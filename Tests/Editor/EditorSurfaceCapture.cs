@@ -269,7 +269,7 @@ namespace DxMessaging.Tests.Editor
             return new RectInt(cropX, cropY, cropWidth, cropHeight);
         }
 
-        private static void InvokeInheritedPanelMethod(
+        internal static void InvokeInheritedPanelMethod(
             IPanel panel,
             string methodName,
             object[] arguments

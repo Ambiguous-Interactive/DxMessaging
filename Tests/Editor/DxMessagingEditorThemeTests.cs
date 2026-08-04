@@ -99,6 +99,20 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void AccentInkMeetsNormalTextContrastInBothSkins(bool lightSkin)
+        {
+            Color background = ReadTokenColor("--dx-accent", lightSkin);
+            Color foreground = ReadTokenColor("--dx-accent-ink", lightSkin);
+
+            Assert.That(
+                ContrastRatio(foreground, background),
+                Is.GreaterThanOrEqualTo(4.5f),
+                "Accent-backed badges and buttons use 10 px text, so their ink must satisfy normal-text contrast."
+            );
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void ForSkinPicksTheValueBelongingToTheSkinInUse(bool proSkin)
@@ -341,6 +355,29 @@ namespace DxMessaging.Tests.Editor
             Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.0001f), message);
             Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.0001f), message);
             Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.0001f), message);
+        }
+
+        private static float ContrastRatio(Color first, Color second)
+        {
+            float firstLuminance = RelativeLuminance(first);
+            float secondLuminance = RelativeLuminance(second);
+            float lighter = Mathf.Max(firstLuminance, secondLuminance);
+            float darker = Mathf.Min(firstLuminance, secondLuminance);
+            return (lighter + 0.05f) / (darker + 0.05f);
+        }
+
+        private static float RelativeLuminance(Color color)
+        {
+            return 0.2126f * Linearize(color.r)
+                + 0.7152f * Linearize(color.g)
+                + 0.0722f * Linearize(color.b);
+        }
+
+        private static float Linearize(float channel)
+        {
+            return channel <= 0.04045f
+                ? channel / 12.92f
+                : Mathf.Pow((channel + 0.055f) / 1.055f, 2.4f);
         }
 
         /// <summary>

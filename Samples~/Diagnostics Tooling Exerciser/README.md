@@ -53,11 +53,19 @@ After the default play-start burst:
 - Message Monitor global history includes `ToolingPulse`, `ToolingCommand`, and
   `ToolingSignal` entries with trace IDs like `sample-pulse-001`.
 - Flow Graph shows three receiver components, four message nodes (the three
-  concrete messages plus `IMessage`), 15 routes, and 33 recent trace paths.
+  concrete messages plus `ANY MESSAGE`), 15 routes, and 33 recent trace paths.
   Its primary canvas places the four messages on the left, the three receivers
   on the right, and draws all 15 live connections. It starts with no default
   selection; clicking any part of a connection opens focused route and activity
-  details while evidence and technical reports remain collapsed. The textual
+  details while evidence and diagnostics remain collapsed. Expanded evidence
+  uses breadcrumb context trails plus compact source-linked message and call-site
+  rows. Breadcrumbs backed by exact captured Unity-object identities and
+  relationship endpoints select the matching graph item; **Route roster** reveals
+  each exact receiver ID, registration subtype, context, and context ID on demand.
+  Diagnostics split route health from trace coverage; component and message
+  selections show distinct busiest paths as directed relationship records,
+  while route selections omit those redundant aggregates. The full text report
+  remains available through **Copy diagnostics**. The textual
   route and trace reports remain inside the collapsed **Analysis and Raw Data**
   section.
 - The component diagnostics panel shows enabled listener diagnostics and local

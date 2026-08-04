@@ -723,10 +723,16 @@ namespace DxMessaging.Tests.Editor
             EditorWindowTestUtility.ShowWindow(window);
             VisualElement root = window.rootVisualElement;
             string selectedRoute = string.Empty;
+            FlowGraphSnapshot stressSnapshot = new(
+                components,
+                messages,
+                edges,
+                Array.Empty<string>()
+            );
 
             DxMessagingFlowGraphWindow.BuildGraphUi(
                 root,
-                new FlowGraphSnapshot(components, messages, edges, Array.Empty<string>()),
+                stressSnapshot,
                 FlowGraphViewState.Default,
                 onSelectionChanged: key => selectedRoute = key
             );
@@ -806,6 +812,86 @@ namespace DxMessaging.Tests.Editor
                 selectedRoute,
                 Is.EqualTo(expectedRoute),
                 "Clicking a non-marker segment in the attached 400-route graph must select the visible route."
+            );
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                stressSnapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        components[0]
+                    )
+                )
+            );
+            Foldout detailsOverflow = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsOverflowFoldoutName
+            );
+            int initialMessageTypeRows = detailsOverflow
+                .parent.Children()
+                .Count(child =>
+                    child.ClassListContains(
+                        DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                );
+            Assert.That(
+                initialMessageTypeRows,
+                Is.EqualTo(8),
+                "Dense component evidence should expose a bounded first page of message types."
+            );
+            Assert.That(
+                detailsOverflow.text,
+                Is.EqualTo("2 more message types"),
+                "The overflow disclosure should account for every remaining source-linked type."
+            );
+            Assert.That(
+                detailsOverflow.value,
+                Is.False,
+                "Dense evidence should not replace the graph with dozens of type rows on selection."
+            );
+            Assert.That(
+                detailsOverflow
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                    .ToList(),
+                Is.Empty,
+                "Collapsed overflow should not create hidden source rows or resolve their source links."
+            );
+
+            detailsOverflow.value = true;
+
+            Assert.That(
+                detailsOverflow
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                    .ToList()
+                    .Count,
+                Is.EqualTo(2),
+                "Expanding the disclosure should lazily create every remaining message type row."
+            );
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                stressSnapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        components[0]
+                    )
+                )
+            );
+            detailsOverflow = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsOverflowFoldoutName
+            );
+            Assert.That(detailsOverflow.value, Is.True);
+            Assert.That(
+                detailsOverflow
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(2),
+                "Restoring an expanded overflow must explicitly repopulate its lazy rows even while the rebuilt details tree is detached."
             );
         }
 
@@ -956,7 +1042,9 @@ namespace DxMessaging.Tests.Editor
                 new[] { edge },
                 Array.Empty<string>()
             );
-            VisualElement root = new();
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
 
             FlowGraphViewState viewState = new(
                 selectedItemKey: DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(edge)
@@ -1011,6 +1099,1384 @@ namespace DxMessaging.Tests.Editor
                 location.Line,
                 Is.GreaterThan(0),
                 "The message-source action should open the declaring line, not only the file."
+            );
+            Assert.That(
+                evidence.Query<Label>().ToList().Any(label => label.text.Contains("Game.Emit")),
+                Is.True,
+                "A stale call site should remain readable as evidence."
+            );
+            Assert.That(
+                evidence
+                    .Query<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName)
+                    .ToList()
+                    .Any(button =>
+                        button.text.StartsWith("Open call site", StringComparison.Ordinal)
+                    ),
+                Is.False,
+                "A call-site action should not appear when its captured asset no longer resolves."
+            );
+            Foldout diagnostics = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName
+            );
+            List<string> sectionTitles = diagnostics
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.DetailsSectionClassName)
+                .ToList()
+                .Select(section => section.Q<Label>().text)
+                .ToList();
+            Assert.That(
+                sectionTitles,
+                Does.Contain("ROUTE HEALTH"),
+                "Diagnostics should lead with categorized route health."
+            );
+            Assert.That(
+                sectionTitles,
+                Does.Contain("TRACE COVERAGE"),
+                "Trace coverage should remain separate from route health."
+            );
+            Assert.That(
+                root.Query<Label>()
+                    .ToList()
+                    .Any(label =>
+                        label.text.StartsWith("Visible call share:", StringComparison.Ordinal)
+                    ),
+                Is.False,
+                "Raw diagnostics should not render as a multiline wall anywhere in the details pane."
+            );
+            Assert.That(
+                GetCopiedDiagnostics(diagnostics),
+                Does.Contain("Visible call share"),
+                "The copy action should retain the complete report without rendering it."
+            );
+            string originalClipboard = EditorGUIUtility.systemCopyBuffer;
+            try
+            {
+                string expectedDiagnostics = GetCopiedDiagnostics(diagnostics);
+                EditorGUIUtility.systemCopyBuffer = "diagnostics-copy-sentinel";
+                Button copyDiagnostics = diagnostics.Q<Button>(
+                    DxMessagingFlowGraphWindow.DetailsCopyDiagnosticsButtonName
+                );
+                using (ClickEvent click = ClickEvent.GetPooled())
+                {
+                    click.target = copyDiagnostics;
+                    copyDiagnostics.SendEvent(click);
+                }
+                Assert.That(
+                    EditorGUIUtility.systemCopyBuffer,
+                    Is.EqualTo(expectedDiagnostics),
+                    "Clicking the attached copy action should publish the complete diagnostic report."
+                );
+            }
+            finally
+            {
+                EditorGUIUtility.systemCopyBuffer = originalClipboard;
+            }
+        }
+
+        [Test]
+        public void BuildGraphUiStructuresMessageEvidenceAsCompactHierarchyAndRelationships()
+        {
+            string messageTypeName =
+                $"{typeof(FlowGraphMessage).FullName} [{typeof(FlowGraphMessage).Assembly.GetName().Name}]";
+            string firstContext = "World/Combat/Enemy Drone (GameObject)";
+            string secondContext = "World/UI/HUD Console (GameObject)";
+            string secondRouteContext = "World/Targeting/HUD Target (GameObject)";
+            string fallbackContext = "Instance 4242";
+            string callSite =
+                "DxMessaging.Tests.Editor.DiagnosticsToolingExerciser:EmitOneOfEach () "
+                + "(at Packages/com.wallstop-studios.dxmessaging/Tests/Editor/DxMessagingFlowGraphWindowTests.cs:1)";
+            FlowGraphMessageNode message = new(
+                messageTypeName,
+                registrationCount: 2,
+                callCount: 5,
+                recentTracedDeliveryCount: 4,
+                messageKindName: "TARGETED",
+                recentEmissionSites: new[] { callSite },
+                recentContexts: new[] { firstContext, secondContext, fallbackContext },
+                recentContextComponentIds: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [firstContext] = "component:enemy",
+                    [secondContext] = "component:hud",
+                }
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:enemy",
+                        "World/Combat/Enemy Drone",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 1,
+                        registrationCount: 1,
+                        callCount: 3,
+                        localMessageCount: 0
+                    ),
+                    new FlowGraphComponentNode(
+                        "component:hud",
+                        "World/UI/HUD Console",
+                        "MessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 1,
+                        registrationCount: 1,
+                        callCount: 2,
+                        localMessageCount: 0
+                    ),
+                },
+                new[] { message },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        "component:enemy",
+                        "World/Combat/Enemy Drone",
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 3,
+                        context: firstContext,
+                        recentTracedDeliveryCount: 3,
+                        contextId: 4242
+                    ),
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        "component:hud",
+                        "World/UI/HUD Console",
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 2,
+                        context: secondRouteContext,
+                        recentTracedDeliveryCount: 1
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphTracePath(
+                        messageTypeName,
+                        firstContext,
+                        "component:enemy",
+                        "World/Combat/Enemy Drone",
+                        "Targeted",
+                        recentTracedDeliveryCount: 2,
+                        contextId: 4242
+                    ),
+                    new FlowGraphTracePath(
+                        messageTypeName,
+                        secondContext,
+                        "component:hud",
+                        "World/UI/HUD Console",
+                        "Targeted",
+                        recentTracedDeliveryCount: 1
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(80f, 80f, 520f, 1000f);
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            string selectedItemKey = DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message);
+            FlowGraphViewState viewState = new(
+                selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)
+            );
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                viewState,
+                onSelectionChanged: key => selectedItemKey = key
+            );
+
+            Foldout evidence = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
+            );
+            List<VisualElement> hierarchyRows = evidence
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsHierarchyRowClassName
+                )
+                .ToList();
+            Assert.That(
+                hierarchyRows.Count,
+                Is.EqualTo(3),
+                "Each captured context should render as one hierarchy trail instead of one comma-joined value."
+            );
+            Assert.That(
+                hierarchyRows.Select(row => row.tooltip),
+                Is.EquivalentTo(new[] { firstContext, secondContext, fallbackContext }),
+                "Compact hierarchy trails should retain each exact captured context in their tooltips."
+            );
+            Assert.That(
+                hierarchyRows[0].Query<Label>().ToList().Select(label => label.text),
+                Does.Contain("World").And.Contain("Combat").And.Contain("Enemy Drone"),
+                "The trail should expose hierarchy levels as separate scannable labels."
+            );
+            Assert.That(
+                hierarchyRows[2].Query<Label>().ToList().Select(label => label.text),
+                Does.Contain(fallbackContext),
+                "Instance-id fallbacks should remain readable when no slash hierarchy was captured."
+            );
+            Assert.That(
+                hierarchyRows[0]
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsHierarchySegmentClassName
+                    )
+                    .ToList()
+                    .All(segment => segment.style.flexShrink.value > 0f),
+                Is.True,
+                "Breadcrumb groups should shrink at narrow widths without orphaning their separators."
+            );
+            Assert.That(
+                evidence.Query<Label>().ToList().Select(label => label.text),
+                Does.Contain("Contexts"),
+                "Message-level evidence should keep a neutral role because captured contexts are not route-filtered."
+            );
+            List<VisualElement> selectableContextTrails = hierarchyRows
+                .Select(row =>
+                    row.Q<VisualElement>(className: DxMessagingEditorTheme.DetailLinkClassName)
+                )
+                .Where(trail => trail != null)
+                .ToList();
+            Assert.That(
+                selectableContextTrails,
+                Has.Count.EqualTo(2),
+                "Only hierarchy evidence that resolves to a captured graph component should look interactive."
+            );
+            Assert.That(
+                selectableContextTrails.Select(trail => trail.tooltip),
+                Is.EquivalentTo(new[] { firstContext, secondContext }),
+                "Selectable breadcrumb controls should retain the exact captured identity instead of replacing it with a generic action tooltip."
+            );
+            Assert.That(
+                hierarchyRows[2]
+                    .Q<VisualElement>(className: DxMessagingEditorTheme.DetailLinkClassName),
+                Is.Null,
+                "An unresolved instance fallback must not advertise a dead click target."
+            );
+            using (ClickEvent click = ClickEvent.GetPooled())
+            {
+                click.target = selectableContextTrails[0];
+                selectableContextTrails[0].SendEvent(click);
+            }
+            Assert.That(
+                selectedItemKey,
+                Is.EqualTo(
+                    DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        snapshot.ComponentNodes[0]
+                    )
+                ),
+                "A resolved evidence hierarchy should select its graph component."
+            );
+            VisualElement sourceRow = evidence.Q<VisualElement>(
+                className: DxMessagingFlowGraphWindow.DetailsSourceRowClassName
+            );
+            Assert.That(
+                sourceRow,
+                Is.Not.Null,
+                "Captured provenance should render as one source record with its action and file identity."
+            );
+            Assert.That(
+                sourceRow.Query<Label>().ToList().Select(label => label.text),
+                Does.Contain("DiagnosticsToolingExerciser.EmitOneOfEach()")
+                    .And.Contain("DxMessagingFlowGraphWindowTests.cs:1"),
+                "Source records should separate a compact symbol from its file and line."
+            );
+            Assert.That(
+                sourceRow.Q<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName),
+                Is.Not.Null,
+                "A resolvable source record should keep its source action beside the compact identity."
+            );
+            Assert.That(
+                evidence.Query<Label>().ToList().Select(label => label.text),
+                Does.Not.Contain(messageTypeName).And.Not.Contain(callSite),
+                "Evidence should keep exact identities in tooltips and copy text instead of rendering raw strings."
+            );
+            List<VisualElement> relationships = root.Q<Foldout>(
+                    DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName
+                )
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsRelationshipClassName
+                )
+                .ToList();
+            Assert.That(
+                relationships.Count,
+                Is.EqualTo(1),
+                "Matching busiest route and trace-path evidence should share one directed relationship."
+            );
+            VisualElement messageIdentity = relationships[0]
+                .Q<VisualElement>(DxMessagingFlowGraphWindow.DetailsRelationshipMessageLinkName);
+            VisualElement receiverIdentity = relationships[0]
+                .Q<VisualElement>(DxMessagingFlowGraphWindow.DetailsRelationshipReceiverLinkName);
+            Assert.That(messageIdentity, Is.Not.Null);
+            Assert.That(receiverIdentity, Is.Not.Null);
+            Assert.That(messageIdentity.tooltip, Is.EqualTo(messageTypeName));
+            Assert.That(
+                receiverIdentity.tooltip,
+                Does.Contain(snapshot.ComponentNodes[0].HierarchyPath)
+                    .And.Contain(snapshot.ComponentNodes[0].Id),
+                "Relationship endpoints should retain their exact path and stable receiver identity in the interactive control's tooltip."
+            );
+            Assert.That(
+                messageIdentity.ClassListContains(DxMessagingEditorTheme.DetailActiveClassName),
+                Is.True,
+                "The relationship endpoint that owns the open details should read as active."
+            );
+            Assert.That(
+                messageIdentity.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName),
+                Is.False,
+                "The current relationship endpoint should not advertise a no-op link."
+            );
+            Assert.That(messageIdentity.focusable, Is.False);
+            Assert.That(
+                receiverIdentity.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName),
+                Is.True,
+                "The other relationship endpoint should remain selectable."
+            );
+            using (ClickEvent click = ClickEvent.GetPooled())
+            {
+                click.target = receiverIdentity;
+                receiverIdentity.SendEvent(click);
+            }
+            Assert.That(
+                selectedItemKey,
+                Is.EqualTo(
+                    DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        snapshot.ComponentNodes[0]
+                    )
+                )
+            );
+            Assert.That(
+                relationships
+                    .SelectMany(row => row.Query<Label>().ToList())
+                    .Select(label => label.text),
+                Does.Contain("BUSIEST ROUTE + TRACE PATH")
+                    .And.Contain("3 route traces")
+                    .And.Contain("2 path deliveries"),
+                "A merged relationship should preserve both independently counted activities."
+            );
+            Assert.That(
+                relationships
+                    .SelectMany(row => row.Query<Label>().ToList())
+                    .Select(label => label.text),
+                Does.Contain("FlowGraphMessage")
+                    .And.Contain("Enemy Drone")
+                    .And.Not.Contain(messageTypeName),
+                "Relationship cards should use compact identities and hierarchy leaves rather than report sentences."
+            );
+            foreach (VisualElement relationship in relationships)
+            {
+                AssertCompleteBorder(relationship, DxMessagingEditorPalette.Targeted);
+                Assert.That(
+                    relationship
+                        .Query<VisualElement>(
+                            className: DxMessagingFlowGraphWindow.DetailsHierarchyRowClassName
+                        )
+                        .ToList(),
+                    Is.Empty,
+                    "A production-shaped context should not duplicate its matching receiver hierarchy."
+                );
+            }
+            VisualElement details = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsPaneName
+            );
+            IEnumerable<string> renderedLabels = details
+                .Query<Label>()
+                .ToList()
+                .Select(label => label.text ?? string.Empty);
+            Assert.That(
+                renderedLabels.Any(text =>
+                    text.Contains(" [") || text.Contains("(at ") || text.Contains(" |")
+                ),
+                Is.False,
+                "The selected details surface should not regress to raw captured identities or report prose."
+            );
+            string copiedDiagnostics = GetCopiedDiagnostics(root);
+            Assert.That(
+                copiedDiagnostics,
+                Does.Contain(messageTypeName)
+                    .And.Contain(callSite)
+                    .And.Contain(firstContext)
+                    .And.Contain(secondContext)
+                    .And.Contain(fallbackContext),
+                "Copy diagnostics should retain every exact value hidden by the compact visual treatment."
+            );
+
+            Foldout routeRoster = root.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName
+            );
+            Assert.That(routeRoster, Is.Not.Null);
+            Assert.That(routeRoster.text, Is.EqualTo("Route roster (2)"));
+            Assert.That(
+                routeRoster.value,
+                Is.False,
+                "The receiver roster should remain on demand instead of adding another text wall."
+            );
+            routeRoster.value = true;
+            List<VisualElement> routeRows = routeRoster
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsRouteRowClassName
+                )
+                .ToList();
+            Assert.That(routeRows, Has.Count.EqualTo(2));
+            Assert.That(
+                routeRows
+                    .SelectMany(row => row.Query<Label>().ToList())
+                    .Select(label => label.text),
+                Does.Contain("Enemy Drone")
+                    .And.Contain("HUD Console")
+                    .And.Contain("HUD Target")
+                    .And.Contain("Registration")
+                    .And.Contain("Targeted"),
+                "Expanding the route metric should identify each receiver, exact registration, and route context."
+            );
+            Assert.That(routeRows.All(row => row.focusable), Is.True);
+            Assert.That(
+                routeRows.All(row =>
+                    row.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName)
+                ),
+                Is.True,
+                "Route rows should expose the same keyboard and persistent visual affordance as other detail links."
+            );
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                Array.Empty<object>()
+            );
+            Color expectedRouteLinkSurface = EditorGUIUtility.isProSkin
+                ? new Color32(44, 44, 44, 255)
+                : new Color32(255, 255, 255, 255);
+            Assert.That(
+                routeRows.All(row =>
+                    ColorsApproximatelyEqual(
+                        row.resolvedStyle.backgroundColor,
+                        expectedRouteLinkSurface
+                    )
+                ),
+                Is.True,
+                "The card cascade must preserve a visible resting-state link surface on every selectable route row."
+            );
+            using (ClickEvent click = ClickEvent.GetPooled())
+            {
+                click.target = routeRows[0];
+                routeRows[0].SendEvent(click);
+            }
+            Assert.That(
+                selectedItemKey,
+                Is.EqualTo(DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(snapshot.Edges[0])),
+                "A route-roster row should select the exact graph route."
+            );
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                snapshot,
+                viewState,
+                onSelectionChanged: key => selectedItemKey = key
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName).value,
+                Is.True,
+                "Refresh should preserve the route roster disclosure."
+            );
+        }
+
+        [Test]
+        public void MessageEvidenceKeepsAmbiguousAndNonSceneHierarchyContextsInert()
+        {
+            const string messageTypeName = "FilteredEvidenceMessage";
+            FlowGraphMessageNode message = new(
+                messageTypeName,
+                registrationCount: 2,
+                callCount: 2,
+                recentContexts: new[]
+                {
+                    "Root/Duplicate (GameObject)",
+                    "Config (CombatConfig)",
+                    "Root/Context Only (GameObject)",
+                },
+                recentContextComponentIds: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Root/Context Only (GameObject)"] = "component:context-only",
+                }
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        "component:visible-duplicate",
+                        "Root/Duplicate",
+                        "MessagingComponent",
+                        true,
+                        1,
+                        1,
+                        1,
+                        0
+                    ),
+                    new FlowGraphComponentNode(
+                        "component:filtered-duplicate",
+                        "Root/Duplicate",
+                        "MessagingComponent",
+                        true,
+                        0,
+                        0,
+                        0,
+                        0
+                    ),
+                    new FlowGraphComponentNode(
+                        "component:config-name",
+                        "Config",
+                        "MessagingComponent",
+                        true,
+                        1,
+                        1,
+                        1,
+                        0
+                    ),
+                    new FlowGraphComponentNode(
+                        "component:context-only",
+                        "Root/Context Only",
+                        "MessagingComponent",
+                        true,
+                        0,
+                        0,
+                        0,
+                        0
+                    ),
+                },
+                new[] { message },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        "component:visible-duplicate",
+                        "Root/Duplicate",
+                        "Targeted",
+                        1,
+                        1
+                    ),
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        "component:config-name",
+                        "Config",
+                        "Targeted",
+                        1,
+                        1
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    filterText: messageTypeName,
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)
+                ),
+                onSelectionChanged: _ => Assert.Fail("An ambiguous context selected a component.")
+            );
+
+            List<VisualElement> contextTrails = root.Q<Foldout>(
+                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
+                )
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsHierarchyTrailClassName
+                )
+                .ToList();
+            Assert.That(contextTrails, Has.Count.EqualTo(3));
+            Assert.That(
+                contextTrails.All(trail =>
+                    !trail.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName)
+                    && !trail.focusable
+                ),
+                Is.True,
+                "A duplicate path, a ScriptableObject-shaped context, and a unique component hidden by the filter must remain plain evidence."
+            );
+
+            Assert.That(
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    root,
+                    snapshot,
+                    new FlowGraphViewState(
+                        filterText: messageTypeName,
+                        selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(
+                            message
+                        )
+                    ),
+                    onSelectionChanged: _ =>
+                        Assert.Fail("A filtered-out context selected a component.")
+                ),
+                Is.True
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName)
+                    .Query<VisualElement>(className: DxMessagingEditorTheme.DetailLinkClassName)
+                    .ToList(),
+                Is.Empty,
+                "Refreshing a filtered message selection must not turn off-graph contexts into dead links."
+            );
+        }
+
+        [Test]
+        public void RouteRosterDistinguishesMultipleRoutesToOneReceiver()
+        {
+            const string messageTypeName = "DamageApplied";
+            FlowGraphComponentNode receiver = new(
+                "component:receiver",
+                "Root/Receiver",
+                "MessagingComponent",
+                true,
+                1,
+                3,
+                4,
+                0
+            );
+            FlowGraphMessageNode message = new(messageTypeName, 3, 4);
+            FlowGraphSnapshot snapshot = new(
+                new[] { receiver },
+                new[] { message },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        receiver.Id,
+                        receiver.HierarchyPath,
+                        "Targeted",
+                        1,
+                        2,
+                        context: "Root/Receiver (GameObject)",
+                        contextId: 101
+                    ),
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        receiver.Id,
+                        receiver.HierarchyPath,
+                        "Targeted",
+                        1,
+                        1,
+                        context: "Root/Receiver (GameObject)",
+                        contextId: 202
+                    ),
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        receiver.Id,
+                        receiver.HierarchyPath,
+                        "TargetedPostProcessor",
+                        1,
+                        1,
+                        context: "Root/Receiver (GameObject)",
+                        contextId: 303
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)
+                ),
+                onSelectionChanged: _ => { }
+            );
+            Foldout roster = root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName);
+            roster.value = true;
+            List<VisualElement> rows = roster
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsRouteRowClassName
+                )
+                .ToList();
+
+            Assert.That(rows, Has.Count.EqualTo(3));
+            Assert.That(
+                rows.Select(row => row.tooltip),
+                Is.EquivalentTo(
+                    new[]
+                    {
+                        $"{messageTypeName} -> Root/Receiver [component:receiver] (Targeted, Root/Receiver (GameObject), context #101)",
+                        $"{messageTypeName} -> Root/Receiver [component:receiver] (Targeted, Root/Receiver (GameObject), context #202)",
+                        $"{messageTypeName} -> Root/Receiver [component:receiver] (TargetedPostProcessor, Root/Receiver (GameObject), context #303)",
+                    }
+                )
+            );
+            Assert.That(
+                rows.SelectMany(row => row.Query<Label>().ToList()).Select(label => label.text),
+                Does.Contain("Context ID")
+                    .And.Contain("101")
+                    .And.Contain("202")
+                    .And.Contain("303")
+                    .And.Contain("Targeted")
+                    .And.Contain("TargetedPostProcessor")
+            );
+        }
+
+        [Test]
+        public void RouteRosterDistinguishesDuplicateReceiverPaths()
+        {
+            const string messageTypeName = "DuplicateReceiverMessage";
+            FlowGraphComponentNode firstReceiver = new(
+                "component:first",
+                "Root/Duplicate",
+                "MessagingComponent",
+                true,
+                1,
+                1,
+                1,
+                0
+            );
+            FlowGraphComponentNode secondReceiver = new(
+                "component:second",
+                "Root/Duplicate",
+                "MessagingComponent",
+                true,
+                1,
+                1,
+                1,
+                0
+            );
+            FlowGraphMessageNode message = new(messageTypeName, 2, 2);
+            FlowGraphSnapshot snapshot = new(
+                new[] { firstReceiver, secondReceiver },
+                new[] { message },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        firstReceiver.Id,
+                        firstReceiver.HierarchyPath,
+                        "Untargeted",
+                        1,
+                        1
+                    ),
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        secondReceiver.Id,
+                        secondReceiver.HierarchyPath,
+                        "Untargeted",
+                        1,
+                        1
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)
+                ),
+                onSelectionChanged: _ => { }
+            );
+            Foldout roster = root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName);
+            roster.value = true;
+            List<VisualElement> rows = roster
+                .Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsRouteRowClassName
+                )
+                .ToList();
+
+            Assert.That(rows, Has.Count.EqualTo(2));
+            Assert.That(
+                rows.SelectMany(row => row.Query<Label>().ToList()).Select(label => label.text),
+                Does.Contain("Receiver ID")
+                    .And.Contain(firstReceiver.Id)
+                    .And.Contain(secondReceiver.Id)
+            );
+            Assert.That(
+                rows.Select(row => row.tooltip),
+                Is.EquivalentTo(
+                    new[]
+                    {
+                        $"{messageTypeName} -> Root/Duplicate [component:first] (Untargeted, <none>)",
+                        $"{messageTypeName} -> Root/Duplicate [component:second] (Untargeted, <none>)",
+                    }
+                ),
+                "Receiver IDs must distinguish routes whose path, registration, context, and activity are identical."
+            );
+        }
+
+        [Test]
+        public void RouteRosterBoundsRowsAndPopulatesOverflowOnDemand()
+        {
+            const string messageTypeName = "DenseMessage";
+            FlowGraphMessageNode message = new(messageTypeName, 10, 55);
+            FlowGraphComponentNode[] components = Enumerable
+                .Range(0, 10)
+                .Select(index => new FlowGraphComponentNode(
+                    $"component:{index}",
+                    $"Root/Receiver {index}",
+                    "MessagingComponent",
+                    true,
+                    1,
+                    1,
+                    index + 1,
+                    0
+                ))
+                .ToArray();
+            FlowGraphEdge[] edges = components
+                .Select(
+                    (component, index) =>
+                        new FlowGraphEdge(
+                            messageTypeName,
+                            component.Id,
+                            component.HierarchyPath,
+                            "Untargeted",
+                            1,
+                            index + 1,
+                            contextId: index + 1
+                        )
+                )
+                .ToArray();
+            FlowGraphSnapshot snapshot = new(
+                components,
+                new[] { message },
+                edges,
+                Array.Empty<string>()
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            FlowGraphViewState viewState = new(
+                selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)
+            );
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                viewState,
+                onSelectionChanged: _ => { }
+            );
+            Foldout roster = root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName);
+            roster.value = true;
+            Foldout overflow = roster.Q<Foldout>(
+                DxMessagingFlowGraphWindow.DetailsRoutesOverflowFoldoutName
+            );
+
+            Assert.That(roster.text, Is.EqualTo("Route roster (10)"));
+            Assert.That(
+                roster
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsRouteRowClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(8)
+            );
+            Assert.That(overflow, Is.Not.Null);
+            Assert.That(overflow.text, Is.EqualTo("2 more routes"));
+            overflow.value = true;
+            Assert.That(
+                roster
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsRouteRowClassName
+                    )
+                    .ToList(),
+                Has.Count.EqualTo(10)
+            );
+
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                snapshot,
+                viewState,
+                onSelectionChanged: _ => { }
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName).value,
+                Is.True
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesOverflowFoldoutName).value,
+                Is.True,
+                "Both levels of a dense route roster should survive a details refresh."
+            );
+        }
+
+        [Test]
+        public void MessageWithoutVisibleRoutesShowsNonInteractiveRosterEmptyState()
+        {
+            FlowGraphMessageNode quietMessage = new("QuietMessage", 0, 0);
+            FlowGraphMessageNode routedMessage = new("RoutedMessage", 1, 1);
+            FlowGraphComponentNode receiver = new(
+                "component:receiver",
+                "Root/Receiver",
+                "MessagingComponent",
+                true,
+                1,
+                1,
+                1,
+                0
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[] { receiver },
+                new[] { quietMessage, routedMessage },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        routedMessage.MessageTypeName,
+                        receiver.Id,
+                        receiver.HierarchyPath,
+                        "Untargeted",
+                        1,
+                        1
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(
+                        quietMessage
+                    )
+                )
+            );
+
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsRoutesFoldoutName),
+                Is.Null
+            );
+            VisualElement emptyRoster = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                )
+                .ToList()
+                .Single(section => section.Q<Label>().text == "ROUTE ROSTER");
+            Assert.That(
+                emptyRoster.Query<Label>().ToList().Select(label => label.text),
+                Does.Contain("Routes").And.Contain("none")
+            );
+        }
+
+        [Test]
+        public void DetailFocusSurvivesChangingBackgroundRefreshAndSelection()
+        {
+            const string messageTypeName = "KeyboardMessage";
+            const string existingContext = "Root/Receiver (GameObject)";
+            const string addedContext = "Root/Receiver/Child (GameObject)";
+            FlowGraphComponentNode receiver = new(
+                "component:receiver",
+                "Root/Receiver",
+                "MessagingComponent",
+                true,
+                1,
+                1,
+                1,
+                0
+            );
+            FlowGraphMessageNode message = new(
+                messageTypeName,
+                1,
+                1,
+                recentContexts: new[] { existingContext },
+                recentContextComponentIds: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [existingContext] = receiver.Id,
+                }
+            );
+            FlowGraphMessageNode refreshedMessage = new(
+                messageTypeName,
+                1,
+                1,
+                recentContexts: new[] { addedContext, existingContext },
+                recentContextComponentIds: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [addedContext] = receiver.Id,
+                    [existingContext] = receiver.Id,
+                }
+            );
+            FlowGraphEdge edge = new(
+                messageTypeName,
+                receiver.Id,
+                receiver.HierarchyPath,
+                "Targeted",
+                1,
+                1,
+                recentTracedDeliveryCount: 1,
+                context: existingContext,
+                contextId: 101
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[] { receiver },
+                new[] { message },
+                new[] { edge },
+                Array.Empty<string>()
+            );
+            FlowGraphSnapshot refreshedSnapshot = new(
+                new[] { receiver },
+                new[] { refreshedMessage },
+                new[] { edge },
+                Array.Empty<string>()
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+            VisualElement root = window.rootVisualElement;
+            string selectedItemKey = DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message);
+            FlowGraphSnapshot currentSnapshot = snapshot;
+            Action<string> select = null;
+            select = key =>
+            {
+                selectedItemKey = key;
+                DxMessagingFlowGraphWindow.RefreshGraphContent(
+                    root,
+                    currentSnapshot,
+                    new FlowGraphViewState(selectedItemKey: key),
+                    onSelectionChanged: select
+                );
+            };
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(selectedItemKey: selectedItemKey),
+                onSelectionChanged: select
+            );
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName).value = true;
+            VisualElement receiverLink = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsRelationshipReceiverLinkName
+            );
+            receiverLink.Focus();
+            Assert.That(
+                root.panel.focusController.focusedElement,
+                Is.SameAs(receiverLink),
+                "The test must begin with keyboard focus on the detail link."
+            );
+
+            currentSnapshot = refreshedSnapshot;
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                root,
+                currentSnapshot,
+                new FlowGraphViewState(selectedItemKey: selectedItemKey),
+                onSelectionChanged: select
+            );
+            receiverLink = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsRelationshipReceiverLinkName
+            );
+            Assert.That(
+                selectedItemKey,
+                Is.EqualTo(DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)),
+                "A background refresh must not change the selected item."
+            );
+            Assert.That(
+                root.panel.focusController.focusedElement,
+                Is.SameAs(receiverLink),
+                "A background refresh should preserve focus on the recreated detail link instead of moving it to an unselected graph node."
+            );
+            Assert.That(
+                receiverLink.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName),
+                Is.True
+            );
+            Assert.That(
+                root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsHierarchyTrailClassName
+                    )
+                    .ToList()
+                    .Count(trail =>
+                        trail.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName)
+                    ),
+                Is.EqualTo(2),
+                "The changing snapshot must contain two earlier context links targeting the same receiver so focus restoration cannot rely on a same-key ordinal."
+            );
+
+            using (
+                KeyDownEvent keyDown = KeyDownEvent.GetPooled(
+                    '\n',
+                    KeyCode.Return,
+                    EventModifiers.None
+                )
+            )
+            {
+                keyDown.target = receiverLink;
+                receiverLink.SendEvent(keyDown);
+            }
+            string receiverSelectionKey = DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                receiver
+            );
+            Assert.That(selectedItemKey, Is.EqualTo(receiverSelectionKey));
+            VisualElement focused = root.panel.focusController.focusedElement as VisualElement;
+            Assert.That(focused, Is.Not.Null);
+            Assert.That(focused.userData as string, Is.EqualTo(receiverSelectionKey));
+            Assert.That(
+                focused.ClassListContains(DxMessagingFlowGraphWindow.GraphReceiverNodeClassName),
+                Is.True,
+                "A keyboard detail selection should rebuild the details and move focus to the matching graph node."
+            );
+            VisualElement activeReceiver = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsRelationshipReceiverLinkName
+            );
+            VisualElement selectableMessage = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsRelationshipMessageLinkName
+            );
+            Assert.That(
+                activeReceiver.ClassListContains(DxMessagingEditorTheme.DetailActiveClassName),
+                Is.True
+            );
+            Assert.That(activeReceiver.focusable, Is.False);
+            Assert.That(
+                selectableMessage.ClassListContains(DxMessagingEditorTheme.DetailLinkClassName),
+                Is.True,
+                "After selecting the receiver, endpoint treatments should invert without leaving a no-op link."
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiStructuresComponentEvidenceAndLinksMessageTypes()
+        {
+            string firstMessageType = typeof(FlowGraphMessage).FullName;
+            string secondMessageType = typeof(EvidenceOnlyFlowGraphMessage).FullName;
+            FlowGraphComponentNode component = new(
+                "component:receiver",
+                "Root/Receiver",
+                "MessagingComponent",
+                activeInHierarchy: true,
+                listenerCount: 1,
+                registrationCount: 2,
+                callCount: 5,
+                localMessageCount: 5
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[] { component },
+                new[]
+                {
+                    new FlowGraphMessageNode(firstMessageType, 1, 3),
+                    new FlowGraphMessageNode(secondMessageType, 1, 2),
+                },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        firstMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Untargeted",
+                        registrationCount: 1,
+                        callCount: 3
+                    ),
+                    new FlowGraphEdge(
+                        secondMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 2
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+            FlowGraphViewState viewState = new(
+                selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(component)
+            );
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
+            DxMessagingFlowGraphWindow.CompleteMessageSourceIndexesForTests();
+            DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot, viewState);
+
+            List<VisualElement> messageTypeRows = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                )
+                .ToList();
+            List<Button> sourceLinks = messageTypeRows
+                .SelectMany(row =>
+                    row.Query<Button>(name: DxMessagingFlowGraphWindow.SourceLinkButtonName)
+                        .ToList()
+                )
+                .ToList();
+            Assert.That(
+                messageTypeRows,
+                Has.Count.EqualTo(2),
+                "Each visible message type should receive a separate scannable evidence row."
+            );
+            Assert.That(
+                sourceLinks,
+                Has.Count.EqualTo(2),
+                "Every resolvable component message type should link to its declaration."
+            );
+            Assert.That(
+                messageTypeRows.Select(row => row.Q<Label>().text),
+                Is.EquivalentTo(
+                    new[] { nameof(FlowGraphMessage), nameof(EvidenceOnlyFlowGraphMessage) }
+                ),
+                "The source-linked rows should use compact type labels instead of namespace paragraphs."
+            );
+            Assert.That(
+                messageTypeRows.Select(row => row.tooltip),
+                Is.EquivalentTo(new[] { firstMessageType, secondMessageType }),
+                "Compact rows should retain exact type identity in their tooltips."
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiQualifiesCompactMessageTypesThatShareAnIdentity()
+        {
+            const string firstMessageType = "Alpha.Events.Damage [Assembly.One]";
+            const string secondMessageType = "Alpha.Events.Damage [Assembly.Two]";
+            const string thirdMessageType = "Beta.Events.Damage [Assembly.One]";
+            FlowGraphComponentNode component = new(
+                "component:receiver",
+                "Root/Receiver",
+                "MessagingComponent",
+                activeInHierarchy: true,
+                listenerCount: 1,
+                registrationCount: 3,
+                callCount: 3,
+                localMessageCount: 0
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[] { component },
+                new[]
+                {
+                    new FlowGraphMessageNode(firstMessageType, 1, 1),
+                    new FlowGraphMessageNode(secondMessageType, 1, 1),
+                    new FlowGraphMessageNode(thirdMessageType, 1, 1),
+                },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        firstMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Untargeted",
+                        registrationCount: 1,
+                        callCount: 1
+                    ),
+                    new FlowGraphEdge(
+                        secondMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Untargeted",
+                        registrationCount: 1,
+                        callCount: 1
+                    ),
+                    new FlowGraphEdge(
+                        thirdMessageType,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Untargeted",
+                        registrationCount: 1,
+                        callCount: 1
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        component
+                    )
+                )
+            );
+
+            Dictionary<string, string[]> labelsByIdentity = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsMessageTypeRowClassName
+                )
+                .ToList()
+                .ToDictionary(
+                    row => row.tooltip,
+                    row => row.Query<Label>().ToList().Select(label => label.text).ToArray(),
+                    StringComparer.Ordinal
+                );
+            Assert.That(
+                labelsByIdentity.Keys,
+                Is.EquivalentTo(new[] { firstMessageType, secondMessageType, thirdMessageType })
+            );
+            Assert.That(
+                labelsByIdentity[firstMessageType],
+                Does.Contain("Damage")
+                    .And.Contain("Alpha.Events")
+                    .And.Contain("Assembly.One assembly")
+            );
+            Assert.That(
+                labelsByIdentity[secondMessageType],
+                Does.Contain("Damage")
+                    .And.Contain("Alpha.Events")
+                    .And.Contain("Assembly.Two assembly")
+            );
+            Assert.That(
+                labelsByIdentity[thirdMessageType],
+                Does.Contain("Damage")
+                    .And.Contain("Beta.Events")
+                    .And.Contain("Assembly.One assembly")
+            );
+        }
+
+        [Test]
+        public void BuildGraphUiKeepsDistinctContextRelationshipsSeparate()
+        {
+            const string messageTypeName = "Combat.Damage";
+            const string context = "World/Combat/Enemy Drone (GameObject)";
+            FlowGraphComponentNode component = new(
+                "component:receiver",
+                "World/Combat/Enemy Drone",
+                "MessagingComponent",
+                activeInHierarchy: true,
+                listenerCount: 1,
+                registrationCount: 1,
+                callCount: 1,
+                localMessageCount: 0
+            );
+            FlowGraphMessageNode message = new(messageTypeName, 1, 1);
+            FlowGraphSnapshot snapshot = new(
+                new[] { component },
+                new[] { message },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Targeted",
+                        registrationCount: 1,
+                        callCount: 1,
+                        recentTracedDeliveryCount: 4,
+                        context: context,
+                        contextId: 101
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphTracePath(
+                        messageTypeName,
+                        context,
+                        component.Id,
+                        component.HierarchyPath,
+                        "Targeted",
+                        recentTracedDeliveryCount: 4,
+                        contextId: 202
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            VisualElement root = new();
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateMessageSelectionKey(message)
+                )
+            );
+
+            List<VisualElement> relationships = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsRelationshipClassName
+                )
+                .ToList();
+            Assert.That(
+                relationships,
+                Has.Count.EqualTo(2),
+                "Matching hierarchy text must not merge relationships captured from distinct Unity contexts."
+            );
+            Assert.That(
+                relationships
+                    .SelectMany(relationship => relationship.Query<Label>().ToList())
+                    .Select(label => label.text),
+                Does.Contain("BUSIEST TRACED ROUTE").And.Contain("BUSIEST TRACE PATH")
             );
         }
 
@@ -1594,6 +3060,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, initialSnapshot, viewState);
 
             VisualElement graph = root.Q<VisualElement>(DxMessagingFlowGraphWindow.GraphCanvasName);
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName).value = true;
+            root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName).value = true;
             DxMessagingFlowGraphWindow.FlowGraphCanvasState canvasState =
                 (DxMessagingFlowGraphWindow.FlowGraphCanvasState)graph.userData;
             canvasState.Initialized = true;
@@ -1648,7 +3116,17 @@ namespace DxMessaging.Tests.Editor
                 "The same stable route must remain selected after its display label changes."
             );
             Assert.That(
-                root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName).value,
+                Is.True,
+                "Refresh should preserve an expanded evidence disclosure while source links update."
+            );
+            Assert.That(
+                root.Q<Foldout>(DxMessagingFlowGraphWindow.DetailsTechnicalFoldoutName).value,
+                Is.True,
+                "Refresh should preserve an expanded diagnostics disclosure while source links update."
+            );
+            Assert.That(
+                GetCopiedDiagnostics(root),
                 Does.Contain("Route context: Instance 4242"),
                 "The preserved selection must resolve to the refreshed route details."
             );
@@ -1785,7 +3263,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement marker = root.Q<VisualElement>(
                 className: DxMessagingFlowGraphWindow.GraphConnectionClassName
             );
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
             Assert.That(marker.Query<Label>().ToList(), Is.Empty);
             Assert.That(
                 marker.tooltip,
@@ -1806,6 +3284,11 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                    )
+                    .ToList()
+                    .Single(section => section.Q<Label>().text == "ROUTE ACTIVITY")
+                    .Query<VisualElement>(
                         className: DxMessagingFlowGraphWindow.DetailsMetricClassName
                     )
                     .ToList()
@@ -2136,10 +3619,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(selectedDetails, Does.Contain("TARGETED"));
             Assert.That(selectedDetails, Does.Not.Contain("Message kind: MIXED"));
-            Assert.That(
-                root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
-                Does.Contain("Message kind: TARGETED")
-            );
+            Assert.That(GetCopiedDiagnostics(root), Does.Contain("Message kind: TARGETED"));
         }
 
         [Test]
@@ -2175,7 +3655,8 @@ namespace DxMessaging.Tests.Editor
                         "Root/Observer",
                         "GlobalAcceptAll",
                         registrationCount: 1,
-                        callCount: 2
+                        callCount: 2,
+                        recentTracedDeliveryCount: 2
                     ),
                 },
                 new[]
@@ -2209,11 +3690,110 @@ namespace DxMessaging.Tests.Editor
                 .ToList()
                 .Select(label => label.text)
                 .ToArray();
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
             Assert.That(graphLabels, Does.Contain("GLOBAL OBSERVER"));
             Assert.That(graphLabels, Does.Contain("ANY MESSAGE"));
             Assert.That(string.Join("\n", graphLabels), Does.Not.Contain("IMessage"));
             Assert.That(details, Does.Contain("Combat.DamageApplied"));
+            Assert.That(
+                details,
+                Does.Contain("Traced deliveries: 2"),
+                "The complete observer report should derive its traced headline from concrete GlobalAcceptAll paths."
+            );
+            Assert.That(
+                details,
+                Does.Contain("Trace-path deliveries: 2"),
+                "The complete observer report should include concrete GlobalAcceptAll path volume."
+            );
+            VisualElement messageDetails = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                )
+                .ToList()
+                .Single(section => section.Q<Label>().text == "MESSAGE");
+            Dictionary<string, string> messageMetrics = messageDetails
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.DetailsMetricClassName)
+                .ToList()
+                .ToDictionary(
+                    metric => metric.Query<Label>().ToList().First().text,
+                    metric => metric.Query<Label>().ToList().Last().text,
+                    StringComparer.Ordinal
+                );
+            Assert.That(
+                messageMetrics["Traced"],
+                Is.EqualTo("2"),
+                "The observer headline should agree with its concrete traced deliveries."
+            );
+            VisualElement traceCoverage = root.Query<VisualElement>(
+                    className: DxMessagingFlowGraphWindow.DetailsSectionClassName
+                )
+                .ToList()
+                .Single(section => section.Q<Label>().text == "TRACE COVERAGE");
+            Dictionary<string, string> traceCoverageMetrics = traceCoverage
+                .Query<VisualElement>(className: DxMessagingFlowGraphWindow.DetailsMetricClassName)
+                .ToList()
+                .ToDictionary(
+                    metric => metric.Query<Label>().ToList().First().text,
+                    metric => metric.Query<Label>().ToList().Last().text,
+                    StringComparer.Ordinal
+                );
+            Assert.That(
+                traceCoverageMetrics["Paths"],
+                Is.EqualTo("1"),
+                "Trace coverage should include the concrete path delivered through GlobalAcceptAll."
+            );
+            Assert.That(
+                traceCoverageMetrics["Deliveries"],
+                Is.EqualTo("2"),
+                "Trace coverage should total deliveries from concrete GlobalAcceptAll paths."
+            );
+            VisualElement observerDetails = root.Q<VisualElement>(
+                DxMessagingFlowGraphWindow.DetailsPaneName
+            );
+            VisualElement observerHeader = observerDetails.Q<VisualElement>(
+                className: DxMessagingEditorTheme.DetailHeadClassName
+            );
+            Assert.That(
+                observerHeader
+                    .Query<Label>()
+                    .ToList()
+                    .Count(label =>
+                        label.text == DxMessagingFlowGraphWindow.GlobalObserverMessageName
+                    ),
+                Is.EqualTo(1),
+                "The observer header should not repeat ANY MESSAGE as metadata."
+            );
+            Assert.That(
+                observerDetails
+                    .Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsRelationshipClassName
+                    )
+                    .ToList()
+                    .SelectMany(relationship =>
+                        relationship
+                            .Query<VisualElement>(
+                                className: DxMessagingFlowGraphWindow.DetailsHierarchyRowClassName
+                            )
+                            .ToList()
+                    )
+                    .Select(row => row.tooltip),
+                Does.Not.Contain("<none>"),
+                "A missing trace context should not render as a hierarchy inside a relationship."
+            );
+            Label globalObserverBadge = observerHeader
+                .Query<Label>()
+                .ToList()
+                .FirstOrDefault(label =>
+                    label.text == "GLOBAL OBSERVER"
+                    && label.ClassListContains(DxMessagingEditorTheme.TypeBadgeClassName)
+                );
+            Assert.That(globalObserverBadge, Is.Not.Null);
+            Assert.That(
+                globalObserverBadge.ClassListContains(
+                    DxMessagingEditorTheme.TypeBadgeGlobalObserverClassName
+                ),
+                Is.True,
+                "Global-observer badges should use the brand taxonomy color instead of black text on a transparent background."
+            );
 
             DxMessagingFlowGraphWindow.BuildGraphUi(
                 root,
@@ -2234,7 +3814,20 @@ namespace DxMessaging.Tests.Editor
                     .Select(label => label.text)
             );
             Assert.That(structuredRouteDetails, Does.Contain("GLOBAL OBSERVER"));
-            Assert.That(structuredRouteDetails, Does.Contain("Combat.DamageApplied"));
+            Assert.That(structuredRouteDetails, Does.Contain("DamageApplied"));
+            Assert.That(
+                root.Query<VisualElement>(
+                        className: DxMessagingFlowGraphWindow.DetailsRelationshipClassName
+                    )
+                    .ToList(),
+                Is.Empty,
+                "An already-selected edge should not repeat itself as aggregate busiest relationships."
+            );
+            Assert.That(
+                GetCopiedDiagnostics(root),
+                Does.Contain("Combat.DamageApplied"),
+                "The compact observer relationship should retain the exact message identity in copied diagnostics."
+            );
             Assert.That(structuredRouteDetails, Does.Contain("2"));
         }
 
@@ -2606,14 +4199,14 @@ namespace DxMessaging.Tests.Editor
             Assert.That(details, Is.Not.Null);
             Assert.That(
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
-                Does.Contain("InventoryChanged -> Root/Alpha")
+                Does.Contain("InventoryChanged -> Alpha")
             );
             Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                GetCopiedDiagnostics(details),
                 Does.Contain("Registration type: Untargeted")
             );
             Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                GetCopiedDiagnostics(details),
                 Does.Contain("Visible call share: 4/6 (67%)")
             );
 
@@ -2654,12 +4247,9 @@ namespace DxMessaging.Tests.Editor
                 details.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
                 Does.Contain("ScoreChanged")
             );
+            Assert.That(GetCopiedDiagnostics(details), Does.Contain("Listener components: 1"));
             Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
-                Does.Contain("Listener components: 1")
-            );
-            Assert.That(
-                details.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text,
+                GetCopiedDiagnostics(details),
                 Does.Contain("Busiest listener: Root/Beta (2 calls)")
             );
         }
@@ -2723,7 +4313,7 @@ namespace DxMessaging.Tests.Editor
                 .ToList()[0]
                 .Q<Label>(DxMessagingFlowGraphWindow.NodeSummaryLabelName)
                 .text;
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
             string exportText = DxMessagingFlowGraphWindow.CreateExportText(snapshot);
             FlowGraphExportPayload exportPayload = JsonUtility.FromJson<FlowGraphExportPayload>(
                 exportText
@@ -6370,7 +7960,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Visible registrations: 1 | Calls: 4"));
             Assert.That(details, Does.Contain("Listener components: 1"));
@@ -6400,7 +7990,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent traced routes: 1/2 | No-call routes: 1"));
             Assert.That(
@@ -6426,7 +8016,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent traced routes: 2/3 | No-call routes: 1"));
             Assert.That(
@@ -6453,7 +8043,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent traced routes: 1/2 | No-call routes: 1"));
             Assert.That(
@@ -6582,7 +8172,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent trace paths: 3"));
             Assert.That(details, Does.Contain("Traced deliveries: 7"));
@@ -6687,7 +8277,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Recent trace paths: 1"));
             Assert.That(
@@ -6793,7 +8383,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(
                 details,
@@ -6932,7 +8522,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(
                 details,
@@ -7062,7 +8652,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(
                 details,
@@ -7109,7 +8699,7 @@ namespace DxMessaging.Tests.Editor
                 )
             );
 
-            string details = root.Q<Label>(DxMessagingFlowGraphWindow.DetailsBodyLabelName).text;
+            string details = GetCopiedDiagnostics(root);
 
             Assert.That(details, Does.Contain("Visible traced share: 0/0 (n/a)"));
             Assert.That(details, Does.Contain("Contexts: 0 | Busiest context: none"));
@@ -8192,7 +9782,7 @@ namespace DxMessaging.Tests.Editor
                 );
                 Assert.That(
                     root.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName).text,
-                    Does.Contain("ScoreChanged -> Root/Beta")
+                    Does.Contain("ScoreChanged -> Beta")
                 );
                 Assert.That(
                     root.Q<VisualElement>(DxMessagingFlowGraphWindow.RouteMapName)
@@ -9059,7 +10649,7 @@ namespace DxMessaging.Tests.Editor
             messageBus.DiagnosticsMode = true;
             messageBus._emissionBuffer.Clear();
             messageBus._emissionBuffer.Add(
-                new MessageEmissionData(new EvidenceOnlyFlowGraphMessage())
+                new MessageEmissionData(new EvidenceOnlyFlowGraphMessage(), (InstanceId)host)
             );
 
             FlowGraphSnapshot snapshot = DxMessagingFlowGraphWindow.CaptureSnapshot(
@@ -9079,6 +10669,85 @@ namespace DxMessaging.Tests.Editor
             Assert.That(snapshot.MessageNodes[0].RecentLocalMessageCount, Is.EqualTo(0));
             Assert.That(snapshot.MessageNodes[0].MessageKindName, Is.EqualTo("GLOBAL"));
             Assert.That(snapshot.MessageNodes[0].RecentEmissionSites, Is.Not.Empty);
+            Assert.That(
+                snapshot.MessageNodes[0].RecentContexts,
+                Is.EqualTo(new[] { "FlowGraphEvidenceOnlyHost (GameObject)" })
+            );
+            Assert.That(
+                snapshot.MessageNodes[0].RecentContextComponentIds[
+                    "FlowGraphEvidenceOnlyHost (GameObject)"
+                ],
+                Is.EqualTo(snapshot.ComponentNodes[0].Id),
+                "Capture should retain the exact graph component behind a display breadcrumb."
+            );
+        }
+
+        [Test]
+        public void CaptureSnapshotDoesNotInferContextComponentFromDuplicateHierarchyText()
+        {
+            GameObject parent = CreateTrackedObject("FlowGraphDuplicateContextRoot");
+            GameObject receiver = new("Duplicate");
+            receiver.transform.SetParent(parent.transform);
+            MessagingComponent messagingComponent = receiver.AddComponent<MessagingComponent>();
+            GameObject nonGraphContext = new("Duplicate");
+            nonGraphContext.transform.SetParent(parent.transform);
+            MessageBus messageBus = MessageHandler.MessageBus as MessageBus;
+            Assert.That(messageBus, Is.Not.Null);
+
+            messageBus.DiagnosticsMode = true;
+            messageBus._emissionBuffer.Clear();
+            messageBus._emissionBuffer.Add(
+                new MessageEmissionData(
+                    new EvidenceOnlyFlowGraphMessage(),
+                    (InstanceId)nonGraphContext
+                )
+            );
+
+            FlowGraphSnapshot snapshot = DxMessagingFlowGraphWindow.CaptureSnapshot(
+                new[] { messagingComponent }
+            );
+            FlowGraphMessageNode message = snapshot.MessageNodes.Single();
+            string context = "FlowGraphDuplicateContextRoot/Duplicate (GameObject)";
+
+            Assert.That(message.RecentContexts, Is.EqualTo(new[] { context }));
+            Assert.That(
+                message.RecentContextComponentIds,
+                Is.Empty,
+                "A same-path GameObject without a MessagingComponent must not be inferred as the graph receiver."
+            );
+            messageBus._emissionBuffer.Clear();
+        }
+
+        [Test]
+        public void CaptureSnapshotKeepsDestroyedComponentContextAsInertEvidence()
+        {
+            GameObject receiver = CreateTrackedObject("FlowGraphDestroyedComponentReceiver");
+            MessagingComponent messagingComponent = receiver.AddComponent<MessagingComponent>();
+            GameObject transient = CreateTrackedObject("FlowGraphDestroyedComponentContext");
+            InstanceId destroyedContext = transient.transform;
+            int destroyedContextId = destroyedContext.Id;
+            Object.DestroyImmediate(transient);
+            MessageBus messageBus = MessageHandler.MessageBus as MessageBus;
+            Assert.That(messageBus, Is.Not.Null);
+
+            messageBus.DiagnosticsMode = true;
+            messageBus._emissionBuffer.Clear();
+            messageBus._emissionBuffer.Add(
+                new MessageEmissionData(new EvidenceOnlyFlowGraphMessage(), destroyedContext)
+            );
+
+            FlowGraphSnapshot snapshot = null;
+            Assert.DoesNotThrow(() =>
+                snapshot = DxMessagingFlowGraphWindow.CaptureSnapshot(new[] { messagingComponent })
+            );
+            FlowGraphMessageNode message = snapshot.MessageNodes.Single();
+            Assert.That(
+                message.RecentContexts,
+                Is.EqualTo(new[] { "Instance " + destroyedContextId })
+            );
+            Assert.That(message.RecentContextComponentIds, Is.Empty);
+
+            messageBus._emissionBuffer.Clear();
         }
 
         [Test]
@@ -9963,6 +11632,33 @@ namespace DxMessaging.Tests.Editor
                 },
                 Array.Empty<string>()
             );
+        }
+
+        private static bool ColorsApproximatelyEqual(Color actual, Color expected)
+        {
+            const float tolerance = 0.001f;
+            return Mathf.Abs(actual.r - expected.r) <= tolerance
+                && Mathf.Abs(actual.g - expected.g) <= tolerance
+                && Mathf.Abs(actual.b - expected.b) <= tolerance
+                && Mathf.Abs(actual.a - expected.a) <= tolerance;
+        }
+
+        private static string GetCopiedDiagnostics(VisualElement root)
+        {
+            Button copyDiagnostics = root.Q<Button>(
+                DxMessagingFlowGraphWindow.DetailsCopyDiagnosticsButtonName
+            );
+            Assert.That(
+                copyDiagnostics,
+                Is.Not.Null,
+                "Selected details should expose the complete report through a copy action."
+            );
+            Assert.That(
+                copyDiagnostics.userData,
+                Is.TypeOf<string>(),
+                "The copy action should retain the exact diagnostic text as its payload."
+            );
+            return (string)copyDiagnostics.userData;
         }
 
         private GameObject CreateTrackedObject(string name)

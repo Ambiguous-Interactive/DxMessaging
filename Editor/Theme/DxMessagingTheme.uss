@@ -113,6 +113,7 @@
 .dx-typebadge--u { background-color: var(--dx-untargeted); }
 .dx-typebadge--t { background-color: var(--dx-targeted); }
 .dx-typebadge--b { background-color: var(--dx-broadcast); }
+.dx-typebadge--g { background-color: var(--dx-accent); color: var(--dx-accent-ink); }
 
 /* ---------- list ---------- */
 .dx-list-header {
@@ -160,6 +161,24 @@
 .dx-detail__head { flex-direction: row; align-items: center; margin-bottom: 10px; }
 .dx-detail__title { -unity-font-style: bold; font-size: 16px; color: var(--dx-text); margin-left: 9px; }
 .dx-detail__frame { color: var(--dx-text-muted); font-size: 10px; }
+.dx-detail__link {
+    background-color: var(--dx-tool-field);
+    border-width: 1px;
+    border-color: var(--dx-accent);
+    border-radius: var(--dx-r-chip);
+    padding-left: 4px;
+    padding-right: 4px;
+}
+.dx-detail__link:hover { background-color: var(--dx-tool-btn-hover); }
+.dx-detail__link:focus { background-color: var(--dx-tool-selected); }
+.dx-detail__active {
+    background-color: var(--dx-tool-selected);
+    border-width: 1px;
+    border-color: var(--dx-accent);
+    border-radius: var(--dx-r-chip);
+    padding-left: 4px;
+    padding-right: 4px;
+}
 
 .dx-card {
     background-color: var(--dx-tool-card);
@@ -172,6 +191,9 @@
     padding-bottom: 9px;
     margin-bottom: 8px;
 }
+.dx-card.dx-detail__link { background-color: var(--dx-tool-field); }
+.dx-card.dx-detail__link:hover { background-color: var(--dx-tool-btn-hover); }
+.dx-card.dx-detail__link:focus { background-color: var(--dx-tool-selected); }
 .dx-card__label {
     font-size: 9px;
     letter-spacing: 0.6px;

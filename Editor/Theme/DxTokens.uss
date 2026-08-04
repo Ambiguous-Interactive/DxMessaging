@@ -61,7 +61,7 @@
 /* ---- Light editor skin: "Press" paper ---- */
 .dx-theme.dx-light {
     --dx-accent: #b07d1f;
-    --dx-accent-ink: #ffffff;
+    --dx-accent-ink: #0d1117;
 
     --dx-untargeted-text: #35536f;
     --dx-targeted-text: #a3283b;
