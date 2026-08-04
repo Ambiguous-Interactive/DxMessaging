@@ -698,8 +698,16 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
+        /// <summary>
+        /// Sends a key the way PLAN.md's Appendix C prescribes: focus the element, then dispatch
+        /// through the panel rather than at the element. Key events route to the focused element
+        /// via the panel, so `element.SendEvent(...)` on an unfocused element reaches the handler
+        /// on some editor versions and not others -- it worked on 2021.3 and 6000.x and did
+        /// nothing on 2022.3.
+        /// </summary>
         private static void SendActivationKey(VisualElement target, char character, KeyCode keyCode)
         {
+            target.Focus();
             using (
                 KeyDownEvent keyDown = KeyDownEvent.GetPooled(
                     character,
@@ -709,7 +717,7 @@ namespace DxMessaging.Tests.Editor
             )
             {
                 keyDown.target = target;
-                target.SendEvent(keyDown);
+                target.panel.visualTree.SendEvent(keyDown);
             }
         }
 

@@ -1172,10 +1172,11 @@ namespace DxMessaging.Editor.Windows
 
         /// <summary>
         /// Whether a key event means "activate this". Both the key code AND the character are
-        /// accepted, because a `KeyDownEvent` carrying a character can report `KeyCode.None` --
-        /// which is how keyboard activation silently did nothing on the 2022.3 editor leg while
-        /// working on 2021.3 and 6000.x. A reader who can reach a control with Tab has to be able
-        /// to use it, so the check answers to whichever half the editor version populated.
+        /// accepted, defensively: a `KeyDownEvent` can arrive carrying only one of the two
+        /// depending on how it was raised, and a reader who can reach a control with Tab has to
+        /// be able to use it. (This is belt-and-braces, not the fix for a known defect -- the
+        /// 2022.3 failure that prompted it turned out to be the TEST dispatching at the element
+        /// instead of through the panel, not the key code being absent.)
         /// </summary>
         private static bool IsActivationKey(KeyDownEvent evt)
         {
