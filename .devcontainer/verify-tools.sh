@@ -32,7 +32,7 @@ check_tool() {
     
     if command -v "$cmd" &> /dev/null; then
         local version
-        version=$("$cmd" $version_flag 2>&1 | head -n 1) || version="installed"
+        version=$("$cmd" "$version_flag" 2>&1 | head -n 1) || version="installed"
         echo -e "${GREEN}✓${NC} $version"
         ((++PASS))
         return 0
@@ -71,7 +71,7 @@ check_optional() {
     
     if command -v "$cmd" &> /dev/null; then
         local version
-        version=$("$cmd" $version_flag 2>&1 | head -n 1) || version="installed"
+        version=$("$cmd" "$version_flag" 2>&1 | head -n 1) || version="installed"
         echo -e "${GREEN}✓${NC} $version"
         ((++PASS))
         return 0
@@ -149,11 +149,11 @@ check_tool "ncdu" "ncdu" "--version"
 
 echo ""
 echo -e "${BLUE}=== .NET Tools ===${NC}"
-check_tool "csharpier" "csharpier" "--version"
+check_tool "csharpier" "dotnet-csharpier" "--version"
 
 echo ""
 echo -e "${BLUE}=== AI / Agent CLIs ===${NC}"
-check_optional "codex (@openai)" "codex" "--version"
+check_optional "codex (@openai)" "codex" "--version" || true
 
 echo ""
 echo -e "${BLUE}=== npm Configuration ===${NC}"

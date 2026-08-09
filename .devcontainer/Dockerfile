@@ -7,8 +7,9 @@
 # editor), so this image ships only the .NET / Node / docs toolchain.
 FROM mcr.microsoft.com/devcontainers/dotnet:1-9.0-bookworm
 
-# Build argument for target architecture (amd64 or arm64)
-ARG TARGETARCH=amd64
+# Import BuildKit's automatic target architecture (amd64 or arm64) into this
+# stage. Do not assign a default: doing so shadows the native target on ARM64.
+ARG TARGETARCH
 
 # Container labels
 LABEL org.opencontainers.image.source="https://github.com/Ambiguous-Interactive/DxMessaging"
@@ -229,7 +230,7 @@ RUN set -eux; \
     SD_VERSION="1.0.0"; \
     case "${TARGETARCH}" in \
         amd64) SD_ARCH="x86_64-unknown-linux-gnu" ;; \
-        arm64) SD_ARCH="aarch64-unknown-linux-gnu" ;; \
+        arm64) SD_ARCH="aarch64-unknown-linux-musl" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
     wget -q "https://github.com/chmln/sd/releases/download/v${SD_VERSION}/sd-v${SD_VERSION}-${SD_ARCH}.tar.gz" -O sd.tar.gz; \
@@ -258,11 +259,11 @@ RUN set -eux; \
     dust --version
 
 # ------------------------------------------------------------------------------
-# Install procs 0.14.8
+# Install procs 0.14.12
 # https://github.com/dalance/procs
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    PROCS_VERSION="0.14.8"; \
+    PROCS_VERSION="0.14.12"; \
     case "${TARGETARCH}" in \
         amd64) PROCS_ARCH="x86_64-linux" ;; \
         arm64) PROCS_ARCH="aarch64-linux" ;; \

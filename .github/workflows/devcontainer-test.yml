@@ -11,6 +11,7 @@
 #     - The cache-mount contract still holds (validate-caching.sh)
 #     - The script-test node:test suite (node --test scripts/) passes inside
 #       the devcontainer image
+#     - The same image and smoke suite run natively on Linux ARM64
 #
 # Local Unity verification is NOT exercised here: it runs through the
 # unity-mcp-remote MCP server (the host editor), not inside this container.
@@ -38,6 +39,7 @@ on:
     paths:
       - ".devcontainer/**"
       - ".github/**"
+      - "scripts/__tests__/devcontainer*.test.js"
       - "scripts/unity/**"
   pull_request:
     branches:
@@ -77,7 +79,7 @@ jobs:
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/|^scripts/unity/)'; then
+          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/|^scripts/__tests__/devcontainer.*\.test\.js$|^scripts/unity/)'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -172,3 +174,88 @@ jobs:
             node --test scripts/
 
             echo "=== All devcontainer smoke checks passed ==="
+
+  test-arm64:
+    name: Build + smoke-test devcontainer image (ARM64)
+    needs: changes
+    if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.relevant != 'false') }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.relevant != 'true' && needs.changes.outputs.relevant != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with relevant='${{ needs.changes.outputs.relevant }}'."
+          echo "::error::Required gates only skip after successful detection emits relevant=false."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build and smoke-test ARM64 devcontainer
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3
+        with:
+          imageName: dxmessaging-devcontainer-arm64-ci
+          platform: linux/arm64
+          useNativeRunner: true
+          push: never
+          runCmd: |
+            set -euo pipefail
+            test "$(uname -m)" = "aarch64"
+            test "$(dpkg --print-architecture)" = "arm64"
+
+            echo "=== Toolchain versions ==="
+            bash .devcontainer/verify-tools.sh
+
+            echo "=== .NET 10 SDK + runtime presence ==="
+            dotnet --list-sdks | grep -E '^10\.0' \
+              || (echo "ERROR: .NET 10 SDK not found" >&2 && exit 1)
+            dotnet --list-runtimes | grep -E '^Microsoft\.NETCore\.App 10\.0' \
+              || (echo "ERROR: .NET 10 runtime not found" >&2 && exit 1)
+
+            echo "=== asmdef-discovery self-test ==="
+            node scripts/unity/lib/asmdef-discovery.js | tail -n 30
+
+            echo "=== Cache-mount contract ==="
+            bash .devcontainer/validate-caching.sh
+
+            echo "=== Node script tests ==="
+            node --test scripts/
+
+            echo "=== All ARM64 devcontainer smoke checks passed ==="
+
+  devcontainer-ci-success:
+    name: Devcontainer CI Success
+    needs:
+      - changes
+      - test
+      - test-arm64
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify devcontainer CI result shape
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          X64_RESULT: ${{ needs.test.result }}
+          ARM64_RESULT: ${{ needs.test-arm64.result }}
+        run: |
+          set -euo pipefail
+          test "${CHANGES_RESULT}" = success
+          if [ "${RELEVANT}" = false ]; then
+            test "${X64_RESULT}" = skipped
+            test "${ARM64_RESULT}" = skipped
+          else
+            test "${RELEVANT}" = true
+            test "${X64_RESULT}" = success
+            test "${ARM64_RESULT}" = success
+          fi
