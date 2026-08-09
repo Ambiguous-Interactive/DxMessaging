@@ -1,17 +1,17 @@
 {
-  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons) and the committed .unity-test-project/Packages/manifest.json (local parity). Bump versions/modules/defines HERE only and keep both consumers in sync. See .llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md.",
+  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons) and the committed .unity-test-project/Packages/manifest.json (local parity). Bump versions/modules/defines HERE only and keep both consumers in sync. Unity 6000.5 requires MessagePipe 1.8.2+ for generic TreeView APIs and Unity Atoms 4.6.2+ for Object.GetEntityId(). See .llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md.",
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",
     "scopes": ["com.cysharp", "com.svermeulen", "com.neuecc", "com.unity-atoms"]
   },
   "packages": {
-    "com.cysharp.messagepipe": "1.8.1",
+    "com.cysharp.messagepipe": "1.8.2",
     "com.cysharp.unitask": "2.5.11",
     "com.svermeulen.extenject": "9.2.0-stcf3",
     "com.neuecc.unirx": "7.1.0",
-    "com.unity-atoms.unity-atoms-core": "4.6.1",
-    "com.unity-atoms.unity-atoms-base-atoms": "4.6.1"
+    "com.unity-atoms.unity-atoms-core": "4.6.2",
+    "com.unity-atoms.unity-atoms-base-atoms": "4.6.2"
   },
   "unityBuiltInPackages": {
     "com.unity.modules.animation": "1.0.0",
