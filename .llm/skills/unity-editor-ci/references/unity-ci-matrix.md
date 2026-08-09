@@ -2,7 +2,7 @@
 
 # Unity CI Matrix
 
-> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` is one unified matrix of three Unity versions x {editmode, playmode, standalone} = 9 jobs, where `standalone` builds and runs a `StandaloneWindows64` IL2CPP player from an ephemeral Unity project generated under `.artifacts/`.
+> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` is one unified matrix of four Unity versions x {editmode, playmode, standalone} = 12 jobs, where `standalone` builds and runs a `StandaloneWindows64` IL2CPP player from an ephemeral Unity project generated under `.artifacts/`.
 
 ## When to Use
 
@@ -20,12 +20,12 @@
 
 `unity-tests.yml` (active; direct Unity on self-hosted Windows; one unified matrix):
 
-| Axis            | Values                                      |
-| --------------- | ------------------------------------------- |
-| `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1` |
-| `test-mode`     | `editmode`, `playmode`, `standalone`        |
+| Axis            | Values                                                    |
+| --------------- | --------------------------------------------------------- |
+| `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1`, `6000.5.2f1` |
+| `test-mode`     | `editmode`, `playmode`, `standalone`                      |
 
-Nine matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone`
+Twelve matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone`
 builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner
 generates a temporary package host project under
 `.artifacts/u/<version>-<mode>/`, imports the repo package with a
@@ -57,7 +57,7 @@ The Unity serial has two activation seats shared across the organization and no 
 **Matrix serialization and organization admission.** `strategy.max-parallel: 1` serializes matrix cells WITHIN a single run. The external `ambiguous-organization-build-lock` action admits at most two distinct runners ACROSS runs, workflows, and repositories while accounting for cooldowns, quarantines, and account incidents.
 
 - `max-parallel: 1` only: cannot prevent two separate runs (two pushes, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
-- The lock only: leaves all 9 cells spawning at once, so idle cells burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
+- The lock only: leaves all 12 cells spawning at once, so idle cells burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
 
 With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows (`unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`); single-job release workflows rely on the lock for cross-run admission.
 

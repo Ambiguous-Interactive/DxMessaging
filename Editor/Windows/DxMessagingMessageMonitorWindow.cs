@@ -2386,8 +2386,8 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement row = CreateKeyValue("Context", entry.ContextText, valueName);
             row.name = DetailsContextRowName;
-            int contextInstanceId = entry.ContextInstanceId;
-            if (DxMessagingEditorSourceLinks.FindContextObject(contextInstanceId) == null)
+            InstanceId? context = entry.Context;
+            if (DxMessagingEditorSourceLinks.FindContextObject(context) == null)
             {
                 return row;
             }
@@ -2400,7 +2400,7 @@ namespace DxMessaging.Editor.Windows
             DxMessagingEditorSourceLinks.MakeActivatable(
                 value ?? row,
                 "Select and ping this object in the Hierarchy.",
-                () => DxMessagingEditorSourceLinks.TryRevealContext(contextInstanceId)
+                () => DxMessagingEditorSourceLinks.TryRevealContext(context)
             );
             return row;
         }
@@ -2865,7 +2865,7 @@ namespace DxMessaging.Editor.Windows
             string messageTypeDisplayPath = null,
             string routeKind = null,
             long traceId = 0,
-            int contextInstanceId = 0
+            InstanceId? context = null
         )
         {
             MessageTypeName = messageTypeName;
@@ -2879,7 +2879,7 @@ namespace DxMessaging.Editor.Windows
             StackTrace = stackTrace;
             RouteKind = routeKind ?? string.Empty;
             TraceId = traceId;
-            ContextInstanceId = contextInstanceId;
+            Context = context;
         }
 
         internal string MessageTypeName { get; }
@@ -2904,13 +2904,12 @@ namespace DxMessaging.Editor.Windows
         internal long TraceId { get; }
 
         /// <summary>
-        /// The Unity instance id of the context this emission was routed through, or 0 when it
-        /// had none. The captured object itself is deliberately not held: a monitor log outlives
-        /// the scene it recorded, and an id can be re-resolved on demand and simply fails to
-        /// resolve once the object is gone, which is exactly the "this row can no longer be
-        /// opened" answer the detail pane needs.
+        /// The package-standard identity of the context this emission was routed through.
+        /// Object-backed <see cref="InstanceId"/> values preserve a selectable editor reference;
+        /// Unity's destroyed-object null semantics make the reference stop resolving after its
+        /// native scene object is gone.
         /// </summary>
-        internal int ContextInstanceId { get; }
+        internal InstanceId? Context { get; }
 
         internal static MessageMonitorEntry FromEmission(MessageEmissionData emission)
         {
@@ -2927,7 +2926,7 @@ namespace DxMessaging.Editor.Windows
                 typeDisplayPath,
                 CreateRouteKind(messageType),
                 emission.traceId,
-                emission.context?.Id ?? 0
+                emission.context
             );
         }
 

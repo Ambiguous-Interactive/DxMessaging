@@ -1,5 +1,5 @@
 {
   "_comment": "Canonical Unity version source of truth for all CI. The newest entry of `all` (last element) is the 'latest' tracked by perf-numbers. `release` is the version release.yml pins. Bump versions HERE; scripts/validate-unity-versions.js fails if any static workflow matrix or other consumer drifts. See .llm/skills/unity-editor-ci/SKILL.md for the contract.",
-  "all": ["2021.3.45f1", "2022.3.45f1", "6000.3.16f1"],
+  "all": ["2021.3.45f1", "2022.3.45f1", "6000.3.16f1", "6000.5.2f1"],
   "release": "2022.3.45f1"
 }

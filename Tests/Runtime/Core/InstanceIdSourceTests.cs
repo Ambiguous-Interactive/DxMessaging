@@ -89,23 +89,28 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Drift-guard: every shipped <c>UnityEngine.Object</c> id read must funnel through
-        /// <see cref="InstanceId.StableId"/>, so the deprecated source call lives in exactly
-        /// one version-gated place. The banned identifier is assembled by concatenation so
-        /// this contract's own description cannot match it, and only <c>InstanceId.cs</c>
-        /// (the gated helper) is allowed to contain it. When the shipped source is not on
-        /// disk (a standalone player run) the scan is vacuously satisfied, matching the
-        /// other source-scan contracts.
+        /// Drift-guard: every shipped <c>UnityEngine.Object</c> identity read or lookup must
+        /// funnel through <see cref="InstanceId"/>, so Unity-version-specific APIs live in one
+        /// place. Banned identifiers are assembled by concatenation so this contract's own
+        /// description cannot match them. When shipped source is not on disk (a standalone
+        /// player run) the scan is vacuously satisfied, matching the other source-scan contracts.
         /// </summary>
         [Test]
-        public void ShippedSourceReadsInstanceIdOnlyThroughStableId()
+        public void ShippedSourceUsesOnlyInstanceIdForUnityObjectIdentity()
         {
-            string bannedIdentifier = "GetInstance" + "ID";
+            string[] bannedIdentifiers =
+            {
+                "GetInstance" + "ID",
+                "GetEntity" + "Id",
+                "InstanceID" + "ToObject",
+                "EntityId" + "ToObject",
+            };
             const string allowedRelativePath = "Runtime/Core/InstanceId.cs";
 
             List<string> roots = new();
             roots.AddRange(ResolvePackageSubtreeRoots("Runtime"));
             roots.AddRange(ResolvePackageSubtreeRoots("Editor"));
+            roots.AddRange(ResolvePackageSubtreeRoots("Samples~"));
 
             HashSet<string> scannedFiles = new(System.StringComparer.OrdinalIgnoreCase);
             List<string> offenders = new();
@@ -157,9 +162,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
                     {
-                        if (lines[lineIndex].Contains(bannedIdentifier))
+                        foreach (string bannedIdentifier in bannedIdentifiers)
                         {
-                            offenders.Add(normalized + ":" + (lineIndex + 1));
+                            if (lines[lineIndex].Contains(bannedIdentifier))
+                            {
+                                offenders.Add(
+                                    normalized
+                                        + ":"
+                                        + (lineIndex + 1)
+                                        + " ("
+                                        + bannedIdentifier
+                                        + ")"
+                                );
+                            }
                         }
                     }
                 }
@@ -169,7 +184,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 offenders,
                 Is.Empty,
                 "These shipped files read a Unity object id directly instead of routing "
-                    + "through InstanceId.StableId (the one version-gated source for the "
+                    + "through InstanceId (the one version-gated source for the "
                     + "Unity 6 EntityId migration, GitHub #208):\n"
                     + string.Join("\n", offenders)
             );

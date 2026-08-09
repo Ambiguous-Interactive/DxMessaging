@@ -1,7 +1,7 @@
 ---
 name: unity-editor-ci
 description: "Unity CI on self-hosted Windows runners: the unity-tests.yml
-  matrix of 3 Unity versions x {editmode, playmode, standalone}, manual
+  matrix of 4 Unity versions x {editmode, playmode, standalone}, manual
   administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only
   workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the
   organization build-lock and timeout invariants that protect the two-seat Unity

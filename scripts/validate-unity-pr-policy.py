@@ -54,7 +54,7 @@ BLANKET_PR_REJECTION = re.compile(
 )
 # A pull request whose head has moved on must not schedule the licensed matrix:
 # `cancel-in-progress: false` is deliberate, so a superseded run would otherwise
-# hold the concurrency group through all nine legs while the current head waits.
+# hold the concurrency group through every matrix leg while the current head waits.
 SUPERSEDED_GUARD = re.compile(
     r"needs\.head-check\.outputs\.superseded\s*!=\s*'true'\s*&&"
 )

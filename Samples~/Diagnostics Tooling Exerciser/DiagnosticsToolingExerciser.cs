@@ -81,14 +81,14 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 
         private void OnDisable()
         {
-            _ = InitializedRunnerIds.Remove(GetInstanceID());
+            _ = InitializedRunnerIds.Remove(((InstanceId)this).Id);
             CancelInvoke(nameof(EmitBurst));
             StopAllCoroutines();
         }
 
         private void BeginPlaySession()
         {
-            if (!InitializedRunnerIds.Add(GetInstanceID()))
+            if (!InitializedRunnerIds.Add(((InstanceId)this).Id))
             {
                 return;
             }

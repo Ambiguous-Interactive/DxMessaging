@@ -80,7 +80,9 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 
 - The devcontainer workspace IS the embedded package inside the host Unity project,
   so edits in-container are instantly visible to the editor.
-- Compile: trigger `AssetDatabase.Refresh()` via `Unity_RunCommand`.
+- Compile: first refuse if any open scene is dirty, a prefab stage is open, or the editor is
+  playing/compiling/updating; then execute `Assets/Refresh` through `Unity_ManageMenuItem`.
+  Never use an operation that can raise a modal prompt in the developer's shared editor.
 - Run tests: call the host bridge `DxMcpTestRunner.Run(testMode, assemblies, tests, categories, resultPath)` via `Unity_RunCommand`, then poll the `.status` sidecar from the container. `resultPath` resolves against the HOST project root, so it MUST be prefixed `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`; a bare `.artifacts/unity-mcp/<name>.json` lands where the container cannot see it and the poll waits forever next to stale files.
 - EditMode assemblies: `WallstopStudios.DxMessaging.Tests.Editor`, `...Tests.Editor.Allocations`, `...Tests.00.Editor.Benchmarks`. PlayMode: `...Tests.Runtime`, `...Tests.00.Runtime.Benchmarks` (category `PerfBench`), `...Tests.00.Runtime.Comparisons`, DI integrations (Reflex/VContainer/Zenject).
 - Perf baselines: the benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override env `DX_PERF_BASELINE`; `DX_PERF_COMMIT` stamps the commit column).
@@ -122,6 +124,11 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + Node + docs t
 - Use explicit types where practical; avoid unnecessary `var`.
 - Keep braces explicit.
 - Avoid regions.
+- Route every shipped Unity object identity read and lookup through `Runtime/Core/InstanceId.cs`,
+  including samples. Convert a `GameObject` or `Component` to `InstanceId` and use its `Id` or
+  object reference; never add direct `GetInstanceID`, `GetEntityId`, `InstanceIDToObject`, or
+  `EntityIdToObject` calls elsewhere. `InstanceIdSourceTests` enforces this across `Runtime/`,
+  `Editor/`, and `Samples~/`.
 - Editor `delayCall` callbacks that mutate assets must re-check editor idle state inside the callback and requeue until safe; prefer `DxMessagingEditorIdle.ScheduleAssetDatabaseMutation`.
 - Passive Editor settings reads used during domain load must surface effective legacy-migrated values in memory while deferring durable asset migration/saves through `DxMessagingEditorIdle.ScheduleAssetDatabaseMutation`.
 - Settings-dependent diagnostics skipped because a passive domain-load read found no settings asset must be re-evaluated after the deferred settings ensure/create callback realizes the asset.

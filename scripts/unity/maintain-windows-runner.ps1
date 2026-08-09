@@ -18,7 +18,7 @@
 param(
     [switch]$DetectOnly,
 
-    [string[]]$UnityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1'),
+    [string[]]$UnityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1', '6000.5.2f1'),
 
     [ValidateSet('EditorOnly', 'StandaloneWindowsIl2Cpp', 'Android', 'Full')]
     [string]$ProvisioningProfile = 'StandaloneWindowsIl2Cpp',
@@ -215,7 +215,7 @@ function Write-MaintenanceSummary {
 function Invoke-WindowsRunnerMaintenance {
     param(
         [switch]$DetectOnly,
-        [string[]]$UnityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1'),
+        [string[]]$UnityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1', '6000.5.2f1'),
         [ValidateSet('EditorOnly', 'StandaloneWindowsIl2Cpp', 'Android', 'Full')]
         [string]$ProvisioningProfile = 'StandaloneWindowsIl2Cpp',
         [string]$InstallRoot = $(if ($env:UNITY_EDITOR_INSTALL_ROOT) { $env:UNITY_EDITOR_INSTALL_ROOT } else { 'C:\Unity\Editors' }),

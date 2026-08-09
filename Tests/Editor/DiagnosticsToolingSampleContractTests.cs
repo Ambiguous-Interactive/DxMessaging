@@ -95,7 +95,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(receiver, Does.Contain("protected override void OnEnable()"));
             Assert.That(receiver, Does.Contain("EnsureToolingRegistrations();"));
             Assert.That(receiver, Does.Contain("EnsureToolingRegistrations(force: true);"));
-            Assert.That(receiver, Does.Contain("PreparedReceiverIds.Add(GetInstanceID())"));
+            Assert.That(receiver, Does.Contain("PreparedReceiverIds.Add(((InstanceId)this).Id)"));
             Assert.That(receiver, Does.Contain("messagingComponent.Release(this);"));
             Assert.That(receiver, Does.Contain("messagingComponent.Create(this)"));
             Assert.That(
@@ -115,15 +115,18 @@ namespace DxMessaging.Tests.Editor
             Assert.That(receiver, Does.Contain("RestoreRegistrationsAfterSceneLoad"));
             Assert.That(runner, Does.Contain("private void OnEnable()"));
             Assert.That(runner, Does.Contain("InitializeAfterSceneLoad"));
-            Assert.That(runner, Does.Contain("InitializedRunnerIds.Add(GetInstanceID())"));
-            Assert.That(runner, Does.Contain("InitializedRunnerIds.Remove(GetInstanceID())"));
+            Assert.That(runner, Does.Contain("InitializedRunnerIds.Add(((InstanceId)this).Id)"));
+            Assert.That(runner, Does.Contain("InitializedRunnerIds.Remove(((InstanceId)this).Id)"));
             Assert.That(runner, Does.Contain("BeginPlaySession"));
             Assert.That(runner, Does.Not.Contain("private void Start()"));
             Assert.That(runner, Does.Not.Contain("EnsureReceiversReady"));
             Assert.That(receiver, Does.Contain("base.Awake();"));
             Assert.That(receiver, Does.Contain("base.OnEnable();"));
             Assert.That(receiver, Does.Contain("base.OnDisable();"));
-            Assert.That(receiver, Does.Contain("PreparedReceiverIds.Remove(GetInstanceID())"));
+            Assert.That(
+                receiver,
+                Does.Contain("PreparedReceiverIds.Remove(((InstanceId)this).Id)")
+            );
             Assert.That(receiver, Does.Contain("base.OnDestroy();"));
         }
 

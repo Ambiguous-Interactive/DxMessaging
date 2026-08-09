@@ -520,13 +520,32 @@ namespace DxMessaging.Tests.Editor
         /// </remarks>
         [TestCase(ContextState.Alive)]
         [TestCase(ContextState.Destroyed)]
+        [TestCase(ContextState.IdOnly)]
         [TestCase(ContextState.NeverCaptured)]
         public void AContextLinksToItsObjectOnlyWhileThatObjectStillExists(ContextState state)
         {
-            GameObject contextObject = new(
-                nameof(AContextLinksToItsObjectOnlyWhileThatObjectStillExists)
+            GameObject contextObject = EditorUtility.CreateGameObjectWithHideFlags(
+                nameof(AContextLinksToItsObjectOnlyWhileThatObjectStillExists),
+                HideFlags.HideAndDontSave
             );
-            int contextInstanceId = contextObject.GetInstanceID();
+            bool contextIsAlive = state == ContextState.Alive;
+            InstanceId objectBackedContext = contextObject;
+            InstanceId? context;
+            if (state == ContextState.NeverCaptured)
+            {
+                context = null;
+            }
+            else if (state == ContextState.IdOnly)
+            {
+                context = new InstanceId(objectBackedContext.Id);
+            }
+            else
+            {
+                context = objectBackedContext;
+            }
+            MessageMonitorEntry entry = MessageMonitorEntry.FromEmission(
+                new MessageEmissionData(new OlderMessage(), context)
+            );
             if (state == ContextState.Destroyed)
             {
                 Object.DestroyImmediate(contextObject);
@@ -535,14 +554,6 @@ namespace DxMessaging.Tests.Editor
             {
                 _createdObjects.Add(contextObject);
             }
-
-            bool contextIsAlive = state == ContextState.Alive;
-            MessageMonitorEntry entry = new(
-                nameof(OlderMessage),
-                "Context: Player",
-                CapturedStackTrace,
-                contextInstanceId: state == ContextState.NeverCaptured ? 0 : contextInstanceId
-            );
             VisualElement root = new();
 
             DxMessagingMessageMonitorWindow.BuildMonitorUi(
@@ -564,7 +575,9 @@ namespace DxMessaging.Tests.Editor
             Assert.That(contextValue, Is.Not.Null);
             Assert.That(
                 contextValue.text,
-                Is.EqualTo("Context: Player"),
+                state == ContextState.NeverCaptured
+                    ? Is.EqualTo("Context: none")
+                    : Does.StartWith("Context:"),
                 "An inert context is still readable."
             );
             Assert.That(
@@ -3466,11 +3479,12 @@ namespace DxMessaging.Tests.Editor
             return window;
         }
 
-        /// <summary>The three states a captured context can be in by the time it is rendered.</summary>
+        /// <summary>The four states a captured context can be in by the time it is rendered.</summary>
         public enum ContextState
         {
             Alive,
             Destroyed,
+            IdOnly,
             NeverCaptured,
         }
 

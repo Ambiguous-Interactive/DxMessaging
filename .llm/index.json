@@ -426,7 +426,7 @@
     {
       "name": "unity-editor-ci",
       "path": ".llm/skills/unity-editor-ci/SKILL.md",
-      "description": "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow.",
+      "description": "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 4 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow.",
       "metadata": {
         "category": "unity",
         "tags": "unity, ci, matrix, il2cpp, lts, game-ci"
@@ -477,7 +477,7 @@
         "category": "unity",
         "tags": "unity, testing, mcp, devcontainer, test-runner"
       },
-      "lineCount": 87,
+      "lineCount": 103,
       "references": [
         ".llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md"
       ]

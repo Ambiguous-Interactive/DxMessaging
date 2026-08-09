@@ -206,6 +206,7 @@ Unity test matrix:
 - `2021.3.45f1`
 - `2022.3.45f1`
 - `6000.3.16f1`
+- `6000.5.2f1`
 - `editmode`
 - `playmode`
 - `standalone` (native `StandaloneWindows64` IL2CPP player via
