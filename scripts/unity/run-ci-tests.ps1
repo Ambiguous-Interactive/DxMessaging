@@ -1301,6 +1301,56 @@ function Write-AnalyzerSetupDiagnostics {
     Write-Host "::endgroup::"
 }
 
+function Copy-DiagnosticsToolingSampleForCompilation {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Project
+    )
+
+    # Unity does not import package Samples~ until a consumer explicitly installs a
+    # sample. Copy only the sample assembly's compile inputs into the disposable CI
+    # host so every supported editor version compiles the exact shipped sources.
+    # Omitting .meta files avoids carrying package asset identities into the host.
+    $sampleSource = [System.IO.Path]::Combine($Root, 'Samples~', 'Diagnostics Tooling Exerciser')
+    if (-not (Test-Path -LiteralPath $sampleSource -PathType Container)) {
+        throw "Missing Diagnostics Tooling Exerciser source directory: $sampleSource"
+    }
+    $sampleDestination = [System.IO.Path]::Combine($Project, 'Assets', 'DxmCiSamples')
+    $csharpInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.cs' -File)
+    $asmdefInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.asmdef' -File)
+    if ($csharpInputs.Count -eq 0 -or $asmdefInputs.Count -ne 1) {
+        throw "Diagnostics Tooling Exerciser must contain at least one C# file and exactly one asmdef."
+    }
+    $compileInputs = @($csharpInputs) + @($asmdefInputs)
+    $compileInputNames = @($compileInputs | Select-Object -ExpandProperty Name)
+
+    New-Item -ItemType Directory -Force -Path $sampleDestination | Out-Null
+    foreach ($existingFile in @(Get-ChildItem -LiteralPath $sampleDestination -File)) {
+        if (
+            ($existingFile.Extension -eq '.cs' -or $existingFile.Extension -eq '.asmdef') -and
+            $compileInputNames -notcontains $existingFile.Name
+        ) {
+            Remove-Item -LiteralPath $existingFile.FullName -Force
+        }
+    }
+
+    foreach ($sourceFile in $compileInputs) {
+        $destinationPath = Join-Path $sampleDestination $sourceFile.Name
+        $sourceContent = Get-Content -LiteralPath $sourceFile.FullName -Raw
+        $needsWrite = -not (Test-Path -LiteralPath $destinationPath -PathType Leaf)
+        if (-not $needsWrite) {
+            $destinationContent = Get-Content -LiteralPath $destinationPath -Raw
+            $needsWrite = $destinationContent -ne $sourceContent
+        }
+        if ($needsWrite) {
+            [System.IO.File]::WriteAllText($destinationPath, $sourceContent)
+        }
+        if ((Get-Content -LiteralPath $destinationPath -Raw) -ne $sourceContent) {
+            throw "Generated sample compile input differs from its source: $($sourceFile.Name)"
+        }
+    }
+}
+
 function Initialize-EphemeralProject {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
@@ -1415,6 +1465,7 @@ EditorSettings:
 '@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
+    Copy-DiagnosticsToolingSampleForCompilation -Root $Root -Project $project
 
     # The generator + analyzer ship under the package's Runtime/Analyzers/
     # (RoslynAnalyzer-labeled, every platform disabled), so Unity scopes them to the
