@@ -190,7 +190,7 @@ jobs:
           try {
               Start-Transcript -Path $logPath -Force | Out-Null
               . $script
-              $unityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1')
+              $unityVersions = @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1', '6000.5.2f1')
               $provisioningProfile = 'StandaloneWindowsIl2Cpp'
               $installRoot = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3'
               $maintenanceArgs = @{

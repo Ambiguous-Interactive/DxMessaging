@@ -315,7 +315,7 @@ and central license-return action require the `u6-v3` layout exactly.
 $runnerToolCache = 'C:\path\to\actions-runner\_work\_tool'
 $editorRoot = Join-Path $runnerToolCache 'u6-v3'
 .\scripts\unity\maintain-windows-runner.ps1 `
-  -UnityVersions @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1') `
+  -UnityVersions @('2021.3.45f1', '2022.3.45f1', '6000.3.16f1', '6000.5.2f1') `
   -InstallRoot $editorRoot `
   -ProvisioningProfile StandaloneWindowsIl2Cpp `
   -Force

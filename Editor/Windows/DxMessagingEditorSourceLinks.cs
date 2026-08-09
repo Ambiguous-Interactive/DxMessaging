@@ -1188,38 +1188,29 @@ namespace DxMessaging.Editor.Windows
         }
 
         /// <summary>
-        /// Resolves the Unity object a captured context id stood for, or null once that object
+        /// Resolves the Unity object a captured context identity stood for, or null once that object
         /// is gone. A destroyed context is the normal case for a log that outlives the scene
         /// it recorded, so callers use this to decide whether a row can link at all rather
         /// than offering a link that does nothing.
         /// </summary>
         /// <remarks>
-        /// Editor-only, and deliberately the int overload. <see cref="InstanceId"/> stores the
-        /// same 32-bit key the runtime uses; see the accessor note on
-        /// <see cref="InstanceId.StableId"/>, which reads that key from <c>EntityId</c> on Unity
-        /// 6.4+ because the legacy accessor it replaced is being retired. This lookup is the
-        /// inverse of the same key and runs only in the editor, so it is not on the path that
-        /// note protects. If a future editor version retires the int overload too, this is the
-        /// single place that has to move.
-        ///
-        /// The legacy accessor is deliberately not named here: `InstanceIdSourceTests` text-scans
-        /// shipped source for it, and `Runtime/Core/InstanceId.cs` is the only file allowed to
-        /// mention it at all.
+        /// <see cref="InstanceId"/> is the package's single Unity object identity abstraction.
+        /// Object-backed values carry the originating Unity object on every supported editor;
+        /// Unity's destroyed-object null semantics make that reference stop resolving after the
+        /// native object is gone without a second version-specific ID lookup path here.
         /// </remarks>
-        internal static UnityEngine.Object FindContextObject(int contextInstanceId)
+        internal static UnityEngine.Object FindContextObject(InstanceId? context)
         {
-            return contextInstanceId == 0
-                ? null
-                : EditorUtility.InstanceIDToObject(contextInstanceId);
+            return context.HasValue ? context.Value.Object : null;
         }
 
         /// <summary>
         /// Selects and pings the object a captured context id stood for, so the reader lands on
         /// it in the Hierarchy (or the Project window) with the Inspector already showing it.
         /// </summary>
-        internal static bool TryRevealContext(int contextInstanceId)
+        internal static bool TryRevealContext(InstanceId? context)
         {
-            UnityEngine.Object contextObject = FindContextObject(contextInstanceId);
+            UnityEngine.Object contextObject = FindContextObject(context);
             if (contextObject == null)
             {
                 return false;

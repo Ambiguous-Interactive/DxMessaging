@@ -25,7 +25,7 @@ the absolute number.
 
 ## The modes (CI matrix)
 
-`.github/workflows/unity-tests.yml` runs **9 legs** = 3 Unity versions (from
+`.github/workflows/unity-tests.yml` runs **12 legs** = 4 Unity versions (from
 `.github/unity-versions.json`) x 3 modes (`editmode`, `playmode`, `standalone`),
 `max-parallel: 1`. Each mode is a separate Unity invocation against a separate
 ephemeral project under `.artifacts/u/<version>-<mode>/`. The

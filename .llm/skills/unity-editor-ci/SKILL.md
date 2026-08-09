@@ -1,6 +1,6 @@
 ---
 name: unity-editor-ci
-description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 3 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow."
+description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 4 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow."
 metadata:
   category: "unity"
   tags: "unity, ci, matrix, il2cpp, lts, game-ci"
@@ -9,8 +9,8 @@ metadata:
 # Unity Editor CI
 
 The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self-hosted
-Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions x
-`{editmode, playmode, standalone}` = 9 cells; `standalone` builds and runs a
+Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions x
+`{editmode, playmode, standalone}` = 12 cells; `standalone` builds and runs a
 `StandaloneWindows64` IL2CPP player from an ephemeral project generated under
 `.artifacts/u/<version>-<mode>/`.
 
@@ -120,7 +120,7 @@ Windows runners. `unity-tests.yml` is one unified matrix of three Unity versions
 | Document                                                                                    | Purpose                                                                                                                  |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | [github-actions-version-consistency.md](./references/github-actions-version-consistency.md) | Repo-wide action major pins, the audit and upstream-tag verification commands, and artifact action pairing               |
-| [unity-ci-matrix.md](./references/unity-ci-matrix.md)                                       | The 9-cell matrix, build-lock and timeout invariants, is-empty gate, IL2CPP-only failure catalog, and log reading order  |
+| [unity-ci-matrix.md](./references/unity-ci-matrix.md)                                       | The 12-cell matrix, build-lock and timeout invariants, is-empty gate, IL2CPP-only failure catalog, and log reading order |
 | [unity-editor-cli-bootstrap.md](./references/unity-editor-cli-bootstrap.md)                 | ensure-editor.ps1 internals: PATH refresh, getter-based discovery, module desired state, and quarantine/reinstall repair |
 | [unity-runner-host-prereqs.md](./references/unity-runner-host-prereqs.md)                   | The four-layer Windows host prereq defense, both VC++ generations, and detection contracts                               |
 | [unity-version-single-source.md](./references/unity-version-single-source.md)               | The canonical unity-versions.json contract, the three consumer policies, and how to bump a version                       |

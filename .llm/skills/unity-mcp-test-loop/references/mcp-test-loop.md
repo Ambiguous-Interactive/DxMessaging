@@ -29,8 +29,18 @@ the host editor; the container only edits files and drives the editor over MCP.
 ## The Loop
 
 1. **Edit** files in the container as usual.
-1. **Compile**: trigger `AssetDatabase.Refresh()` via `Unity_RunCommand`. Wait for the
-   recompile to settle before running tests.
+1. **Preflight the shared editor.** Call `Unity_ManageEditor GetState`, then run one
+   read-only command that logs `SceneManager.sceneCount`, every scene's `path` and
+   `isDirty`, whether `StageUtility.GetCurrentStageHandle()` equals the main stage,
+   and `EditorApplication.isPlaying`, `isCompiling`, and `isUpdating`. Refuse to
+   refresh or change scenes while any scene is dirty, a prefab stage is open, or the
+   editor is busy. Never call an API that can raise a save prompt; a modal blocks the
+   main thread and only the developer can dismiss it.
+1. **Compile**: validate changed C# under `Assets/` with `Unity_ValidateScript`, then
+   execute the `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator
+   rejects embedded `Packages/` paths, so package edits rely on the refresh plus the
+   fresh-assembly proof below. Wait for the recompile to settle before running tests.
+   Do not call `AssetDatabase.Refresh()` from `Unity_RunCommand`.
 1. **Prove the assembly is fresh before you trust a green run.** When a package
    assembly fails to compile, Unity keeps the last good DLL loaded and
    `DxMcpTestRunner` happily runs it, so an edit that does not compile reports the
@@ -78,6 +88,27 @@ failures[] }`.
 The bridge survives domain reloads via `[InitializeOnLoad]` + `SessionState`, so a
 recompile mid-run does not lose the result.
 
+## Shared Editor Safety
+
+The MCP host is the developer's editor, not an expendable test process. A normal
+`new GameObject(...)` joins the active scene and marks it dirty; destroying the object
+in teardown does not clear the dirty flag, so the next refresh or scene switch can
+raise a modal save prompt. Tests and probes that only need a Unity object must use:
+
+```csharp
+GameObject host = EditorUtility.CreateGameObjectWithHideFlags(
+    "Probe",
+    HideFlags.HideAndDontSave,
+    typeof(MyComponent)
+);
+```
+
+The returned object has no valid scene. Do not use this form for behavior that requires
+scene lifecycle or physics registration. Put those objects in an isolated scene, close
+that scene without prompting in `finally`, restore the previous active scene, and verify
+the developer's original scenes remain clean. Re-run the read-only preflight after every
+test batch.
+
 ## Test Assemblies
 
 | Mode     | Assemblies                                                                                                                                                  |
@@ -110,9 +141,9 @@ benchmark run, since the editor process is already up. See
 
 The `DxMcpTestRunner` bridge lives in the host project (under its `Assets/Editor/`),
 NOT in this package repo, so a clean of the host project drops it. Regenerate it via
-`Unity_RunCommand` (`System.IO.File.WriteAllText` of the bridge source, then
-`AssetDatabase.Refresh()`). It wraps `TestRunnerApi` and writes the JSON result plus
-the `.status` sidecar.
+`Unity_RunCommand` (`System.IO.File.WriteAllText` of the bridge source), then run the
+safe-state preflight and execute `Assets/Refresh` through `Unity_ManageMenuItem`. It
+wraps `TestRunnerApi` and writes the JSON result plus the `.status` sidecar.
 
 ## CI vs Local
 
@@ -140,7 +171,7 @@ Two caveats keep the numbers honest:
   teardown, disabled reload) can show a near-zero LOCAL delta while still paying
   off on the cold CI legs. Per-mode `< 3 min` is a CI metric; locally, trust
   relative deltas, not the absolute number.
-- **A script edit forces one reload.** `AssetDatabase.Refresh()` after editing a
+- **A script edit forces one reload.** Executing `Assets/Refresh` after editing a
   `.cs` triggers a domain reload even when enter-play-mode reload is disabled, so
   the FIRST play-mode entry after an edit is a fresh domain. Run twice
   back-to-back to exercise the true persistent-domain (reload-off) path -- a

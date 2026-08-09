@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix the Message Monitor failing to compile on Unity 6000.5 after Unity made
+  its integer object-lookup API a compile error. Context links now use the
+  package's centralized `InstanceId` object reference on every supported editor
+  ([#365](https://github.com/Ambiguous-Interactive/DxMessaging/issues/365)).
+
 ## [3.2.2]
 
 ### Added

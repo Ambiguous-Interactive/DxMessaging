@@ -47,13 +47,29 @@ The devcontainer workspace is the same directory as the embedded package inside 
 ### The loop
 
 1. **Edit** files in the container.
-1. **Compile** by triggering `AssetDatabase.Refresh()` through `Unity_RunCommand`, and wait for the recompile to settle.
+1. **Preflight the shared editor before any refresh or test.** Read `Unity_ManageEditor GetState`,
+   then use a read-only `Unity_RunCommand` to inspect every open scene's `isDirty`, confirm the
+   current stage is the main stage, and confirm the editor is not playing, compiling, or updating.
+   If any scene is dirty, a prefab stage is open, or the editor is busy, do not refresh or change
+   scenes. Wait or report the unsafe state; never invoke an API that can raise a save prompt.
+1. **Compile** with `Unity_ValidateScript` for changed C# under `Assets/`, then execute the
+   `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator rejects embedded
+   `Packages/` paths, so package edits must use the refresh plus fresh-assembly proof. Wait for
+   compilation to settle before trusting tests. Do not use `AssetDatabase.Refresh()` through
+   `Unity_RunCommand`; a modal prompt blocks the editor and only the developer can dismiss it.
 1. **Run** `DxMcpTestRunner.Run(testMode, assemblyNames, testNames, categoryNames, resultPath)` through `Unity_RunCommand`, locating the type by scanning `AppDomain` assemblies. Arguments are semicolon-separated lists and `null` means no filter. `testMode` is `EditMode` or `PlayMode`. `testNames` accepts a full fixture type name such as `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests` for a single-fixture red-green loop.
 1. **Poll** the `.status` sidecar next to `resultPath` from bash. It moves `running` to `done` or `error: <message>`. The JSON result carries `{ passCount, failCount, skipCount, inconclusiveCount, durationSeconds, failures[] }`.
 
 `resultPath` resolves relative to the HOST Unity project root, not the embedded package. To land somewhere the container can read, prefix it: `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`. A bare `.artifacts/unity-mcp/<name>.json` writes to the host project root, invisible to the container.
 
 The bridge survives domain reloads via `[InitializeOnLoad]` plus `SessionState`, so a recompile mid-run does not lose the result.
+
+The host editor belongs to the developer. Tests and probes that only need a temporary
+`GameObject` must create it with
+`EditorUtility.CreateGameObjectWithHideFlags(name, HideFlags.HideAndDontSave, ...)`; constructing
+one normally dirties the active scene even when teardown destroys it. Tests that genuinely need
+scene residency must use an isolated scene, close it without prompting, and restore the prior
+active scene. Re-read scene dirtiness after the run.
 
 ### Assemblies
 
@@ -66,11 +82,11 @@ EditMode: `WallstopStudios.DxMessaging.Tests.Editor`, `...Tests.Editor.Allocatio
 
 ### If the bridge is missing
 
-`DxMcpTestRunner` lives in the host project under its `Assets/Editor/`, not in this repo, so cleaning the host project drops it. Regenerate it through `Unity_RunCommand` with `System.IO.File.WriteAllText` of the bridge source followed by `AssetDatabase.Refresh()`. It wraps `TestRunnerApi` and writes the JSON result plus the `.status` sidecar.
+`DxMcpTestRunner` lives in the host project under its `Assets/Editor/`, not in this repo, so cleaning the host project drops it. After the safe-state preflight, regenerate it through `Unity_RunCommand` with `System.IO.File.WriteAllText` of the bridge source, then execute `Assets/Refresh` through `Unity_ManageMenuItem`. It wraps `TestRunnerApi` and writes the JSON result plus the `.status` sidecar.
 
 ### Measuring suite speed
 
-Baseline a mode, record `durationSeconds` and the pass/fail/skip counts, change ONE lever, re-run the SAME call, and diff. Keep a change only if pass counts hold and no flake appears across repeated runs. Two caveats: the host editor is warm, so frames are near-free and a structural win can show a near-zero local delta while paying off on the cold CI legs (per-mode under 3 minutes is a CI metric, so trust relative deltas locally); and `AssetDatabase.Refresh()` after a `.cs` edit forces one domain reload, so run twice back-to-back to exercise the true persistent-domain path - a latent reload dependency fails only on the second run.
+Baseline a mode, record `durationSeconds` and the pass/fail/skip counts, change ONE lever, re-run the SAME call, and diff. Keep a change only if pass counts hold and no flake appears across repeated runs. Two caveats: the host editor is warm, so frames are near-free and a structural win can show a near-zero local delta while paying off on the cold CI legs (per-mode under 3 minutes is a CI metric, so trust relative deltas locally); and an `Assets/Refresh` after a `.cs` edit forces one domain reload, so run twice back-to-back to exercise the true persistent-domain path - a latent reload dependency fails only on the second run.
 
 ### Perf baselines
 

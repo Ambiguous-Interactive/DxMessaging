@@ -62,7 +62,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         protected override void Awake()
         {
             base.Awake();
-            _ = PreparedReceiverIds.Add(GetInstanceID());
+            _ = PreparedReceiverIds.Add(((InstanceId)this).Id);
         }
 
         protected override void OnDisable()
@@ -72,7 +72,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 
         protected override void OnDestroy()
         {
-            _ = PreparedReceiverIds.Remove(GetInstanceID());
+            _ = PreparedReceiverIds.Remove(((InstanceId)this).Id);
             base.OnDestroy();
         }
 
@@ -112,12 +112,12 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 
         private void EnsureToolingRegistrations(bool force = false)
         {
-            if (!force && !PreparedReceiverIds.Add(GetInstanceID()))
+            if (!force && !PreparedReceiverIds.Add(((InstanceId)this).Id))
             {
                 return;
             }
 
-            _ = PreparedReceiverIds.Add(GetInstanceID());
+            _ = PreparedReceiverIds.Add(((InstanceId)this).Id);
             MessagingComponent messagingComponent = GetComponent<MessagingComponent>();
             messagingComponent.Release(this);
             MessageRegistrationToken liveToken = messagingComponent.Create(this);

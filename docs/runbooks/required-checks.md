@@ -91,7 +91,7 @@ and each is validated rather than assumed:
   `cancel-in-progress: false` on purpose, because hard-cancelling a run that
   holds the organization build lock is the scenario the license-return guarantee
   exists to prevent. Without a gate, the run for the older commit keeps the
-  concurrency group through all nine legs and the current head cannot start. The
+  concurrency group through every matrix leg and the current head cannot start. The
   `head-check` job compares the event's head SHA against the live pull-request
   head on `ubuntu-latest`, before the lock is in reach, and publishes a
   `superseded` output that both licensed jobs gate on. It fails open: a lookup
@@ -143,8 +143,9 @@ Validate Documentation Build
 Lint docs links
 ```
 
-`devcontainer-test.yml` (`Build + smoke-test devcontainer image`) is the same
-shape; require it only if devcontainer changes must gate merges.
+`devcontainer-test.yml` reports the always-present `Devcontainer CI Success`
+aggregate across the x64 and native ARM64 smoke jobs. Require that aggregate
+only if devcontainer changes must gate merges.
 
 ## Must NOT be required
 
@@ -343,8 +344,7 @@ Lint docs links
 ```
 
 If devcontainer image changes should gate merges, also add
-`Build + smoke-test devcontainer image` after verifying its run-or-skip behavior
-on real PRs.
+`Devcontainer CI Success` after verifying its run-or-skip behavior on real PRs.
 
 ```bash
 # PUT the existing ruleset with the augmented contexts (keep target/conditions/

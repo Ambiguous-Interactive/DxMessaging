@@ -12,8 +12,7 @@ const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1
 // must emit a ProjectSettings/EditorSettings.asset that disables enter-play-mode
 // domain + scene reload (value 3) so the PlayMode CI legs skip the per-entry
 // reload. This guards the COMMITTED CI enforcement; the local .unity-test-project
-// copy is gitignored, so the runner emit is the source of truth for CI. See
-// docs/runbooks/test-suite-performance.md and the Fast Unity Tests skill.
+// copy is gitignored, so the runner emit is the source of truth for CI.
 const runCiTests = fs.readFileSync(RUN_CI_SCRIPT_PATH, "utf8");
 const exportUnityPackage = fs.readFileSync(
   path.join(__dirname, "..", "unity", "export-unitypackage.ps1"),
@@ -41,7 +40,11 @@ function escapeRegExp(value) {
 
 function createGenerateOnlyRepo(root) {
   const analyzerRoot = path.join(root, "Runtime", "Analyzers");
+  const sampleRoot = path.join(root, "Samples~", "Diagnostics Tooling Exerciser");
   fs.mkdirSync(analyzerRoot, { recursive: true });
+  fs.mkdirSync(sampleRoot, { recursive: true });
+  for (const file of ["A.cs", "A.Sample.asmdef"])
+    fs.writeFileSync(path.join(sampleRoot, file), "", "utf8");
   fs.writeFileSync(path.join(root, "package.json"), "{}\n", "utf8");
   for (const dllName of [
     "WallstopStudios.DxMessaging.SourceGenerators.dll",
@@ -128,6 +131,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
       ["Packages", "manifest.json"],
       ["ProjectSettings", "EditorSettings.asset"],
       ["Assets", "Editor", "DxmCiTestConfigurator.cs"],
+      ["Assets", "DxmCiSamples", "A.Sample.asmdef"],
       [".dxmessaging-ci-project"],
       ["Library"]
     ]) {

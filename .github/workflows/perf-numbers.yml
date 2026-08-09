@@ -192,7 +192,7 @@ jobs:
         # .github/unity-versions.json by validate-unity-versions.js and remains
         # statically attestable by the organization lock analyzer.
         unity-version:
-          - 6000.3.16f1
+          - 6000.5.2f1
         # One published scope: the Standalone IL2CPP Release player that shipped
         # games run. The stripped player cannot measure GC.Alloc, so the renderer
         # omits allocation columns instead of adding a second Mono benchmark leg.
@@ -648,7 +648,7 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      LATEST_VERSION: 6000.3.16f1
+      LATEST_VERSION: 6000.5.2f1
       PERF_BASELINE: docs/architecture/perf-baseline.csv
       PERF_DELTA: .artifacts/perf-pr-delta.md
       MEASURED_SHA: ${{ github.event.pull_request.head.sha }}
@@ -994,7 +994,7 @@ jobs:
     permissions:
       contents: read
     env:
-      LATEST_VERSION: 6000.3.16f1
+      LATEST_VERSION: 6000.5.2f1
       PERF_DOC: docs/architecture/performance.md
       # The committed master baseline used by the PR's diagnostic historical
       # delta. Regenerated from the real post-merge run and committed
