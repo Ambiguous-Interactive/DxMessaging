@@ -1,5 +1,5 @@
 #if UNITY_EDITOR && UNITY_2021_3_OR_NEWER
-#nullable enable
+#nullable enable annotations
 namespace DxMessaging.Tests.Editor
 {
     using System;
