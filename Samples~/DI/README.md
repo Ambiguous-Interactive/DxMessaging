@@ -39,11 +39,11 @@ Each sample shows:
      - Define `VCONTAINER_PRESENT` and reference the optional extension under [VContainerRegistrationExtensions.cs](../../Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs).
      - Add [SampleLifetimeScope.cs](./VContainer/SampleLifetimeScope.cs) to the scene (or derive from it); the sample scope registers the builder and an entry point that emits/consumes `ScoreUpdated` messages each tick.
    - **Reflex**:
-     - Enable `REFLEX_PRESENT` and install `DxMessagingRegistrationInstaller` into your container bootstrap.
-     - Include [SampleInstaller.cs](./Reflex/SampleInstaller.cs) in your installer chain. The sample service resolves `IMessageRegistrationBuilder`, subscribes to `PlayerAlert`, and can emit alerts via `EmitAlertFor`.
+     - Install Reflex, then enable `REFLEX_PRESENT` for the imported sample assembly.
+     - Attach [SampleInstaller.cs](./Reflex/SampleInstaller.cs) to a Reflex SceneScope or RootScope hierarchy. It registers the bus and `IMessageRegistrationBuilder`, then constructs the sample service when Reflex builds the container. The service subscribes to `PlayerAlert`; call the installer's `EmitAlertFor` method to emit one.
 
 1. **Emit a message**  
-   Use the service exposed by the container (e.g., call into `ScoreboardService` or `PlayerAlertService`) to emit a message. Because the prefab already configured `MessagingComponent` instances via the installer, the listeners run immediately.
+   For Reflex, call `SampleInstaller.EmitAlertFor`. The VContainer sample's registered entry point emits `ScoreUpdated` during its tick. Because the prefab already configured `MessagingComponent` instances through the installer, the listeners run immediately.
 
 1. **Swap providers** (optional)  
    Duplicate [GlobalMessageBusProvider.asset](./Providers/GlobalMessageBusProvider.asset), modify it to return a custom bus, assign it on the prefab root, and observe how builder-created leases now resolve that bus instead.

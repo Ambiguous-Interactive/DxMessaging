@@ -11,7 +11,7 @@ const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1
 // prettier-ignore
 const ROSLYNATOR_ANALYZER_FILES = ["Roslynator.CSharp.Analyzers.dll", "Roslynator_Analyzers_Roslynator.Common.dll", "Roslynator_Analyzers_Roslynator.Core.dll", "Roslynator_Analyzers_Roslynator.CSharp.dll"];
 // prettier-ignore
-const INTEGRATION_PACKAGES = { "com.gustavopsantos.reflex": "9.2.1", "com.svermeulen.extenject": "9.2.0-stcf3", "jp.hadashikick.vcontainer": "1.19.0" };
+const INTEGRATION_PACKAGES = { "com.gustavopsantos.reflex": "14.3.1", "com.svermeulen.extenject": "9.2.0-stcf3", "jp.hadashikick.vcontainer": "1.19.0" };
 // Drift-guard the committed reload-disabled CI project; the local host is gitignored.
 const runCiTests = fs.readFileSync(RUN_CI_SCRIPT_PATH, "utf8");
 // prettier-ignore
@@ -132,7 +132,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     // prettier-ignore
     const diAsmdef = JSON.parse(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", "DI", "DxmCi.Samples.DI.asmdef"), "utf8"));
     // prettier-ignore
-    assert.deepEqual(diAsmdef.versionDefines.map(({ define }) => define).sort(), ["REFLEX_PRESENT", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]);
+    assert.deepEqual([...diAsmdef.versionDefines.map(({ define }) => define), ...diAsmdef.references.filter((reference) => reference === "Reflex" || reference === "Reflex.Unity")].sort(), ["REFLEX_PRESENT", "Reflex", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]);
     for (const cacheName of ["upm", "npm"]) {
       assert.ok(fs.existsSync(path.join(cacheRoot, cacheName)), cacheName);
     }

@@ -2,87 +2,67 @@
 
 [Back to Integrations Overview](index.md)
 
----
-
 ## Overview
 
-**Reflex** is a minimal, lightweight dependency injection framework for Unity. DxMessaging integrates with Reflex, allowing you to:
+Use Reflex for object construction and DxMessaging for message delivery. The optional
+DxMessaging Reflex assembly registers both `MessageBus` and `IMessageBus`, and it can provide
+`IMessageRegistrationBuilder` to container-created services.
 
-- **Inject `IMessageBus`** in any class with minimal overhead
-- **Use DI for construction** + DxMessaging for events (best of both worlds)
-- **Minimal API surface** -- small number of concepts to understand
-- **Compatible** -- Reflex and DxMessaging can be used together
+> **Changed in v3.2.3:** The examples target Reflex 14.0 or newer. DxMessaging's registration
+> helpers also adapt to the pre-14 `AddSingleton` API.
 
-**Why combine DI + Messaging?** Use constructor injection for service dependencies (repositories, managers) and messaging for reactive events (damage taken, item collected), combining both approaches.
-
----
-
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
-- DxMessaging installed via UPM
-- Reflex installed (`gustavopsantos/Reflex`) via source or UPM
+- Install DxMessaging through UPM.
+- Install Reflex 14.0 or newer (`com.gustavopsantos.reflex`).
+- Create a Reflex settings asset inside a `Resources` folder with
+  **Assets > Create > Reflex > Settings**.
 
-### 1. Create a Reflex Installer
+### Create an installer
+
+Reflex discovers `IInstaller` components below a `ContainerScope`. Derive the installer from
+`MonoBehaviour` so it can be attached to that hierarchy.
 
 ```csharp
-using DxMessaging.Core.MessageBus;
 using DxMessaging.Unity.Integrations.Reflex;
 using Reflex.Core;
+using UnityEngine;
 
-// Option A: Use IInstaller interface (recommended for explicit registration)
-public sealed class DxMessagingInstaller : IInstaller
+public sealed class DxMessagingInstaller : MonoBehaviour, IInstaller
 {
-    public void InstallBindings(ContainerBuilder containerBuilder)
+    public void InstallBindings(ContainerBuilder builder)
     {
-        // Bind MessageBus as singleton implementing IMessageBus
-        containerBuilder.AddSingleton(
-            typeof(MessageBus),
-            typeof(MessageBus),
-            typeof(IMessageBus)
-        );
-
-        // Optional: Enable automatic IMessageRegistrationBuilder binding
-        // Install the DxMessagingRegistrationInstaller to get IMessageRegistrationBuilder
-        #if REFLEX_PRESENT
-        new DxMessagingRegistrationInstaller().InstallBindings(containerBuilder);
-        #endif
-    }
-}
-
-// Option B: Extend Installer base class (common pattern)
-public sealed class DxMessagingInstallerAlt : Installer
-{
-    protected override void InstallBindings()
-    {
-        Container.Bind<MessageBus>().AsSingleton();
-        Container.Bind<IMessageBus>().FromContainer<MessageBus>();
+        builder.AddDxMessagingBus();
+        new DxMessagingRegistrationInstaller().InstallBindings(builder);
     }
 }
 ```
 
-**Note:** You must import the `DxMessaging.Unity.Integrations.Reflex` namespace to access `DxMessagingRegistrationInstaller`.
+`AddDxMessagingBus()` uses an explicit factory and exposes the same singleton as both
+`MessageBus` and `IMessageBus`. `DxMessagingRegistrationInstaller` adds
+`IMessageRegistrationBuilder`.
 
-#### Add to your scene
+### Add it to a scope
 
-1. Create a `SceneContext` or `ProjectContext` in your scene
-1. Add `DxMessagingInstaller` to the installers list
-1. Reflex will now inject `IMessageBus` automatically
+1. Create a scene scope with **GameObject > Reflex > SceneScope**.
+1. Add `DxMessagingInstaller` to the `SceneScope` GameObject or one of its children.
+1. Enter Play Mode. Reflex builds the scene container and injects scene objects from it.
 
----
+For one bus shared across scenes, put the installer on a Reflex RootScope prefab and add that
+prefab to the `RootScopes` list in the Reflex settings asset.
 
-## Usage Patterns
+## Register a service
 
-### Pattern 1: Inject into Plain Classes (Recommended for Services)
-
-Use `IMessageRegistrationBuilder` to create message handlers in non-MonoBehaviour classes:
+The following service owns a `MessageRegistrationLease`. Its constructor stages a real
+handler, `Initialize()` activates it, and `Dispose()` releases it.
 
 ```csharp
-using DxMessaging.Core.MessageBus;
+using System;
 using DxMessaging.Core.Attributes;
+using DxMessaging.Core.MessageBus;
 
-// Define a message
 [DxUntargetedMessage]
 [DxAutoConstructor]
 public readonly partial struct PlayerDamaged
@@ -90,65 +70,61 @@ public readonly partial struct PlayerDamaged
     public readonly int damage;
 }
 
-// Service that listens to messages
-public sealed class DamageService
+public sealed class DamageService : IDisposable
 {
     private readonly MessageRegistrationLease _lease;
 
-    // Builder is injected automatically when using the installer
     public DamageService(IMessageRegistrationBuilder registrationBuilder)
     {
-        var options = new MessageRegistrationBuildOptions
+        MessageRegistrationBuildOptions options = new()
         {
             Configure = token =>
             {
                 _ = token.RegisterUntargeted<PlayerDamaged>(OnPlayerDamaged);
-            }
+            },
         };
 
         _lease = registrationBuilder.Build(options);
     }
 
+    public int LastDamage { get; private set; }
+
     public void Initialize()
     {
-        _lease.Activate();  // Start listening
+        _lease.Activate();
     }
 
     public void Dispose()
     {
-        _lease.Dispose();   // Clean up
+        _lease.Dispose();
     }
 
-    private static void OnPlayerDamaged(ref PlayerDamaged message)
+    private void OnPlayerDamaged(ref PlayerDamaged message)
     {
-        UnityEngine.Debug.Log($"Player took {message.damage} damage!");
+        LastDamage = message.damage;
     }
 }
 ```
 
-#### Register the service in your installer
+Register the service with Reflex 14's singleton and lazy-resolution settings:
 
 ```csharp
-// Using IInstaller interface
-public void InstallBindings(ContainerBuilder containerBuilder)
-{
-    containerBuilder.AddSingleton(typeof(DamageService), typeof(DamageService));
-    // Call Initialize() from a bootstrap MonoBehaviour
-}
+using Reflex.Enums;
 
-// Or using Installer base class
-protected override void InstallBindings()
-{
-    Container.Bind<DamageService>().AsSingleton();
-    // Call Initialize() from a bootstrap MonoBehaviour
-}
+builder.RegisterType(
+    typeof(DamageService),
+    Lifetime.Singleton,
+    Resolution.Lazy
+);
 ```
 
-**Note:** Reflex doesn't have lifecycle interfaces like `IInitializable`. Call `Initialize()` and `Dispose()` manually from a controlling MonoBehaviour or bootstrap script.
+Reflex disposes singleton services with their owning container. Call `Initialize()` from a
+bootstrap component after resolving the service. Reflex does not provide an `IInitializable`
+lifecycle contract.
 
----
+## Configure an existing MessagingComponent
 
-### Pattern 2: Configure MessagingComponents (For Existing MonoBehaviours)
+Inject the container bus before `MessagingComponent` registers its handlers:
 
 ```csharp
 using DxMessaging.Core.MessageBus;
@@ -173,19 +149,19 @@ public sealed class MessagingComponentConfigurator : MonoBehaviour
 }
 ```
 
-#### Usage
+Add this configurator beside each `MessagingComponent` that should use the container-owned bus.
+Reflex's scene scope runs before ordinary `Awake()` methods and injects the field first.
 
-1. Add `MessagingComponentConfigurator` alongside any `MessagingComponent` in your prefabs
-1. Reflex will inject the bus in `Awake()` before handlers are registered
-1. Your message handlers now use the container-managed bus
+## Inject IMessageBus directly
 
----
-
-### Pattern 3: Inject IMessageBus Directly
-
-For simple emission without listening, inject `IMessageBus` directly:
+Inject `IMessageBus` into a component that only emits messages:
 
 ```csharp
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using Reflex.Attributes;
+using UnityEngine;
+
 public sealed class GameBootstrap : MonoBehaviour
 {
     [Inject]
@@ -193,41 +169,44 @@ public sealed class GameBootstrap : MonoBehaviour
 
     private void Start()
     {
-        var message = new GameStarted();
+        GameStarted message = new();
         _messageBus.EmitUntargeted(ref message);
     }
 }
 ```
 
----
+## Inject pooled objects
 
-## Advanced: Object Pooling
-
-When using object pooling with Reflex:
+Reflex injects scene objects when it creates the scene container. Inject objects instantiated
+later through `GameObjectInjector` before returning them to callers:
 
 ```csharp
+using System.Collections.Generic;
+using Reflex.Core;
+using Reflex.Injectors;
+using UnityEngine;
+
 public sealed class EnemyPool
 {
     private readonly Container _container;
+    private readonly Enemy _enemyPrefab;
     private readonly Queue<Enemy> _pool = new();
 
-    public EnemyPool(Container container)
+    public EnemyPool(Container container, Enemy enemyPrefab)
     {
         _container = container;
+        _enemyPrefab = enemyPrefab;
     }
 
     public Enemy Spawn()
     {
-        Enemy enemy;
         if (_pool.Count > 0)
         {
-            enemy = _pool.Dequeue();
+            return _pool.Dequeue();
         }
-        else
-        {
-            enemy = UnityEngine.Object.Instantiate(enemyPrefab);
-            _container.Inject(enemy);  // Inject dependencies
-        }
+
+        Enemy enemy = UnityEngine.Object.Instantiate(_enemyPrefab);
+        GameObjectInjector.InjectObject(enemy.gameObject, _container);
         return enemy;
     }
 
@@ -238,82 +217,72 @@ public sealed class EnemyPool
 }
 ```
 
----
+## Test with Reflex
 
-## Testing with Reflex
-
-### Unit Tests
+Build an isolated container with a real bus and the same DxMessaging installer used at runtime:
 
 ```csharp
 using DxMessaging.Core.MessageBus;
-using Reflex.Core;
+using DxMessaging.Unity.Integrations.Reflex;
 using NUnit.Framework;
+using Reflex.Core;
+using Reflex.Enums;
 
 [TestFixture]
-public class DamageServiceTests
+public sealed class DamageServiceTests
 {
     [Test]
-    public void Initialize_ListensToMessages()
+    public void InitializeListensToMessages()
     {
-        // Arrange
-        var builder = new ContainerBuilder();
-        var bus = new MessageBus();
-        builder.AddSingleton<IMessageBus>(bus);
-        builder.AddSingleton<DamageService>();
-        var container = builder.Build();
-
-        bool messageReceived = false;
-        var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
-        var token = MessageRegistrationToken.Create(handler, bus);
-        _ = token.RegisterUntargeted<PlayerDamaged>(
-            (ref PlayerDamaged msg) => messageReceived = true
+        ContainerBuilder builder = new();
+        MessageBus bus = new();
+        builder.RegisterValue(
+            bus,
+            new[] { typeof(MessageBus), typeof(IMessageBus) }
         );
-        token.Enable();
+        new DxMessagingRegistrationInstaller().InstallBindings(builder);
+        builder.RegisterType(
+            typeof(DamageService),
+            Lifetime.Singleton,
+            Resolution.Lazy
+        );
 
-        // Act
-        var service = container.Resolve<DamageService>();
+        using Container container = builder.Build();
+        DamageService service = container.Resolve<DamageService>();
         service.Initialize();
-        var message = new PlayerDamaged(25);
+
+        PlayerDamaged message = new(25);
         bus.EmitUntargeted(ref message);
 
-        // Assert
-        Assert.IsTrue(messageReceived);
+        Assert.That(service.LastDamage, Is.EqualTo(25));
     }
 }
 ```
 
----
-
 ## Checklist
 
-### Initial Setup
+### Initial setup
 
-- [ ] Install DxMessaging and Reflex
-- [ ] Create `DxMessagingInstaller` with bus bindings
-- [ ] Add installer to your `SceneContext` or `ProjectContext`
-- [ ] Import `DxMessaging.Unity.Integrations.Reflex` and install `DxMessagingRegistrationInstaller` for `IMessageRegistrationBuilder` support
+- [ ] Install DxMessaging and Reflex.
+- [ ] Create a Reflex settings asset under `Resources`.
+- [ ] Create a `ContainerScope` and attach an `IInstaller` component.
+- [ ] Call `AddDxMessagingBus()` and install `DxMessagingRegistrationInstaller`.
 
 ### Integration
 
-- [ ] Use `IMessageRegistrationBuilder` in plain classes
-- [ ] Call `Initialize()` and `Dispose()` manually from a bootstrap script
-- [ ] Add `MessagingComponentConfigurator` to prefabs with `MessagingComponent`
-- [ ] Replace `MessageHandler.MessageBus` references with injected `IMessageBus`
+- [ ] Register container services with a concrete Reflex lifetime and resolution mode.
+- [ ] Activate builder-created leases from a bootstrap component.
+- [ ] Dispose leases directly or let Reflex dispose their singleton owner.
+- [ ] Configure each existing `MessagingComponent` with the injected bus.
 
-### Pooling
+### Pooling and tests
 
-- [ ] Use `container.Inject(instance)` for pooled objects
-- [ ] Ensure injection happens before message handlers are registered
+- [ ] Inject runtime-created GameObjects with `GameObjectInjector` before use.
+- [ ] Build a fresh `ContainerBuilder` and `MessageBus` for each test.
+- [ ] Register real handlers and assert their observable result.
 
-### Testing
+## Next steps
 
-- [ ] Create isolated `ContainerBuilder` instances in tests
-- [ ] Use `builder.AddSingleton<IMessageBus>(new MessageBus())` for test buses
-
----
-
-## Next Steps
-
-- **[Zenject Integration](zenject.md)** -- Full-featured DI with extensive Unity support
-- **[VContainer Integration](vcontainer.md)** -- Lightweight alternative with scoped lifetimes
-- **[Back to Documentation Hub](../getting-started/index.md)** -- Browse all docs
+- [Zenject Integration](zenject.md) -- Zenject container wiring
+- [VContainer Integration](vcontainer.md) -- VContainer lifetime scopes
+- [Back to Documentation Hub](../getting-started/index.md) -- all DxMessaging guides

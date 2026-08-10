@@ -27,6 +27,11 @@ internal static class GeneratorTestUtilities
     private static readonly ImmutableArray<MetadataReference> CoreReferences =
         BuildCoreReferences();
 
+    /// <summary>
+    /// Gets the framework references used by warning-fatal in-memory contract compilations.
+    /// </summary>
+    internal static ImmutableArray<MetadataReference> CompilationReferences => CoreReferences;
+
     internal static GeneratorDriverRunResult RunDxAutoConstructor(string userSource)
     {
         SyntaxTree attributeTree = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);

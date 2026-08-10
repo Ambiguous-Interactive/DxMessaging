@@ -56,7 +56,8 @@ namespace DxMessaging.Tests.Runtime.Reflex
             DxMessagingInstaller coreInstaller = new();
             coreInstaller.InstallBindings(builder);
 
-            builder.AddSingleton(
+            ReflexContainerBuilderCompatibility.RegisterSingletonType(
+                builder,
                 typeof(StaticMessageBusProvider),
                 typeof(StaticMessageBusProvider),
                 typeof(IMessageBusProvider)
@@ -282,7 +283,8 @@ namespace DxMessaging.Tests.Runtime.Reflex
         {
             public void InstallBindings(ContainerBuilder containerBuilder)
             {
-                containerBuilder.AddSingleton(
+                ReflexContainerBuilderCompatibility.RegisterSingletonType(
+                    containerBuilder,
                     typeof(MessageBus),
                     typeof(MessageBus),
                     typeof(IMessageBus)

@@ -80,7 +80,7 @@
       "url": "https://package.openupm.com"
     },
     "com.gustavopsantos.reflex": {
-      "version": "9.2.1",
+      "version": "14.3.1",
       "depth": 0,
       "source": "registry",
       "dependencies": {},

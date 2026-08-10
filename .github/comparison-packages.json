@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical single source for the OpenUPM scoped registry, pinned comparison-benchmark and sample-integration package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 and the committed .unity-test-project/Packages/manifest.json (local parity). EditMode CI installs integrationPackages so every conditional DI sample body compiles against a real dependency. Bump versions/modules/defines here only and keep both consumers in sync. Unity 6000.5 requires MessagePipe 1.8.2+ for generic TreeView APIs and Unity Atoms 4.6.2+ for Object.GetEntityId(). See .llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md.",
+  "_comment": "Canonical single source for the OpenUPM scoped registry, pinned comparison-benchmark and sample-integration package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 and the committed .unity-test-project/Packages/manifest.json (local parity). EditMode CI installs integrationPackages so every conditional DI sample body compiles against a real dependency. Bump versions/modules/defines here only and keep both consumers in sync. Unity 6000.5 requires MessagePipe 1.8.2+ and Reflex 14.3.1+ for generic TreeView APIs, plus Unity Atoms 4.6.2+ for Object.GetEntityId(). See .llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md.",
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",
@@ -14,7 +14,7 @@
     "com.unity-atoms.unity-atoms-base-atoms": "4.6.2"
   },
   "integrationPackages": {
-    "com.gustavopsantos.reflex": "9.2.1",
+    "com.gustavopsantos.reflex": "14.3.1",
     "com.svermeulen.extenject": "9.2.0-stcf3",
     "jp.hadashikick.vcontainer": "1.19.0"
   },

@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix the optional Reflex integration and DI sample for Reflex 14's registration
+  API while retaining support for earlier Reflex releases. The pinned Reflex
+  14.3.1 test dependency also removes its obsolete non-generic TreeView usage on
+  Unity 6000.5 ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 - Keep Message Monitor, Flow Graph, and the Diagnostics Tooling Exerciser compiling
   on Unity 6000.5 after Unity replaced the object-discovery sort-mode overloads.
   Older supported editors retain their matching API path

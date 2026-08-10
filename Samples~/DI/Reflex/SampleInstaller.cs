@@ -14,16 +14,40 @@ namespace DxMessaging.Samples.DI.Reflex
     /// Demonstrates wiring <see cref="IMessageRegistrationBuilder"/> inside a Reflex container.
     /// Requires the Reflex package and the REFLEX_PRESENT scripting define.
     /// </summary>
-    public sealed partial class SampleInstaller : IInstaller
+    public sealed partial class SampleInstaller : MonoBehaviour, IInstaller
     {
+        private PlayerAlertService _service;
+
         public void InstallBindings(ContainerBuilder builder)
         {
             // Use the explicit factory-based helper so constructor selection cannot drift with
             // the container's reflection policy.
             builder.AddDxMessagingBus();
+            new DxMessagingRegistrationInstaller().InstallBindings(builder);
+            builder.OnContainerBuilt += OnContainerBuilt;
+        }
 
-            // The DxMessagingRegistrationInstaller shim will have been installed elsewhere; we simply resolve the builder.
-            builder.AddSingleton(typeof(PlayerAlertService));
+        public void EmitAlertFor(GameObject gameObject)
+        {
+            if (_service == null)
+            {
+                throw new System.InvalidOperationException(
+                    "Reflex has not built the sample container yet."
+                );
+            }
+
+            _service.EmitAlertFor(gameObject);
+        }
+
+        private void OnContainerBuilt(Container container)
+        {
+            _service = container.Construct<PlayerAlertService>();
+        }
+
+        private void OnDestroy()
+        {
+            _service?.Dispose();
+            _service = null;
         }
 
         private sealed class PlayerAlertService : System.IDisposable
@@ -47,7 +71,7 @@ namespace DxMessaging.Samples.DI.Reflex
                 );
             }
 
-            public void EmitAlertFor(GameObject gameObject)
+            internal void EmitAlertFor(GameObject gameObject)
             {
                 PlayerAlert alert = new PlayerAlert(gameObject);
                 alert.EmitGameObjectBroadcast(gameObject, _messageBus);

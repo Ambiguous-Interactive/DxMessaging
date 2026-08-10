@@ -974,7 +974,6 @@ function New-DiSampleAsmdef {
     "WallstopStudios.DxMessaging.VContainer",
     "WallstopStudios.DxMessaging.Zenject",
     "Reflex",
-    "Reflex.Unity",
     "VContainer",
     "VContainer.Unity",
     "Zenject"
@@ -989,7 +988,7 @@ function New-DiSampleAsmdef {
   "versionDefines": [
     {
       "name": "com.gustavopsantos.reflex",
-      "expression": "9.2.1",
+      "expression": "14.3.1",
       "define": "REFLEX_PRESENT"
     },
     {
