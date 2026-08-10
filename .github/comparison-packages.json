@@ -18,6 +18,9 @@
     "com.svermeulen.extenject": "9.2.0-stcf3",
     "jp.hadashikick.vcontainer": "1.19.0"
   },
+  "integrationUnityBuiltInPackages": {
+    "com.unity.modules.animation": "1.0.0"
+  },
   "unityBuiltInPackages": {
     "com.unity.modules.animation": "1.0.0",
     "com.unity.ugui": "1.0.0",

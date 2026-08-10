@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   traffic, open Message Monitor and Flow Graph, select the sample receivers, and
   link to DxMessaging Project Settings
   ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
+- Add the standard .NET constructors to `MessageRegistrationBuildException`.
+  Builder-thrown instances continue to include the retryable lease and both
+  activation and cleanup failures ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 
 ### Changed
 

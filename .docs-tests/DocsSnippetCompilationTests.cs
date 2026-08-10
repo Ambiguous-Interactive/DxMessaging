@@ -752,6 +752,30 @@ internal sealed class DocsSnippetCompilationTests
     }
 
     [Test]
+    public void ExtractCodeBlocksHandlesCommonMarkContainers()
+    {
+        const string markdown = """
+1. List example:
+
+   ```csharp
+   int listValue = 1;
+   ```
+
+> Quoted example:
+>
+> ```csharp
+> int quoteValue = 2;
+> ```
+""";
+
+        string[] snippets = ExtractCodeBlocksFromLines(markdown.Split('\n'), "csharp").ToArray();
+
+        Assert.That(snippets, Has.Length.EqualTo(2));
+        Assert.That(snippets[0].Trim(), Is.EqualTo("int listValue = 1;"));
+        Assert.That(snippets[1].Trim(), Is.EqualTo("int quoteValue = 2;"));
+    }
+
+    [Test]
     public void ExtractHtmlCSharpSnippetsFindsPlainCodeAndJinjaSetBlocks()
     {
         const string html = """
@@ -836,27 +860,53 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<string> ExtractCodeBlocks(string markdownPath, string infoString)
     {
-        string[] lines = File.ReadAllLines(markdownPath);
+        return ExtractCodeBlocksFromLines(File.ReadLines(markdownPath), infoString);
+    }
+
+    private static IEnumerable<string> ExtractCodeBlocksFromLines(
+        IEnumerable<string> lines,
+        string infoString
+    )
+    {
         bool inBlock = false;
+        int containerIndent = 0;
+        int quoteDepth = 0;
+        int fenceLength = 0;
         System.Text.StringBuilder builder = new();
         foreach (string rawLine in lines)
         {
-            string line = rawLine.TrimEnd();
             if (!inBlock)
             {
+                string openingLine = StripMarkdownContainerPrefix(
+                        rawLine,
+                        out int openingQuoteDepth,
+                        out int openingIndent
+                    )
+                    .TrimEnd();
+                int openingFenceLength = CountLeadingBackticks(openingLine);
                 if (
-                    line.StartsWith("```", StringComparison.Ordinal)
-                    && line.Length > 3
-                    && line[3..].StartsWith(infoString, StringComparison.Ordinal)
+                    openingFenceLength >= 3
+                    && openingLine.Length > openingFenceLength
+                    && openingLine[openingFenceLength..]
+                        .StartsWith(infoString, StringComparison.Ordinal)
                 )
                 {
                     inBlock = true;
+                    containerIndent = openingIndent;
+                    quoteDepth = openingQuoteDepth;
+                    fenceLength = openingFenceLength;
                     builder.Clear();
                 }
                 continue;
             }
 
-            if (line.StartsWith("```", StringComparison.Ordinal))
+            string contentLine = StripMarkdownContainerPrefix(rawLine, quoteDepth, containerIndent);
+            string line = contentLine.TrimEnd();
+            int closingFenceLength = CountLeadingBackticks(line);
+            if (
+                closingFenceLength >= fenceLength
+                && string.IsNullOrWhiteSpace(line[closingFenceLength..])
+            )
             {
                 inBlock = false;
                 string snippet = builder.ToString();
@@ -867,8 +917,83 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 continue;
             }
 
-            builder.AppendLine(rawLine);
+            builder.AppendLine(contentLine);
         }
+    }
+
+    private static string StripMarkdownContainerPrefix(
+        string line,
+        out int quoteDepth,
+        out int containerIndent
+    )
+    {
+        int index = 0;
+        quoteDepth = 0;
+        while (TryConsumeBlockQuoteMarker(line, ref index))
+        {
+            quoteDepth++;
+        }
+
+        containerIndent = ConsumeSpaces(line, ref index, 3);
+        return line[index..];
+    }
+
+    private static string StripMarkdownContainerPrefix(
+        string line,
+        int quoteDepth,
+        int containerIndent
+    )
+    {
+        int index = 0;
+        for (int i = 0; i < quoteDepth; i++)
+        {
+            if (!TryConsumeBlockQuoteMarker(line, ref index))
+            {
+                return string.Empty;
+            }
+        }
+
+        ConsumeSpaces(line, ref index, containerIndent);
+        return line[index..];
+    }
+
+    private static bool TryConsumeBlockQuoteMarker(string line, ref int index)
+    {
+        int markerStart = index;
+        ConsumeSpaces(line, ref index, 3);
+        if (index >= line.Length || line[index] != '>')
+        {
+            index = markerStart;
+            return false;
+        }
+
+        index++;
+        if (index < line.Length && line[index] == ' ')
+        {
+            index++;
+        }
+        return true;
+    }
+
+    private static int ConsumeSpaces(string line, ref int index, int maximum)
+    {
+        int consumed = 0;
+        while (consumed < maximum && index < line.Length && line[index] == ' ')
+        {
+            consumed++;
+            index++;
+        }
+        return consumed;
+    }
+
+    private static int CountLeadingBackticks(string line)
+    {
+        int count = 0;
+        while (count < line.Length && line[count] == '`')
+        {
+            count++;
+        }
+        return count;
     }
 
     private static IEnumerable<string> ExtractHtmlCSharpSnippets(string htmlPath)

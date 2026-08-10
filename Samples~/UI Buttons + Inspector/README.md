@@ -162,10 +162,7 @@ Add your own partial struct next to it, then emit it from `UIButtonEmitter` usin
 1. **Use `override`, never `new`:**
 
    ```csharp
-   //  WRONG - This hides the method, doesn't override it
-   new void OnEnable() { }
-
-   //  CORRECT - This properly overrides
+   // Avoid hiding this method with: new void OnEnable() { }
    protected override void OnEnable() {
        base.OnEnable();
    }

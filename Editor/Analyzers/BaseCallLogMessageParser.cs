@@ -1,4 +1,4 @@
-#nullable enable
+#nullable enable annotations
 namespace DxMessaging.Editor.Analyzers
 {
     using System;

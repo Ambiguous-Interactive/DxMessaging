@@ -1218,6 +1218,7 @@ namespace DxMessaging.Core.MessageBus
 
         private sealed class IdleSweepRegistryBenchmarkScope : IDisposable
         {
+            private static readonly object SyncRoot = new object();
             private readonly List<WeakReference<MessageBus>> _saved;
             private readonly IdleSweepRegistryBenchmarkScope _parent;
             private readonly int _ownerThreadId;
@@ -1226,7 +1227,7 @@ namespace DxMessaging.Core.MessageBus
             internal IdleSweepRegistryBenchmarkScope()
             {
                 _ownerThreadId = Environment.CurrentManagedThreadId;
-                lock (typeof(IdleSweepRegistryBenchmarkScope))
+                lock (SyncRoot)
                 {
                     if (
                         ActiveIdleSweepRegistryBenchmarkScope != null
@@ -1247,7 +1248,7 @@ namespace DxMessaging.Core.MessageBus
 
             public void Dispose()
             {
-                lock (typeof(IdleSweepRegistryBenchmarkScope))
+                lock (SyncRoot)
                 {
                     if (_disposed)
                     {
@@ -1277,6 +1278,7 @@ namespace DxMessaging.Core.MessageBus
 
         private sealed class ContextMapPoolBenchmarkScope : IDisposable
         {
+            private static readonly object SyncRoot = new object();
             private readonly CollectionPool<ContextHandlerMap> _savedOverride;
             private readonly CollectionPool<ContextHandlerMap> _savedPool;
             private readonly CollectionPool<ContextHandlerMap> _isolated;
@@ -1289,7 +1291,7 @@ namespace DxMessaging.Core.MessageBus
             internal ContextMapPoolBenchmarkScope()
             {
                 _ownerThreadId = Environment.CurrentManagedThreadId;
-                lock (typeof(ContextMapPoolBenchmarkScope))
+                lock (SyncRoot)
                 {
                     if (
                         ActiveContextMapPoolBenchmarkScope != null
@@ -1317,7 +1319,7 @@ namespace DxMessaging.Core.MessageBus
 
             public void Dispose()
             {
-                lock (typeof(ContextMapPoolBenchmarkScope))
+                lock (SyncRoot)
                 {
                     if (_disposed)
                     {

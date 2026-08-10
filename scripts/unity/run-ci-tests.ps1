@@ -927,6 +927,13 @@ function New-ManifestJson {
             foreach ($pkg in $integrationPackages.Value.PSObject.Properties) {
                 $dependencies[$pkg.Name] = $pkg.Value
             }
+            $integrationBuiltInPackages = $comparisons.PSObject.Properties['integrationUnityBuiltInPackages']
+            if (-not $integrationBuiltInPackages) {
+                throw "comparison-packages.json is missing integrationUnityBuiltInPackages; cannot compile conditional DI samples."
+            }
+            foreach ($pkg in $integrationBuiltInPackages.Value.PSObject.Properties) {
+                $dependencies[$pkg.Name] = $pkg.Value
+            }
         }
         if ($IncludeComparisons) {
             foreach ($pkg in $comparisons.packages.PSObject.Properties) {
@@ -1496,6 +1503,7 @@ function Copy-SamplesForCompilation {
     if ($IncludeIntegrations) {
         $generatedDiAsmdefPath = Join-Path $sampleDestination $generatedDiAsmdefRelativePath
         $generatedDiAsmdef = New-DiSampleAsmdef
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $generatedDiAsmdefPath) | Out-Null
         if (
             -not (Test-Path -LiteralPath $generatedDiAsmdefPath -PathType Leaf) -or
             (Get-Content -LiteralPath $generatedDiAsmdefPath -Raw) -ne $generatedDiAsmdef

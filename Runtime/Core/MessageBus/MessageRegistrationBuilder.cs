@@ -9,8 +9,32 @@ namespace DxMessaging.Core.MessageBus
     /// Exception thrown when <see cref="MessageRegistrationBuildOptions.ActivateOnBuild"/> fails and
     /// the builder cannot fully clean up the partially constructed lease before returning control.
     /// </summary>
+    /// <remarks>
+    /// Instances thrown by <see cref="MessageRegistrationBuilder"/> populate the recovery properties.
+    /// Instances created through the standard exception constructors leave those properties null.
+    /// </remarks>
     public sealed class MessageRegistrationBuildException : Exception
     {
+        /// <summary>
+        /// Creates an exception with no message or inner exception.
+        /// </summary>
+        public MessageRegistrationBuildException() { }
+
+        /// <summary>
+        /// Creates an exception with the supplied message.
+        /// </summary>
+        /// <param name="message">Message describing the failure.</param>
+        public MessageRegistrationBuildException(string message)
+            : base(message) { }
+
+        /// <summary>
+        /// Creates an exception with the supplied message and inner exception.
+        /// </summary>
+        /// <param name="message">Message describing the failure.</param>
+        /// <param name="innerException">Exception that caused the current failure.</param>
+        public MessageRegistrationBuildException(string message, Exception innerException)
+            : base(message, innerException) { }
+
         internal MessageRegistrationBuildException(
             string message,
             MessageRegistrationLease lease,

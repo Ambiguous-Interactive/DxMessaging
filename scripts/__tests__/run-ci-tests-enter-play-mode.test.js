@@ -44,7 +44,7 @@ function createGenerateOnlyRepo(root) {
   // prettier-ignore
   for (const name of ROSLYNATOR_ANALYZER_FILES) fs.copyFileSync(path.join(__dirname, "..", "..", ".github", "analyzers", name), path.join(analyzerSourceRoot, name));
   // prettier-ignore
-  const comparisonPackages = { registry: { name: "package.openupm.com", url: "https://package.openupm.com", scopes: ["com.gustavopsantos", "com.svermeulen", "jp.hadashikick"] }, integrationPackages: INTEGRATION_PACKAGES };
+  const comparisonPackages = { registry: { name: "package.openupm.com", url: "https://package.openupm.com", scopes: ["com.gustavopsantos", "com.svermeulen", "jp.hadashikick"] }, integrationPackages: INTEGRATION_PACKAGES, integrationUnityBuiltInPackages: { "com.unity.modules.animation": "1.0.0" } };
   // prettier-ignore
   fs.writeFileSync(path.join(root, ".github", "comparison-packages.json"), JSON.stringify(comparisonPackages), "utf8");
   for (const dllName of [
@@ -128,7 +128,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     // prettier-ignore
     const manifest = JSON.parse(fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8"));
     // prettier-ignore
-    for (const [name, version] of Object.entries(INTEGRATION_PACKAGES)) assert.equal(manifest.dependencies[name], version);
+    for (const [name, version] of Object.entries({ ...INTEGRATION_PACKAGES, "com.unity.modules.animation": "1.0.0" })) assert.equal(manifest.dependencies[name], version);
     // prettier-ignore
     const diAsmdef = JSON.parse(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", "DI", "DxmCi.Samples.DI.asmdef"), "utf8"));
     // prettier-ignore

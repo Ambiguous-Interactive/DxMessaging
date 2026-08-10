@@ -229,7 +229,7 @@ function metadataDiagnostics(paths) {
   const projectDir = path.join(ARTIFACT_ROOT, "metadata-reader");
   createMetadataReaderProject(projectDir);
   return run("dotnet", ["run", "--project", projectDir, "--", ...paths], {
-    cwd: REPO_ROOT
+    cwd: SOURCE_GENERATORS_DIR
   }).trim();
 }
 

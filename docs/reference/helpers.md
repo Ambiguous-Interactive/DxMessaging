@@ -695,8 +695,12 @@ Makes a constructor parameter optional. Three usage patterns:
 > Uses the type's default value (`0`, `false`, `null`, etc.):
 >
 > ```csharp
-> [DxOptionalParameter]
-> public readonly bool flag;
+> [DxAutoConstructor]
+> public readonly partial struct OptionalFlagMessage
+> {
+>     [DxOptionalParameter]
+>     public readonly bool flag;
+> }
 > // Generates: bool flag = default
 > ```
 >
@@ -705,8 +709,12 @@ Makes a constructor parameter optional. Three usage patterns:
 > Provides a specific default value:
 >
 > ```csharp
-> [DxOptionalParameter(42)]
-> public readonly int count;
+> [DxAutoConstructor]
+> public readonly partial struct OptionalCountMessage
+> {
+>     [DxOptionalParameter(42)]
+>     public readonly int count;
+> }
 > // Generates: int count = 42
 > ```
 >
@@ -715,8 +723,17 @@ Makes a constructor parameter optional. Three usage patterns:
 > Uses a verbatim expression for enums, Unity types, etc.:
 >
 > ```csharp
-> [DxOptionalParameter(Expression = "DamageType.Physical")]
-> public readonly DamageType damageType;
+> public enum DamageType
+> {
+>     Physical
+> }
+>
+> [DxAutoConstructor]
+> public readonly partial struct OptionalDamageTypeMessage
+> {
+>     [DxOptionalParameter(Expression = "DamageType.Physical")]
+>     public readonly DamageType damageType;
+> }
 > // Generates: DamageType damageType = DamageType.Physical
 > ```
 
