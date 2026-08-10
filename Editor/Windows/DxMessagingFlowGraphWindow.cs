@@ -3320,7 +3320,7 @@ namespace DxMessaging.Editor.Windows
             marker.style.borderBottomRightRadius = radius;
             if (normalizedKind == DxMessagingEditorPalette.TargetedKind)
             {
-                marker.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
+                marker.style.rotate = new Rotate(new Angle(45f, AngleUnit.Degree));
             }
         }
 
@@ -3370,12 +3370,10 @@ namespace DxMessaging.Editor.Windows
             Vector2 viewportSize = Vector2.zero;
             void ApplyTransform()
             {
-                graphContent.transform.position = new Vector3(
-                    canvasState.Pan.x,
-                    canvasState.Pan.y,
-                    0f
+                graphContent.style.translate = new Translate(canvasState.Pan.x, canvasState.Pan.y);
+                graphContent.style.scale = new Scale(
+                    new Vector3(canvasState.Zoom, canvasState.Zoom, 1f)
                 );
-                graphContent.transform.scale = new Vector3(canvasState.Zoom, canvasState.Zoom, 1f);
                 zoomLabel.text = Mathf.RoundToInt(canvasState.Zoom * 100f) + "%";
             }
 

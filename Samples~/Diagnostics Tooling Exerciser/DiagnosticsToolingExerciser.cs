@@ -99,7 +99,10 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             lastRunSummary = "Not run yet";
             foreach (DiagnosticsToolingReceiver receiver in receivers)
             {
-                receiver?.ResetCounts();
+                if (receiver != null)
+                {
+                    receiver.ResetCounts();
+                }
             }
 
             ConfigureDiagnostics();
@@ -137,6 +140,20 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             {
                 EmitOneOfEach();
             }
+        }
+
+        [ContextMenu("Reset Counters And Emit Burst")]
+        public void ResetCountersAndEmitBurst()
+        {
+            foreach (DiagnosticsToolingReceiver receiver in receivers)
+            {
+                if (receiver != null)
+                {
+                    receiver.ResetCounts();
+                }
+            }
+
+            EmitBurst();
         }
 
         [ContextMenu("Emit One Of Each")]

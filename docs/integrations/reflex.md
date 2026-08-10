@@ -225,7 +225,7 @@ public sealed class EnemyPool
         }
         else
         {
-            enemy = Object.Instantiate(enemyPrefab);
+            enemy = UnityEngine.Object.Instantiate(enemyPrefab);
             _container.Inject(enemy);  // Inject dependencies
         }
         return enemy;
@@ -265,7 +265,9 @@ public class DamageServiceTests
         bool messageReceived = false;
         var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
         var token = MessageRegistrationToken.Create(handler, bus);
-        _ = token.RegisterUntargeted<PlayerDamaged>(ref msg => messageReceived = true);
+        _ = token.RegisterUntargeted<PlayerDamaged>(
+            (ref PlayerDamaged msg) => messageReceived = true
+        );
         token.Enable();
 
         // Act

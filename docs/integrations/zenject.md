@@ -288,7 +288,9 @@ public class GameInitializerTests : ZenjectUnitTestFixture
         bool messageReceived = false;
         var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
         var token = MessageRegistrationToken.Create(handler, bus);
-        _ = token.RegisterUntargeted<GameStarted>(ref msg => messageReceived = true);
+        _ = token.RegisterUntargeted<GameStarted>(
+            (ref GameStarted msg) => messageReceived = true
+        );
         token.Enable();
 
         // Act

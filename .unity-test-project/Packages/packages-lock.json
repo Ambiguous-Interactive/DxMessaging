@@ -79,6 +79,20 @@
       "dependencies": {},
       "url": "https://package.openupm.com"
     },
+    "com.gustavopsantos.reflex": {
+      "version": "9.2.1",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://package.openupm.com"
+    },
+    "jp.hadashikick.vcontainer": {
+      "version": "1.19.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://package.openupm.com"
+    },
     "com.neuecc.unirx": {
       "version": "7.1.0",
       "depth": 0,

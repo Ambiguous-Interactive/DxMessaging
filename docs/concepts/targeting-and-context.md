@@ -76,7 +76,7 @@ heal.EmitComponentTargeted(playerHealthComponent);
 
 ```csharp
 // Setup: Player GameObject with multiple components
-GameObject player = /* ... */;
+GameObject player = new("Player");
 HealthComponent health = player.GetComponent<HealthComponent>();
 UIComponent ui = player.GetComponent<UIComponent>();
 

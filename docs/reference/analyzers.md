@@ -41,7 +41,9 @@ Pick exactly one message-shape attribute. A message can be Broadcast, Targeted, 
 [DxBroadcastMessage]
 [DxTargetedMessage]
 public readonly partial struct Healed { public readonly int amount; }
+```
 
+```csharp
 //  One shape per type
 [DxTargetedMessage]
 public readonly partial struct Healed { public readonly int amount; }
@@ -67,8 +69,9 @@ public sealed class GameSystems
     [DxUntargetedMessage]
     public readonly partial struct SceneLoaded { public readonly int buildIndex; }
 }
+```
 
-//
+```csharp
 public sealed partial class GameSystems
 {
     [DxUntargetedMessage]
@@ -109,7 +112,9 @@ public readonly partial struct Damage
 {
     [DxOptionalParameter(GetDefaultAmount())] public readonly int amount;
 }
+```
 
+```csharp
 //  Constants only
 [DxAutoConstructor]
 public readonly partial struct Damage
@@ -200,13 +205,15 @@ See [Suppression precedence](#suppression-precedence) for the full ordering.
 Replace `new` with `override` and add the base call.
 
 ```csharp
-//  Hides the lifecycle method; Unity still calls the base, your code never runs
+// WRONG: Hides the lifecycle method; Unity still calls the base, your code never runs
 public sealed class HealthComponent : MessageAwareComponent
 {
     new void OnEnable() { _hud.Show(); }
 }
+```
 
-//  Override and chain
+```csharp
+// CORRECT: Override and chain
 public sealed class HealthComponent : MessageAwareComponent
 {
     protected override void OnEnable()
@@ -255,12 +262,15 @@ DXMSG009 is the most common Unity footgun. Forgetting `override` on `private voi
 ### Fix
 
 ```csharp
+// This intentionally will not compile cleanly: CS0114 and DXMSG009 demonstrate the bug.
 //  Implicit hiding  --  DXMSG009 fires (alongside CS0114)
 public class BrokenThing : MessageAwareComponent
 {
     private void OnEnable() { }
 }
+```
 
+```csharp
 //  Override and chain
 public class FixedThing : MessageAwareComponent
 {

@@ -249,7 +249,7 @@ public sealed class Spawner
 }
 public sealed class UI
 {
-    private Spawner _spawner;
+    [SerializeField] private Spawner _spawner;
     void Awake() { _spawner.Spawned += OnSpawned; }
     void OnDestroy() { _spawner.Spawned -= OnSpawned; } // easy to forget
     void OnSpawned() => Refresh();

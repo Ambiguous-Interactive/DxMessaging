@@ -255,6 +255,12 @@ public class UI : MonoBehaviour {
     [SerializeField] Player player; // Tight coupling!
     [SerializeField] EnemySpawner spawner;
     [SerializeField] AudioManager audio;
+
+    private void Refresh() {
+        player.Refresh();
+        spawner.Refresh();
+        audio.Refresh();
+    }
 }
 ```
 

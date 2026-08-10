@@ -1,7 +1,4 @@
-// The Unity Editor assembly that hosts this file does not enable nullable annotations; the
-// dotnet-test project that compiles a linked copy DOES (`<Nullable>enable</Nullable>`). Pin the
-// nullable state per-file so behavior is identical in both compilation contexts.
-#nullable disable
+#nullable enable
 namespace DxMessaging.Editor.Analyzers
 {
     using System;
@@ -17,7 +14,12 @@ namespace DxMessaging.Editor.Analyzers
     /// method name in its message format). Empty <see cref="FilePath"/> / zero <see cref="Line"/>
     /// indicate the bare (Unity-prefix-less) form of the message.
     /// </remarks>
-    public readonly struct ParsedEntry
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    readonly struct ParsedEntry
     {
         public string DiagnosticId { get; }
 
@@ -54,15 +56,20 @@ namespace DxMessaging.Editor.Analyzers
     /// <see cref="FilePath"/> / <see cref="Line"/> hold the FIRST seen non-empty values so the
     /// inspector overlay's "Open Script" jump remains stable across repeated parses.
     /// </remarks>
-    public sealed class ParsedTypeReport
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    sealed class ParsedTypeReport
     {
-        public string TypeFullName { get; set; }
+        public string TypeFullName { get; set; } = string.Empty;
 
         public SortedSet<string> MissingBaseFor { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> DiagnosticIds { get; } = new(StringComparer.Ordinal);
 
-        public string FilePath { get; set; }
+        public string FilePath { get; set; } = string.Empty;
 
         public int Line { get; set; }
     }
@@ -88,7 +95,12 @@ namespace DxMessaging.Editor.Analyzers
     /// in lockstep.
     /// </para>
     /// </remarks>
-    public static class BaseCallLogMessageParser
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    static class BaseCallLogMessageParser
     {
         // Roslyn / Unity-style location prefix:  path(line,col): warning DXMSG006:
         // We don't anchor to the diagnostic id here beyond the leading "DXMSG"; that lets the
@@ -253,7 +265,7 @@ namespace DxMessaging.Editor.Analyzers
         /// Preserves first-occurrence for <see cref="ParsedTypeReport.FilePath"/> /
         /// <see cref="ParsedTypeReport.Line"/>.
         /// </summary>
-        public static Dictionary<string, ParsedTypeReport> Aggregate(IEnumerable<string> logLines)
+        public static Dictionary<string, ParsedTypeReport> Aggregate(IEnumerable<string>? logLines)
         {
             Dictionary<string, ParsedTypeReport> result = new(StringComparer.Ordinal);
             if (logLines == null)
@@ -269,7 +281,7 @@ namespace DxMessaging.Editor.Analyzers
                     continue;
                 }
 
-                if (!result.TryGetValue(entry.TypeFullName, out ParsedTypeReport report))
+                if (!result.TryGetValue(entry.TypeFullName, out ParsedTypeReport? report))
                 {
                     report = new ParsedTypeReport { TypeFullName = entry.TypeFullName };
                     result[entry.TypeFullName] = report;

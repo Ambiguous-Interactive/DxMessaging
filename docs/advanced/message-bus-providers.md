@@ -164,7 +164,7 @@ handle = handle.WithRuntimeProvider(myRuntimeProvider);
 // Resolve the provider (runtime takes precedence over asset)
 if (handle.TryGetProvider(out IMessageBusProvider provider))
 {
-    IMessageBus bus = provider.Resolve();
+    IMessageBus resolvedBus = provider.Resolve();
 }
 
 // Or resolve the bus directly

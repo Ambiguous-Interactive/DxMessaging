@@ -1,9 +1,9 @@
 {
-  "_comment": "Canonical single source for the OpenUPM scoped registry, PINNED comparison-benchmark package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 (ephemeral manifest, comparison legs only via -IncludeComparisons) and the committed .unity-test-project/Packages/manifest.json (local parity). Bump versions/modules/defines HERE only and keep both consumers in sync. Unity 6000.5 requires MessagePipe 1.8.2+ for generic TreeView APIs and Unity Atoms 4.6.2+ for Object.GetEntityId(). See .llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md.",
+  "_comment": "Canonical single source for the OpenUPM scoped registry, pinned comparison-benchmark and sample-integration package versions, required Unity built-in module packages, and package-specific asmdef define symbols. Consumed by scripts/unity/run-ci-tests.ps1 and the committed .unity-test-project/Packages/manifest.json (local parity). EditMode CI installs integrationPackages so every conditional DI sample body compiles against a real dependency. Bump versions/modules/defines here only and keep both consumers in sync. Unity 6000.5 requires MessagePipe 1.8.2+ for generic TreeView APIs and Unity Atoms 4.6.2+ for Object.GetEntityId(). See .llm/skills/test-code-quality/references/comparison-parity-and-package-single-source.md.",
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",
-    "scopes": ["com.cysharp", "com.svermeulen", "com.neuecc", "com.unity-atoms"]
+    "scopes": ["com.cysharp", "com.gustavopsantos", "com.svermeulen", "com.neuecc", "com.unity-atoms", "jp.hadashikick"]
   },
   "packages": {
     "com.cysharp.messagepipe": "1.8.2",
@@ -12,6 +12,11 @@
     "com.neuecc.unirx": "7.1.0",
     "com.unity-atoms.unity-atoms-core": "4.6.2",
     "com.unity-atoms.unity-atoms-base-atoms": "4.6.2"
+  },
+  "integrationPackages": {
+    "com.gustavopsantos.reflex": "9.2.1",
+    "com.svermeulen.extenject": "9.2.0-stcf3",
+    "jp.hadashikick.vcontainer": "1.19.0"
   },
   "unityBuiltInPackages": {
     "com.unity.modules.animation": "1.0.0",
@@ -24,6 +29,8 @@
     "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT",
     "com.cysharp.unitask": "UNITASK_PRESENT",
     "com.svermeulen.extenject": "ZENJECT_PRESENT",
+    "com.gustavopsantos.reflex": "REFLEX_PRESENT",
+    "jp.hadashikick.vcontainer": "VCONTAINER_PRESENT",
     "com.neuecc.unirx": "UNIRX_PRESENT",
     "com.unity-atoms.unity-atoms-core": "UNITY_ATOMS_CORE_PRESENT",
     "com.unity-atoms.unity-atoms-base-atoms": "UNITY_ATOMS_BASE_ATOMS_PRESENT"

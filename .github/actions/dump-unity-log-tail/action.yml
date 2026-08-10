@@ -139,6 +139,8 @@ runs:
           @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
           @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
           @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
+          @{ Label = 'error Roslynator diagnostic'; Pattern = 'error (?:RCS|ROS)\d+'; UseSimple = $false }
+          @{ Label = 'Roslyn analyzer failure'; Pattern = '(?:error|warning) AD0001'; UseSimple = $false }
           @{
             Label = 'Optional engine module not in the minimal CI project (CS1069 forwarded type)'
             Pattern = 'forwarded to assembly .UnityEngine\.\w+Module'

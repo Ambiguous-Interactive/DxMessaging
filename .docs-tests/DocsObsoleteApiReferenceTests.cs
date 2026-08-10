@@ -37,7 +37,7 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 /// </para>
 /// </remarks>
 [TestFixture]
-public sealed class DocsObsoleteApiReferenceTests
+internal sealed class DocsObsoleteApiReferenceTests
 {
     private static readonly string[] SourceScanRoots = { "Runtime", "Editor" };
 
@@ -130,7 +130,7 @@ public sealed class DocsObsoleteApiReferenceTests
         });
     }
 
-    private static IReadOnlyList<ObsoleteMember> CollectObsoleteMembers(string repoRoot)
+    private static List<ObsoleteMember> CollectObsoleteMembers(string repoRoot)
     {
         // Keyed by qualified name so the same obsolete member found in multiple partial
         // declarations collapses to one entry.
@@ -154,9 +154,9 @@ public sealed class DocsObsoleteApiReferenceTests
             {
                 string normalized = sourcePath.Replace('\\', '/');
                 if (
-                    normalized.Contains("/obj/")
-                    || normalized.Contains("/bin/")
-                    || normalized.Contains("/.artifacts/")
+                    normalized.Contains("/obj/", StringComparison.Ordinal)
+                    || normalized.Contains("/bin/", StringComparison.Ordinal)
+                    || normalized.Contains("/.artifacts/", StringComparison.Ordinal)
                 )
                 {
                     continue;

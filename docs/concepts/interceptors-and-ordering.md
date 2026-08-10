@@ -188,8 +188,8 @@ public readonly partial struct ShowDialog
 public class UIStateManager
 {
     private bool _isInCutscene;
-    private bool _isPaused;
-    private bool _isLoading;
+    private bool _isPaused = false;
+    private bool _isLoading = false;
 
     public void RegisterInterceptors()
     {

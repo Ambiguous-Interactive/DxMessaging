@@ -167,6 +167,8 @@ function createMetadataReaderProject(projectDir) {
       "    <TargetFramework>net9.0</TargetFramework>",
       "    <ImplicitUsings>enable</ImplicitUsings>",
       "    <Nullable>enable</Nullable>",
+      "    <TreatWarningsAsErrors>true</TreatWarningsAsErrors><WarningLevel>9999</WarningLevel>",
+      "    <EnableNETAnalyzers>true</EnableNETAnalyzers><AnalysisLevel>9.0-all</AnalysisLevel><EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>",
       "  </PropertyGroup>",
       "</Project>",
       ""
@@ -226,13 +228,9 @@ function createMetadataReaderProject(projectDir) {
 function metadataDiagnostics(paths) {
   const projectDir = path.join(ARTIFACT_ROOT, "metadata-reader");
   createMetadataReaderProject(projectDir);
-  try {
-    return run("dotnet", ["run", "--project", projectDir, "--", ...paths], {
-      cwd: REPO_ROOT
-    }).trim();
-  } catch (error) {
-    return `metadata unavailable: ${error.message}`;
-  }
+  return run("dotnet", ["run", "--project", projectDir, "--", ...paths], {
+    cwd: REPO_ROOT
+  }).trim();
 }
 
 function printPayloadDiagnostics(title, rows, metadataPaths) {
@@ -264,6 +262,7 @@ function checkPayload() {
 
   const first = payloadHashes(firstPayload);
   const second = payloadHashes(secondPayload);
+  metadataDiagnostics(FIRST_PARTY_ANALYZER_DLLS.map((dllName) => path.join(firstPayload, dllName)));
 
   // Emit diagnostics for the failing DLLs and signal a check failure. `rowFor`
   // maps each DLL to the hash fields printPayloadDiagnostics renders; the

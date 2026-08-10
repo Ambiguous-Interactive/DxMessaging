@@ -63,8 +63,8 @@ $PerformanceFrameworkVersion = '3.4.2'
 # there (see Assert-DxMessagingAnalyzerDllsPresent). The generator + analyzer apply
 # NATIVELY: Unity scopes the Runtime/Analyzers/ RoslynAnalyzer-labeled DLLs to the
 # runtime assembly and EVERYTHING that references it (the test assemblies + the
-# predefined Assembly-CSharp), so the generator runs at the first compile with NO
-# in-project Assets copy and NO csc.rsp created. Runtime/Analyzers/ ALSO ships the
+# predefined Assembly-CSharp), so the generator runs at the first compile with no
+# in-project analyzer copy or -a:csc.rsp entry. Runtime/Analyzers/ ALSO ships the
 # Roslyn runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
 # System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe) the generator
 # loads at compile time; those ride along as platform-EXCLUDED analyzer dependencies
@@ -73,6 +73,12 @@ $PerformanceFrameworkVersion = '3.4.2'
 $RequiredDxMessagingAnalyzerDllNames = @(
     'WallstopStudios.DxMessaging.SourceGenerators.dll',
     'WallstopStudios.DxMessaging.Analyzer.dll'
+)
+$CiRoslynatorAnalyzerFiles = @(
+    @{ Name = 'Roslynator.CSharp.Analyzers.dll'; Sha256 = '3f104ae829826e063b36ea4c11df2fd595ae482ddf76c58c09530486e1ebf853'; Guid = '3661e954d1b7490b944b35cdb72a3665' }
+    @{ Name = 'Roslynator_Analyzers_Roslynator.Common.dll'; Sha256 = '4b3133ce1d4f52e17e6b488a1b7e7eb3d768e4d705c50d3482f8ca65e91cc834'; Guid = '8ccb09443b614abbb68b8e4bc48fed63' }
+    @{ Name = 'Roslynator_Analyzers_Roslynator.Core.dll'; Sha256 = 'bab462206bdb9653cc61f39b13b47042d82b8fcc189ab73eaf76452f2f369424'; Guid = 'f4fdc9dd29fa4da897893d2be89437d6' }
+    @{ Name = 'Roslynator_Analyzers_Roslynator.CSharp.dll'; Sha256 = 'c69267920234e720e5c93f0eec218d522547edd1e67ec2e295f42c5a2b89de70'; Guid = 'bb49eda285bf4387a171485058f6ae80' }
 )
 $ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
 $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
@@ -118,6 +124,7 @@ function Clear-NonFatalNativeExitCode {
 #   - error CS\d+ -- compiler errors (CS0246, CS0103, CS0117, etc).
 #   - warning CS8032 -- "An instance of analyzer cannot be created" (analyzer
 #     failed to instantiate; same class of issue).
+#   - error RCS/ROS -- Roslynator diagnostics promoted by -warnaserror.
 #   - "forwarded to assembly 'UnityEngine.<X>Module'" (CS1069) -- a test/source
 #     references an OPTIONAL engine module the minimal CI test project omits;
 #     carries a remediation Hint (kept in sync with the copy in
@@ -128,6 +135,8 @@ $script:CatastrophicPatterns = @(
     @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
     @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
     @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
+    @{ Label = 'error Roslynator diagnostic'; Pattern = 'error (?:RCS|ROS)\d+'; UseSimple = $false }
+    @{ Label = 'Roslyn analyzer failure'; Pattern = '(?:error|warning) AD0001'; UseSimple = $false }
     @{
         Label = 'Optional engine module not in the minimal CI project (CS1069 forwarded type)'
         Pattern = 'forwarded to assembly .UnityEngine\.\w+Module'
@@ -885,6 +894,7 @@ function New-ManifestJson {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
         [switch]$IncludeComparisons,
+        [switch]$IncludeIntegrations,
         [string]$RepoRoot
     )
 
@@ -900,26 +910,35 @@ function New-ManifestJson {
         testables = @($PackageName)
     }
 
-    # ONLY the comparison legs (-IncludeComparisons) get the OpenUPM scoped
-    # registry, pinned comparison packages, and comparison-package-required Unity
-    # built-in modules, read from the single source .github/comparison-packages.json.
-    # Non-comparison legs MUST stay byte-for-byte identical to before (no
-    # scopedRegistries key and no extra dependencies) so their Library cache and
-    # reliability are unchanged.
-    if ($IncludeComparisons) {
+    # Comparison legs install the benchmark dependencies and their required Unity
+    # modules. EditMode correctness legs install the three optional DI providers so
+    # the copied conditional sample bodies compile against real pinned packages.
+    # Both sets come from the single source .github/comparison-packages.json.
+    if ($IncludeComparisons -or $IncludeIntegrations) {
         if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-            throw "New-ManifestJson -IncludeComparisons requires -RepoRoot (the comparison-packages.json single source)."
+            throw "New-ManifestJson package inclusion requires -RepoRoot (the comparison-packages.json single source)."
         }
         $comparisons = Get-ComparisonPackages -Root $RepoRoot
-        foreach ($pkg in $comparisons.packages.PSObject.Properties) {
-            $dependencies[$pkg.Name] = $pkg.Value
+        if ($IncludeIntegrations) {
+            $integrationPackages = $comparisons.PSObject.Properties['integrationPackages']
+            if (-not $integrationPackages) {
+                throw "comparison-packages.json is missing integrationPackages; cannot compile conditional DI samples."
+            }
+            foreach ($pkg in $integrationPackages.Value.PSObject.Properties) {
+                $dependencies[$pkg.Name] = $pkg.Value
+            }
         }
-        $builtInPackages = $comparisons.PSObject.Properties['unityBuiltInPackages']
-        if (-not $builtInPackages) {
-            throw "comparison-packages.json is missing unityBuiltInPackages; cannot generate the comparison manifest."
-        }
-        foreach ($pkg in $builtInPackages.Value.PSObject.Properties) {
-            $dependencies[$pkg.Name] = $pkg.Value
+        if ($IncludeComparisons) {
+            foreach ($pkg in $comparisons.packages.PSObject.Properties) {
+                $dependencies[$pkg.Name] = $pkg.Value
+            }
+            $builtInPackages = $comparisons.PSObject.Properties['unityBuiltInPackages']
+            if (-not $builtInPackages) {
+                throw "comparison-packages.json is missing unityBuiltInPackages; cannot generate the comparison manifest."
+            }
+            foreach ($pkg in $builtInPackages.Value.PSObject.Properties) {
+                $dependencies[$pkg.Name] = $pkg.Value
+            }
         }
         $reg = $comparisons.registry
         # Ordered so ConvertTo-Json emits name/url/scopes deterministically (matches
@@ -935,6 +954,116 @@ function New-ManifestJson {
     }
 
     return ($manifest | ConvertTo-Json -Depth 8)
+}
+
+function New-DiSampleAsmdef {
+    @'
+{
+  "name": "DxmCi.Samples.DI",
+  "rootNamespace": "DxMessaging.Samples.DI",
+  "references": [
+    "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Reflex",
+    "WallstopStudios.DxMessaging.VContainer",
+    "WallstopStudios.DxMessaging.Zenject",
+    "Reflex",
+    "Reflex.Unity",
+    "VContainer",
+    "VContainer.Unity",
+    "Zenject"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [
+    {
+      "name": "com.gustavopsantos.reflex",
+      "expression": "9.2.1",
+      "define": "REFLEX_PRESENT"
+    },
+    {
+      "name": "com.svermeulen.extenject",
+      "expression": "9.2.0-stcf3",
+      "define": "ZENJECT_PRESENT"
+    },
+    {
+      "name": "jp.hadashikick.vcontainer",
+      "expression": "1.19.0",
+      "define": "VCONTAINER_PRESENT"
+    }
+  ],
+  "noEngineReferences": false
+}
+'@
+}
+
+function Install-CiRoslynatorAnalyzer {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Project
+    )
+
+    $destinationDirectory = Join-Path $Project 'Assets'
+    New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+    $destinationPaths = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $CiRoslynatorAnalyzerFiles) {
+        $sourcePath = [System.IO.Path]::Combine($Root, '.github', 'analyzers', $file.Name)
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "Missing vendored Unity CI analyzer dependency: $sourcePath"
+        }
+        $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($sourceHash -ne $file.Sha256) {
+            throw "Vendored Unity CI analyzer hash mismatch for $($file.Name): expected $($file.Sha256), got $sourceHash."
+        }
+
+        $destinationPath = Join-Path $destinationDirectory $file.Name
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+        $destinationPaths.Add($destinationPath)
+        @"
+fileFormatVersion: 2
+guid: $($file.Guid)
+PluginImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  iconMap: {}
+  executionOrder: {}
+  defineConstraints: []
+  isPreloaded: 0
+  isOverridable: 0
+  isExplicitlyReferenced: 0
+  validateReferences: 1
+  platformData:
+  - first:
+      : Any
+    second:
+      enabled: 0
+      settings: {}
+  - first:
+      Any:
+    second:
+      enabled: 0
+      settings: {}
+  - first:
+      Editor: Editor
+    second:
+      enabled: 0
+      settings:
+        DefaultValueInitialized: true
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+"@ | Set-Content -LiteralPath "$destinationPath.meta" -Encoding UTF8
+    }
+
+    # csc.rsp registers every assembly in the dependency closure because Roslyn's
+    # command-line loader does not probe sibling DLLs. The DLLs deliberately have
+    # no RoslynAnalyzer label: folder labels are assembly-scoped and would also
+    # double-register predefined code.
+    return @($destinationPaths)
 }
 
 function New-ConfiguratorSource {
@@ -953,6 +1082,7 @@ function New-ConfiguratorSource {
 using System;
 using System.IO;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEngine;
 
 public static class DxmCiTestConfigurator
@@ -964,28 +1094,29 @@ public static class DxmCiTestConfigurator
         UnityEditor.Compilation.CompilationPipeline.codeOptimization = UnityEditor.Compilation.CodeOptimization.Release;
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);
+        NamedBuildTarget standalone = NamedBuildTarget.Standalone;
         // The scripting backend is parameterized: the runner passes the IL2CPP or
         // the Mono backend for the Mono perf leg via -Backend.
-        PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.$Backend);
+        PlayerSettings.SetScriptingBackend(standalone, ScriptingImplementation.$Backend);
         // Use the non-deprecated ApiCompatibilityLevel.NET_Standard (targets .NET
         // Standard 2.1). The deprecated 2.0 form and the non-existent 2.1 enum
         // member are intentionally NOT used.
-        PlayerSettings.SetApiCompatibilityLevel(BuildTargetGroup.Standalone, ApiCompatibilityLevel.NET_Standard);
+        PlayerSettings.SetApiCompatibilityLevel(standalone, ApiCompatibilityLevel.NET_Standard);
         // Disable managed code stripping so IncludeTestAssemblies + the [Preserve]
         // standalone TestRunCallback survive a NON-development (Release) Mono player
         // build; otherwise the stripper can drop the test code from the player.
-        PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Standalone, ManagedStrippingLevel.Disabled);
+        PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.Disabled);
         // Pin the IL2CPP C++ compiler configuration to Release explicitly. An
         // ephemeral CI project has no committed default for this setting, and
         // measured CI runs showed Debug's faster native compile is outweighed by a
         // much slower standalone test player. The correctness and published perf
         // legs both keep Release native code: it is faster end-to-end here and
         // matches shipped-player behavior. Harmless under Mono.
-        PlayerSettings.SetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone, Il2CppCompilerConfiguration.Release);
+        PlayerSettings.SetIl2CppCompilerConfiguration(standalone, Il2CppCompilerConfiguration.Release);
 
         // Print the EFFECTIVE Unity config so the artifact log PROVES Mono/IL2CPP
         // + .NET Standard 2.1 + Release for this run.
-        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(BuildTargetGroup.Standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}, il2cppConfig={PlayerSettings.GetIl2CppCompilerConfiguration(BuildTargetGroup.Standalone)}");
+        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}, il2cppConfig={PlayerSettings.GetIl2CppCompilerConfiguration(standalone)}");
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
@@ -1281,8 +1412,8 @@ function Write-AnalyzerSetupDiagnostics {
 
     # The generator + analyzer now apply NATIVELY from the package's Runtime/Analyzers/
     # (Unity scopes the RoslynAnalyzer-labeled DLLs to the runtime assembly and
-    # everything referencing it). There is no in-project Assets copy or csc.rsp to
-    # inspect, so this is a best-effort log scan only: confirm the Unity compile log
+    # everything referencing it). There is no in-project analyzer copy or -a:csc.rsp
+    # entry to inspect, so this is a best-effort log scan only: confirm the Unity compile log
     # mentions both analyzer DLLs, proving Unity passed them to csc from
     # Runtime/Analyzers/. No hard throw -- if the generator did NOT apply, the tests
     # themselves fail loudly with CS0315/CS0452. $Project is unused (kept so the 3 call
@@ -1301,41 +1432,54 @@ function Write-AnalyzerSetupDiagnostics {
     Write-Host "::endgroup::"
 }
 
-function Copy-DiagnosticsToolingSampleForCompilation {
+function Copy-SamplesForCompilation {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$Project
+        [Parameter(Mandatory = $true)][string]$Project,
+        [switch]$IncludeIntegrations
     )
 
     # Unity does not import package Samples~ until a consumer explicitly installs a
-    # sample. Copy only the sample assembly's compile inputs into the disposable CI
-    # host so every supported editor version compiles the exact shipped sources.
+    # sample. Copy every sample compile input into the disposable CI host so every
+    # supported editor version compiles the exact shipped sources. EditMode adds a
+    # generated parent asmdef whose package version defines activate every conditional
+    # DI sample against real provider assemblies; other legs leave those bodies off.
     # Omitting .meta files avoids carrying package asset identities into the host.
-    $sampleSource = [System.IO.Path]::Combine($Root, 'Samples~', 'Diagnostics Tooling Exerciser')
+    $sampleSource = [System.IO.Path]::Combine($Root, 'Samples~')
     if (-not (Test-Path -LiteralPath $sampleSource -PathType Container)) {
-        throw "Missing Diagnostics Tooling Exerciser source directory: $sampleSource"
+        throw "Missing package samples source directory: $sampleSource"
     }
     $sampleDestination = [System.IO.Path]::Combine($Project, 'Assets', 'DxmCiSamples')
-    $csharpInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.cs' -File)
-    $asmdefInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.asmdef' -File)
-    if ($csharpInputs.Count -eq 0 -or $asmdefInputs.Count -ne 1) {
-        throw "Diagnostics Tooling Exerciser must contain at least one C# file and exactly one asmdef."
+    $csharpInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.cs' -File -Recurse)
+    $asmdefInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.asmdef' -File -Recurse)
+    if ($csharpInputs.Count -eq 0 -or $asmdefInputs.Count -eq 0) {
+        throw "Package samples must contain at least one C# file and at least one asmdef."
     }
     $compileInputs = @($csharpInputs) + @($asmdefInputs)
-    $compileInputNames = @($compileInputs | Select-Object -ExpandProperty Name)
+    $compileInputRelativePaths = @($compileInputs | ForEach-Object {
+        $_.FullName.Substring($sampleSource.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    })
+    $generatedDiAsmdefRelativePath = [System.IO.Path]::Combine('DI', 'DxmCi.Samples.DI.asmdef')
+    if ($IncludeIntegrations) {
+        $compileInputRelativePaths += $generatedDiAsmdefRelativePath
+    }
 
     New-Item -ItemType Directory -Force -Path $sampleDestination | Out-Null
-    foreach ($existingFile in @(Get-ChildItem -LiteralPath $sampleDestination -File)) {
+    foreach ($existingFile in @(Get-ChildItem -LiteralPath $sampleDestination -File -Recurse)) {
+        $existingRelativePath = $existingFile.FullName.Substring($sampleDestination.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
         if (
             ($existingFile.Extension -eq '.cs' -or $existingFile.Extension -eq '.asmdef') -and
-            $compileInputNames -notcontains $existingFile.Name
+            $compileInputRelativePaths -notcontains $existingRelativePath
         ) {
             Remove-Item -LiteralPath $existingFile.FullName -Force
         }
     }
 
     foreach ($sourceFile in $compileInputs) {
-        $destinationPath = Join-Path $sampleDestination $sourceFile.Name
+        $relativePath = $sourceFile.FullName.Substring($sampleSource.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        $destinationPath = Join-Path $sampleDestination $relativePath
+        $destinationDirectory = Split-Path -Parent $destinationPath
+        New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
         $sourceContent = Get-Content -LiteralPath $sourceFile.FullName -Raw
         $needsWrite = -not (Test-Path -LiteralPath $destinationPath -PathType Leaf)
         if (-not $needsWrite) {
@@ -1346,7 +1490,17 @@ function Copy-DiagnosticsToolingSampleForCompilation {
             [System.IO.File]::WriteAllText($destinationPath, $sourceContent)
         }
         if ((Get-Content -LiteralPath $destinationPath -Raw) -ne $sourceContent) {
-            throw "Generated sample compile input differs from its source: $($sourceFile.Name)"
+            throw "Generated sample compile input differs from its source: $relativePath"
+        }
+    }
+    if ($IncludeIntegrations) {
+        $generatedDiAsmdefPath = Join-Path $sampleDestination $generatedDiAsmdefRelativePath
+        $generatedDiAsmdef = New-DiSampleAsmdef
+        if (
+            -not (Test-Path -LiteralPath $generatedDiAsmdefPath -PathType Leaf) -or
+            (Get-Content -LiteralPath $generatedDiAsmdefPath -Raw) -ne $generatedDiAsmdef
+        ) {
+            [System.IO.File]::WriteAllText($generatedDiAsmdefPath, $generatedDiAsmdef)
         }
     }
 }
@@ -1435,7 +1589,8 @@ function Initialize-EphemeralProject {
     New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
     Write-ProjectOwnershipMarker -ProjectPath $project
 
-    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -RepoRoot $RepoRoot |
+    $includeIntegrations = $Mode -eq 'editmode'
+    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -RepoRoot $RepoRoot |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
     "m_EditorVersion: $Version`n" |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
@@ -1463,14 +1618,22 @@ EditorSettings:
   m_EnterPlayModeOptionsEnabled: 1
   m_EnterPlayModeOptions: 3
 '@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
+    $cscOptions = @('-warnaserror', '-warn:9999')
+    if ($includeIntegrations) {
+        $ciAnalyzerPaths = @(Install-CiRoslynatorAnalyzer -Root $Root -Project $project)
+        foreach ($ciAnalyzerPath in $ciAnalyzerPaths) {
+            $cscOptions += "-analyzer:`"$ciAnalyzerPath`""
+        }
+    }
+    $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
-    Copy-DiagnosticsToolingSampleForCompilation -Root $Root -Project $project
+    Copy-SamplesForCompilation -Root $Root -Project $project -IncludeIntegrations:$includeIntegrations
 
     # The generator + analyzer ship under the package's Runtime/Analyzers/
     # (RoslynAnalyzer-labeled, every platform disabled), so Unity scopes them to the
     # test assemblies + the predefined Assembly-CSharp NATIVELY -- registered at the
-    # first compile with NO in-project Assets copy and NO csc.rsp. This call only
+    # first compile with no in-project analyzer copy and no -a:csc.rsp entry. This call only
     # sanity-checks that the package actually ships those two DLLs where Unity expects
     # them; the generator applies on its own once the file: package mounts.
     Assert-DxMessagingAnalyzerDllsPresent -Root $Root
@@ -2570,8 +2733,8 @@ function Invoke-UnityNativeStartupProbe {
 }
 
 # CLASS-OF-ISSUE GUARD: the defect this whole change fixes is a single analyzer
-# DLL handed to the compiler from MORE THAN ONE path (the Assets/Plugins copy plus
-# a duplicate registration). That is invisible in a raw csc command line, so this
+# DLL handed to the compiler from MORE THAN ONE path. That is invisible in a raw
+# csc command line, so this
 # best-effort scanner reads the Unity compile log, collects every analyzer the
 # compiler was given (-a:/-analyzer:, quoted or not), and -- when the SAME DLL file
 # name came from more than one distinct path -- names the offending DLL and every
@@ -2619,8 +2782,9 @@ function Write-DuplicateAnalyzerDiagnostics {
             Write-CiError ("Analyzer/source-generator '$($entry.Key)' was handed to the compiler from " +
                 "$($entry.Value.Count) distinct paths: $joinedPaths. A source generator that runs more than " +
                 "once emits each member twice (CS0102) and duplicate precompiled assemblies are rejected " +
-                "outright. The harness must register each analyzer DLL EXACTLY ONCE (the pre-created " +
-                "Assets/Plugins copy); it must NOT also wire one via csc.rsp.")
+                "outright. Each DLL must arrive from exactly one intended path: DxMessaging analyzers " +
+                "through Runtime/Analyzers RoslynAnalyzer metadata, and CI-only Roslynator assemblies " +
+                "through Assets/csc.rsp. Do not copy or register the same DLL through another path.")
         }
         Write-Host "::endgroup::"
     } catch {

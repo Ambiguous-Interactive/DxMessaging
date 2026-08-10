@@ -1,12 +1,10 @@
-// The Unity Editor assembly that hosts this file does not enable nullable annotations; the
-// dotnet-test project that compiles a linked copy DOES (`<Nullable>enable</Nullable>`). Pin the
-// nullable state per-file so behavior is identical in both compilation contexts.
-#nullable disable
+#nullable enable
 namespace DxMessaging.Editor.Analyzers
 {
     using System;
     using System.Reflection;
     using System.Reflection.Emit;
+    using System.Security;
 
     /// <summary>
     /// Pure (Unity-API-free) IL inspector that decides whether a given <see cref="MethodInfo"/>'s
@@ -37,14 +35,19 @@ namespace DxMessaging.Editor.Analyzers
     /// <para>
     /// <b>Defensive bias.</b> When we cannot reason at all (null method, empty name, inaccessible
     /// IL body, <c>GetMethodBody()</c> returns null on abstract / P/Invoke / IL2CPP-stripped
-    /// targets, or any reflection exception), the inspector returns <c>true</c>
+    /// targets, or a documented reflection/metadata access failure), the inspector returns <c>true</c>
     /// ("assume clean -- calls base") so the scanner never invents a phantom warning. The
     /// compile-time analyzer is the authoritative source for CI builds (DXMSG006/007/009/010 via
     /// full Roslyn semantic-model precision); the IL scanner exists only to make the editor
     /// overlay light up at edit-time, where a missed warning is far worse than a phantom one.
     /// </para>
     /// </remarks>
-    public static class BaseCallIlInspector
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    static class BaseCallIlInspector
     {
         // CIL opcode tables, indexed by the low byte of OpCode.Value. Built once by reflecting over
         // System.Reflection.Emit.OpCodes; every public static OpCode field there represents a
@@ -97,7 +100,7 @@ namespace DxMessaging.Editor.Analyzers
         /// default -- assume clean). <c>false</c> only when IL was readable AND no call/callvirt
         /// targeting a parent same-named method was found.
         /// </returns>
-        public static bool MethodIlContainsBaseCall(MethodInfo method, string methodName)
+        public static bool MethodIlContainsBaseCall(MethodInfo? method, string? methodName)
         {
             if (method == null || string.IsNullOrEmpty(methodName))
             {
@@ -108,25 +111,25 @@ namespace DxMessaging.Editor.Analyzers
 
             try
             {
-                MethodBody body = method.GetMethodBody();
+                MethodBody? body = method.GetMethodBody();
                 if (body == null)
                 {
                     // Abstract / extern / runtime-implemented / IL2CPP-stripped; cannot inspect.
                     return true;
                 }
 
-                byte[] il = body.GetILAsByteArray();
+                byte[]? il = body.GetILAsByteArray();
                 if (il == null || il.Length == 0)
                 {
                     return true;
                 }
 
                 Module module = method.Module;
-                Type[] genericTypeArgs =
+                Type[]? genericTypeArgs =
                     method.DeclaringType?.IsGenericType == true
                         ? method.DeclaringType.GetGenericArguments()
                         : null;
-                Type[] genericMethodArgs = method.IsGenericMethod
+                Type[]? genericMethodArgs = method.IsGenericMethod
                     ? method.GetGenericArguments()
                     : null;
 
@@ -168,20 +171,23 @@ namespace DxMessaging.Editor.Analyzers
                             return true;
                         }
                         int token = BitConverter.ToInt32(il, i);
-                        try
-                        {
-                            MethodBase target = module.ResolveMethod(
+                        if (
+                            TryResolveMethod(
+                                module,
                                 token,
                                 genericTypeArgs,
-                                genericMethodArgs
-                            );
+                                genericMethodArgs,
+                                out MethodBase? target
+                            )
+                        )
+                        {
                             if (
                                 target != null
                                 && string.Equals(target.Name, methodName, StringComparison.Ordinal)
                             )
                             {
-                                Type declaring = method.DeclaringType;
-                                Type resolved = target.DeclaringType;
+                                Type? declaring = method.DeclaringType;
+                                Type? resolved = target.DeclaringType;
                                 // Guard against false-positives: the resolved method must live on a
                                 // STRICT base type of the declaring class (not the declaring class
                                 // itself, not a sibling, not a generic-arg shadow). IsAssignableFrom
@@ -198,14 +204,6 @@ namespace DxMessaging.Editor.Analyzers
                                 }
                             }
                         }
-                        catch
-                        {
-                            // ResolveMethod throws on tokens that don't bind in our generic-arg
-                            // context (e.g. a MemberRef into a closed generic we can't resolve).
-                            // The OpCodes-table walker means we can no longer land on a misaligned
-                            // 0x28 inside a wider operand, so this catch only protects against
-                            // legitimate-but-unbindable tokens; we swallow and continue scanning.
-                        }
                         i += 4;
                         continue;
                     }
@@ -217,11 +215,65 @@ namespace DxMessaging.Editor.Analyzers
                 }
                 return false;
             }
-            catch
+            catch (ArgumentException)
             {
-                // Any reflection failure → assume clean. We never want the scanner itself to
-                // become the source of a phantom warning.
                 return true;
+            }
+            catch (BadImageFormatException)
+            {
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+            catch (NotSupportedException)
+            {
+                return true;
+            }
+            catch (SecurityException)
+            {
+                return true;
+            }
+        }
+
+        private static bool TryResolveMethod(
+            Module module,
+            int token,
+            Type[]? genericTypeArgs,
+            Type[]? genericMethodArgs,
+            out MethodBase? target
+        )
+        {
+            try
+            {
+                target = module.ResolveMethod(token, genericTypeArgs, genericMethodArgs);
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                target = null;
+                return false;
+            }
+            catch (BadImageFormatException)
+            {
+                target = null;
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                target = null;
+                return false;
+            }
+            catch (NotSupportedException)
+            {
+                target = null;
+                return false;
+            }
+            catch (SecurityException)
+            {
+                target = null;
+                return false;
             }
         }
 

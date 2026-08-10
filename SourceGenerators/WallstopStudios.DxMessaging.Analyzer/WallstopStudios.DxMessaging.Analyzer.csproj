@@ -26,9 +26,6 @@
     <RootNamespace>WallstopStudios.DxMessaging.SourceGenerators</RootNamespace>
     <AssemblyName>WallstopStudios.DxMessaging.Analyzer</AssemblyName>
     <AssemblyInformationalVersion>$(Version)</AssemblyInformationalVersion>
-    <!-- Suppress NU1701/NU1603 noise from older Roslyn metapackages building
-         against newer SDK targets — the surface area we use is in 3.8 proper. -->
-    <NoWarn>$(NoWarn);NU1701;NU1603</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <!-- Expose internals to the analyzer test project so tests can reference

@@ -138,7 +138,7 @@ jobs:
           # docs/*.md, README.md, and Samples~/*.md are dotnet triggers because the
           # dotnet job compiles and scans them in WallstopStudios.DxMessaging.Docs.Tests.
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
@@ -156,6 +156,8 @@ jobs:
           scripts_pattern="$scripts_pattern"'|^\.github/actions/.*/action\.yml$'
           scripts_pattern="$scripts_pattern"'|^\.github/ISSUE_TEMPLATE/.*\.ya?ml$'
           scripts_pattern="$scripts_pattern"'|^\.github/unity-versions\.json$'
+          scripts_pattern="$scripts_pattern"'|^\.github/analyzers/'
+          scripts_pattern="$scripts_pattern"'|^\.github/comparison-packages\.json$'
           scripts_pattern="$scripts_pattern"'|^package\.json$|^\.npmignore$'
           scripts_pattern="$scripts_pattern"'|^CHANGELOG\.md$|^CHANGELOG\.md\.meta$'
           scripts_pattern="$scripts_pattern"'|^docs/.*\.(md|markdown|ya?ml|js|json)$'

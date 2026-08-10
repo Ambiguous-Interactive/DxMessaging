@@ -46,7 +46,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 /// </list>
 /// </remarks>
 [TestFixture]
-public sealed class BaseCallTypeScannerTests
+internal sealed class BaseCallTypeScannerTests
 {
     // ---- Per-classification tests -----------------------------------------------------------
 
@@ -72,8 +72,8 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("Broken"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["Broken"];
-        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(new[] { "OnEnable" }));
-        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006" }));
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expected));
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray));
     }
 
     [Test]
@@ -110,7 +110,6 @@ public sealed class BaseCallTypeScannerTests
         // insight, the assertion below should be updated alongside the doc note.
         Assembly fixture = CompileFixture(
             """
-            #pragma warning disable CS0114 // suppress "hides inherited member" so the fixture compiles.
             using DxMessaging.Unity;
 
             public class ImplicitHider : MessageAwareComponent
@@ -121,8 +120,8 @@ public sealed class BaseCallTypeScannerTests
                     // The scanner classifies as DXMSG007 because the IL is indistinguishable.
                 }
             }
-            #pragma warning restore CS0114
-            """
+            """,
+            "CS0114"
         );
 
         Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
@@ -130,10 +129,10 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("ImplicitHider"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["ImplicitHider"];
-        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(new[] { "OnEnable" }));
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expected));
         Assert.That(
             entry.DiagnosticIds,
-            Is.EquivalentTo(new[] { "DXMSG007" }),
+            Is.EquivalentTo(expectedArray0),
             "Scanner should conservatively classify DXMSG009 as DXMSG007 (IL ambiguity)."
         );
     }
@@ -160,8 +159,8 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("ExplicitHider"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["ExplicitHider"];
-        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(new[] { "OnEnable" }));
-        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG007" }));
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expectedArray1));
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray0));
     }
 
     [Test]
@@ -197,15 +196,15 @@ public sealed class BaseCallTypeScannerTests
             BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("ddd"));
-        Assert.That(snapshot["ddd"].DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006" }));
+        Assert.That(snapshot["ddd"].DiagnosticIds, Is.EquivalentTo(expectedArray));
 
         Assert.That(snapshot, Contains.Key("BrokenThing"));
         Assert.That(
             snapshot["BrokenThing"].DiagnosticIds,
-            Is.EquivalentTo(new[] { "DXMSG010" }),
+            Is.EquivalentTo(expectedArray2),
             "DXMSG010 must land on the leaf (the type the user is editing)."
         );
-        Assert.That(snapshot["BrokenThing"].MissingBaseFor, Is.EquivalentTo(new[] { "OnEnable" }));
+        Assert.That(snapshot["BrokenThing"].MissingBaseFor, Is.EquivalentTo(expectedArray1));
     }
 
     [Test]
@@ -248,7 +247,7 @@ public sealed class BaseCallTypeScannerTests
             BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("ddd"));
-        Assert.That(snapshot["ddd"].DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006" }));
+        Assert.That(snapshot["ddd"].DiagnosticIds, Is.EquivalentTo(expectedArray3));
 
         // Middle declares neither override nor new → no entry.
         Assert.That(snapshot, Does.Not.ContainKey("Middle"));
@@ -256,7 +255,7 @@ public sealed class BaseCallTypeScannerTests
         Assert.That(snapshot, Contains.Key("BrokenThing"));
         Assert.That(
             snapshot["BrokenThing"].DiagnosticIds,
-            Is.EquivalentTo(new[] { "DXMSG010" }),
+            Is.EquivalentTo(expectedArray2),
             "Chain walker must skip Middle and detect ddd's broken override."
         );
     }
@@ -286,6 +285,23 @@ public sealed class BaseCallTypeScannerTests
         Assert.That(snapshot, Is.Empty);
     }
 
+    private static readonly string[] ignoredTypeNames = new[] { "ProjectIgnoredBroken" };
+    private static readonly string[] expected = new[] { "OnEnable" };
+    private static readonly string[] expectedArray = new[] { "DXMSG006" };
+    private static readonly string[] expectedArray0 = new[] { "DXMSG007" };
+    private static readonly string[] expectedArray1 = new[] { "OnEnable" };
+    private static readonly string[] expectedArray2 = new[] { "DXMSG010" };
+    private static readonly string[] expectedArray3 = new[] { "DXMSG006" };
+    private static readonly string[] expectedArray4 = new[] { "OnEnable" };
+    private static readonly string[] expectedArray5 = new[] { "OnDisable" };
+    private static readonly string[] expectedArray6 = new[] { "OnApplicationFocus" };
+    private static readonly string[] expectedArray7 = new[] { "DXMSG006" };
+    private static readonly string[] expectedArray8 = new[] { "OnApplicationPause" };
+    private static readonly string[] expectedArray9 = new[] { "DXMSG007" };
+    private static readonly string[] expectedArray10 = new[] { "DXMSG010" };
+    private static readonly string[] expectedArray11 = new[] { "Awake", "OnEnable" };
+    private static readonly string[] expectedArray12 = new[] { "DXMSG006" };
+
     [Test]
     public void ScanTypeInProjectIgnoreListExcludesFromSnapshot()
     {
@@ -304,10 +320,7 @@ public sealed class BaseCallTypeScannerTests
         );
 
         Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
-            BaseCallTypeScannerCore.Scan(
-                EnumerateMacSubclasses(fixture),
-                new[] { "ProjectIgnoredBroken" }
-            );
+            BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), ignoredTypeNames);
 
         Assert.That(snapshot, Is.Empty);
     }
@@ -463,11 +476,8 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("FirstBroken"));
         Assert.That(snapshot, Contains.Key("SecondBroken"));
-        Assert.That(snapshot["FirstBroken"].MissingBaseFor, Is.EquivalentTo(new[] { "OnEnable" }));
-        Assert.That(
-            snapshot["SecondBroken"].MissingBaseFor,
-            Is.EquivalentTo(new[] { "OnDisable" })
-        );
+        Assert.That(snapshot["FirstBroken"].MissingBaseFor, Is.EquivalentTo(expectedArray4));
+        Assert.That(snapshot["SecondBroken"].MissingBaseFor, Is.EquivalentTo(expectedArray5));
     }
 
     [Test]
@@ -501,8 +511,8 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("PartiallyIgnored"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["PartiallyIgnored"];
-        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(new[] { "OnDisable" }));
-        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006" }));
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expectedArray5));
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray3));
     }
 
     [Test]
@@ -565,8 +575,8 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("BrokenFocusLeaf"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["BrokenFocusLeaf"];
-        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(new[] { "OnApplicationFocus" }));
-        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006" }));
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expectedArray6));
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray7));
     }
 
     [Test]
@@ -596,8 +606,8 @@ public sealed class BaseCallTypeScannerTests
 
         Assert.That(snapshot, Contains.Key("HiddenPauseLeaf"));
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["HiddenPauseLeaf"];
-        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(new[] { "OnApplicationPause" }));
-        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG007" }));
+        Assert.That(entry.MissingBaseFor, Is.EquivalentTo(expectedArray8));
+        Assert.That(entry.DiagnosticIds, Is.EquivalentTo(expectedArray9));
     }
 
     [Test]
@@ -634,17 +644,11 @@ public sealed class BaseCallTypeScannerTests
             BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
         Assert.That(snapshot, Contains.Key("BrokenFocusMiddle"));
-        Assert.That(
-            snapshot["BrokenFocusMiddle"].DiagnosticIds,
-            Is.EquivalentTo(new[] { "DXMSG006" })
-        );
+        Assert.That(snapshot["BrokenFocusMiddle"].DiagnosticIds, Is.EquivalentTo(expectedArray7));
 
         Assert.That(snapshot, Contains.Key("FocusLeaf"));
-        Assert.That(snapshot["FocusLeaf"].DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG010" }));
-        Assert.That(
-            snapshot["FocusLeaf"].MissingBaseFor,
-            Is.EquivalentTo(new[] { "OnApplicationFocus" })
-        );
+        Assert.That(snapshot["FocusLeaf"].DiagnosticIds, Is.EquivalentTo(expectedArray10));
+        Assert.That(snapshot["FocusLeaf"].MissingBaseFor, Is.EquivalentTo(expectedArray6));
     }
 
     [Test]
@@ -710,12 +714,12 @@ public sealed class BaseCallTypeScannerTests
         BaseCallTypeScannerCore.ScanEntry entry = snapshot["BrokenThing"];
         Assert.That(
             entry.MissingBaseFor,
-            Is.EquivalentTo(new[] { "Awake", "OnEnable" }),
+            Is.EquivalentTo(expectedArray11),
             "Both broken methods must appear in MissingBaseFor on a single entry."
         );
         Assert.That(
             entry.DiagnosticIds,
-            Is.EquivalentTo(new[] { "DXMSG006" }),
+            Is.EquivalentTo(expectedArray12),
             "DXMSG006 must be deduped to a single id even though both methods contribute it."
         );
     }
@@ -751,40 +755,34 @@ public sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanOnExternMethodTreatedAsCleanCrossAssembly()
     {
-        // Spec 2d: a MessageAwareComponent subclass whose override is `extern` (no IL body) must
-        // be treated as assume-clean. GetMethodBody() returns null for extern methods just like
-        // it does for cross-assembly closed-source code; the scanner's defensive bias means no
-        // diagnostic is emitted.
-        // Suppress CS0626 for the missing DllImport; we never actually call the method, we just
-        // need a MethodInfo whose IL body is null.
+        // Spec 2d: a concrete MessageAwareComponent subclass whose override is extern (no IL body)
+        // must be treated as assume-clean. GetMethodBody() returns null just like it does for
+        // cross-assembly closed-source code; the scanner's defensive bias means no diagnostic is
+        // emitted. CS0626 is intrinsic to this exact no-body fixture and is the sole allowed
+        // compiler warning.
         Assembly fixture = CompileFixture(
             """
-            #pragma warning disable CS0626
-            using System.Runtime.InteropServices;
             using DxMessaging.Unity;
 
             public class ExternLeaf : MessageAwareComponent
             {
-                [DllImport("nonexistent")]
-                protected static extern void NotALifecycleMethod();
-
                 protected override extern void OnEnable();
             }
-            #pragma warning restore CS0626
-            """
+            """,
+            "CS0626"
         );
 
         // Sanity-check the precondition: the method has no body.
         Type leaf = fixture.GetType("ExternLeaf")!;
-        MethodInfo? extern_ = leaf.GetMethod(
+        MethodInfo? externMethod = leaf.GetMethod(
             "OnEnable",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             Type.EmptyTypes,
             null
         );
-        Assert.That(extern_, Is.Not.Null);
-        Assert.That(extern_!.GetMethodBody(), Is.Null);
+        Assert.That(externMethod, Is.Not.Null);
+        Assert.That(externMethod!.GetMethodBody(), Is.Null);
 
         Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
             BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
@@ -844,7 +842,7 @@ public sealed class BaseCallTypeScannerTests
         return fixture.GetTypes().Where(t => t != mac && mac.IsAssignableFrom(t));
     }
 
-    private static Assembly CompileFixture(string userSource)
+    private static Assembly CompileFixture(string userSource, params string[] allowedWarningIds)
     {
         // Build a self-contained assembly that defines a MessageAwareComponent stub plus the
         // user's classes on top. The stub's chain terminator FQN ("DxMessaging.Unity.MessageAware
@@ -901,15 +899,35 @@ namespace DxMessaging.Unity
 
         using MemoryStream stream = new();
         EmitResult emit = compilation.Emit(stream);
-        if (!emit.Success)
+        Diagnostic[] blockingDiagnostics = emit
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Severity == DiagnosticSeverity.Error
+                || (
+                    diagnostic.Severity == DiagnosticSeverity.Warning
+                    && !allowedWarningIds.Contains(diagnostic.Id, StringComparer.Ordinal)
+                )
+            )
+            .ToArray();
+        if (blockingDiagnostics.Length != 0)
         {
-            string errors = string.Join(
-                "\n",
-                emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
-                    .Select(d => d.ToString())
-            );
+            string errors = string.Join("\n", blockingDiagnostics.Select(d => d.ToString()));
             throw new InvalidOperationException(
                 $"Test fixture failed to compile:\n{errors}\n\nUser source:\n{userSource}"
+            );
+        }
+
+        string[] emittedWarningIds = emit
+            .Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning)
+            .Select(diagnostic => diagnostic.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        string[] expectedWarningIds = allowedWarningIds
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        if (!emittedWarningIds.SequenceEqual(expectedWarningIds, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Fixture warning allowlist drifted. Expected [{string.Join(", ", expectedWarningIds)}], emitted [{string.Join(", ", emittedWarningIds)}]."
             );
         }
 

@@ -13,22 +13,16 @@ namespace DxMessaging.Samples.DI.Reflex
     /// Demonstrates wiring <see cref="IMessageRegistrationBuilder"/> inside a Reflex container.
     /// Requires the Reflex package and the REFLEX_PRESENT scripting define.
     /// </summary>
-    public sealed class SampleInstaller : Installer
+    public sealed class SampleInstaller : IInstaller
     {
-        protected override void InstallBindings()
+        public void InstallBindings(ContainerBuilder builder)
         {
-            // Reflex today selects the public parameterless MessageBus constructor, so the bare
-            // Container.Bind<MessageBus>().AsSingleton() pattern works -- but it is fragile
-            // against future Reflex releases that broaden constructor scanning to non-public
-            // constructors (which would surface a clock-taking overload whose IDxMessagingClock
-            // dependency is not registered). When using the Reflex 8.0+ ContainerBuilder API,
-            // prefer ReflexRegistrationExtensions.AddDxMessagingBus, which uses an explicit
-            // factory that sidesteps reflection-based constructor selection entirely.
-            Container.Bind<MessageBus>().AsSingleton();
-            Container.Bind<IMessageBus>().FromContainer<MessageBus>();
+            // Use the explicit factory-based helper so constructor selection cannot drift with
+            // the container's reflection policy.
+            builder.AddDxMessagingBus();
 
             // The DxMessagingRegistrationInstaller shim will have been installed elsewhere; we simply resolve the builder.
-            Container.Bind<PlayerAlertService>().AsSingleton();
+            builder.AddSingleton(typeof(PlayerAlertService));
         }
 
         private sealed class PlayerAlertService : System.IDisposable

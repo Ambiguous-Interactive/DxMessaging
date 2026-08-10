@@ -189,7 +189,9 @@ public class MyObserver : MessageAwareComponent {
     }
 }
 // Result: String messages won't work, base class handlers missing
+```
 
+```csharp
 //  CORRECT
 public class MyObserver : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {

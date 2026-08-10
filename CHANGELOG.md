@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add an auto-opening guided tour to the Diagnostics Tooling Exerciser sample.
+  Its live status and ordered actions start the scene, emit and reset deterministic
+  traffic, open Message Monitor and Flow Graph, select the sample receivers, and
+  link to DxMessaging Project Settings
+  ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
+
+### Changed
+
+- Stop generated message and constructor source from disabling all compiler
+  warnings. Generated code now participates in the consumer's warning policy,
+  while repository CI compiles every shipped sample and generated output with
+  warnings treated as errors. Strict .NET analysis uses all SDK 9 rules, and
+  Unity EditMode CI adds a non-shipping Roslynator pass across the project
+  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+
 ### Fixed
 
 - Fix the Message Monitor failing to compile on Unity 6000.5 after Unity made

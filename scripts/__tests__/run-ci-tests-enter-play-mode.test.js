@@ -8,27 +8,20 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1");
-// Drift-guard for the test-suite-performance contract: Initialize-EphemeralProject
-// must emit a ProjectSettings/EditorSettings.asset that disables enter-play-mode
-// domain + scene reload (value 3) so the PlayMode CI legs skip the per-entry
-// reload. This guards the COMMITTED CI enforcement; the local .unity-test-project
-// copy is gitignored, so the runner emit is the source of truth for CI.
+// prettier-ignore
+const ROSLYNATOR_ANALYZER_FILES = ["Roslynator.CSharp.Analyzers.dll", "Roslynator_Analyzers_Roslynator.Common.dll", "Roslynator_Analyzers_Roslynator.Core.dll", "Roslynator_Analyzers_Roslynator.CSharp.dll"];
+// prettier-ignore
+const INTEGRATION_PACKAGES = { "com.gustavopsantos.reflex": "9.2.1", "com.svermeulen.extenject": "9.2.0-stcf3", "jp.hadashikick.vcontainer": "1.19.0" };
+// Drift-guard the committed reload-disabled CI project; the local host is gitignored.
 const runCiTests = fs.readFileSync(RUN_CI_SCRIPT_PATH, "utf8");
-const exportUnityPackage = fs.readFileSync(
-  path.join(__dirname, "..", "unity", "export-unitypackage.ps1"),
-  "utf8"
-);
+// prettier-ignore
+const exportUnityPackage = fs.readFileSync(path.join(__dirname, "..", "unity", "export-unitypackage.ps1"), "utf8");
 const UNITY_VERSION = "2022.3.45f1";
 
 function commandExists(command) {
-  const result = spawnSync(
-    command,
-    ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"],
-    {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
-    }
-  );
+  // prettier-ignore
+  const result = spawnSync(command, ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return !result.error && result.status === 0;
 }
 
@@ -40,12 +33,20 @@ function escapeRegExp(value) {
 
 function createGenerateOnlyRepo(root) {
   const analyzerRoot = path.join(root, "Runtime", "Analyzers");
-  const sampleRoot = path.join(root, "Samples~", "Diagnostics Tooling Exerciser");
   fs.mkdirSync(analyzerRoot, { recursive: true });
-  fs.mkdirSync(sampleRoot, { recursive: true });
-  for (const file of ["A.cs", "A.Sample.asmdef"])
-    fs.writeFileSync(path.join(sampleRoot, file), "", "utf8");
+  // prettier-ignore
+  const compileInputs = ["Diagnostics Tooling Exerciser/A.cs", "Diagnostics Tooling Exerciser/Sample.asmdef", "Mini Combat/A.cs", "Mini Combat/Sample.asmdef", "UI Buttons + Inspector/A.cs", "UI Buttons + Inspector/Sample.asmdef", "DI/VContainer/ConditionalSample.cs"];
+  // prettier-ignore
+  for (const relative of compileInputs) { const fullPath = path.join(root, "Samples~", ...relative.split("/")); fs.mkdirSync(path.dirname(fullPath), { recursive: true }); fs.writeFileSync(fullPath, "", "utf8"); }
   fs.writeFileSync(path.join(root, "package.json"), "{}\n", "utf8");
+  const analyzerSourceRoot = path.join(root, ".github", "analyzers");
+  fs.mkdirSync(analyzerSourceRoot, { recursive: true });
+  // prettier-ignore
+  for (const name of ROSLYNATOR_ANALYZER_FILES) fs.copyFileSync(path.join(__dirname, "..", "..", ".github", "analyzers", name), path.join(analyzerSourceRoot, name));
+  // prettier-ignore
+  const comparisonPackages = { registry: { name: "package.openupm.com", url: "https://package.openupm.com", scopes: ["com.gustavopsantos", "com.svermeulen", "jp.hadashikick"] }, integrationPackages: INTEGRATION_PACKAGES };
+  // prettier-ignore
+  fs.writeFileSync(path.join(root, ".github", "comparison-packages.json"), JSON.stringify(comparisonPackages), "utf8");
   for (const dllName of [
     "WallstopStudios.DxMessaging.SourceGenerators.dll",
     "WallstopStudios.DxMessaging.Analyzer.dll"
@@ -55,25 +56,8 @@ function createGenerateOnlyRepo(root) {
 }
 
 function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
-  const args = [
-    "-NoLogo",
-    "-NoProfile",
-    "-NonInteractive",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    RUN_CI_SCRIPT_PATH,
-    "-UnityVersion",
-    UNITY_VERSION,
-    "-TestMode",
-    "editmode",
-    "-AssemblyNames",
-    "WallstopStudios.DxMessaging.Tests.Editor",
-    "-ArtifactsPath",
-    artifactsPath,
-    "-RepoRoot",
-    repoRoot
-  ];
+  // prettier-ignore
+  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RUN_CI_SCRIPT_PATH, "-UnityVersion", UNITY_VERSION, "-TestMode", "editmode", "-AssemblyNames", "WallstopStudios.DxMessaging.Tests.Editor", "-ArtifactsPath", artifactsPath, "-RepoRoot", repoRoot];
   if (options.projectPath) {
     args.push("-ProjectPath", options.projectPath);
   }
@@ -127,16 +111,28 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     const result = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath);
 
     assert.equal(result.status, 0, `GenerateOnly failed:\n${result.stdout}\n${result.stderr}`);
-    for (const relative of [
-      ["Packages", "manifest.json"],
-      ["ProjectSettings", "EditorSettings.asset"],
-      ["Assets", "Editor", "DxmCiTestConfigurator.cs"],
-      ["Assets", "DxmCiSamples", "A.Sample.asmdef"],
-      [".dxmessaging-ci-project"],
-      ["Library"]
-    ]) {
-      assert.ok(fs.existsSync(path.join(projectPath, ...relative)), relative.join("/"));
+    // prettier-ignore
+    const analyzerFiles = ROSLYNATOR_ANALYZER_FILES.flatMap((name) => [`Assets/${name}`, `Assets/${name}.meta`]);
+    // prettier-ignore
+    const expectedFiles = ["Packages/manifest.json", "ProjectSettings/EditorSettings.asset", "Assets/Editor/DxmCiTestConfigurator.cs", "Assets/csc.rsp", ...analyzerFiles, "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/Sample.asmdef", "Assets/DxmCiSamples/Mini Combat/Sample.asmdef", "Assets/DxmCiSamples/UI Buttons + Inspector/Sample.asmdef", "Assets/DxmCiSamples/DI/VContainer/ConditionalSample.cs", "Assets/DxmCiSamples/DI/DxmCi.Samples.DI.asmdef", ".dxmessaging-ci-project", "Library"];
+    for (const relative of expectedFiles) {
+      assert.ok(fs.existsSync(path.join(projectPath, ...relative.split("/"))), relative);
     }
+    const cscRsp = fs.readFileSync(path.join(projectPath, "Assets", "csc.rsp"), "utf8");
+    // prettier-ignore
+    const expectedCscOptions = ["-warnaserror", "-warn:9999", ...ROSLYNATOR_ANALYZER_FILES.map((name) => `-analyzer:"${path.join(projectPath, "Assets", name)}"`)];
+    // prettier-ignore
+    assert.equal(cscRsp.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), expectedCscOptions.join("\n"));
+    // prettier-ignore
+    for (const name of ROSLYNATOR_ANALYZER_FILES) assert.doesNotMatch(fs.readFileSync(path.join(projectPath, "Assets", `${name}.meta`), "utf8"), /RoslynAnalyzer/);
+    // prettier-ignore
+    const manifest = JSON.parse(fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8"));
+    // prettier-ignore
+    for (const [name, version] of Object.entries(INTEGRATION_PACKAGES)) assert.equal(manifest.dependencies[name], version);
+    // prettier-ignore
+    const diAsmdef = JSON.parse(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", "DI", "DxmCi.Samples.DI.asmdef"), "utf8"));
+    // prettier-ignore
+    assert.deepEqual(diAsmdef.versionDefines.map(({ define }) => define).sort(), ["REFLEX_PRESENT", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]);
     for (const cacheName of ["upm", "npm"]) {
       assert.ok(fs.existsSync(path.join(cacheRoot, cacheName)), cacheName);
     }

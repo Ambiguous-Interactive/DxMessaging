@@ -1,7 +1,4 @@
-// The Unity Editor assembly that hosts this file does not enable nullable annotations; the
-// dotnet-test project that compiles a linked copy DOES (`<Nullable>enable</Nullable>`). Pin the
-// nullable state per-file so behavior is identical in both compilation contexts.
-#nullable disable
+#nullable enable
 namespace DxMessaging.Editor.Analyzers
 {
     using System;
@@ -19,10 +16,15 @@ namespace DxMessaging.Editor.Analyzers
     /// shape in lock-step with that wrapper -- fields added here must also flow through to the
     /// Unity-facing entry or the inspector overlay won't see them.
     /// </remarks>
-    public sealed class BaseCallReportEntryDto
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    sealed class BaseCallReportEntryDto
     {
         /// <summary>Fully-qualified name of the offending type (dot-form for nested types).</summary>
-        public string TypeName;
+        public string TypeName = string.Empty;
 
         /// <summary>Method names whose overrides are missing the corresponding <c>base.*()</c> call.</summary>
         public readonly SortedSet<string> MissingBaseFor = new(StringComparer.Ordinal);
@@ -31,7 +33,7 @@ namespace DxMessaging.Editor.Analyzers
         public readonly HashSet<string> DiagnosticIds = new(StringComparer.Ordinal);
 
         /// <summary>Source file path (best-effort) for "Open Script" actions in the inspector overlay.</summary>
-        public string FilePath;
+        public string FilePath = string.Empty;
 
         /// <summary>1-based line number of the first relevant diagnostic, when known.</summary>
         public int Line;
@@ -61,7 +63,12 @@ namespace DxMessaging.Editor.Analyzers
     /// failure-prone slice of the harvester. Keeping it pure makes it test-driven.
     /// </para>
     /// </remarks>
-    public static class BaseCallReportAggregator
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    static class BaseCallReportAggregator
     {
         /// <summary>
         /// Apply a single assembly's freshly-parsed report batch. Replaces that assembly's prior
@@ -79,7 +86,7 @@ namespace DxMessaging.Editor.Analyzers
         /// assembly drops its claim.</param>
         public static void ApplyAssemblyReports(
             string assemblyKey,
-            IReadOnlyDictionary<string, ParsedTypeReport> latestReportsForAssembly,
+            IReadOnlyDictionary<string, ParsedTypeReport>? latestReportsForAssembly,
             Dictionary<string, HashSet<string>> typesByAssembly,
             Dictionary<string, ParsedTypeReport> mergedReports
         )
@@ -88,6 +95,10 @@ namespace DxMessaging.Editor.Analyzers
             {
                 throw new ArgumentException("Assembly key must be non-empty.", nameof(assemblyKey));
             }
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(typesByAssembly);
+            ArgumentNullException.ThrowIfNull(mergedReports);
+#else
             if (typesByAssembly is null)
             {
                 throw new ArgumentNullException(nameof(typesByAssembly));
@@ -96,10 +107,11 @@ namespace DxMessaging.Editor.Analyzers
             {
                 throw new ArgumentNullException(nameof(mergedReports));
             }
+#endif
 
             // 1. Replace this assembly's FQN set with the latest batch. Types absent from the new
             //    batch are dropped from the assembly's row; that's the per-assembly retirement.
-            if (!typesByAssembly.TryGetValue(assemblyKey, out HashSet<string> typeSet))
+            if (!typesByAssembly.TryGetValue(assemblyKey, out HashSet<string>? typeSet))
             {
                 typeSet = new HashSet<string>(StringComparer.Ordinal);
                 typesByAssembly[assemblyKey] = typeSet;
@@ -140,7 +152,7 @@ namespace DxMessaging.Editor.Analyzers
                 // assemblies, we need the previous merge to still carry their data; but that
                 // information is only retrievable from the OUTGOING mergedReports, so we read it
                 // before clearing.
-                IReadOnlyDictionary<string, ParsedTypeReport> source = string.Equals(
+                IReadOnlyDictionary<string, ParsedTypeReport>? source = string.Equals(
                     thisAssemblyKey,
                     assemblyKey,
                     StringComparison.OrdinalIgnoreCase
@@ -154,7 +166,7 @@ namespace DxMessaging.Editor.Analyzers
 
                 foreach (string fqn in fqns)
                 {
-                    if (!source.TryGetValue(fqn, out ParsedTypeReport contribution))
+                    if (!source.TryGetValue(fqn, out ParsedTypeReport? contribution))
                     {
                         continue;
                     }
@@ -163,7 +175,7 @@ namespace DxMessaging.Editor.Analyzers
                         continue;
                     }
 
-                    if (!rebuilt.TryGetValue(fqn, out ParsedTypeReport existing))
+                    if (!rebuilt.TryGetValue(fqn, out ParsedTypeReport? existing))
                     {
                         // Defensive copy so future ApplyAssemblyReports calls don't mutate state
                         // that callers may still hold a reference to.
@@ -228,8 +240,8 @@ namespace DxMessaging.Editor.Analyzers
         /// produced by <see cref="ApplyAssemblyReports"/>. May be empty when no compilation
         /// callbacks have fired yet.</param>
         public static Dictionary<string, BaseCallReportEntryDto> BuildSnapshot(
-            IReadOnlyDictionary<string, ParsedTypeReport> logEntriesReports,
-            IReadOnlyDictionary<string, ParsedTypeReport> mergedReports
+            IReadOnlyDictionary<string, ParsedTypeReport>? logEntriesReports,
+            IReadOnlyDictionary<string, ParsedTypeReport>? mergedReports
         )
         {
             Dictionary<string, BaseCallReportEntryDto> snapshot = new(StringComparer.Ordinal);
@@ -264,7 +276,7 @@ namespace DxMessaging.Editor.Analyzers
                 return;
             }
 
-            if (!snapshot.TryGetValue(fqn, out BaseCallReportEntryDto existing))
+            if (!snapshot.TryGetValue(fqn, out BaseCallReportEntryDto? existing))
             {
                 existing = new BaseCallReportEntryDto { TypeName = fqn };
                 snapshot[fqn] = existing;

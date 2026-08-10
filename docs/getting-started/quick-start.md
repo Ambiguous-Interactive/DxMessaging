@@ -70,7 +70,7 @@ public readonly partial struct HealAdvanced
     public readonly int amount;
     [DxOptionalParameter(true)]  // Custom default value
     public readonly bool showEffect;
-    [DxOptionalParameter(Expression = "Color.green")]  // Expression for any type
+    [DxOptionalParameter]  // Defaults to default(Color)
     public readonly Color effectColor;
 }
 ```

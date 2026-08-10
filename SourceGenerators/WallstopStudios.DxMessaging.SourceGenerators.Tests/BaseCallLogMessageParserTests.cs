@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 [TestFixture]
-public sealed class BaseCallLogMessageParserTests
+internal sealed class BaseCallLogMessageParserTests
 {
     // The exact format strings the analyzer uses today. If these drift, both this test and the
     // parser regexes must be updated in lockstep; the parser is downstream of the analyzer.
@@ -28,6 +28,23 @@ public sealed class BaseCallLogMessageParserTests
     private const string Dxmsg010Bare =
         "'Sample.BrokenThing' calls base.OnEnable() but the inherited override on 'Sample.ddd' "
         + "does not chain to MessageAwareComponent.OnEnable; the messaging system will not function correctly on this component.";
+    private static readonly string[] expected = new[] { "DXMSG006" };
+    private static readonly string[] expectedArray = new[] { "Awake" };
+    private static readonly string[] expectedArray0 = new[] { "OnEnable" };
+    private static readonly string[] expectedArray1 = new[] { "DXMSG006", "DXMSG007" };
+    private static readonly string[] expectedArray2 = new[] { "DXMSG008" };
+    private static readonly string[] expectedArray3 = new[] { "DXMSG006", "DXMSG008" };
+    private static readonly string[] expectedArray4 = new[] { "DXMSG009" };
+    private static readonly string[] expectedArray5 = new[] { "DXMSG006", "DXMSG009" };
+    private static readonly string[] expectedArray6 = new[] { "DXMSG010" };
+    private static readonly string[] expectedArray7 = new[]
+    {
+        "DiagnosticId",
+        "FilePath",
+        "Line",
+        "MethodName",
+        "TypeFullName",
+    };
 
     [Test]
     public void ParseLineBareDxmsg006CapturesIdTypeAndMethod()
@@ -200,7 +217,7 @@ public sealed class BaseCallLogMessageParserTests
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];
         Assert.That(report.MissingBaseFor, Is.EqualTo(new List<string> { "Awake" }));
-        Assert.That(report.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006" }));
+        Assert.That(report.DiagnosticIds, Is.EquivalentTo(expected));
     }
 
     [Test]
@@ -237,8 +254,8 @@ public sealed class BaseCallLogMessageParserTests
         );
 
         Assert.That(result.Count, Is.EqualTo(2));
-        Assert.That(result["Sample.PlayerA"].MissingBaseFor, Is.EqualTo(new[] { "Awake" }));
-        Assert.That(result["Sample.PlayerB"].MissingBaseFor, Is.EqualTo(new[] { "OnEnable" }));
+        Assert.That(result["Sample.PlayerA"].MissingBaseFor, Is.EqualTo(expectedArray));
+        Assert.That(result["Sample.PlayerB"].MissingBaseFor, Is.EqualTo(expectedArray0));
     }
 
     [Test]
@@ -257,7 +274,7 @@ public sealed class BaseCallLogMessageParserTests
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];
-        Assert.That(report.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006", "DXMSG007" }));
+        Assert.That(report.DiagnosticIds, Is.EquivalentTo(expectedArray1));
         Assert.That(report.MissingBaseFor, Is.EqualTo(new List<string> { "Awake", "OnEnable" }));
     }
 
@@ -270,7 +287,7 @@ public sealed class BaseCallLogMessageParserTests
 
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.Player"];
-        Assert.That(report.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG008" }));
+        Assert.That(report.DiagnosticIds, Is.EquivalentTo(expectedArray2));
         Assert.That(report.MissingBaseFor, Is.Empty);
     }
 
@@ -305,7 +322,7 @@ public sealed class BaseCallLogMessageParserTests
         ParsedTypeReport rev = reverse["Sample.Player"];
         Assert.That(fwd.MissingBaseFor, Is.EqualTo(rev.MissingBaseFor));
         Assert.That(fwd.DiagnosticIds, Is.EquivalentTo(rev.DiagnosticIds));
-        Assert.That(fwd.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006", "DXMSG008" }));
+        Assert.That(fwd.DiagnosticIds, Is.EquivalentTo(expectedArray3));
         Assert.That(fwd.MissingBaseFor, Is.EqualTo(new List<string> { "Awake" }));
     }
 
@@ -363,7 +380,7 @@ public sealed class BaseCallLogMessageParserTests
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.BrokenThing"];
         Assert.That(report.MissingBaseFor, Is.EqualTo(new List<string> { "OnEnable" }));
-        Assert.That(report.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG009" }));
+        Assert.That(report.DiagnosticIds, Is.EquivalentTo(expectedArray4));
     }
 
     [Test]
@@ -381,7 +398,7 @@ public sealed class BaseCallLogMessageParserTests
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.BrokenThing"];
         Assert.That(report.MissingBaseFor, Is.EqualTo(new List<string> { "Awake", "OnEnable" }));
-        Assert.That(report.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG006", "DXMSG009" }));
+        Assert.That(report.DiagnosticIds, Is.EquivalentTo(expectedArray5));
     }
 
     [Test]
@@ -455,7 +472,7 @@ public sealed class BaseCallLogMessageParserTests
         Assert.That(result.Count, Is.EqualTo(1));
         ParsedTypeReport report = result["Sample.BrokenThing"];
         Assert.That(report.MissingBaseFor, Is.EqualTo(new List<string> { "OnEnable" }));
-        Assert.That(report.DiagnosticIds, Is.EquivalentTo(new[] { "DXMSG010" }));
+        Assert.That(report.DiagnosticIds, Is.EquivalentTo(expectedArray6));
     }
 
     [Test]
@@ -485,7 +502,7 @@ public sealed class BaseCallLogMessageParserTests
         string[] propertyNames = properties.Select(p => p.Name).OrderBy(n => n).ToArray();
         Assert.That(
             propertyNames,
-            Is.EqualTo(new[] { "DiagnosticId", "FilePath", "Line", "MethodName", "TypeFullName" }),
+            Is.EqualTo(expectedArray7),
             "ParsedEntry must expose exactly DiagnosticId/TypeFullName/MethodName/FilePath/Line. "
                 + "The DXMSG010 regex captures `broken` but the struct does NOT yet surface it. "
                 + "If you're seeing this assertion fail because you added BrokenAncestor, update "
