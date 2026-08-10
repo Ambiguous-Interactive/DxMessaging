@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep Message Monitor, Flow Graph, and the Diagnostics Tooling Exerciser compiling
+  on Unity 6000.5 after Unity replaced the object-discovery sort-mode overloads.
+  Older supported editors retain their matching API path
+  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 - Fix the Message Monitor failing to compile on Unity 6000.5 after Unity made
   its integer object-lookup API a compile error. Context links now use the
   package's centralized `InstanceId` object reference on every supported editor

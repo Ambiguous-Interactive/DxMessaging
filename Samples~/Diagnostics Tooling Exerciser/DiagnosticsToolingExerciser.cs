@@ -53,7 +53,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InitializeAfterSceneLoad()
         {
-#if UNITY_2023_1_OR_NEWER
+#if UNITY_6000_5_OR_NEWER
+            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
+                FindObjectsInactive.Exclude
+            );
+#elif UNITY_2023_1_OR_NEWER
             DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None

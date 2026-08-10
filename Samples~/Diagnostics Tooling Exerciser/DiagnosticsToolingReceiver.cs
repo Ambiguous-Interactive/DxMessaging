@@ -85,7 +85,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void RestoreRegistrationsAfterSceneLoad()
         {
-#if UNITY_2023_1_OR_NEWER
+#if UNITY_6000_5_OR_NEWER
+            DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(
+                FindObjectsInactive.Exclude
+            );
+#elif UNITY_2023_1_OR_NEWER
             DiagnosticsToolingReceiver[] receivers = FindObjectsByType<DiagnosticsToolingReceiver>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None

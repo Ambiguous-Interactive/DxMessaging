@@ -203,7 +203,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
         private static DiagnosticsToolingReceiver[] FindReceivers()
         {
-#if UNITY_2023_1_OR_NEWER
+#if UNITY_6000_5_OR_NEWER
+            return Object.FindObjectsByType<DiagnosticsToolingReceiver>(
+                FindObjectsInactive.Exclude
+            );
+#elif UNITY_2023_1_OR_NEWER
             return Object.FindObjectsByType<DiagnosticsToolingReceiver>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None
