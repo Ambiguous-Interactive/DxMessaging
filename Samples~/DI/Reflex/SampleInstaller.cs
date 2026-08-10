@@ -4,6 +4,7 @@ namespace DxMessaging.Samples.DI.Reflex
     using global::UnityEngine;
     using global::DxMessaging.Core;
     using global::DxMessaging.Core.Attributes;
+    using global::DxMessaging.Core.Extensions;
     using global::DxMessaging.Core.MessageBus;
     using global::DxMessaging.Core.Messages;
     using global::DxMessaging.Unity.Integrations.Reflex;
@@ -13,7 +14,7 @@ namespace DxMessaging.Samples.DI.Reflex
     /// Demonstrates wiring <see cref="IMessageRegistrationBuilder"/> inside a Reflex container.
     /// Requires the Reflex package and the REFLEX_PRESENT scripting define.
     /// </summary>
-    public sealed class SampleInstaller : IInstaller
+    public sealed partial class SampleInstaller : IInstaller
     {
         public void InstallBindings(ContainerBuilder builder)
         {

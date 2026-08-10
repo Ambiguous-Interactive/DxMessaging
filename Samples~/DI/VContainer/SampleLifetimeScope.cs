@@ -14,7 +14,7 @@ namespace DxMessaging.Samples.DI.VContainer
     /// Sample lifetime scope showing DI-friendly registration via IMessageRegistrationBuilder.
     /// Requires the VCONTAINER_PRESENT scripting define and VContainer package.
     /// </summary>
-    public sealed class SampleLifetimeScope : LifetimeScope
+    public sealed partial class SampleLifetimeScope : LifetimeScope
     {
         protected override void Configure(IContainerBuilder builder)
         {

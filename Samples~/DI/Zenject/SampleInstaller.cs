@@ -11,7 +11,7 @@ namespace DxMessaging.Samples.DI.Zenject
     /// Sample scene installer demonstrating how to bridge the registration builder into Zenject services.
     /// Requires the DxMessaging Zenject registration shim and the ZENJECT_PRESENT scripting define.
     /// </summary>
-    public sealed class SampleInstaller : MonoInstaller
+    public sealed partial class SampleInstaller : MonoInstaller
     {
         public override void InstallBindings()
         {
