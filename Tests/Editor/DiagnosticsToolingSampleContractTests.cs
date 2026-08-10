@@ -170,8 +170,26 @@ namespace DxMessaging.Tests.Editor
             Assert.That(guide, Does.Contain("DiagnosticsToolingExerciser.unity"));
             Assert.That(guide, Does.Contain("SessionState.GetBool"));
             Assert.That(guide, Does.Contain("if (runner != null)"));
-            Assert.That(runner, Does.Contain("public void ResetCountersAndEmitBurst()"));
-            Assert.That(runner, Does.Not.Contain("sequence = 0;"));
+            int resetMethodStart = runner.IndexOf(
+                "public void ResetCountersAndEmitBurst()",
+                StringComparison.Ordinal
+            );
+            Assert.That(resetMethodStart, Is.GreaterThanOrEqualTo(0));
+
+            int nextMethodStart = runner.IndexOf(
+                "public void EmitOneOfEach()",
+                resetMethodStart,
+                StringComparison.Ordinal
+            );
+            Assert.That(nextMethodStart, Is.GreaterThan(resetMethodStart));
+
+            string resetMethod = runner.Substring(
+                resetMethodStart,
+                nextMethodStart - resetMethodStart
+            );
+            Assert.That(resetMethod, Does.Contain("receiver.ResetCounts();"));
+            Assert.That(resetMethod, Does.Contain("EmitBurst();"));
+            Assert.That(resetMethod, Does.Not.Contain("sequence = 0;"));
         }
 
         [Test]
