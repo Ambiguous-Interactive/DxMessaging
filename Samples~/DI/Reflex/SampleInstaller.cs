@@ -50,7 +50,7 @@ namespace DxMessaging.Samples.DI.Reflex
             public void EmitAlertFor(GameObject source)
             {
                 PlayerAlert alert = new PlayerAlert(source);
-                _messageBus.Emit(ref alert);
+                alert.EmitBroadcast(alert.Source, _messageBus);
             }
 
             public void Dispose()
