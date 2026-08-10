@@ -192,7 +192,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
         private static DiagnosticsToolingExerciser FindRunner()
         {
-#if UNITY_2023_1_OR_NEWER
+#if UNITY_6000_5_OR_NEWER
+            return Object.FindAnyObjectByType<DiagnosticsToolingExerciser>(
+                FindObjectsInactive.Exclude
+            );
+#elif UNITY_2023_1_OR_NEWER
             return Object.FindFirstObjectByType<DiagnosticsToolingExerciser>(
                 FindObjectsInactive.Exclude
             );
