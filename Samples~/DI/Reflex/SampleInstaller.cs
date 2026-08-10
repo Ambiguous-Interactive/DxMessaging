@@ -47,10 +47,10 @@ namespace DxMessaging.Samples.DI.Reflex
                 );
             }
 
-            public void EmitAlertFor(GameObject source)
+            public void EmitAlertFor(GameObject gameObject)
             {
-                PlayerAlert alert = new PlayerAlert(source);
-                alert.EmitBroadcast(alert.Source, _messageBus);
+                PlayerAlert alert = new PlayerAlert(gameObject);
+                alert.EmitGameObjectBroadcast(gameObject, _messageBus);
             }
 
             public void Dispose()
