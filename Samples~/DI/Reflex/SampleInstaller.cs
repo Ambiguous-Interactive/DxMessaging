@@ -1,13 +1,13 @@
 #if REFLEX_PRESENT
 namespace DxMessaging.Samples.DI.Reflex
 {
-    using DxMessaging.Core;
-    using DxMessaging.Core.Attributes;
-    using DxMessaging.Core.MessageBus;
-    using DxMessaging.Core.Messages;
-    using DxMessaging.Unity.Integrations.Reflex;
-    using Reflex.Core;
-    using UnityEngine;
+    using global::UnityEngine;
+    using global::DxMessaging.Core;
+    using global::DxMessaging.Core.Attributes;
+    using global::DxMessaging.Core.MessageBus;
+    using global::DxMessaging.Core.Messages;
+    using global::DxMessaging.Unity.Integrations.Reflex;
+    using global::Reflex.Core;
 
     /// <summary>
     /// Demonstrates wiring <see cref="IMessageRegistrationBuilder"/> inside a Reflex container.
