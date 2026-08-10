@@ -48,10 +48,14 @@ Let's understand what each script does:
 **Purpose**: Defines all message types used in the sample
 
 ```csharp
-// Message definitions (simplified for explanation)
-- VideoSettingsChanged (untargeted)  // Global setting anyone can listen to
-- Heal (targeted)                    // Directed at a specific component
-- TookDamage (broadcast)             // Announced to all interested parties
+[DxUntargetedMessage]
+public readonly partial struct VideoSettingsChanged { }
+
+[DxTargetedMessage]
+public readonly partial struct Heal { }
+
+[DxBroadcastMessage]
+public readonly partial struct TookDamage { }
 ```
 
 **Why separate file?** Keeping messages in one place makes them easy to find and prevents circular dependencies.

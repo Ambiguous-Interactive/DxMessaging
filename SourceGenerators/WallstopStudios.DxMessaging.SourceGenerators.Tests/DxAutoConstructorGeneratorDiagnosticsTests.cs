@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 [TestFixture]
-public sealed class DxAutoConstructorGeneratorDiagnosticsTests
+internal sealed class DxAutoConstructorGeneratorDiagnosticsTests
 {
     [Test]
     public void ReportsNonPartialContainingType()

@@ -256,12 +256,12 @@ _ = token.RegisterGlobalAcceptAll(
     (ref InstanceId target, ref ITargetedMessage m) => Debug.Log($"Targeted {m.MessageType} to {target}"),
     (ref InstanceId source, ref IBroadcastMessage m) => Debug.Log($"Broadcast {m.MessageType} from {source}")
 );
+```
 
 Do's
 
 - Use global accept-all in tooling and debug inspectors.
 - Prefer specific registrations for gameplay code to avoid surprises.
-```
 
 ## 11) Diagnostics and Tuning
 
@@ -366,7 +366,8 @@ using DxMessaging.Core.Extensions;
 public class PersistentAchievementSystem : MessageAwareComponent {
     private static PersistentAchievementSystem instance;
 
-    void Awake() {
+    protected override void Awake() {
+        base.Awake();
         if (instance != null) {
             Destroy(gameObject);
             return;
@@ -376,6 +377,7 @@ public class PersistentAchievementSystem : MessageAwareComponent {
     }
 
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Listen to ALL broadcasts from ANY scene
         _ = Token.RegisterBroadcastWithoutSource<EntityDamaged>(OnAnyDamage);
         _ = Token.RegisterUntargeted<LevelCompleted>(OnLevelComplete);
@@ -648,7 +650,9 @@ void TakeDamage(int amount) {
     var msg = new HealthChanged(health);
     msg.Emit(); // Emits every frame
 }
+```
 
+```csharp
 //  EFFICIENT: Batch updates, emit once per frame
 private bool healthDirty = false;
 

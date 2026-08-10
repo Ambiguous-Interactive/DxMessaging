@@ -53,7 +53,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InitializeAfterSceneLoad()
         {
-#if UNITY_2023_1_OR_NEWER
+#if UNITY_6000_5_OR_NEWER
+            DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
+                FindObjectsInactive.Exclude
+            );
+#elif UNITY_2023_1_OR_NEWER
             DiagnosticsToolingExerciser[] runners = FindObjectsByType<DiagnosticsToolingExerciser>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None
@@ -99,7 +103,10 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             lastRunSummary = "Not run yet";
             foreach (DiagnosticsToolingReceiver receiver in receivers)
             {
-                receiver?.ResetCounts();
+                if (receiver != null)
+                {
+                    receiver.ResetCounts();
+                }
             }
 
             ConfigureDiagnostics();
@@ -137,6 +144,20 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             {
                 EmitOneOfEach();
             }
+        }
+
+        [ContextMenu("Reset Counters And Emit Burst")]
+        public void ResetCountersAndEmitBurst()
+        {
+            foreach (DiagnosticsToolingReceiver receiver in receivers)
+            {
+                if (receiver != null)
+                {
+                    receiver.ResetCounts();
+                }
+            }
+
+            EmitBurst();
         }
 
         [ContextMenu("Emit One Of Each")]

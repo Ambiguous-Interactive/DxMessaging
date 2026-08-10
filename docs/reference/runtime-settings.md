@@ -153,6 +153,7 @@ public readonly struct TrimResult : IEquatable<TrimResult>
     public int TargetSlotsEvicted { get; }
     public int PooledCollectionsEvicted { get; }
     public int LiveTypeSlotsRemaining { get; }
+    public bool Equals(TrimResult other);
 }
 ```
 

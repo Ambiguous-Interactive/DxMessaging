@@ -2156,12 +2156,11 @@ namespace DxMessaging.Editor.Windows
 
         private static MessagingComponent[] FindMessagingComponentsInLoadedScenes()
         {
-#if UNITY_2023_1_OR_NEWER
-            // FindObjectsByType's two-argument (FindObjectsInactive, FindObjectsSortMode)
-            // overload exists across all 2023.1+ editors, including every 6000.x. The
-            // one-argument FindObjectsByType(FindObjectsInactive) convenience overload only
-            // exists on some 6000.x patch releases (e.g. 6000.4, not 6000.3), so always pass
-            // both arguments to stay portable across the whole 6000.x range.
+#if UNITY_6000_5_OR_NEWER
+            return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
+                FindObjectsInactive.Include
+            );
+#elif UNITY_2023_1_OR_NEWER
             return UnityEngine.Object.FindObjectsByType<MessagingComponent>(
                 FindObjectsInactive.Include,
                 FindObjectsSortMode.None
@@ -3320,7 +3319,7 @@ namespace DxMessaging.Editor.Windows
             marker.style.borderBottomRightRadius = radius;
             if (normalizedKind == DxMessagingEditorPalette.TargetedKind)
             {
-                marker.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
+                marker.style.rotate = new Rotate(new Angle(45f, AngleUnit.Degree));
             }
         }
 
@@ -3370,12 +3369,10 @@ namespace DxMessaging.Editor.Windows
             Vector2 viewportSize = Vector2.zero;
             void ApplyTransform()
             {
-                graphContent.transform.position = new Vector3(
-                    canvasState.Pan.x,
-                    canvasState.Pan.y,
-                    0f
+                graphContent.style.translate = new Translate(canvasState.Pan.x, canvasState.Pan.y);
+                graphContent.style.scale = new Scale(
+                    new Vector3(canvasState.Zoom, canvasState.Zoom, 1f)
                 );
-                graphContent.transform.scale = new Vector3(canvasState.Zoom, canvasState.Zoom, 1f);
                 zoomLabel.text = Mathf.RoundToInt(canvasState.Zoom * 100f) + "%";
             }
 

@@ -308,9 +308,9 @@ namespace DxMessaging.Unity
             }
 
             MessageBusRebindMode effectiveMode =
-#pragma warning disable CS0618 // Type or member is obsolete
-                rebindMode == MessageBusRebindMode.Unknown
-#pragma warning restore CS0618 // Type or member is obsolete
+                // Zero is the legacy Unknown value. Compare the default without naming the
+                // obsolete compatibility member so strict consumers do not inherit CS0618.
+                rebindMode == default
                     ? MessageBusRebindMode.RebindActive
                     : rebindMode;
 

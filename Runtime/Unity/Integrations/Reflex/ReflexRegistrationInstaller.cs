@@ -7,6 +7,9 @@ namespace DxMessaging.Unity.Integrations.Reflex
     using Core.Pooling;
     using global::Reflex.Attributes;
     using global::Reflex.Core;
+#if REFLEX_14_OR_NEWER
+    using global::Reflex.Enums;
+#endif
 
     /// <summary>
     /// Optional installer that binds <see cref="IMessageRegistrationBuilder"/> for Reflex containers.
@@ -19,7 +22,8 @@ namespace DxMessaging.Unity.Integrations.Reflex
         /// <param name="containerBuilder">Container builder receiving the registrations.</param>
         public void InstallBindings(ContainerBuilder containerBuilder)
         {
-            containerBuilder.AddSingleton(
+            ReflexContainerBuilderCompatibility.RegisterSingletonType(
+                containerBuilder,
                 typeof(ContainerMessageRegistrationBuilder),
                 typeof(ContainerMessageRegistrationBuilder),
                 typeof(IMessageRegistrationBuilder)
@@ -92,11 +96,8 @@ namespace DxMessaging.Unity.Integrations.Reflex
 
     /// <summary>
     /// Provides convenience helpers for wiring a <see cref="MessageBus"/> into Reflex containers.
-    /// Reflex's container builder defaults to public-only constructor scanning, so today the
-    /// bare <c>Bind&lt;MessageBus&gt;().AsSingleton()</c> pattern resolves through the public
-    /// parameterless constructor. This is fragile against future Reflex versions that broaden
-    /// scanning to non-public constructors -- always prefer the helper below for clarity and
-    /// forward compatibility.
+    /// The helpers use an explicit factory and adapt to the registration API introduced by
+    /// Reflex 14 while retaining compatibility with earlier Reflex releases.
     /// </summary>
     public static class ReflexRegistrationExtensions
     {
@@ -111,7 +112,12 @@ namespace DxMessaging.Unity.Integrations.Reflex
             {
                 throw new ArgumentNullException(nameof(builder));
             }
-            builder.AddSingleton(_ => new MessageBus(), typeof(MessageBus), typeof(IMessageBus));
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
+                builder,
+                _ => new MessageBus(),
+                typeof(MessageBus),
+                typeof(IMessageBus)
+            );
         }
 
         /// <summary>
@@ -134,7 +140,12 @@ namespace DxMessaging.Unity.Integrations.Reflex
             {
                 throw new ArgumentNullException(nameof(factory));
             }
-            builder.AddSingleton(factory, typeof(MessageBus), typeof(IMessageBus));
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
+                builder,
+                factory,
+                typeof(MessageBus),
+                typeof(IMessageBus)
+            );
         }
 
         /// <summary>
@@ -153,11 +164,41 @@ namespace DxMessaging.Unity.Integrations.Reflex
             {
                 throw new ArgumentNullException(nameof(clock));
             }
-            builder.AddSingleton(
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
+                builder,
                 _ => MessageBus.CreateForInternalUse(clock),
                 typeof(MessageBus),
                 typeof(IMessageBus)
             );
+        }
+    }
+
+    internal static class ReflexContainerBuilderCompatibility
+    {
+        internal static void RegisterSingletonType(
+            ContainerBuilder builder,
+            Type concrete,
+            params Type[] contracts
+        )
+        {
+#if REFLEX_14_OR_NEWER
+            builder.RegisterType(concrete, contracts, Lifetime.Singleton, Resolution.Lazy);
+#else
+            builder.AddSingleton(concrete, contracts);
+#endif
+        }
+
+        internal static void RegisterSingletonFactory<T>(
+            ContainerBuilder builder,
+            Func<Container, T> factory,
+            params Type[] contracts
+        )
+        {
+#if REFLEX_14_OR_NEWER
+            builder.RegisterFactory(factory, contracts, Lifetime.Singleton, Resolution.Lazy);
+#else
+            builder.AddSingleton(factory, contracts);
+#endif
         }
     }
 #endif

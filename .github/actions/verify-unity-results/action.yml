@@ -216,6 +216,8 @@ runs:
         #   - error CS\d+ -- compiler errors (CS0246, CS0103, CS0117, etc).
         #   - warning CS8032 -- "An instance of analyzer cannot be created"
         #     (analyzer failed to instantiate; same class of issue).
+        #   - error RCS/ROS -- Roslynator diagnostics promoted by -warnaserror.
+        #   - AD0001 -- an analyzer threw while inspecting source.
         function Write-UnityCatastrophicPatternHits {
           param([Parameter(Mandatory = $true)][string]$ResultsDir)
 
@@ -225,6 +227,8 @@ runs:
             @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
             @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
             @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
+            @{ Label = 'error Roslynator diagnostic'; Pattern = 'error (?:RCS|ROS)\d+'; UseSimple = $false }
+            @{ Label = 'Roslyn analyzer failure'; Pattern = '(?:error|warning) AD0001'; UseSimple = $false }
             # CS1069: a type was "forwarded to assembly 'UnityEngine.<X>Module'" --
             # i.e. a test/source references an OPTIONAL engine module the minimal CI
             # test project intentionally omits (its generated manifest lists only the

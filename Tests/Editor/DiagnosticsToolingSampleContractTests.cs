@@ -1,10 +1,16 @@
 #if UNITY_EDITOR && UNITY_2021_3_OR_NEWER
+#nullable enable annotations
 namespace DxMessaging.Tests.Editor
 {
+    using System;
     using System.IO;
+    using System.Linq;
+    using System.Reflection;
     using System.Text.RegularExpressions;
     using NUnit.Framework;
+    using UnityEditor;
     using UnityEngine;
+    using UnityEngine.UIElements;
 
     public sealed class DiagnosticsToolingSampleContractTests
     {
@@ -13,6 +19,7 @@ namespace DxMessaging.Tests.Editor
         private const string RunnerScriptFileName = "DiagnosticsToolingExerciser.cs";
         private const string ReceiverScriptFileName = "DiagnosticsToolingReceiver.cs";
         private const string MessagesScriptFileName = "Messages.cs";
+        private const string GuideScriptFileName = "Editor/DiagnosticsToolingGuideWindow.cs";
         private const string RuntimeMessagingComponentGuid = "98ea04ea326660845ba49942dacbf907";
 
         [Test]
@@ -139,8 +146,142 @@ namespace DxMessaging.Tests.Editor
             Assert.That(readme, Does.Contain("Flow Graph"));
             Assert.That(readme, Does.Contain("Inspector overlay"));
             Assert.That(readme, Does.Contain("Project Settings"));
+            Assert.That(readme, Does.Contain("DxMessaging Guided Tour"));
+            Assert.That(readme, Does.Contain("Reset Counters And Emit Burst"));
+            Assert.That(readme, Does.Contain("history stays visible"));
             Assert.That(readme, Does.Contain("sample-pulse-001"));
             Assert.That(readme, Does.Contain("DiagnosticsToolingSampleContractTests"));
+        }
+
+        [Test]
+        public void SampleGuideProvidesAnEndToEndEditorToolingTour()
+        {
+            string guide = ReadSampleFile(GuideScriptFileName);
+            string runner = ReadSampleFile(RunnerScriptFileName);
+
+            Assert.That(guide, Does.Contain("Diagnostics Tooling Guided Tour"));
+            Assert.That(guide, Does.Contain("DxMessagingMessageMonitorWindow.Open"));
+            Assert.That(guide, Does.Contain("DxMessagingFlowGraphWindow.Open"));
+            Assert.That(guide, Does.Contain("Project/Wallstop Studios/DxMessaging"));
+            Assert.That(guide, Does.Contain("Select All Receivers"));
+            Assert.That(guide, Does.Contain("Reset Counters And Emit Burst"));
+            Assert.That(guide, Does.Contain("trace IDs continue forward"));
+            Assert.That(guide, Does.Contain("DxMessagingEditorTheme.ApplyWindow"));
+            Assert.That(guide, Does.Contain("DiagnosticsToolingExerciser.unity"));
+            Assert.That(guide, Does.Contain("SessionState.GetBool"));
+            Assert.That(guide, Does.Contain("if (runner != null)"));
+            int resetMethodStart = runner.IndexOf(
+                "public void ResetCountersAndEmitBurst()",
+                StringComparison.Ordinal
+            );
+            Assert.That(resetMethodStart, Is.GreaterThanOrEqualTo(0));
+
+            int nextMethodStart = runner.IndexOf(
+                "public void EmitOneOfEach()",
+                resetMethodStart,
+                StringComparison.Ordinal
+            );
+            Assert.That(nextMethodStart, Is.GreaterThan(resetMethodStart));
+
+            string resetMethod = runner.Substring(
+                resetMethodStart,
+                nextMethodStart - resetMethodStart
+            );
+            Assert.That(resetMethod, Does.Contain("receiver.ResetCounts();"));
+            Assert.That(resetMethod, Does.Contain("EmitBurst();"));
+            Assert.That(resetMethod, Does.Not.Contain("sequence = 0;"));
+        }
+
+        [Test]
+        public void ImportedSampleGuideBuildsInteractiveStateAndClaimsOnlyOneSampleScenePerSession()
+        {
+            Type? windowType = FindLoadedType(
+                "WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor.DiagnosticsToolingGuideWindow"
+            );
+            Type? bootstrapType = FindLoadedType(
+                "WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor.DiagnosticsToolingGuideBootstrap"
+            );
+            if (windowType == null || bootstrapType == null)
+            {
+                Assert.Ignore(
+                    "The guide assembly is available when Unity imports the sample; the CI host copies every sample for this behavior check."
+                );
+                return;
+            }
+
+            const string sessionKey = "DxMessaging.DiagnosticsToolingGuide.Opened";
+            bool previousSessionValue = SessionState.GetBool(sessionKey, false);
+            EditorWindow? window = null;
+            try
+            {
+                SessionState.SetBool(sessionKey, false);
+                MethodInfo claim = bootstrapType.GetMethod(
+                    "TryClaimSessionForScene",
+                    BindingFlags.Static | BindingFlags.NonPublic
+                )!;
+                Assert.That(
+                    claim.Invoke(
+                        null,
+                        new object[] { "Assets/Unrelated/DiagnosticsToolingExerciser.unity" }
+                    ),
+                    Is.False,
+                    "A filename collision outside the sample folder must not open the guide."
+                );
+                const string importedScene =
+                    "Assets/Samples/DxMessaging/1.0.0/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity";
+                Assert.That(claim.Invoke(null, new object[] { importedScene }), Is.True);
+                Assert.That(
+                    claim.Invoke(null, new object[] { importedScene }),
+                    Is.False,
+                    "The guide must auto-open only once per editor session."
+                );
+
+                window = ScriptableObject.CreateInstance(windowType) as EditorWindow;
+                Assert.That(window, Is.Not.Null);
+                MethodInfo createGui = windowType.GetMethod(
+                    "CreateGUI",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                )!;
+                createGui.Invoke(window, null);
+
+                VisualElement root = window!.rootVisualElement;
+                Label? status = root.Q<Label>("dx-tooling-guide-status");
+                Button? play = root.Q<Button>("dx-tooling-guide-play");
+                Button? emit = root.Q<Button>("dx-tooling-guide-emit");
+                Button? reset = root.Q<Button>("dx-tooling-guide-reset");
+                Assert.That(status, Is.Not.Null);
+                Assert.That(play, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).True);
+                Assert.That(
+                    emit,
+                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
+                );
+                Assert.That(
+                    reset,
+                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
+                );
+
+                FieldInfo scheduledRefresh = windowType.GetField(
+                    "_statusRefresh",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                )!;
+                Assert.That(scheduledRefresh.GetValue(window), Is.Not.Null);
+            }
+            finally
+            {
+                if (window != null)
+                {
+                    EditorWindowTestUtility.CloseWindow(window);
+                }
+                SessionState.SetBool(sessionKey, previousSessionValue);
+            }
+        }
+
+        private static Type? FindLoadedType(string fullName)
+        {
+            return AppDomain
+                .CurrentDomain.GetAssemblies()
+                .Select(assembly => assembly.GetType(fullName, throwOnError: false))
+                .FirstOrDefault(type => type != null);
         }
 
         private static string ReadSampleFile(string relativeFilePath)

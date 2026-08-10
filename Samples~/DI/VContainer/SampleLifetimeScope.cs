@@ -1,20 +1,20 @@
 #if VCONTAINER_PRESENT
 namespace DxMessaging.Samples.DI.VContainer
 {
-    using System;
-    using DxMessaging.Core.Attributes;
-    using DxMessaging.Core.Extensions;
-    using DxMessaging.Core.MessageBus;
-    using DxMessaging.Unity.Integrations.VContainer;
-    using UnityEngine;
-    using VContainer;
-    using VContainer.Unity;
+    using global::System;
+    using global::UnityEngine;
+    using global::VContainer;
+    using global::DxMessaging.Core.Attributes;
+    using global::DxMessaging.Core.Extensions;
+    using global::DxMessaging.Core.MessageBus;
+    using global::DxMessaging.Unity.Integrations.VContainer;
+    using global::VContainer.Unity;
 
     /// <summary>
     /// Sample lifetime scope showing DI-friendly registration via IMessageRegistrationBuilder.
     /// Requires the VCONTAINER_PRESENT scripting define and VContainer package.
     /// </summary>
-    public sealed class SampleLifetimeScope : LifetimeScope
+    public sealed partial class SampleLifetimeScope : LifetimeScope
     {
         protected override void Configure(IContainerBuilder builder)
         {

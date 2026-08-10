@@ -30,7 +30,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 /// </para>
 /// </remarks>
 [TestFixture]
-public sealed class BaseCallIlInspectorTests
+internal sealed class BaseCallIlInspectorTests
 {
     // ---- BaseCallIlInspector unit tests ---------------------------------------------------
 
@@ -542,13 +542,12 @@ namespace DxMessaging.Unity
 
         using MemoryStream stream = new();
         EmitResult emit = compilation.Emit(stream);
-        if (!emit.Success)
+        Diagnostic[] blockingDiagnostics = emit
+            .Diagnostics.Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning)
+            .ToArray();
+        if (blockingDiagnostics.Length != 0)
         {
-            string errors = string.Join(
-                "\n",
-                emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
-                    .Select(d => d.ToString())
-            );
+            string errors = string.Join("\n", blockingDiagnostics.Select(d => d.ToString()));
             throw new InvalidOperationException(
                 $"Test fixture failed to compile:\n{errors}\n\nUser source:\n{userSource}"
             );

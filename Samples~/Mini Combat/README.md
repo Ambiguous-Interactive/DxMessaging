@@ -263,7 +263,9 @@ Ready to understand the implementation details?
 protected override void RegisterMessageHandlers() {
     _ = Token.RegisterUntargeted<MyMessage>(OnMessage);
 }
+```
 
+```csharp
 //  CORRECT - Always call base first
 protected override void RegisterMessageHandlers() {
     base.RegisterMessageHandlers();  // Essential!
@@ -278,7 +280,9 @@ protected override void RegisterMessageHandlers() {
 protected override void Awake() {
     myCustomSetup();
 }
+```
 
+```csharp
 //  CORRECT - Call base.Awake()
 protected override void Awake() {
     base.Awake();  // Creates the token!
@@ -304,12 +308,14 @@ protected override void RegisterMessageHandlers() {
 ###  Pitfall #4: Using 'new' instead of 'override'
 
 ```csharp
-//  WRONG - Hides the base method, breaks functionality
+// WRONG - This example will not compile cleanly because it hides the base method.
 new void OnEnable() {
     // This doesn't override, it hides!
 }
+```
 
-//  CORRECT - Always use override
+```csharp
+// CORRECT - Always use override
 protected override void OnEnable() {
     base.OnEnable();
     // Your code here

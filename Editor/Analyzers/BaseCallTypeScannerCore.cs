@@ -1,7 +1,4 @@
-// The Unity Editor assembly that hosts this file does not enable nullable annotations; the
-// dotnet-test project that compiles a linked copy DOES (`<Nullable>enable</Nullable>`). Pin the
-// nullable state per-file so behavior is identical in both compilation contexts.
-#nullable disable
+#nullable enable annotations
 namespace DxMessaging.Editor.Analyzers
 {
     using System;
@@ -35,7 +32,12 @@ namespace DxMessaging.Editor.Analyzers
     /// link does not).
     /// </para>
     /// </remarks>
-    public static class BaseCallTypeScannerCore
+#if UNITY_EDITOR
+    public
+#else
+    internal
+#endif
+    static class BaseCallTypeScannerCore
     {
         /// <summary>
         /// The guarded lifecycle methods on <c>MessageAwareComponent</c>. Method names are
@@ -129,11 +131,11 @@ namespace DxMessaging.Editor.Analyzers
         /// against the supplied type display string. Falls back to the generic format if the
         /// method is unknown so that inserting a new guarded method does not blank the overlay.
         /// </summary>
-        public static string GetMissingBaseConsequenceLine(string methodName, string typeDisplay)
+        public static string GetMissingBaseConsequenceLine(string? methodName, string? typeDisplay)
         {
             string format = MissingBaseCallMessageFormatsByMethod.TryGetValue(
                 methodName ?? string.Empty,
-                out string perMethodFormat
+                out string? perMethodFormat
             )
                 ? perMethodFormat
                 : GenericMissingBaseCallMessageFormat;
@@ -158,10 +160,15 @@ namespace DxMessaging.Editor.Analyzers
         /// <c>BaseCallReportEntry</c> shape but uses pure BCL collections so the helper is
         /// callable from <c>dotnet test</c>.
         /// </summary>
-        public sealed class ScanEntry
+#if UNITY_EDITOR
+        public
+#else
+        internal
+#endif
+        sealed class ScanEntry
         {
             /// <summary>Fully-qualified name of the offending type (dot-form for nested types).</summary>
-            public string TypeName;
+            public string TypeName = string.Empty;
 
             /// <summary>Method names whose overrides are missing the corresponding <c>base.*()</c> call.</summary>
             public SortedSet<string> MissingBaseFor = new(StringComparer.Ordinal);
@@ -192,8 +199,8 @@ namespace DxMessaging.Editor.Analyzers
         /// <c>DxMessagingSettings._baseCallIgnoredTypes</c>). May be <c>null</c>.
         /// </param>
         public static Dictionary<string, ScanEntry> Scan(
-            IEnumerable<Type> candidates,
-            IEnumerable<string> ignoredTypeNames
+            IEnumerable<Type?>? candidates,
+            IEnumerable<string>? ignoredTypeNames
         )
         {
             Dictionary<string, ScanEntry> result = new(StringComparer.Ordinal);
@@ -206,7 +213,7 @@ namespace DxMessaging.Editor.Analyzers
                 ? new HashSet<string>(StringComparer.Ordinal)
                 : new HashSet<string>(ignoredTypeNames, StringComparer.Ordinal);
 
-            foreach (Type concrete in candidates)
+            foreach (Type? concrete in candidates)
             {
                 if (concrete == null)
                 {
@@ -283,7 +290,7 @@ namespace DxMessaging.Editor.Analyzers
             HashSet<string> ignoredMethods = new(StringComparer.Ordinal);
             foreach (string methodName in GuardedMethodNames)
             {
-                MethodInfo m = GetDeclaredInstance(type, methodName);
+                MethodInfo? m = GetDeclaredInstance(type, methodName);
                 if (m == null)
                 {
                     continue;
@@ -340,7 +347,7 @@ namespace DxMessaging.Editor.Analyzers
             // independent; we only record the FIRST classification for the leaf in
             // entry.MissingBaseFor since the overlay HelpBox shows one row per method per type.
 
-            MethodInfo declared = GetDeclaredInstance(concrete, methodName);
+            MethodInfo? declared = GetDeclaredInstance(concrete, methodName);
             if (declared == null)
             {
                 // Type does not declare this method at all; nothing to flag at this level.
@@ -394,13 +401,13 @@ namespace DxMessaging.Editor.Analyzers
             // produces DXMSG010 on the leaf and we stop. Cross-assembly ancestors with no IL body
             // are trusted (assume-clean); the alternative would be unactionable warnings against
             // closed-source code.
-            MethodInfo cursorOverridden = GetOverriddenMethod(declared);
+            MethodInfo? cursorOverridden = GetOverriddenMethod(declared);
             HashSet<MethodInfo> visited = new();
             while (cursorOverridden != null && visited.Add(cursorOverridden))
             {
                 // Chain reached MessageAwareComponent itself; clean. We compare by full type
                 // name so the helper does not need a hard reference to the Unity-only type.
-                Type cursorDeclaring = cursorOverridden.DeclaringType;
+                Type? cursorDeclaring = cursorOverridden.DeclaringType;
                 if (
                     cursorDeclaring != null
                     && cursorDeclaring.FullName == "DxMessaging.Unity.MessageAwareComponent"
@@ -426,7 +433,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        private static MethodInfo GetDeclaredZeroArgInstance(Type type, string methodName)
+        private static MethodInfo? GetDeclaredZeroArgInstance(Type type, string methodName)
         {
             return type.GetMethod(
                 methodName,
@@ -440,7 +447,7 @@ namespace DxMessaging.Editor.Analyzers
             );
         }
 
-        private static MethodInfo GetDeclaredBoolArgInstance(Type type, string methodName)
+        private static MethodInfo? GetDeclaredBoolArgInstance(Type type, string methodName)
         {
             return type.GetMethod(
                 methodName,
@@ -462,9 +469,9 @@ namespace DxMessaging.Editor.Analyzers
         /// (defensive against an unusual subclass that declared a zero-arg variant) and fall
         /// back to the bool variant.
         /// </summary>
-        private static MethodInfo GetDeclaredInstance(Type type, string methodName)
+        private static MethodInfo? GetDeclaredInstance(Type type, string methodName)
         {
-            MethodInfo zeroArg = GetDeclaredZeroArgInstance(type, methodName);
+            MethodInfo? zeroArg = GetDeclaredZeroArgInstance(type, methodName);
             if (zeroArg != null)
             {
                 return zeroArg;
@@ -485,13 +492,13 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        private static bool BaseHasSameNamedVirtual(Type baseType, string methodName)
+        private static bool BaseHasSameNamedVirtual(Type? baseType, string methodName)
         {
             while (baseType != null && baseType != typeof(object))
             {
                 foreach (Type[] parameterTypes in GetGuardedMethodSignatures(methodName))
                 {
-                    MethodInfo m = baseType.GetMethod(
+                    MethodInfo? m = baseType.GetMethod(
                         methodName,
                         BindingFlags.Public
                             | BindingFlags.NonPublic
@@ -522,7 +529,7 @@ namespace DxMessaging.Editor.Analyzers
             return parameterTypes;
         }
 
-        private static MethodInfo GetOverriddenMethod(MethodInfo derivedOverride)
+        private static MethodInfo? GetOverriddenMethod(MethodInfo derivedOverride)
         {
             // For an override, GetBaseDefinition() returns the most-base virtual (the originating
             // declaration). To walk the chain link-by-link we need the closest ancestor that
@@ -530,11 +537,11 @@ namespace DxMessaging.Editor.Analyzers
             // return the first match. This skips intermediate types that don't override the slot
             // (e.g. a generic intermediate that just passes through), which is exactly what the
             // chain walk needs to detect DXMSG010 at the broken link rather than the pass-through.
-            Type baseType = derivedOverride.DeclaringType?.BaseType;
+            Type? baseType = derivedOverride.DeclaringType?.BaseType;
             Type[] signature = GetParameterTypes(derivedOverride);
             while (baseType != null && baseType != typeof(object))
             {
-                MethodInfo m = baseType.GetMethod(
+                MethodInfo? m = baseType.GetMethod(
                     derivedOverride.Name,
                     BindingFlags.Public
                         | BindingFlags.NonPublic

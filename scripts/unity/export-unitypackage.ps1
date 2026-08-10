@@ -769,6 +769,8 @@ $manifestJson = (@{ dependencies = $manifestDependencies } | ConvertTo-Json -Dep
     Set-Content -LiteralPath ([System.IO.Path]::Combine($projectPath, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
 New-ExporterSource |
     Set-Content -LiteralPath ([System.IO.Path]::Combine($projectPath, 'Assets', 'Editor', 'DxmUnityPackageExporter.cs')) -Encoding UTF8
+@('-warnaserror', '-warn:9999') |
+    Set-Content -LiteralPath ([System.IO.Path]::Combine($projectPath, 'Assets', 'csc.rsp')) -Encoding UTF8
 
 if ($StageOnly) {
     Write-Host "StageOnly: staged project at $projectPath; skipping the Unity export run."

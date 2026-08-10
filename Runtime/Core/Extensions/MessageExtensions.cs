@@ -199,7 +199,7 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <example>
         /// <code>
-        /// [DxUntargetedMessage]
+        /// [DxUntargetedMessage, DxAutoConstructor]
         /// public readonly partial struct SceneLoaded { public readonly int buildIndex; }
         ///
         /// var m = new SceneLoaded(3);
@@ -253,7 +253,7 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <example>
         /// <code>
-        /// [DxUntargetedMessage]
+        /// [DxUntargetedMessage, DxAutoConstructor]
         /// public readonly partial struct SettingsChanged { public readonly float volume; }
         ///
         /// var m = new SettingsChanged(0.8f);
@@ -290,7 +290,7 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <example>
         /// <code>
-        /// [DxTargetedMessage]
+        /// [DxTargetedMessage, DxAutoConstructor]
         /// public readonly partial struct Heal { public readonly int amount; }
         ///
         /// var heal = new Heal(10);
@@ -329,7 +329,7 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <example>
         /// <code>
-        /// [DxBroadcastMessage]
+        /// [DxBroadcastMessage, DxAutoConstructor]
         /// public readonly partial struct TookDamage { public readonly int amount; }
         ///
         /// var dmg = new TookDamage(5);

@@ -309,7 +309,9 @@ public class Player : MonoBehaviour {
         msg.EmitGameObjectBroadcast(gameObject); // NEW message
     }
 }
+```
 
+```csharp
 // Phase 2: Remove direct references
 public class Player : MonoBehaviour {
     // [SerializeField] private HealthBar healthBar; -> DELETED
@@ -364,7 +366,7 @@ public class Player : MonoBehaviour {
 // player.OnHealthChanged += UpdateBar;
 
 // NEW
-_ = Token.RegisterBroadcast<HealthChanged>(...);
+_ = Token.RegisterBroadcast<HealthChanged>(OnHealthChanged);
 ```
 
 ### L Pitfall 3: Mixing Message Types Incorrectly

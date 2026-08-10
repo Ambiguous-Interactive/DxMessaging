@@ -7,8 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add an auto-opening guided tour to the Diagnostics Tooling Exerciser sample.
+  Its live status and ordered actions start the scene, emit and reset deterministic
+  traffic, open Message Monitor and Flow Graph, select the sample receivers, and
+  link to DxMessaging Project Settings
+  ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
+- Add the standard .NET constructors to `MessageRegistrationBuildException`.
+  Builder-thrown instances continue to include the retryable lease and both
+  activation and cleanup failures ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+
+### Changed
+
+- Stop generated message and constructor source from disabling all compiler
+  warnings. Generated code now participates in the consumer's warning policy,
+  while repository CI compiles every shipped sample and generated output with
+  warnings treated as errors. Strict .NET analysis uses all SDK 9 rules, and
+  Unity EditMode CI adds a non-shipping Roslynator pass across the project
+  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+
 ### Fixed
 
+- Fix the optional Reflex integration and DI sample for Reflex 14's registration
+  API while retaining support for earlier Reflex releases. The pinned Reflex
+  14.3.1 test dependency also removes its obsolete non-generic TreeView usage on
+  Unity 6000.5 ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Keep Message Monitor, Flow Graph, and the Diagnostics Tooling Exerciser compiling
+  on Unity 6000.5 after Unity replaced the object-discovery sort-mode overloads.
+  Older supported editors retain their matching API path
+  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 - Fix the Message Monitor failing to compile on Unity 6000.5 after Unity made
   its integer object-lookup API a compile error. Context links now use the
   package's centralized `InstanceId` object reference on every supported editor

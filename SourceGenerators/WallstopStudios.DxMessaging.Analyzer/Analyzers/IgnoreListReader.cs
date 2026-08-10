@@ -36,6 +36,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         private const string GlobalPrefix = "global::";
 
+        private static readonly char[] DirectorySeparators = { '/', '\\' };
+
         private static readonly ConditionalWeakTable<
             AnalyzerOptions,
             Lazy<ImmutableHashSet<string>>
@@ -95,7 +97,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     continue;
                 }
 
-                SourceText sourceText = additionalText.GetText(cancellationToken);
+                SourceText? sourceText = additionalText.GetText(cancellationToken);
                 if (sourceText is null)
                 {
                     continue;
@@ -144,7 +146,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 return string.Empty;
             }
 
-            int lastSlash = path.LastIndexOfAny(new[] { '/', '\\' });
+            int lastSlash = path.LastIndexOfAny(DirectorySeparators);
             return lastSlash < 0 ? path : path.Substring(lastSlash + 1);
         }
     }

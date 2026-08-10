@@ -122,6 +122,11 @@ Group related messages inside a container class for better organization:
 ```csharp
 using DxMessaging.Core.Attributes;
 
+public enum DamageType
+{
+    Physical,
+}
+
 public partial class CombatEvents
 {
     [DxTargetedMessage]

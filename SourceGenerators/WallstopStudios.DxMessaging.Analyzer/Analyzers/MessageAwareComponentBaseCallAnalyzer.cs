@@ -234,6 +234,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         public override void Initialize(AnalysisContext context)
         {
+            if (context is null)
+            {
+                throw new ArgumentNullException(nameof(context));
+            }
+
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
             context.EnableConcurrentExecution();
             context.RegisterSyntaxNodeAction(
@@ -334,7 +339,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             // method IS an override AND base.X() IS present syntactically; otherwise DXMSG006
             // already fires on this method and DXMSG010 would be redundant noise on the same
             // location. We compute it here so the opt-out branches can lower it to DXMSG008 too.
-            IMethodSymbol brokenChainAncestor = null;
+            IMethodSymbol? brokenChainAncestor = null;
             bool wouldFireBrokenChain =
                 hasOverrideModifier
                 && !wouldFireMissingBase
@@ -439,7 +444,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 // intermediate ancestor itself fails to chain to MessageAwareComponent. The chain
                 // is broken at some ancestor and the messaging system is dead on this component
                 // even though THIS override looks correct in isolation.
-                if (wouldFireBrokenChain)
+                if (wouldFireBrokenChain && brokenChainAncestor is not null)
                 {
                     context.ReportDiagnostic(
                         Diagnostic.Create(
@@ -463,7 +468,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             // (if generic) diagnostic. The meta-test forces the dictionary to stay aligned.
             string consequenceFormat = MissingBaseCallMessageFormatsByMethod.TryGetValue(
                 methodName,
-                out string perMethodFormat
+                out string? perMethodFormat
             )
                 ? perMethodFormat
                 : MissingBaseCallMessageFormat;
@@ -480,8 +485,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             // string-id overload of Diagnostic.Create, which lets us specify an effective severity
             // without registering a duplicate descriptor for the same id.
             if (
-                string.Equals(methodName, RegisterMessageHandlersMethodName)
-                && ClassOverridesRegisterForStringMessagesAsFalse(containingType)
+                string.Equals(
+                    methodName,
+                    RegisterMessageHandlersMethodName,
+                    StringComparison.Ordinal
+                ) && ClassOverridesRegisterForStringMessagesAsFalse(containingType)
             )
             {
                 Diagnostic loweredDiagnostic = Diagnostic.Create(
@@ -527,7 +535,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         private static bool StrictlyInheritsFromMessageAwareComponent(INamedTypeSymbol type)
         {
-            INamedTypeSymbol current = type.BaseType;
+            INamedTypeSymbol? current = type.BaseType;
             while (current is not null)
             {
                 // OriginalDefinition normalizes constructed generics back to the open type for FQN comparison.
@@ -556,7 +564,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         {
             foreach (AttributeData attribute in symbol.GetAttributes())
             {
-                INamedTypeSymbol attrClass = attribute.AttributeClass;
+                INamedTypeSymbol? attrClass = attribute.AttributeClass;
                 if (attrClass is null)
                 {
                     continue;
@@ -662,15 +670,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         private static bool ChainReachesMessageAwareComponent(
             IMethodSymbol methodSymbol,
             string methodName,
-            out IMethodSymbol firstBrokenLink
+            out IMethodSymbol? firstBrokenLink
         )
         {
             firstBrokenLink = null;
             HashSet<IMethodSymbol> visited = new(SymbolEqualityComparer.Default);
-            IMethodSymbol cursor = methodSymbol.OverriddenMethod;
+            IMethodSymbol? cursor = methodSymbol.OverriddenMethod;
             while (cursor is not null && visited.Add(cursor))
             {
-                INamedTypeSymbol containing = cursor.ContainingType?.OriginalDefinition;
+                INamedTypeSymbol? containing = cursor.ContainingType?.OriginalDefinition;
                 if (containing is null)
                 {
                     return true;
@@ -743,7 +751,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             INamedTypeSymbol containingType
         )
         {
-            INamedTypeSymbol current = containingType;
+            INamedTypeSymbol? current = containingType;
             while (current is not null)
             {
                 // Stop walking once we've reached MessageAwareComponent itself; its virtual
@@ -822,7 +830,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 return false;
             }
 
-            AccessorDeclarationSyntax getter = null;
+            AccessorDeclarationSyntax? getter = null;
             foreach (AccessorDeclarationSyntax accessor in property.AccessorList.Accessors)
             {
                 if (accessor.IsKind(SyntaxKind.GetAccessorDeclaration))
@@ -864,7 +872,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             return false;
         }
 
-        private static bool IsFalseLiteral(ExpressionSyntax expression)
+        private static bool IsFalseLiteral(ExpressionSyntax? expression)
         {
             return expression is LiteralExpressionSyntax literal
                 && literal.IsKind(SyntaxKind.FalseLiteralExpression);

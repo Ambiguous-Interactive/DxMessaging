@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -13,11 +14,35 @@ using WallstopStudios.DxMessaging.SourceGenerators.Analyzers;
 namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 [TestFixture]
-public sealed class MessageAwareComponentBaseCallAnalyzerTests
+internal sealed class MessageAwareComponentBaseCallAnalyzerTests
 {
+    private static readonly string[] Cs0114Warning = { "CS0114" };
+
     // S2. Reference the analyzer's source-of-truth constant directly via InternalsVisibleTo;
     // no more duplicated literal in the tests. Drift risk eliminated.
-    private static readonly string IgnoreFileName = IgnoreListReader.IgnoreFileName;
+    private const string IgnoreFileName = IgnoreListReader.IgnoreFileName;
+
+    [Test]
+    public void AnalyzerHarnessRejectsUnexpectedCompilerWarnings()
+    {
+        const string source = """
+namespace Sample
+{
+    public sealed class WarningInput
+    {
+        public void Run()
+        {
+            int unused = 42;
+        }
+    }
+}
+""";
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            GeneratorTestUtilities.RunBaseCallAnalyzer(source)
+        )!;
+        Assert.That(exception.Message, Does.Contain("CS0219"));
+    }
 
     [TestCase("DXMSG006", "dxmsg006")]
     [TestCase("DXMSG007", "dxmsg007")]
@@ -53,7 +78,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 0;
+            _ = 0;
         }
     }
 }
@@ -170,7 +195,7 @@ namespace Sample
     {
         protected override void {{methodName}}()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -206,7 +231,7 @@ namespace Sample
         string source = $$"""
 namespace Sample
 {
-    public sealed class Player : DxMessaging.Unity.MessageAwareComponent
+    public class Player : DxMessaging.Unity.MessageAwareComponent
     {
         protected new void {{methodName}}() { }
     }
@@ -225,7 +250,7 @@ namespace Sample
                 .ToString(),
             Is.EqualTo(methodName)
         );
-        Assert.That(dxmsg007.GetMessage(), Does.Contain(methodName));
+        Assert.That(dxmsg007.GetMessage(CultureInfo.InvariantCulture), Does.Contain(methodName));
     }
 
     // -- G4: focused DXMSG009 tests for OnDisable and OnDestroy --------------------------------
@@ -253,9 +278,12 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG009", DiagnosticSeverity.Warning);
         AssertNoSiblings(diagnostics, "DXMSG009");
         Diagnostic dxmsg009 = diagnostics.Single(d => d.Id == "DXMSG009");
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("Sample.BrokenThing"));
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("OnDisable"));
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("CS0114"));
+        Assert.That(
+            dxmsg009.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.BrokenThing")
+        );
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("OnDisable"));
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("CS0114"));
         string spanText = dxmsg009
             .Location.SourceTree!.GetText()
             .GetSubText(dxmsg009.Location.SourceSpan)
@@ -281,9 +309,12 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG009", DiagnosticSeverity.Warning);
         AssertNoSiblings(diagnostics, "DXMSG009");
         Diagnostic dxmsg009 = diagnostics.Single(d => d.Id == "DXMSG009");
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("Sample.BrokenThing"));
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("OnDestroy"));
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("CS0114"));
+        Assert.That(
+            dxmsg009.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.BrokenThing")
+        );
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("OnDestroy"));
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("CS0114"));
         string spanText = dxmsg009
             .Location.SourceTree!.GetText()
             .GetSubText(dxmsg009.Location.SourceSpan)
@@ -305,7 +336,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -316,11 +347,17 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
         Assert.That(
-            dxmsg006.GetMessage(),
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("the message registration token will never be created")
         );
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("Sample.Player"));
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("base.Awake()"));
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.Player")
+        );
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("base.Awake()")
+        );
     }
 
     [Test]
@@ -331,7 +368,7 @@ namespace Sample
 {
     public sealed class Player : DxMessaging.Unity.MessageAwareComponent
     {
-        protected override void OnEnable() { int x = 1; }
+        protected override void OnEnable() { _ = 1; }
     }
 }
 """;
@@ -340,8 +377,14 @@ namespace Sample
 
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("handlers will not be re-enabled"));
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("base.OnEnable()"));
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("handlers will not be re-enabled")
+        );
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("base.OnEnable()")
+        );
     }
 
     [Test]
@@ -352,7 +395,7 @@ namespace Sample
 {
     public sealed class Player : DxMessaging.Unity.MessageAwareComponent
     {
-        protected override void OnDisable() { int x = 1; }
+        protected override void OnDisable() { _ = 1; }
     }
 }
 """;
@@ -361,8 +404,14 @@ namespace Sample
 
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("unwanted message processing"));
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("base.OnDisable()"));
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("unwanted message processing")
+        );
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("base.OnDisable()")
+        );
     }
 
     [Test]
@@ -373,7 +422,7 @@ namespace Sample
 {
     public sealed class Player : DxMessaging.Unity.MessageAwareComponent
     {
-        protected override void OnDestroy() { int x = 1; }
+        protected override void OnDestroy() { _ = 1; }
     }
 }
 """;
@@ -382,8 +431,11 @@ namespace Sample
 
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("memory leak"));
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("base.OnDestroy()"));
+        Assert.That(dxmsg006.GetMessage(CultureInfo.InvariantCulture), Does.Contain("memory leak"));
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("base.OnDestroy()")
+        );
     }
 
     [Test]
@@ -394,7 +446,7 @@ namespace Sample
 {
     public sealed class Player : DxMessaging.Unity.MessageAwareComponent
     {
-        protected override void RegisterMessageHandlers() { int x = 1; }
+        protected override void RegisterMessageHandlers() { _ = 1; }
     }
 }
 """;
@@ -404,10 +456,13 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
         Assert.That(
-            dxmsg006.GetMessage(),
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("default string-message handlers will not be registered")
         );
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("RegisterForStringMessages"));
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("RegisterForStringMessages")
+        );
     }
 
     [Test]
@@ -422,7 +477,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -450,7 +505,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -478,7 +533,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -497,7 +552,7 @@ namespace Sample
         string source = """
 namespace Sample
 {
-    public sealed class Player : DxMessaging.Unity.MessageAwareComponent
+    public class Player : DxMessaging.Unity.MessageAwareComponent
     {
         protected new void Awake() { }
     }
@@ -536,7 +591,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -546,7 +601,7 @@ namespace Sample
 
         Diagnostic[] dxmsg006 = diagnostics.Where(d => d.Id == "DXMSG006").ToArray();
         Assert.That(dxmsg006, Has.Length.EqualTo(1));
-        Assert.That(dxmsg006[0].GetMessage(), Does.Contain("Sample.B"));
+        Assert.That(dxmsg006[0].GetMessage(CultureInfo.InvariantCulture), Does.Contain("Sample.B"));
     }
 
     [Test]
@@ -567,7 +622,7 @@ namespace Sample
 
         protected override void OnEnable()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -594,12 +649,12 @@ namespace Sample
         string source = """
 namespace Sample
 {
-    public sealed class Player : DxMessaging.Unity.MessageAwareComponent
+    public class Player : DxMessaging.Unity.MessageAwareComponent
     {
         [DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -628,7 +683,7 @@ namespace Sample
 
         protected override void OnDisable()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -722,7 +777,7 @@ namespace Sample
     {
         protected sealed override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -732,7 +787,7 @@ namespace Sample
 
         Diagnostic[] dxmsg006 = diagnostics.Where(d => d.Id == "DXMSG006").ToArray();
         Assert.That(dxmsg006, Has.Length.EqualTo(1));
-        Assert.That(dxmsg006[0].GetMessage(), Does.Contain("Sample.B"));
+        Assert.That(dxmsg006[0].GetMessage(CultureInfo.InvariantCulture), Does.Contain("Sample.B"));
         Assert.That(dxmsg006[0].Severity, Is.EqualTo(DiagnosticSeverity.Warning));
     }
 
@@ -803,7 +858,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -813,7 +868,10 @@ namespace Sample
 
         Diagnostic[] dxmsg006 = diagnostics.Where(d => d.Id == "DXMSG006").ToArray();
         Assert.That(dxmsg006, Has.Length.EqualTo(1));
-        Assert.That(dxmsg006[0].GetMessage(), Does.Contain("Sample.MyConcrete"));
+        Assert.That(
+            dxmsg006[0].GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.MyConcrete")
+        );
     }
 
     [Test]
@@ -833,7 +891,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -855,7 +913,7 @@ namespace Sample
     {
         public void Awake(int discriminator)
         {
-            int x = discriminator;
+            _ = discriminator;
         }
     }
 }
@@ -876,7 +934,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -918,7 +976,7 @@ namespace Sample
     {
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -953,7 +1011,7 @@ namespace Sample
     {
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -989,7 +1047,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -1022,7 +1080,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -1049,7 +1107,7 @@ namespace Sample
     {
         public void Awake(int discriminator)
         {
-            int x = discriminator;
+            _ = discriminator;
         }
     }
 }
@@ -1076,7 +1134,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 0;
+            _ = 0;
         }
     }
 }
@@ -1100,7 +1158,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 0;
+            _ = 0;
         }
     }
 }
@@ -1144,7 +1202,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -1183,7 +1241,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 0;
+            _ = 0;
         }
     }
 }
@@ -1251,7 +1309,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -1277,7 +1335,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -1344,7 +1402,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -1389,7 +1447,7 @@ namespace Sample
     )
     {
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
-        string message = dxmsg006.GetMessage();
+        string message = dxmsg006.GetMessage(CultureInfo.InvariantCulture);
         Assert.That(
             message,
             Does.Contain(expectedTypeDisplayName),
@@ -1464,11 +1522,14 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG009", DiagnosticSeverity.Warning);
         AssertNoSiblings(diagnostics, "DXMSG009");
         Diagnostic dxmsg009 = diagnostics.Single(d => d.Id == "DXMSG009");
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("Sample.BrokenThing"));
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("OnEnable"));
+        Assert.That(
+            dxmsg009.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.BrokenThing")
+        );
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("OnEnable"));
         // S1: pin the CS0114 cross-reference into the message so a future refactor that drops the
         // parenthetical doesn't silently lose the canonical compiler-warning anchor.
-        Assert.That(dxmsg009.GetMessage(), Does.Contain("CS0114"));
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("CS0114"));
         string spanText = dxmsg009
             .Location.SourceTree!.GetText()
             .GetSubText(dxmsg009.Location.SourceSpan)
@@ -1623,7 +1684,7 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG009", DiagnosticSeverity.Warning);
         AssertNoSiblings(diagnostics, "DXMSG009");
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG009").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG009").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain(methodName)
         );
     }
@@ -1638,7 +1699,7 @@ namespace Sample
 {
     public class BrokenThing : DxMessaging.Unity.MessageAwareComponent
     {
-        public void OnEnable(int discriminator) { int x = discriminator; }
+        public void OnEnable(int discriminator) { _ = discriminator; }
     }
 }
 """;
@@ -1662,7 +1723,11 @@ namespace Sample
 }
 """;
 
-        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                Cs0114Warning
+            );
 
         Assert.That(diagnostics, Is.Empty);
     }
@@ -1680,7 +1745,11 @@ namespace Sample
 }
 """;
 
-        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                Cs0114Warning
+            );
 
         Assert.That(diagnostics, Is.Empty);
     }
@@ -1699,7 +1768,11 @@ namespace Sample
 }
 """;
 
-        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                Cs0114Warning
+            );
 
         AssertSingle(diagnostics, "DXMSG008", DiagnosticSeverity.Info);
         AssertNoSiblings(diagnostics, "DXMSG008");
@@ -1707,7 +1780,7 @@ namespace Sample
         // passing (the literal `[DxIgnoreMissingBaseCall]` for attribute-driven opt-outs vs the
         // ignore-list filename) does not silently drift.
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG008").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG008").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("[DxIgnoreMissingBaseCall]")
         );
     }
@@ -1726,12 +1799,16 @@ namespace Sample
 }
 """;
 
-        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                Cs0114Warning
+            );
 
         AssertSingle(diagnostics, "DXMSG008", DiagnosticSeverity.Info);
         AssertNoSiblings(diagnostics, "DXMSG008");
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG008").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG008").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("[DxIgnoreMissingBaseCall]")
         );
     }
@@ -1753,15 +1830,17 @@ namespace Sample
             ($"some/path/{IgnoreListReader.IgnoreFileName}", "Sample.BrokenThing\n"),
         };
 
-        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(
-            source,
-            additionalFiles
-        );
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                Cs0114Warning,
+                additionalFiles
+            );
 
         AssertSingle(diagnostics, "DXMSG008", DiagnosticSeverity.Info);
         AssertNoSiblings(diagnostics, "DXMSG008");
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG008").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG008").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain(IgnoreListReader.IgnoreFileName)
         );
     }
@@ -1832,7 +1911,7 @@ namespace Sample
         {
             protected override void Awake()
             {
-                int x = 0;
+                _ = 0;
             }
         }
     }
@@ -1845,8 +1924,14 @@ namespace Sample
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
         // The emitted message must contain the dot-form of the nested FQN; that is the form
         // the harvester ingests and keys the snapshot by.
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("Sample.Outer.Nested"));
-        Assert.That(dxmsg006.GetMessage(), Does.Not.Contain("Outer+Nested"));
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.Outer.Nested")
+        );
+        Assert.That(
+            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
+            Does.Not.Contain("Outer+Nested")
+        );
     }
 
     // -- DXMSG010 (transitive broken base-call chain) ----------------------------------------
@@ -1884,10 +1969,10 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG010", DiagnosticSeverity.Warning);
 
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("Sample.ddd"));
+        Assert.That(dxmsg006.GetMessage(CultureInfo.InvariantCulture), Does.Contain("Sample.ddd"));
 
         Diagnostic dxmsg010 = diagnostics.Single(d => d.Id == "DXMSG010");
-        string msg010 = dxmsg010.GetMessage();
+        string msg010 = dxmsg010.GetMessage(CultureInfo.InvariantCulture);
         Assert.That(msg010, Does.Contain("Sample.BrokenThing"));
         Assert.That(msg010, Does.Contain("OnEnable"));
         Assert.That(msg010, Does.Contain("Sample.ddd"));
@@ -1933,7 +2018,7 @@ namespace Sample
             "Exactly one DXMSG006 expected (on ddd)."
         );
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
-        Assert.That(dxmsg006.GetMessage(), Does.Contain("Sample.ddd"));
+        Assert.That(dxmsg006.GetMessage(CultureInfo.InvariantCulture), Does.Contain("Sample.ddd"));
         Assert.That(dxmsg006.Severity, Is.EqualTo(DiagnosticSeverity.Warning));
 
         Diagnostic[] dxmsg010 = diagnostics.Where(d => d.Id == "DXMSG010").ToArray();
@@ -1943,11 +2028,19 @@ namespace Sample
             "Exactly two DXMSG010 expected (on Middle and BrokenThing)."
         );
         Assert.That(dxmsg010.All(d => d.Severity == DiagnosticSeverity.Warning), Is.True);
-        string[] messages = dxmsg010.Select(d => d.GetMessage()).ToArray();
-        Assert.That(messages.Any(m => m.Contains("Sample.Middle")), Is.True);
-        Assert.That(messages.Any(m => m.Contains("Sample.BrokenThing")), Is.True);
+        string[] messages = dxmsg010
+            .Select(d => d.GetMessage(CultureInfo.InvariantCulture))
+            .ToArray();
+        Assert.That(
+            messages.Any(m => m.Contains("Sample.Middle", StringComparison.Ordinal)),
+            Is.True
+        );
+        Assert.That(
+            messages.Any(m => m.Contains("Sample.BrokenThing", StringComparison.Ordinal)),
+            Is.True
+        );
         // Both DXMSG010 messages should mention `Sample.ddd` as the first broken ancestor.
-        Assert.That(messages.All(m => m.Contains("Sample.ddd")), Is.True);
+        Assert.That(messages.All(m => m.Contains("Sample.ddd", StringComparison.Ordinal)), Is.True);
     }
 
     [Test]
@@ -2039,13 +2132,19 @@ namespace Sample
         Assert.That(diagnostics.Count(d => d.Id == "DXMSG010"), Is.Zero);
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.ddd")
         );
         AssertSingle(diagnostics, "DXMSG008", DiagnosticSeverity.Info);
         Diagnostic dxmsg008 = diagnostics.Single(d => d.Id == "DXMSG008");
-        Assert.That(dxmsg008.GetMessage(), Does.Contain("Sample.BrokenThing"));
-        Assert.That(dxmsg008.GetMessage(), Does.Contain("[DxIgnoreMissingBaseCall]"));
+        Assert.That(
+            dxmsg008.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.BrokenThing")
+        );
+        Assert.That(
+            dxmsg008.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("[DxIgnoreMissingBaseCall]")
+        );
     }
 
     [Test]
@@ -2078,13 +2177,19 @@ namespace Sample
         Assert.That(diagnostics.Count(d => d.Id == "DXMSG010"), Is.Zero);
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.ddd")
         );
         AssertSingle(diagnostics, "DXMSG008", DiagnosticSeverity.Info);
         Diagnostic dxmsg008 = diagnostics.Single(d => d.Id == "DXMSG008");
-        Assert.That(dxmsg008.GetMessage(), Does.Contain("Sample.BrokenThing"));
-        Assert.That(dxmsg008.GetMessage(), Does.Contain(IgnoreListReader.IgnoreFileName));
+        Assert.That(
+            dxmsg008.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("Sample.BrokenThing")
+        );
+        Assert.That(
+            dxmsg008.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain(IgnoreListReader.IgnoreFileName)
+        );
     }
 
     [Test]
@@ -2115,12 +2220,12 @@ namespace Sample
 
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.MyBase")
         );
         AssertSingle(diagnostics, "DXMSG010", DiagnosticSeverity.Warning);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG010").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG010").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.BrokenThing")
         );
     }
@@ -2156,12 +2261,12 @@ namespace Sample
 
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Info);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.ddd")
         );
         AssertSingle(diagnostics, "DXMSG010", DiagnosticSeverity.Warning);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG010").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG010").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.BrokenThing")
         );
     }
@@ -2201,7 +2306,7 @@ namespace Sample
         ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
 
         Diagnostic dxmsg010 = diagnostics.Single(d => d.Id == "DXMSG010");
-        string message = dxmsg010.GetMessage();
+        string message = dxmsg010.GetMessage(CultureInfo.InvariantCulture);
         Assert.That(message, Does.Contain("Sample.ddd"));
         Assert.That(message, Does.Not.Contain("an ancestor"));
         Assert.That(message, Does.Not.Contain("{2}"));
@@ -2264,7 +2369,7 @@ namespace Sample
     {
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -2295,7 +2400,7 @@ namespace Sample
         [DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]
         protected override void Awake()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -2327,12 +2432,12 @@ namespace Sample
 
         protected override void OnEnable()
         {
-            int x = 1;
+            _ = 1;
         }
 
         protected override void OnDisable()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -2358,7 +2463,7 @@ namespace Sample
                 d.Location.SourceTree!.GetText().GetSubText(d.Location.SourceSpan).ToString()
             )
             .ToArray();
-        Assert.That(spans, Is.EquivalentTo(new[] { "OnEnable", "OnDisable" }));
+        Assert.That(spans, Is.EquivalentTo(expected));
     }
 
     [Test]
@@ -2442,17 +2547,21 @@ namespace Sample
         // ddd has DXMSG006. Inner and Leaf both have DXMSG010; chain dies at ddd.
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         Assert.That(
-            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(),
+            diagnostics.Single(d => d.Id == "DXMSG006").GetMessage(CultureInfo.InvariantCulture),
             Does.Contain("Sample.ddd")
         );
         Diagnostic[] dxmsg010 = diagnostics.Where(d => d.Id == "DXMSG010").ToArray();
         Assert.That(dxmsg010, Has.Length.EqualTo(2));
         Assert.That(
-            dxmsg010.Select(d => d.GetMessage()).Any(m => m.Contains("Sample.Inner")),
+            dxmsg010
+                .Select(d => d.GetMessage(CultureInfo.InvariantCulture))
+                .Any(m => m.Contains("Sample.Inner", StringComparison.Ordinal)),
             Is.True
         );
         Assert.That(
-            dxmsg010.Select(d => d.GetMessage()).Any(m => m.Contains("Sample.Leaf")),
+            dxmsg010
+                .Select(d => d.GetMessage(CultureInfo.InvariantCulture))
+                .Any(m => m.Contains("Sample.Leaf", StringComparison.Ordinal)),
             Is.True
         );
     }
@@ -2473,7 +2582,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -2498,7 +2607,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -2523,7 +2632,7 @@ namespace Sample
 
         protected override void RegisterMessageHandlers()
         {
-            int x = 1;
+            _ = 1;
         }
     }
 }
@@ -2554,11 +2663,11 @@ namespace Sample
     [DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]
     public sealed class Player : DxMessaging.Unity.MessageAwareComponent
     {
-        protected override void Awake() { int a = 0; }
-        protected override void OnEnable() { int b = 0; }
-        protected override void OnDisable() { int c = 0; }
-        protected override void OnDestroy() { int d = 0; }
-        protected override void RegisterMessageHandlers() { int e = 0; }
+        protected override void Awake() { _ = 0; }
+        protected override void OnEnable() { _ = 0; }
+        protected override void OnDisable() { _ = 0; }
+        protected override void OnDestroy() { _ = 0; }
+        protected override void RegisterMessageHandlers() { _ = 0; }
     }
 }
 """;
@@ -2581,16 +2690,14 @@ namespace Sample
                 d.Location.SourceTree!.GetText().GetSubText(d.Location.SourceSpan).ToString()
             )
             .ToArray();
-        Assert.That(
-            spans,
-            Is.EquivalentTo(
-                new[] { "Awake", "OnEnable", "OnDisable", "OnDestroy", "RegisterMessageHandlers" }
-            )
-        );
+        Assert.That(spans, Is.EquivalentTo(expectedArray));
         foreach (Diagnostic d in dxmsg008)
         {
             Assert.That(d.Severity, Is.EqualTo(DiagnosticSeverity.Info));
-            Assert.That(d.GetMessage(), Does.Contain("[DxIgnoreMissingBaseCall]"));
+            Assert.That(
+                d.GetMessage(CultureInfo.InvariantCulture),
+                Does.Contain("[DxIgnoreMissingBaseCall]")
+            );
         }
     }
 
@@ -2605,10 +2712,10 @@ namespace Sample
     public sealed class Player : DxMessaging.Unity.MessageAwareComponent
     {
         [DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]
-        protected override void Awake() { int a = 0; }
+        protected override void Awake() { _ = 0; }
 
-        protected override void OnEnable() { int b = 0; }
-        protected override void OnDisable() { int c = 0; }
+        protected override void OnEnable() { _ = 0; }
+        protected override void OnDisable() { _ = 0; }
     }
 }
 """;
@@ -2638,7 +2745,7 @@ namespace Sample
                 d.Location.SourceTree!.GetText().GetSubText(d.Location.SourceSpan).ToString()
             )
             .ToArray();
-        Assert.That(dxmsg006Spans, Is.EquivalentTo(new[] { "OnEnable", "OnDisable" }));
+        Assert.That(dxmsg006Spans, Is.EquivalentTo(expected));
         Assert.That(diagnostics.Where(d => d.Id == "DXMSG007"), Is.Empty);
         Assert.That(diagnostics.Where(d => d.Id == "DXMSG009"), Is.Empty);
         Assert.That(diagnostics.Where(d => d.Id == "DXMSG010"), Is.Empty);
@@ -2652,10 +2759,10 @@ namespace Sample
         string source = """
 namespace Sample
 {
-    public sealed class Player : DxMessaging.Unity.MessageAwareComponent
+    public class Player : DxMessaging.Unity.MessageAwareComponent
     {
         [DxMessaging.Core.Attributes.DxIgnoreMissingBaseCall]
-        protected new void Awake() { int x = 0; }
+        protected new void Awake() { _ = 0; }
     }
 }
 """;
@@ -2673,7 +2780,10 @@ namespace Sample
                 .ToString(),
             Is.EqualTo("Awake")
         );
-        Assert.That(dxmsg008.GetMessage(), Does.Contain("[DxIgnoreMissingBaseCall]"));
+        Assert.That(
+            dxmsg008.GetMessage(CultureInfo.InvariantCulture),
+            Does.Contain("[DxIgnoreMissingBaseCall]")
+        );
     }
 
     [Test]
@@ -2734,6 +2844,15 @@ namespace Sample
     /// </summary>
     private static readonly ImmutableHashSet<string> KnownOneArgBoolLifecycleNames =
         ImmutableHashSet.Create("OnApplicationFocus", "OnApplicationPause");
+    private static readonly string[] expected = new[] { "OnEnable", "OnDisable" };
+    private static readonly string[] expectedArray = new[]
+    {
+        "Awake",
+        "OnEnable",
+        "OnDisable",
+        "OnDestroy",
+        "RegisterMessageHandlers",
+    };
 
     [Test]
     public void GuardedMethodListMatchesAllVirtualLifecycleMethodsOnPublicBaseClasses()
@@ -2998,7 +3117,7 @@ namespace Sample
     [Test]
     public void AnalyzerAndScannerCoreShareIdenticalMissingBaseCallMessageFormats()
     {
-        IReadOnlyDictionary<string, string> analyzerFormats =
+        ImmutableDictionary<string, string> analyzerFormats =
             MessageAwareComponentBaseCallAnalyzer.MissingBaseCallMessageFormatsByMethod;
         IReadOnlyDictionary<string, string> scannerFormats = global::DxMessaging
             .Editor

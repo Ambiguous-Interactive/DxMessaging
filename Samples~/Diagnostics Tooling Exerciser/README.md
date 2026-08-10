@@ -21,14 +21,14 @@ the package editor tools.
 
 1. Import **Diagnostics Tooling Exerciser** from the Package Manager Samples tab.
 1. Open `DiagnosticsToolingExerciser.unity`.
-1. Press Play. The runner emits a burst of one untargeted pulse, one targeted
-   command for each receiver, and one broadcast signal for each source.
-1. Open **Tools > Wallstop Studios > DxMessaging > Message Monitor**.
-1. Open **Tools > Wallstop Studios > DxMessaging > Flow Graph**.
-1. Click any route line, including near a message or receiver endpoint, then
-   expand its evidence or open a captured message or call-site source link.
-1. Select `Player Ship`, `Enemy Drone`, and `HUD Console` to inspect local
-   diagnostics counters.
+1. Follow the **DxMessaging Guided Tour** window that opens with the scene. It
+   starts Play Mode, emits deterministic traffic, opens Message Monitor and Flow
+   Graph, selects all receivers, and links to the relevant Project Settings.
+
+Reopen the guide at any time from **Tools > Wallstop Studios > DxMessaging >
+Diagnostics Tooling Guided Tour**. Each step remains safe when the scene is not
+running: emit actions stay disabled until the runner is active, and the status
+panel explains whether the runner and receivers are available.
 
 The active runner starts its burst after the initial scene load and again from
 `OnEnable` instead of relying on a one-shot `Start` callback. Consecutive Play
@@ -42,6 +42,9 @@ The runner also exposes context-menu commands:
 
 - **Emit One Of Each** sends one untargeted, targeted, and broadcast pass.
 - **Emit Burst** repeats that pass using `burstCount`.
+- **Reset Counters And Emit Burst** clears all receiver counters and emits the
+  configured burst. Message Monitor history stays visible, and sequence-based
+  trace IDs continue forward without duplicates.
 - Receiver **Reset Counts** clears the inspector counters without changing
   registrations.
 

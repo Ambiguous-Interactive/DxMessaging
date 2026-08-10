@@ -20,7 +20,7 @@ namespace DxMessaging.Unity
     /// IMessageBus startupBus = initialProvider.Resolve();
     /// using (MessageHandler.OverrideGlobalMessageBus(customBus))
     /// {
-    ///     // ... scenario under test
+    ///     _ = startupBus; // scenario under test
     /// }
     /// // startupBus still references the original global bus
     /// </code>

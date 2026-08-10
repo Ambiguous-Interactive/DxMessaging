@@ -14,13 +14,23 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 internal static class GeneratorTestUtilities
 {
+    private static readonly CSharpCompilationOptions WarningFatalCompilationOptions = new(
+        OutputKind.DynamicallyLinkedLibrary,
+        generalDiagnosticOption: ReportDiagnostic.Error
+    );
+
     private static readonly CSharpParseOptions ParseOptions = new(
         languageVersion: LanguageVersion.Latest,
-        documentationMode: DocumentationMode.Diagnose
+        documentationMode: DocumentationMode.Parse
     );
 
     private static readonly ImmutableArray<MetadataReference> CoreReferences =
         BuildCoreReferences();
+
+    /// <summary>
+    /// Gets the framework references used by warning-fatal in-memory contract compilations.
+    /// </summary>
+    internal static ImmutableArray<MetadataReference> CompilationReferences => CoreReferences;
 
     internal static GeneratorDriverRunResult RunDxAutoConstructor(string userSource)
     {
@@ -31,7 +41,7 @@ internal static class GeneratorTestUtilities
             assemblyName: "GeneratorTests",
             syntaxTrees: new[] { attributeTree, userTree },
             references: CoreReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            options: WarningFatalCompilationOptions
         );
 
         DxAutoConstructorGenerator generator = new();
@@ -50,7 +60,7 @@ internal static class GeneratorTestUtilities
             assemblyName: "GeneratorTests",
             syntaxTrees: new[] { stubs, userTree },
             references: CoreReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            options: WarningFatalCompilationOptions
         );
 
         DxMessageIdGenerator generator = new();
@@ -70,6 +80,23 @@ internal static class GeneratorTestUtilities
         );
         GeneratorDriverRunResult result = RunDxMessageId(userSource);
 
+        return CompileGeneratedOutput(userSource, result, parseOptions);
+    }
+
+    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(
+        string userSource,
+        GeneratorDriverRunResult result
+    )
+    {
+        return CompileGeneratedOutput(userSource, result, ParseOptions);
+    }
+
+    private static ImmutableArray<Diagnostic> CompileGeneratedOutput(
+        string userSource,
+        GeneratorDriverRunResult result,
+        CSharpParseOptions parseOptions
+    )
+    {
         List<SyntaxTree> syntaxTrees = new()
         {
             CSharpSyntaxTree.ParseText(SharedStubs, parseOptions, path: "DxMessagingStubs.cs"),
@@ -91,7 +118,7 @@ internal static class GeneratorTestUtilities
             assemblyName: "GeneratedOutputCompilation",
             syntaxTrees: syntaxTrees,
             references: CoreReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            options: WarningFatalCompilationOptions
         );
 
         return compilation.GetDiagnostics();
@@ -102,7 +129,26 @@ internal static class GeneratorTestUtilities
         params (string path, string contents)[] additionalFiles
     )
     {
-        return RunBaseCallAnalyzer(userSource, compilationOptions: null, additionalFiles);
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            Array.Empty<string>(),
+            additionalFiles
+        );
+    }
+
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerAllowingCompilerWarnings(
+        string userSource,
+        string[] allowedWarningIds,
+        params (string path, string contents)[] additionalFiles
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            allowedWarningIds,
+            additionalFiles
+        );
     }
 
     /// <summary>
@@ -114,6 +160,21 @@ internal static class GeneratorTestUtilities
         string userSource,
         CSharpCompilationOptions? compilationOptions,
         params (string path, string contents)[] additionalFiles
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions,
+            Array.Empty<string>(),
+            additionalFiles
+        );
+    }
+
+    private static ImmutableArray<Diagnostic> RunBaseCallAnalyzerCore(
+        string userSource,
+        CSharpCompilationOptions? compilationOptions,
+        string[] allowedWarningIds,
+        (string path, string contents)[] additionalFiles
     )
     {
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
@@ -129,18 +190,17 @@ internal static class GeneratorTestUtilities
             options: effectiveOptions
         );
 
-        // B6. Refuse to return when the underlying compilation has errors; otherwise tests can
-        // silently bind nothing and pass. We exclude analyzer diagnostics here (we only want raw
-        // compile errors) by calling Compilation.GetDiagnostics rather than the analyzer pipeline.
+        // B6. Refuse invalid fixture input. CS0114 is deferred until the analyzer runs because
+        // the positive DXMSG009 fixtures intentionally produce the compiler/analyzer pair.
         ImmutableArray<Diagnostic> compileDiags = compilation.GetDiagnostics();
-        ImmutableArray<Diagnostic> errors = compileDiags
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
+        ImmutableArray<Diagnostic> blockingErrors = compileDiags
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToImmutableArray();
-        if (!errors.IsEmpty)
+        if (!blockingErrors.IsEmpty)
         {
             throw new InvalidOperationException(
                 "Test source did not compile cleanly:\n"
-                    + string.Join("\n", errors.Select(d => d.ToString()))
+                    + string.Join("\n", blockingErrors.Select(d => d.ToString()))
             );
         }
 
@@ -156,7 +216,50 @@ internal static class GeneratorTestUtilities
 
         Task<ImmutableArray<Diagnostic>> task =
             compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync(CancellationToken.None);
-        return task.GetAwaiter().GetResult();
+        ImmutableArray<Diagnostic> analyzerDiagnostics = task.GetAwaiter().GetResult();
+        Diagnostic[] warnings = compileDiags
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning)
+            .ToArray();
+        Diagnostic[] unexpectedWarnings = warnings
+            .Where(compilerWarning =>
+                !allowedWarningIds.Contains(compilerWarning.Id, StringComparer.Ordinal)
+                && !(
+                    string.Equals(compilerWarning.Id, "CS0114", StringComparison.Ordinal)
+                    && analyzerDiagnostics.Any(analyzerDiagnostic =>
+                        string.Equals(analyzerDiagnostic.Id, "DXMSG009", StringComparison.Ordinal)
+                        && analyzerDiagnostic.Location.SourceTree
+                            == compilerWarning.Location.SourceTree
+                        && analyzerDiagnostic.Location.SourceSpan.IntersectsWith(
+                            compilerWarning.Location.SourceSpan
+                        )
+                    )
+                )
+            )
+            .ToArray();
+        if (unexpectedWarnings.Length != 0)
+        {
+            throw new InvalidOperationException(
+                "Test source produced unexpected compiler warnings:\n"
+                    + string.Join("\n", unexpectedWarnings.Select(d => d.ToString()))
+            );
+        }
+
+        string[] emittedAllowedWarningIds = warnings
+            .Where(diagnostic => allowedWarningIds.Contains(diagnostic.Id, StringComparer.Ordinal))
+            .Select(diagnostic => diagnostic.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        string[] expectedWarningIds = allowedWarningIds
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        if (!emittedAllowedWarningIds.SequenceEqual(expectedWarningIds, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Compiler warning allowlist drifted. Expected [{string.Join(", ", expectedWarningIds)}], emitted [{string.Join(", ", emittedAllowedWarningIds)}]."
+            );
+        }
+
+        return analyzerDiagnostics;
     }
 
     /// <summary>

@@ -45,7 +45,7 @@ public void IsolatedBusDoesNotAffectGlobalBus()
 
     // Cleanup
     token.UnregisterAll();
-    Object.DestroyImmediate(testObject);
+    UnityEngine.Object.DestroyImmediate(testObject);
 }
 ```
 
@@ -64,7 +64,7 @@ public abstract class MessagingTestBase
     public virtual void Cleanup()
     {
         foreach (GameObject spawned in _spawned)
-            if (spawned != null) Object.Destroy(spawned);
+            if (spawned != null) UnityEngine.Object.Destroy(spawned);
         _spawned.Clear();
     }
 

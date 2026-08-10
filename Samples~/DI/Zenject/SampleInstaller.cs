@@ -1,17 +1,17 @@
 #if ZENJECT_PRESENT
 namespace DxMessaging.Samples.DI.Zenject
 {
-    using System;
-    using DxMessaging.Core.Attributes;
-    using DxMessaging.Core.MessageBus;
-    using UnityEngine;
-    using Zenject;
+    using global::System;
+    using global::UnityEngine;
+    using global::Zenject;
+    using global::DxMessaging.Core.Attributes;
+    using global::DxMessaging.Core.MessageBus;
 
     /// <summary>
     /// Sample scene installer demonstrating how to bridge the registration builder into Zenject services.
     /// Requires the DxMessaging Zenject registration shim and the ZENJECT_PRESENT scripting define.
     /// </summary>
-    public sealed class SampleInstaller : MonoInstaller
+    public sealed partial class SampleInstaller : MonoInstaller
     {
         public override void InstallBindings()
         {

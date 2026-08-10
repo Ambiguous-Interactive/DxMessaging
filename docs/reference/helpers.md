@@ -257,11 +257,21 @@ public readonly partial struct DefaultExamples
 }
 ```
 
-#### Advanced: Custom Expressions for Any Type
+#### Advanced: Custom Constant Expressions
 
-For types that don't have built-in constructor overloads (enums, nullables, Unity types, custom structs), use the `Expression` property. The expression is inserted verbatim into the generated constructor, and the C# compiler enforces type safety:
+Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The expression is inserted verbatim into an optional constructor parameter, so ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
 
 ```csharp
+public enum DamageType
+{
+    Physical,
+}
+
+public static class GameConstants
+{
+    public const int DefaultHealth = 100;
+}
+
 [DxAutoConstructor]
 public readonly partial struct AdvancedDefaults
 {
@@ -273,11 +283,11 @@ public readonly partial struct AdvancedDefaults
     [DxOptionalParameter(Expression = "DamageType.Physical")]
     public readonly DamageType damageType;
 
-    // Unity types
-    [DxOptionalParameter(Expression = "Vector3.zero")]
+    // Structs use their default value
+    [DxOptionalParameter]
     public readonly Vector3 position;
 
-    [DxOptionalParameter(Expression = "Color.white")]
+    [DxOptionalParameter]
     public readonly Color tint;
 
     // Static constants
@@ -295,7 +305,8 @@ public readonly partial struct AdvancedDefaults
 > - The expression is inserted **verbatim** into the generated code
 > - Must be a valid C# constant expression
 > - Type safety is enforced by the C# compiler at build time
-> - Perfect for enums, nullable types, static constants, or complex defaults
+> - Valid for enum members, literals, and named `const` values
+> - Runtime properties such as `DateTime.UtcNow` or `Color.white` cannot be optional parameter defaults
 
 #### Code Examples
 
@@ -326,7 +337,7 @@ public readonly partial struct SpawnEffect
     [DxOptionalParameter(1.0f)]
     public readonly float scale;
 
-    [DxOptionalParameter(Expression = "Color.white")]
+    [DxOptionalParameter]
     public readonly Color color;
 
     [DxOptionalParameter(5.0f)]
@@ -337,7 +348,7 @@ public readonly partial struct SpawnEffect
 }
 
 // Usage:
-var defaultEffect = new SpawnEffect();                          // All defaults
+_ = new SpawnEffect();                                         // All defaults
 var largeEffect = new SpawnEffect(2.5f);                        // Custom scale
 var redEffect = new SpawnEffect(1.0f, Color.red);               // Custom color
 var customEffect = new SpawnEffect(1.5f, Color.blue, 10f, true); // All custom
@@ -361,8 +372,6 @@ public readonly partial struct GameEvent
     [DxOptionalParameter("")]
     public readonly string metadata;
 
-    [DxOptionalParameter(Expression = "System.DateTime.UtcNow")]
-    public readonly System.DateTime timestamp;
 }
 
 // Usage:
@@ -686,8 +695,12 @@ Makes a constructor parameter optional. Three usage patterns:
 > Uses the type's default value (`0`, `false`, `null`, etc.):
 >
 > ```csharp
-> [DxOptionalParameter]
-> public readonly bool flag;
+> [DxAutoConstructor]
+> public readonly partial struct OptionalFlagMessage
+> {
+>     [DxOptionalParameter]
+>     public readonly bool flag;
+> }
 > // Generates: bool flag = default
 > ```
 >
@@ -696,8 +709,12 @@ Makes a constructor parameter optional. Three usage patterns:
 > Provides a specific default value:
 >
 > ```csharp
-> [DxOptionalParameter(42)]
-> public readonly int count;
+> [DxAutoConstructor]
+> public readonly partial struct OptionalCountMessage
+> {
+>     [DxOptionalParameter(42)]
+>     public readonly int count;
+> }
 > // Generates: int count = 42
 > ```
 >
@@ -706,8 +723,17 @@ Makes a constructor parameter optional. Three usage patterns:
 > Uses a verbatim expression for enums, Unity types, etc.:
 >
 > ```csharp
-> [DxOptionalParameter(Expression = "DamageType.Physical")]
-> public readonly DamageType damageType;
+> public enum DamageType
+> {
+>     Physical
+> }
+>
+> [DxAutoConstructor]
+> public readonly partial struct OptionalDamageTypeMessage
+> {
+>     [DxOptionalParameter(Expression = "DamageType.Physical")]
+>     public readonly DamageType damageType;
+> }
 > // Generates: DamageType damageType = DamageType.Physical
 > ```
 
@@ -840,7 +866,9 @@ public readonly struct MyMsg : IUntargetedMessage<MyMsg>
 {
     public Type MessageType => typeof(MyMsg);
 }
+```
 
+```csharp
 // Attributes (same result, less code)
 [DxUntargetedMessage]
 public readonly partial struct MyMsg { }
@@ -934,6 +962,9 @@ public readonly partial struct MessageA
 > [DxAutoConstructor]
 > public readonly struct MyMsg { }
 >
+> ```
+>
+> ```csharp
 > //  Correct
 > [DxAutoConstructor]
 > public readonly partial struct MyMsg { }

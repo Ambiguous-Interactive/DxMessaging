@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System.Collections.Generic;
+    using System.Reflection;
     using DxMessaging.Core;
     using NUnit.Framework;
     using UnityEngine;
@@ -43,9 +44,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 UnityEngine.Object[] objects = { gameObject, component, scriptableObject };
                 foreach (UnityEngine.Object unityObject in objects)
                 {
-#pragma warning disable CS0618 // Legacy source the migration preserves (warning pre-6.5; removed in 6.5).
-                    int legacy = unityObject.GetInstanceID();
-#pragma warning restore CS0618
+                    MethodInfo legacyAccessor = typeof(UnityEngine.Object).GetMethod(
+                        "GetInstanceID",
+                        BindingFlags.Instance | BindingFlags.Public
+                    );
+                    Assert.That(legacyAccessor, Is.Not.Null);
+                    int legacy = (int)legacyAccessor.Invoke(unityObject, null);
                     Assert.AreEqual(
                         legacy,
                         InstanceId.StableId(unityObject),

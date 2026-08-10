@@ -31,19 +31,19 @@ Register handlers for messages that have no specific target -- system-wide event
 MessageRegistrationHandle RegisterUntargeted<T>(
     Action<T> handler,
     int priority = 0
-)
+);
 
 // Fast handler (zero-allocation, receives message by ref)
 MessageRegistrationHandle RegisterUntargeted<T>(
     MessageHandler.FastHandler<T> handler,
     int priority = 0
-)
+);
 
 // Post-processor (runs after all handlers)
 MessageRegistrationHandle RegisterUntargetedPostProcessor<T>(
     MessageHandler.FastHandler<T> handler,
     int priority = 0
-)
+);
 ```
 
 ### Targeted Message Registration
@@ -58,21 +58,21 @@ MessageRegistrationHandle RegisterGameObjectTargeted<T>(
     GameObject target,
     Action<T> handler,
     int priority = 0
-)
+);
 
 // Component target
 MessageRegistrationHandle RegisterComponentTargeted<T>(
     Component target,
     Action<T> handler,
     int priority = 0
-)
+);
 
 // InstanceId target (low-level)
 MessageRegistrationHandle RegisterTargeted<T>(
     InstanceId target,
     Action<T> handler,
     int priority = 0
-)
+);
 ```
 
 #### All Targets
@@ -80,9 +80,9 @@ MessageRegistrationHandle RegisterTargeted<T>(
 ```csharp
 // Receive all targeted messages regardless of target
 MessageRegistrationHandle RegisterTargetedWithoutTargeting<T>(
-    FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> handler,
     int priority = 0
-)
+);
 ```
 
 #### Post-Processors
@@ -91,15 +91,15 @@ MessageRegistrationHandle RegisterTargetedWithoutTargeting<T>(
 // Post-process for specific target
 MessageRegistrationHandle RegisterTargetedPostProcessor<T>(
     InstanceId target,
-    FastHandler<T> handler,
+    MessageHandler.FastHandler<T> handler,
     int priority = 0
-)
+);
 
 // Post-process all targeted messages
 MessageRegistrationHandle RegisterTargetedWithoutTargetingPostProcessor<T>(
-    FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> handler,
     int priority = 0
-)
+);
 ```
 
 ### Broadcast Message Registration
@@ -114,21 +114,21 @@ MessageRegistrationHandle RegisterGameObjectBroadcast<T>(
     GameObject source,
     Action<T> handler,
     int priority = 0
-)
+);
 
 // From specific Component
 MessageRegistrationHandle RegisterComponentBroadcast<T>(
     Component source,
     Action<T> handler,
     int priority = 0
-)
+);
 
 // From specific InstanceId
 MessageRegistrationHandle RegisterBroadcast<T>(
     InstanceId source,
     Action<T> handler,
     int priority = 0
-)
+);
 ```
 
 #### All Sources
@@ -136,9 +136,9 @@ MessageRegistrationHandle RegisterBroadcast<T>(
 ```csharp
 // Receive broadcasts from any source
 MessageRegistrationHandle RegisterBroadcastWithoutSource<T>(
-    FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> handler,
     int priority = 0
-)
+);
 ```
 
 #### Post-Processors
@@ -147,15 +147,15 @@ MessageRegistrationHandle RegisterBroadcastWithoutSource<T>(
 // Post-process for specific source
 MessageRegistrationHandle RegisterBroadcastPostProcessor<T>(
     InstanceId source,
-    FastHandler<T> handler,
+    MessageHandler.FastHandler<T> handler,
     int priority = 0
-)
+);
 
 // Post-process all broadcasts
 MessageRegistrationHandle RegisterBroadcastWithoutSourcePostProcessor<T>(
-    FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> handler,
     int priority = 0
-)
+);
 ```
 
 ---
@@ -175,28 +175,28 @@ message.EmitUntargeted();
 ### Targeted Emission
 
 ```csharp
-// Emit to specific target (by InstanceId)
-message.EmitTargeted(InstanceId target);
+message.EmitTargeted(targetInstanceId);
 
 // Emit to GameObject target
-message.EmitGameObjectTargeted(GameObject target);
+message.EmitGameObjectTargeted(targetGameObject);
 
 // Emit to Component target
-message.EmitComponentTargeted(Component target);
+message.EmitComponentTargeted(targetComponent);
 ```
 
 ### Broadcast Emission
 
 ```csharp
-// Broadcast from specific source (by InstanceId)
-message.EmitBroadcast(InstanceId source);
-
 // Broadcast from GameObject source
-message.EmitGameObjectBroadcast(GameObject source);
+message.EmitGameObjectBroadcast(gameObject);
 
 // Broadcast from Component source
-message.EmitComponentBroadcast(Component source);
+message.EmitComponentBroadcast(this);
 ```
+
+For lower-level sources that are already represented by an `InstanceId`, call
+`EmitBroadcast`. Prefer the Unity helpers above when the source is a GameObject or
+Component.
 
 ### String Message Conveniences
 
@@ -217,22 +217,22 @@ Interceptors allow you to intercept and potentially modify or cancel messages at
 Action RegisterUntargetedInterceptor<T>(
     UntargetedInterceptor<T> interceptor,
     int priority = 0
-)
+);
 
 // Intercept targeted messages
 Action RegisterTargetedInterceptor<T>(
     TargetedInterceptor<T> interceptor,
     int priority = 0
-)
+);
 
 // Intercept broadcast messages
 Action RegisterBroadcastInterceptor<T>(
     BroadcastInterceptor<T> interceptor,
     int priority = 0
-)
+);
 
 // Global observer for all messages
-Action RegisterGlobalAcceptAll(MessageHandler handler)
+Action RegisterGlobalAcceptAll(MessageHandler handler);
 ```
 
 ---

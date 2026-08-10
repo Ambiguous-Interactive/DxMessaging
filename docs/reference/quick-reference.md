@@ -204,82 +204,111 @@ Interceptors -> Global Accept-All -> Handlers<T> @ source
 ### Token: Untargeted
 
 ```csharp
-// Register handler
-token.RegisterUntargeted<T>(Action<T> handler, int priority = 0)
-token.RegisterUntargeted<T>(FastHandler<T> handler, int priority = 0)
+// Choose either the Action or by-ref overload.
+_ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoaded, priority: 0);
+_ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoadedFast, priority: 0);
 
 // Post-processor
-token.RegisterUntargetedPostProcessor<T>(FastHandler<T> handler, int priority = 0)
+_ = token.RegisterUntargetedPostProcessor<SceneLoaded>(AfterSceneLoaded, priority: 0);
+
+void OnSceneLoaded(SceneLoaded message) => Debug.Log(message.buildIndex);
+void OnSceneLoadedFast(ref SceneLoaded message) => Debug.Log(message.buildIndex);
+void AfterSceneLoaded(ref SceneLoaded message) => Debug.Log(message.buildIndex);
 ```
 
 ### Token: Targeted (Specific)
 
 ```csharp
-// Register for specific target
-token.RegisterGameObjectTargeted<T>(GameObject go, handler, int priority = 0)
-token.RegisterComponentTargeted<T>(Component c, handler, int priority = 0)
-token.RegisterTargeted<T>(InstanceId id, handler, int priority = 0)
+_ = token.RegisterGameObjectTargeted<Heal>(gameObject, OnHeal, priority: 0);
+_ = token.RegisterComponentTargeted<Heal>(this, OnHeal, priority: 0);
+_ = token.RegisterTargeted<Heal>(targetInstanceId, OnHeal, priority: 0);
 
 // Post-processor
-token.RegisterTargetedPostProcessor<T>(InstanceId id, FastHandler<T> handler, int priority = 0)
+_ = token.RegisterTargetedPostProcessor<Heal>(targetInstanceId, AfterHeal, priority: 0);
+
+void OnHeal(ref Heal message) => Debug.Log(message.amount);
+void AfterHeal(ref Heal message) => Debug.Log(message.amount);
 ```
 
 ### Token: Targeted (All Targets)
 
 ```csharp
 // Listen to messages for any target
-token.RegisterTargetedWithoutTargeting<T>(FastHandlerWithContext<T> handler, int priority = 0)
+_ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal, priority: 0);
 
 // Post-processor
-token.RegisterTargetedWithoutTargetingPostProcessor<T>(FastHandlerWithContext<T> handler, int priority = 0)
+_ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(AfterAnyHeal, priority: 0);
+
+void OnAnyHeal(ref InstanceId target, ref Heal message) =>
+    Debug.Log($"Healed {target} for {message.amount}");
+void AfterAnyHeal(ref InstanceId target, ref Heal message) =>
+    Debug.Log($"Finished healing {target} for {message.amount}");
 ```
 
 ### Token: Broadcast (Specific)
 
 ```csharp
-// Register for specific source
-token.RegisterGameObjectBroadcast<T>(GameObject go, handler, int priority = 0)
-token.RegisterComponentBroadcast<T>(Component c, handler, int priority = 0)
-token.RegisterBroadcast<T>(InstanceId id, handler, int priority = 0)
+_ = token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnDamage, priority: 0);
+_ = token.RegisterComponentBroadcast<TookDamage>(this, OnDamage, priority: 0);
+_ = token.RegisterBroadcast<TookDamage>(sourceInstanceId, OnDamage, priority: 0);
 
 // Post-processor
-token.RegisterBroadcastPostProcessor<T>(InstanceId id, FastHandler<T> handler, int priority = 0)
+_ = token.RegisterBroadcastPostProcessor<TookDamage>(sourceInstanceId, AfterDamage, priority: 0);
+
+void OnDamage(ref TookDamage message) => Debug.Log(message.amount);
+void AfterDamage(ref TookDamage message) => Debug.Log(message.amount);
 ```
 
 ### Token: Broadcast (All Sources)
 
 ```csharp
 // Listen to broadcasts from any source
-token.RegisterBroadcastWithoutSource<T>(FastHandlerWithContext<T> handler, int priority = 0)
+_ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage, priority: 0);
 
 // Post-processor
-token.RegisterBroadcastWithoutSourcePostProcessor<T>(FastHandlerWithContext<T> handler, int priority = 0)
+_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(AfterAnyDamage, priority: 0);
+
+void OnAnyDamage(ref InstanceId source, ref TookDamage message) =>
+    Debug.Log($"{source} dealt {message.amount} damage");
+void AfterAnyDamage(ref InstanceId source, ref TookDamage message) =>
+    Debug.Log($"Finished damage from {source}: {message.amount}");
 ```
 
 ### Token: Global Observer
 
 ```csharp
-// Action-based
-token.RegisterGlobalAcceptAll(
-    Action<IUntargetedMessage> untargeted,
-    Action<InstanceId, ITargetedMessage> targeted,
-    Action<InstanceId, IBroadcastMessage> broadcast)
+_ = token.RegisterGlobalAcceptAll(
+    message => Debug.Log(message.MessageType),
+    (target, message) => Debug.Log($"{message.MessageType} to {target}"),
+    (source, message) => Debug.Log($"{message.MessageType} from {source}")
+);
 
 // Fast handler-based
-token.RegisterGlobalAcceptAll(
-    FastHandler<IUntargetedMessage> untargeted,
-    FastHandlerWithContext<ITargetedMessage> targeted,
-    FastHandlerWithContext<IBroadcastMessage> broadcast)
+_ = token.RegisterGlobalAcceptAll(
+    (ref IUntargetedMessage message) => Debug.Log(message.MessageType),
+    (ref InstanceId target, ref ITargetedMessage message) =>
+        Debug.Log($"{message.MessageType} to {target}"),
+    (ref InstanceId source, ref IBroadcastMessage message) =>
+        Debug.Log($"{message.MessageType} from {source}")
+);
 ```
 
 ### Bus: Interceptors
 
 ```csharp
-// Type-specific interceptors (return false to cancel)
-bus.RegisterUntargetedInterceptor<T>(UntargetedInterceptor<T> interceptor, int priority = 0)
-bus.RegisterTargetedInterceptor<T>(TargetedInterceptor<T> interceptor, int priority = 0)
-bus.RegisterBroadcastInterceptor<T>(BroadcastInterceptor<T> interceptor, int priority = 0)
+_ = bus.RegisterUntargetedInterceptor<SceneLoaded>(
+    (ref SceneLoaded message) => message.buildIndex >= 0,
+    priority: 0
+);
+_ = bus.RegisterTargetedInterceptor<Heal>(
+    (ref InstanceId target, ref Heal message) => message.amount > 0,
+    priority: 0
+);
+_ = bus.RegisterBroadcastInterceptor<TookDamage>(
+    (ref InstanceId source, ref TookDamage message) => message.amount > 0,
+    priority: 0
+);
 
 // Bus-level global observer
-bus.RegisterGlobalAcceptAll(MessageHandler handler)
+_ = bus.RegisterGlobalAcceptAll(messageHandler);
 ```

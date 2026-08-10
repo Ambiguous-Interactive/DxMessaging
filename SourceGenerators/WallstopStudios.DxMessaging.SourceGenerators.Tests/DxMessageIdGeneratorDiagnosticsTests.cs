@@ -10,7 +10,7 @@ using WallstopStudios.DxMessaging.SourceGenerators.Analyzers;
 namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
 [TestFixture]
-public sealed class DxMessageIdGeneratorDiagnosticsTests
+internal sealed class DxMessageIdGeneratorDiagnosticsTests
 {
     [Test]
     public void GeneratorsUseUnity2021CompatibleClassicSourceGeneratorApi()

@@ -1,34 +1,53 @@
 #if REFLEX_PRESENT
 namespace DxMessaging.Samples.DI.Reflex
 {
-    using DxMessaging.Core;
-    using DxMessaging.Core.Attributes;
-    using DxMessaging.Core.MessageBus;
-    using DxMessaging.Core.Messages;
-    using DxMessaging.Unity.Integrations.Reflex;
-    using Reflex.Core;
-    using UnityEngine;
+    using global::UnityEngine;
+    using global::DxMessaging.Core;
+    using global::DxMessaging.Core.Attributes;
+    using global::DxMessaging.Core.Extensions;
+    using global::DxMessaging.Core.MessageBus;
+    using global::DxMessaging.Core.Messages;
+    using global::DxMessaging.Unity.Integrations.Reflex;
+    using global::Reflex.Core;
 
     /// <summary>
     /// Demonstrates wiring <see cref="IMessageRegistrationBuilder"/> inside a Reflex container.
     /// Requires the Reflex package and the REFLEX_PRESENT scripting define.
     /// </summary>
-    public sealed class SampleInstaller : Installer
+    public sealed partial class SampleInstaller : MonoBehaviour, IInstaller
     {
-        protected override void InstallBindings()
-        {
-            // Reflex today selects the public parameterless MessageBus constructor, so the bare
-            // Container.Bind<MessageBus>().AsSingleton() pattern works -- but it is fragile
-            // against future Reflex releases that broaden constructor scanning to non-public
-            // constructors (which would surface a clock-taking overload whose IDxMessagingClock
-            // dependency is not registered). When using the Reflex 8.0+ ContainerBuilder API,
-            // prefer ReflexRegistrationExtensions.AddDxMessagingBus, which uses an explicit
-            // factory that sidesteps reflection-based constructor selection entirely.
-            Container.Bind<MessageBus>().AsSingleton();
-            Container.Bind<IMessageBus>().FromContainer<MessageBus>();
+        private PlayerAlertService _service;
 
-            // The DxMessagingRegistrationInstaller shim will have been installed elsewhere; we simply resolve the builder.
-            Container.Bind<PlayerAlertService>().AsSingleton();
+        public void InstallBindings(ContainerBuilder builder)
+        {
+            // Use the explicit factory-based helper so constructor selection cannot drift with
+            // the container's reflection policy.
+            builder.AddDxMessagingBus();
+            new DxMessagingRegistrationInstaller().InstallBindings(builder);
+            builder.OnContainerBuilt += OnContainerBuilt;
+        }
+
+        public void EmitAlertFor(GameObject gameObject)
+        {
+            if (_service == null)
+            {
+                throw new System.InvalidOperationException(
+                    "Reflex has not built the sample container yet."
+                );
+            }
+
+            _service.EmitAlertFor(gameObject);
+        }
+
+        private void OnContainerBuilt(Container container)
+        {
+            _service = container.Construct<PlayerAlertService>();
+        }
+
+        private void OnDestroy()
+        {
+            _service?.Dispose();
+            _service = null;
         }
 
         private sealed class PlayerAlertService : System.IDisposable
@@ -52,10 +71,10 @@ namespace DxMessaging.Samples.DI.Reflex
                 );
             }
 
-            public void EmitAlertFor(GameObject source)
+            internal void EmitAlertFor(GameObject gameObject)
             {
-                PlayerAlert alert = new PlayerAlert(source);
-                _messageBus.Emit(ref alert);
+                PlayerAlert alert = new PlayerAlert(gameObject);
+                alert.EmitGameObjectBroadcast(gameObject, _messageBus);
             }
 
             public void Dispose()

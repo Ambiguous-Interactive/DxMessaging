@@ -1,0 +1,17 @@
+{
+  "name": "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample.Editor",
+  "rootNamespace": "WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor",
+  "references": [
+    "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Editor",
+    "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample"
+  ],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "noEngineReferences": false
+}

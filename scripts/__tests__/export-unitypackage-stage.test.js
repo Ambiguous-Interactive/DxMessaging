@@ -126,7 +126,10 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
       exporters.map((e) => e.full),
       [path.join(assetsRoot, "Editor", "DxmUnityPackageExporter.cs")]
     );
-
+    assert.match(
+      fs.readFileSync(path.join(assetsRoot, "csc.rsp"), "utf8"),
+      /^(?:\uFEFF)?-warnaserror\r?\n-warn:9999\r?\n$/u
+    );
     // (c) Every staged file AND folder under the export root has a sibling
     // .meta, and no .meta anywhere in the staged Assets tree is an orphan.
     for (const entry of walk(exportRoot)) {
