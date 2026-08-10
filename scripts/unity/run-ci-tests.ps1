@@ -1456,7 +1456,15 @@ function Copy-SamplesForCompilation {
     if (-not (Test-Path -LiteralPath $sampleSource -PathType Container)) {
         throw "Missing package samples source directory: $sampleSource"
     }
-    $sampleDestination = [System.IO.Path]::Combine($Project, 'Assets', 'DxmCiSamples')
+    # FileInfo.FullName expands Windows 8.3 path segments (for example RUNNER~1).
+    # Normalize both roots through the provider before using length-based relative
+    # paths, otherwise the expanded child path no longer shares the raw root prefix.
+    $sampleSource = (Get-Item -LiteralPath $sampleSource).FullName
+    $sampleDestination = (
+        New-Item -ItemType Directory -Force -Path (
+            [System.IO.Path]::Combine($Project, 'Assets', 'DxmCiSamples')
+        )
+    ).FullName
     $csharpInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.cs' -File -Recurse)
     $asmdefInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.asmdef' -File -Recurse)
     if ($csharpInputs.Count -eq 0 -or $asmdefInputs.Count -eq 0) {
@@ -1471,7 +1479,6 @@ function Copy-SamplesForCompilation {
         $compileInputRelativePaths += $generatedDiAsmdefRelativePath
     }
 
-    New-Item -ItemType Directory -Force -Path $sampleDestination | Out-Null
     foreach ($existingFile in @(Get-ChildItem -LiteralPath $sampleDestination -File -Recurse)) {
         $existingRelativePath = $existingFile.FullName.Substring($sampleDestination.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
         if (
