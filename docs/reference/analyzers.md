@@ -40,13 +40,13 @@ Pick exactly one message-shape attribute. A message can be Broadcast, Targeted, 
 //  Multiple shapes on one type
 [DxBroadcastMessage]
 [DxTargetedMessage]
-public readonly partial struct Healed { public readonly int amount; }
+public readonly partial struct Heal { public readonly int amount; }
 ```
 
 ```csharp
 //  One shape per type
 [DxTargetedMessage]
-public readonly partial struct Healed { public readonly int amount; }
+public readonly partial struct Heal { public readonly int amount; }
 ```
 
 ---

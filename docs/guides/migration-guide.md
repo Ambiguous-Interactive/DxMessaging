@@ -366,7 +366,7 @@ public class Player : MonoBehaviour {
 // player.OnHealthChanged += UpdateBar;
 
 // NEW
-_ = Token.RegisterBroadcast<HealthChanged>(OnHealthChanged);
+_ = Token.RegisterGameObjectBroadcast<HealthChanged>(playerObject, OnHealthChanged);
 ```
 
 ### L Pitfall 3: Mixing Message Types Incorrectly

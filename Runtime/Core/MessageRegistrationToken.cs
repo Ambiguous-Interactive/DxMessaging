@@ -231,7 +231,7 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterGameObjectTargeted&lt;TookDamage&gt;(gameObject, (ref TookDamage m) =&gt; Apply(m));
+        /// _ = token.RegisterGameObjectTargeted&lt;ApplyDamage&gt;(gameObject, (ref ApplyDamage m) =&gt; Apply(m));
         /// token.Enable();
         /// </code>
         /// </example>
@@ -258,7 +258,7 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterComponentTargeted&lt;TookDamage&gt;(this, OnDamage);
+        /// _ = token.RegisterComponentTargeted&lt;ApplyDamage&gt;(this, OnDamage);
         /// token.Enable();
         /// </code>
         /// </example>
@@ -303,7 +303,7 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterGameObjectTargetedPostProcessor&lt;TookDamage&gt;(gameObject, (ref TookDamage m) =&gt; Log(m));
+        /// _ = token.RegisterGameObjectTargetedPostProcessor&lt;ApplyDamage&gt;(gameObject, (ref ApplyDamage m) =&gt; metrics.RecordProcessedDamageRequest(m.amount));
         /// </code>
         /// </example>
         public MessageRegistrationHandle RegisterGameObjectTargetedPostProcessor<T>(
@@ -1036,7 +1036,7 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterBroadcastWithoutSource&lt;TookDamage&gt;((DxMessaging.Core.InstanceId src, TookDamage m) =&gt; TrackDamage(src, m));
+        /// _ = token.RegisterBroadcastWithoutSource&lt;TookDamage&gt;((DxMessaging.Core.InstanceId src, TookDamage m) =&gt; ShowDamageNumber(src, m));
         /// </code>
         /// </example>
         public MessageRegistrationHandle RegisterBroadcastWithoutSource<T>(
@@ -1105,7 +1105,7 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterBroadcastWithoutSourcePostProcessor&lt;TookDamage&gt;((DxMessaging.Core.InstanceId src, TookDamage m) =&gt; Log(src, m));
+        /// _ = token.RegisterBroadcastWithoutSourcePostProcessor&lt;TookDamage&gt;((DxMessaging.Core.InstanceId src, TookDamage m) =&gt; replay.RecordProcessedDamageMessage(src, m.amount));
         /// </code>
         /// </example>
         public MessageRegistrationHandle RegisterBroadcastWithoutSourcePostProcessor<T>(

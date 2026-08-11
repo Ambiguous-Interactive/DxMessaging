@@ -432,12 +432,17 @@ namespace DxMessaging.Tests.Editor
                 Assert.That(
                     GetRequiredField(observerType, "acceptAllCount").GetValue(observer),
                     Is.EqualTo(2),
-                    "The observer must see both the untargeted and targeted demo routes."
+                    "The observer must see both the broadcast and targeted demo routes."
                 );
                 Assert.That(
                     GetRequiredField(observerType, "lastButtonId").GetValue(observer),
                     Is.EqualTo("Play"),
                     "The authored button ID must reach the typed observer."
+                );
+                Assert.That(
+                    GetRequiredField(observerType, "lastButtonSource").GetValue(observer),
+                    Is.EqualTo((InstanceId)emitter.gameObject),
+                    "The clicked GameObject must remain the ButtonClicked broadcast source."
                 );
             }
             finally

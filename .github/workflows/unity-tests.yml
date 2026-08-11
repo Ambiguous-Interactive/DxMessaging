@@ -45,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
+      relevant: ${{ steps.head.outputs.relevant }}
       superseded: ${{ steps.head.outputs.superseded }}
     steps:
       - name: Compare the event head against the live pull-request head
@@ -57,6 +58,7 @@ jobs:
           EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          relevant=true
           superseded=false
           if [ "${EVENT_NAME}" = pull_request ]; then
             live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" || live=
@@ -66,7 +68,20 @@ jobs:
               echo "::notice::${EVENT_HEAD_SHA} is superseded by ${live}; skipping the Unity matrix."
               superseded=true
             fi
+            if files="$(gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --jq '.[] | .filename, (.previous_filename // empty)')"; then
+              documentation_only_pattern='^(docs/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)(\.meta)?$|(AGENTS|GOAL|PLAN)\.md(\.meta)?$|llms\.txt$|mkdocs\.yml$|requirements-docs\.txt$)'
+              non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
+              if [ -n "${files}" ] && [ -z "${non_documentation}" ]; then
+                echo "::notice::Only documentation and agent-context files changed; skipping licensed Unity tests."
+                relevant=false
+              fi
+            else
+              echo "::warning::Changed-file lookup failed; running licensed Unity tests."
+            fi
           fi
+          echo "relevant=${relevant}" >> "${GITHUB_OUTPUT}"
           echo "superseded=${superseded}" >> "${GITHUB_OUTPUT}"
 
   runner-preflight:
@@ -86,6 +101,7 @@ jobs:
     if: >-
       ${{
         needs.head-check.outputs.superseded != 'true' &&
+        needs.head-check.outputs.relevant != 'false' &&
         (github.event_name != 'pull_request' ||
         (github.event.pull_request.user.login != 'dependabot[bot]' &&
           github.event.pull_request.head.repo.full_name == github.repository))
@@ -116,6 +132,7 @@ jobs:
     if: >-
       ${{
         needs.head-check.outputs.superseded != 'true' &&
+        needs.head-check.outputs.relevant != 'false' &&
         (github.event_name != 'pull_request' ||
         (github.event.pull_request.user.login != 'dependabot[bot]' &&
           github.event.pull_request.head.repo.full_name == github.repository))
@@ -504,9 +521,10 @@ jobs:
     # Exactly always() -- NEVER a falsifiable job-level if. A skipped required
     # check counts as passing and the latest run on a SHA wins, so a guard that
     # can be false on a pull_request could launder a red/pending gate into a
-    # false green. The step below validates the only three intentional skip
-    # shapes: fork PRs and Dependabot PRs skip both licensed jobs (neither can
-    # read the organization secrets those jobs require), and a superseded head
+    # false green. The step below validates the four intentional skip shapes:
+    # documentation-only, fork, and Dependabot PRs skip both licensed jobs
+    # (the latter two cannot read the organization secrets those jobs require),
+    # and a superseded head
     # skips them because the run for the current head is the one that counts.
     # A superseded run cannot launder anything -- branch protection reads only
     # the checks on the current head -- but it still has to report its shape
@@ -523,13 +541,14 @@ jobs:
           HEAD_CHECK_RESULT: ${{ needs.head-check.result }}
           RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
           UNITY_TESTS_RESULT: ${{ needs.unity-tests.result }}
+          RELEVANT: ${{ needs.head-check.outputs.relevant }}
           SUPERSEDED: ${{ needs.head-check.outputs.superseded }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           set -euo pipefail
           test "${HEAD_CHECK_RESULT}" = success
-          if [ "${SUPERSEDED}" = "true" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+          if [ "${SUPERSEDED}" = "true" ] || [ "${RELEVANT}" = "false" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = skipped
             test "${UNITY_TESTS_RESULT}" = skipped
           else

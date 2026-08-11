@@ -63,7 +63,7 @@ using System;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core.MessageBus;
 
-[DxUntargetedMessage]
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct PlayerDamaged
 {
@@ -80,7 +80,7 @@ public sealed class DamageService : IDisposable
         {
             Configure = token =>
             {
-                _ = token.RegisterUntargeted<PlayerDamaged>(OnPlayerDamaged);
+                _ = token.RegisterBroadcastWithoutSource<PlayerDamaged>(OnPlayerDamaged);
             },
         };
 
@@ -99,7 +99,7 @@ public sealed class DamageService : IDisposable
         _lease.Dispose();
     }
 
-    private void OnPlayerDamaged(ref PlayerDamaged message)
+    private void OnPlayerDamaged(DxMessaging.Core.InstanceId player, PlayerDamaged message)
     {
         LastDamage = message.damage;
     }
@@ -252,7 +252,8 @@ public sealed class DamageServiceTests
         service.Initialize();
 
         PlayerDamaged message = new(25);
-        bus.EmitUntargeted(ref message);
+        DxMessaging.Core.InstanceId player = new(42);
+        bus.SourcedBroadcast(ref player, ref message);
 
         Assert.That(service.LastDamage, Is.EqualTo(25));
     }

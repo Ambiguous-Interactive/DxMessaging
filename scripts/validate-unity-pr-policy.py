@@ -814,22 +814,28 @@ def run_script(step: str) -> str:
     return "\n".join(lines)
 
 
-def run_head_check(script: str, event: str, live_head: str) -> str:
-    """Run the head-freshness script against a stub `gh` and return its decision."""
+def run_head_check(
+    script: str, event: str, live_head: str, changed_files: list[str] | None
+) -> dict[str, str]:
+    """Run the head/relevance script against a strict, endpoint-aware `gh` stub."""
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         stub = root / "gh"
-        # The stub answers only the live-head lookup, so a script that asked a
-        # different endpoint gets nothing and the truth table below fails. An
-        # empty live head stands for a lookup that failed, so the stub exits
-        # non-zero the way the real CLI does rather than printing nothing.
+        files_response = "\n".join(changed_files or [])
+        files_exit = 0 if changed_files is not None else 1
+        # Answer both API calls made by the production script. Keeping the
+        # endpoints distinct prevents a missing changed-file fixture from
+        # quietly exercising only the fail-closed fallback.
         stub.write_text(
             "#!/bin/sh\n"
             'case "$*" in\n'
-            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1*.head.sha*) ;;\n"
+            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1/files*)\n"
+            f"    cat <<'FILES'\n{files_response}\nFILES\n"
+            f"    exit {files_exit} ;;\n"
+            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1*.head.sha*)\n"
+            f'    [ -n "{live_head}" ] || exit 1\n    echo "{live_head}"\n    exit 0 ;;\n'
             '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;\n'
-            "esac\n"
-            f'[ -n "{live_head}" ] || exit 1\necho "{live_head}"\n',
+            "esac\n",
             encoding="utf-8",
         )
         stub.chmod(0o755)
@@ -852,10 +858,94 @@ def run_head_check(script: str, event: str, live_head: str) -> str:
         )
         require(result.returncode == 0, f"head-check script failed: {result.stderr}")
         written = output.read_text(encoding="utf-8").strip()
+        decisions = {}
+        for line in written.splitlines():
+            key, separator, value = line.partition("=")
+            require(separator == "=" and key, f"head-check wrote malformed output: {line!r}")
+            require(key not in decisions, f"head-check wrote duplicate output: {key}")
+            decisions[key] = value
         require(
-            written.startswith("superseded="), f"head-check wrote no decision: {written!r}"
+            set(decisions) == {"relevant", "superseded"},
+            f"head-check must write exactly relevant and superseded: {written!r}",
         )
-        return written[len("superseded=") :]
+        require(
+            all(value in {"true", "false"} for value in decisions.values()),
+            f"head-check decisions must be booleans: {written!r}",
+        )
+        return decisions
+
+
+def validate_head_check_truth_table(script: str, workflow_name: str) -> None:
+    """Exercise current, renamed, mixed, empty, failed, and superseded PR shapes."""
+    if os.name == "nt":
+        return
+    # A rename is represented by both values emitted by the workflow's
+    # `.filename, (.previous_filename // empty)` query.
+    cases = (
+        ("push", "push", "", None, {"superseded": "false", "relevant": "true"}),
+        (
+            "current documentation PR",
+            "pull_request",
+            "current",
+            ["docs/guide.md"],
+            {"superseded": "false", "relevant": "false"},
+        ),
+        (
+            "renamed documentation file",
+            "pull_request",
+            "current",
+            ["docs/new-name.md", "docs/old-name.md"],
+            {"superseded": "false", "relevant": "false"},
+        ),
+        (
+            "code PR",
+            "pull_request",
+            "current",
+            ["Runtime/Core/MessageBus.cs"],
+            {"superseded": "false", "relevant": "true"},
+        ),
+        (
+            "mixed PR",
+            "pull_request",
+            "current",
+            ["docs/guide.md", "Tests/Runtime/MessageBusTests.cs"],
+            {"superseded": "false", "relevant": "true"},
+        ),
+        (
+            "empty file response",
+            "pull_request",
+            "current",
+            [],
+            {"superseded": "false", "relevant": "true"},
+        ),
+        (
+            "failed file lookup",
+            "pull_request",
+            "current",
+            None,
+            {"superseded": "false", "relevant": "true"},
+        ),
+        (
+            "failed live-head lookup",
+            "pull_request",
+            "",
+            ["docs/guide.md"],
+            {"superseded": "false", "relevant": "false"},
+        ),
+        (
+            "superseded documentation PR",
+            "pull_request",
+            "moved-on",
+            ["docs/guide.md"],
+            {"superseded": "true", "relevant": "false"},
+        ),
+    )
+    for name, event, live, files, expected in cases:
+        actual = run_head_check(script, event, live, files)
+        require(
+            actual == expected,
+            f"{workflow_name} head-check {name}: expected {expected}, got {actual}",
+        )
 
 
 def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> str:
@@ -3041,6 +3131,68 @@ def validate_perf_pr_policy() -> None:
     )
     for block, pattern, label in checks:
         require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
+    head_check = job_block(source, "head-check")
+    require(
+        "      relevant: ${{ steps.head.outputs.relevant }}\n" in head_check
+        and "      superseded: ${{ steps.head.outputs.superseded }}\n" in head_check,
+        "performance head-check must publish relevance and freshness",
+    )
+    head_script = run_script(
+        step_block(head_check, "Compare the event head against the live pull-request head")
+    )
+    validate_head_check_truth_table(head_script, "performance")
+
+    aggregate = job_block(source, "perf-unity-success")
+    aggregate_step = step_block(aggregate, "Require complete performance validation")
+    aggregate_script = run_script(aggregate_step)
+    executable_aggregate = (
+        aggregate_script.replace(
+            "${{ needs.head-check.result }}", "${HEAD_CHECK_RESULT}"
+        )
+        .replace(
+            "${{ needs.runner-preflight.result }}", "${RUNNER_PREFLIGHT_RESULT}"
+        )
+        .replace(
+            "${{ needs.perf-benchmarks.result }}", "${PERF_BENCHMARKS_RESULT}"
+        )
+    )
+    require(
+        executable_aggregate != aggregate_script,
+        "performance aggregate must validate dependency results",
+    )
+    aggregate_cases = (
+        ("relevant trusted PR", "true", "true", "success", "success", 0),
+        ("documentation-only PR", "true", "false", "skipped", "skipped", 0),
+        ("untrusted PR", "false", "true", "skipped", "skipped", 0),
+        ("superseded PR", "true", "true", "skipped", "skipped", 0),
+        ("relevant PR skipped", "true", "true", "skipped", "skipped", 1),
+        ("documentation PR ran", "true", "false", "skipped", "success", 1),
+        ("untrusted PR ran", "false", "true", "success", "success", 1),
+    )
+    if os.name != "nt":
+        for name, trusted, relevant, preflight_result, benchmark_result, expected in aggregate_cases:
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "HEAD_CHECK_RESULT": "success",
+                    "TRUSTED_PR": trusted,
+                    "SUPERSEDED": "true" if name == "superseded PR" else "false",
+                    "RELEVANT": relevant,
+                    "RUNNER_PREFLIGHT_RESULT": preflight_result,
+                    "PERF_BENCHMARKS_RESULT": benchmark_result,
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", executable_aggregate],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            require(
+                result.returncode == expected,
+                f"performance aggregate {name}: expected {expected}, got {result.returncode}",
+            )
     modes_block = re.search(
         r"^        test-mode:\n((?:          - \w+\n)+)", benchmark, re.M
     )
@@ -3887,19 +4039,7 @@ steps:
     head_script = run_script(
         step_block(head_check, "Compare the event head against the live pull-request head")
     )
-    if os.name != "nt":
-        # The event head is always "current"; the live head is what moves.
-        # name, event, live head, expected superseded decision
-        for name, event, live, expected in (
-            ("push", "push", "", "false"),
-            ("current PR head", "pull_request", "current", "false"),
-            ("superseded PR head", "pull_request", "moved-on", "true"),
-            ("failed live lookup", "pull_request", "", "false"),
-        ):
-            require(
-                run_head_check(head_script, event, live) == expected,
-                f"head-check {name}: expected superseded={expected}",
-            )
+    validate_head_check_truth_table(head_script, "Unity")
     require(
         "environment:" not in licensed,
         "Unity job must use organization secrets without an environment approval gate",
@@ -3942,6 +4082,7 @@ steps:
         "HEAD_CHECK_RESULT": "${{ needs.head-check.result }}",
         "RUNNER_PREFLIGHT_RESULT": "${{ needs.runner-preflight.result }}",
         "UNITY_TESTS_RESULT": "${{ needs.unity-tests.result }}",
+        "RELEVANT": "${{ needs.head-check.outputs.relevant }}",
         "SUPERSEDED": "${{ needs.head-check.outputs.superseded }}",
         "FORK_PR": (
             "${{ github.event_name == 'pull_request' && "
@@ -3962,7 +4103,7 @@ steps:
     script = run_script(aggregate_step)
     expected_script = """set -euo pipefail
 test "${HEAD_CHECK_RESULT}" = success
-if [ "${SUPERSEDED}" = "true" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+if [ "${SUPERSEDED}" = "true" ] || [ "${RELEVANT}" = "false" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
   test "${RUNNER_PREFLIGHT_RESULT}" = skipped
   test "${UNITY_TESTS_RESULT}" = skipped
 else
@@ -3970,27 +4111,30 @@ else
   test "${UNITY_TESTS_RESULT}" = success
 fi"""
     require(script == expected_script, "aggregate result-shape script drifted")
-    # name, head-check, preflight, unity, SUPERSEDED, FORK_PR, DEPENDABOT_PR, exit code
+    # name, head-check, preflight, unity, SUPERSEDED, RELEVANT, FORK_PR, DEPENDABOT_PR, exit code
     cases = (
-        ("same-repository PR", "success", "success", "success", "false", "false", "false", 0),
-        ("fork PR", "success", "skipped", "skipped", "false", "true", "false", 0),
-        ("Dependabot PR", "success", "skipped", "skipped", "false", "false", "true", 0),
-        ("superseded PR", "success", "skipped", "skipped", "true", "false", "false", 0),
-        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "false", "false", 1),
-        ("fork unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "false", 1),
-        ("Dependabot unexpectedly ran Unity", "success", "skipped", "success", "false", "false", "true", 1),
-        ("Dependabot unexpectedly ran preflight", "success", "success", "skipped", "false", "false", "true", 1),
-        ("superseded run still ran Unity", "success", "skipped", "success", "true", "false", "false", 1),
-        ("current head skipped Unity after a failed decision", "failure", "skipped", "skipped", "", "false", "false", 1),
+        ("same-repository PR", "success", "success", "success", "false", "true", "false", "false", 0),
+        ("documentation-only PR", "success", "skipped", "skipped", "false", "false", "false", "false", 0),
+        ("fork PR", "success", "skipped", "skipped", "false", "true", "true", "false", 0),
+        ("Dependabot PR", "success", "skipped", "skipped", "false", "true", "false", "true", 0),
+        ("superseded PR", "success", "skipped", "skipped", "true", "true", "false", "false", 0),
+        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "true", "false", "false", 1),
+        ("documentation-only PR ran Unity", "success", "skipped", "success", "false", "false", "false", "false", 1),
+        ("fork unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "true", "false", 1),
+        ("Dependabot unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "false", "true", 1),
+        ("Dependabot unexpectedly ran preflight", "success", "success", "skipped", "false", "true", "false", "true", 1),
+        ("superseded run still ran Unity", "success", "skipped", "success", "true", "true", "false", "false", 1),
+        ("current head skipped Unity after a failed decision", "failure", "skipped", "skipped", "", "", "false", "false", 1),
     )
     if os.name != "nt":
-        for name, head, preflight, unity, superseded, fork, dependabot, expected in cases:
+        for name, head, preflight, unity, superseded, relevant, fork, dependabot, expected in cases:
             environment = os.environ.copy()
             environment.update(
                 {
                     "HEAD_CHECK_RESULT": head,
                     "RUNNER_PREFLIGHT_RESULT": preflight,
                     "UNITY_TESTS_RESULT": unity,
+                    "RELEVANT": relevant,
                     "SUPERSEDED": superseded,
                     "FORK_PR": fork,
                     "DEPENDABOT_PR": dependabot,

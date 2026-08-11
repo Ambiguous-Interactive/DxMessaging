@@ -268,17 +268,22 @@ After (DxMessaging + token lifecycle)
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Extensions;
 using DxMessaging.Core.Messages;
+using UnityEngine;
 
-[DxUntargetedMessage]
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct Spawned { }
 
 // Producer
-var evt = new Spawned();
-evt.Emit();
+public sealed class Spawner : MonoBehaviour {
+    public void Spawn() {
+        var evt = new Spawned();
+        evt.EmitComponentBroadcast(this);
+    }
+}
 
 // Consumer (Unity)
-_ = token.RegisterUntargeted<Spawned>(OnSpawned);
+_ = token.RegisterComponentBroadcast<Spawned>(spawner, OnSpawned);
 void OnSpawned(ref Spawned m) => Refresh();
 ```
 

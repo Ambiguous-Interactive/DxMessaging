@@ -18,13 +18,13 @@ available for a project's normal `UnityEngine.UI.Button.onClick` binding.
 
 ## Message flow
 
-`UIButtonEmitter.Click()` emits an untargeted domain event and a GameObject-targeted text
+`UIButtonEmitter.Click()` emits a GameObject-sourced domain event and a GameObject-targeted text
 message:
 
 ```csharp
 string effectiveButtonId = string.IsNullOrWhiteSpace(buttonId) ? "UnnamedButton" : buttonId;
 var clicked = new ButtonClicked(effectiveButtonId);
-clicked.Emit();
+clicked.EmitGameObjectBroadcast(gameObject);
 
 var text = new StringMessage($"Clicked {effectiveButtonId}");
 text.EmitGameObjectTargeted(gameObject);
@@ -35,7 +35,7 @@ data.
 
 `MessagingObserver` demonstrates two different observation levels:
 
-- `RegisterUntargeted<ButtonClicked>` handles the typed button event.
+- `RegisterBroadcastWithoutSource<ButtonClicked>` handles the typed button event and retains its source.
 - `RegisterGlobalAcceptAll` observes route metadata for diagnostics and tooling.
 
 Use the typed registration for gameplay. Reserve accept-all listeners for diagnostics,

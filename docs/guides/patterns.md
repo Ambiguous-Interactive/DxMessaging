@@ -173,10 +173,10 @@ Use interceptors to enforce rules before handlers run.
 using DxMessaging.Core; // MessageHandler
 
 var bus = MessageHandler.MessageBus;
-_ = token.RegisterBroadcastInterceptor<TookDamage>((ref InstanceId source, ref TookDamage m) =>
+_ = token.RegisterTargetedInterceptor<ApplyDamage>((ref InstanceId target, ref ApplyDamage m) =>
 {
     if (m.amount <= 0) return false; // cancel
-    m = new TookDamage(Math.Min(m.amount, 999)); // clamp
+    m = new ApplyDamage(Math.Min(m.amount, 999)); // clamp
     return true;
 }, priority: 0);
 ```
@@ -186,7 +186,8 @@ _ = token.RegisterBroadcastInterceptor<TookDamage>((ref InstanceId source, ref T
 Post-processors run after handlers -- ideal for metrics.
 
 ```csharp
-_ = token.RegisterUntargetedPostProcessor<SceneLoaded>((ref SceneLoaded m) => Metrics.TrackScene(m.buildIndex));
+_ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
+    (ref SceneLoaded m) => Metrics.RecordProcessedSceneLoad(m.buildIndex));
 ```
 
 ## 6) Local Bus Islands
@@ -414,8 +415,8 @@ public class Boss : MessageAwareComponent {
 **Challenge:** Coordinate 20+ UI panels reacting to game state without tight coupling.
 
 ```csharp
-// Game state messages (global)
-[DxUntargetedMessage]
+// Player-owned state snapshots are broadcasts from that player.
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct PlayerStatsChanged {
     public readonly int health;
@@ -423,7 +424,7 @@ public readonly partial struct PlayerStatsChanged {
     public readonly int gold;
 }
 
-[DxUntargetedMessage]
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct InventoryChanged { public readonly int itemCount; }
 
@@ -431,40 +432,40 @@ public readonly partial struct InventoryChanged { public readonly int itemCount;
 public class HealthPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterUntargeted<PlayerStatsChanged>(OnStats);
+        _ = Token.RegisterBroadcastWithoutSource<PlayerStatsChanged>(OnStats);
     }
-    void OnStats(ref PlayerStatsChanged msg) => UpdateHealth(msg.health);
+    void OnStats(InstanceId player, PlayerStatsChanged msg) => UpdateHealth(player, msg.health);
 }
 
 public class ManaPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterUntargeted<PlayerStatsChanged>(OnStats);
+        _ = Token.RegisterBroadcastWithoutSource<PlayerStatsChanged>(OnStats);
     }
-    void OnStats(ref PlayerStatsChanged msg) => UpdateMana(msg.mana);
+    void OnStats(InstanceId player, PlayerStatsChanged msg) => UpdateMana(player, msg.mana);
 }
 
 public class GoldPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterUntargeted<PlayerStatsChanged>(OnStats);
+        _ = Token.RegisterBroadcastWithoutSource<PlayerStatsChanged>(OnStats);
     }
-    void OnStats(ref PlayerStatsChanged msg) => UpdateGold(msg.gold);
+    void OnStats(InstanceId player, PlayerStatsChanged msg) => UpdateGold(player, msg.gold);
 }
 
 public class InventoryPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterUntargeted<InventoryChanged>(OnInventory);
+        _ = Token.RegisterBroadcastWithoutSource<InventoryChanged>(OnInventory);
     }
-    void OnInventory(ref InventoryChanged msg) => Refresh();
+    void OnInventory(InstanceId player, InventoryChanged msg) => Refresh(player);
 }
 
 // Game systems emit once, all panels update
 public class PlayerStats : MonoBehaviour {
     void UpdateStats() {
         var msg = new PlayerStatsChanged(health, mana, gold);
-        msg.Emit(); // All 3 panels update automatically
+        msg.EmitGameObjectBroadcast(gameObject); // All 3 panels update automatically
     }
 }
 ```
@@ -479,13 +480,13 @@ public class PlayerStats : MonoBehaviour {
 
 ```csharp
 //  DON'T: Separate message per UI element (too granular)
-[DxUntargetedMessage] public struct HealthChanged { public int health; }
-[DxUntargetedMessage] public struct ManaChanged { public int mana; }
-[DxUntargetedMessage] public struct GoldChanged { public int gold; }
+[DxBroadcastMessage] public struct HealthChanged { public int health; }
+[DxBroadcastMessage] public struct ManaChanged { public int mana; }
+[DxBroadcastMessage] public struct GoldChanged { public int gold; }
 // This creates 3x message traffic and registration overhead
 
 //  DO: Batch related updates into one message
-[DxUntargetedMessage] public struct PlayerStatsChanged {
+[DxBroadcastMessage] public struct PlayerStatsChanged {
     public int health;
     public int mana;
     public int gold;
@@ -557,19 +558,26 @@ msg.Emit();
 **Challenge:** Validate 1000s of messages without duplicating logic.
 
 ```csharp
-// Single interceptor validates ALL damage
+[DxTargetedMessage]
+[DxAutoConstructor]
+public readonly partial struct ApplyDamage {
+    public readonly int amount;
+    public readonly DamageType damageType;
+}
+
+// Single interceptor validates ALL targeted damage commands
 public class DamageValidator : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
         // Interceptors run BEFORE handlers
-        _ = Token.RegisterBroadcastInterceptor<EntityDamaged>(ValidateDamage, priority: -100);
+        _ = Token.RegisterTargetedInterceptor<ApplyDamage>(ValidateDamage, priority: -100);
     }
 
-    bool ValidateDamage(ref InstanceId source, ref EntityDamaged msg) {
+    bool ValidateDamage(ref InstanceId target, ref ApplyDamage msg) {
         // Validation logic runs once per message, not per handler
         if (msg.amount <= 0) return false; // Cancel invalid
         if (msg.amount > 9999) {
-            msg = new EntityDamaged(9999, msg.damageType); // Clamp
+            msg = new ApplyDamage(9999, msg.damageType); // Clamp
         }
         return true; // Allow to proceed to handlers
     }
@@ -579,12 +587,14 @@ public class DamageValidator : MessageAwareComponent {
 public class CombatEntity : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterComponentBroadcast<EntityDamaged>(this, OnDamaged);
+        _ = Token.RegisterComponentTargeted<ApplyDamage>(this, OnApplyDamage);
     }
 
-    void OnDamaged(ref EntityDamaged msg) {
+    void OnApplyDamage(ref ApplyDamage msg) {
         // No need to validate - interceptor already did it
         health -= msg.amount;
+        var fact = new EntityDamaged(msg.amount, msg.damageType);
+        fact.EmitComponentBroadcast(this);
     }
 }
 ```
@@ -600,11 +610,15 @@ public class GameAnalytics : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
         // Record completed dispatch after gameplay handlers have run.
-        _ = Token.RegisterBroadcastWithoutSourcePostProcessor<EntityDamaged>(LogDamage, priority: 100);
-        _ = Token.RegisterUntargetedPostProcessor<LevelCompleted>(LogLevelComplete, priority: 100);
+        _ = Token.RegisterBroadcastWithoutSourcePostProcessor<EntityDamaged>(
+            RecordProcessedDamageMessage,
+            priority: 100);
+        _ = Token.RegisterUntargetedPostProcessor<LevelCompleted>(
+            RecordProcessedLevelCompletion,
+            priority: 100);
     }
 
-    void LogDamage(InstanceId source, EntityDamaged msg) {
+    void RecordProcessedDamageMessage(InstanceId source, EntityDamaged msg) {
         SendAnalyticsEvent("damage_message_processed", new {
             source = source.ToString(),
             amount = msg.amount,
@@ -612,8 +626,8 @@ public class GameAnalytics : MessageAwareComponent {
         });
     }
 
-    void LogLevelComplete(ref LevelCompleted msg) {
-        SendAnalyticsEvent("level_complete", new { level = msg.levelIndex });
+    void RecordProcessedLevelCompletion(ref LevelCompleted msg) {
+        SendAnalyticsEvent("level_completion_message_processed", new { level = msg.levelIndex });
     }
 }
 ```
@@ -661,7 +675,7 @@ _ = Token.RegisterUntargeted<LevelCompleted>(OnLevelComplete);
 void TakeDamage(int amount) {
     health -= amount;
     var msg = new HealthChanged(health);
-    msg.Emit(); // Emits every frame
+    msg.EmitGameObjectBroadcast(gameObject); // Emits every frame
 }
 ```
 
@@ -677,7 +691,7 @@ void TakeDamage(int amount) {
 void LateUpdate() {
     if (healthDirty) {
         var msg = new HealthChanged(health);
-        msg.Emit(); // Emits once per frame max
+        msg.EmitGameObjectBroadcast(gameObject); // Emits once per frame max
         healthDirty = false;
     }
 }
@@ -767,10 +781,11 @@ public class MatchStats : MessageAwareComponent {
 
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterBroadcastWithoutSourcePostProcessor<PlayerDamaged>(TrackDamage);
+        _ = Token.RegisterBroadcastWithoutSourcePostProcessor<PlayerDamaged>(
+            CountProcessedDamageMessage);
     }
 
-    void TrackDamage(InstanceId source, PlayerDamaged msg) {
+    void CountProcessedDamageMessage(InstanceId source, PlayerDamaged msg) {
         processedDamageMessagesByPlayer.TryGetValue(msg.playerId, out int count);
         processedDamageMessagesByPlayer[msg.playerId] = count + 1;
     }

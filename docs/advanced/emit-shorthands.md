@@ -181,8 +181,8 @@ heal.EmitAt(this);
 _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
 void OnAnyHeal(ref InstanceId target, ref Heal msg)
 {
-    Debug.Log($"Someone healed {target} for {msg.amount}");
-    // You get WHO was healed as a parameter!
+    Debug.Log($"Heal requested for {target}: {msg.amount}");
+    // You get the target that received the request.
 }
 
 // Listen to ALL damage, regardless of source

@@ -32,6 +32,10 @@ public readonly partial struct SceneLoaded { public readonly int buildIndex; }
 [DxAutoConstructor]
 public readonly partial struct Heal { public readonly int amount; }
 
+[DxTargetedMessage]
+[DxAutoConstructor]
+public readonly partial struct ApplyDamage { public readonly int amount; }
+
 [DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct TookDamage { public readonly int amount; }
@@ -93,7 +97,7 @@ public sealed class DamageSystem : IStartable, IDisposable
         {
             Configure = token =>
             {
-                _ = token.RegisterUntargeted<TookDamage>(OnDamage);
+                _ = token.RegisterUntargeted<CombatStarted>(OnCombatStarted);
             }
         });
     }
@@ -102,7 +106,7 @@ public sealed class DamageSystem : IStartable, IDisposable
 
     public void Dispose() => lease.Dispose();
 
-    private static void OnDamage(ref TookDamage message) { /* respond */ }
+    private static void OnCombatStarted(ref CombatStarted message) { /* respond */ }
 }
 ```
 
@@ -123,7 +127,7 @@ public sealed class DamageRules : IDisposable
     public DamageRules(IMessageBus bus)
     {
         _bus = bus;
-        _interceptor = bus.RegisterBroadcastInterceptor<TookDamage>(ClampDamage);
+        _interceptor = bus.RegisterTargetedInterceptor<ApplyDamage>(ClampDamage);
     }
 
     public void Dispose()
@@ -132,17 +136,17 @@ public sealed class DamageRules : IDisposable
         {
             return;
         }
-        _bus.Deregister<TookDamage>(in _interceptor);
+        _bus.Deregister<ApplyDamage>(in _interceptor);
         _interceptor = MessageBusRegistration.None;
     }
 
-    private static bool ClampDamage(ref InstanceId source, ref TookDamage message)
+    private static bool ClampDamage(ref InstanceId target, ref ApplyDamage message)
     {
         if (message.amount <= 0)
         {
             return false; // cancel
         }
-        message = new TookDamage(Math.Min(message.amount, 999));
+        message = new ApplyDamage(Math.Min(message.amount, 999));
         return true;
     }
 }
@@ -151,7 +155,8 @@ public sealed class DamageRules : IDisposable
 Token registrations remain token-owned:
 
 ```csharp
-_ = token.RegisterUntargetedPostProcessor<SceneLoaded>((ref SceneLoaded m) => metrics.RecordLoadedScene(m.buildIndex));
+_ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
+    (ref SceneLoaded m) => metrics.RecordProcessedSceneLoad(m.buildIndex));
 ```
 
 Direct bus registrations are not token-owned. Retain each `MessageBusRegistration` on the
@@ -270,11 +275,14 @@ _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoaded, priority: 0);
 _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoadedFast, priority: 0);
 
 // Post-processor
-_ = token.RegisterUntargetedPostProcessor<SceneLoaded>(AfterSceneLoaded, priority: 0);
+_ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
+    RecordProcessedSceneLoad,
+    priority: 0);
 
 void OnSceneLoaded(SceneLoaded message) => scenePresenter.Show(message.buildIndex);
 void OnSceneLoadedFast(ref SceneLoaded message) => scenePresenter.Show(message.buildIndex);
-void AfterSceneLoaded(ref SceneLoaded message) => metrics.RecordLoadedScene(message.buildIndex);
+void RecordProcessedSceneLoad(ref SceneLoaded message) =>
+    metrics.RecordProcessedSceneLoad(message.buildIndex);
 ```
 
 ### Token: Targeted (Specific)
@@ -285,10 +293,14 @@ _ = token.RegisterComponentTargeted<Heal>(this, OnHeal, priority: 0);
 _ = token.RegisterTargeted<Heal>(targetInstanceId, OnHeal, priority: 0);
 
 // Post-processor
-_ = token.RegisterTargetedPostProcessor<Heal>(targetInstanceId, AfterHeal, priority: 0);
+_ = token.RegisterTargetedPostProcessor<Heal>(
+    targetInstanceId,
+    RecordProcessedHealRequest,
+    priority: 0);
 
 void OnHeal(ref Heal message) => health.Apply(message.amount);
-void AfterHeal(ref Heal message) => metrics.RecordProcessedHealRequest(message.amount);
+void RecordProcessedHealRequest(ref Heal message) =>
+    metrics.RecordProcessedHealRequest(message.amount);
 ```
 
 ### Token: Targeted (All Targets)
@@ -298,12 +310,14 @@ void AfterHeal(ref Heal message) => metrics.RecordProcessedHealRequest(message.a
 _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal, priority: 0);
 
 // Post-processor
-_ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(AfterAnyHeal, priority: 0);
+_ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(
+    RecordProcessedHealRequest,
+    priority: 0);
 
 void OnAnyHeal(ref InstanceId target, ref Heal message) =>
-    combatFeed.ShowHeal(target, message.amount);
-void AfterAnyHeal(ref InstanceId target, ref Heal message) =>
-    metrics.RecordHeal(target, message.amount);
+    combatFeed.ShowRequestedHeal(target, message.amount);
+void RecordProcessedHealRequest(ref InstanceId target, ref Heal message) =>
+    metrics.RecordProcessedHealRequest(target, message.amount);
 ```
 
 ### Token: Broadcast (Specific)
@@ -314,10 +328,14 @@ _ = token.RegisterComponentBroadcast<TookDamage>(this, OnDamage, priority: 0);
 _ = token.RegisterBroadcast<TookDamage>(sourceInstanceId, OnDamage, priority: 0);
 
 // Post-processor
-_ = token.RegisterBroadcastPostProcessor<TookDamage>(sourceInstanceId, AfterDamage, priority: 0);
+_ = token.RegisterBroadcastPostProcessor<TookDamage>(
+    sourceInstanceId,
+    RecordProcessedDamageMessage,
+    priority: 0);
 
 void OnDamage(ref TookDamage message) => damageEffects.Play(message.amount);
-void AfterDamage(ref TookDamage message) => replay.RecordDamage(message.amount);
+void RecordProcessedDamageMessage(ref TookDamage message) =>
+    replay.RecordProcessedDamageMessage(message.amount);
 ```
 
 ### Token: Broadcast (All Sources)
@@ -327,12 +345,14 @@ void AfterDamage(ref TookDamage message) => replay.RecordDamage(message.amount);
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage, priority: 0);
 
 // Post-processor
-_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(AfterAnyDamage, priority: 0);
+_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(
+    RecordProcessedDamageMessage,
+    priority: 0);
 
 void OnAnyDamage(ref InstanceId source, ref TookDamage message) =>
     damageNumbers.Show(source, message.amount);
-void AfterAnyDamage(ref InstanceId source, ref TookDamage message) =>
-    replay.RecordDamage(source, message.amount);
+void RecordProcessedDamageMessage(ref InstanceId source, ref TookDamage message) =>
+    replay.RecordProcessedDamageMessage(source, message.amount);
 ```
 
 ### Token: Global Observer

@@ -31,12 +31,12 @@ namespace DxMessaging.Unity
     ///     {
     ///         base.RegisterMessageHandlers();
     ///         // Listen for targeted damage commands to this component
-    ///         _ = Token.RegisterComponentTargeted&lt;TookDamage&gt;(this, HandleDamage);
+    ///         _ = Token.RegisterComponentTargeted&lt;ApplyDamage&gt;(this, HandleDamage);
     ///         // Listen for global difficulty changes
     ///         _ = Token.RegisterUntargeted&lt;DifficultyChanged&gt;(HandleDifficulty);
     ///     }
     ///
-    ///     private void HandleDamage(ref TookDamage msg)
+    ///     private void HandleDamage(ref ApplyDamage msg)
     ///     {
     ///         // apply damage
     ///     }

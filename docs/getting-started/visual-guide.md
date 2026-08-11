@@ -554,10 +554,10 @@ You get automatic lifecycle, automatic cleanup, full observability, and predicta
 
 ```csharp
 // Cancel invalid damage
-_ = token.RegisterBroadcastInterceptor<TookDamage>(
-    (ref InstanceId source, ref TookDamage msg) => {
+_ = token.RegisterTargetedInterceptor<ApplyDamage>(
+    (ref InstanceId target, ref ApplyDamage msg) => {
         if (msg.amount <= 0) return false;  // Cancel invalid damage
-        if (IsInvincible(source)) return false;  // Cancel during invincibility
+        if (IsInvincible(target)) return false;  // Cancel during invincibility
         return true;  // Allow
     }
 );

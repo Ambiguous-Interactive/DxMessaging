@@ -472,7 +472,6 @@ public readonly partial struct PlayerDamaged
 {
     public readonly int amount;
     public readonly string damageType;
-    public readonly GameObject source;
 }
 ```
 
@@ -484,13 +483,11 @@ public readonly partial struct PlayerDamaged : IBroadcastMessage<PlayerDamaged>
 {
     public readonly int amount;
     public readonly string damageType;
-    public readonly GameObject source;
 
-    public PlayerDamaged(int amount, string damageType, GameObject source)
+    public PlayerDamaged(int amount, string damageType)
     {
         this.amount = amount;
         this.damageType = damageType;
-        this.source = source;
     }
 
     public Type MessageType => typeof(PlayerDamaged);
@@ -772,13 +769,13 @@ public readonly partial struct Heal
 ```csharp
 [DxBroadcastMessage]
 [DxAutoConstructor]
-public readonly partial struct Attack
+public readonly partial struct AttackPerformed
 {
     public readonly int damage;
     [DxOptionalParameter]
     public readonly string damageType;
 }
-// Auto-generates: Attack(int damage, string damageType = default)
+// Auto-generates: AttackPerformed(int damage, string damageType = default)
 ```
 
 ### Pattern 4: Complex Message
@@ -808,9 +805,9 @@ public partial class GameEvents
 {
     [DxUntargetedMessage]
     [DxAutoConstructor]
-    public readonly partial struct LevelUp
+    public readonly partial struct DifficultyChanged
     {
-        public readonly int newLevel;
+        public readonly int difficulty;
     }
 
     [DxTargetedMessage]
@@ -822,8 +819,8 @@ public partial class GameEvents
 }
 
 // Usage:
-var levelUp = new GameEvents.LevelUp(5);
-levelUp.Emit();
+var difficulty = new GameEvents.DifficultyChanged(5);
+difficulty.Emit();
 ```
 
 #### Benefits

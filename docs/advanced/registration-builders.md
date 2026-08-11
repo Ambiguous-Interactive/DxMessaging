@@ -74,7 +74,7 @@ MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
     ActivateOnBuild = true,
     Configure = token =>
     {
-        _ = token.RegisterUntargeted<PlayerDamaged>(OnPlayerDamaged);
+        _ = token.RegisterUntargeted<GameStarted>(OnGameStarted);
     }
 };
 
@@ -335,8 +335,8 @@ public sealed class DIIntegrationExample : MonoBehaviour
 
     private void ConfigureRegistrations(MessageRegistrationToken token)
     {
-        _ = token.RegisterUntargeted<PlayerSpawned>(OnPlayerSpawned);
-        _ = token.RegisterUntargeted<PlayerDied>(OnPlayerDied);
+        _ = token.RegisterUntargeted<GameStarted>(OnGameStarted);
+        _ = token.RegisterUntargeted<GameStopped>(OnGameStopped);
     }
 
     private void OnDestroy()
@@ -345,14 +345,14 @@ public sealed class DIIntegrationExample : MonoBehaviour
     }
 
     // Action<T> handler signatures
-    private void OnPlayerSpawned(PlayerSpawned message)
+    private void OnGameStarted(GameStarted message)
     {
-        Debug.Log($"Player spawned: {message.PlayerId}");
+        Debug.Log("Game started");
     }
 
-    private void OnPlayerDied(PlayerDied message)
+    private void OnGameStopped(GameStopped message)
     {
-        Debug.Log($"Player died: {message.PlayerId}");
+        Debug.Log("Game stopped");
     }
 }
 ```

@@ -28,7 +28,7 @@ public sealed class UIButtonEmitter : MonoBehaviour
     {
         string effectiveButtonId = EffectiveButtonId;
         var evt = new ButtonClicked(effectiveButtonId);
-        evt.Emit();
+        evt.EmitGameObjectBroadcast(gameObject);
 
         // Also emit a targeted string message to this GameObject.
         var text = new StringMessage($"Clicked {effectiveButtonId}");

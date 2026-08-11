@@ -71,6 +71,43 @@ internal sealed class DocsSnippetCompilationTests
         System.Text.RegularExpressions.RegexOptions.Compiled
     );
 
+    private static readonly System.Text.RegularExpressions.Regex PostProcessorRegistrationRegex =
+        new(
+            @"\bRegister[A-Za-z0-9_]*PostProcessor\s*<[^>]+>\s*\((?<arguments>(?:(?!\)\s*;)[\s\S]){0,600}?)\)\s*;",
+            System.Text.RegularExpressions.RegexOptions.Compiled
+        );
+
+    private static readonly System.Text.RegularExpressions.Regex AmbiguousPostProcessorOutcomeRegex =
+        new(
+            @"\b(?:Log|Track|Record|Save|Count|Publish|Apply|Show|Update|After)(?![A-Za-z]*(?:Processed|Completed|Dispatch|Message|Request))[A-Za-z]*(?:Damage|Heal|Health|Scene|Level)[A-Za-z]*\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled
+                | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+
+    private static readonly System.Text.RegularExpressions.Regex UntargetedEntityHealthRegex = new(
+        @"(?:DxUntargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|RegisterUntargeted(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>Heal(?:Request(?:ed)?)?|HealPlayerRequested|ApplyDamage|DealDamage|DamageMessage|DamageRequested|InflictDamage|TookDamage|DamageTaken|DamageApplied|HealthLost|HealthChanged|HealthReduced|[A-Za-z0-9_]*(?:Damaged|Healed))(?![A-Za-z0-9_])",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex TargetedHealthOutcomeRegex = new(
+        @"(?:DxTargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Targeted(?:WithoutTargeting|PostProcessor|Interceptor)?\s*<\s*)(?<type>TookDamage|DamageTaken|DamageApplied|HealthLost|HealthChanged|HealthReduced|[A-Za-z0-9_]*(?:Damaged|Healed))(?![A-Za-z0-9_])",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex BroadcastHealthCommandRegex = new(
+        @"(?:DxBroadcastMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Broadcast(?:WithoutSource|PostProcessor|Interceptor)?\s*<\s*)(?<type>Heal(?:Request(?:ed)?)?|HealPlayerRequested|ApplyDamage|DealDamage|DamageMessage|DamageRequested|InflictDamage)(?![A-Za-z0-9_])",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex UntargetedEntityFactRegex = new(
+        @"(?:DxUntargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|RegisterUntargeted(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>Player(?:Spawned|Died|Moved|Damaged)|ButtonClicked|EntityDamaged)(?![A-Za-z0-9_])",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
     [Test]
     public void QuickStartStep1Compiles()
     {
@@ -332,6 +369,156 @@ internal sealed class DocsSnippetCompilationTests
             "MessageAwareComponent examples must call base.RegisterMessageHandlers():"
                 + System.Environment.NewLine
                 + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    [Test]
+    public void PostProcessorExamplesNameProcessedDispatchInsteadOfGameplayOutcomes()
+    {
+        string[] violations = GetBroadcastExampleSources()
+            .SelectMany(source =>
+                PostProcessorRegistrationRegex
+                    .Matches(source.Text)
+                    .Cast<System.Text.RegularExpressions.Match>()
+                    .SelectMany(registration =>
+                        FindAmbiguousPostProcessorCallbacks(registration.Groups["arguments"].Value)
+                            .Select(match =>
+                                $"{source.Path}:{source.Text[..registration.Index].Count(character => character == '\n') + 1}: {match.Value}"
+                            )
+                    )
+            )
+            .ToArray();
+
+        Assert.That(
+            violations,
+            Is.Empty,
+            "Post-processor examples must name the processed request/message/dispatch instead "
+                + "of claiming that gameplay state changed:"
+                + System.Environment.NewLine
+                + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    [TestCase("token.RegisterBroadcastPostProcessor<T>(RecordDamage);", true)]
+    [TestCase("token.RegisterBroadcastPostProcessor<T>(CountHealth);", true)]
+    [TestCase("token.RegisterBroadcastPostProcessor<T>(PublishHealMetric);", true)]
+    [TestCase("token.RegisterBroadcastPostProcessor<T>((T m) => SaveDamageTelemetry(m));", true)]
+    [TestCase("token.RegisterBroadcastPostProcessor<T>(RecordProcessedDamageRequest);", false)]
+    [TestCase(
+        "token.RegisterTargetedPostProcessor<ApplyDamage>((ref ApplyDamage m) => RecordProcessedDamageRequest(m));",
+        false
+    )]
+    [TestCase("void RecordDamage() { } // PostProcessor documentation", false)]
+    public void PostProcessorSemanticGuardBindsNamesToRegistrations(string source, bool invalid)
+    {
+        bool actual = PostProcessorRegistrationRegex
+            .Matches(source)
+            .Cast<System.Text.RegularExpressions.Match>()
+            .Any(registration =>
+                FindAmbiguousPostProcessorCallbacks(registration.Groups["arguments"].Value).Any()
+            );
+
+        Assert.That(
+            actual,
+            Is.EqualTo(invalid),
+            $"Expected post-processor semantic classification {invalid} for: {source}"
+        );
+    }
+
+    private static IEnumerable<System.Text.RegularExpressions.Match> FindAmbiguousPostProcessorCallbacks(
+        string arguments
+    )
+    {
+        return AmbiguousPostProcessorOutcomeRegex
+            .Matches(arguments)
+            .Cast<System.Text.RegularExpressions.Match>()
+            .Where(match =>
+                !System.Text.RegularExpressions.Regex.IsMatch(
+                    arguments[..match.Index],
+                    @"\b(?:ref|in|out)\s*$"
+                )
+            );
+    }
+
+    [Test]
+    public void HomepageQuickStartRequiresNoManualSceneReferenceWiring()
+    {
+        string docsRoot = ResolveDocsRoot();
+        string homepagePath = Path.Combine(docsRoot, "index.md");
+        string snippet = ExtractFirstCodeBlock(homepagePath, "csharp");
+
+        Assert.That(snippet, Does.Not.Contain("[SerializeField]"));
+        Assert.That(snippet, Does.Contain("[DxTargetedMessage]"));
+        Assert.That(snippet, Does.Not.Contain("[DxUntargetedMessage]"));
+        Assert.That(snippet, Does.Contain("RegisterGameObjectTargeted<HealPlayerRequested>"));
+        Assert.That(snippet, Does.Contain("EmitGameObjectTargeted(_playerHealth.gameObject)"));
+        Assert.That(snippet, Does.Contain("[RequireComponent(typeof(Button))]"));
+        Assert.That(snippet, Does.Contain("onClick.AddListener"));
+        Assert.That(snippet, Does.Contain("onClick.RemoveListener"));
+    }
+
+    [Test]
+    public void EntityScopedExamplesUseMessageKindsThatRetainIdentity()
+    {
+        System.Text.RegularExpressions.Regex[] invalidPatterns =
+        {
+            UntargetedEntityHealthRegex,
+            UntargetedEntityFactRegex,
+            TargetedHealthOutcomeRegex,
+            BroadcastHealthCommandRegex,
+        };
+        string[] violations = GetBroadcastExampleSources()
+            .SelectMany(source =>
+                invalidPatterns.SelectMany(pattern =>
+                    pattern
+                        .Matches(source.Text)
+                        .Cast<System.Text.RegularExpressions.Match>()
+                        .Select(match =>
+                            $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}: {match.Groups["type"].Value}"
+                        )
+                )
+            )
+            .ToArray();
+
+        Assert.That(
+            violations,
+            Is.Empty,
+            "Entity commands must be targeted, entity facts must be broadcast, and neither "
+                + "belongs to the untargeted global channel:"
+                + System.Environment.NewLine
+                + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    [TestCase("[DxUntargetedMessage] struct HealRequested { }", true)]
+    [TestCase("[DxUntargetedMessage] struct DamageSettingsChanged { }", false)]
+    [TestCase("[DxUntargetedMessage] struct HealthUiOpened { }", false)]
+    [TestCase("[DxUntargetedMessage] struct DamageSystemInitialized { }", false)]
+    [TestCase("[DxTargetedMessage] struct DamageApplied { }", true)]
+    [TestCase("[DxTargetedMessage] struct HealthReduced { }", true)]
+    [TestCase("[DxTargetedMessage] struct ApplyDamage { }", false)]
+    [TestCase("[DxBroadcastMessage] struct DamageRequested { }", true)]
+    [TestCase("[DxBroadcastMessage] struct InflictDamage { }", true)]
+    [TestCase("[DxBroadcastMessage] struct TookDamage { }", false)]
+    [TestCase("[DxUntargetedMessage] struct PlayerSpawned { }", true)]
+    [TestCase("[DxUntargetedMessage] struct GameStarted { }", false)]
+    public void EntityRouteSemanticGuardDistinguishesCommandsFactsAndGlobals(
+        string source,
+        bool invalid
+    )
+    {
+        bool actual = new[]
+        {
+            UntargetedEntityHealthRegex,
+            UntargetedEntityFactRegex,
+            TargetedHealthOutcomeRegex,
+            BroadcastHealthCommandRegex,
+        }.Any(pattern => pattern.IsMatch(source));
+
+        Assert.That(
+            actual,
+            Is.EqualTo(invalid),
+            $"Expected entity-route semantic classification {invalid} for: {source}"
         );
     }
 

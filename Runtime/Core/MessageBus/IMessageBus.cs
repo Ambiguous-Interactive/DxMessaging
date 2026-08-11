@@ -38,12 +38,12 @@ namespace DxMessaging.Core.MessageBus
     /// <code>
     /// // Unity: register then send a targeted message
     /// var token = messagingComponent.Create(this);
-    /// token.RegisterComponentTargeted&lt;TookDamage&gt;(this, (ref TookDamage m) =&gt; OnDamage(m));
+    /// token.RegisterComponentTargeted&lt;ApplyDamage&gt;(this, (ref ApplyDamage m) =&gt; OnDamage(m));
     /// token.Enable();
     ///
     /// // Later, somewhere else
     /// DxMessaging.Core.InstanceId me = GetComponent&lt;UnityEngine.Component&gt;();
-    /// var msg = new TookDamage(5);
+    /// var msg = new ApplyDamage(5);
     /// DxMessaging.Core.MessageHandler.MessageBus.TargetedBroadcast(ref me, ref msg);
     /// </code>
     /// </example>

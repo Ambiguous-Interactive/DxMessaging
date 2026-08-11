@@ -25,11 +25,11 @@ public sealed class HealthComponent : MessageAwareComponent
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterComponentTargeted<TookDamage>(this, OnTookDamage);
+        _ = Token.RegisterComponentTargeted<ApplyDamage>(this, OnApplyDamage);
         _ = Token.RegisterUntargeted<WorldRegenerated>(OnWorldRegenerated);
     }
 
-    private void OnTookDamage(ref TookDamage m) => Apply(m.amount);
+    private void OnApplyDamage(ref ApplyDamage m) => Apply(m.amount);
     private void OnWorldRegenerated(ref WorldRegenerated m) => Reset();
 }
 ```
@@ -82,14 +82,14 @@ public sealed class InventoryUI : UnityEngine.MonoBehaviour
         _messaging = GetComponent<MessagingComponent>();
         _token = _messaging.Create(this);
         _ = _token.RegisterUntargeted<WorldRegenerated>(OnWorld);
-        _ = _token.RegisterComponentTargeted<TookDamage>(this, OnDamage);
+        _ = _token.RegisterComponentTargeted<ApplyDamage>(this, OnDamage);
     }
 
     private void OnEnable() => _token.Enable();
     private void OnDisable() => _token.Disable();
 
     private void OnWorld(ref WorldRegenerated m) { /* update UI */ }
-    private void OnDamage(ref TookDamage m) { /* flash damage */ }
+    private void OnDamage(ref ApplyDamage m) { /* apply damage */ }
 }
 ```
 

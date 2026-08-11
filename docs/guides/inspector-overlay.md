@@ -300,10 +300,10 @@ public sealed class HealthComponent : MessageAwareComponent
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterComponentTargeted<TookDamage>(this, OnHit);
+        _ = Token.RegisterComponentTargeted<ApplyDamage>(this, OnHit);
     }
 
-    private void OnHit(ref TookDamage m) => Debug.Log($"hit for {m.amount}");
+    private void OnHit(ref ApplyDamage m) => Debug.Log($"hit for {m.amount}");
 }
 ```
 

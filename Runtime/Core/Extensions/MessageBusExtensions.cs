@@ -63,8 +63,8 @@ namespace DxMessaging.Core.Extensions
         /// <example>
         /// <code>
         /// InstanceId playerId = GetPlayerId();
-        /// var change = new HealthChanged(5);
-        /// bus.EmitTargeted(playerId, change);
+        /// var command = new AdjustHealth(5);
+        /// bus.EmitTargeted(playerId, command);
         /// </code>
         /// </example>
         public static void EmitTargeted<TMessage>(

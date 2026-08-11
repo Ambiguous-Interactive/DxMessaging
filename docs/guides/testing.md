@@ -146,15 +146,15 @@ public IEnumerator InterceptorCanModifyMessage()
     MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
 
     int receivedAmount = 0;
-    _ = token.RegisterUntargeted<DamageMessage>(msg => receivedAmount = msg.amount);
-    _ = token.RegisterUntargetedInterceptor((ref DamageMessage msg) =>
+    _ = token.RegisterGameObjectTargeted<DamageMessage>(host, msg => receivedAmount = msg.amount);
+    _ = token.RegisterTargetedInterceptor((ref InstanceId _, ref DamageMessage msg) =>
     {
         if (msg.amount > 100) msg = new DamageMessage { amount = 100 };
         return true;
     });
 
     DamageMessage msg = new() { amount = 999 };
-    msg.EmitUntargeted();
+    msg.EmitGameObjectTargeted(host);
 
     Assert.AreEqual(100, receivedAmount, "Interceptor should clamp damage to 100.");
     yield break;

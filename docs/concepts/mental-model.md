@@ -307,8 +307,8 @@ Token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
 
 void OnAnyHeal(ref InstanceId target, ref Heal msg)
 {
-    // 'target' tells you who was healed
-    Debug.Log($"Someone healed {target} for {msg.amount}");
+    // 'target' tells you who received the heal request
+    Debug.Log($"Heal requested for {target}: {msg.amount}");
 }
 ```
 

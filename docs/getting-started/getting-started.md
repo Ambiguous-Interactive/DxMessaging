@@ -91,11 +91,11 @@ public class GameUI : MessageAwareComponent
     {
         base.RegisterMessageHandlers();
 
-        _ = Token.RegisterGameObjectTargeted<Heal>(playerGO, OnPlayerHealed);
+        _ = Token.RegisterGameObjectTargeted<Heal>(playerGO, OnHealRequested);
         _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
     }
 
-    private void OnPlayerHealed(ref Heal m) => UpdateHealthBar(m.amount);
+    private void OnHealRequested(ref Heal m) => ShowRequestedHeal(m.amount);
     private void OnAnyDamage(InstanceId source, TookDamage m) => ShowDamageEffect(source);
 }
 ```
@@ -201,7 +201,7 @@ Checklist:
 ```csharp
 // Listen
 _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
-_ = Token.RegisterGameObjectTargeted<Heal>(playerGO, OnPlayerHealed);
+_ = Token.RegisterGameObjectTargeted<Heal>(playerGO, OnHealRequested);
 
 // Emit (broadcasts always require a source)
 var damage = new TookDamage(25);
