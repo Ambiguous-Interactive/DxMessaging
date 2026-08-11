@@ -70,9 +70,9 @@ test("run-ci-tests emits EnterPlayModeOptions reload-disable for CI projects", (
   assert.match(runCiTests, /\[System\.IO\.Path\]::Combine\(\$project,\s*'ProjectSettings',\s*'EditorSettings\.asset'\)/, "the EnterPlayModeOptions block must be written to ProjectSettings/EditorSettings.asset through native path segments");
 });
 
-test("Unity native-exit and retry-cleanup guards stay fail-closed", () => {
-  // GitHub runners add ANSI styling to PowerShell errors; message contracts compare plain text.
-  assert.equal(stripVTControlCharacters("\u001b[31;1munsafe\u001b[0m"), "unsafe");
+test("Unity native-exit, diagnostic, and retry-cleanup guards stay fail-closed", () => {
+  // prettier-ignore
+  assert.match(stripVTControlCharacters("\u001b[31;1mowned\u001b[0m\r\n | DxMessaging CI cache"), /owned(?:\s+\|\s+|\s+)DxMessaging CI cache/);
   for (const text of [runCiTests, exportUnityPackage]) {
     assert.match(
       text,
@@ -243,7 +243,7 @@ test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying 
     const result = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, { cachePath });
     assert.notEqual(result.status, 0, "unowned CachePath should be rejected");
     // prettier-ignore
-    assert.match(stripVTControlCharacters(`${result.stdout}\n${result.stderr}`), /owned DxMessaging CI cache/);
+    assert.match(stripVTControlCharacters(`${result.stdout}\n${result.stderr}`), /owned(?:\s+\|\s+|\s+)DxMessaging CI cache/);
     for (const sentinel of sentinels) {
       assert.equal(fs.readFileSync(sentinel, "utf8"), "do not delete\n");
     }
