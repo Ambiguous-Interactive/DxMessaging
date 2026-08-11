@@ -547,7 +547,7 @@ Every message flows through 3 stages with priority control:
 flowchart LR
     P[Producer] --> I[Interceptors<br/>validate/mutate]
     I --> H[Handlers<br/>main logic]
-    H --> PP[Post-Processors<br/>analytics/logging]
+    H --> PP[Post-Processors<br/>metrics/replay]
 ```
 
 ### Global Observers: Listen to All Events

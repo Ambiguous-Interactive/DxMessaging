@@ -40,11 +40,19 @@ namespace DxMessaging.Samples.DI.VContainer
 
         private sealed class ScoreboardService : IStartable, ITickable, IDisposable
         {
+            private const float EmitIntervalSeconds = 1f;
+
+            private readonly IMessageBus messageBus;
             private readonly MessageRegistrationLease lease;
             private int observedScores;
+            private float nextEmitTime;
 
-            public ScoreboardService(IMessageRegistrationBuilder registrationBuilder)
+            public ScoreboardService(
+                IMessageBus messageBus,
+                IMessageRegistrationBuilder registrationBuilder
+            )
             {
+                this.messageBus = messageBus;
                 lease = registrationBuilder.Build(
                     new MessageRegistrationBuildOptions
                     {
@@ -59,13 +67,19 @@ namespace DxMessaging.Samples.DI.VContainer
             public void Start()
             {
                 lease.Activate();
+                nextEmitTime = Time.unscaledTime;
             }
 
             public void Tick()
             {
-                // Emit periodically for demo purposes
+                if (Time.unscaledTime < nextEmitTime)
+                {
+                    return;
+                }
+
+                nextEmitTime = Time.unscaledTime + EmitIntervalSeconds;
                 ScoreUpdated message = new ScoreUpdated(UnityEngine.Random.Range(0, 100));
-                message.Emit();
+                message.Emit(messageBus);
             }
 
             public void Dispose()

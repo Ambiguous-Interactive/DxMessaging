@@ -12,15 +12,15 @@ on:
       - "docs/architecture/perf-baseline.csv"
   workflow_dispatch:
 
+concurrency:
+  group: unity-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 permissions:
   actions: read
   contents: read
   checks: write
   pull-requests: read
-
-concurrency:
-  group: unity-tests-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
 
 jobs:
   head-check:
@@ -251,26 +251,6 @@ jobs:
         with:
           matrix-note: "default (organization lock wraps the Unity section)"
 
-      - name: Cache Unity Library and package caches
-        timeout-minutes: 30
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        env:
-          PACKAGE_HASH: >-
-            ${{ hashFiles(
-              'package.json',
-              'Runtime/**',
-              'Editor/**',
-              'Tests/**',
-              'scripts/unity/run-ci-tests.ps1',
-              'scripts/unity/lib/asmdef-discovery.js',
-              '.github/actions/compute-unity-assemblies/action.yml'
-            ) }}
-        with:
-          path: |
-            .artifacts/u/${{ matrix.unity-version }}-${{ matrix.test-mode }}/Library
-            .artifacts/unity/cache/${{ matrix.unity-version }}
-          key: Library-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
-
       - name: Setup Node.js
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -363,11 +343,11 @@ jobs:
         # player with the Release C++ configuration. Measured PR runs showed the
         # Debug C++ configuration reduces native compile time but makes the
         # standalone player test run far slower, so Release remains faster
-        # end-to-end and closer to shipped-player behavior. A run-ci-tests.ps1
-        # change rotates the Library cache key, so first runs build cold. The
-        # editmode/playmode legs finish far below this; stays well under the job
-        # timeout (900) so the step clock fires first and releases the
-        # shared Unity seat.
+        # end-to-end and closer to shipped-player behavior. Each fixed runner
+        # reuses its scope-isolated project when available; a new runner or a
+        # cleared project still builds cold. The editmode/playmode legs finish
+        # far below this; stays well under the job timeout (900) so the step
+        # clock fires first and releases the shared Unity seat.
         timeout-minutes: 150
         shell: pwsh
         env:
@@ -377,12 +357,16 @@ jobs:
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!UnityRuntime;!PerfBench;!PerfGate;!PerfBaseline"
         run: |
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ProjectPath $projectPath `
+            -CachePath $cachePath `
             -LicenseReturnOwner Central `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild

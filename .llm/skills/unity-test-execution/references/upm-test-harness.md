@@ -2,7 +2,7 @@
 
 # UPM Test Harness
 
-> **One-line summary**: CI generates a thin Unity host project under `.artifacts/u/<version>-<mode>/`; its only job is to import the package via a local `file:` dependency and expose its `Tests/` asmdefs through the UPM `testables` field.
+> **One-line summary**: CI generates a thin Unity host project in a runner-local, scope-isolated directory; its only job is to import the package via a local `file:` dependency and expose its `Tests/` asmdefs through the UPM `testables` field.
 
 ## When to Use
 
@@ -26,7 +26,7 @@ repo-root/
 +-- Tests/
 |   +-- Editor/                   # NUnit + UTF tests (asmdefs)
 |   +-- Runtime/                  # PlayMode tests (asmdefs)
-+-- .artifacts/u/                 # generated thin hosts that import the package
++-- $RUNNER_WORKSPACE/dxm-u/      # generated thin CI hosts outside the checkout
     +-- Packages/
     |   +-- manifest.json         # "com.wallstop-studios.dxmessaging": "file:<repo-root>",
     |   |                         # plus "testables" exposing the package's Tests
@@ -70,15 +70,15 @@ Committed source of truth:
 - `scripts/unity/run-ci-tests.ps1`
 - package source at `Runtime/`, `Editor/`, `Tests/`
 
-Generated and gitignored:
+Generated and ignored:
 
-- `.artifacts/u/**/Library/`
-- `.artifacts/u/**/Temp/`
-- `.artifacts/u/**/Logs/`
-- `.artifacts/u/**/UserSettings/`
-- `.artifacts/unity/cache/**`
+- `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/**/Library/`
+- `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/**/Temp/`
+- `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/**/Logs/`
+- `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/**/UserSettings/`
+- `$RUNNER_WORKSPACE/dxm-c/**`
 
-CI caches the generated project's `Library/` with an exact key that includes OS, architecture, Unity version, mode, package/test inputs, and `scripts/unity/run-ci-tests.ps1`. Do not add broad restore keys.
+Each fixed runner reuses its own project in place. Test (`t`), benchmark (`b`), and performance (`p`) scopes are separate so incompatible package graphs never share a `Library`. The workflows do not transfer `Library` through `actions/cache`; measured post-job uploads were slower than rebuilding and PR caches could not seed the default branch.
 
 ## Adding a New Test Asmdef
 

@@ -8,13 +8,14 @@
 using DxMessaging.Core;   // InstanceId
 using DxMessaging.Core.Messages;
 
-// Observe all Heal messages and their intended targets
-_ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
-void OnAnyHeal(InstanceId target, Heal m) => Audit(target, m);
+// Update the combat feed for every requested heal.
+_ = token.RegisterTargetedWithoutTargeting<Heal>(ShowRequestedHeal);
+void ShowRequestedHeal(InstanceId target, Heal m) => combatFeed.ShowHeal(target, m.amount);
 
-// Post-process all targeted of type
-_ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(OnAnyHealPost);
-void OnAnyHealPost(InstanceId target, Heal m) => Log(target, m);
+// Record the request only after message dispatch reaches post-processing.
+_ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(RecordProcessedHealRequest);
+void RecordProcessedHealRequest(InstanceId target, Heal m) =>
+    metrics.RecordProcessedHealRequest(target, m.amount);
 ```
 
 ## Broadcast across all sources
@@ -25,13 +26,13 @@ void OnAnyHealPost(InstanceId target, Heal m) => Log(target, m);
 using DxMessaging.Core;   // InstanceId
 using DxMessaging.Core.Messages;
 
-// Observe all TookDamage messages and their sources
-_ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyTookDamage);
-void OnAnyTookDamage(InstanceId source, TookDamage m) => Track(source, m);
+// Spawn presentation feedback for every damage source.
+_ = token.RegisterBroadcastWithoutSource<TookDamage>(ShowDamageNumber);
+void ShowDamageNumber(InstanceId source, TookDamage m) => damageNumbers.Show(source, m.amount);
 
-// Post-process all broadcast of type
-_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(OnAnyTookDamagePost);
-void OnAnyTookDamagePost(InstanceId source, TookDamage m) => Log(source, m);
+// Append replay evidence after every gameplay handler has run.
+_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(RecordDamageOutcome);
+void RecordDamageOutcome(InstanceId source, TookDamage m) => replay.RecordDamage(source, m.amount);
 ```
 
 ## Global accept-all (debug/inspection)
@@ -40,11 +41,16 @@ void OnAnyTookDamagePost(InstanceId source, TookDamage m) => Log(source, m);
 
 ```csharp
 using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+using DxMessaging.Core.MessageBus;
 
-var bus = MessageHandler.MessageBus;
-var handler = new MessageHandler(new InstanceId(1)) { active = true };
-var dereg = bus.RegisterGlobalAcceptAll(handler);
+IMessageBus bus = MessageHandler.MessageBus;
+MessageHandler handler = new(new InstanceId(1)) { active = true };
+MessageBusRegistration registration = bus.RegisterGlobalAcceptAll(handler);
 // implement handler callbacks for generic categories on your MessageHandler
+
+// When the owning tool shuts down:
+bus.Deregister<IMessage>(in registration);
 ```
 
 ## Real-World Use Cases
@@ -54,13 +60,23 @@ var dereg = bus.RegisterGlobalAcceptAll(handler);
 Capture all messages during development for debugging and diagnostics:
 
 ```csharp
+using System;
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
+using DxMessaging.Core.MessageBus;
 using UnityEngine;
 
-public class DebugMessageLogger : MessageHandler
+public sealed class DebugMessageLogger : MessageHandler, IDisposable
 {
-    public DebugMessageLogger() : base(new InstanceId(999)) { }
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _registration;
+
+    public DebugMessageLogger(IMessageBus bus) : base(new InstanceId(999))
+    {
+        _bus = bus;
+        active = true;
+        _registration = bus.RegisterGlobalAcceptAll(this);
+    }
 
     public override void Handle(ref IUntargetedMessage message)
     {
@@ -76,12 +92,24 @@ public class DebugMessageLogger : MessageHandler
     {
         Debug.Log($"[Broadcast <- {source}] {message.GetType().Name}: {message}");
     }
-}
 
-// Register in development builds only
+    public void Dispose()
+    {
+        if (!_registration.IsValid)
+        {
+            return;
+        }
+        _bus.Deregister<IMessage>(in _registration);
+        _registration = MessageBusRegistration.None;
+    }
+}
+```
+
+Keep the owner alive for the intended observation scope:
+
+```csharp
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
-var logger = new DebugMessageLogger { active = true };
-_ = MessageHandler.MessageBus.RegisterGlobalAcceptAll(logger);
+using DebugMessageLogger logger = new(MessageHandler.MessageBus);
 #endif
 ```
 
@@ -95,6 +123,7 @@ using System.Reflection;
 using System.Collections.Generic;
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
+using DxMessaging.Core.MessageBus;
 
 // Mark messages that should be replicated
 [AttributeUsage(AttributeTargets.Struct)]
@@ -117,15 +146,20 @@ public readonly partial struct DealDamage
 }
 
 // Network replication handler
-public class NetworkReplicator : MessageHandler
+public sealed class NetworkReplicator : MessageHandler, IDisposable
 {
     private readonly INetworkManager _network;
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _registration;
     private readonly HashSet<Type> _networkedTypes = new();
 
-    public NetworkReplicator(INetworkManager network) : base(new InstanceId(1000))
+    public NetworkReplicator(INetworkManager network, IMessageBus bus) : base(new InstanceId(1000))
     {
         _network = network;
+        _bus = bus;
         CacheNetworkedTypes();
+        active = true;
+        _registration = bus.RegisterGlobalAcceptAll(this);
     }
 
     private void CacheNetworkedTypes()
@@ -166,13 +200,25 @@ public class NetworkReplicator : MessageHandler
             _network.Send(source, message);
         }
     }
+
+    public void Dispose()
+    {
+        if (!_registration.IsValid)
+        {
+            return;
+        }
+        _bus.Deregister<IMessage>(in _registration);
+        _registration = MessageBusRegistration.None;
+    }
 }
+```
 
-// Usage: any message with [Networked] automatically replicates
-var replicator = new NetworkReplicator(networkManager) { active = true };
-_ = MessageHandler.MessageBus.RegisterGlobalAcceptAll(replicator);
+Use the owner for the full replication scope. Messages marked with `[Networked]` then replicate
+without explicit per-type registration:
 
-// These messages are now replicated across the network
+```csharp
+using NetworkReplicator replicator = new(networkManager, MessageHandler.MessageBus);
+
 var playerMoved = new PlayerMoved(playerPos);
 playerMoved.Emit();
 var dealDamage = new DealDamage(50f);

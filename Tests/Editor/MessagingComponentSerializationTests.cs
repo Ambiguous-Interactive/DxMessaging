@@ -27,43 +27,37 @@ namespace DxMessaging.Tests.Editor
             }
             _createdObjects.Clear();
 
-            bool deletedAnyAsset = false;
             foreach (string assetPath in _createdAssetPaths)
             {
                 if (!string.IsNullOrEmpty(assetPath))
                 {
                     AssetDatabase.DeleteAsset(assetPath);
-                    deletedAnyAsset = true;
                 }
             }
             _createdAssetPaths.Clear();
-
-            // DeleteAsset already updates the database; the Refresh is only needed
-            // to settle the import state of assets this fixture actually created on
-            // disk. Guarding it on deletedAnyAsset keeps that Refresh correct while
-            // ensuring a future test that creates no on-disk asset pays no
-            // AssetDatabase sweep. The one current test does create an asset, so the
-            // Refresh still runs for it -- this guard is defensive, not a saving today.
-            if (deletedAnyAsset)
-            {
-                AssetDatabase.Refresh();
-            }
         }
 
+        /// <remarks>
+        /// Investigation (2026-08-10): teardown formerly refreshed the entire AssetDatabase
+        /// after deleting its temporary provider. DeleteAsset already completes that owned
+        /// cleanup; the global refresh also imported unrelated malformed host assets and made
+        /// this isolated serialization contract fail on project state it did not create.
+        /// </remarks>
         [Test]
         public void SerializedProviderHandleSurvivesJsonRoundtrip()
         {
             MessageBus messageBus = new();
-            TestScriptableMessageBusProvider provider =
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
             provider.Configure(messageBus);
             string assetPath = AssetDatabase.GenerateUniqueAssetPath(
                 "Assets/__TempTestProvider.asset"
             );
+            _createdAssetPaths.Add(assetPath);
             AssetDatabase.CreateAsset(provider, assetPath);
             AssetDatabase.SaveAssets();
             AssetDatabase.ImportAsset(assetPath);
-            _createdAssetPaths.Add(assetPath);
 
             GameObject owner = Track(new GameObject("OriginalComponentOwner"));
             MessagingComponent original = owner.AddComponent<MessagingComponent>();

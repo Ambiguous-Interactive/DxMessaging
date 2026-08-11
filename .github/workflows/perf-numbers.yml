@@ -313,27 +313,6 @@ jobs:
           matrix-note: "perf (organization lock wraps the Unity section)"
           requested-labels: "self-hosted, Windows, RAM-64GB, fast"
 
-      - name: Cache Unity Library and package caches
-        timeout-minutes: 30
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        env:
-          PACKAGE_HASH: >-
-            ${{ hashFiles(
-              'package.json',
-              'Runtime/**',
-              'Editor/**',
-              'Tests/**',
-              'scripts/unity/run-ci-tests.ps1',
-              'scripts/unity/lib/asmdef-discovery.js',
-              '.github/actions/compute-unity-assemblies/action.yml',
-              '.github/comparison-packages.json'
-            ) }}
-        with:
-          path: |
-            .artifacts/u/${{ matrix.unity-version }}-${{ matrix.test-mode }}/Library
-            .artifacts/unity/cache/${{ matrix.unity-version }}
-          key: Library-perf-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
-
       - name: Setup Node.js
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -425,10 +404,10 @@ jobs:
       - name: Run Unity Test Runner
         id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        # 180 (not 120): the Standalone leg builds a COLD IL2CPP player. Stays
-        # strictly below the job-level timeout (900) so the step clock
-        # fires first and releases the shared Unity seat. Must stay >= the
-        # validator's RUN_BUDGET (120).
+        # 180 (not 120): the Standalone leg builds an IL2CPP player and may run
+        # cold after runner maintenance. Stays strictly below the job-level
+        # timeout (900) so the step clock fires first and releases the shared
+        # Unity seat. Must stay >= the validator's RUN_BUDGET (120).
         timeout-minutes: 180
         shell: pwsh
         env:
@@ -453,12 +432,16 @@ jobs:
               ReleasePlayerBuild = $true
               StandaloneScriptingBackend = 'IL2CPP'
           }
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ProjectPath $projectPath `
+            -CachePath $cachePath `
             -LicenseReturnOwner Central `
             @extra
 
@@ -467,7 +450,8 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          $playerDir = '.artifacts/u/${{ matrix.unity-version }}-standalone/Build/DxmTestPlayer'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone'
+          $playerDir = Join-Path $projectPath 'Build\DxmTestPlayer'
           $playerExe = Join-Path $playerDir 'DxmTestPlayer.exe'
           if (-not (Test-Path -LiteralPath $playerExe -PathType Leaf)) {
             throw "Validated standalone player was not found at $playerExe"

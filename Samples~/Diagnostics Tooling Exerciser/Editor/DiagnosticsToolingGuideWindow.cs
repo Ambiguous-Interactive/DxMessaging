@@ -115,6 +115,12 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             RefreshStatus();
         }
 
+        private void OnDisable()
+        {
+            _statusRefresh?.Pause();
+            _statusRefresh = null;
+        }
+
         private static Button AddStep(
             VisualElement parent,
             string heading,
@@ -231,9 +237,24 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
         static DiagnosticsToolingGuideBootstrap()
         {
-            EditorSceneManager.sceneOpened -= HandleSceneOpened;
+            if (Application.isBatchMode)
+            {
+                return;
+            }
+
+            Shutdown();
             EditorSceneManager.sceneOpened += HandleSceneOpened;
             EditorApplication.delayCall += OpenForActiveSampleSceneOnce;
+            AssemblyReloadEvents.beforeAssemblyReload += Shutdown;
+            EditorApplication.quitting += Shutdown;
+        }
+
+        private static void Shutdown()
+        {
+            EditorSceneManager.sceneOpened -= HandleSceneOpened;
+            EditorApplication.delayCall -= OpenForActiveSampleSceneOnce;
+            AssemblyReloadEvents.beforeAssemblyReload -= Shutdown;
+            EditorApplication.quitting -= Shutdown;
         }
 
         private static void HandleSceneOpened(Scene scene, OpenSceneMode mode)

@@ -123,10 +123,10 @@ flowchart TD
   - Shows Targeted and Broadcast messages in action
   - Complete working scene you can play with
 
-- **[UI Buttons + Inspector](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** - Interactive diagnostics demo
-  - See the Inspector diagnostics in action
-  - Explore message history and handler registrations
-  - Great for debugging and understanding the system
+- **[UI Buttons + Inspector](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** - Zero-setup button and diagnostics scene
+  - Emit typed and GameObject-targeted messages from the Game view
+  - Compare typed handlers with accept-all diagnostic observation
+  - Inspect token-local diagnostics that are disposed with the observer
 
 ### Code Examples (In Docs)
 
@@ -170,7 +170,7 @@ Every message flows through 3 stages:
 flowchart LR
     P[Producer] --> I[Interceptors<br/>validate/mutate/cancel]
     I --> H[Handlers<br/>main logic by priority]
-    H --> PP[Post-Processors<br/>analytics/logging]
+    H --> PP[Post-Processors<br/>metrics/replay]
 
     classDef neutral stroke-width:2px
     class P neutral

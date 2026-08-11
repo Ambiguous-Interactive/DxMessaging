@@ -149,17 +149,27 @@ using DxMessaging.Core;               // MessageHandler, InstanceId
 using DxMessaging.Core.MessageBus;    // IMessageBus
 
 // Cancel <=0 damage and clamp high values
-var bus = MessageHandler.MessageBus;
-_ = bus.RegisterTargetedInterceptor<TookDamage>(
+IMessageBus bus = MessageHandler.MessageBus;
+MessageBusRegistration registration = bus.RegisterTargetedInterceptor<TookDamage>(
     (ref InstanceId target, ref TookDamage m) =>
     {
-        if (m.amount <= 0) return false;
+        if (m.amount <= 0)
+        {
+            return false;
+        }
         m = new TookDamage(Math.Min(m.amount, 999));
         return true;
     },
     priority: 0
 );
+
+// The owning system calls this during teardown.
+bus.Deregister<TookDamage>(in registration);
 ```
+
+Calls through `MessageRegistrationToken` are owned by that token. Calls made directly on
+`IMessageBus` return raw handles; retain them and call `Deregister<T>(in registration)` with
+the exact registered message type when the owner shuts down.
 
 Real-World Use Cases
 
@@ -168,6 +178,7 @@ Real-World Use Cases
 Prevent UI messages from being processed based on current UI state:
 
 ```csharp
+using System;
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
 
@@ -185,26 +196,43 @@ public readonly partial struct ShowDialog
     public readonly string dialogText;
 }
 
-public class UIStateManager
+public sealed class UIStateManager : IDisposable
 {
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _openMenuRegistration;
+    private MessageBusRegistration _showDialogRegistration;
     private bool _isInCutscene;
     private bool _isPaused = false;
     private bool _isLoading = false;
 
-    public void RegisterInterceptors()
+    public UIStateManager(IMessageBus bus)
     {
-        var bus = MessageHandler.MessageBus;
+        _bus = bus;
 
         // Block all UI interactions during cutscenes, loading, or when paused
-        _ = bus.RegisterUntargetedInterceptor<OpenMenu>(
+        _openMenuRegistration = bus.RegisterUntargetedInterceptor<OpenMenu>(
             (ref OpenMenu m) => !_isInCutscene && !_isLoading,
             priority: -100  // Run early
         );
 
-        _ = bus.RegisterUntargetedInterceptor<ShowDialog>(
+        _showDialogRegistration = bus.RegisterUntargetedInterceptor<ShowDialog>(
             (ref ShowDialog m) => !_isInCutscene && !_isPaused,
             priority: -100
         );
+    }
+
+    public void Dispose()
+    {
+        if (_openMenuRegistration.IsValid)
+        {
+            _bus.Deregister<OpenMenu>(in _openMenuRegistration);
+            _openMenuRegistration = MessageBusRegistration.None;
+        }
+        if (_showDialogRegistration.IsValid)
+        {
+            _bus.Deregister<ShowDialog>(in _showDialogRegistration);
+            _showDialogRegistration = MessageBusRegistration.None;
+        }
     }
 
     public void EnterCutscene() => _isInCutscene = true;
@@ -212,8 +240,7 @@ public class UIStateManager
 }
 
 // Usage: UI messages automatically blocked during cutscenes
-var uiManager = new UIStateManager();
-uiManager.RegisterInterceptors();
+using UIStateManager uiManager = new(MessageHandler.MessageBus);
 uiManager.EnterCutscene();
 
 var openMenu = new OpenMenu("inventory");
@@ -227,6 +254,7 @@ showDialog.Emit();  // Cancelled by interceptor
 Ensure message data stays within valid ranges:
 
 ```csharp
+using System;
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
 using UnityEngine;
@@ -239,14 +267,17 @@ public readonly partial struct MovementInput
     public readonly float speed;
 }
 
-public class InputNormalizer
+public sealed class InputNormalizer : IDisposable
 {
-    public void RegisterInterceptors()
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _registration;
+
+    public InputNormalizer(IMessageBus bus)
     {
-        var bus = MessageHandler.MessageBus;
+        _bus = bus;
 
         // Normalize and clamp movement input
-        _ = bus.RegisterUntargetedInterceptor<MovementInput>(
+        _registration = bus.RegisterUntargetedInterceptor<MovementInput>(
             (ref MovementInput m) =>
             {
                 // Normalize direction vector
@@ -262,11 +293,21 @@ public class InputNormalizer
             priority: 0
         );
     }
+
+    public void Dispose()
+    {
+        if (!_registration.IsValid)
+        {
+            return;
+        }
+
+        _bus.Deregister<MovementInput>(in _registration);
+        _registration = MessageBusRegistration.None;
+    }
 }
 
 // Usage: all movement input is automatically normalized
-var normalizer = new InputNormalizer();
-normalizer.RegisterInterceptors();
+using InputNormalizer normalizer = new(MessageHandler.MessageBus);
 
 // Even invalid input gets cleaned
 var input = new MovementInput(new Vector2(100, 200), 9999f);
@@ -279,6 +320,7 @@ input.Emit();
 Block messages that violate game rules or permissions:
 
 ```csharp
+using System;
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
 
@@ -296,21 +338,20 @@ public readonly partial struct UnlockAchievement
     public readonly string achievementId;
 }
 
-public class PermissionSystem
+public sealed class PermissionSystem : IDisposable
 {
     private readonly IPlayerDataService _playerData;
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _spendRegistration;
+    private MessageBusRegistration _achievementRegistration;
 
-    public PermissionSystem(IPlayerDataService playerData)
+    public PermissionSystem(IPlayerDataService playerData, IMessageBus bus)
     {
         _playerData = playerData;
-    }
-
-    public void RegisterInterceptors()
-    {
-        var bus = MessageHandler.MessageBus;
+        _bus = bus;
 
         // Block currency spending if player doesn't have enough
-        _ = bus.RegisterTargetedInterceptor<SpendCurrency>(
+        _spendRegistration = bus.RegisterTargetedInterceptor<SpendCurrency>(
             (ref InstanceId playerId, ref SpendCurrency m) =>
             {
                 var balance = _playerData.GetCurrencyBalance(playerId);
@@ -325,7 +366,7 @@ public class PermissionSystem
         );
 
         // Block achievement unlocks if already unlocked (idempotency)
-        _ = bus.RegisterTargetedInterceptor<UnlockAchievement>(
+        _achievementRegistration = bus.RegisterTargetedInterceptor<UnlockAchievement>(
             (ref InstanceId playerId, ref UnlockAchievement m) =>
             {
                 if (_playerData.HasAchievement(playerId, m.achievementId))
@@ -337,11 +378,24 @@ public class PermissionSystem
             priority: -50
         );
     }
+
+    public void Dispose()
+    {
+        if (_spendRegistration.IsValid)
+        {
+            _bus.Deregister<SpendCurrency>(in _spendRegistration);
+            _spendRegistration = MessageBusRegistration.None;
+        }
+        if (_achievementRegistration.IsValid)
+        {
+            _bus.Deregister<UnlockAchievement>(in _achievementRegistration);
+            _achievementRegistration = MessageBusRegistration.None;
+        }
+    }
 }
 
 // Usage: invalid operations automatically blocked
-var permissions = new PermissionSystem(playerDataService);
-permissions.RegisterInterceptors();
+using PermissionSystem permissions = new(playerDataService, MessageHandler.MessageBus);
 
 // This will be blocked if player doesn't have 100 currency
 var spendCurrency = new SpendCurrency(100);
@@ -372,21 +426,19 @@ public readonly partial struct PlayerAction
     public readonly string sessionId; // Added by interceptor
 }
 
-public class TelemetryEnricher
+public sealed class TelemetryEnricher : IDisposable
 {
     private readonly string _currentSessionId;
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _registration;
 
-    public TelemetryEnricher(string sessionId)
+    public TelemetryEnricher(string sessionId, IMessageBus bus)
     {
         _currentSessionId = sessionId;
-    }
-
-    public void RegisterInterceptors()
-    {
-        var bus = MessageHandler.MessageBus;
+        _bus = bus;
 
         // Enrich player actions with timestamp and session context
-        _ = bus.RegisterTargetedInterceptor<PlayerAction>(
+        _registration = bus.RegisterTargetedInterceptor<PlayerAction>(
             (ref InstanceId playerId, ref PlayerAction m) =>
             {
                 // Add timestamp and session ID to every action
@@ -400,11 +452,21 @@ public class TelemetryEnricher
             priority: -100  // Run very early to enrich before other interceptors
         );
     }
+
+    public void Dispose()
+    {
+        if (!_registration.IsValid)
+        {
+            return;
+        }
+
+        _bus.Deregister<PlayerAction>(in _registration);
+        _registration = MessageBusRegistration.None;
+    }
 }
 
 // Usage: messages automatically enriched with context
-var enricher = new TelemetryEnricher(Guid.NewGuid().ToString());
-enricher.RegisterInterceptors();
+using TelemetryEnricher enricher = new(Guid.NewGuid().ToString(), MessageHandler.MessageBus);
 
 // Emit without timestamp/session - interceptor adds them
 var action = new PlayerAction("jump");
@@ -429,16 +491,18 @@ public readonly partial struct CastSpell
     public readonly string spellName;
 }
 
-public class CooldownManager
+public sealed class CooldownManager : IDisposable
 {
     private readonly Dictionary<(InstanceId, string), DateTime> _lastCastTimes = new();
     private readonly TimeSpan _globalCooldown = TimeSpan.FromSeconds(1.5);
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _registration;
 
-    public void RegisterInterceptors()
+    public CooldownManager(IMessageBus bus)
     {
-        var bus = MessageHandler.MessageBus;
+        _bus = bus;
 
-        _ = bus.RegisterTargetedInterceptor<CastSpell>(
+        _registration = bus.RegisterTargetedInterceptor<CastSpell>(
             (ref InstanceId casterId, ref CastSpell m) =>
             {
                 var key = (casterId, m.spellName);
@@ -459,11 +523,21 @@ public class CooldownManager
             priority: -10
         );
     }
+
+    public void Dispose()
+    {
+        if (!_registration.IsValid)
+        {
+            return;
+        }
+
+        _bus.Deregister<CastSpell>(in _registration);
+        _registration = MessageBusRegistration.None;
+    }
 }
 
 // Usage: rapid spell casts automatically throttled
-var cooldowns = new CooldownManager();
-cooldowns.RegisterInterceptors();
+using CooldownManager cooldowns = new(MessageHandler.MessageBus);
 
 var spell1 = new CastSpell("fireball");
 spell1.EmitTargeted(playerId);  // Yes Allowed

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add ready-to-run scenes to Mini Combat and UI Buttons + Inspector. The samples
+  now start without manual Inspector wiring, release fallback objects and scoped
+  diagnostics they own, and keep demonstration work bounded
+  ([#372](https://github.com/Ambiguous-Interactive/DxMessaging/issues/372)).
 - Add an auto-opening guided tour to the Diagnostics Tooling Exerciser sample.
   Its live status and ordered actions start the scene, emit and reset deterministic
   traffic, open Message Monitor and Flow Graph, select the sample receivers, and

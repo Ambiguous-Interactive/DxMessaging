@@ -90,21 +90,51 @@ public sealed class UIOverlay : MessageAwareComponent
 Interceptors and post-processing (ordering)
 
 ```csharp
+using System;
 using DxMessaging.Core;            // MessageHandler
 using DxMessaging.Core.MessageBus; // IMessageBus
 
-var bus = MessageHandler.MessageBus;
-
-// Normalize negatives to zero and clamp max
-_ = bus.RegisterTargetedInterceptor<Heal>((ref InstanceId tgt, ref Heal m) =>
+public sealed class HealRules : IDisposable
 {
-    var amount = UnityEngine.Mathf.Clamp(m.amount, 0, 999);
-    if (amount == 0) return false; // cancel zero heals
-    m = new Heal(amount);
-    return true;
-}, priority: 0);
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _registration;
 
-// Log after handlers
+    public HealRules(IMessageBus bus)
+    {
+        _bus = bus;
+        _registration = bus.RegisterTargetedInterceptor<Heal>(NormalizeHeal, priority: 0);
+    }
+
+    public void Dispose()
+    {
+        if (!_registration.IsValid)
+        {
+            return;
+        }
+
+        _bus.Deregister<Heal>(in _registration);
+        _registration = MessageBusRegistration.None;
+    }
+
+    private static bool NormalizeHeal(ref InstanceId target, ref Heal message)
+    {
+        int amount = UnityEngine.Mathf.Clamp(message.amount, 0, 999);
+        if (amount == 0)
+        {
+            return false;
+        }
+
+        message = new Heal(amount);
+        return true;
+    }
+}
+```
+
+Keep the interceptor owner alive for the rules scope. Token-owned post-processors remain on
+their token and need no separate bus handle:
+
+```csharp
+using HealRules healRules = new(MessageHandler.MessageBus);
 _ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>((InstanceId src, TookDamage m) =>
 {
     Analytics.Log("Damage", new { src, m.amount });

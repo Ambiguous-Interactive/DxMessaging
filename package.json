@@ -100,12 +100,12 @@
   "samples": [
     {
       "displayName": "Mini Combat",
-      "description": "Simple combat scenario showing Untargeted (settings), Targeted (heal), Broadcast (damage) with MessageAwareComponent and emit helpers.",
+      "description": "Runnable combat scene comparing untargeted settings, a targeted heal, and sourced damage with lifecycle-safe fallback ownership.",
       "path": "Samples~/Mini Combat"
     },
     {
       "displayName": "UI Buttons + Inspector",
-      "description": "UI-driven message emissions and a global observer demonstrating inspector diagnostics and RegisterGlobalAcceptAll.",
+      "description": "Zero-setup demo buttons, typed events, accept-all observation, and token-local diagnostics disposed with the observer.",
       "path": "Samples~/UI Buttons + Inspector"
     },
     {
@@ -115,7 +115,7 @@
     },
     {
       "displayName": "Dependency Injection",
-      "description": "Integration samples for Zenject, VContainer, and Reflex showing IMessageRegistrationBuilder usage with container lifecycles.",
+      "description": "Zenject, VContainer, and Reflex integrations showing registration leases paired with container disposal.",
       "path": "Samples~/DI"
     }
   ]

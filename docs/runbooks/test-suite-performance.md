@@ -28,7 +28,7 @@ the absolute number.
 `.github/workflows/unity-tests.yml` runs **12 legs** = 4 Unity versions (from
 `.github/unity-versions.json`) x 3 modes (`editmode`, `playmode`, `standalone`),
 `max-parallel: 1`. Each mode is a separate Unity invocation against a separate
-ephemeral project under `.artifacts/u/<version>-<mode>/`. The
+runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`. The
 correctness legs exclude the heavy categories
 (`Stress;Performance;Allocation;MemoryReclaim;UnityRuntime;PerfBench;PerfGate;PerfBaseline`),
 which run in their own dedicated scopes so a perf change cannot hide in the
@@ -95,19 +95,14 @@ Release C++.
 the correctness leg to Debug C++ for compile speed; the total leg gets slower and the
 runtime code no longer matches the published Release-player profile.
 
-**Library cache (audited, intentionally conservative).** The per-`<version>-<mode>`
-`Library` cache key in `unity-tests.yml` hashes `run-ci-tests.ps1`, so a harness
-edit cold-busts the IL2CPP build cache. That is **by design**: the build-affecting
-configurator (scripting backend, IL2CPP config, API level, stripping) is generated
-by `run-ci-tests.ps1`, so the script genuinely affects build output, and a stale
-`Library` is a correctness hazard. The repo rule bans broad Unity `Library` restore
-keys (a fallback that would return a stale Library), so there is no safe narrowing.
-The right mitigation is keeping the generated project cache exact and avoiding
-configuration churn, not a riskier cache key. The correctness and perf legs cache the
-SAME per-`<version>-<mode>` `Library` path, but under distinct key prefixes
-(`Library-` vs `Library-perf-`) with no `restore-keys` and a clean checkout that
-wipes `.artifacts/` before each restore -- so each leg restores only its own
-exactly-keyed cache.
+**Runner-local Library reuse.** Tests, benchmarks, and performance use separate
+short roots under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/`. Unity versions and modes
+also have separate projects, so incompatible package graphs never share a
+`Library`. The fixed runner retains each project between jobs and
+`run-ci-tests.ps1` reports `LibraryState: cold|warm` before launch. This replaces
+network cache restore/save steps: measured standalone uploads took 50-82 seconds,
+one upload exceeded 400 MB, and a pull-request cache miss repeated on the
+default branch for the same exact key.
 
 ## Local measurement protocol (MCP loop)
 
@@ -159,8 +154,8 @@ Open follow-ups (tracked in the remaining-work plan):
   empty `pendingMigration` allowlist, so the rule now covers the entire `Tests/` tree.
   The per-method drain held PlayMode at 916/0/0 parity.
 - Standalone IL2CPP build: Release C++ is intentionally retained after the
-  Debug/Release measurement above. The Library cache key was audited and
-  intentionally left conservative (see
+  Debug/Release measurement above. Runner-local Library reuse is isolated by
+  scope, version, and mode (see
   [Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock)).
   Within-leg / cross-runner sharding stays open, gated on the org build lock + Unity
   license concurrency.

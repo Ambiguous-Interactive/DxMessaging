@@ -158,19 +158,18 @@ time; until it is restarted it will keep reporting `pwsh: command not found`
 even though a fresh interactive shell can find `pwsh`. Re-run the queued
 Unity workflow once the agent is back online.
 
-## Git compression tools for Actions cache
+## Git compression tools
 
-Self-hosted Windows Unity runners also need Git for Windows' Unix tools
-available to GitHub Actions cache steps. `actions/cache` restores and saves
-archives through `tar` and `gzip`; when the runner PATH exposes Git Bash but
-omits `C:\Program Files\Git\usr\bin`, cache post steps can warn with
-`gzip: command not found` and fail to save the Unity Library cache.
+Self-hosted Windows runners also need Git for Windows' Unix tools for workflows
+that archive dependency or link-check caches. When the runner PATH exposes Git
+Bash but omits `C:\Program Files\Git\usr\bin`, those steps can warn with
+`gzip: command not found`.
 
 The `print-self-hosted-runner-diagnostics` composite action now prepends Git's
 `usr\bin` directory to `$GITHUB_PATH` when it finds both `gzip.exe` and
-`tar.exe`, and emits a warning when that directory is absent. This makes the
-current job reliable and gives the operator an actionable host configuration
-signal for future runs.
+`tar.exe`, and emits a warning when that directory is absent. This gives the
+operator an actionable host configuration signal. Unity workflows retain
+`Library` in runner-local projects and do not archive it.
 
 To verify locally on the runner:
 
