@@ -50,6 +50,10 @@ discover it. `.llm/` is the single source of truth; the mirrors are generated po
 - Push to remotes sparingly: every push triggers a full, expensive CI run. Aggregate work in local
   commits, run all practical local verification, and push only when the branch is ready for CI or
   review, or when the user explicitly requests it. Do not push after each commit.
+- For GitHub operations, use the VS Code/Codex GitHub connector or extension first for repository,
+  issue, pull-request, review, and workflow metadata or supported writes. Use local `git` second for
+  checkout, commit, branch, fetch, rebase, and push operations. Use `gh` only as the final fallback
+  when neither the connector nor `git` covers the required operation. Preserve this order.
 - Never commit repository settings that auto-approve chat-invoked terminal commands.
 - Ensure fenced markdown examples are closed and do not swallow real sections (for example `## See Also`).
 - Before committing, run the relevant formatters/linters yourself (`npm run format:check`, `npm run lint:markdown`, `npm run check:spelling`, `npm run validate:all` as applicable); hooks are the fast backstop, not the first signal.
