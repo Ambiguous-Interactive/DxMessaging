@@ -270,6 +270,7 @@ public class UI : MonoBehaviour {
 public class UI : MessageAwareComponent {
     // No references needed! Just listen for messages.
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterBroadcastWithoutSource<PlayerDamaged>(OnDamage);
     }
 }

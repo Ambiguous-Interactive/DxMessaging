@@ -4,6 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const YAML = require("yaml");
 const { walkFiles } = require("../lib/repo-files.js");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -99,6 +100,10 @@ function readWorkflow(file = "ci.yml") {
   return fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 }
 
+function readWorkflowDocument(file) {
+  return YAML.parseDocument(readWorkflow(file));
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -155,6 +160,94 @@ function extractShellPatternVariable(source, variableName) {
   assert.ok(pieces.length > 0, `ci.yml must build ${variableName}`);
   return pieces.join("");
 }
+
+test("active workflows keep the shared safety contract", () => {
+  const workflowFiles = fs
+    .readdirSync(WORKFLOW_DIR)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .sort();
+
+  for (const file of workflowFiles) {
+    const document = readWorkflowDocument(file);
+    assert.equal(document.errors.length, 0, `${file} must parse as YAML`);
+
+    const keys = document.contents.items.map((item) => String(item.key.value));
+    assert.deepEqual(
+      keys.slice(0, 5),
+      ["name", "on", "concurrency", "permissions", "jobs"],
+      `${file} must use the canonical top-level key order`
+    );
+
+    const workflow = document.toJS();
+    assert.equal(
+      typeof workflow.concurrency["cancel-in-progress"],
+      "boolean",
+      `${file} must choose a concurrency cancellation policy`
+    );
+    assert.equal(typeof workflow.concurrency.group, "string", `${file} must have a group`);
+    assert.notEqual(workflow.concurrency.group.trim(), "", `${file} must have a nonempty group`);
+    assert.equal(
+      typeof workflow.permissions,
+      "object",
+      `${file} must declare top-level permissions`
+    );
+
+    for (const [jobId, job] of Object.entries(workflow.jobs)) {
+      assert.ok(
+        Number.isFinite(job["timeout-minutes"]) && job["timeout-minutes"] > 0,
+        `${file}:${jobId} must have a positive timeout-minutes`
+      );
+
+      for (const step of job.steps || []) {
+        if (typeof step.uses === "string" && step.uses.startsWith("actions/checkout@")) {
+          assert.equal(
+            step.with?.["persist-credentials"],
+            false,
+            `${file}:${jobId}:${step.name || step.uses} must disable persisted credentials`
+          );
+        }
+      }
+    }
+  }
+});
+
+test("opt-in formatting never executes a fork head with repository write permissions", () => {
+  const source = readWorkflow("format-on-demand.yml");
+  const workflow = readWorkflowDocument("format-on-demand.yml").toJS();
+
+  assert.equal(
+    workflow.concurrency.group,
+    "${{ github.workflow }}-${{ github.event.issue.number || inputs.pr_number }}"
+  );
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  assert.deepEqual(workflow.permissions, {
+    contents: "write",
+    issues: "write",
+    "pull-requests": "read"
+  });
+  assert.doesNotMatch(source, /repository:\s*\$\{\{\s*steps\.meta\.outputs\.head_repo/);
+
+  for (const jobId of ["by_comment", "by_dispatch"]) {
+    const job = workflow.jobs[jobId];
+    const refusal = job.steps.find((step) => step.name === "Refuse fork pull requests");
+    const checkouts = job.steps.filter(
+      (step) => typeof step.uses === "string" && step.uses.startsWith("actions/checkout@")
+    );
+    assert.equal(checkouts.length, 1, `${jobId} must have one same-repository checkout`);
+    const checkout = checkouts[0];
+    assert.equal(refusal.if, "${{ steps.meta.outputs.same_repo != 'true' }}", jobId);
+    assert.match(refusal.run, /exit 1/);
+    assert.notEqual(refusal["continue-on-error"], true);
+    assert.equal(checkout.if, "${{ steps.meta.outputs.same_repo == 'true' }}", jobId);
+    assert.equal(checkout.with.repository, undefined, jobId);
+  }
+
+  const dispatchMeta = workflow.jobs.by_dispatch.steps.find(
+    (step) => step.name === "Resolve PR metadata"
+  );
+  assert.equal(dispatchMeta.env.PR_NUMBER, "${{ inputs.pr_number }}");
+  assert.match(dispatchMeta.with.script, /Number\(process\.env\.PR_NUMBER\)/);
+});
 
 test("static CI checks stay consolidated behind CI Success", () => {
   const source = readWorkflow();

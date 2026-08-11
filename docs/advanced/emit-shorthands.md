@@ -434,6 +434,7 @@ public class UIManager : MessageAwareComponent
 {
     protected override void RegisterMessageHandlers()
     {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<WaveStarted>(OnWaveStarted);
     }
 
@@ -447,6 +448,7 @@ public class AchievementTracker : MessageAwareComponent
 {
     protected override void RegisterMessageHandlers()
     {
+        base.RegisterMessageHandlers();
         // Listen to ALL enemy deaths (no specific source)
         _ = Token.RegisterBroadcastWithoutSource<EnemyDied>(OnAnyEnemyDied);
     }

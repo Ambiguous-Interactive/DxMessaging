@@ -1,4 +1,5 @@
 name: Opt-in Formatting
+
 on:
   issue_comment:
     types: [created]
@@ -7,9 +8,16 @@ on:
       pr_number:
         description: PR number to format
         required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.pr_number }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
-  pull-requests: write
+  issues: write
+  pull-requests: read
+
 jobs:
   by_comment:
     name: Run on /format comment
@@ -19,6 +27,7 @@ jobs:
           github.event.issue.pull_request &&
           (contains(github.event.comment.body, '/format') || contains(github.event.comment.body, '/autofix') || contains(github.event.comment.body, '/lint-fix')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Resolve PR metadata and authorize request
         id: meta
@@ -35,8 +44,6 @@ jobs:
             const allowed = isMaintainer || isAuthor;
             core.setOutput('allowed', String(allowed));
             core.setOutput('pr', String(prNumber));
-            core.setOutput('base_ref', pr.base.ref);
-            core.setOutput('head_repo', pr.head.repo.full_name);
             core.setOutput('head_ref', pr.head.ref);
             core.setOutput('same_repo', String(pr.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`));
       - name: Exit if not authorized
@@ -44,21 +51,18 @@ jobs:
         run: |
           echo "Commenter is not authorized to trigger formatting." 1>&2
           exit 1
-      - name: Checkout PR branch (same-repo)
+      - name: Refuse fork pull requests
+        if: ${{ steps.meta.outputs.same_repo != 'true' }}
+        run: |
+          echo "Fork pull requests cannot run repository-write formatting automation." 1>&2
+          exit 1
+      - name: Checkout PR branch
         if: ${{ steps.meta.outputs.same_repo == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.meta.outputs.head_ref }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Checkout PR fork head
-        if: ${{ steps.meta.outputs.same_repo != 'true' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ${{ steps.meta.outputs.head_repo }}
-          ref: ${{ steps.meta.outputs.head_ref }}
-          persist-credentials: false
-          fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -113,13 +117,13 @@ jobs:
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Configure push credentials (same-repo)
-        if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+      - name: Configure push credentials
+        if: ${{ steps.changes.outputs.has_changes == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-      - name: Commit changes to PR branch (same-repo)
-        if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+      - name: Commit changes to PR branch
+        if: ${{ steps.changes.outputs.has_changes == 'true' }}
         uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7
         with:
           commit_message: "chore(format): apply requested formatting"
@@ -132,65 +136,16 @@ jobs:
             **/*.json
             **/*.asmdef
             **/*.yml
-      - name: Clear push credentials (same-repo)
-        if: ${{ always() && steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+      - name: Clear push credentials
+        if: ${{ always() && steps.changes.outputs.has_changes == 'true' }}
         run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
-      - name: Create bot branch and PR (fork)
-        if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
-        shell: bash
-        env:
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          BRANCH="bot/format/pr-${{ steps.meta.outputs.pr }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          # Stage only supported text files; avoid workflows to prevent permission issues
-          # Use --renormalize to ensure LF line endings in git index per .gitattributes
-          # Renormalize each extension separately to avoid "pathspec did not match" failures
-          # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in cs md json asmdef yml; do
-            if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
-              git add --renormalize -- "*.$ext" "**/*.$ext"
-            fi
-          done
-          git commit -m "chore(format): apply requested formatting for PR #${{ steps.meta.outputs.pr }}"
-          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
-          git remote add upstream "https://github.com/${GH_REPO}.git"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch upstream
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream "$BRANCH" --force
-      - name: Open/Update formatting PR (fork)
-        if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            const prNumber = Number(core.getInput('pr')) || Number('${{ steps.meta.outputs.pr }}');
-            const baseRef = '${{ steps.meta.outputs.base_ref }}';
-            const headBranch = `bot/format/pr-${prNumber}`;
-            const {owner, repo} = context.repo;
-            const title = `chore(format): Apply formatting to PR #${prNumber}`;
-            const body = [
-              `This automated PR applies Prettier/markdownlint/CSharpier formatting to the changes from PR #${prNumber}.`,
-              '',
-              `- Source PR (fork): #${prNumber}`,
-              `- Target branch: ${baseRef}`,
-            ].join('\n');
-            const existing = await github.rest.pulls.list({ owner, repo, state: 'open', head: `${owner}:${headBranch}` });
-            if (existing.data.length === 0) {
-              await github.rest.pulls.create({ owner, repo, head: headBranch, base: baseRef, title, body });
-            }
       - name: Comment result on PR
         if: ${{ steps.changes.outputs.has_changes == 'true' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const prNumber = Number('${{ steps.meta.outputs.pr }}');
-            const sameRepo = '${{ steps.meta.outputs.same_repo }}' === 'true';
-            const body = sameRepo
-              ? 'Applied formatting as requested and pushed commits to this PR branch.'
-              : 'Opened a formatting PR against the base repository with requested fixes.';
+            const body = 'Applied formatting as requested and pushed commits to this PR branch.';
             await github.rest.issues.createComment({ ...context.repo, issue_number: prNumber, body });
       - name: No-op comment (nothing to change)
         if: ${{ steps.changes.outputs.has_changes != 'true' }}
@@ -204,35 +159,33 @@ jobs:
     name: Run via manual dispatch
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Resolve PR metadata
         id: meta
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
-            const prNumber = Number(core.getInput('pr_number'));
+            const prNumber = Number(process.env.PR_NUMBER);
             if (!prNumber) core.setFailed('pr_number is required');
             const pr = (await github.rest.pulls.get({ ...context.repo, pull_number: prNumber })).data;
             core.setOutput('pr', String(prNumber));
-            core.setOutput('base_ref', pr.base.ref);
-            core.setOutput('head_repo', pr.head.repo.full_name);
             core.setOutput('head_ref', pr.head.ref);
             core.setOutput('same_repo', String(pr.head.repo.full_name === `${context.repo.owner}/${context.repo.repo}`));
-      - name: Checkout PR branch (same-repo)
+      - name: Refuse fork pull requests
+        if: ${{ steps.meta.outputs.same_repo != 'true' }}
+        run: |
+          echo "Fork pull requests cannot run repository-write formatting automation." 1>&2
+          exit 1
+      - name: Checkout PR branch
         if: ${{ steps.meta.outputs.same_repo == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.meta.outputs.head_ref }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Checkout PR fork head
-        if: ${{ steps.meta.outputs.same_repo != 'true' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ${{ steps.meta.outputs.head_repo }}
-          ref: ${{ steps.meta.outputs.head_ref }}
-          persist-credentials: false
-          fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -287,13 +240,13 @@ jobs:
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Configure push credentials (same-repo)
-        if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+      - name: Configure push credentials
+        if: ${{ steps.changes.outputs.has_changes == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-      - name: Commit changes to PR branch (same-repo)
-        if: ${{ steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+      - name: Commit changes to PR branch
+        if: ${{ steps.changes.outputs.has_changes == 'true' }}
         uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7
         with:
           commit_message: "chore(format): apply requested formatting"
@@ -306,52 +259,6 @@ jobs:
             **/*.json
             **/*.asmdef
             **/*.yml
-      - name: Clear push credentials (same-repo)
-        if: ${{ always() && steps.meta.outputs.same_repo == 'true' && steps.changes.outputs.has_changes == 'true' }}
+      - name: Clear push credentials
+        if: ${{ always() && steps.changes.outputs.has_changes == 'true' }}
         run: git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
-      - name: Create bot branch and PR (fork)
-        if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
-        shell: bash
-        env:
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          BRANCH="bot/format/pr-${{ steps.meta.outputs.pr }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          # Stage only supported text files; avoid workflows to prevent permission issues
-          # Use --renormalize to ensure LF line endings in git index per .gitattributes
-          # Renormalize each extension separately to avoid "pathspec did not match" failures
-          # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in cs md json asmdef yml; do
-            if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
-              git add --renormalize -- "*.$ext" "**/*.$ext"
-            fi
-          done
-          git commit -m "chore(format): apply requested formatting for PR #${{ steps.meta.outputs.pr }}"
-          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
-          git remote add upstream "https://github.com/${GH_REPO}.git"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch upstream
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream "$BRANCH" --force
-      - name: Open/Update formatting PR (fork)
-        if: ${{ steps.meta.outputs.same_repo != 'true' && steps.changes.outputs.has_changes == 'true' }}
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            const prNumber = Number('${{ steps.meta.outputs.pr }}');
-            const baseRef = '${{ steps.meta.outputs.base_ref }}';
-            const headBranch = `bot/format/pr-${prNumber}`;
-            const {owner, repo} = context.repo;
-            const title = `chore(format): Apply formatting to PR #${prNumber}`;
-            const body = [
-              `This automated PR applies Prettier/markdownlint/CSharpier formatting to the changes from PR #${prNumber}.`,
-              '',
-              `- Source PR (fork): #${prNumber}`,
-              `- Target branch: ${baseRef}`,
-            ].join('\n');
-            const existing = await github.rest.pulls.list({ owner, repo, state: 'open', head: `${owner}:${headBranch}` });
-            if (existing.data.length === 0) {
-              await github.rest.pulls.create({ owner, repo, head: headBranch, base: baseRef, title, body });
-            }

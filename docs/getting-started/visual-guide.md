@@ -530,6 +530,7 @@ void OnDisable() { GameManager.OnScoreChanged -= Update; }  // Forgot this? LEAK
 
 ```csharp
 protected override void RegisterMessageHandlers() {
+    base.RegisterMessageHandlers();
     _ = Token.RegisterUntargeted<ScoreChanged>(Update);
 }
 // Automatic cleanup when component is destroyed.

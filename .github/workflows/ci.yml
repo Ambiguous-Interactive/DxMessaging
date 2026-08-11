@@ -769,7 +769,7 @@ jobs:
         shell: bash
         run: node --test scripts/
 
-      - name: Test Unity license activation retry
+      - name: Test Unity retry policies
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: pwsh
         run: ./scripts/__tests__/test-unity-license-activation-retry.ps1 -VerboseOutput

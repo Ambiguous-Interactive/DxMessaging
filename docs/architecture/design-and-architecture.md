@@ -132,7 +132,8 @@ Message flow: Interceptors > Handlers > Post-Processors.
 
 - Interceptors may transform or cancel messages before delivery.
 - Handlers execute in priority order; lower number executes first.
-- Post-processors observe outcomes and can emit follow-up messages.
+- Post-processors observe completed dispatch and can emit follow-up messages. The message
+  payload alone does not prove which gameplay changes a handler applied.
 
 ## Why DxMessaging is Fast
 

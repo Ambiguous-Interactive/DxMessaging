@@ -137,9 +137,12 @@ their token and need no separate bus handle:
 using HealRules healRules = new(MessageHandler.MessageBus);
 _ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>((InstanceId src, TookDamage m) =>
 {
-    Analytics.Log("Damage", new { src, m.amount });
+    Analytics.Log("DamageMessageProcessed", new { src, m.amount });
 });
 ```
+
+The `UIOverlay` handler above owns the floating damage presentation. This post-processor
+records the completed dispatch for telemetry; it does not claim that a health change occurred.
 
 Settings menu (untargeted)
 

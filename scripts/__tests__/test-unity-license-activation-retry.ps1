@@ -1,8 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Data-driven tests for the Unity serial-activation retry policy in
-    scripts/unity/run-ci-tests.ps1 (build-lock issue #57).
+    Data-driven tests for the Unity retry policies in scripts/unity/run-ci-tests.ps1.
 
 .DESCRIPTION
     The organization build lock's release cooldown is deliberately near-zero, so a
@@ -21,6 +20,10 @@
         (-ActivationInvoker), a fake editor that is deterministic and needs no
         external process, so this runs on ubuntu-latest, macos-latest, and Windows
         alike.
+
+    The same real-function extraction drives the Unity Package Manager cancellation
+    path through a deterministic fake editor. This guards the retry itself,
+    including its CI annotation helpers, without requiring a live UPM fault.
 #>
 [CmdletBinding()]
 param(
@@ -53,7 +56,12 @@ foreach ($name in @(
     'Get-UnityActivationRetryBudgetSeconds',
     'Get-UnityActivationRetryDelaySeconds',
     'Get-UnityActivationFailureClass',
+    'Write-CiWarning',
     'Write-CiNotice',
+    'ConvertTo-SingleLineDiagnostic',
+    'Test-UnityPackageManagerTransientFailure',
+    'Write-UnityPackageManagerTransientFailureWarnings',
+    'Invoke-UnityEditorTestsWithPackageManagerRetry',
     'Invoke-UnityLicenseActivate'
 )) {
     $fn = $ast.FindAll(
@@ -256,12 +264,87 @@ Assert-That "loop: budget 0 throws on the single failing attempt" ($r.Threw)
 $r = Invoke-FakeActivation -Plan @('ok') -BudgetSeconds 0 -Label 'budget-zero-success'
 Assert-That "loop: budget 0 success returns in exactly 1 attempt" (($r.Attempts -eq 1) -and (-not $r.Threw))
 
+# ---------------------------------------------------------------------------
+# 5. Package Manager retry path. A real 2026-08-11 CI failure reached the UPM
+#    cancellation branch but crashed before retry because Write-CiWarning was
+#    missing. Exercise the extracted production function with a deterministic
+#    fake editor so every annotation/helper dependency resolves at runtime.
+# ---------------------------------------------------------------------------
+$script:upmAttempts = 0
+$script:upmCleanupCalls = 0
+$script:upmScenario = 'transient-no-results'
+$upmLog = Join-Path $tmpRoot 'unity.log'
+$upmResults = Join-Path $tmpRoot 'results.xml'
+
+function Invoke-UnityEditor {
+    param(
+        [string]$EditorPath,
+        [string[]]$Arguments,
+        [string]$Label,
+        [string]$LogPath
+    )
+    $script:upmAttempts++
+    if ($script:upmAttempts -eq 1) {
+        if ($script:upmScenario -eq 'non-transient') {
+            Set-Content -LiteralPath $LogPath -Value 'CompilationFailedException: fixture failure' -Encoding UTF8
+        } else {
+            Set-Content -LiteralPath $LogPath -Value @(
+                'IPCStream (Upm-25512): IPC stream failed to read (Not connected)',
+                'Failed to resolve packages: operation cancelled'
+            ) -Encoding UTF8
+            if ($script:upmScenario -eq 'transient-with-results') {
+                Set-Content -LiteralPath $upmResults -Value '<test-run total="1" passed="1" failed="0" />' -Encoding UTF8
+            }
+        }
+        return 1
+    }
+
+    Set-Content -LiteralPath $LogPath -Value 'Retry completed successfully.' -Encoding UTF8
+    Set-Content -LiteralPath $upmResults -Value '<test-run total="1" passed="1" failed="0" />' -Encoding UTF8
+    return 0
+}
+
+function Clear-UnityPackageManagerRetryState {
+    param([string]$Project)
+    $script:upmCleanupCalls++
+}
+
+foreach ($case in @(
+    @{ Name = 'transient without results retries'; Scenario = 'transient-no-results'; Attempts = 2; Cleanups = 1; ExitCode = 0; PreservesLog = $true },
+    @{ Name = 'transient with results trusts results'; Scenario = 'transient-with-results'; Attempts = 1; Cleanups = 0; ExitCode = 1; PreservesLog = $false },
+    @{ Name = 'non-transient failure does not retry'; Scenario = 'non-transient'; Attempts = 1; Cleanups = 0; ExitCode = 1; PreservesLog = $false }
+)) {
+    $script:upmAttempts = 0
+    $script:upmCleanupCalls = 0
+    $script:upmScenario = $case.Scenario
+    $firstAttemptLog = Join-Path $tmpRoot 'unity.first-attempt.log'
+    Remove-Item -LiteralPath $upmLog, $upmResults, $firstAttemptLog -Force -ErrorAction SilentlyContinue
+
+    $exitCode = Invoke-UnityEditorTestsWithPackageManagerRetry `
+        -EditorPath 'fake-editor' `
+        -Arguments @('-batchmode') `
+        -Label 'fixture Unity tests' `
+        -LogPath $upmLog `
+        -ResultsPath $upmResults `
+        -Project $tmpRoot
+
+    Assert-That "UPM: $($case.Name) [exit]" ($exitCode -eq $case.ExitCode)
+    Assert-That "UPM: $($case.Name) [attempts]" ($script:upmAttempts -eq $case.Attempts)
+    Assert-That "UPM: $($case.Name) [cleanup]" ($script:upmCleanupCalls -eq $case.Cleanups)
+    Assert-That "UPM: $($case.Name) [first log]" ((Test-Path -LiteralPath $firstAttemptLog -PathType Leaf) -eq $case.PreservesLog)
+    if ($case.PreservesLog) {
+        Assert-That 'UPM: retry preserves the original cancellation signal' (
+            (Get-Content -LiteralPath $firstAttemptLog -Raw) -match 'IPC stream failed to read'
+        )
+    }
+}
+
 Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "Unity license activation-retry tests: $passed passed, $failed failed."
+Write-Host "Unity retry-policy tests: $passed passed, $failed failed."
 if ($failed -gt 0) {
     exit 1
 }
-Write-Host "All Unity license activation-retry tests passed."
+Write-Host "All Unity retry-policy tests passed."
 exit 0

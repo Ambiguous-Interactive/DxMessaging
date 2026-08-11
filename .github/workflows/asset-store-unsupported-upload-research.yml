@@ -8,6 +8,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: asset-store-unsupported-upload-research
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

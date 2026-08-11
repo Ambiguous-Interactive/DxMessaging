@@ -35,6 +35,7 @@ on:
       - master
     paths:
       - ".devcontainer/**"
+      - ".github/workflows/devcontainer-prebuild.yml"
   schedule:
     # Sunday 00:00 UTC — weekly rebuild keeps the image fresh and captures
     # base-image updates / CVE patches.
@@ -44,6 +45,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   prebuild:

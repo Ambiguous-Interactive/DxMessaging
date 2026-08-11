@@ -11,6 +11,7 @@ on:
       - "**/.csharpierignore"
       - ".editorconfig"
       - "**/.editorconfig"
+      - ".github/workflows/csharpier-autofix.yml"
   pull_request_target:
     paths:
       - "**/*.cs"
@@ -21,6 +22,7 @@ on:
       - "**/.csharpierignore"
       - ".editorconfig"
       - "**/.editorconfig"
+      - ".github/workflows/csharpier-autofix.yml"
   workflow_dispatch:
 
 concurrency:
