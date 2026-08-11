@@ -111,27 +111,88 @@ Tip: Define `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` to enab
 ## Interceptors and post-processors
 
 ```csharp
+using System;
 using DxMessaging.Core;            // MessageHandler
 using DxMessaging.Core.MessageBus; // IMessageBus
 
-var bus = MessageHandler.MessageBus;
-_ = bus.RegisterBroadcastInterceptor<TookDamage>((ref InstanceId src, ref TookDamage m) =>
+public sealed class DamageRules : IDisposable
 {
-    if (m.amount <= 0) return false; // cancel
-    m = new TookDamage(Math.Min(m.amount, 999));
-    return true;
-});
+    private readonly IMessageBus _bus;
+    private MessageBusRegistration _interceptor;
 
-_ = token.RegisterUntargetedPostProcessor<SceneLoaded>((ref SceneLoaded m) => LogScene(m.buildIndex));
+    public DamageRules(IMessageBus bus)
+    {
+        _bus = bus;
+        _interceptor = bus.RegisterBroadcastInterceptor<TookDamage>(ClampDamage);
+    }
+
+    public void Dispose()
+    {
+        if (!_interceptor.IsValid)
+        {
+            return;
+        }
+        _bus.Deregister<TookDamage>(in _interceptor);
+        _interceptor = MessageBusRegistration.None;
+    }
+
+    private static bool ClampDamage(ref InstanceId source, ref TookDamage message)
+    {
+        if (message.amount <= 0)
+        {
+            return false; // cancel
+        }
+        message = new TookDamage(Math.Min(message.amount, 999));
+        return true;
+    }
+}
 ```
+
+Token registrations remain token-owned:
+
+```csharp
+_ = token.RegisterUntargetedPostProcessor<SceneLoaded>((ref SceneLoaded m) => metrics.RecordLoadedScene(m.buildIndex));
+```
+
+Direct bus registrations are not token-owned. Retain each `MessageBusRegistration` on the
+owner and call `Deregister<T>(in registration)` with the same message type during teardown.
+Use `IMessage` as `T` for `RegisterGlobalAcceptAll`.
 
 ## Lifecycle
 
 ```csharp
-void Awake()     { /* stage registrations */ }
-void OnEnable()  { token.Enable(); }
-void OnDisable() { token.Disable(); }
+public sealed class ScenePresenter : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+        _ = Token.RegisterUntargeted<SceneLoaded>(OnSceneLoaded);
+    }
+
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+        // Acquire this component's other enable-scoped resources here.
+    }
+
+    protected override void OnDisable()
+    {
+        // Release other enable-scoped resources before disabling registrations.
+        base.OnDisable();
+    }
+
+    protected override void OnDestroy()
+    {
+        // Destroy or dispose only resources this component created or acquired.
+        base.OnDestroy();
+    }
+
+    private static void OnSceneLoaded(ref SceneLoaded message) { /* present scene */ }
+}
 ```
+
+`MessageAwareComponent` owns and disposes `Token`. For standalone services, retain the
+`MessageRegistrationLease` returned by `Build()` and dispose it, as shown above.
 
 ## Inheritance tip (MessageAwareComponent)
 
@@ -211,9 +272,9 @@ _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoadedFast, priority: 0);
 // Post-processor
 _ = token.RegisterUntargetedPostProcessor<SceneLoaded>(AfterSceneLoaded, priority: 0);
 
-void OnSceneLoaded(SceneLoaded message) => Debug.Log(message.buildIndex);
-void OnSceneLoadedFast(ref SceneLoaded message) => Debug.Log(message.buildIndex);
-void AfterSceneLoaded(ref SceneLoaded message) => Debug.Log(message.buildIndex);
+void OnSceneLoaded(SceneLoaded message) => scenePresenter.Show(message.buildIndex);
+void OnSceneLoadedFast(ref SceneLoaded message) => scenePresenter.Show(message.buildIndex);
+void AfterSceneLoaded(ref SceneLoaded message) => metrics.RecordLoadedScene(message.buildIndex);
 ```
 
 ### Token: Targeted (Specific)
@@ -226,8 +287,8 @@ _ = token.RegisterTargeted<Heal>(targetInstanceId, OnHeal, priority: 0);
 // Post-processor
 _ = token.RegisterTargetedPostProcessor<Heal>(targetInstanceId, AfterHeal, priority: 0);
 
-void OnHeal(ref Heal message) => Debug.Log(message.amount);
-void AfterHeal(ref Heal message) => Debug.Log(message.amount);
+void OnHeal(ref Heal message) => health.Apply(message.amount);
+void AfterHeal(ref Heal message) => metrics.RecordProcessedHealRequest(message.amount);
 ```
 
 ### Token: Targeted (All Targets)
@@ -240,9 +301,9 @@ _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal, priority: 0);
 _ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(AfterAnyHeal, priority: 0);
 
 void OnAnyHeal(ref InstanceId target, ref Heal message) =>
-    Debug.Log($"Healed {target} for {message.amount}");
+    combatFeed.ShowHeal(target, message.amount);
 void AfterAnyHeal(ref InstanceId target, ref Heal message) =>
-    Debug.Log($"Finished healing {target} for {message.amount}");
+    metrics.RecordHeal(target, message.amount);
 ```
 
 ### Token: Broadcast (Specific)
@@ -255,8 +316,8 @@ _ = token.RegisterBroadcast<TookDamage>(sourceInstanceId, OnDamage, priority: 0)
 // Post-processor
 _ = token.RegisterBroadcastPostProcessor<TookDamage>(sourceInstanceId, AfterDamage, priority: 0);
 
-void OnDamage(ref TookDamage message) => Debug.Log(message.amount);
-void AfterDamage(ref TookDamage message) => Debug.Log(message.amount);
+void OnDamage(ref TookDamage message) => damageEffects.Play(message.amount);
+void AfterDamage(ref TookDamage message) => replay.RecordDamage(message.amount);
 ```
 
 ### Token: Broadcast (All Sources)
@@ -269,9 +330,9 @@ _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage, priority: 0);
 _ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(AfterAnyDamage, priority: 0);
 
 void OnAnyDamage(ref InstanceId source, ref TookDamage message) =>
-    Debug.Log($"{source} dealt {message.amount} damage");
+    damageNumbers.Show(source, message.amount);
 void AfterAnyDamage(ref InstanceId source, ref TookDamage message) =>
-    Debug.Log($"Finished damage from {source}: {message.amount}");
+    replay.RecordDamage(source, message.amount);
 ```
 
 ### Token: Global Observer
@@ -296,19 +357,25 @@ _ = token.RegisterGlobalAcceptAll(
 ### Bus: Interceptors
 
 ```csharp
-_ = bus.RegisterUntargetedInterceptor<SceneLoaded>(
+MessageBusRegistration sceneLoadedInterceptor = bus.RegisterUntargetedInterceptor<SceneLoaded>(
     (ref SceneLoaded message) => message.buildIndex >= 0,
     priority: 0
 );
-_ = bus.RegisterTargetedInterceptor<Heal>(
+MessageBusRegistration healInterceptor = bus.RegisterTargetedInterceptor<Heal>(
     (ref InstanceId target, ref Heal message) => message.amount > 0,
     priority: 0
 );
-_ = bus.RegisterBroadcastInterceptor<TookDamage>(
+MessageBusRegistration damageInterceptor = bus.RegisterBroadcastInterceptor<TookDamage>(
     (ref InstanceId source, ref TookDamage message) => message.amount > 0,
     priority: 0
 );
 
 // Bus-level global observer
-_ = bus.RegisterGlobalAcceptAll(messageHandler);
+MessageBusRegistration globalObserver = bus.RegisterGlobalAcceptAll(messageHandler);
+
+// The owner performs exact teardown in Dispose or OnDestroy.
+bus.Deregister<SceneLoaded>(in sceneLoadedInterceptor);
+bus.Deregister<Heal>(in healInterceptor);
+bus.Deregister<TookDamage>(in damageInterceptor);
+bus.Deregister<IMessage>(in globalObserver);
 ```

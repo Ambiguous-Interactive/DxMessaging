@@ -39,6 +39,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         private string lastRunSummary = "Not run yet";
 
         private static readonly HashSet<int> InitializedRunnerIds = new();
+        private static MessageBus diagnosticsBus;
+        private static int diagnosticsLeaseCount;
+        private static bool originalDiagnosticsMode;
+
+        private bool hasDiagnosticsLease;
 
         public int Sequence => sequence;
 
@@ -47,6 +52,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void BeginPlayGeneration()
         {
+            RestoreDiagnosticsMode();
             InitializedRunnerIds.Clear();
         }
 
@@ -88,6 +94,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             _ = InitializedRunnerIds.Remove(((InstanceId)this).Id);
             CancelInvoke(nameof(EmitBurst));
             StopAllCoroutines();
+            ReleaseDiagnosticsLease();
         }
 
         private void BeginPlaySession()
@@ -190,21 +197,23 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             }
 
             int broadcastEmits = 0;
-            GameObject[] sources =
-                broadcastSources == null || broadcastSources.Length == 0
-                    ? new[] { gameObject }
-                    : broadcastSources;
-            foreach (GameObject source in sources)
+            if (broadcastSources == null || broadcastSources.Length == 0)
             {
-                if (source == null)
+                EmitSignal(gameObject);
+                broadcastEmits = 1;
+            }
+            else
+            {
+                foreach (GameObject source in broadcastSources)
                 {
-                    continue;
-                }
+                    if (source == null)
+                    {
+                        continue;
+                    }
 
-                ToolingSignal signal = new(CreateTraceId("signal"), source.name, sequence);
-                InstanceId sourceId = source;
-                MessageHandler.MessageBus.SourcedBroadcast(ref sourceId, ref signal);
-                broadcastEmits++;
+                    EmitSignal(source);
+                    broadcastEmits++;
+                }
             }
 
             lastRunSummary =
@@ -216,15 +225,38 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             }
         }
 
+        private void EmitSignal(GameObject source)
+        {
+            ToolingSignal signal = new(CreateTraceId("signal"), source.name, sequence);
+            InstanceId sourceId = source;
+            MessageHandler.MessageBus.SourcedBroadcast(ref sourceId, ref signal);
+        }
+
         private void ConfigureDiagnostics()
         {
-            if (!enableGlobalDiagnostics)
+            if (!enableGlobalDiagnostics || hasDiagnosticsLease)
             {
                 return;
             }
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
             {
+                if (diagnosticsLeaseCount == 0)
+                {
+                    diagnosticsBus = messageBus;
+                    originalDiagnosticsMode = messageBus.DiagnosticsMode;
+                }
+                else if (!object.ReferenceEquals(diagnosticsBus, messageBus))
+                {
+                    Debug.LogWarning(
+                        "DxMessaging diagnostics are already scoped to a different message bus.",
+                        this
+                    );
+                    return;
+                }
+
+                diagnosticsLeaseCount++;
+                hasDiagnosticsLease = true;
                 messageBus.DiagnosticsMode = true;
             }
             else
@@ -234,6 +266,33 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
                     this
                 );
             }
+        }
+
+        private void ReleaseDiagnosticsLease()
+        {
+            if (!hasDiagnosticsLease)
+            {
+                return;
+            }
+
+            hasDiagnosticsLease = false;
+            diagnosticsLeaseCount = Mathf.Max(0, diagnosticsLeaseCount - 1);
+            if (diagnosticsLeaseCount == 0)
+            {
+                RestoreDiagnosticsMode();
+            }
+        }
+
+        private static void RestoreDiagnosticsMode()
+        {
+            if (diagnosticsBus != null)
+            {
+                diagnosticsBus.DiagnosticsMode = originalDiagnosticsMode;
+            }
+
+            diagnosticsBus = null;
+            diagnosticsLeaseCount = 0;
+            originalDiagnosticsMode = false;
         }
 
         private string CreateTraceId(string route)

@@ -38,6 +38,11 @@ the runner's `OnEnable` and post-scene-load callbacks. Active receivers
 deliberately replace their token after the initial scene load so a stale enabled
 flag cannot hide reset bus state.
 
+Disabling the runner cancels its scheduled invokes and coroutines, releases its
+reference-counted diagnostics lease, and restores the bus's original diagnostics state when the
+last runner exits. Closing the guide pauses its UI Toolkit schedule. The sample does not leave
+background work, registrations, or global configuration behind.
+
 The runner also exposes context-menu commands:
 
 - **Emit One Of Each** sends one untargeted, targeted, and broadcast pass.

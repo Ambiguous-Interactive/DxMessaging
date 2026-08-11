@@ -4,17 +4,37 @@ using UnityEngine;
 
 public sealed class UIButtonEmitter : MonoBehaviour
 {
+    private const string FallbackButtonId = "UnnamedButton";
+
     [SerializeField]
     private string buttonId = "ButtonA";
 
-    // Hook this to a Unity UI Button via the Inspector
+    [SerializeField]
+    private bool showDemoButton = true;
+
+    [SerializeField]
+    private Rect demoButtonRect = new Rect(24, 24, 180, 44);
+
+    private void OnGUI()
+    {
+        if (showDemoButton && GUI.Button(demoButtonRect, $"Emit {EffectiveButtonId}"))
+        {
+            Click();
+        }
+    }
+
+    // A project using Unity UI can also bind this method to Button.onClick.
     public void Click()
     {
-        var evt = new ButtonClicked(buttonId);
+        string effectiveButtonId = EffectiveButtonId;
+        var evt = new ButtonClicked(effectiveButtonId);
         evt.Emit();
 
-        // Also emit a targeted string message to this GameObject
-        var text = new StringMessage($"Clicked {buttonId}");
+        // Also emit a targeted string message to this GameObject.
+        var text = new StringMessage($"Clicked {effectiveButtonId}");
         text.EmitGameObjectTargeted(gameObject);
     }
+
+    private string EffectiveButtonId =>
+        string.IsNullOrWhiteSpace(buttonId) ? FallbackButtonId : buttonId;
 }

@@ -4,7 +4,7 @@ using UnityEngine;
 
 public sealed class Player : MessageAwareComponent
 {
-    private int _hp;
+    private int _hp = 100;
 
     protected override void RegisterMessageHandlers()
     {

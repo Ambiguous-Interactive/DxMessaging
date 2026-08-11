@@ -198,14 +198,20 @@ using DxMessaging.Core;            // MessageHandler, InstanceId
 using DxMessaging.Core.MessageBus;
 
 var bus = MessageHandler.MessageBus;
-Action remove = bus.RegisterBroadcastInterceptor<TookDamage>((ref InstanceId src, ref TookDamage m) =>
+MessageBusRegistration registration = bus.RegisterBroadcastInterceptor<TookDamage>((ref InstanceId src, ref TookDamage m) =>
 {
     Debug.Log($"Intercept {src}: {m.amount}");
     return true; // allow
 }, priority: -100);
 
-// Later
-remove();
+try
+{
+    RunInterceptedScenario();
+}
+finally
+{
+    bus.Deregister<TookDamage>(in registration);
+}
 ```
 
 Safety and troubleshooting

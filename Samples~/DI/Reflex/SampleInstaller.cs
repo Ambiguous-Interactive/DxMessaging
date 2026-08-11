@@ -16,12 +16,20 @@ namespace DxMessaging.Samples.DI.Reflex
     /// </summary>
     public sealed partial class SampleInstaller : MonoBehaviour, IInstaller
     {
+        private ContainerBuilder _builder;
         private PlayerAlertService _service;
 
         public void InstallBindings(ContainerBuilder builder)
         {
+            if (builder == null)
+            {
+                throw new System.ArgumentNullException(nameof(builder));
+            }
+
             // Use the explicit factory-based helper so constructor selection cannot drift with
             // the container's reflection policy.
+            UnsubscribeFromContainerBuilt();
+            _builder = builder;
             builder.AddDxMessagingBus();
             new DxMessagingRegistrationInstaller().InstallBindings(builder);
             builder.OnContainerBuilt += OnContainerBuilt;
@@ -29,6 +37,11 @@ namespace DxMessaging.Samples.DI.Reflex
 
         public void EmitAlertFor(GameObject gameObject)
         {
+            if (gameObject == null)
+            {
+                throw new System.ArgumentNullException(nameof(gameObject));
+            }
+
             if (_service == null)
             {
                 throw new System.InvalidOperationException(
@@ -41,13 +54,27 @@ namespace DxMessaging.Samples.DI.Reflex
 
         private void OnContainerBuilt(Container container)
         {
+            UnsubscribeFromContainerBuilt();
+            _service?.Dispose();
             _service = container.Construct<PlayerAlertService>();
         }
 
         private void OnDestroy()
         {
+            UnsubscribeFromContainerBuilt();
             _service?.Dispose();
             _service = null;
+        }
+
+        private void UnsubscribeFromContainerBuilt()
+        {
+            if (_builder == null)
+            {
+                return;
+            }
+
+            _builder.OnContainerBuilt -= OnContainerBuilt;
+            _builder = null;
         }
 
         private sealed class PlayerAlertService : System.IDisposable
