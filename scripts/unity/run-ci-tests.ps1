@@ -98,6 +98,11 @@ function Write-CiNotice {
     Write-Host "::notice::$Message"
 }
 
+function Write-CiWarning {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    Write-Host "::warning::$Message"
+}
+
 function Clear-NonFatalNativeExitCode {
     # GitHub Actions' pwsh wrapper exits with $LASTEXITCODE after a script returns.
     # Any native exit code that this script has already captured and deliberately
