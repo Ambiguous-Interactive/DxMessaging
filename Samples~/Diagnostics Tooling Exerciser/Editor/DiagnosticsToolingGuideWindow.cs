@@ -237,6 +237,11 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
         static DiagnosticsToolingGuideBootstrap()
         {
+            if (Application.isBatchMode)
+            {
+                return;
+            }
+
             Shutdown();
             EditorSceneManager.sceneOpened += HandleSceneOpened;
             EditorApplication.delayCall += OpenForActiveSampleSceneOnce;

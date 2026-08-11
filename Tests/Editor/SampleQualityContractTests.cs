@@ -490,6 +490,7 @@ namespace DxMessaging.Tests.Editor
             AssertSourceContains(toolingGuide, "private void OnDisable()", "Tooling guide");
             AssertSourceContains(toolingGuide, "_statusRefresh?.Pause();", "Tooling guide");
             AssertSourceContains(toolingGuide, "_statusRefresh = null;", "Tooling guide");
+            AssertSourceContains(toolingGuide, "if (Application.isBatchMode)", "Tooling guide");
             AssertSourceContains(
                 toolingGuide,
                 "AssemblyReloadEvents.beforeAssemblyReload += Shutdown;",
