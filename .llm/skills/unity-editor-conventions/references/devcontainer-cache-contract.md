@@ -99,7 +99,7 @@ Anti-drift invariants to keep honest when editing the contract: no hardcoded abs
 1. **Workflow configuration**: `devcontainer-test.yml` and `devcontainer-prebuild.yml` push and pull the prebuilt image.
 1. **Runtime mount state** (only inside a container): each target is a real mount point owned by `vscode:vscode`, and a write probe succeeds.
 
-Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The `devcontainer-test.yml` workflow runs `validate-caching.sh` inside the built image; it is the sole automated enforcement of this contract.
+Outside a container the runtime block is skipped with a single warning. Inside the devcontainer, every assertion is a hard failure. The pre-commit hook checks `.devcontainer/` edits locally, and the `devcontainer-test.yml` workflow runs `validate-caching.sh` inside the built image.
 
 ## Adding a New Cache Mount
 

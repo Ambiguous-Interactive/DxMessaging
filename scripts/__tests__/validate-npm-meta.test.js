@@ -20,8 +20,7 @@ const {
   runValidation,
   validateCsharpMetaFiles,
   validatePackEntries,
-  validatePublishedFilesArePairedWithMetas,
-  validateRepositoryCsharpMetaFiles
+  validateRepositoryMetaPairs
 } = validateNpmMeta;
 
 const FORBIDDEN_PATH_CASES = [
@@ -151,68 +150,49 @@ test("validateCsharpMetaFiles aggregates invalid tracked C# meta diagnostics", (
   ]);
 });
 
-test("validateRepositoryCsharpMetaFiles ignores tracked metas deleted in the working tree", () => {
-  const result = validateRepositoryCsharpMetaFiles({
-    execFileSync: () => "Present.cs.meta\0Deleted.cs.meta\0",
-    existsSync: (filePath) => path.basename(filePath) !== "Deleted.cs.meta",
-    readFileSync: (filePath) => {
-      assert.notEqual(path.basename(filePath), "Deleted.cs.meta");
-      return VALID_CSHARP_META;
-    }
-  });
-
-  assert.equal(result.checked, 1);
-  assert.deepEqual(result.invalid, []);
+test("repository meta pairing covers tracked ignored, ancestor, orphaned, and index-only assets", () => {
+  // prettier-ignore
+  const cases = [
+    { trackedPaths: [".github/workflows/ci.yml", "Runtime/Foo.cs", "Runtime/Foo.cs.meta", "Runtime/OrphanDirectory.meta", "Runtime/OrphanDirectory/Ghost.cs.meta", "Runtime/Orphan.asset.meta", "progress/legacy.md"], ignoredPaths: new Set(["progress/legacy.md"]), expected: { checkedAssets: 2, missing: ["Runtime.meta", "progress.meta", "progress/legacy.md.meta"], orphans: ["Runtime/Orphan.asset.meta", "Runtime/OrphanDirectory.meta", "Runtime/OrphanDirectory/Ghost.cs.meta"] } },
+    { trackedPaths: ["Runtime.meta", "Runtime/Core.meta", "Runtime/Core/Bus.cs", "Runtime/Core/Bus.cs.meta"], expected: { checkedAssets: 1, missing: [], orphans: [] } },
+    { trackedPaths: ["IndexOnly.cs", "IndexOnly.cs.meta"], existsSync: () => false, expected: { checkedAssets: 1, missing: [], orphans: [] } }
+  ];
+  for (const { expected, ...options } of cases) {
+    assert.deepEqual(validateRepositoryMetaPairs({ existsSync: () => true, ...options }), expected);
+  }
 });
 
-test("runValidation --repo-cs-metas-only reports invalid tracked C# metas", () => {
+test("runValidation --repo-metas-only aggregates pair and C# shape failures", () => {
+  const git = (_command, args) =>
+    args[0] === "ls-files"
+      ? "Runtime.meta\0Runtime/TwoLine.cs\0Runtime/TwoLine.cs.meta\0"
+      : (assert.deepEqual(args, ["show", ":Runtime/TwoLine.cs.meta"]), VALID_CSHARP_META_HEADER);
   const result = withQuietValidation(() =>
     runValidation({
-      repoCsharpMetasOnly: true,
-      relativePaths: ["TwoLine.cs.meta"],
-      readFileSync: () => VALID_CSHARP_META_HEADER
+      repoMetasOnly: true,
+      execFileSync: git
     })
   );
 
   assert.equal(result.valid, false);
+  assert.deepEqual(result.missingMetas, []);
+  assert.deepEqual(result.orphanMetas, []);
   assert.deepEqual(result.invalidCsharpMetas, [
     {
-      path: "TwoLine.cs.meta",
+      path: "Runtime/TwoLine.cs.meta",
       reason: "is missing the standard MonoImporter block for Unity C# scripts"
     }
   ]);
 });
 
-test("runValidation fails closed when tracked C# meta git listing fails", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-json-git-failure-test-"));
-  try {
-    const jsonFile = path.join(tempDir, "pack.json");
-    fs.writeFileSync(
-      jsonFile,
-      JSON.stringify([
-        {
-          filename: "pkg.tgz",
-          files: [{ path: "package/Runtime/Foo.cs" }, { path: "package/Runtime/Foo.cs.meta" }]
-        }
-      ]),
-      "utf8"
-    );
-
-    assert.throws(() => {
-      withQuietValidation(() =>
-        runValidation({
-          packJson: jsonFile,
-          execFileSync: () => {
-            const error = new Error("spawn git ENOENT");
-            error.code = "ENOENT";
-            throw error;
-          }
-        })
-      );
-    }, /Unable to list tracked C# \.meta files with git: spawn git ENOENT/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
+test("runValidation fails closed when tracked repository git listing fails", () => {
+  const failGit = () => {
+    throw new Error("spawn git ENOENT");
+  };
+  assert.throws(
+    () => withQuietValidation(() => runValidation({ repoMetasOnly: true, execFileSync: failGit })),
+    /Unable to list tracked repository files with git: spawn git ENOENT/
+  );
 });
 
 test("parsePackJsonEntries loads npm --json file entries", () => {
@@ -259,21 +239,6 @@ test("computeRequiredMetaPaths includes ancestor dirs but skips Samples~ root", 
   assert.equal(required.has("Runtime.meta"), true);
   assert.equal(required.has("Runtime/Core.meta"), true);
   assert.equal(required.has("Runtime/Core/Bus.cs.meta"), true);
-});
-
-test("validatePublishedFilesArePairedWithMetas reports missing and orphan metas", () => {
-  const result = validatePublishedFilesArePairedWithMetas([
-    "Runtime/Core/Bus.cs",
-    "Runtime.meta",
-    "Runtime/Core.meta",
-    "Runtime/Core/Unused.cs.meta",
-    "Samples~/Example/Scene.unity",
-    "Samples~/Example.meta",
-    "Samples~/Example/Scene.unity.meta"
-  ]);
-
-  assert.deepEqual(result.missing, ["Runtime/Core/Bus.cs.meta"]);
-  assert.deepEqual(result.orphans, ["Runtime/Core/Unused.cs.meta"]);
 });
 
 test("validatePackEntries returns valid for properly paired Unity paths", () => {

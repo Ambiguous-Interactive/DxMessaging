@@ -114,6 +114,17 @@ repos:
         stages:
           - pre-commit
         description: Run "npm run llm:index" when this fails.
+      - id: validate-devcontainer-cache-contract
+        name: Validate devcontainer cache mounts
+        entry: bash .devcontainer/validate-caching.sh
+        language: system
+        files: '^\.devcontainer/'
+        pass_filenames: false
+        stages:
+          - pre-commit
+        description: >-
+          Validate named-volume mounts, ownership, and cache paths when the
+          devcontainer configuration changes.
       - id: validate-asmdef-references
         name: Validate asmdef precompiled references
         entry: node scripts/validate-asmdef-references.js
@@ -126,18 +137,21 @@ repos:
           Fail when a package asmdef populates precompiledReferences while
           overrideReferences is false (compiles in the Editor but breaks
           standalone/IL2CPP player builds).
-      - id: validate-csharp-metas
-        name: Validate Unity C# .meta files
-        entry: node scripts/validate-npm-meta.js --repo-cs-metas-only
+      - id: validate-unity-metas
+        name: Validate repository Unity .meta files
+        entry: node scripts/validate-npm-meta.js --repo-metas-only
         language: system
         pass_filenames: false
-        files: '(?i)\.cs\.meta$'
+        # Run for every commit because pre-commit's changed-file list omits
+        # deleted and untracked companions. The git-backed validator is fast
+        # and detects both missing and orphaned metadata across the repository.
+        always_run: true
         stages:
           - pre-commit
-          - pre-push
         description: >-
-          Fail when tracked C# .meta files are missing Unity's standard
-          MonoImporter block or contain non-canonical MonoImporter lines.
+          Fail when an imported tracked asset lacks its .meta companion, a
+          tracked .meta is orphaned, or a C# .meta has a non-canonical
+          MonoImporter block.
       - id: script-tests
         name: Run fast JavaScript script tests (node --test)
         # Curated unit/mocked subset only. Real subprocess/archive integration
