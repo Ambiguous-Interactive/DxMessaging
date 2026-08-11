@@ -301,6 +301,7 @@ public class Player : MessageAwareComponent
 {
     protected override void RegisterMessageHandlers()
     {
+        base.RegisterMessageHandlers();
         // Listen only to damage targeting THIS player
         _ = Token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnPlayerTookDamage);
     }
@@ -317,6 +318,7 @@ public class CombatLog : MessageAwareComponent
 {
     protected override void RegisterMessageHandlers()
     {
+        base.RegisterMessageHandlers();
         // Listen to ALL damage from ANY source (global observer)
         _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
     }
@@ -332,6 +334,7 @@ public class AchievementSystem : MessageAwareComponent
 {
     protected override void RegisterMessageHandlers()
     {
+        base.RegisterMessageHandlers();
         // Listen to ALL damage targeting ANY entity (global observer)
         _ = Token.RegisterTargetedWithoutTargeting<DealDamage>(OnAnyDamageDealt);
     }

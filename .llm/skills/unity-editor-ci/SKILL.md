@@ -113,7 +113,7 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
   startup, `Reloading assemblies`, `Run tests on platform`, `Test results saved at`.
 - Keep action majors consistent repo-wide across `.github/workflows/` and
   `.github/workflows-disabled/`: `checkout@v7`, `cache/restore@v6`, `cache/save@v6`, `setup-node@v7`,
-  `setup-dotnet@v5`, `setup-python@v6`, `upload-artifact@v7`, `download-artifact@v8`,
+  `setup-dotnet@v6`, `setup-python@v6`, `upload-artifact@v7`, `download-artifact@v8`,
   `github-script@v9`, `create-github-app-token@v3`, `attest-build-provenance@v4`,
   `deploy-pages@v5`, `upload-pages-artifact@v5`. Verify a tag exists upstream
   (`git ls-remote --tags`) before calling a version invalid; bump all instances in one PR.

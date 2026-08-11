@@ -60,6 +60,17 @@ internal sealed class DocsSnippetCompilationTests
                 | System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
 
+    private static readonly System.Text.RegularExpressions.Regex RegistrationOverrideRegex = new(
+        @"protected\s+override\s+void\s+RegisterMessageHandlers\s*\(\s*\)\s*(?:\{(?<body>.*?)\}|(?<body>=>[^;\r\n]*;))",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex RegistrationBaseCallRegex = new(
+        @"(?m)(?:^|=>)\s*base\s*\.\s*RegisterMessageHandlers\s*\(\s*\)\s*;\s*(?://.*)?$",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
     [Test]
     public void QuickStartStep1Compiles()
     {
@@ -295,6 +306,30 @@ internal sealed class DocsSnippetCompilationTests
             Is.Empty,
             "Handler, interceptor, callback, processor, and observer examples must use "
                 + "real delegates instead of null/default placeholders:"
+                + System.Environment.NewLine
+                + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    [Test]
+    public void MessageAwareComponentExamplesCallBaseRegistrationHook()
+    {
+        string[] violations = GetBroadcastExampleSources()
+            .SelectMany(source =>
+                RegistrationOverrideRegex
+                    .Matches(source.Text)
+                    .Cast<System.Text.RegularExpressions.Match>()
+                    .Where(match => !RegistrationBaseCallRegex.IsMatch(match.Groups["body"].Value))
+                    .Select(match =>
+                        $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}"
+                    )
+            )
+            .ToArray();
+
+        Assert.That(
+            violations,
+            Is.Empty,
+            "MessageAwareComponent examples must call base.RegisterMessageHandlers():"
                 + System.Environment.NewLine
                 + string.Join(System.Environment.NewLine, violations)
         );

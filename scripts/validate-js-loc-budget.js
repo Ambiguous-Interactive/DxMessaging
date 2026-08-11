@@ -96,7 +96,11 @@ const path = require("path");
 //     comparison erases the date, so a file whose only defect was a corrupt
 //     date line looked identical to a fresh generation and update exited 1
 //     while advertising itself as the fix: 17612.
-const TOTAL_BUDGET = 17612;
+// 078 Parser-backed workflow consistency and fork-execution security contracts.
+//     Actionlint cannot enforce repository key ordering, permissions, concurrency,
+//     timeouts, checkout credential persistence, or same-repository formatting
+//     guards, so issue #379 adds those checks to the existing workflow suite: 17710.
+const TOTAL_BUDGET = 17710;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

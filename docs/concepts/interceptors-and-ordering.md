@@ -576,7 +576,11 @@ No **Avoid for:**
 
 Post-processors
 
-- Observe after handlers. Great for logging, analytics, or follow-up emission.
+- Observe after handlers. Use them for logging, metrics, replay records, or follow-up emission.
+- Keep gameplay and presentation state changes in handlers. A completed dispatch does not
+  reveal whether a handler applied the payload to health, inventory, UI, or another state.
+- Post-processors cannot cancel delivery. Use an interceptor when a message must be rejected
+  or normalized before handlers run.
 - Per category and scope (per target/source or all):
   - Untargeted: `RegisterUntargetedPostProcessor<T>`
   - Targeted (specific): `RegisterTargetedPostProcessor<T>(target, ...)`

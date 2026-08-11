@@ -315,6 +315,7 @@ public class EnemyHealthBar : MessageAwareComponent {
     [SerializeField] private GameObject trackedEnemy;
 
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Only listens to ONE enemy, not all 100
         _ = Token.RegisterGameObjectBroadcast<EntityDamaged>(trackedEnemy, OnDamaged);
     }
@@ -327,6 +328,7 @@ public class CombatAnalytics : MessageAwareComponent {
     private readonly Dictionary<InstanceId, int> totalDamageByEntity = new();
 
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Listens to all 100+ entities with ONE registration
         _ = Token.RegisterBroadcastWithoutSource<EntityDamaged>(OnAnyDamage);
     }
@@ -428,6 +430,7 @@ public readonly partial struct InventoryChanged { public readonly int itemCount;
 // Each UI panel listens independently
 public class HealthPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<PlayerStatsChanged>(OnStats);
     }
     void OnStats(ref PlayerStatsChanged msg) => UpdateHealth(msg.health);
@@ -435,6 +438,7 @@ public class HealthPanel : MessageAwareComponent {
 
 public class ManaPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<PlayerStatsChanged>(OnStats);
     }
     void OnStats(ref PlayerStatsChanged msg) => UpdateMana(msg.mana);
@@ -442,6 +446,7 @@ public class ManaPanel : MessageAwareComponent {
 
 public class GoldPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<PlayerStatsChanged>(OnStats);
     }
     void OnStats(ref PlayerStatsChanged msg) => UpdateGold(msg.gold);
@@ -449,6 +454,7 @@ public class GoldPanel : MessageAwareComponent {
 
 public class InventoryPanel : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<InventoryChanged>(OnInventory);
     }
     void OnInventory(ref InventoryChanged msg) => Refresh();
@@ -497,6 +503,7 @@ public readonly partial struct GameExit { }
 
 public class SaveSystem : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Priority 0 = runs FIRST
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 0);
     }
@@ -508,6 +515,7 @@ public class SaveSystem : MessageAwareComponent {
 
 public class AudioSystem : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Priority 5 = runs AFTER SaveSystem
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 5);
     }
@@ -519,6 +527,7 @@ public class AudioSystem : MessageAwareComponent {
 
 public class UISystem : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Priority 10 = runs LAST
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 10);
     }
@@ -551,6 +560,7 @@ msg.Emit();
 // Single interceptor validates ALL damage
 public class DamageValidator : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         // Interceptors run BEFORE handlers
         _ = Token.RegisterBroadcastInterceptor<EntityDamaged>(ValidateDamage, priority: -100);
     }
@@ -568,6 +578,7 @@ public class DamageValidator : MessageAwareComponent {
 // Handlers can trust data is valid (no duplicate checks needed)
 public class CombatEntity : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterComponentBroadcast<EntityDamaged>(this, OnDamaged);
     }
 
@@ -587,14 +598,14 @@ public class CombatEntity : MessageAwareComponent {
 ```csharp
 public class GameAnalytics : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
-        // Post-processors run AFTER all handlers
+        base.RegisterMessageHandlers();
+        // Record completed dispatch after gameplay handlers have run.
         _ = Token.RegisterBroadcastWithoutSourcePostProcessor<EntityDamaged>(LogDamage, priority: 100);
         _ = Token.RegisterUntargetedPostProcessor<LevelCompleted>(LogLevelComplete, priority: 100);
     }
 
     void LogDamage(InstanceId source, EntityDamaged msg) {
-        // Analytics code is completely isolated from gameplay
-        SendAnalyticsEvent("damage_dealt", new {
+        SendAnalyticsEvent("damage_message_processed", new {
             source = source.ToString(),
             amount = msg.amount,
             type = msg.damageType
@@ -607,7 +618,9 @@ public class GameAnalytics : MessageAwareComponent {
 }
 ```
 
-**Key insight:** Post-processors let you add analytics, logging, and telemetry WITHOUT touching existing handlers. Add/remove analytics system without modifying game logic.
+**Key insight:** Handlers own gameplay and presentation state. Post-processors let you add
+analytics, logging, and telemetry without modifying those handlers. A post-processor sees the
+processed message, not proof that a handler changed health or any other state.
 
 ### Performance Optimization Patterns at Scale
 
@@ -715,6 +728,7 @@ public class SelfHealthUI : MessageAwareComponent {
     [SerializeField] private GameObject localPlayerObject;
 
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterGameObjectBroadcast<PlayerDamaged>(localPlayerObject, OnDamage);
     }
 
@@ -726,6 +740,7 @@ public class TeamHealthUI : MessageAwareComponent {
     [SerializeField] private List<GameObject> teammateObjects;
 
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         foreach (var teammate in teammateObjects) {
             _ = Token.RegisterGameObjectBroadcast<PlayerDamaged>(teammate, OnTeammateDamage);
         }
@@ -737,6 +752,7 @@ public class TeamHealthUI : MessageAwareComponent {
 // KILL FEED (global observation)
 public class KillFeedUI : MessageAwareComponent {
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterBroadcastWithoutSource<PlayerKilled>(OnAnyKill);
     }
 
@@ -747,14 +763,16 @@ public class KillFeedUI : MessageAwareComponent {
 
 // MATCH STATS (analytics)
 public class MatchStats : MessageAwareComponent {
-    private Dictionary<int, int> damageByPlayer = new();
+    private readonly Dictionary<int, int> processedDamageMessagesByPlayer = new();
 
     protected override void RegisterMessageHandlers() {
+        base.RegisterMessageHandlers();
         _ = Token.RegisterBroadcastWithoutSourcePostProcessor<PlayerDamaged>(TrackDamage);
     }
 
     void TrackDamage(InstanceId source, PlayerDamaged msg) {
-        // Track for post-game stats
+        processedDamageMessagesByPlayer.TryGetValue(msg.playerId, out int count);
+        processedDamageMessagesByPlayer[msg.playerId] = count + 1;
     }
 }
 ```
@@ -764,7 +782,7 @@ public class MatchStats : MessageAwareComponent {
 - Self health UI: 1 registration, receives ~10 messages/sec
 - Team health UI: 4 registrations, receives ~40 messages/sec
 - Kill feed UI: 1 registration, receives ALL kills (~5 messages/sec)
-- Match stats: Post-processor, doesn't affect gameplay latency
+- Match stats: Post-processor records processed payloads without owning gameplay state
 
 **Total:** ~100 players x 10 damage/sec = 1000 messages/sec. DxMessaging handles this with negligible overhead (~0.06ms/frame).
 

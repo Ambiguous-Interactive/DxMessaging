@@ -120,6 +120,7 @@ public sealed class NoStringDemos : MessageAwareComponent
 
     protected override void RegisterMessageHandlers()
     {
+        base.RegisterMessageHandlers();
         // only your registrations
     }
 }

@@ -30,10 +30,14 @@ using DxMessaging.Core.Messages;
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(ShowDamageNumber);
 void ShowDamageNumber(InstanceId source, TookDamage m) => damageNumbers.Show(source, m.amount);
 
-// Append replay evidence after every gameplay handler has run.
-_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(RecordDamageOutcome);
-void RecordDamageOutcome(InstanceId source, TookDamage m) => replay.RecordDamage(source, m.amount);
+// Record the processed message for replay after every gameplay handler has run.
+_ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(RecordProcessedDamage);
+void RecordProcessedDamage(InstanceId source, TookDamage m) =>
+    replay.RecordDamage(source, m.amount);
 ```
+
+The handler owns presentation state by spawning a damage number. The post-processor records
+that dispatch completed. It cannot infer the target's final health from the message payload.
 
 ## Global accept-all (debug/inspection)
 
