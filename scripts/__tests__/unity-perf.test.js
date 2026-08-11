@@ -509,6 +509,29 @@ test("performance workflow publishes an exact IL2CPP player-size manifest", () =
   assert.match(workflow, /player-size\.json/);
 });
 
+test("Unity workflows reuse isolated runner-local projects without network Library caches", () => {
+  const workflowDir = path.join(REPO_ROOT, ".github", "workflows");
+  const scopes = new Map([
+    ["unity-tests.yml", "t"],
+    ["unity-benchmarks.yml", "b"],
+    ["perf-numbers.yml", "p"]
+  ]);
+
+  for (const [name, scope] of scopes) {
+    const workflow = fs.readFileSync(path.join(workflowDir, name), "utf8");
+    assert.ok(!workflow.includes("Cache Unity Library"));
+    assert.doesNotMatch(workflow, /path:[^\n]*(?:\n\s*)?[^\n]*Library/i);
+    assert.match(workflow, new RegExp(`Join-Path \\$env:RUNNER_WORKSPACE 'dxm-u\\\\${scope}\\\\`));
+    assert.match(workflow, /Join-Path \$env:RUNNER_WORKSPACE 'dxm-c\\/);
+    assert.match(workflow, /-ProjectPath \$projectPath/);
+    assert.match(workflow, /-CachePath \$cachePath/);
+  }
+
+  const perf = fs.readFileSync(path.join(workflowDir, "perf-numbers.yml"), "utf8");
+  assert.match(perf, /\$playerDir = Join-Path \$projectPath 'Build\\DxmTestPlayer'/);
+  assert.doesNotMatch(perf, /\.artifacts\/u\/.*Build\/DxmTestPlayer/);
+});
+
 test("buildComparisonSections bolds per-scenario throughput winners only", () => {
   const sections = buildComparisonSections(
     standaloneRows([

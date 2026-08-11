@@ -2,7 +2,7 @@
 
 # Unity CI Matrix
 
-> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` is one unified matrix of four Unity versions x {editmode, playmode, standalone} = 12 jobs, where `standalone` builds and runs a `StandaloneWindows64` IL2CPP player from an ephemeral Unity project generated under `.artifacts/`.
+> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` is one unified matrix of four Unity versions x {editmode, playmode, standalone} = 12 jobs, where `standalone` builds and runs a `StandaloneWindows64` IL2CPP player from a runner-local project.
 
 ## When to Use
 
@@ -14,7 +14,7 @@
 ## When NOT to Use
 
 - Tweaking which assemblies run. That is the asmdef-discovery module's responsibility (see [unity-perf-test-isolation](../../benchmark-methodology/references/unity-perf-test-isolation.md)).
-- Adjusting cache keys. Those live in the workflow's `actions/cache@v5` block; they hash package/test inputs plus the direct CI runner script and include OS, architecture, Unity version, and mode.
+- Changing the project or package-cache layout without preserving separation between test, benchmark, and performance scopes.
 
 ## Current Matrix
 
@@ -27,8 +27,8 @@
 
 Twelve matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone`
 builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner
-generates a temporary package host project under
-`.artifacts/u/<version>-<mode>/`, imports the repo package with a
+generates a package host project under
+`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, imports the repo package with a
 `file:` dependency, sets `testables`, and configures IL2CPP before running
 standalone tests. Dispatch runs use the same complete static matrix.
 
@@ -118,9 +118,9 @@ Add a version to the canonical `.github/unity-versions.json` `all` array when on
    suite through `DxMcpTestRunner.Run` over `Unity_RunCommand`. See
    [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md).
 
-1. Push the workflow change. The first CI run will pull the new image (slow); subsequent runs hit the cache.
+1. Push the workflow change. The first run on each fixed runner starts with a cold project; later runs reuse that runner's `Library` in place.
 
-The `actions/cache@v5` keys include `${{ matrix.unity-version }}`, mode, OS, architecture, and hashes for package/test inputs plus `scripts/unity/run-ci-tests.ps1`. Do not add broad `restore-keys` for `Library/`; restoring a Library from a different Unity version or package graph can corrupt domain reloads and make failures nondeterministic. A new version should start cold and warm on the next exact-key run.
+The test, benchmark, and performance workflows use separate `t`, `b`, and `p` roots. Unity versions and modes also have separate projects. This keeps incompatible package graphs apart while each fixed runner retains its own warm `Library`; a new version starts cold on every runner.
 
 ## IL2CPP-Only Failure Patterns
 
@@ -131,7 +131,7 @@ IL2CPP exercises an AOT-compiled path that EditMode/PlayMode under Mono cannot. 
 | Generic virtual method (GVM) call             | `ExecutionEngineException: Attempting to call method 'X' for which no AOT code...` | Add a non-generic forwarder, mark with `[Preserve]`, or instantiate the generic at compile time.  |
 | Code stripping                                | `MissingMethodException` or `TypeLoadException` for a reflected type               | Add the type to `link.xml`, or annotate with `[Preserve]`. See Unity managed-code-stripping docs. |
 | Reflection over open generics                 | Tests pass under Mono, fail under IL2CPP with reflection-related null returns      | Avoid open-generic reflection on the hot path; use the source generator instead.                  |
-| Incremental Mono / IL2CPP serialization drift | `Library/` cache is stale and the build hangs at "Domain Reload"                   | Delete the Library cache (or bump the cache key prefix in the workflow); rebuild.                 |
+| Incremental Mono / IL2CPP serialization drift | `Library/` is stale and the build hangs at "Domain Reload"                         | Delete only the affected runner-local project; rebuild.                                           |
 | PInvoke / native-callable mismatch            | `EntryPointNotFoundException` or `MarshalAs` complaints unique to IL2CPP           | Audit `[DllImport]` signatures; verify calling convention.                                        |
 
 The `avoid-reflection-on-hot-paths` skill (see Performance section of the index) covers reflection-related cases in detail. The DxMessaging codebase uses the source generator precisely to avoid most reflection at runtime.
@@ -140,9 +140,9 @@ The `avoid-reflection-on-hot-paths` skill (see Performance section of the index)
 
 A direct Windows Unity job log is structured. To diagnose a failure, scan in this order:
 
-1. **Pre-Unity setup**: `Setup Node.js`, `Cache Unity Library`, `Compute test assembly list`. Failures here are infrastructure, not test logic.
+1. **Pre-Unity setup**: `Setup Node.js`, `Compute test assembly list`, and the `LibraryState` diagnostic. Failures here are infrastructure, not test logic.
 1. **License activation**: search for `LICENSE SYSTEM` or `Failed to activate`. The serial is activated (and returned) per run. See [unity-license-bootstrap](../../unity-licensing/references/unity-license-bootstrap.md) and [unity-license-return-guarantee](../../unity-licensing/references/unity-license-return-guarantee.md).
-1. **Editor startup**: search for `[Licensing]` or `Loading native plugins`. A timeout here usually means a corrupted Library cache.
+1. **Editor startup**: search for `[Licensing]` or `Loading native plugins`. A timeout here usually means a corrupted runner-local project `Library`.
 1. **Domain reload**: search for `Reloading assemblies`. A hang here typically means a circular asmdef reference or a missing dependency.
 1. **Test execution**: search for `Run tests on platform`. NUnit failures appear as `[Test Failed]` lines with stack traces.
 1. **Result emission**: search for `Test results saved at`. Missing results XML almost always means the player crashed before tests completed.

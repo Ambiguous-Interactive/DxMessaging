@@ -1,6 +1,6 @@
 ---
 name: unity-test-execution
-description: "How the DxMessaging Unity test legs are hosted, filtered, and kept fast: the generated UPM host project under .artifacts/u/, NUnit [Category] filtering and -testFilter, EnterPlayModeOptions domain/scene reload disabling, batched teardown frames, [UnityTest] vs [Test], banned real-time waits, and the single-threaded bus contract. Use when an EditMode/PlayMode/standalone leg blows its wall-clock budget, when adding an asmdef or test dependency under Tests/, when picking test categories, when converting a no-yield [UnityTest], or before adding lock/Interlocked to the dispatch path."
+description: "How the DxMessaging Unity test legs are hosted, filtered, and kept fast: generated UPM hosts with runner-local Library reuse, NUnit [Category] filtering and -testFilter, EnterPlayModeOptions domain/scene reload disabling, batched teardown frames, [UnityTest] vs [Test], banned real-time waits, and the single-threaded bus contract. Use when an EditMode/PlayMode/standalone leg blows its wall-clock budget, when adding an asmdef under Tests/, when picking test categories, when converting a no-yield [UnityTest], or before adding lock/Interlocked to the dispatch path."
 metadata:
   category: "testing"
   tags: "testing, unity, performance, play-mode, domain-reload"
@@ -23,11 +23,11 @@ How the DxMessaging Unity suites are hosted, selected, and executed, plus the le
 
 ### Host project and assemblies
 
-- The repo root is a UPM package, not a Unity project. `scripts/unity/run-ci-tests.ps1` generates a thin host under `.artifacts/u/<version>-<mode>/` whose `Packages/manifest.json` declares `com.wallstop-studios.dxmessaging` as a local `file:` dependency and lists it under `testables`. Never add `Assets/` content to the package root.
+- The repo root is a UPM package, not a Unity project. `scripts/unity/run-ci-tests.ps1` generates a thin host whose `Packages/manifest.json` declares `com.wallstop-studios.dxmessaging` as a local `file:` dependency and lists it under `testables`. Local runs default to `.artifacts/u/<version>-<mode>/`; CI passes a short, scope-isolated path under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/`. Never add `Assets/` content to the package root.
 - `testables` exposes every asmdef under `Tests/` automatically, so a new suite needs no harness change: create the asmdef, give it a stable name such as `WallstopStudios.DxMessaging.Tests.Editor.NewSuite`, then confirm discovery with `node scripts/unity/lib/asmdef-discovery.js`.
 - Name perf and DI-integration assemblies `*Benchmarks*`, `*Allocations*`, `*Comparisons*`, `*VContainer*`, `*Zenject*`, or `*Reflex*`. The classification regex in `scripts/unity/lib/asmdef-discovery.js` excludes those from the default include list.
 - A new test-only UPM dependency goes into `New-ManifestJson` in `scripts/unity/run-ci-tests.ps1`; inspect the result with the runner's `-GenerateOnly` mode. Heavyweight runtime dependencies must be opt-in behind `--include-integrations`.
-- Committed source of truth: `scripts/unity/run-ci-tests.ps1` plus `Runtime/`, `Editor/`, `Tests/`. Generated and gitignored: the host project's `Library/`, `Temp/`, `Logs/`, `UserSettings/`, and `.artifacts/unity/cache/**`. The `Library/` cache key pins OS, architecture, Unity version, mode, package inputs, and the runner script; do not add broad restore keys.
+- Committed source of truth: `scripts/unity/run-ci-tests.ps1` plus `Runtime/`, `Editor/`, `Tests/`. Generated and ignored: the host project's `Library/`, `Temp/`, `Logs/`, and `UserSettings/`. Fixed CI runners reuse scope-isolated projects and per-version package caches outside the checkout; do not upload or restore Unity `Library` directories through `actions/cache`.
 
 ### Categories and selection
 

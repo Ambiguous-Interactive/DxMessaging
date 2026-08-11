@@ -11,8 +11,8 @@ metadata:
 The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self-hosted
 Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions x
 `{editmode, playmode, standalone}` = 12 cells; `standalone` builds and runs a
-`StandaloneWindows64` IL2CPP player from an ephemeral project generated under
-`.artifacts/u/<version>-<mode>/`.
+`StandaloneWindows64` IL2CPP player from a runner-local project under
+`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`.
 
 ## When to use
 
@@ -102,14 +102,17 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
   exclusions, and install `pwsh` via winget. `.github/actions/assert-unity-host-prereqs` and
   `runner-bootstrap.yml` always use `-DetectOnly`; workflows never install host prerequisites.
 
-### Caches, logs, and action versions
+### Runner-local projects, logs, and action versions
 
-- `actions/cache@v5` keys include OS, architecture, `matrix.unity-version`, mode, and hashes of
-  package/test inputs plus `run-ci-tests.ps1`. Never add broad `restore-keys` for `Library/`.
+- Fixed runners reuse scope-isolated projects under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/` and
+  per-version package caches under `$RUNNER_WORKSPACE/dxm-c/`. Do not transfer Unity
+  `Library/` directories through `actions/cache`; checkout must not clean these external paths.
+  Existing custom cache directories require `.dxmessaging-ci-cache`; retry cleanup revalidates
+  ownership and permits only the cache root's `upm/` and `npm/` children.
 - Read a failing log in order: pre-Unity setup, `LICENSE SYSTEM`, `[Licensing]` / editor
   startup, `Reloading assemblies`, `Run tests on platform`, `Test results saved at`.
 - Keep action majors consistent repo-wide across `.github/workflows/` and
-  `.github/workflows-disabled/`: `checkout@v6`, `cache@v5`, `setup-node@v6`,
+  `.github/workflows-disabled/`: `checkout@v7`, `cache/restore@v6`, `cache/save@v6`, `setup-node@v7`,
   `setup-dotnet@v5`, `setup-python@v6`, `upload-artifact@v7`, `download-artifact@v8`,
   `github-script@v9`, `create-github-app-token@v3`, `attest-build-provenance@v4`,
   `deploy-pages@v5`, `upload-pages-artifact@v5`. Verify a tag exists upstream

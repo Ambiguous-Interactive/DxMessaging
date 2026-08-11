@@ -19,6 +19,8 @@ param(
 
     [string]$ProjectPath,
 
+    [string]$CachePath,
+
     [string]$UnityEditorPath = $env:UNITY_EDITOR_PATH,
 
     [string]$UnityInstallRoot = $(if ($env:UNITY_EDITOR_INSTALL_ROOT) { $env:UNITY_EDITOR_INSTALL_ROOT } else { 'C:\Unity\Editors' }),
@@ -82,6 +84,9 @@ $CiRoslynatorAnalyzerFiles = @(
 )
 $ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
 $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
+$CacheOwnershipMarkerName = '.dxmessaging-ci-cache'
+$CacheOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci cache'
+$script:UnityCacheRoot = ''
 
 function Write-CiError {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -266,18 +271,26 @@ function Clear-UnityPackageManagerRetryState {
     $packageCachePath = [System.IO.Path]::Combine($Project, 'Library', 'PackageCache')
     $packageManagerPath = [System.IO.Path]::Combine($Project, 'Library', 'PackageManager')
     $tempPath = Join-Path $Project 'Temp'
-    $paths = @(
+    $projectRetryPaths = @(
         $packageCachePath,
         $packageManagerPath,
         $tempPath
     )
+    foreach ($projectRetryPath in $projectRetryPaths) {
+        Assert-UnityProjectRetryPathSafe -Path $projectRetryPath -Project $Project
+    }
 
+    $retryCachePaths = @()
     foreach ($envName in @('UPM_CACHE_ROOT', 'UPM_NPM_CACHE_PATH')) {
         $value = [Environment]::GetEnvironmentVariable($envName)
         if (-not [string]::IsNullOrWhiteSpace($value)) {
-            $paths += $value
+            $retryCachePaths += $value
         }
     }
+    foreach ($retryCachePath in $retryCachePaths) {
+        Assert-UnityCacheRetryPathSafe -Path $retryCachePath -CacheRoot $script:UnityCacheRoot
+    }
+    $paths = $projectRetryPaths + $retryCachePaths
 
     Write-Host "::group::Unity Package Manager retry cleanup"
     foreach ($path in ($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
@@ -677,11 +690,11 @@ function Test-IsFilesystemRoot {
 function Test-IsReparsePoint {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    if (-not (Test-Path -LiteralPath $Path)) {
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
         return $false
     }
-
-    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
     return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
@@ -715,7 +728,10 @@ function Test-ProjectOwnershipMarker {
     param([Parameter(Mandatory = $true)][string]$ProjectPath)
 
     $markerPath = Join-Path $ProjectPath $ProjectOwnershipMarkerName
-    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+    if (
+        -not (Test-Path -LiteralPath $markerPath -PathType Leaf) -or
+        (Test-IsReparsePoint -Path $markerPath)
+    ) {
         return $false
     }
 
@@ -739,9 +755,49 @@ function Write-ProjectOwnershipMarker {
     param([Parameter(Mandatory = $true)][string]$ProjectPath)
 
     $markerPath = Join-Path $ProjectPath $ProjectOwnershipMarkerName
+    if (Test-IsReparsePoint -Path $markerPath) {
+        throw "Refusing to write the Unity project ownership marker through a reparse point: '$markerPath'."
+    }
     [System.IO.File]::WriteAllText(
         $markerPath,
         "$ProjectOwnershipMarkerContent`n",
+        [System.Text.Encoding]::UTF8
+    )
+}
+
+function Test-CacheOwnershipMarker {
+    param([Parameter(Mandatory = $true)][string]$CachePath)
+
+    $markerPath = Join-Path $CachePath $CacheOwnershipMarkerName
+    if (
+        -not (Test-Path -LiteralPath $markerPath -PathType Leaf) -or
+        (Test-IsReparsePoint -Path $markerPath)
+    ) {
+        return $false
+    }
+
+    try {
+        $markerContent = Get-Content -LiteralPath $markerPath -Raw
+    } catch {
+        return $false
+    }
+    return $null -ne $markerContent -and [string]::Equals(
+        $markerContent.Trim(),
+        $CacheOwnershipMarkerContent,
+        [System.StringComparison]::Ordinal
+    )
+}
+
+function Write-CacheOwnershipMarker {
+    param([Parameter(Mandatory = $true)][string]$CachePath)
+
+    $markerPath = Join-Path $CachePath $CacheOwnershipMarkerName
+    if (Test-IsReparsePoint -Path $markerPath) {
+        throw "Refusing to write the Unity cache ownership marker through a reparse point: '$markerPath'."
+    }
+    [System.IO.File]::WriteAllText(
+        $markerPath,
+        "$CacheOwnershipMarkerContent`n",
         [System.Text.Encoding]::UTF8
     )
 }
@@ -833,6 +889,127 @@ function Get-UnityCiProjectPathSafetyError {
     return ''
 }
 
+function Get-UnityCiCachePathSafetyError {
+    param(
+        [Parameter(Mandatory = $true)][string]$CachePath,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ArtifactsPath,
+        [Parameter(Mandatory = $true)][string[]]$ManagedCacheRoots
+    )
+
+    if (Test-IsFilesystemRoot -Path $CachePath) {
+        return "Refusing to use CachePath '$CachePath' because it resolves to a filesystem root."
+    }
+    foreach ($reservedPath in @($RepoRoot, $ArtifactsPath) + $ManagedCacheRoots) {
+        if (Test-IsPathEqual -Left $CachePath -Right $reservedPath) {
+            return "Refusing to use CachePath '$CachePath' because it resolves to a protected parent directory."
+        }
+    }
+    if (
+        (Test-IsPathInsideDirectory -Path $RepoRoot -Directory $CachePath) -or
+        (Test-IsPathInsideDirectory -Path $ArtifactsPath -Directory $CachePath)
+    ) {
+        return "Refusing to use CachePath '$CachePath' because it contains a protected repository or artifacts directory."
+    }
+    if (Test-IsPathInsideDirectory -Path $CachePath -Directory $ArtifactsPath) {
+        return "Refusing to use CachePath '$CachePath' inside the uploaded artifacts directory."
+    }
+
+    $managedRoot = $null
+    foreach ($candidateRoot in $ManagedCacheRoots) {
+        if (Test-IsPathInsideDirectory -Path $CachePath -Directory $candidateRoot) {
+            $managedRoot = $candidateRoot
+            break
+        }
+    }
+    if (
+        (Test-IsPathInsideDirectory -Path $CachePath -Directory $RepoRoot) -and
+        $null -eq $managedRoot
+    ) {
+        return "Refusing to use CachePath '$CachePath' outside the managed Unity cache area."
+    }
+    if (
+        $null -ne $managedRoot -and
+        (
+            (Test-IsReparsePoint -Path $managedRoot) -or
+            (Test-PathContainsReparsePointBeforeBoundary -Path $CachePath -BoundaryDirectory $managedRoot)
+        )
+    ) {
+        return "Refusing to use CachePath '$CachePath' because a symlink or reparse point appears inside the managed cache area."
+    }
+    if (
+        (Test-Path -LiteralPath $CachePath -PathType Container) -and
+        $null -eq $managedRoot -and
+        ((Test-IsReparsePoint -Path $CachePath) -or -not (Test-CacheOwnershipMarker -CachePath $CachePath))
+    ) {
+        return "Refusing to use existing CachePath '$CachePath' because it is not an owned DxMessaging CI cache. Choose a new empty CachePath or remove the directory manually."
+    }
+    return ''
+}
+
+function Assert-UnityCacheRetryPathSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$CacheRoot
+    )
+
+    if (
+        [string]::IsNullOrWhiteSpace($CacheRoot) -or
+        -not (Test-CacheOwnershipMarker -CachePath $CacheRoot) -or
+        (Test-IsReparsePoint -Path $CacheRoot)
+    ) {
+        throw "Refusing Unity package-cache cleanup because the cache root is not an owned directory."
+    }
+
+    $isExpectedChild = $false
+    foreach ($childName in @('upm', 'npm')) {
+        if (Test-IsPathEqual -Left $Path -Right (Join-Path $CacheRoot $childName)) {
+            $isExpectedChild = $true
+            break
+        }
+    }
+    if (
+        -not $isExpectedChild -or
+        -not (Test-IsPathInsideDirectory -Path $Path -Directory $CacheRoot) -or
+        (Test-PathContainsReparsePointBeforeBoundary -Path $Path -BoundaryDirectory $CacheRoot)
+    ) {
+        throw "Refusing Unity package-cache cleanup outside the owned cache root '$CacheRoot': '$Path'."
+    }
+}
+
+function Assert-UnityProjectRetryPathSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Project
+    )
+
+    if (
+        -not (Test-ProjectOwnershipMarker -ProjectPath $Project) -or
+        (Test-IsReparsePoint -Path $Project)
+    ) {
+        throw "Refusing Unity project retry cleanup because the project is not an owned directory."
+    }
+
+    $isExpectedChild = $false
+    foreach ($expectedPath in @(
+        [System.IO.Path]::Combine($Project, 'Library', 'PackageCache'),
+        [System.IO.Path]::Combine($Project, 'Library', 'PackageManager'),
+        (Join-Path $Project 'Temp')
+    )) {
+        if (Test-IsPathEqual -Left $Path -Right $expectedPath) {
+            $isExpectedChild = $true
+            break
+        }
+    }
+    if (
+        -not $isExpectedChild -or
+        -not (Test-IsPathInsideDirectory -Path $Path -Directory $Project) -or
+        (Test-PathContainsReparsePointBeforeBoundary -Path $Path -BoundaryDirectory $Project)
+    ) {
+        throw "Refusing Unity project retry cleanup outside the owned project '$Project': '$Path'."
+    }
+}
+
 function Assert-RepoRoot {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath (Join-Path $Path 'package.json') -PathType Leaf)) {
@@ -851,10 +1028,28 @@ function ConvertTo-UnityFileUriPath {
 function Initialize-UnityCacheEnvironment {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$Version
+        [Parameter(Mandatory = $true)][string]$Version,
+        [string]$Path
     )
 
-    $cacheRoot = [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'cache', $Version)
+    $cacheRoot = if ([string]::IsNullOrWhiteSpace($Path)) {
+        [System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'cache', $Version)
+    } else {
+        Resolve-FullPath -Path $Path
+    }
+    $managedCacheRoots = @([System.IO.Path]::Combine($Root, '.artifacts', 'unity', 'cache'))
+    if (-not [string]::IsNullOrWhiteSpace($env:RUNNER_WORKSPACE)) {
+        $managedCacheRoots += [System.IO.Path]::Combine($env:RUNNER_WORKSPACE, 'dxm-c')
+    }
+    $cachePathSafetyError = Get-UnityCiCachePathSafetyError `
+        -CachePath $cacheRoot `
+        -RepoRoot $Root `
+        -ArtifactsPath $ArtifactsPath `
+        -ManagedCacheRoots $managedCacheRoots
+    if (-not [string]::IsNullOrWhiteSpace($cachePathSafetyError)) {
+        throw $cachePathSafetyError
+    }
+
     $upmRoot = Join-Path $cacheRoot 'upm'
     $npmRoot = Join-Path $cacheRoot 'npm'
     $gitLfsRoot = Join-Path $cacheRoot 'git-lfs'
@@ -864,7 +1059,10 @@ function Initialize-UnityCacheEnvironment {
         [System.IO.Path]::Combine($cacheRoot, 'localappdata', 'Unity', 'Caches')
     }
 
-    foreach ($path in @($cacheRoot, $upmRoot, $npmRoot, $gitLfsRoot, $localUnityCaches)) {
+    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+    Write-CacheOwnershipMarker -CachePath $cacheRoot
+    $script:UnityCacheRoot = $cacheRoot
+    foreach ($path in @($upmRoot, $npmRoot, $gitLfsRoot, $localUnityCaches)) {
         New-Item -ItemType Directory -Force -Path $path | Out-Null
     }
 
@@ -1446,11 +1644,11 @@ function Copy-SamplesForCompilation {
     )
 
     # Unity does not import package Samples~ until a consumer explicitly installs a
-    # sample. Copy every sample compile input into the disposable CI host so every
-    # supported editor version compiles the exact shipped sources. EditMode adds a
+    # sample. Copy every sample compile input and runnable scene into the disposable
+    # CI host so every supported editor version imports the exact shipped assets.
+    # Preserve their metas because the scenes reference sample scripts by GUID. EditMode adds a
     # generated parent asmdef whose package version defines activate every conditional
     # DI sample against real provider assemblies; other legs leave those bodies off.
-    # Omitting .meta files avoids carrying package asset identities into the host.
     $sampleSource = [System.IO.Path]::Combine($Root, 'Samples~')
     if (-not (Test-Path -LiteralPath $sampleSource -PathType Container)) {
         throw "Missing package samples source directory: $sampleSource"
@@ -1466,29 +1664,46 @@ function Copy-SamplesForCompilation {
     ).FullName
     $csharpInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.cs' -File -Recurse)
     $asmdefInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.asmdef' -File -Recurse)
-    if ($csharpInputs.Count -eq 0 -or $asmdefInputs.Count -eq 0) {
-        throw "Package samples must contain at least one C# file and at least one asmdef."
+    $sceneInputs = @(Get-ChildItem -LiteralPath $sampleSource -Filter '*.unity' -File -Recurse)
+    if ($csharpInputs.Count -eq 0 -or $asmdefInputs.Count -eq 0 -or $sceneInputs.Count -eq 0) {
+        throw "Package samples must contain at least one C# file, asmdef, and Unity scene."
     }
-    $compileInputs = @($csharpInputs) + @($asmdefInputs)
-    $compileInputRelativePaths = @($compileInputs | ForEach-Object {
+    $assetInputs = @($csharpInputs) + @($asmdefInputs) + @($sceneInputs)
+    $metaInputs = @($assetInputs | ForEach-Object {
+        $metaPath = "$($_.FullName).meta"
+        if (-not (Test-Path -LiteralPath $metaPath -PathType Leaf)) {
+            throw "Package sample input lacks its required meta file: $($_.FullName)"
+        }
+        Get-Item -LiteralPath $metaPath
+    })
+    $copiedInputs = $assetInputs + $metaInputs
+    $copiedInputRelativePaths = @($copiedInputs | ForEach-Object {
         $_.FullName.Substring($sampleSource.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
     })
     $generatedDiAsmdefRelativePath = [System.IO.Path]::Combine('DI', 'DxmCi.Samples.DI.asmdef')
     if ($IncludeIntegrations) {
-        $compileInputRelativePaths += $generatedDiAsmdefRelativePath
+        $copiedInputRelativePaths += $generatedDiAsmdefRelativePath
+        $copiedInputRelativePaths += "$generatedDiAsmdefRelativePath.meta"
     }
 
     foreach ($existingFile in @(Get-ChildItem -LiteralPath $sampleDestination -File -Recurse)) {
         $existingRelativePath = $existingFile.FullName.Substring($sampleDestination.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        $isManagedSampleInput =
+            $existingFile.Extension -eq '.cs' -or
+            $existingFile.Extension -eq '.asmdef' -or
+            $existingFile.Extension -eq '.unity' -or
+            $existingFile.Name.EndsWith('.cs.meta', [System.StringComparison]::OrdinalIgnoreCase) -or
+            $existingFile.Name.EndsWith('.asmdef.meta', [System.StringComparison]::OrdinalIgnoreCase) -or
+            $existingFile.Name.EndsWith('.unity.meta', [System.StringComparison]::OrdinalIgnoreCase)
         if (
-            ($existingFile.Extension -eq '.cs' -or $existingFile.Extension -eq '.asmdef') -and
-            $compileInputRelativePaths -notcontains $existingRelativePath
+            $isManagedSampleInput -and
+            $copiedInputRelativePaths -notcontains $existingRelativePath
         ) {
             Remove-Item -LiteralPath $existingFile.FullName -Force
         }
     }
 
-    foreach ($sourceFile in $compileInputs) {
+    foreach ($sourceFile in $copiedInputs) {
         $relativePath = $sourceFile.FullName.Substring($sampleSource.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
         $destinationPath = Join-Path $sampleDestination $relativePath
         $destinationDirectory = Split-Path -Parent $destinationPath
@@ -1503,7 +1718,7 @@ function Copy-SamplesForCompilation {
             [System.IO.File]::WriteAllText($destinationPath, $sourceContent)
         }
         if ((Get-Content -LiteralPath $destinationPath -Raw) -ne $sourceContent) {
-            throw "Generated sample compile input differs from its source: $relativePath"
+            throw "Generated sample input differs from its source: $relativePath"
         }
     }
     if ($IncludeIntegrations) {
@@ -3118,7 +3333,7 @@ Assert-RepoRoot -Path $RepoRoot
 $ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
 New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
-Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion
+Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion -Path $CachePath
 
 # Release is now the repo-wide Unity CI contract. The historical switches remain
 # accepted for workflow/back-compat, but the effective mode is always Release:
@@ -3129,12 +3344,19 @@ $UseReleasePlayerBuild = $true
 
 $ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot -ArtifactsPath $ArtifactsPath
 $LibraryPath = Join-Path $ProjectPath 'Library'
+$LibraryEntries = @(
+    if (Test-Path -LiteralPath $LibraryPath -PathType Container) {
+        Get-ChildItem -LiteralPath $LibraryPath -Force | Select-Object -First 1
+    }
+)
+$LibraryState = if ($LibraryEntries.Count -gt 0) { 'warm' } else { 'cold' }
 New-Item -ItemType Directory -Force -Path $LibraryPath | Out-Null
 
 Write-Host "::group::Ephemeral Unity project"
 Write-Host "RepoRoot: $RepoRoot"
 Write-Host "ProjectPath: $ProjectPath"
 Write-Host "LibraryPath: $LibraryPath"
+Write-Host "LibraryState: $LibraryState"
 Write-Host "ArtifactsPath: $ArtifactsPath"
 Write-Host "IncludeComparisons: $IncludeComparisons"
 Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"

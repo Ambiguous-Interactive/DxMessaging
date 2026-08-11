@@ -3,6 +3,10 @@ name: Unity Benchmarks
 on:
   workflow_dispatch:
 
+concurrency:
+  group: unity-benchmarks-${{ github.ref }}
+  cancel-in-progress: false
+
 # Top-level permissions are least-privilege and mirror unity-tests.yml. The
 # licensed matrix jobs (matrix-config, runner-preflight, benchmarks) only need
 # read access plus checks:write for NUnit annotations and issues:write for
@@ -161,26 +165,6 @@ jobs:
         with:
           matrix-note: "default (organization lock wraps the Unity section)"
 
-      - name: Cache Unity Library and package caches
-        timeout-minutes: 30
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        env:
-          PACKAGE_HASH: >-
-            ${{ hashFiles(
-              'package.json',
-              'Runtime/**',
-              'Editor/**',
-              'Tests/**',
-              'scripts/unity/run-ci-tests.ps1',
-              'scripts/unity/lib/asmdef-discovery.js',
-              '.github/actions/compute-unity-assemblies/action.yml'
-            ) }}
-        with:
-          path: |
-            .artifacts/u/${{ matrix.unity-version }}-${{ matrix.test-mode }}/Library
-            .artifacts/unity/cache/${{ matrix.unity-version }}
-          key: Library-bench-${{ runner.os }}-${{ runner.arch }}-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ env.PACKAGE_HASH }}
-
       - name: Setup Node.js
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -267,12 +251,16 @@ jobs:
           # coverage run measures the same optimized hot path the docs do.
           # This run keeps its editmode+playmode + no-comparisons coverage role;
           # the Release flags add no comparison rows.
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\b\${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ProjectPath $projectPath `
+            -CachePath $cachePath `
             -LicenseReturnOwner Central `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild

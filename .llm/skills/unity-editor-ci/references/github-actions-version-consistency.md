@@ -23,13 +23,13 @@ Version inconsistencies cause preventable issues:
 
 ```yaml
 # GOOD: Use repo-wide pinned major versions consistently.
-- uses: actions/checkout@v6
-- uses: actions/setup-node@v6
+- uses: actions/checkout@v7
+- uses: actions/setup-node@v7
 - uses: actions/upload-artifact@v7
 
 # BAD: Mixed versions across workflows
 - uses: actions/checkout@v5 # One workflow
-- uses: actions/checkout@v6 # Another workflow
+- uses: actions/checkout@v7 # Another workflow
 ```
 
 ### Version Update Process
@@ -45,26 +45,25 @@ Version inconsistencies cause preventable issues:
 ### Common Actions to Monitor
 
 Do not treat a static table as permanent truth. Verify the official action tag
-before claiming that a workflow version is unpublished. As of 2026-06-18, this
+before claiming that a workflow version is unpublished. As of 2026-08-10, this
 repo intentionally uses these published official-action majors in enabled and
 disabled workflow files:
 
-| Action                            | Repo Pin | Notes                               |
-| --------------------------------- | -------- | ----------------------------------- |
-| `actions/attest-build-provenance` | `v4`     | Build provenance attestations       |
-| `actions/checkout`                | `v6`     | Checkout and credential handling    |
-| `actions/cache`                   | `v5`     | Dependency and Unity project caches |
-| `actions/cache/restore`           | `v5`     | Link-check cache restore            |
-| `actions/cache/save`              | `v5`     | Link-check cache save               |
-| `actions/create-github-app-token` | `v3`     | GitHub App authentication           |
-| `actions/deploy-pages`            | `v5`     | Pages deployments                   |
-| `actions/download-artifact`       | `v8`     | Workflow artifact downloads         |
-| `actions/github-script`           | `v9`     | GitHub API scripting                |
-| `actions/setup-dotnet`            | `v5`     | .NET SDK setup                      |
-| `actions/setup-node`              | `v6`     | Node.js setup                       |
-| `actions/setup-python`            | `v6`     | Python setup                        |
-| `actions/upload-artifact`         | `v7`     | Workflow artifact uploads           |
-| `actions/upload-pages-artifact`   | `v5`     | Pages artifact uploads              |
+| Action                            | Repo Pin | Notes                            |
+| --------------------------------- | -------- | -------------------------------- |
+| `actions/attest-build-provenance` | `v4`     | Build provenance attestations    |
+| `actions/checkout`                | `v7`     | Checkout and credential handling |
+| `actions/cache/restore`           | `v6`     | Link-check cache restore         |
+| `actions/cache/save`              | `v6`     | Link-check cache save            |
+| `actions/create-github-app-token` | `v3`     | GitHub App authentication        |
+| `actions/deploy-pages`            | `v5`     | Pages deployments                |
+| `actions/download-artifact`       | `v8`     | Workflow artifact downloads      |
+| `actions/github-script`           | `v9`     | GitHub API scripting             |
+| `actions/setup-dotnet`            | `v5`     | .NET SDK setup                   |
+| `actions/setup-node`              | `v7`     | Node.js setup                    |
+| `actions/setup-python`            | `v6`     | Python setup                     |
+| `actions/upload-artifact`         | `v7`     | Workflow artifact uploads        |
+| `actions/upload-pages-artifact`   | `v5`     | Pages artifact uploads           |
 
 ### Audit Command
 
@@ -73,7 +72,7 @@ disabled workflow files:
 rg -n "uses:\s+[^[:space:]]+@v[0-9]+" .github/workflows .github/workflows-disabled
 
 # Verify an official major tag exists before flagging it as invalid.
-git ls-remote --tags https://github.com/actions/setup-node.git refs/tags/v6
+git ls-remote --tags https://github.com/actions/setup-node.git refs/tags/v7
 ```
 
 ### Artifact Action Pairing

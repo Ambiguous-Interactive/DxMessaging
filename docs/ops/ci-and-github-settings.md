@@ -77,9 +77,10 @@ only for jobs that actually need Android SDK/NDK tooling. Workflows never
 install, repair, uninstall, or quarantine editors.
 
 Per-runner Unity-cache safety is provided by each runner agent's exclusive
-workspace - a single self-hosted agent only ever runs one job at a time, so
-generated `.artifacts/u/<version>-<mode>/Library` directories
-cannot collide.
+workspace. Test, benchmark, and performance projects use separate short roots
+under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/`, while per-version package caches live
+under `$RUNNER_WORKSPACE/dxm-c/`. Checkout cannot delete these external paths,
+and the workflows do not upload Unity `Library` directories.
 
 Most Unity-credential-using jobs use the shared runner set:
 
@@ -292,17 +293,18 @@ Protect the default branch and release tags:
 1. Confirm release maintainers can create `vX.Y.Z` tags through the intended
    process.
 
-## Cache Contract
+## Unity Workspace Contract
 
-Unity Library caches must include:
+The fixed runners retain generated Unity state locally:
 
-- runner OS and architecture
-- Unity version
-- Unity test mode
-- package/test input hashes
-- `scripts/unity/run-ci-tests.ps1`
+- separate test (`t`), benchmark (`b`), and performance (`p`) roots
+- separate projects for every Unity version and test mode
+- one package-cache root per Unity version
+- a `.dxmessaging-ci-project` ownership marker in every external project
 
-Do not add broad `restore-keys` for Unity Library caches.
+Do not reintroduce `actions/cache` for Unity `Library` directories. The measured
+post-job transfer cost exceeded the benefit, and pull-request caches could not
+seed default-branch runs.
 
 ## Verification
 
