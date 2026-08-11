@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { stripVTControlCharacters } = require("node:util");
 
 const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1");
 // prettier-ignore
@@ -53,12 +54,8 @@ function createGenerateOnlyRepo(root) {
 function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
   // prettier-ignore
   const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RUN_CI_SCRIPT_PATH, "-UnityVersion", UNITY_VERSION, "-TestMode", "editmode", "-AssemblyNames", "WallstopStudios.DxMessaging.Tests.Editor", "-ArtifactsPath", artifactsPath, "-RepoRoot", repoRoot];
-  if (options.projectPath) {
-    args.push("-ProjectPath", options.projectPath);
-  }
-  if (options.cachePath) {
-    args.push("-CachePath", options.cachePath);
-  }
+  if (options.projectPath) args.push("-ProjectPath", options.projectPath);
+  if (options.cachePath) args.push("-CachePath", options.cachePath);
   args.push("-GenerateOnly");
 
   return spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 120000 });
@@ -74,6 +71,8 @@ test("run-ci-tests emits EnterPlayModeOptions reload-disable for CI projects", (
 });
 
 test("Unity native-exit and retry-cleanup guards stay fail-closed", () => {
+  // GitHub runners add ANSI styling to PowerShell errors; message contracts compare plain text.
+  assert.equal(stripVTControlCharacters("\u001b[31;1munsafe\u001b[0m"), "unsafe");
   for (const text of [runCiTests, exportUnityPackage]) {
     assert.match(
       text,
@@ -112,7 +111,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
         const rejected = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath);
         assert.notEqual(rejected.status, 0, "a dangling marker symlink must be rejected");
         // prettier-ignore
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /marker through a reparse(?:\s+\|\s+|\s+)point/);
+        assert.match(stripVTControlCharacters(`${rejected.stdout}\n${rejected.stderr}`), /marker through a reparse(?:\s+\|\s+|\s+)point/);
         assert.equal(fs.existsSync(danglingTarget), false, "the symlink target must stay absent");
       } finally {
         fs.unlinkSync(markerPath);
@@ -216,7 +215,8 @@ test("run-ci-tests -GenerateOnly refuses an unowned existing custom ProjectPath"
     for (const testCase of cases) {
       const result = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, testCase);
       assert.notEqual(result.status, 0, `${testCase.projectPath} should be rejected`);
-      assert.match(`${result.stdout}\n${result.stderr}`, testCase.pattern);
+      // prettier-ignore
+      assert.match(stripVTControlCharacters(`${result.stdout}\n${result.stderr}`), testCase.pattern);
       testCase.after?.();
     }
   } finally {
@@ -242,7 +242,8 @@ test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying 
     }
     const result = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, { cachePath });
     assert.notEqual(result.status, 0, "unowned CachePath should be rejected");
-    assert.match(`${result.stdout}\n${result.stderr}`, /owned DxMessaging CI cache/);
+    // prettier-ignore
+    assert.match(stripVTControlCharacters(`${result.stdout}\n${result.stderr}`), /owned DxMessaging CI cache/);
     for (const sentinel of sentinels) {
       assert.equal(fs.readFileSync(sentinel, "utf8"), "do not delete\n");
     }
