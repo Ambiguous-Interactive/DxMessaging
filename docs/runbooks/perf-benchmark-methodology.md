@@ -127,6 +127,26 @@ they are report-only -- rendered as wall clock, never gated.
   warm-JIT deregistration flood is repeatable and reports the MINIMUM over
   `WarmFloodTrials` trials. Both are wall-clock rows, symmetric with the
   registration floods.
+- **Deregistration attribution.** The four `DeregistrationAttribution_*_131072`
+  rows report cumulative layers over one same-type, high-cardinality population:
+  direct bus removal; handler-cache plus bus removal; token `RemoveRegistration`
+  plus the lower layers; and token `Disable` queue teardown plus the lower layers.
+  Within the same run, subtract direct bus from direct handler to estimate
+  handler-cache cost, then direct handler from token removal to estimate
+  per-handle token bookkeeping. Treat `Disable` as a sibling end-to-end path:
+  unlike `RemoveRegistration`, it retains staged token state, so subtracting the
+  two mixes queue work with omitted arena unlinking. Each row collects once before
+  its seven-trial loop, prepares every fresh state outside the stopwatch, validates
+  exact zero-registration and zero-delivery
+  state after each sample, and reports the minimum elapsed time. Full teardown
+  also clears the ordered handler storage before the clock stops, so the sample
+  does not defer compaction to the next dispatch. Allocation columns are `n/a`:
+  multi-second destructive windows collect ambient editor allocations, and a
+  faster implementation would look like an allocation win merely by shortening
+  exposure. Prove allocation changes with structural or short-window differential
+  guards instead. These diagnostic wall-clock rows are not hard regression gates.
+  Do not compare them with the 1000-type flood rows because their registration
+  topology differs.
 - **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms
   operation on a shared CI runner swings run-to-run by tens of percent (scheduler
   preemption, or a GC landing inside the timed window). Two mitigations: (1) the
@@ -218,11 +238,15 @@ apples-to-apples set every library bridge implements (or declares unsupported).
 
 ### Dispatch scenarios (DxMessaging only)
 
-The eighteen dispatch-throughput scenarios are defined in
+The scenario registry contains thirty DxMessaging rows: fourteen continuous-window
+dispatch-throughput rows and sixteen wall-clock rows. The twenty-six established rows
+are defined in
 [`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs).
-The first eight are warm/hot throughput; the remaining ten are cold, warm-JIT, or
-marginal-registration latency (zero-throughput, wall-clock rows; see
-[Cold vs warm/hot modes](#cold-vs-warmhot-modes)). The three marginal-registration
+The four diagnostic deregistration-attribution rows are defined in
+[`RegistrationLifecycleBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/RegistrationLifecycleBenchmarks.cs).
+The sixteen cold, warm-JIT, construction, marginal-registration, deregistration, and
+attribution rows report zero throughput and wall-clock latency; see
+[Cold vs warm/hot modes](#cold-vs-warmhot-modes). The three marginal-registration
 rows report the GC-allocation cost of an additional same-type registration -- the
 surface the registration allocation work reduced -- and are measurable only where the
 profiler is present (an in-editor PlayMode/Mono run; the published Standalone IL2CPP
@@ -238,26 +262,38 @@ The stripped IL2CPP leg skips those allocation-only populations and reports `n/a
 seven timing populations still execute. Repeated floor trials replace the former
 sub-millisecond single shot without changing the reported per-bus cardinality.
 
-| Scenario key                                  | What it measures                                                       |
-| --------------------------------------------- | ---------------------------------------------------------------------- |
-| `UntargetedFlood_OneHandler`                  | One untargeted handler on one message type.                            |
-| `UntargetedFlood_FourHandlers_OnePriority`    | Four untargeted handlers sharing priority 0.                           |
-| `UntargetedFlood_FourHandlers_FourPriorities` | Four untargeted handlers across priorities 0-3.                        |
-| `TargetedFlood_OneListener`                   | One targeted listener on one target.                                   |
-| `TargetedFlood_SixteenListeners`              | Sixteen targeted listeners on one target.                              |
-| `BroadcastFlood_OneHandler`                   | One broadcast handler.                                                 |
-| `InterceptorHeavy_FourInterceptors`           | Four interceptors plus one handler.                                    |
-| `PostProcessingHeavy_FourPostProcessors`      | Four post-processors plus one handler.                                 |
-| `RegistrationFlood_1000Types_FromColdBus`     | Registering 1000 distinct message types from a cold bus (cold flood).  |
-| `RegistrationFlood_1000Types_WarmJit`         | Registering the same 1000 types after a JIT pre-warm (warm-JIT flood). |
-| `UntargetedRegistration_Marginal`             | Marginal cost of 1000 more untargeted handlers on one warm type.       |
-| `TargetedRegistration_Marginal`               | Marginal cost of 1000 more targeted handlers on one warm type/target.  |
-| `BroadcastRegistration_Marginal`              | Marginal cost of 1000 more broadcast handlers on one warm type/source. |
-| `DeregistrationFlood_1000Types_Cold`          | Tearing down 1000 live registrations, JIT-inclusive (cold flood).      |
-| `DeregistrationFlood_1000Types_WarmJit`       | Tearing down the same 1000 registrations after a JIT pre-warm.         |
-| `UntargetedFirstDispatch_Cold`                | First untargeted dispatch per type, JIT-inclusive, median of 32 types. |
-| `TargetedFirstDispatch_Cold`                  | First targeted dispatch per type, JIT-inclusive, median of 32 types.   |
-| `BroadcastFirstDispatch_Cold`                 | First broadcast dispatch per type, JIT-inclusive, median of 32 types.  |
+| Scenario key                                                      | What it measures                                                       |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `EmptyBus_Dispatch`                                               | Dispatch with no registered handler.                                   |
+| `UntargetedFlood_OneHandler`                                      | One untargeted handler on one message type.                            |
+| `UntargetedFlood_TwoHandlers_OnePriority`                         | Two untargeted handlers sharing priority 0.                            |
+| `UntargetedFlood_ThreeHandlers_OnePriority`                       | Three untargeted handlers sharing priority 0.                          |
+| `UntargetedFlood_FourHandlers_OnePriority`                        | Four untargeted handlers sharing priority 0.                           |
+| `UntargetedFlood_FourHandlers_FourPriorities`                     | Four untargeted handlers across priorities 0-3.                        |
+| `UntargetedFlood_SixteenHandlers_OnePriority`                     | Sixteen untargeted handlers sharing priority 0.                        |
+| `UntargetedFlood_OneInactiveHandler`                              | One registered but inactive untargeted handler.                        |
+| `UntargetedFirstDispatch_Cold`                                    | First untargeted dispatch per type, JIT-inclusive, median of 32 types. |
+| `TargetedFlood_NoMatchingTarget`                                  | Targeted dispatch with no handler for the emitted target.              |
+| `TargetedFlood_OneListener`                                       | One targeted listener on one target.                                   |
+| `TargetedFlood_SixteenListeners`                                  | Sixteen targeted listeners on one target.                              |
+| `TargetedFirstDispatch_Cold`                                      | First targeted dispatch per type, JIT-inclusive, median of 32 types.   |
+| `BroadcastFlood_OneHandler`                                       | One broadcast handler.                                                 |
+| `BroadcastFirstDispatch_Cold`                                     | First broadcast dispatch per type, JIT-inclusive, median of 32 types.  |
+| `InterceptorHeavy_FourInterceptors`                               | Four interceptors plus one handler.                                    |
+| `PostProcessingHeavy_FourPostProcessors`                          | Four post-processors plus one handler.                                 |
+| `MessageBusConstruction_1000`                                     | Constructing 1000 isolated message buses.                              |
+| `MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus` | Constructing 1000 tokens with prebuilt handlers and buses.             |
+| `RegistrationFlood_1000Types_FromColdBus`                         | Registering 1000 distinct message types from a cold bus (cold flood).  |
+| `RegistrationFlood_1000Types_WarmJit`                             | Registering the same 1000 types after a JIT pre-warm (warm-JIT flood). |
+| `UntargetedRegistration_Marginal`                                 | Marginal cost of 1000 more untargeted handlers on one warm type.       |
+| `TargetedRegistration_Marginal`                                   | Marginal cost of 1000 more targeted handlers on one warm type/target.  |
+| `BroadcastRegistration_Marginal`                                  | Marginal cost of 1000 more broadcast handlers on one warm type/source. |
+| `DeregistrationFlood_1000Types_Cold`                              | Tearing down 1000 live registrations, JIT-inclusive (cold flood).      |
+| `DeregistrationFlood_1000Types_WarmJit`                           | Tearing down the same 1000 registrations after a JIT pre-warm.         |
+| `DeregistrationAttribution_DirectBus_131072`                      | Direct built-in bus teardown for 131072 same-type registrations.       |
+| `DeregistrationAttribution_DirectHandler_131072`                  | Handler-cache teardown including the direct bus layer.                 |
+| `DeregistrationAttribution_TokenRemove_131072`                    | Per-handle token removal including handler and bus layers.             |
+| `DeregistrationAttribution_TokenDisable_131072`                   | Token queue teardown including handler and bus layers.                 |
 
 ### Comparison scenarios (cross-library)
 

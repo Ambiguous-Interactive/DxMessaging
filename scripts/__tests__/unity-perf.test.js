@@ -39,6 +39,7 @@ const {
 } = require("../unity/render-perf-doc.js");
 const {
   SCENARIO_ORDER,
+  WALL_CLOCK_SCENARIOS,
   DISPATCH_DISPLAY_NAMES,
   buildComparisonScenarioId
 } = require("../unity/perf-scenarios.js");
@@ -67,7 +68,11 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
     [
       "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
       "Registration Token Construction (1000, Prebuilt Handler + Bus)"
-    ]
+    ],
+    ...["Direct Bus", "Direct Handler", "Token Remove", "Token Disable"].map((label) => [
+      `DeregistrationAttribution_${label.replaceAll(" ", "")}_131072`,
+      `Deregistration Attribution (${label}, 131072)`
+    ])
   ];
 
   for (const [key, label] of expected) {
@@ -91,6 +96,15 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
     [...Object.keys(DISPATCH_DISPLAY_NAMES)].sort(),
     [...SCENARIO_ORDER].sort(),
     "every rendered dispatch scenario must have exactly one display label"
+  );
+  assert.deepEqual(
+    [...WALL_CLOCK_SCENARIOS].filter((key) => key.startsWith("DeregistrationAttribution_")),
+    [
+      "DeregistrationAttribution_DirectBus_131072",
+      "DeregistrationAttribution_DirectHandler_131072",
+      "DeregistrationAttribution_TokenRemove_131072",
+      "DeregistrationAttribution_TokenDisable_131072"
+    ]
   );
 });
 
@@ -190,6 +204,7 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     `2026-01-01T00:00:00 UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
     `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
     `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,gcAllocations:64,wallClockMs:8.25,gcAllocatedBytes:4096}`,
+    `{scenario:"DeregistrationAttribution_DirectHandler_131072",platform:"${PLATFORM}",commit:"abc1234",runIndex:-1,emitsPerSec:0,gcAllocations:-1,wallClockMs:42.5,gcAllocatedBytes:-1}`,
     `UnknownScenario,${PLATFORM},abc1234,0,1,0,1,0`
   ].join("\n");
 
@@ -203,7 +218,8 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     ]),
     [
       ["UntargetedFlood_OneHandler", "1000000.000", "0", "2048"],
-      ["TargetedFlood_OneListener", "2500000.500", "64", "4096"]
+      ["TargetedFlood_OneListener", "2500000.500", "64", "4096"],
+      ["DeregistrationAttribution_DirectHandler_131072", "0.000", "-1", "-1"]
     ]
   );
 });

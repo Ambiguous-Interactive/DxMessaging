@@ -457,15 +457,183 @@ namespace DxMessaging.Tests.Editor.Contract
             AssertOrderedKeys(cache, handlers[1]);
         }
 
+        [Test]
+        public void HandlerActionCacheSpillPrefixAndFallbackPreserveSurvivorOrder()
+        {
+            MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
+            System.Action<int>[] handlers = Enumerable
+                .Range(0, 6)
+                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
+                .ToArray();
+            foreach (System.Action<int> handler in handlers.Take(5))
+            {
+                cache.entries[handler] =
+                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
+            }
+
+            Assert.IsTrue(cache.entries.UsesSpillStorage, "Five handlers must use spill storage.");
+            Assert.IsTrue(cache.entries.Remove(handlers[3]), "Fallback removal must find D.");
+            Assert.IsTrue(cache.entries.Remove(handlers[0]), "Prefix removal must find A.");
+            Assert.IsTrue(cache.entries.Remove(handlers[1]), "Prefix removal must find B.");
+            cache.entries[handlers[3]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[3], 1);
+            cache.entries[handlers[1]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
+            cache.entries[handlers[5]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[5], 1);
+
+            Assert.AreEqual(
+                2,
+                cache.entries.SkippedPrefixCount,
+                "A and B form the skipped prefix."
+            );
+            Assert.AreEqual(
+                7,
+                cache.entries.OrderSlotCount,
+                "Re-registered keys append after C/E."
+            );
+            Assert.AreEqual(5, cache.entries.Count, "Exactly five delegates remain live.");
+            Assert.AreEqual(
+                2,
+                cache.entries.SkippedPrefixCount,
+                "Count must remain a pure O(1) read."
+            );
+
+            AssertOrderedKeys(
+                cache,
+                handlers[2],
+                handlers[4],
+                handlers[3],
+                handlers[1],
+                handlers[5]
+            );
+            Assert.Zero(cache.entries.SkippedPrefixCount, "Ordered preparation must compact.");
+            Assert.AreEqual(5, cache.entries.OrderSlotCount, "Compaction must leave five slots.");
+            Assert.IsFalse(cache.entries.Remove(handlers[0]), "Removed A must remain absent.");
+        }
+
+        [Test]
+        public void HandlerActionCacheSpillChurnBoundsUnobservedSkippedPrefix()
+        {
+            MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
+            int churnCount =
+                MessageHandler
+                    .HandlerActionCache<System.Action<int>>
+                    .OrderedEntries
+                    .CompactionPrefixThreshold + 1;
+            System.Action<int>[] handlers = Enumerable
+                .Range(0, churnCount + 3)
+                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
+                .ToArray();
+            for (int index = 0; index < 3; ++index)
+            {
+                cache.entries[handlers[index]] =
+                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(
+                        handlers[index],
+                        1
+                    );
+            }
+
+            int initialMapCapacity = cache.entries.MapCapacity;
+            for (int index = 0; index < handlers.Length - 3; ++index)
+            {
+                Assert.IsTrue(
+                    cache.entries.Remove(handlers[index]),
+                    "Churn removal {0} must find its current oldest delegate.",
+                    index
+                );
+                cache.entries[handlers[index + 3]] =
+                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(
+                        handlers[index + 3],
+                        1
+                    );
+            }
+
+            int maximumSkippedPrefix =
+                MessageHandler
+                    .HandlerActionCache<System.Action<int>>
+                    .OrderedEntries
+                    .CompactionPrefixThreshold - 1;
+            Assert.LessOrEqual(
+                cache.entries.SkippedPrefixCount,
+                maximumSkippedPrefix,
+                "Skipped prefix must compact at the absolute and ratio threshold."
+            );
+            Assert.LessOrEqual(
+                cache.entries.OrderSlotCount,
+                cache.entries.Count + maximumSkippedPrefix,
+                "Logical order slots must stay bounded by live entries plus the prefix."
+            );
+            Assert.LessOrEqual(
+                cache.entries.OrderCapacity,
+                MessageHandler
+                    .HandlerActionCache<System.Action<int>>
+                    .OrderedEntries
+                    .CompactionPrefixThreshold * 2,
+                "Tiny fixed-cardinality churn must retain at most the calibrated order array."
+            );
+            Assert.AreEqual(
+                initialMapCapacity,
+                cache.entries.MapCapacity,
+                "Fixed live cardinality must not grow dictionary capacity."
+            );
+            AssertOrderedKeys(
+                cache,
+                handlers[churnCount],
+                handlers[churnCount + 1],
+                handlers[churnCount + 2]
+            );
+        }
+
+        [Test]
+        public void HandlerActionCacheRemovingEverySpillEntryResetsOrderBeforeReuse()
+        {
+            MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
+            System.Action<int>[] handlers = Enumerable
+                .Range(0, 5)
+                .Select(index => new System.Action<int>(_ignored => GC.KeepAlive(index)))
+                .ToArray();
+            foreach (System.Action<int> handler in handlers)
+            {
+                cache.entries[handler] =
+                    new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
+            }
+            foreach (System.Action<int> handler in handlers)
+            {
+                Assert.IsTrue(
+                    cache.entries.Remove(handler),
+                    "Every live handler must be removable."
+                );
+            }
+
+            Assert.Zero(cache.entries.Count, "Removing every handler must empty the map.");
+            Assert.Zero(cache.entries.OrderSlotCount, "Full teardown must clear order slots.");
+            Assert.Zero(cache.entries.SkippedPrefixCount, "Full teardown must reset the cursor.");
+
+            cache.entries[handlers[4]] =
+                new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[4], 1);
+            AssertOrderedKeys(cache, handlers[4]);
+        }
+
         private static void AssertOrderedKeys(
             MessageHandler.HandlerActionCache<System.Action<int>> cache,
             params System.Action<int>[] expected
         )
         {
-            Assert.AreEqual(expected.Length, cache.entries.Count);
+            cache.entries.PrepareForOrderedIteration();
+            Assert.AreEqual(
+                expected.Length,
+                cache.entries.Count,
+                "Ordered cache count must match the expected delegate sequence."
+            );
             for (int index = 0; index < expected.Length; ++index)
             {
-                Assert.AreEqual(expected[index], cache.entries.KeyAt(index));
+                Assert.AreEqual(
+                    expected[index],
+                    cache.entries.KeyAt(index),
+                    "Ordered cache key at index {0} drifted.",
+                    index
+                );
             }
         }
 

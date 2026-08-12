@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Access"
+  short_description: "Use repository GitHub access in the supported order"
+  default_prompt: "Use the repository GitHub connector, git, and gh fallback rules for this GitHub task."

@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message types that have not emitted yet. Per-message-type dispatch snapshot
   state now materializes on the first emission instead of the first registration
   ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
+- Reduce registration-order bulk deregistration from quadratic to linear time
+  when one token owns many distinct same-priority handlers for the same message
+  type, while preserving registration-order dispatch for surviving handlers.
+  During fixed-cardinality churn, logical order storage retains fewer than the larger
+  of 64 or the live count in skipped prefix entries before compaction, while the
+  underlying list retains its geometric high-water capacity until the typed slot is
+  reclaimed. The representation adds no per-handler index
+  ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
 - Stop generated message and constructor source from disabling all compiler
   warnings. Generated code now participates in the consumer's warning policy,
   while repository CI compiles every shipped sample and generated output with

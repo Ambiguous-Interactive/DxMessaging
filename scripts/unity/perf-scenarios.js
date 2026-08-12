@@ -2,89 +2,76 @@
 
 const COMPARISON_SCENARIO_PREFIX = "Comparison_";
 
-// Stable scenario order for the rendered dispatch tables. The set mirrors
-// DispatchBenchmarkScenario keys; the order groups cold first-dispatch rows next
-// to their warm dispatch counterparts for readability.
-const SCENARIO_ORDER = [
-  "EmptyBus_Dispatch",
-  "UntargetedFlood_OneHandler",
-  "UntargetedFlood_TwoHandlers_OnePriority",
-  "UntargetedFlood_ThreeHandlers_OnePriority",
-  "UntargetedFlood_FourHandlers_OnePriority",
-  "UntargetedFlood_FourHandlers_FourPriorities",
-  "UntargetedFlood_SixteenHandlers_OnePriority",
-  "UntargetedFlood_OneInactiveHandler",
-  "UntargetedFirstDispatch_Cold",
-  "TargetedFlood_NoMatchingTarget",
-  "TargetedFlood_OneListener",
-  "TargetedFlood_SixteenListeners",
-  "TargetedFirstDispatch_Cold",
-  "BroadcastFlood_OneHandler",
-  "BroadcastFirstDispatch_Cold",
-  "InterceptorHeavy_FourInterceptors",
-  "PostProcessingHeavy_FourPostProcessors",
-  "MessageBusConstruction_1000",
-  "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
-  "RegistrationFlood_1000Types_FromColdBus",
-  "RegistrationFlood_1000Types_WarmJit",
-  "UntargetedRegistration_Marginal",
-  "TargetedRegistration_Marginal",
-  "BroadcastRegistration_Marginal",
-  "DeregistrationFlood_1000Types_Cold",
-  "DeregistrationFlood_1000Types_WarmJit"
+// Stable rendered order, labels, and wall-clock classification; mirrors C# keys.
+const SCENARIO_DEFINITIONS = [
+  ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
+  ["UntargetedFlood_OneHandler", "Untargeted Flood (One Handler)"],
+  ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
+  ["UntargetedFlood_ThreeHandlers_OnePriority", "Untargeted Flood (Three Handlers, One Priority)"],
+  ["UntargetedFlood_FourHandlers_OnePriority", "Untargeted Flood (Four Handlers, One Priority)"],
+  [
+    "UntargetedFlood_FourHandlers_FourPriorities",
+    "Untargeted Flood (Four Handlers, Four Priorities)"
+  ],
+  [
+    "UntargetedFlood_SixteenHandlers_OnePriority",
+    "Untargeted Flood (Sixteen Handlers, One Priority)"
+  ],
+  ["UntargetedFlood_OneInactiveHandler", "Untargeted Flood (One Inactive Handler)"],
+  ["UntargetedFirstDispatch_Cold", "Untargeted First Dispatch (Cold, Distinct Types)", true],
+  ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"],
+  ["TargetedFlood_OneListener", "Targeted Flood (One Listener)"],
+  ["TargetedFlood_SixteenListeners", "Targeted Flood (Sixteen Listeners)"],
+  ["TargetedFirstDispatch_Cold", "Targeted First Dispatch (Cold, Distinct Types)", true],
+  ["BroadcastFlood_OneHandler", "Broadcast Flood (One Handler)"],
+  ["BroadcastFirstDispatch_Cold", "Broadcast First Dispatch (Cold, Distinct Types)", true],
+  ["InterceptorHeavy_FourInterceptors", "Interceptor Heavy (Four Interceptors)"],
+  ["PostProcessingHeavy_FourPostProcessors", "Post-Processing Heavy (Four Post-Processors)"],
+  ["MessageBusConstruction_1000", "Message Bus Construction (1000)", true],
+  [
+    "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
+    true
+  ],
+  ["RegistrationFlood_1000Types_FromColdBus", "Registration Flood (1000 Types, Cold Bus)", true],
+  ["RegistrationFlood_1000Types_WarmJit", "Registration Flood (1000 Types, Warm JIT)", true],
+  ["UntargetedRegistration_Marginal", "Untargeted Registration (Marginal, 1000 Same-Type)", true],
+  ["TargetedRegistration_Marginal", "Targeted Registration (Marginal, 1000 Same-Type)", true],
+  ["BroadcastRegistration_Marginal", "Broadcast Registration (Marginal, 1000 Same-Type)", true],
+  ["DeregistrationFlood_1000Types_Cold", "Deregistration Flood (1000 Types, Cold)", true],
+  ["DeregistrationFlood_1000Types_WarmJit", "Deregistration Flood (1000 Types, Warm JIT)", true],
+  [
+    "DeregistrationAttribution_DirectBus_131072",
+    "Deregistration Attribution (Direct Bus, 131072)",
+    true
+  ],
+  [
+    "DeregistrationAttribution_DirectHandler_131072",
+    "Deregistration Attribution (Direct Handler, 131072)",
+    true
+  ],
+  [
+    "DeregistrationAttribution_TokenRemove_131072",
+    "Deregistration Attribution (Token Remove, 131072)",
+    true
+  ],
+  [
+    "DeregistrationAttribution_TokenDisable_131072",
+    "Deregistration Attribution (Token Disable, 131072)",
+    true
+  ]
 ];
 
+const SCENARIO_ORDER = SCENARIO_DEFINITIONS.map(([key]) => key);
 const SCENARIOS = new Set(SCENARIO_ORDER);
+const WALL_CLOCK_SCENARIOS = new Set(
+  SCENARIO_DEFINITIONS.filter(([, , wallClock]) => wallClock).map(([key]) => key)
+);
+const DISPATCH_DISPLAY_NAMES = Object.fromEntries(
+  SCENARIO_DEFINITIONS.map(([key, displayName]) => [key, displayName])
+);
 
-const WALL_CLOCK_SCENARIOS = new Set([
-  "MessageBusConstruction_1000",
-  "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
-  "RegistrationFlood_1000Types_FromColdBus",
-  "RegistrationFlood_1000Types_WarmJit",
-  "UntargetedRegistration_Marginal",
-  "TargetedRegistration_Marginal",
-  "BroadcastRegistration_Marginal",
-  "DeregistrationFlood_1000Types_Cold",
-  "DeregistrationFlood_1000Types_WarmJit",
-  "UntargetedFirstDispatch_Cold",
-  "TargetedFirstDispatch_Cold",
-  "BroadcastFirstDispatch_Cold"
-]);
-
-// Human-readable dispatch scenario labels shown in the Scenario column. These
-// mirror DispatchBenchmarkScenarios.DisplayName in BenchmarkProtocol.cs.
-const DISPATCH_DISPLAY_NAMES = {
-  EmptyBus_Dispatch: "Empty Bus Dispatch",
-  UntargetedFlood_OneHandler: "Untargeted Flood (One Handler)",
-  UntargetedFlood_TwoHandlers_OnePriority: "Untargeted Flood (Two Handlers, One Priority)",
-  UntargetedFlood_ThreeHandlers_OnePriority: "Untargeted Flood (Three Handlers, One Priority)",
-  UntargetedFlood_FourHandlers_OnePriority: "Untargeted Flood (Four Handlers, One Priority)",
-  UntargetedFlood_FourHandlers_FourPriorities: "Untargeted Flood (Four Handlers, Four Priorities)",
-  UntargetedFlood_SixteenHandlers_OnePriority: "Untargeted Flood (Sixteen Handlers, One Priority)",
-  UntargetedFlood_OneInactiveHandler: "Untargeted Flood (One Inactive Handler)",
-  UntargetedFirstDispatch_Cold: "Untargeted First Dispatch (Cold, Distinct Types)",
-  TargetedFlood_NoMatchingTarget: "Targeted Flood (No Matching Target)",
-  TargetedFlood_OneListener: "Targeted Flood (One Listener)",
-  TargetedFlood_SixteenListeners: "Targeted Flood (Sixteen Listeners)",
-  TargetedFirstDispatch_Cold: "Targeted First Dispatch (Cold, Distinct Types)",
-  BroadcastFlood_OneHandler: "Broadcast Flood (One Handler)",
-  BroadcastFirstDispatch_Cold: "Broadcast First Dispatch (Cold, Distinct Types)",
-  InterceptorHeavy_FourInterceptors: "Interceptor Heavy (Four Interceptors)",
-  PostProcessingHeavy_FourPostProcessors: "Post-Processing Heavy (Four Post-Processors)",
-  MessageBusConstruction_1000: "Message Bus Construction (1000)",
-  MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus:
-    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
-  RegistrationFlood_1000Types_FromColdBus: "Registration Flood (1000 Types, Cold Bus)",
-  RegistrationFlood_1000Types_WarmJit: "Registration Flood (1000 Types, Warm JIT)",
-  UntargetedRegistration_Marginal: "Untargeted Registration (Marginal, 1000 Same-Type)",
-  TargetedRegistration_Marginal: "Targeted Registration (Marginal, 1000 Same-Type)",
-  BroadcastRegistration_Marginal: "Broadcast Registration (Marginal, 1000 Same-Type)",
-  DeregistrationFlood_1000Types_Cold: "Deregistration Flood (1000 Types, Cold)",
-  DeregistrationFlood_1000Types_WarmJit: "Deregistration Flood (1000 Types, Warm JIT)"
-};
-
-// Fixed column order for the comparison matrices. Mirrors the ComparisonScenario
-// enum order in Tests/Runtime/Comparisons/ComparisonScenario.cs.
+// Fixed comparison-matrix columns; mirrors the ComparisonScenario enum order.
 const COMPARISON_SCENARIO_ORDER = [
   "GlobalToOne",
   "GlobalToMany",
@@ -98,8 +85,7 @@ const COMPARISON_SCENARIO_ORDER = [
 
 const COMPARISON_SCENARIO_SET = new Set(COMPARISON_SCENARIO_ORDER);
 
-// Human-readable comparison scenario labels for the matrix column headers. These
-// mirror ComparisonScenarios.DisplayName in ComparisonScenario.cs.
+// Matrix column labels mirror ComparisonScenarios.DisplayName.
 const COMPARISON_SCENARIO_LABELS = {
   GlobalToOne: "Global -> 1 subscriber",
   GlobalToMany: "Global -> 16 subscribers",
@@ -111,8 +97,7 @@ const COMPARISON_SCENARIO_LABELS = {
   StructNoBox: "Struct message (no boxing)"
 };
 
-// Fixed row order for the comparison matrices, by bridge TechKey. Mirrors each
-// bridge's TechKey property in Tests/Runtime/Comparisons/**.
+// Fixed matrix row order, mirroring each comparison bridge's TechKey.
 const COMPARISON_TECH_ORDER = [
   "DxMessaging",
   "MessagePipe",
@@ -175,15 +160,9 @@ function isComparisonScenario(scenario) {
   return parseComparisonScenario(scenario) !== null;
 }
 
-// Derive the execution scope from a platform string. The benchmark encodes the
-// target as the FIRST token(s): "Standalone ...", "Editor PlayMode ...", or
-// "Editor EditMode ..." (see DispatchThroughputBenchmarks.ResolveExecutionTarget).
-// Standalone is checked first so a hypothetical "Standalone PlayMode" still maps
-// to the most player-faithful scope. Returns null for a non-string or a platform
-// with no recognized token so such rows are skipped rather than mis-grouped. Lives
-// here -- the shared, dependency-free module -- so render-perf-doc.js (which
-// re-exports it) and extract-perf-baseline.js share ONE copy with no circular
-// require.
+// Derive execution scope from the benchmark's leading platform tokens. Standalone
+// wins if a future platform contains both tokens. Unknown shapes return null. This
+// shared dependency-free copy avoids a renderer/extractor import cycle.
 function deriveScope(platform) {
   if (typeof platform !== "string") {
     return null;

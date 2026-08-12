@@ -2511,6 +2511,7 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
+            cache.entries.PrepareForOrderedIteration();
             int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
@@ -2538,6 +2539,7 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
+            cache.entries.PrepareForOrderedIteration();
             int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
@@ -2590,6 +2592,7 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
+            cache.entries.PrepareForOrderedIteration();
             int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
@@ -2619,6 +2622,7 @@ namespace DxMessaging.Core
                 return writeIndex;
             }
 
+            cache.entries.PrepareForOrderedIteration();
             int orderedCount = cache.entries.Count;
             for (int i = 0; i < orderedCount; ++i)
             {
@@ -2652,6 +2656,7 @@ namespace DxMessaging.Core
             internal struct OrderedEntries
             {
                 private const int PhysicalInlineCapacity = 2;
+                internal const int CompactionPrefixThreshold = 64;
                 private static readonly EqualityComparer<T> s_comparer =
                     EqualityComparer<T>.Default;
 
@@ -2662,6 +2667,7 @@ namespace DxMessaging.Core
                 private Entry _value1;
                 private Dictionary<T, Entry> _spillMap;
                 private List<T> _spillOrder;
+                private int _spillOrderStart;
 
                 public int Count
                 {
@@ -2685,6 +2691,18 @@ namespace DxMessaging.Core
                 {
                     [MethodImpl(MethodImplOptions.AggressiveInlining)]
                     get => _spillOrder?.Capacity ?? 0;
+                }
+
+                internal int OrderSlotCount
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => _spillOrder?.Count ?? _inlineCount;
+                }
+
+                internal int SkippedPrefixCount
+                {
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    get => _spillOrderStart;
                 }
 
                 public bool UsesSpillStorage
@@ -2779,7 +2797,34 @@ namespace DxMessaging.Core
                         {
                             return false;
                         }
-                        _ = _spillOrder.Remove(key);
+
+                        if (_spillMap.Count == 0)
+                        {
+                            _spillOrder.Clear();
+                            _spillOrderStart = 0;
+                        }
+                        else if (
+                            _spillOrderStart < _spillOrder.Count
+                            && s_comparer.Equals(_spillOrder[_spillOrderStart], key)
+                        )
+                        {
+                            // Token bulk teardown runs in registration order. Advance a cleared
+                            // prefix in O(1) for that path, while retaining the original fallback
+                            // for arbitrary per-handle removal.
+                            _spillOrder[_spillOrderStart] = default;
+                            ++_spillOrderStart;
+                            if (
+                                _spillOrderStart >= CompactionPrefixThreshold
+                                && _spillOrderStart >= _spillOrder.Count - _spillOrderStart
+                            )
+                            {
+                                CompactSpillOrder();
+                            }
+                        }
+                        else
+                        {
+                            _ = _spillOrder.Remove(key);
+                        }
                         return true;
                     }
                     int index = FindInlineIndex(key);
@@ -2807,6 +2852,7 @@ namespace DxMessaging.Core
                     {
                         _spillMap.Clear();
                         _spillOrder.Clear();
+                        _spillOrderStart = 0;
                         return;
                     }
                     for (int index = 0; index < _inlineCount; ++index)
@@ -2817,11 +2863,20 @@ namespace DxMessaging.Core
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public void PrepareForOrderedIteration()
+                {
+                    if (_spillOrderStart != 0)
+                    {
+                        CompactSpillOrder();
+                    }
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 public T KeyAt(int index)
                 {
                     if (_spillOrder != null)
                     {
-                        return _spillOrder[index];
+                        return _spillOrder[_spillOrderStart + index];
                     }
                     if ((uint)index >= (uint)_inlineCount)
                     {
@@ -2835,7 +2890,7 @@ namespace DxMessaging.Core
                 {
                     if (_spillOrder != null)
                     {
-                        return _spillMap[_spillOrder[index]];
+                        return _spillMap[_spillOrder[_spillOrderStart + index]];
                     }
                     if ((uint)index >= (uint)_inlineCount)
                     {
@@ -2875,6 +2930,12 @@ namespace DxMessaging.Core
                     _inlineCount = 0;
                     _spillMap = map;
                     _spillOrder = order;
+                }
+
+                private void CompactSpillOrder()
+                {
+                    _spillOrder.RemoveRange(0, _spillOrderStart);
+                    _spillOrderStart = 0;
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -6514,6 +6575,7 @@ namespace DxMessaging.Core
                         // steady-state dispatch, and reuses the snapshot list.
                         List<TU> list = actionCache.cache;
                         list.Clear();
+                        actionCache.entries.PrepareForOrderedIteration();
                         int orderedCount = actionCache.entries.Count;
                         for (int i = 0; i < orderedCount; ++i)
                         {
@@ -6543,6 +6605,7 @@ namespace DxMessaging.Core
                     {
                         List<TInvoker> list = actionCache.GetOrCreateFlatInvokerCache<TInvoker>();
                         list.Clear();
+                        actionCache.entries.PrepareForOrderedIteration();
                         int orderedCount = actionCache.entries.Count;
                         for (int i = 0; i < orderedCount; ++i)
                         {
