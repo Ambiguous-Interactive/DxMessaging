@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using System;
     using System.Collections.Generic;
     using DxMessaging.Core;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
@@ -36,6 +37,103 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class ReentrantMutationEmissionTests : MessagingTestBase
     {
         private const int DeepNestingLevels = 3;
+
+        [Test]
+        public void SamePrioritySpillRemoveRegisterThenReentrantEmitPreservesSnapshots(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(SamePrioritySpillRemoveRegisterThenReentrantEmitPreservesSnapshots)
+                    + scenario.Kind
+            );
+            _spawned.Add(host);
+            MessageHandler handler = new(host) { active = true };
+            MessageBus bus = new();
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.Enable();
+            using LeakWatcher watcher = new(
+                bus: bus,
+                throwOnLeak: true,
+                label: scenario.DisplayName
+            );
+            InstanceId hostId = host;
+            List<string> trace = new(12);
+            int depth = 0;
+            bool mutated = false;
+            MessageRegistrationHandle removedHandle = default;
+
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () =>
+                {
+                    trace.Add($"d{depth}:A");
+                    if (depth != 0 || mutated)
+                    {
+                        return;
+                    }
+
+                    mutated = true;
+                    token.RemoveRegistration(removedHandle);
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        token,
+                        hostId,
+                        () => trace.Add($"d{depth}:E"),
+                        priority: 0
+                    );
+                    ++depth;
+                    try
+                    {
+                        ScenarioCallbacks.EmitForKind(scenario, bus, hostId);
+                    }
+                    finally
+                    {
+                        --depth;
+                    }
+                },
+                priority: 0
+            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () => trace.Add($"d{depth}:B"),
+                priority: 0
+            );
+            removedHandle = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () => trace.Add($"d{depth}:C"),
+                priority: 0
+            );
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () => trace.Add($"d{depth}:D"),
+                priority: 0
+            );
+
+            Assert.DoesNotThrow(
+                () => ScenarioCallbacks.EmitForKind(scenario, bus, hostId),
+                "[{0}] spill-backed remove/register during a nested emission must not throw.",
+                scenario.Kind
+            );
+            CollectionAssert.AreEqual(
+                new[] { "d0:A", "d1:A", "d1:B", "d1:D", "d1:E", "d0:B", "d0:C", "d0:D" },
+                trace,
+                "[{0}] spill-backed same-priority mutation must preserve the outer frozen "
+                    + "snapshot and rebuild the nested snapshot in live registration order.",
+                scenario.Kind
+            );
+            token.UnregisterAll();
+            handler.active = false;
+        }
 
         /// <summary>
         /// A priority-0 handler registers a NEW same-type handler on the same

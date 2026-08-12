@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Diagnostics;
     using System.Globalization;
     using DxMessaging.Core;
+    using DxMessaging.Core.Internal;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
@@ -32,6 +33,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     public sealed class RegistrationLifecycleBenchmarks
     {
         private const int TimingTrials = 7;
+        private const int AllocationAttempts = 8;
 
         [Test, Performance, Category("PerfBench")]
         [TestCaseSource(nameof(LifecycleBenchmarkCases))]
@@ -67,11 +69,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             // checks, and allocation probing are deliberately outside the timing trials.
             _ = ExecuteOnceForContract(operation, cardinality);
 
+            // Collect once before the timing loop. Every trial still prepares fresh state
+            // outside its stopwatch; repeating a forced collection before each sub-millisecond
+            // sample makes the reported floor depend on collection overhead.
+            AllocationProbe.SettleHeapForMeasurement();
             double minElapsedSeconds = double.MaxValue;
             for (int trial = 0; trial < TimingTrials; trial++)
             {
                 using LifecycleState timingState = PrepareState(operation, cardinality);
-                AllocationProbe.SettleHeapForMeasurement();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 Execute(operation, timingState);
                 long endTimestamp = Stopwatch.GetTimestamp();
@@ -84,15 +89,51 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            RegistrationLifecycleObservation observation;
-            AllocationProbe.AllocationSample allocation;
-            using (LifecycleState allocationState = PrepareState(operation, cardinality))
+            LifecycleState allocationState = null;
+            bool allocationStateExecuted = false;
+            AllocationProbe.MinimumMeasurement<RegistrationLifecycleObservation> allocation;
+            try
             {
-                AllocationProbe.SettleHeapForMeasurement();
-                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
-                Execute(operation, allocationState);
-                allocation = window.SampleBoth();
-                observation = Verify(operation, allocationState);
+                allocation = AllocationProbe.MeasureMinWithDiagnostics(
+                    AllocationAttempts,
+                    prepare: () =>
+                    {
+                        if (allocationState != null)
+                        {
+                            if (allocationStateExecuted)
+                            {
+                                _ = Verify(operation, allocationState);
+                                allocationStateExecuted = false;
+                            }
+
+                            allocationState.Dispose();
+                        }
+
+                        allocationState = PrepareState(operation, cardinality);
+                        allocationStateExecuted = false;
+                    },
+                    operation: () =>
+                    {
+                        Execute(operation, allocationState);
+                        allocationStateExecuted = true;
+                        return Observe(allocationState);
+                    }
+                );
+
+                if (allocationStateExecuted)
+                {
+                    _ = Verify(operation, allocationState);
+                    allocationStateExecuted = false;
+                }
+            }
+            finally
+            {
+                allocationState?.Dispose();
+            }
+
+            if (allocation.GcAllocations != AllocationProbe.Unmeasured)
+            {
+                AssertAllocationObservation(operation, allocation.Diagnostics);
             }
 
             double registrationsPerSecond =
@@ -102,9 +143,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 cardinality,
                 minElapsedSeconds * 1000d,
                 registrationsPerSecond,
-                allocation.Allocations,
-                allocation.Bytes,
-                observation
+                allocation.GcAllocations,
+                allocation.GcAllocatedBytes,
+                allocation.Diagnostics
             );
         }
 
@@ -261,6 +302,45 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
+        private static RegistrationLifecycleObservation Observe(LifecycleState state)
+        {
+            return new RegistrationLifecycleObservation(
+                state.PrimaryBus.RegisteredUntargeted,
+                state.SecondaryBus.RegisteredUntargeted,
+                state.Counter.Count
+            );
+        }
+
+        private static void AssertAllocationObservation(
+            RegistrationLifecycleOperation operation,
+            RegistrationLifecycleObservation observation
+        )
+        {
+            int expectedPrimaryRegistrations = operation switch
+            {
+                RegistrationLifecycleOperation.Enable => 1,
+                RegistrationLifecycleOperation.ReEnable => 1,
+                _ => 0,
+            };
+            int expectedSecondaryRegistrations =
+                operation == RegistrationLifecycleOperation.Retarget ? 1 : 0;
+            Assert.AreEqual(
+                expectedPrimaryRegistrations,
+                observation.PrimaryRegistrations,
+                $"{operation}: selected allocation attempt had unexpected primary bus state."
+            );
+            Assert.AreEqual(
+                expectedSecondaryRegistrations,
+                observation.SecondaryRegistrations,
+                $"{operation}: selected allocation attempt had unexpected secondary bus state."
+            );
+            Assert.AreEqual(
+                0,
+                observation.HandlerInvocations,
+                $"{operation}: selected allocation attempt dispatched during the measured operation."
+            );
+        }
+
         private static void ValidateCardinality(int cardinality)
         {
             if (cardinality <= 0)
@@ -292,6 +372,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private sealed class LifecycleState : IDisposable
         {
+            private readonly IDisposable _registryScope;
             private readonly MessageRegistrationHandle[] _handles;
             private readonly MessageHandler.FastHandler<LifecycleMessage>[] _handlers;
             private bool _disposed;
@@ -299,6 +380,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public LifecycleState(int cardinality)
             {
                 Cardinality = cardinality;
+                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
                 // Keep lifecycle measurements independent of the host editor's mutable
                 // global diagnostics preference. Diagnostics have separate coverage;
                 // these rows characterize registration storage and teardown itself.
@@ -355,9 +437,409 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
 
                 _disposed = true;
-                Token.Dispose();
+                try
+                {
+                    Token.Dispose();
+                }
+                finally
+                {
+                    _registryScope.Dispose();
+                }
             }
         }
+    }
+
+    public enum DeregistrationAttributionOperation
+    {
+        DirectBus,
+        DirectHandler,
+        TokenRemove,
+        TokenDisable,
+    }
+
+    /// <summary>
+    /// Reports cumulative deregistration layers for direct bus, handler-cache, and per-handle token
+    /// removal. Token queue teardown is a sibling end-to-end path because it retains staged token
+    /// state. Every row uses a high-cardinality, same-type population so the timed region is long
+    /// enough to compare without folding registration setup into the clock.
+    /// </summary>
+    public sealed class DeregistrationAttributionBenchmarks
+    {
+        internal const int Cardinality = 131_072;
+        private const int TimingTrials = 7;
+
+        [Test, Performance, Category("PerfBench")]
+        [TestCaseSource(nameof(BenchmarkCases))]
+        public void DeregistrationAttributionBenchmark(DeregistrationAttributionOperation operation)
+        {
+            DispatchBenchmarkResult result = RunScenario(operation);
+            Debug.Log(result.ToStructuredLog());
+            TestContext.Out.WriteLine(result.ToCsvRow());
+        }
+
+        internal static DeregistrationAttributionObservation ExecuteOnceForContract(
+            DeregistrationAttributionOperation operation,
+            int cardinality
+        )
+        {
+            ValidateCardinality(cardinality);
+            using DeregistrationAttributionState state = new(operation, cardinality);
+            state.VerifyPrepared();
+            state.Execute();
+            return state.Verify();
+        }
+
+        internal static DispatchBenchmarkResult RunScenario(
+            DeregistrationAttributionOperation operation
+        )
+        {
+            _ = ExecuteOnceForContract(operation, cardinality: 16);
+
+            // Collect once before the timing loop. Each state is prepared before its stopwatch;
+            // the minimum rejects a trial interrupted by later organic GC or scheduler work
+            // without issuing seven heap-wide collections per row.
+            AllocationProbe.SettleHeapForMeasurement();
+            double minElapsedSeconds = double.MaxValue;
+            for (int trial = 0; trial < TimingTrials; trial++)
+            {
+                using DeregistrationAttributionState state = new(operation, Cardinality);
+                state.VerifyPrepared();
+                long startTimestamp = Stopwatch.GetTimestamp();
+                state.Execute();
+                long endTimestamp = Stopwatch.GetTimestamp();
+                _ = state.Verify();
+                double elapsedSeconds =
+                    (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
+                if (elapsedSeconds < minElapsedSeconds)
+                {
+                    minElapsedSeconds = elapsedSeconds;
+                }
+            }
+
+            return DispatchBenchmarkResult.ForRegistrationScenario(
+                ScenarioKey(operation),
+                runIndex: -1,
+                AllocationProbe.Unmeasured,
+                AllocationProbe.Unmeasured,
+                minElapsedSeconds * 1000d
+            );
+        }
+
+        internal static string ScenarioKey(DeregistrationAttributionOperation operation)
+        {
+            return operation switch
+            {
+                DeregistrationAttributionOperation.DirectBus =>
+                    $"DeregistrationAttribution_DirectBus_{Cardinality}",
+                DeregistrationAttributionOperation.DirectHandler =>
+                    $"DeregistrationAttribution_DirectHandler_{Cardinality}",
+                DeregistrationAttributionOperation.TokenRemove =>
+                    $"DeregistrationAttribution_TokenRemove_{Cardinality}",
+                DeregistrationAttributionOperation.TokenDisable =>
+                    $"DeregistrationAttribution_TokenDisable_{Cardinality}",
+                _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
+            };
+        }
+
+        private static IEnumerable<TestCaseData> BenchmarkCases()
+        {
+            foreach (
+                DeregistrationAttributionOperation operation in Enum.GetValues(
+                    typeof(DeregistrationAttributionOperation)
+                )
+            )
+            {
+                yield return new TestCaseData(operation).SetName(
+                    $"DeregistrationAttribution_{operation}_{Cardinality}"
+                );
+            }
+        }
+
+        private static void ValidateCardinality(int cardinality)
+        {
+            if (cardinality <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(cardinality),
+                    cardinality,
+                    "Deregistration attribution cardinality must be positive."
+                );
+            }
+        }
+
+        private readonly struct AttributionMessage : IUntargetedMessage { }
+
+        private sealed class AttributionCounter
+        {
+            public int Count { get; private set; }
+
+            public void Increment(ref AttributionMessage message)
+            {
+                Count++;
+            }
+        }
+
+        private sealed class DeregistrationAttributionState : IDisposable
+        {
+            private readonly DeregistrationAttributionOperation _operation;
+            private readonly int _cardinality;
+            private readonly IDisposable _registryScope;
+            private readonly MessageBus _bus;
+            private readonly MessageHandler _handler;
+            private readonly MessageBusRegistration[] _busRegistrations;
+            private readonly MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState[] _handlerDeregistrations;
+            private readonly MessageRegistrationHandle[] _tokenRegistrations;
+            private readonly MessageHandler.FastHandler<AttributionMessage>[] _handlers;
+            private readonly AttributionCounter _counter;
+            private readonly MessageRegistrationToken _token;
+            private int _directBusDeregistered;
+            private int _directHandlerDeregistered;
+            private bool _executed;
+            private bool _disposed;
+
+            public DeregistrationAttributionState(
+                DeregistrationAttributionOperation operation,
+                int cardinality
+            )
+            {
+                _operation = operation;
+                _cardinality = cardinality;
+                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _bus = new MessageBus { DiagnosticsMode = false };
+                _handler = new MessageHandler(new InstanceId(42001), _bus) { active = true };
+                _counter = new AttributionCounter();
+
+                if (operation == DeregistrationAttributionOperation.DirectBus)
+                {
+                    _busRegistrations = new MessageBusRegistration[cardinality];
+                    for (int index = 0; index < cardinality; index++)
+                    {
+                        _busRegistrations[index] = _bus.RegisterUntargeted<AttributionMessage>(
+                            _handler
+                        );
+                    }
+                }
+                else
+                {
+                    _handlers = new MessageHandler.FastHandler<AttributionMessage>[cardinality];
+                    for (int index = 0; index < cardinality; index++)
+                    {
+                        int capturedIndex = index;
+                        _handlers[index] = (ref AttributionMessage message) =>
+                        {
+                            _ = capturedIndex;
+                            _counter.Increment(ref message);
+                        };
+                    }
+
+                    if (operation == DeregistrationAttributionOperation.DirectHandler)
+                    {
+                        _handlerDeregistrations =
+                            new MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState[
+                                cardinality
+                            ];
+                        for (int index = 0; index < cardinality; index++)
+                        {
+                            _handlerDeregistrations[index] =
+                                _handler.RegisterUntargetedMessageHandler(
+                                    _handlers[index],
+                                    _handlers[index],
+                                    messageBus: _bus
+                                );
+                        }
+                    }
+                    else
+                    {
+                        _token = MessageRegistrationToken.Create(_handler, _bus);
+                        _token.DiagnosticMode = false;
+                        _tokenRegistrations = new MessageRegistrationHandle[cardinality];
+                        for (int index = 0; index < cardinality; index++)
+                        {
+                            _tokenRegistrations[index] =
+                                _token.RegisterUntargeted<AttributionMessage>(_handlers[index]);
+                        }
+                        _token.Enable();
+                    }
+                }
+            }
+
+            public void VerifyPrepared()
+            {
+                Assert.AreEqual(
+                    1,
+                    _bus.RegisteredUntargeted,
+                    $"{_operation}/{_cardinality}: preparation must produce one refcounted bus entry."
+                );
+                Assert.AreEqual(
+                    _operation == DeregistrationAttributionOperation.DirectBus ? 0 : _cardinality,
+                    CountHandlerRegistrations(),
+                    $"{_operation}/{_cardinality}: preparation produced the wrong handler fan-out."
+                );
+            }
+
+            public void Execute()
+            {
+                if (_executed)
+                {
+                    throw new InvalidOperationException(
+                        $"{_operation}/{_cardinality}: the destructive operation ran twice."
+                    );
+                }
+
+                _executed = true;
+                switch (_operation)
+                {
+                    case DeregistrationAttributionOperation.DirectBus:
+                        for (
+                            ;
+                            _directBusDeregistered < _busRegistrations.Length;
+                            _directBusDeregistered++
+                        )
+                        {
+                            MessageBusRegistration registration = _busRegistrations[
+                                _directBusDeregistered
+                            ];
+                            _bus.Deregister<AttributionMessage>(in registration);
+                        }
+                        break;
+                    case DeregistrationAttributionOperation.DirectHandler:
+                        for (
+                            ;
+                            _directHandlerDeregistered < _handlerDeregistrations.Length;
+                            _directHandlerDeregistered++
+                        )
+                        {
+                            _handlerDeregistrations[_directHandlerDeregistered].Deregister();
+                        }
+                        break;
+                    case DeregistrationAttributionOperation.TokenRemove:
+                        for (int index = 0; index < _tokenRegistrations.Length; index++)
+                        {
+                            _token.RemoveRegistration(_tokenRegistrations[index]);
+                        }
+                        break;
+                    case DeregistrationAttributionOperation.TokenDisable:
+                        _token.Disable();
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(_operation), _operation, null);
+                }
+            }
+
+            public DeregistrationAttributionObservation Verify()
+            {
+                Assert.IsTrue(
+                    _executed,
+                    $"{_operation}/{_cardinality}: verification requires one completed operation."
+                );
+                Assert.AreEqual(
+                    0,
+                    _bus.RegisteredUntargeted,
+                    $"{_operation}/{_cardinality}: teardown left a bus registration live."
+                );
+                Assert.AreEqual(
+                    0,
+                    CountHandlerRegistrations(),
+                    $"{_operation}/{_cardinality}: teardown left a handler registration live."
+                );
+
+                AttributionMessage message = default;
+                _bus.UntargetedBroadcast(ref message);
+                Assert.AreEqual(
+                    0,
+                    _counter.Count,
+                    $"{_operation}/{_cardinality}: teardown still dispatched a handler."
+                );
+                return Observe();
+            }
+
+            public DeregistrationAttributionObservation Observe()
+            {
+                return new DeregistrationAttributionObservation(
+                    _operation,
+                    _cardinality,
+                    _bus.RegisteredUntargeted,
+                    CountHandlerRegistrations(),
+                    _counter.Count
+                );
+            }
+
+            private int CountHandlerRegistrations()
+            {
+                return _handler.CountFlatHandlers<AttributionMessage>(
+                    _bus,
+                    priority: 0,
+                    fastIndex: TypedSlotIndex.UntargetedHandleFast,
+                    defaultIndex: TypedSlotIndex.UntargetedHandleDefault
+                );
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                try
+                {
+                    if (_operation == DeregistrationAttributionOperation.DirectBus)
+                    {
+                        while (_directBusDeregistered < _busRegistrations.Length)
+                        {
+                            MessageBusRegistration registration = _busRegistrations[
+                                _directBusDeregistered++
+                            ];
+                            _bus.Deregister<AttributionMessage>(in registration);
+                        }
+                    }
+                    else if (_operation == DeregistrationAttributionOperation.DirectHandler)
+                    {
+                        while (_directHandlerDeregistered < _handlerDeregistrations.Length)
+                        {
+                            _handlerDeregistrations[_directHandlerDeregistered++].Deregister();
+                        }
+                    }
+                    else
+                    {
+                        _token.Dispose();
+                    }
+                }
+                finally
+                {
+                    _registryScope.Dispose();
+                }
+            }
+        }
+    }
+
+    public readonly struct DeregistrationAttributionObservation
+    {
+        public DeregistrationAttributionObservation(
+            DeregistrationAttributionOperation operation,
+            int cardinality,
+            int busRegistrations,
+            int handlerRegistrations,
+            int handlerInvocations
+        )
+        {
+            Operation = operation;
+            Cardinality = cardinality;
+            BusRegistrations = busRegistrations;
+            HandlerRegistrations = handlerRegistrations;
+            HandlerInvocations = handlerInvocations;
+        }
+
+        public DeregistrationAttributionOperation Operation { get; }
+
+        public int Cardinality { get; }
+
+        public int BusRegistrations { get; }
+
+        public int HandlerRegistrations { get; }
+
+        public int HandlerInvocations { get; }
     }
 
     public static class RegistrationLifecycleScenarios

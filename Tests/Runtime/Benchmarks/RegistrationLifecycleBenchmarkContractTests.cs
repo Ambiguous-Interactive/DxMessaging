@@ -67,6 +67,84 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
+        [Test]
+        [Category("PerfBench")]
+        [TestCase(DeregistrationAttributionOperation.DirectBus)]
+        [TestCase(DeregistrationAttributionOperation.DirectHandler)]
+        [TestCase(DeregistrationAttributionOperation.TokenRemove)]
+        [TestCase(DeregistrationAttributionOperation.TokenDisable)]
+        public void DeregistrationAttributionProducesExactTeardownBehavior(
+            DeregistrationAttributionOperation operation
+        )
+        {
+            const int Cardinality = 16;
+            DeregistrationAttributionObservation observation =
+                DeregistrationAttributionBenchmarks.ExecuteOnceForContract(operation, Cardinality);
+
+            Assert.AreEqual(
+                operation,
+                observation.Operation,
+                $"{operation}/{Cardinality}: observation operation drifted."
+            );
+            Assert.AreEqual(
+                Cardinality,
+                observation.Cardinality,
+                $"{operation}/{Cardinality}: observation cardinality drifted."
+            );
+            Assert.AreEqual(
+                0,
+                observation.BusRegistrations,
+                $"{operation}/{Cardinality}: teardown left a bus registration live."
+            );
+            Assert.AreEqual(
+                0,
+                observation.HandlerRegistrations,
+                $"{operation}/{Cardinality}: teardown left a handler registration live."
+            );
+            Assert.AreEqual(
+                0,
+                observation.HandlerInvocations,
+                $"{operation}/{Cardinality}: teardown still dispatched a handler."
+            );
+        }
+
+        [Test]
+        [Category("PerfBench")]
+        public void DeregistrationAttributionScenarioKeysCoverEveryOperationAtCalibratedCardinality()
+        {
+            DeregistrationAttributionOperation[] operations =
+            {
+                DeregistrationAttributionOperation.DirectBus,
+                DeregistrationAttributionOperation.DirectHandler,
+                DeregistrationAttributionOperation.TokenRemove,
+                DeregistrationAttributionOperation.TokenDisable,
+            };
+            CollectionAssert.AreEqual(
+                operations,
+                (DeregistrationAttributionOperation[])
+                    Enum.GetValues(typeof(DeregistrationAttributionOperation))
+            );
+            Assert.AreEqual(131_072, DeregistrationAttributionBenchmarks.Cardinality);
+
+            string[] keys = operations
+                .Select(DeregistrationAttributionBenchmarks.ScenarioKey)
+                .ToArray();
+            CollectionAssert.AllItemsAreUnique(keys);
+            foreach (DeregistrationAttributionOperation operation in operations)
+            {
+                StringAssert.Contains(
+                    operation.ToString(),
+                    DeregistrationAttributionBenchmarks.ScenarioKey(operation),
+                    $"{operation}: scenario key must name the measured teardown layer."
+                );
+                StringAssert.EndsWith(
+                    "_131072",
+                    DeregistrationAttributionBenchmarks.ScenarioKey(operation),
+                    $"{operation}: scenario key must encode the calibrated cardinality."
+                );
+            }
+        }
+
         private static IEnumerable<TestCaseData> LifecycleOperationCases()
         {
             const int Cardinality = 4;
