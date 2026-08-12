@@ -70,10 +70,11 @@ Use `IMessageRegistrationBuilder` to create message handlers in non-MonoBehaviou
 ```csharp
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Attributes;
+using DxMessaging.Core;
 using VContainer.Unity;
 
 // Define a message
-[DxUntargetedMessage]
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct PlayerSpawned
 {
@@ -92,7 +93,7 @@ public sealed class PlayerService : IStartable, IDisposable
         {
             Configure = token =>
             {
-                _ = token.RegisterUntargeted<PlayerSpawned>(OnPlayerSpawned);
+                _ = token.RegisterBroadcastWithoutSource<PlayerSpawned>(OnPlayerSpawned);
             }
         };
 
@@ -109,7 +110,7 @@ public sealed class PlayerService : IStartable, IDisposable
         _lease.Dispose();   // Clean up when container disposes
     }
 
-    private static void OnPlayerSpawned(ref PlayerSpawned message)
+    private static void OnPlayerSpawned(InstanceId player, PlayerSpawned message)
     {
         UnityEngine.Debug.Log($"Player {message.playerId} spawned!");
     }

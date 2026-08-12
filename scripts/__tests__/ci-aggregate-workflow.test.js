@@ -48,37 +48,11 @@ const UNITY_LOCK_WINDOWS = [
   ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
 ];
 
-const CONSOLIDATED_WORKFLOWS = [
-  "actionlint.yml",
-  "csharpier-check.yml",
-  "dotnet-tests.yml",
-  "json-format-check.yml",
-  "lint-doc-links.yml",
-  "markdownlint.yml",
-  "script-tests.yml",
-  "spellcheck.yml",
-  "validate-banner.yml",
-  "validate-docs.yml",
-  "validate-llms-txt.yml",
-  "yaml-format-lint.yml"
-];
+// prettier-ignore
+const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet-tests.yml", "json-format-check.yml", "lint-doc-links.yml", "markdownlint.yml", "script-tests.yml", "spellcheck.yml", "validate-banner.yml", "validate-docs.yml", "validate-llms-txt.yml", "yaml-format-lint.yml"];
 
-const AGGREGATED_JOBS = [
-  "changes",
-  "actionlint",
-  "markdownlint",
-  "csharpier",
-  "dotnet",
-  "json-format",
-  "line-endings",
-  "spellcheck",
-  "validate-banner",
-  "validate-llms-txt",
-  "yaml-format-lint",
-  "script-tests",
-  "validate-docs",
-  "lint-doc-links"
-];
+// prettier-ignore
+const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
 
 // cspell:ignore ACDMRT
 const STATIC_CHILD_JOBS = [
@@ -631,13 +605,39 @@ test("Unity CI defers every post-activation return to the central action", () =>
   }
 });
 
-test("Unity Tests classifies Dependabot pull requests by immutable PR author", () => {
-  const source = fs.readFileSync(path.join(WORKFLOW_DIR, "unity-tests.yml"), "utf8");
-  const preflight = getJobBlock(source, "runner-preflight", "unity-tests.yml");
-  const licensed = getJobBlock(source, "unity-tests", "unity-tests.yml");
-  const aggregate = getJobBlock(source, "unity-ci-success", "unity-tests.yml");
-
-  for (const job of [preflight, licensed]) {
+test("licensed PR workflows fail closed and skip only documented non-code paths", () => {
+  for (const [file, aggregateId] of [
+    ["unity-tests.yml", "unity-ci-success"],
+    ["perf-numbers.yml", "perf-unity-success"]
+  ]) {
+    const source = readWorkflow(file);
+    const head = getJobBlock(source, "head-check", file);
+    const preflight = getJobBlock(source, "runner-preflight", file);
+    const aggregate = getJobBlock(source, aggregateId, file);
+    assert.match(head, /relevant: \$\{\{ steps\.head\.outputs\.relevant \}\}/);
+    assert.match(head, /Changed-file lookup failed; running licensed/);
+    assert.match(head, /echo "relevant=\$\{relevant\}" >> "\$\{GITHUB_OUTPUT\}"/);
+    const pattern = /documentation_only_pattern='([^']+)'/.exec(head);
+    const allowed = new RegExp(pattern?.[1] ?? "a^");
+    // prettier-ignore
+    for (const path of ["docs/index.md", ".llm/context.md", "Samples~/Mini Combat/README.md", "GOAL.md"])
+      assert.match(path, allowed, `${file}: ${path}`);
+    // prettier-ignore
+    for (const path of [`.github/workflows/${file}`, "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "README.md"])
+      assert.doesNotMatch(path, allowed, `${file}: ${path}`);
+    assert.match(preflight, /needs\.head-check\.outputs\.relevant != 'false'/);
+    assert.match(aggregate, /RELEVANT: \$\{\{ needs\.head-check\.outputs\.relevant \}\}/);
+    assert.match(aggregate, /\[ "\$\{RELEVANT\}" = "false" \]/);
+    const gatedId = file === "unity-tests.yml" ? "unity-tests" : "comment-perf-doc";
+    const gated = getJobBlock(source, gatedId, file);
+    assert.match(gated, /needs\.head-check\.outputs\.relevant != 'false'/);
+  }
+  const unity = readWorkflow("unity-tests.yml");
+  const aggregate = getJobBlock(unity, "unity-ci-success", "unity-tests.yml");
+  for (const job of [
+    getJobBlock(unity, "runner-preflight", "unity-tests.yml"),
+    getJobBlock(unity, "unity-tests", "unity-tests.yml")
+  ]) {
     assert.match(job, /github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'/);
     assert.doesNotMatch(job, /github\.actor != 'dependabot\[bot\]'/);
   }

@@ -150,21 +150,21 @@ using DxMessaging.Core.MessageBus;    // IMessageBus
 
 // Cancel <=0 damage and clamp high values
 IMessageBus bus = MessageHandler.MessageBus;
-MessageBusRegistration registration = bus.RegisterTargetedInterceptor<TookDamage>(
-    (ref InstanceId target, ref TookDamage m) =>
+MessageBusRegistration registration = bus.RegisterTargetedInterceptor<ApplyDamage>(
+    (ref InstanceId target, ref ApplyDamage m) =>
     {
         if (m.amount <= 0)
         {
             return false;
         }
-        m = new TookDamage(Math.Min(m.amount, 999));
+        m = new ApplyDamage(Math.Min(m.amount, 999));
         return true;
     },
     priority: 0
 );
 
 // The owning system calls this during teardown.
-bus.Deregister<TookDamage>(in registration);
+bus.Deregister<ApplyDamage>(in registration);
 ```
 
 Calls through `MessageRegistrationToken` are owned by that token. Calls made directly on

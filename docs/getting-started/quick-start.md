@@ -185,11 +185,11 @@ Registration cleanup is automatic. Messages are type-safe.
 ### Do's
 
 - Use `MessageAwareComponent` for Unity components (automatic lifecycle)
-- Store struct in variable before emitting: `var msg = new Heal(10); msg.Emit();`
+- Store struct in variable before emitting: `var msg = new Heal(10); msg.EmitGameObjectTargeted(playerGO);`
 - Call `base.RegisterMessageHandlers()` when overriding
 
 ### Don'ts
 
-- Don't emit from temporaries: `new Heal(10).Emit()` won't compile (struct emit methods require `ref this`)
+- Don't emit from temporaries: `new Heal(10).EmitGameObjectTargeted(playerGO)` won't compile (struct emit methods require `ref this`)
 - Don't use Untargeted for commands to one object (use Targeted instead)
 - Don't forget `using DxMessaging.Core.Extensions;` for `Emit*` methods

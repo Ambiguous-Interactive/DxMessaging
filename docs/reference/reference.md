@@ -202,8 +202,8 @@ Component.
 
 ```csharp
 // Quick string message emission
-"PlayerDied".Emit();
-"DamageDealt".Emit(targetInstanceId);
+"PlayerDied".EmitFrom(gameObject);
+"ApplyDamage".Emit(targetInstanceId);
 ```
 
 ---

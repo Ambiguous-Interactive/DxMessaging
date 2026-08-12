@@ -4,6 +4,7 @@ namespace DxMessaging.Samples.DI.Zenject
     using global::System;
     using global::UnityEngine;
     using global::Zenject;
+    using global::DxMessaging.Core;
     using global::DxMessaging.Core.Attributes;
     using global::DxMessaging.Core.MessageBus;
 
@@ -27,7 +28,7 @@ namespace DxMessaging.Samples.DI.Zenject
             Container.BindInterfacesTo<PlayerSpawnTracker>().AsSingle();
         }
 
-        [DxUntargetedMessage]
+        [DxBroadcastMessage]
         [DxAutoConstructor]
         private readonly partial struct PlayerSpawned
         {
@@ -47,7 +48,9 @@ namespace DxMessaging.Samples.DI.Zenject
                     {
                         Configure = token =>
                         {
-                            _ = token.RegisterUntargeted<PlayerSpawned>(OnPlayerSpawned);
+                            _ = token.RegisterBroadcastWithoutSource<PlayerSpawned>(
+                                OnPlayerSpawned
+                            );
                         },
                     }
                 );
@@ -63,7 +66,7 @@ namespace DxMessaging.Samples.DI.Zenject
                 lease.Dispose();
             }
 
-            private static void OnPlayerSpawned(ref PlayerSpawned message)
+            private static void OnPlayerSpawned(InstanceId player, PlayerSpawned message)
             {
                 Debug.Log($"Player spawned: {message.PlayerName}");
             }

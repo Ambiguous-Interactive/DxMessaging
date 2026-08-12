@@ -222,8 +222,8 @@ _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
 
 void OnAnyHeal(ref InstanceId target, ref Heal msg)
 {
-    Debug.Log($"Someone healed {target} for {msg.amount}");
-    // You get the target as a parameter so you know WHO was healed
+    Debug.Log($"Heal requested for {target}: {msg.amount}");
+    // You get the target that received the request.
 }
 
 // Now when ANYONE emits a heal...
@@ -234,8 +234,8 @@ heal.EmitAt(npc);       // OnAnyHeal fires with target = npc
 
 #### Use cases
 
-- Analytics ("track all damage dealt")
-- Debugging ("log every heal in the game")
+- Analytics ("track all damage requests")
+- Debugging ("log every heal request in the game")
 - Achievements ("count total kills")
 - Global UI updates ("show floating damage numbers for any entity")
 
@@ -302,14 +302,14 @@ public class Player : MessageAwareComponent
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        // Listen only to damage targeting THIS player
+        // Listen only to damage broadcast by THIS player
         _ = Token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnPlayerTookDamage);
     }
 
     void OnPlayerTookDamage(ref TookDamage msg)
     {
-        // Player-specific logic: update health bar, play hurt sound
-        health -= msg.amount;
+        // The targeted command already changed health; react to the resulting fact.
+        UpdateHealthBar();
         PlayHurtSound();
     }
 }
@@ -335,15 +335,14 @@ public class AchievementSystem : MessageAwareComponent
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        // Listen to ALL damage targeting ANY entity (global observer)
-        _ = Token.RegisterTargetedWithoutTargeting<DealDamage>(OnAnyDamageDealt);
+        // Listen to ALL damage requests targeting ANY entity (global observer)
+        _ = Token.RegisterTargetedWithoutTargeting<DealDamage>(OnAnyDamageRequested);
     }
 
-    void OnAnyDamageDealt(ref InstanceId target, ref DealDamage msg)
+    void OnAnyDamageRequested(ref InstanceId target, ref DealDamage msg)
     {
-        // Track total damage dealt for achievements
-        totalDamageDealt += msg.amount;
-        CheckDamageAchievements();
+        // Applied damage is a later broadcast fact.
+        requestedDamage += msg.amount;
     }
 }
 ```
@@ -364,7 +363,7 @@ Global listeners (`RegisterTargetedWithoutTargeting` / `RegisterBroadcastWithout
 
 #### Use when
 
-- The whole object is the logical target/source (e.g., "Player was healed", "Enemy took damage")
+- The whole object is the logical target/source (e.g., "Player received a heal request", "Enemy took damage")
 - Multiple components should coordinate under the same address
 - You don't care which specific component handles it
 - You want flexibility for future refactoring (adding/removing components)

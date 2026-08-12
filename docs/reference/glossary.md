@@ -56,34 +56,38 @@ public class MyComponent : MessageAwareComponent {
 
 Code that runs **before** handlers. Can **validate, modify, or cancel** messages before anyone else sees them.
 
-Example: "Only allow damage between 1 and 999"
+Example: "Only allow an apply-damage request between 1 and 999"
 
 ```csharp
 // Use the type-specific interceptor variant based on your message type:
 // - RegisterUntargetedInterceptor<T> for IUntargetedMessage
 // - RegisterTargetedInterceptor<T> for ITargetedMessage
 // - RegisterBroadcastInterceptor<T> for IBroadcastMessage
-_ = token.RegisterBroadcastInterceptor<Damage>((ref InstanceId source, ref Damage msg) => {
+_ = token.RegisterTargetedInterceptor<ApplyDamage>((ref InstanceId target, ref ApplyDamage msg) => {
     if (msg.amount <= 0) return false; // Cancel
-    if (msg.amount > 999) msg = new Damage(999); // Clamp
+    if (msg.amount > 999) msg = new ApplyDamage(999); // Clamp
     return true; // Allow
 });
 ```
 
 ### Post-Processor
 
-Code that runs **after** all handlers. Perfect for **logging, analytics, or metrics** that shouldn't affect gameplay.
+Code that runs **after** all handlers. Use it to record completed dispatch for logging,
+analytics, metrics, or replay without changing gameplay state.
 
-Example: "Track every damage event for statistics"
+Example: "Count every processed damage message for telemetry"
 
 ```csharp
 // Use the type-specific post-processor variant based on your message type:
 // - RegisterUntargetedPostProcessor<T> for IUntargetedMessage
-// - RegisterBroadcastWithoutSourcePostProcessor<T> for IBroadcastMessage from any source
-_ = token.RegisterBroadcastWithoutSourcePostProcessor<Damage>((InstanceId source, Damage msg) => {
-    Analytics.LogDamage(source, msg.amount);
+// - RegisterTargetedWithoutTargetingPostProcessor<T> for ITargetedMessage to any target
+_ = token.RegisterTargetedWithoutTargetingPostProcessor<ApplyDamage>((ref InstanceId target, ref ApplyDamage msg) => {
+    Analytics.RecordProcessedDamageRequest(target, msg.amount);
 });
 ```
+
+The message payload describes the request that completed dispatch. It does not prove how a
+handler changed health or another gameplay value.
 
 ### Priority
 
@@ -121,7 +125,7 @@ To **send** a message. Like hitting "send" on an email.
 
 ```csharp
 var heal = new Heal(10);
-heal.Emit(); // Send it!
+heal.EmitGameObjectTargeted(player); // Send it to one player
 ```
 
 ### Register
@@ -129,7 +133,7 @@ heal.Emit(); // Send it!
 To **sign up** to receive messages. Like subscribing to a newsletter.
 
 ```csharp
-_ = Token.RegisterUntargeted<Heal>(OnHeal); // Subscribe
+_ = Token.RegisterGameObjectTargeted<Heal>(player, OnHeal); // Subscribe to this player
 ```
 
 ## Advanced Terms

@@ -17,6 +17,8 @@ public sealed class MessagingObserver : MessageAwareComponent
     [SerializeField]
     private string lastButtonId = "None";
 
+    private InstanceId lastButtonSource;
+
     [SerializeField]
     private string lastObservedRoute = "None";
 
@@ -24,14 +26,15 @@ public sealed class MessagingObserver : MessageAwareComponent
     {
         base.RegisterMessageHandlers();
         Token.DiagnosticMode = true;
-        _ = Token.RegisterUntargeted<ButtonClicked>(OnButtonClicked);
+        _ = Token.RegisterBroadcastWithoutSource<ButtonClicked>(OnButtonClicked);
         _ = Token.RegisterGlobalAcceptAll(OnAnyUntargeted, OnAnyTargeted, OnAnyBroadcast);
     }
 
-    private void OnButtonClicked(ref ButtonClicked message)
+    private void OnButtonClicked(InstanceId source, ButtonClicked message)
     {
         typedClickCount++;
         lastButtonId = message.id;
+        lastButtonSource = source;
         if (logTypedClicks)
         {
             Debug.Log($"Button clicked: {message.id}", this);

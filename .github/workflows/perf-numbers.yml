@@ -88,6 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
+      relevant: ${{ steps.head.outputs.relevant }}
       superseded: ${{ steps.head.outputs.superseded }}
     steps:
       - name: Compare the event head against the live pull-request head
@@ -100,6 +101,7 @@ jobs:
           EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          relevant=true
           superseded=false
           if [ "${EVENT_NAME}" = pull_request ]; then
             live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" || live=
@@ -109,7 +111,20 @@ jobs:
               echo "::notice::${EVENT_HEAD_SHA} is superseded by ${live}; skipping the performance matrix."
               superseded=true
             fi
+            if files="$(gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --jq '.[] | .filename, (.previous_filename // empty)')"; then
+              documentation_only_pattern='^(docs/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)(\.meta)?$|(AGENTS|GOAL|PLAN)\.md(\.meta)?$|llms\.txt$|mkdocs\.yml$|requirements-docs\.txt$)'
+              non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
+              if [ -n "${files}" ] && [ -z "${non_documentation}" ]; then
+                echo "::notice::Only documentation and agent-context files changed; skipping licensed performance benchmarks."
+                relevant=false
+              fi
+            else
+              echo "::warning::Changed-file lookup failed; running licensed performance benchmarks."
+            fi
           fi
+          echo "relevant=${relevant}" >> "${GITHUB_OUTPUT}"
           echo "superseded=${superseded}" >> "${GITHUB_OUTPUT}"
 
   runner-preflight:
@@ -121,6 +136,7 @@ jobs:
     if: >-
       ${{
         needs.head-check.outputs.superseded != 'true' &&
+        needs.head-check.outputs.relevant != 'false' &&
         (
           github.event_name != 'pull_request' ||
           (
@@ -597,16 +613,17 @@ jobs:
           )
         }}
       SUPERSEDED: ${{ needs.head-check.outputs.superseded }}
+      RELEVANT: ${{ needs.head-check.outputs.relevant }}
     steps:
       - name: Require complete performance validation
         shell: bash
         run: |
           set -euo pipefail
           test "${{ needs.head-check.result }}" = success
-          if [ "${SUPERSEDED}" = "true" ] || [ "${TRUSTED_PR}" != "true" ]; then
+          if [ "${SUPERSEDED}" = "true" ] || [ "${RELEVANT}" = "false" ] || [ "${TRUSTED_PR}" != "true" ]; then
             test "${{ needs.runner-preflight.result }}" = skipped
             test "${{ needs.perf-benchmarks.result }}" = skipped
-            echo "Licensed performance benchmarks skip superseded or untrusted pull requests."
+            echo "Licensed performance benchmarks skip superseded, documentation-only, or untrusted pull requests."
           else
             test "${{ needs.runner-preflight.result }}" = success
             test "${{ needs.perf-benchmarks.result }}" = success
@@ -620,7 +637,8 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.login != 'dependabot[bot]' &&
         always() &&
-        needs.head-check.outputs.superseded != 'true'
+        needs.head-check.outputs.superseded != 'true' &&
+        needs.head-check.outputs.relevant != 'false'
       }}
     needs:
       - head-check

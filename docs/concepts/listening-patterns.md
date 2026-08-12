@@ -33,7 +33,7 @@ void ShowDamageNumber(InstanceId source, TookDamage m) => damageNumbers.Show(sou
 // Record the processed message for replay after every gameplay handler has run.
 _ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(RecordProcessedDamage);
 void RecordProcessedDamage(InstanceId source, TookDamage m) =>
-    replay.RecordDamage(source, m.amount);
+    replay.RecordProcessedDamageMessage(source, m.amount);
 ```
 
 The handler owns presentation state by spawning a damage number. The post-processor records
@@ -134,7 +134,7 @@ using DxMessaging.Core.MessageBus;
 public class NetworkedAttribute : Attribute { }
 
 [Networked]
-[DxUntargetedMessage]
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct PlayerMoved
 {
@@ -224,7 +224,7 @@ without explicit per-type registration:
 using NetworkReplicator replicator = new(networkManager, MessageHandler.MessageBus);
 
 var playerMoved = new PlayerMoved(playerPos);
-playerMoved.Emit();
+playerMoved.EmitFrom(gameObject);
 var dealDamage = new DealDamage(50f);
 dealDamage.EmitTargeted(enemyId);
 ```

@@ -254,22 +254,38 @@ No manual unsubscribe needed. Subscriptions are type-safe and lifecycle-managed.
 **Using Zenject, VContainer, or Reflex?** DxMessaging is fully DI-compatible out of the box!
 
 ```csharp
+[DxUntargetedMessage]
+public readonly struct GameStarted { }
+
 // Inject IMessageBus in any class
 public class PlayerService : IInitializable, IDisposable
 {
+    private readonly IMessageBus _messageBus;
     private readonly MessageRegistrationLease _lease;
 
-    public PlayerService(IMessageRegistrationBuilder builder)
+    public PlayerService(IMessageBus messageBus, IMessageRegistrationBuilder builder)
     {
+        _messageBus = messageBus;
         // Builder automatically resolves your container-managed bus
         _lease = builder.Build(new MessageRegistrationBuildOptions
         {
-            Configure = token => token.RegisterUntargeted<PlayerSpawned>(OnSpawn)
+            Configure = token => token.RegisterUntargeted<GameStarted>(OnGameStarted)
         });
     }
 
     public void Initialize() => _lease.Activate();
     public void Dispose() => _lease.Dispose();
+
+    public void PublishGameStarted()
+    {
+        var started = new GameStarted();
+        started.EmitUntargeted(_messageBus);
+    }
+
+    private static void OnGameStarted(GameStarted message)
+    {
+        Debug.Log("Game started");
+    }
 }
 ```
 
@@ -434,10 +450,10 @@ public class GameUI : MessageAwareComponent {
 
     protected override void RegisterMessageHandlers() {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterUntargeted<HealthChanged>(OnHealth);
+        _ = Token.RegisterBroadcastWithoutSource<HealthChanged>(OnHealth);
         _ = Token.RegisterUntargeted<WaveStarted>(OnWave);
         _ = Token.RegisterUntargeted<ItemAdded>(OnItem);
-        // Listen to anything, from anywhere, no coupling
+        // Observe entity facts by source and global events without direct references
     }
 }
 ```
@@ -508,7 +524,7 @@ What DxMessaging offers:
 #### DxMessaging solution
 
 ```csharp
-void OnDamage(ref TookDamage msg) {  // Pass by ref = zero allocations
+void OnDamage(ref ApplyDamage msg) { // Pass by ref = zero allocations
     health -= msg.amount;            // No boxing, no GC pressure
 }
 // Automatic cleanup prevents common leak patterns
@@ -583,22 +599,25 @@ _ = token.RegisterBroadcastWithoutSource<TookDamage>(
 **DxMessaging solution:** Validate ONCE before ANY handler runs:
 
 ```csharp
+[DxTargetedMessage]
+public struct ApplyDamage { public int amount; }
+
 // ONE interceptor protects ALL handlers
-_ = token.RegisterBroadcastInterceptor<TookDamage>(
-    (ref InstanceId src, ref TookDamage msg) => {
+_ = token.RegisterTargetedInterceptor<ApplyDamage>(
+    (ref InstanceId target, ref ApplyDamage msg) => {
         if (msg.amount <= 0) return false;               // Cancel invalid
         if (msg.amount > 999) {
-            msg = new TookDamage(999);                   // Clamp excessive
+            msg = new ApplyDamage(999);                  // Clamp excessive
         }
-        if (IsGodModeActive(src)) return false;          // Block damage
+        if (IsGodModeActive(target)) return false;       // Block damage
         return true;
     },
     priority: -100  // Run FIRST
 );
 
 // Now ALL handlers receive clean, validated data
-_ = token.RegisterComponentTargeted<TookDamage>(player, OnDamage);
-void OnDamage(ref TookDamage msg) {
+_ = token.RegisterComponentTargeted<ApplyDamage>(player, OnDamage);
+void OnDamage(ref ApplyDamage msg) {
     // No validation needed - interceptor guarantees validity!
     health -= msg.amount;
 }

@@ -96,7 +96,9 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 - Sandbox restriction: `using System.Reflection;` is rejected in `Unity_RunCommand` snippets -- fully qualify (`System.Reflection.Assembly`) instead.
 - The published IL2CPP-Release headline comes from the CI leg (self-hosted Windows, `scripts/unity/run-ci-tests.ps1`), not the local MCP loop; the MCP loop is the local Mono/editor signal. CI keeps short, scope-isolated host projects under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/<version>-<mode>/` so each fixed runner can reuse its own `Library` without transferring it over the network -- see [UPM Test Harness](./skills/unity-test-execution/references/upm-test-harness.md).
 - License (CI only): see [Unity License Bootstrap](./skills/unity-licensing/references/unity-license-bootstrap.md). CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and guarantees a `-returnlicense` on every exit path.
-- For source-generator tests (no Unity), use `dotnet test SourceGenerators/...Tests`.
+- For source-generator tests (no Unity), use
+  `dotnet test SourceGenerators/...Tests /p:CopyAnalyzerPayload=false`. The property keeps a local
+  Debug test build from overwriting the tracked Release analyzer payload under `Runtime/Analyzers/`.
 - For docs sample/reference guards (no Unity), use
   `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`.
 

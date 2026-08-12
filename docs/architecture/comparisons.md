@@ -1223,14 +1223,14 @@ public class UI : MonoBehaviour
 // Old static event bus
 EventHub.RaiseDamage(5);
 
-// DxMessaging equivalent (global bus)
+// DxMessaging equivalent (global bus, affected player retained as source)
 var damage = new TookDamage(5);
-damage.Emit();
+damage.EmitGameObjectBroadcast(gameObject);
 
 // Or use local buses for subsystems
 var combatBus = new MessageBus();
 var combatDamage = new TookDamage(5);
-combatDamage.Emit(combatBus);
+combatDamage.EmitGameObjectBroadcast(gameObject, combatBus);
 ```
 
 ---

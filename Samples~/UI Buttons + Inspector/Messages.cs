@@ -1,6 +1,6 @@
 using DxMessaging.Core.Attributes;
 
-[DxUntargetedMessage]
+[DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct ButtonClicked
 {

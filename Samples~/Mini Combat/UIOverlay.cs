@@ -46,6 +46,6 @@ public sealed class UIOverlay : MessageAwareComponent
     {
         int damage = Mathf.Max(0, message.amount);
         totalDamageObserved += damage;
-        damageText = $"Damage: {source} dealt {damage} (total {totalDamageObserved})";
+        damageText = $"Damage: {source} took {damage} (total {totalDamageObserved})";
     }
 }

@@ -43,40 +43,68 @@ using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Extensions;
 using DxMessaging.Unity;
 using UnityEngine;
+using UnityEngine.UI;
 
 [DxTargetedMessage]
 [DxAutoConstructor]
-public readonly partial struct Heal
+public readonly partial struct HealPlayerRequested
 {
     public readonly int Amount;
 }
 
 public sealed class PlayerHealth : MessageAwareComponent
 {
+    private const int MaximumHealth = 100;
+
+    public int CurrentHealth { get; private set; } = 50;
+
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        Token.RegisterGameObjectTargeted<Heal>(gameObject, OnHeal);
+        _ = Token.RegisterGameObjectTargeted<HealPlayerRequested>(gameObject, OnHealRequested);
     }
 
-    private void OnHeal(ref Heal message)
+    private void OnHealRequested(ref HealPlayerRequested message)
     {
-        // Apply the heal to this player.
+        CurrentHealth = Mathf.Min(MaximumHealth, CurrentHealth + Mathf.Max(0, message.Amount));
     }
 }
 
+[RequireComponent(typeof(Button))]
 public sealed class HealButton : MonoBehaviour
 {
-    [SerializeField]
-    private GameObject _player;
+    private Button _button;
+    private PlayerHealth _playerHealth;
 
-    public void Click()
+    private void Awake()
     {
-        Heal heal = new Heal(25);
-        heal.EmitGameObjectTargeted(_player);
+        _button = GetComponent<Button>();
+        _playerHealth = GetComponentInParent<PlayerHealth>();
+        if (_playerHealth == null)
+        {
+            Debug.LogError("HealButton must be placed under a PlayerHealth component.", this);
+            return;
+        }
+        _button.onClick.AddListener(Click);
+    }
+
+    private void OnDestroy()
+    {
+        _button.onClick.RemoveListener(Click);
+    }
+
+    private void Click()
+    {
+        HealPlayerRequested request = new HealPlayerRequested(25);
+        request.EmitGameObjectTargeted(_playerHealth.gameObject);
     }
 }
 ```
+
+Put `HealButton` on a Unity `Button` under the player's `PlayerHealth` object. The component
+wires the click and finds that player automatically; there is no `On Click` event or player
+reference to assign in the Inspector. The heal request is targeted because it changes one
+player's health.
 
 ## Why Teams Use It
 
