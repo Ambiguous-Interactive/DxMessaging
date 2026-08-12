@@ -19,7 +19,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle baselineHandle =
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
 
-            MessageRegistrationHandle.CreateMessageRegistrationHandle();
+            MessageRegistrationHandle lastPreResetHandle =
+                MessageRegistrationHandle.CreateMessageRegistrationHandle();
             MessagingDebug.enabled = true;
             MessagingDebug.LogFunction = (logLevel, message) => { };
 
@@ -47,7 +48,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             MessageRegistrationHandle resetHandle =
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
-            Assert.AreEqual(baselineHandle, resetHandle);
+            Assert.Greater(
+                resetHandle,
+                lastPreResetHandle,
+                "Reset must not reuse registration identities that stale handles may still carry. baseline={0}, lastPreReset={1}, postReset={2}",
+                baselineHandle,
+                lastPreResetHandle,
+                resetHandle
+            );
 
             object syntheticOwnerValue = syntheticOwnerField.GetValue(null);
             Assert.AreEqual(0, (int)syntheticOwnerValue);

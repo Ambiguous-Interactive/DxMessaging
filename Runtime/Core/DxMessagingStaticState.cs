@@ -14,10 +14,9 @@ namespace DxMessaging.Core
     /// </para>
     /// <para>
     /// <strong>Important:</strong> Message type sequential IDs (managed by MessageHelperIndexer)
-    /// are intentionally NOT reset. Once a message type is assigned an ID, it retains that ID
-    /// for the lifetime of the application domain. This prevents ID collisions that would occur
-    /// if a new message type were assigned an ID that was previously used by a different type.
-    /// Resetting IDs could cause messages to be routed to the wrong handlers.
+    /// and opaque registration handle IDs are intentionally NOT reset. Once an ID is assigned, it
+    /// remains consumed for the lifetime of the application domain. This prevents stale handles or
+    /// new message types from colliding with identities issued before a reset.
     /// </para>
     /// </remarks>
     public static class DxMessagingStaticState
@@ -34,7 +33,8 @@ namespace DxMessaging.Core
         /// Resets all static variables in DxMessaging to their default values.
         /// </summary>
         /// <remarks>
-        /// Message type IDs are NOT reset by this method. See the class remarks for details.
+        /// Message type and registration handle IDs are NOT reset by this method. See the class
+        /// remarks for details.
         /// </remarks>
         public static void Reset()
         {
@@ -47,7 +47,6 @@ namespace DxMessaging.Core
                 IMessageBus.GlobalMessageBufferSize = Baseline.GlobalMessageBufferSize;
                 IMessageBus.GlobalSequentialIndex = Baseline.GlobalSequentialIndex;
 
-                MessageRegistrationHandle.SetIdSeed(Baseline.MessageRegistrationHandleSeed);
                 MessageRegistrationBuilder.SetSyntheticOwnerCounter(Baseline.SyntheticOwnerCounter);
 
                 // Capture the active global bus before ResetStatics swaps it back to the default
@@ -80,7 +79,6 @@ namespace DxMessaging.Core
             DiagnosticsTarget globalDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
             int globalMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
             int globalSequentialIndex = IMessageBus.GlobalSequentialIndex;
-            long messageRegistrationHandleSeed = MessageRegistrationHandle.GetCurrentIdSeed();
             int syntheticOwnerCounter = MessageRegistrationBuilder.GetSyntheticOwnerCounter();
 
             return new BaselineState(
@@ -89,7 +87,6 @@ namespace DxMessaging.Core
                 globalDiagnosticsTargets,
                 globalMessageBufferSize,
                 globalSequentialIndex,
-                messageRegistrationHandleSeed,
                 syntheticOwnerCounter
             );
         }
@@ -102,7 +99,6 @@ namespace DxMessaging.Core
                 DiagnosticsTarget globalDiagnosticsTargets,
                 int globalMessageBufferSize,
                 int globalSequentialIndex,
-                long messageRegistrationHandleSeed,
                 int syntheticOwnerCounter
             )
             {
@@ -111,7 +107,6 @@ namespace DxMessaging.Core
                 GlobalDiagnosticsTargets = globalDiagnosticsTargets;
                 GlobalMessageBufferSize = globalMessageBufferSize;
                 GlobalSequentialIndex = globalSequentialIndex;
-                MessageRegistrationHandleSeed = messageRegistrationHandleSeed;
                 SyntheticOwnerCounter = syntheticOwnerCounter;
             }
 
@@ -124,8 +119,6 @@ namespace DxMessaging.Core
             internal int GlobalMessageBufferSize { get; }
 
             internal int GlobalSequentialIndex { get; }
-
-            internal long MessageRegistrationHandleSeed { get; }
 
             internal int SyntheticOwnerCounter { get; }
         }

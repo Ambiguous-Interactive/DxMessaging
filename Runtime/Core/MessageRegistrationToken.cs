@@ -3402,20 +3402,31 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Wraps a registration handle in an <see cref="IDisposable"/> that removes it on dispose.
+        /// Wraps a registration handle in a disposable value type that removes it on dispose.
         /// </summary>
         /// <param name="handle">The registration handle to remove when disposed.</param>
-        /// <returns>An <see cref="IDisposable"/> that calls <see cref="RemoveRegistration"/> once.</returns>
+        /// <returns>
+        /// A concrete <see cref="RegistrationDisposable"/> value. Keep it as that concrete type to
+        /// avoid boxing it as <see cref="IDisposable"/>.
+        /// </returns>
         public RegistrationDisposable AsDisposable(MessageRegistrationHandle handle)
         {
             return new RegistrationDisposable(this, handle);
         }
 
-        public struct RegistrationDisposable : IDisposable
+        /// <summary>
+        /// Removes one registration when disposed.
+        /// </summary>
+        /// <remarks>
+        /// Copies are safe to dispose. The token's opaque handle identity makes every disposal
+        /// after the first successful removal have no effect, including after the vacated slot is
+        /// reused by a new registration. A failed removal remains retryable through any copy.
+        /// <para><b>Fixed in v3.2.3.</b></para>
+        /// </remarks>
+        public readonly struct RegistrationDisposable : IDisposable
         {
             private readonly MessageRegistrationToken _token;
             private readonly MessageRegistrationHandle _handle;
-            private bool _valid;
 
             /// <summary>
             /// Creates a disposable wrapper that removes a registration when disposed.
@@ -3429,21 +3440,20 @@ namespace DxMessaging.Core
             {
                 _token = token;
                 _handle = handle;
-                _valid = true;
             }
 
             /// <summary>
-            /// Removes the wrapped registration the first time it is invoked.
+            /// Attempts to remove the wrapped registration. Only the first successful removal has
+            /// an effect; a failed attempt remains retryable.
             /// </summary>
             public void Dispose()
             {
-                // Best-effort idempotence; AsDisposable instances are short-lived and immutable
-                if (_valid)
+                // RemoveRegistration rejects a stale opaque handle even after its slot is reused.
+                // Keeping the wrapper stateless makes every copy follow that authoritative check.
+                if (_token != null)
                 {
                     _token.RemoveRegistration(_handle);
                 }
-
-                _valid = false;
             }
         }
 

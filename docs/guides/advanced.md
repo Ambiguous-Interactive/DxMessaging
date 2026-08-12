@@ -26,6 +26,9 @@ Lifecycles and tokens
 - Clearing
   - A successful `token.UnregisterAll()` disables and clears staged registrations plus token-local diagnostics.
   - `token.RemoveRegistration(handle)` removes a single registration.
+  - `token.AsDisposable(handle)` returns a copy-safe concrete value type. Keep that concrete type
+    to avoid `IDisposable` boxing. Only the first successful removal has an effect; a failed removal
+    remains retryable through any copy.
 - Diagnostics
   - `token.DiagnosticMode = true` to record per-registration call counts and emissions.
 
@@ -185,7 +188,15 @@ using (MessageHandler.OverrideGlobalMessageBus(testBus))
 // previous global bus restored here
 ```
 
-The scope throws if you pass `null` and guarantees the prior bus returns even if the wrapped code throws. Pair this with `IMessageRegistrationBuilder` for clean test lifecycles.
+The concrete scope allocates no managed objects per use after `MessageHandler` static initialization
+and is safe to copy. Do not store it as `IDisposable`, which boxes the value. Nested scopes restore
+the nearest active parent even when disposed out of order. An explicit `SetGlobalMessageBus`,
+`ResetGlobalMessageBus`, or `DxMessagingStaticState.Reset` invalidates older scopes instead of
+letting them restore stale state. The scope throws for `null` and when all 1,024 process-wide
+override slots are occupied; out-of-order-disposed parents keep their slots until newer scopes end.
+Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These APIs
+follow DxMessaging's single-threaded runtime contract.
+Pair this with `IMessageRegistrationBuilder` for clean test lifecycles.
 
 > **Editor note:** When the global bus is replaced with a decorated implementation, certain inspector diagnostics that rely on the concrete `MessageBus` type (e.g., registration graphs) are temporarily unavailable until the override scope ends.
 

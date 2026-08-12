@@ -27,7 +27,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// intentionally builds emit closures once outside the assertion zone so
     /// the closure-creation cost itself is not measured. Each test owns a
     /// dedicated <see cref="MessageBus"/> instance to keep registrations from
-    /// leaking across rows; the global static bus is left untouched.
+    /// leaking across rows; tests that exercise global overrides restore the bus captured on entry.
     /// </para>
     /// <para>
     /// <b>Cross-product reduction.</b> The matrix exercises EACH axis (kind,
@@ -215,6 +215,118 @@ namespace DxMessaging.Tests.Editor.Allocations
                     AllocationAssertions.AssertNoAllocations($"Emit-{scenario.Kind}", emit);
                 }
             );
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void GlobalMessageBusOverrideScopeIsZeroAllocAfterWarmup()
+        {
+            IMessageBus entryBus = MessageHandler.MessageBus;
+            MessageBus original = new MessageBus();
+            MessageBus overrideBus = new MessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            Action overrideCycle = () =>
+            {
+                using MessageHandler.GlobalMessageBusScope scope =
+                    MessageHandler.OverrideGlobalMessageBus(overrideBus);
+            };
+
+            try
+            {
+                AllocationAssertions.AssertNoAllocations(
+                    nameof(GlobalMessageBusOverrideScopeIsZeroAllocAfterWarmup),
+                    overrideCycle
+                );
+                Assert.AreSame(
+                    original,
+                    MessageHandler.MessageBus,
+                    "Every measured override scope must restore the original global bus."
+                );
+            }
+            finally
+            {
+                MessageHandler.SetGlobalMessageBus(entryBus);
+            }
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void NestedAndInvalidatedGlobalMessageBusOverridesAreZeroAllocAfterWarmup()
+        {
+            IMessageBus entryBus = MessageHandler.MessageBus;
+            MessageBus original = new MessageBus();
+            MessageBus outerBus = new MessageBus();
+            MessageBus innerBus = new MessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            Action overrideBranches = () =>
+            {
+                MessageHandler.GlobalMessageBusScope outer =
+                    MessageHandler.OverrideGlobalMessageBus(outerBus);
+                MessageHandler.GlobalMessageBusScope inner =
+                    MessageHandler.OverrideGlobalMessageBus(innerBus);
+                outer.Dispose();
+                inner.Dispose();
+
+                MessageHandler.GlobalMessageBusScope invalidated =
+                    MessageHandler.OverrideGlobalMessageBus(outerBus);
+                MessageHandler.SetGlobalMessageBus(original);
+                invalidated.Dispose();
+            };
+
+            try
+            {
+                AllocationAssertions.AssertNoAllocations(
+                    nameof(NestedAndInvalidatedGlobalMessageBusOverridesAreZeroAllocAfterWarmup),
+                    overrideBranches
+                );
+                Assert.AreSame(original, MessageHandler.MessageBus);
+            }
+            finally
+            {
+                MessageHandler.SetGlobalMessageBus(entryBus);
+            }
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void RegistrationDisposableIsZeroAllocAfterWarmup()
+        {
+            MessageBus bus = new MessageBus();
+            MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            MessageRegistrationHandle pending = default;
+            Action prepare = () =>
+                pending = token.RegisterUntargeted<SimpleUntargetedMessage>(NoOpUntargeted);
+            Action dispose = () => token.AsDisposable(pending).Dispose();
+
+            try
+            {
+                token.Enable();
+                prepare();
+                dispose();
+                long delta = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare,
+                    dispose
+                );
+                if (delta == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        "The GC.Alloc allocation probe is non-functional on this backend."
+                    );
+                }
+
+                Assert.AreEqual(
+                    0,
+                    delta,
+                    "AsDisposable and concrete RegistrationDisposable.Dispose must allocate no managed objects after warm-up."
+                );
+            }
+            finally
+            {
+                token.UnregisterAll();
+                token.Dispose();
+            }
         }
 
         /// <summary>

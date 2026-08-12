@@ -23,16 +23,6 @@ namespace DxMessaging.Core
 
         internal int Slot => _slot;
 
-        internal static long GetCurrentIdSeed()
-        {
-            return Interlocked.Read(ref StaticIdCount);
-        }
-
-        internal static void SetIdSeed(long value)
-        {
-            _ = Interlocked.Exchange(ref StaticIdCount, value);
-        }
-
         /// <summary>
         /// Creates a new unique handle.
         /// </summary>

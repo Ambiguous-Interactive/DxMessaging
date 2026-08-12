@@ -59,6 +59,13 @@ var handler = new MessageHandler(new InstanceId(1)) { active = true };
 
 ### Temporarily Overriding the Global Bus
 
+> **Fixed in v3.2.3:** Override scopes are safe to copy and allocate no managed objects per scope
+> after `MessageHandler` static initialization. Keep the result as the concrete
+> `GlobalMessageBusScope` type because converting a value type to `IDisposable` boxes it. Disposing
+> any copy ends the override once. Nested scopes restore the nearest active parent even when
+> disposed out of order. A later `SetGlobalMessageBus`, `ResetGlobalMessageBus`, or
+> `DxMessagingStaticState.Reset` invalidates older scopes so they cannot restore stale state.
+
 Use `OverrideGlobalMessageBus()` when you want to temporarily replace the bus and automatically restore it later:
 
 ```csharp
@@ -86,7 +93,12 @@ Assert.AreSame(originalBus, MessageHandler.MessageBus);
 - When temporarily redirecting messages for debugging or logging
 - For scoped gameplay features that need their own message channel
 
-**Pattern:** This returns an `IDisposable`, so you can use it with `using` statements for automatic cleanup. When the scope exits (either normally or via exception), the previous bus is restored.
+**Pattern:** This returns a `GlobalMessageBusScope` struct. Use the concrete return value directly
+with a `using` statement for allocation-free cleanup after static initialization. When the scope
+exits, the nearest active previous bus is restored. The process-wide table supports 1,024 occupied
+override slots. An out-of-order-disposed parent keeps its slot until all newer scopes have ended.
+Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These
+configuration APIs follow DxMessaging's single-threaded runtime contract.
 
 ### Resetting to the Default Bus
 
@@ -386,17 +398,17 @@ public class DynamicComponentManager
 
 ## Quick Reference
 
-| API                                            | Purpose                                    | Use Case                        |
-| ---------------------------------------------- | ------------------------------------------ | ------------------------------- |
-| `MessageHandler.MessageBus`                    | Access current global bus                  | Normal message emission         |
-| `MessageHandler.InitialGlobalMessageBus`       | Access original startup bus                | Diagnostics, debugging          |
-| `MessageHandler.SetGlobalMessageBus(bus)`      | Permanently replace global bus             | DI integration, test setup      |
-| `MessageHandler.OverrideGlobalMessageBus(bus)` | Temporarily override (returns IDisposable) | Test isolation, scoped features |
-| `MessageHandler.ResetGlobalMessageBus()`       | Restore original startup bus               | Test teardown, reset state      |
-| `component.Configure(bus, mode)`               | Set component's bus                        | Component configuration         |
-| `token.RetargetMessageBus(bus, mode)`          | Retarget a token                           | Fine-grained control            |
-| `MessageBusRebindMode.PreserveRegistrations`   | Keep existing registrations on old bus     | Gradual migration               |
-| `MessageBusRebindMode.RebindActive`            | Move all registrations to new bus          | Atomic switching                |
+| API                                            | Purpose                                            | Use Case                        |
+| ---------------------------------------------- | -------------------------------------------------- | ------------------------------- |
+| `MessageHandler.MessageBus`                    | Access current global bus                          | Normal message emission         |
+| `MessageHandler.InitialGlobalMessageBus`       | Access original startup bus                        | Diagnostics, debugging          |
+| `MessageHandler.SetGlobalMessageBus(bus)`      | Permanently replace global bus                     | DI integration, test setup      |
+| `MessageHandler.OverrideGlobalMessageBus(bus)` | Temporarily override with a concrete zero-GC scope | Test isolation, scoped features |
+| `MessageHandler.ResetGlobalMessageBus()`       | Restore original startup bus                       | Test teardown, reset state      |
+| `component.Configure(bus, mode)`               | Set component's bus                                | Component configuration         |
+| `token.RetargetMessageBus(bus, mode)`          | Retarget a token                                   | Fine-grained control            |
+| `MessageBusRebindMode.PreserveRegistrations`   | Keep existing registrations on old bus             | Gradual migration               |
+| `MessageBusRebindMode.RebindActive`            | Move all registrations to new bus                  | Atomic switching                |
 
 ---
 

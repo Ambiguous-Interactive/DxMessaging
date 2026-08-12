@@ -127,73 +127,244 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreSame(primary, MessageHandler.MessageBus);
         }
 
-        /// <summary>
-        /// Pins LIFO disposal of nested
-        /// <see cref="MessageHandler.OverrideGlobalMessageBus"/> scopes: each
-        /// scope captures the bus active at its construction, so disposing
-        /// inner-then-outer walks the chain back to the original bus.
-        /// </summary>
         [Test]
-        public void OverrideGlobalMessageBusNestedScopesRestoreInLifoOrder()
+        public void DefaultGlobalMessageBusScopeDisposalDoesNothing()
         {
-            GlobalMessageBus original = new GlobalMessageBus();
-            MessageHandler.SetGlobalMessageBus(original);
-            GlobalMessageBus outerBus = new GlobalMessageBus();
-            GlobalMessageBus innerBus = new GlobalMessageBus();
+            GlobalMessageBus current = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(current);
 
-            MessageHandler.GlobalMessageBusScope outerScope =
-                MessageHandler.OverrideGlobalMessageBus(outerBus);
-            Assert.AreSame(
-                outerBus,
-                MessageHandler.MessageBus,
-                "Outer override must take effect immediately."
+            MessageHandler.GlobalMessageBusScope scope = default;
+            Assert.DoesNotThrow(
+                scope.Dispose,
+                "Disposing a default global-bus scope must be a harmless no-op."
             );
-
-            MessageHandler.GlobalMessageBusScope innerScope =
-                MessageHandler.OverrideGlobalMessageBus(innerBus);
             Assert.AreSame(
-                innerBus,
+                current,
                 MessageHandler.MessageBus,
-                "Inner override must take effect immediately."
-            );
-
-            innerScope.Dispose();
-            Assert.AreSame(
-                outerBus,
-                MessageHandler.MessageBus,
-                "Disposing the inner scope must restore the outer override bus."
-            );
-
-            outerScope.Dispose();
-            Assert.AreSame(
-                original,
-                MessageHandler.MessageBus,
-                "Disposing the outer scope must restore the original bus."
+                "A default scope must not reset or replace the current global bus."
             );
         }
 
-        /// <summary>
-        /// Pins what <see cref="MessageHandler.GlobalMessageBusScope"/>
-        /// actually does on OUT-OF-ORDER disposal (outer disposed before
-        /// inner). The implementation performs no nesting validation: each
-        /// scope independently captures the bus that was active at its own
-        /// construction and restores exactly that snapshot when disposed,
-        /// regardless of disposal order. "Sane" here means deterministic
-        /// per-scope snapshot-restore - the scope neither throws nor tries to
-        /// reconcile the stack.
-        /// </summary>
-        /// <remarks>
-        /// CONSEQUENCE (pinned below, and worth flagging to maintainers):
-        /// after disposing outer-then-inner, the globally active bus is the
-        /// OUTER override bus - the inner scope captured it as its "previous"
-        /// - NOT the original bus that was active before either override. A
-        /// caller that disposes scopes out of order is silently left on a
-        /// stale override. If GlobalMessageBusScope ever grows nesting
-        /// validation (e.g. throwing on out-of-order disposal, or restoring
-        /// the original), this test must be re-pinned deliberately.
-        /// </remarks>
+        [TestCase(true)]
+        [TestCase(false)]
+        public void CopiedGlobalMessageBusScopeDisposesExactlyOnce(bool disposeCopyFirst)
+        {
+            GlobalMessageBus original = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            GlobalMessageBus overrideBus = new GlobalMessageBus();
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
+                overrideBus
+            );
+            MessageHandler.GlobalMessageBusScope copy = scope;
+
+            if (disposeCopyFirst)
+            {
+                copy.Dispose();
+            }
+            else
+            {
+                scope.Dispose();
+            }
+
+            Assert.AreSame(
+                original,
+                MessageHandler.MessageBus,
+                "The first disposal of either copy must restore the original bus. copyFirst={0}",
+                disposeCopyFirst
+            );
+
+            GlobalMessageBus intervening = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(intervening);
+            if (disposeCopyFirst)
+            {
+                scope.Dispose();
+            }
+            else
+            {
+                copy.Dispose();
+            }
+
+            Assert.AreSame(
+                intervening,
+                MessageHandler.MessageBus,
+                "The stale copy must not restore over a newer global-bus change. copyFirst={0}",
+                disposeCopyFirst
+            );
+        }
+
         [Test]
-        public void OverrideGlobalMessageBusOutOfOrderDisposalRestoresConstructionSnapshots()
+        public void InterveningGlobalMessageBusChangeInvalidatesActiveScopeRestore()
+        {
+            GlobalMessageBus original = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
+                new GlobalMessageBus()
+            );
+            GlobalMessageBus intervening = new GlobalMessageBus();
+
+            MessageHandler.SetGlobalMessageBus(intervening);
+            scope.Dispose();
+
+            Assert.AreSame(
+                intervening,
+                MessageHandler.MessageBus,
+                "Disposal must not restore a snapshot over a newer explicit global-bus change."
+            );
+        }
+
+        [Test]
+        public void ResetGlobalMessageBusInvalidatesActiveScopeRestore()
+        {
+            MessageHandler.SetGlobalMessageBus(new GlobalMessageBus());
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
+                new GlobalMessageBus()
+            );
+
+            MessageHandler.ResetGlobalMessageBus();
+            IMessageBus resetBus = MessageHandler.MessageBus;
+            scope.Dispose();
+
+            Assert.AreSame(
+                resetBus,
+                MessageHandler.MessageBus,
+                "A scope created before ResetGlobalMessageBus must not restore stale state."
+            );
+        }
+
+        [Test]
+        public void StaticResetInvalidatesActiveScopeRestore()
+        {
+            MessageHandler.SetGlobalMessageBus(new GlobalMessageBus());
+            MessageHandler.GlobalMessageBusScope scope = MessageHandler.OverrideGlobalMessageBus(
+                new GlobalMessageBus()
+            );
+
+            DxMessagingStaticState.Reset();
+            IMessageBus resetBus = MessageHandler.MessageBus;
+            scope.Dispose();
+
+            Assert.AreSame(
+                resetBus,
+                MessageHandler.MessageBus,
+                "A scope created before DxMessagingStaticState.Reset must not restore stale state."
+            );
+        }
+
+        [Test]
+        public void OverrideGlobalMessageBusRejectsNull()
+        {
+            Assert.Throws<ArgumentNullException>(
+                () => MessageHandler.OverrideGlobalMessageBus((IMessageBus)null),
+                "A null global-bus override must fail before changing global state."
+            );
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void RecycledOverrideSlotRejectsStaleScopeGeneration(bool useStaticReset)
+        {
+            GlobalMessageBus original = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            MessageHandler.GlobalMessageBusScope stale = MessageHandler.OverrideGlobalMessageBus(
+                new GlobalMessageBus()
+            );
+
+            if (useStaticReset)
+            {
+                DxMessagingStaticState.Reset();
+            }
+            else
+            {
+                MessageHandler.SetGlobalMessageBus(original);
+            }
+
+            IMessageBus baseline = MessageHandler.MessageBus;
+            GlobalMessageBus current = new GlobalMessageBus();
+            MessageHandler.GlobalMessageBusScope currentScope =
+                MessageHandler.OverrideGlobalMessageBus(current);
+
+            stale.Dispose();
+            Assert.AreSame(
+                current,
+                MessageHandler.MessageBus,
+                "A stale generation must not end the scope that recycled its slot. staticReset={0}",
+                useStaticReset
+            );
+
+            currentScope.Dispose();
+            Assert.AreSame(
+                baseline,
+                MessageHandler.MessageBus,
+                "The recycled slot's live scope must still restore its own baseline. staticReset={0}",
+                useStaticReset
+            );
+        }
+
+        [Test]
+        public void OverrideSlotCapacityFailsWithoutMutationAndIsReusableAfterUnwind()
+        {
+            const int capacity = 1024;
+            GlobalMessageBus original = new GlobalMessageBus();
+            GlobalMessageBus overrideBus = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            MessageHandler.GlobalMessageBusScope[] scopes =
+                new MessageHandler.GlobalMessageBusScope[capacity];
+
+            for (int i = 0; i < scopes.Length; ++i)
+            {
+                scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
+            }
+
+            Assert.Throws<InvalidOperationException>(
+                () => MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus()),
+                "The first scope beyond the documented slot capacity must fail."
+            );
+            Assert.AreSame(
+                overrideBus,
+                MessageHandler.MessageBus,
+                "A capacity failure must not mutate the active global bus."
+            );
+
+            for (int i = 0; i < scopes.Length - 1; ++i)
+            {
+                scopes[i].Dispose();
+            }
+
+            Assert.Throws<InvalidOperationException>(
+                () => MessageHandler.OverrideGlobalMessageBus(overrideBus),
+                "Out-of-order-disposed ancestors keep their slots until the newest scope ends."
+            );
+            scopes[scopes.Length - 1].Dispose();
+            Assert.AreSame(
+                original,
+                MessageHandler.MessageBus,
+                "Ending the newest scope must unwind every disposed ancestor."
+            );
+
+            using (MessageHandler.OverrideGlobalMessageBus(overrideBus))
+            {
+                Assert.AreSame(
+                    overrideBus,
+                    MessageHandler.MessageBus,
+                    "Unwound slots must be reusable after capacity recovery."
+                );
+            }
+
+            Assert.AreSame(
+                original,
+                MessageHandler.MessageBus,
+                "The recovered scope must restore the pre-capacity-test bus."
+            );
+        }
+
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void NestedGlobalMessageBusScopeCopiesRestoreNearestActiveBus(
+            bool disposeOuterFirst,
+            bool disposeCopies
+        )
         {
             GlobalMessageBus original = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
@@ -204,38 +375,41 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageHandler.OverrideGlobalMessageBus(outerBus);
             MessageHandler.GlobalMessageBusScope innerScope =
                 MessageHandler.OverrideGlobalMessageBus(innerBus);
+            MessageHandler.GlobalMessageBusScope outerCopy = outerScope;
+            MessageHandler.GlobalMessageBusScope innerCopy = innerScope;
             Assert.AreSame(
                 innerBus,
                 MessageHandler.MessageBus,
-                "Sanity: inner override is active before any disposal."
+                "The inner override must be active before disposal. outerFirst={0}, copies={1}",
+                disposeOuterFirst,
+                disposeCopies
             );
 
-            // Outer disposed FIRST: it restores ITS captured previous (the
-            // original bus), even though the inner scope is still open.
-            Assert.DoesNotThrow(
-                () => outerScope.Dispose(),
-                "Out-of-order disposal must not throw (no nesting validation exists)."
+            MessageHandler.GlobalMessageBusScope first = disposeOuterFirst
+                ? (disposeCopies ? outerCopy : outerScope)
+                : (disposeCopies ? innerCopy : innerScope);
+            MessageHandler.GlobalMessageBusScope second = disposeOuterFirst
+                ? (disposeCopies ? innerCopy : innerScope)
+                : (disposeCopies ? outerCopy : outerScope);
+            first.Dispose();
+
+            IMessageBus expectedAfterFirst = disposeOuterFirst ? innerBus : outerBus;
+            Assert.AreSame(
+                expectedAfterFirst,
+                MessageHandler.MessageBus,
+                "The first disposal must preserve the nearest active override. outerFirst={0}, copies={1}",
+                disposeOuterFirst,
+                disposeCopies
             );
+
+            second.Dispose();
             Assert.AreSame(
                 original,
                 MessageHandler.MessageBus,
-                "Disposing the outer scope restores the outer scope's construction snapshot (the original bus), ignoring the still-open inner scope."
+                "The second disposal must restore the original bus. outerFirst={0}, copies={1}",
+                disposeOuterFirst,
+                disposeCopies
             );
-
-            // Inner disposed SECOND: it restores ITS captured previous - the
-            // outer override bus - leaving a stale override active. See the
-            // remarks; this is the deterministic consequence of per-scope
-            // snapshot-restore without nesting validation.
-            Assert.DoesNotThrow(() => innerScope.Dispose());
-            Assert.AreSame(
-                outerBus,
-                MessageHandler.MessageBus,
-                "Disposing the inner scope restores the inner scope's construction snapshot (the OUTER override bus), not the original. Out-of-order disposal leaves a stale override active."
-            );
-
-            // Recover explicitly so no stale override leaks past this test
-            // (the fixture TearDown also restores the captured original).
-            MessageHandler.SetGlobalMessageBus(original);
         }
 
 #if UNITY_2021_3_OR_NEWER
