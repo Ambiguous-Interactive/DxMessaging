@@ -1013,6 +1013,34 @@ namespace DxMessaging.Core.MessageBus
             return true;
         }
 
+        internal bool HasDispatchStateForTesting<TMessage>(
+            RegistrationMethod method,
+            InstanceId context
+        )
+            where TMessage : IMessage
+        {
+            switch (method)
+            {
+                case RegistrationMethod.Targeted:
+                case RegistrationMethod.Broadcast:
+                case RegistrationMethod.TargetedPostProcessor:
+                case RegistrationMethod.BroadcastPostProcessor:
+                    return ContextSinkForMethod(method)
+                            .TryGetValue<TMessage>(out ContextHandlerMap handlersByContext)
+                        && handlersByContext.TryGetValue(
+                            context,
+                            out HandlerCache<int, HandlerCache> contextHandlers
+                        )
+                        && contextHandlers.dispatchState != null;
+                default:
+                    return ScalarSinkForMethod(method)
+                            .TryGetValue<TMessage>(
+                                out HandlerCache<int, HandlerCache> scalarHandlers
+                            )
+                        && scalarHandlers.dispatchState != null;
+            }
+        }
+
         // Bumped by every mutation that can change what a DispatchPlan
         // caches or decides. Plans compare their stamp against this value at
         // every emission; the emit shells also re-compare mid-emission to
@@ -5967,7 +5995,14 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            DispatchState state = handlers.dispatchState ??= new DispatchState();
+            DispatchState state = handlers.dispatchState;
+            if (state == null)
+            {
+                // No snapshot exists before this sink's first emission, so registration has
+                // nothing to invalidate. AcquireDispatchSnapshot materializes and builds the
+                // state when that first emission arrives.
+                return;
+            }
             if (state.hasPending)
             {
                 ReleaseSnapshot(ref state.pending);

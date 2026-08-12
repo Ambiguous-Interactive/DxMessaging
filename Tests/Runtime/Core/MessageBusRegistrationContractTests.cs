@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using DxMessaging.Core;
+    using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -116,6 +117,227 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        [Test]
+        public void DispatchStateStaysLazyUntilFirstEmission(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
+            )]
+                MessageScenario scenario
+        )
+        {
+            MessageBus bus = new MessageBus { DiagnosticsMode = false };
+            MessageHandler handler = new MessageHandler(new InstanceId(404), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.Enable();
+            int calls = 0;
+            InstanceId context = new InstanceId(405);
+
+            using (
+                new LeakWatcher(
+                    bus,
+                    label: nameof(DispatchStateStaysLazyUntilFirstEmission) + ":" + scenario
+                )
+            )
+            {
+                try
+                {
+                    _ = RegisterCountingSink(scenario, token, context, () => ++calls);
+                    Assert.IsFalse(
+                        HasDispatchState(bus, scenario, context),
+                        "[{0}] Registration must not allocate dispatch state before a matching emission.",
+                        scenario
+                    );
+
+                    EmitForScenario(scenario, bus, context);
+                    Assert.AreEqual(
+                        1,
+                        calls,
+                        "[{0}] The first emission must build and use the snapshot.",
+                        scenario
+                    );
+                    Assert.IsTrue(
+                        HasDispatchState(bus, scenario, context),
+                        "[{0}] The first emission must materialize dispatch state.",
+                        scenario
+                    );
+
+                    _ = RegisterCountingSink(scenario, token, context, () => calls += 10);
+                    EmitForScenario(scenario, bus, context);
+                    Assert.AreEqual(
+                        12,
+                        calls,
+                        "[{0}] A registration after first emission must dirty and rebuild the existing state.",
+                        scenario
+                    );
+                }
+                finally
+                {
+                    token.UnregisterAll();
+                    token.Dispose();
+                    handler.active = false;
+                }
+            }
+        }
+
+        private static bool HasDispatchState(
+            MessageBus bus,
+            MessageScenario scenario,
+            InstanceId context
+        )
+        {
+            RegistrationMethod method = GetRegistrationMethod(scenario);
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    return bus.HasDispatchStateForTesting<SimpleUntargetedMessage>(method, context);
+                case MessageKind.Targeted:
+                case MessageKind.TargetedWithoutTargeting:
+                    return bus.HasDispatchStateForTesting<SimpleTargetedMessage>(method, context);
+                case MessageKind.Broadcast:
+                case MessageKind.BroadcastWithoutSource:
+                    return bus.HasDispatchStateForTesting<SimpleBroadcastMessage>(method, context);
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario.Kind,
+                        "Unsupported message kind."
+                    );
+            }
+        }
+
+        private static MessageRegistrationHandle RegisterCountingSink(
+            MessageScenario scenario,
+            MessageRegistrationToken token,
+            InstanceId context,
+            Action onInvoked
+        )
+        {
+            if (scenario.UsePostProcessor)
+            {
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                        return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
+                            (ref SimpleUntargetedMessage _) => onInvoked()
+                        );
+                    case MessageKind.Targeted:
+                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                            context,
+                            (ref SimpleTargetedMessage _) => onInvoked()
+                        );
+                    case MessageKind.Broadcast:
+                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                            context,
+                            (ref SimpleBroadcastMessage _) => onInvoked()
+                        );
+                    case MessageKind.TargetedWithoutTargeting:
+                        return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
+                            (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked()
+                        );
+                    case MessageKind.BroadcastWithoutSource:
+                        return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
+                            (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked()
+                        );
+                    default:
+                        throw UnsupportedScenario(scenario);
+                }
+            }
+
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    return token.RegisterUntargeted<SimpleUntargetedMessage>(
+                        (ref SimpleUntargetedMessage _) => onInvoked()
+                    );
+                case MessageKind.Targeted:
+                    return token.RegisterTargeted<SimpleTargetedMessage>(
+                        context,
+                        (ref SimpleTargetedMessage _) => onInvoked()
+                    );
+                case MessageKind.Broadcast:
+                    return token.RegisterBroadcast<SimpleBroadcastMessage>(
+                        context,
+                        (ref SimpleBroadcastMessage _) => onInvoked()
+                    );
+                case MessageKind.TargetedWithoutTargeting:
+                    return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                        (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked()
+                    );
+                case MessageKind.BroadcastWithoutSource:
+                    return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                        (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked()
+                    );
+                default:
+                    throw UnsupportedScenario(scenario);
+            }
+        }
+
+        private static RegistrationMethod GetRegistrationMethod(MessageScenario scenario)
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    return scenario.UsePostProcessor
+                        ? RegistrationMethod.UntargetedPostProcessor
+                        : RegistrationMethod.Untargeted;
+                case MessageKind.Targeted:
+                    return scenario.UsePostProcessor
+                        ? RegistrationMethod.TargetedPostProcessor
+                        : RegistrationMethod.Targeted;
+                case MessageKind.Broadcast:
+                    return scenario.UsePostProcessor
+                        ? RegistrationMethod.BroadcastPostProcessor
+                        : RegistrationMethod.Broadcast;
+                case MessageKind.TargetedWithoutTargeting:
+                    return scenario.UsePostProcessor
+                        ? RegistrationMethod.TargetedWithoutTargetingPostProcessor
+                        : RegistrationMethod.TargetedWithoutTargeting;
+                case MessageKind.BroadcastWithoutSource:
+                    return scenario.UsePostProcessor
+                        ? RegistrationMethod.BroadcastWithoutSourcePostProcessor
+                        : RegistrationMethod.BroadcastWithoutSource;
+                default:
+                    throw UnsupportedScenario(scenario);
+            }
+        }
+
+        private static void EmitForScenario(
+            MessageScenario scenario,
+            IMessageBus bus,
+            InstanceId context
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    SimpleUntargetedMessage untargeted = new();
+                    untargeted.EmitUntargeted(bus);
+                    return;
+                case MessageKind.Targeted:
+                case MessageKind.TargetedWithoutTargeting:
+                    SimpleTargetedMessage targeted = new();
+                    targeted.EmitTargeted(context, bus);
+                    return;
+                case MessageKind.Broadcast:
+                case MessageKind.BroadcastWithoutSource:
+                    SimpleBroadcastMessage broadcast = new();
+                    broadcast.EmitBroadcast(context, bus);
+                    return;
+                default:
+                    throw UnsupportedScenario(scenario);
+            }
+        }
+
+        private static ArgumentOutOfRangeException UnsupportedScenario(MessageScenario scenario)
+        {
+            return new ArgumentOutOfRangeException(
+                nameof(scenario),
+                scenario.Kind,
+                "Unsupported message kind."
+            );
         }
     }
 }
