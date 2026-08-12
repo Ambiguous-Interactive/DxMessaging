@@ -16,14 +16,17 @@ namespace DxMessaging.Core.Configuration
     /// </summary>
     /// <remarks>
     /// Tests inject a fake via <see cref="Override"/>, which returns an
-    /// <see cref="IDisposable"/> that restores the prior current settings. Override
-    /// raises <see cref="DxMessagingRuntimeSettings.SettingsChanged"/> on push and
-    /// pop so subscribed buses re-apply caps.
+    /// <see cref="IDisposable"/> that restores the nearest active prior settings,
+    /// including when nested tokens are disposed out of order. Each call allocates
+    /// one sealed reference token. Override raises
+    /// <see cref="DxMessagingRuntimeSettings.SettingsChanged"/> on push and when
+    /// disposing the newest active token changes the current settings.
     /// </remarks>
     public static class DxMessagingRuntimeSettingsProvider
     {
         private static DxMessagingRuntimeSettings _cached;
         private static readonly object _gate = new();
+        private static OverrideToken _activeOverride;
 
         /// <summary>
         /// Returns the active settings instance. Loads the asset on first call;
@@ -62,7 +65,9 @@ namespace DxMessaging.Core.Configuration
         /// Pushes a test-supplied settings instance as the active <see cref="Current"/>
         /// value and raises <see cref="DxMessagingRuntimeSettings.SettingsChanged"/>.
         /// Disposing the returned token restores the previous instance and raises
-        /// the event again so subscribers re-apply the original caps.
+        /// the event again so subscribers re-apply the original caps. Nested tokens
+        /// may be disposed in any order; an ended ancestor is skipped when the newest
+        /// token later restores state. Each call allocates one sealed reference token.
         /// </summary>
         public static IDisposable Override(DxMessagingRuntimeSettings settings)
         {
@@ -70,15 +75,24 @@ namespace DxMessaging.Core.Configuration
             {
                 throw new ArgumentNullException(nameof(settings));
             }
-            DxMessagingRuntimeSettings previous;
-            int previousGlobalMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
+            OverrideToken token;
             lock (_gate)
             {
-                previous = _cached;
+                token = new OverrideToken(
+                    settings,
+                    _cached,
+                    IMessageBus.GlobalMessageBufferSize,
+                    _activeOverride
+                );
+                if (_activeOverride != null)
+                {
+                    _activeOverride._newer = token;
+                }
+                _activeOverride = token;
                 _cached = settings;
             }
             DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-            return new OverrideToken(settings, previous, previousGlobalMessageBufferSize);
+            return token;
         }
 
         /// <summary>
@@ -89,6 +103,12 @@ namespace DxMessaging.Core.Configuration
         {
             lock (_gate)
             {
+                OverrideToken token = _activeOverride;
+                while (token != null)
+                {
+                    token = token.InvalidateAndGetOlder();
+                }
+                _activeOverride = null;
                 _cached = null;
             }
         }
@@ -126,52 +146,90 @@ namespace DxMessaging.Core.Configuration
 
         private sealed class OverrideToken : IDisposable
         {
-            private readonly DxMessagingRuntimeSettings _installed;
-            private readonly int _previousGlobalMessageBufferSize;
+            private DxMessagingRuntimeSettings _installed;
+            private int _previousGlobalMessageBufferSize;
             private DxMessagingRuntimeSettings _previous;
+            private OverrideToken _older;
+            internal OverrideToken _newer;
             private bool _disposed;
 
             public OverrideToken(
                 DxMessagingRuntimeSettings installed,
                 DxMessagingRuntimeSettings previous,
-                int previousGlobalMessageBufferSize
+                int previousGlobalMessageBufferSize,
+                OverrideToken older
             )
             {
                 _installed = installed;
                 _previous = previous;
                 _previousGlobalMessageBufferSize = previousGlobalMessageBufferSize;
+                _older = older;
             }
 
             public void Dispose()
             {
-                if (_disposed)
-                {
-                    return;
-                }
-                _disposed = true;
                 DxMessagingRuntimeSettings restored = null;
                 bool didRestore = false;
+                int restoredGlobalMessageBufferSize = 0;
                 lock (_gate)
                 {
-                    // Only restore if our install is still the active one.
-                    // If a deeper Override was pushed on top, this Dispose is a no-op
-                    // so the LIFO stack is honored.
-                    if (ReferenceEquals(_cached, _installed))
+                    if (_disposed)
                     {
-                        _cached = _previous;
+                        return;
+                    }
+                    _disposed = true;
+
+                    if (_newer != null)
+                    {
+                        // The immediate child used this override as its restore point.
+                        // Bypass the ended node and carry the root snapshot forward so
+                        // the newest live override eventually restores the nearest
+                        // active ancestor regardless of disposal order.
+                        _newer._older = _older;
+                        _newer._previous = _previous;
+                        _newer._previousGlobalMessageBufferSize = _previousGlobalMessageBufferSize;
+                        if (_older != null)
+                        {
+                            _older._newer = _newer;
+                        }
+                    }
+                    else
+                    {
+                        _activeOverride = _older;
+                        if (_older != null)
+                        {
+                            _older._newer = null;
+                        }
                         restored = _previous;
+                        restoredGlobalMessageBufferSize = _previousGlobalMessageBufferSize;
+                        _cached = restored;
                         didRestore = true;
                     }
+
+                    _installed = null;
                     _previous = null;
+                    _older = null;
+                    _newer = null;
                 }
                 if (didRestore)
                 {
                     if (restored == null || restored.IsFallbackInstance)
                     {
-                        IMessageBus.GlobalMessageBufferSize = _previousGlobalMessageBufferSize;
+                        IMessageBus.GlobalMessageBufferSize = restoredGlobalMessageBufferSize;
                     }
                     DxMessagingRuntimeSettings.RaiseSettingsChanged(restored);
                 }
+            }
+
+            internal OverrideToken InvalidateAndGetOlder()
+            {
+                OverrideToken older = _older;
+                _disposed = true;
+                _installed = null;
+                _previous = null;
+                _older = null;
+                _newer = null;
+                return older;
             }
         }
     }

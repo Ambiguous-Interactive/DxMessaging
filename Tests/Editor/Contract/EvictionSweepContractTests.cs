@@ -695,6 +695,353 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void NestedRuntimeSettingsOverridesRestoreNearestActiveSettings(
+            bool disposeOuterFirst
+        )
+        {
+            DxMessagingRuntimeSettings original =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings outer =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings inner =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable originalToken = null;
+            IDisposable outerToken = null;
+            IDisposable innerToken = null;
+            try
+            {
+                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
+                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
+                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+
+                IDisposable first = disposeOuterFirst ? outerToken : innerToken;
+                IDisposable second = disposeOuterFirst ? innerToken : outerToken;
+                DxMessagingRuntimeSettings expectedAfterFirst = disposeOuterFirst ? inner : outer;
+
+                first.Dispose();
+                Assert.AreSame(
+                    expectedAfterFirst,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Disposing either nested override first must leave the nearest active override current."
+                );
+
+                second.Dispose();
+                Assert.AreSame(
+                    original,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Ending every nested override must restore the original settings."
+                );
+            }
+            finally
+            {
+                innerToken?.Dispose();
+                outerToken?.Dispose();
+                originalToken?.Dispose();
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                DxMessagingRuntimeSettings.RaiseSettingsChanged(
+                    DxMessagingRuntimeSettingsProvider.Current
+                );
+                UnityEngine.Object.DestroyImmediate(inner);
+                UnityEngine.Object.DestroyImmediate(outer);
+                UnityEngine.Object.DestroyImmediate(original);
+            }
+        }
+
+        [Test]
+        public void NestedRuntimeSettingsOverridesUseTokenIdentityForSameSettingsInstance()
+        {
+            DxMessagingRuntimeSettings original =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings shared =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable originalToken = null;
+            IDisposable outerToken = null;
+            IDisposable innerToken = null;
+            try
+            {
+                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
+                outerToken = DxMessagingRuntimeSettingsProvider.Override(shared);
+                innerToken = DxMessagingRuntimeSettingsProvider.Override(shared);
+
+                outerToken.Dispose();
+                Assert.AreSame(
+                    shared,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Disposing the outer token must not end an inner override that installed the same settings reference."
+                );
+
+                innerToken.Dispose();
+                Assert.AreSame(
+                    original,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Ending both same-reference overrides must restore the original settings."
+                );
+            }
+            finally
+            {
+                innerToken?.Dispose();
+                outerToken?.Dispose();
+                originalToken?.Dispose();
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(shared);
+                UnityEngine.Object.DestroyImmediate(original);
+            }
+        }
+
+        [Test]
+        public void DisposedMiddleRuntimeSettingsOverrideIsSkippedDuringUnwind()
+        {
+            DxMessagingRuntimeSettings original =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings outer =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings middle =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings inner =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable originalToken = null;
+            IDisposable outerToken = null;
+            IDisposable middleToken = null;
+            IDisposable innerToken = null;
+            try
+            {
+                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
+                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
+                middleToken = DxMessagingRuntimeSettingsProvider.Override(middle);
+                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+
+                middleToken.Dispose();
+                Assert.AreSame(
+                    inner,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Disposing a middle override must leave the newest override current."
+                );
+
+                innerToken.Dispose();
+                Assert.AreSame(
+                    outer,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "The newest override must restore the nearest active ancestor."
+                );
+
+                outerToken.Dispose();
+                Assert.AreSame(
+                    original,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Unwinding the remaining override must restore the original settings."
+                );
+            }
+            finally
+            {
+                innerToken?.Dispose();
+                middleToken?.Dispose();
+                outerToken?.Dispose();
+                originalToken?.Dispose();
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(inner);
+                UnityEngine.Object.DestroyImmediate(middle);
+                UnityEngine.Object.DestroyImmediate(outer);
+                UnityEngine.Object.DestroyImmediate(original);
+            }
+        }
+
+        [Test]
+        public void StaticResetInvalidatesOlderRuntimeSettingsOverrideTokens()
+        {
+            DxMessagingRuntimeSettings staleOuter =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings staleInner =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings replacementBase =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings replacement =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable staleOuterToken = null;
+            IDisposable staleInnerToken = null;
+            IDisposable replacementBaseToken = null;
+            IDisposable replacementToken = null;
+            try
+            {
+                staleOuterToken = DxMessagingRuntimeSettingsProvider.Override(staleOuter);
+                staleInnerToken = DxMessagingRuntimeSettingsProvider.Override(staleInner);
+
+                DxMessagingStaticState.Reset();
+                replacementBaseToken = DxMessagingRuntimeSettingsProvider.Override(replacementBase);
+                replacementToken = DxMessagingRuntimeSettingsProvider.Override(replacement);
+
+                staleInnerToken.Dispose();
+                staleOuterToken.Dispose();
+                Assert.AreSame(
+                    replacement,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Tokens invalidated by a static reset must not overwrite a newer override."
+                );
+
+                replacementToken.Dispose();
+                Assert.AreSame(
+                    replacementBase,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "A post-reset override must restore only its post-reset baseline."
+                );
+            }
+            finally
+            {
+                replacementToken?.Dispose();
+                replacementBaseToken?.Dispose();
+                staleInnerToken?.Dispose();
+                staleOuterToken?.Dispose();
+                DxMessagingStaticState.Reset();
+                UnityEngine.Object.DestroyImmediate(replacement);
+                UnityEngine.Object.DestroyImmediate(replacementBase);
+                UnityEngine.Object.DestroyImmediate(staleInner);
+                UnityEngine.Object.DestroyImmediate(staleOuter);
+            }
+        }
+
+        [Test]
+        public void OutOfOrderRuntimeSettingsDisposalRaisesOnlyFinalRestoreEvent()
+        {
+            DxMessagingRuntimeSettings original =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings outer =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings inner =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable originalToken = null;
+            IDisposable outerToken = null;
+            IDisposable innerToken = null;
+            int restoreEvents = 0;
+            DxMessagingRuntimeSettings restored = null;
+            Action<DxMessagingRuntimeSettings> captureRestore = settings =>
+            {
+                restoreEvents++;
+                restored = settings;
+            };
+            try
+            {
+                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
+                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
+                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+                DxMessagingRuntimeSettings.SettingsChanged += captureRestore;
+
+                outerToken.Dispose();
+                Assert.AreEqual(
+                    0,
+                    restoreEvents,
+                    "Ending a covered override must not publish a transient settings restore."
+                );
+
+                innerToken.Dispose();
+                Assert.AreEqual(
+                    1,
+                    restoreEvents,
+                    "Ending the newest override must publish exactly one restore event."
+                );
+                Assert.AreSame(
+                    original,
+                    restored,
+                    "The restore event must publish the nearest active settings."
+                );
+
+                innerToken.Dispose();
+                outerToken.Dispose();
+                Assert.AreEqual(
+                    1,
+                    restoreEvents,
+                    "Repeated disposal must not publish additional settings events."
+                );
+            }
+            finally
+            {
+                DxMessagingRuntimeSettings.SettingsChanged -= captureRestore;
+                innerToken?.Dispose();
+                outerToken?.Dispose();
+                originalToken?.Dispose();
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(inner);
+                UnityEngine.Object.DestroyImmediate(outer);
+                UnityEngine.Object.DestroyImmediate(original);
+            }
+        }
+
+        [Test]
+        public void OutOfOrderRuntimeSettingsDisposalCarriesGlobalBufferSnapshotForward()
+        {
+            int entryBufferSize = IMessageBus.GlobalMessageBufferSize;
+            DxMessagingRuntimeSettings originalFallback =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings outer =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            DxMessagingRuntimeSettings inner =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable originalToken = null;
+            IDisposable outerToken = null;
+            IDisposable innerToken = null;
+            try
+            {
+                originalFallback.MarkAsFallbackInstance();
+                originalToken = DxMessagingRuntimeSettingsProvider.Override(originalFallback);
+                IMessageBus.GlobalMessageBufferSize = 23;
+                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
+                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+
+                outerToken.Dispose();
+                innerToken.Dispose();
+
+                Assert.AreSame(
+                    originalFallback,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Out-of-order unwind must restore the original fallback settings."
+                );
+                Assert.AreEqual(
+                    23,
+                    IMessageBus.GlobalMessageBufferSize,
+                    "Out-of-order unwind must preserve the fallback's global buffer snapshot."
+                );
+            }
+            finally
+            {
+                innerToken?.Dispose();
+                outerToken?.Dispose();
+                originalToken?.Dispose();
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                IMessageBus.GlobalMessageBufferSize = entryBufferSize;
+                UnityEngine.Object.DestroyImmediate(inner);
+                UnityEngine.Object.DestroyImmediate(outer);
+                UnityEngine.Object.DestroyImmediate(originalFallback);
+            }
+        }
+
+        [Test]
+        public void NullRuntimeSettingsOverrideLeavesCurrentSettingsUnchanged()
+        {
+            DxMessagingRuntimeSettings original =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable originalToken = null;
+            try
+            {
+                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
+
+                Assert.Throws<ArgumentNullException>(
+                    () => DxMessagingRuntimeSettingsProvider.Override(null),
+                    "A null override must be rejected."
+                );
+                Assert.AreSame(
+                    original,
+                    DxMessagingRuntimeSettingsProvider.Current,
+                    "Rejecting a null override must leave the current settings unchanged."
+                );
+            }
+            finally
+            {
+                originalToken?.Dispose();
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(original);
+            }
+        }
+
         [Test]
         public void PlayerLoopHookInstallsOnceUnderUpdate()
         {

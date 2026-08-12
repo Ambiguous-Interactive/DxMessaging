@@ -35,9 +35,8 @@ npm pack --json --dry-run --ignore-scripts
 
 ## CI
 
-1. Trigger Unity Tests manually for one Unity version and one mode (the
-   `standalone` mode covers IL2CPP via the native game-ci `testMode: standalone`
-   player build).
+1. Trigger Unity Tests manually and confirm an editor-scoped job completes
+   EditMode, PlayMode, and the standalone IL2CPP player build.
 1. Trigger Unity Benchmarks only when runner capacity is available.
 1. Open a same-repository pull request and confirm licensed Unity checks run.
 1. Open or simulate a fork pull request and confirm licensed Unity checks skip.

@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using System.Collections.Generic;
     using System.Reflection;
     using DxMessaging.Core;
+    using DxMessaging.Core.Configuration;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Pooling;
@@ -13,6 +14,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
+    using UnityEngine;
 
     /// <summary>
     /// Locks in the zero-GC dispatch contract across the full register / emit /
@@ -368,6 +370,43 @@ namespace DxMessaging.Tests.Editor.Allocations
             {
                 token.UnregisterAll();
                 token.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void RuntimeSettingsOverrideAllocatesOneReferenceToken()
+        {
+            DxMessagingRuntimeSettings settings =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            Action overrideCycle = () =>
+                DxMessagingRuntimeSettingsProvider.Override(settings).Dispose();
+            using IDisposable isolatedRegistry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            try
+            {
+                overrideCycle();
+                long delta = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare: null,
+                    operation: overrideCycle
+                );
+                if (delta == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        "The GC.Alloc allocation probe is non-functional on this backend."
+                    );
+                }
+
+                Assert.AreEqual(
+                    1,
+                    delta,
+                    "Override and Dispose must allocate only the existing sealed reference token."
+                );
+            }
+            finally
+            {
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(settings);
             }
         }
 

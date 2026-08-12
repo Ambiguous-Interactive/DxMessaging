@@ -113,11 +113,11 @@ shapes above and `success` otherwise. `re-actors/alls-green` and blanket
 allowed-skip lists are rejected by `scripts/validate-unity-pr-policy.py`, which
 also byte-pins that step's script and runs it against a truth table.
 
-Do **not** require the expanded matrix job names (`Unity <version> <mode>`),
+Do **not** require the expanded matrix job names (`Unity <version> all modes`),
 `Unity head freshness`, or `Self-hosted runner registration preflight`. When a
 job-level `if:` skips a matrix before expansion, GitHub can report only one
 skipped check with the literal name
-`Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`, so requiring the
+`Unity ${{ matrix.unity-version }} all modes`, so requiring the
 expanded names leaves auto-merge waiting for absent checks.
 
 ## Retired Individual Static Contexts
@@ -372,10 +372,10 @@ branch after merge.
 
 A required check is matched by literal string, so these break silently:
 
-- **Matrix-interpolated names.** Do not require `Unity <version> <mode>` names.
+- **Matrix-interpolated names.** Do not require `Unity <version> all modes` names.
   The static Unity matrix is validated against `.github/unity-versions.json`, and
   job-level skip paths can prevent matrix expansion entirely, producing only the
-  literal skipped check `Unity ${{ matrix.unity-version }} ${{ matrix.test-mode }}`.
+  literal skipped check `Unity ${{ matrix.unity-version }} all modes`.
   Require `Unity CI Success` instead. Static script tests are inside `ci.yml`;
   the matrix still expands to `Script tests (ubuntu-latest)`,
   `Script tests (macos-latest)`, and `Script tests (windows-latest)`, but branch

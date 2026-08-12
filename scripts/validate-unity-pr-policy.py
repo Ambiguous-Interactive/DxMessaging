@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -2415,10 +2416,9 @@ def run_maintenance_gate(script: str, llms: str, issue_template: str) -> int:
 def validate_msvc_gate_is_reachable() -> None:
     """Every workflow declaring the MSVC gate must be able to run it.
 
-    The gate is gated on `matrix.test-mode == 'standalone'`, and it was copied
-    into `unity-benchmarks.yml`, whose matrix declares only editmode and
-    playmode. It could never run there: dead weight that implied IL2CPP coverage
-    the job does not have, on a workflow whose Mono legs never touch `cl.exe`.
+    A mode-matrix workflow gates the check on its standalone row. An
+    editor-grouped workflow may run it unconditionally when a standalone
+    assembly-discovery and test step are structurally present.
 
     This is the same class as everything else this file pins -- a check that
     cannot fail, here a check that cannot RUN -- so it is asserted rather than
@@ -2432,6 +2432,21 @@ def validate_msvc_gate_is_reachable() -> None:
             r"- name: [^\n]*MSVC[^\n]*\n\s+if: \$\{\{ matrix\.test-mode == '(\w+)' \}\}",
             source,
         )
+        if condition is None:
+            msvc_name = re.search(r"- name: [^\n]*MSVC[^\n]*", source)
+            assert msvc_name is not None
+            msvc_step = containing_named_step(source, msvc_name.start())
+            grouped_standalone = re.search(
+                r"id: compute_standalone[\s\S]*?uses: ./\.github/actions/compute-unity-assemblies"
+                r"[\s\S]*?target: standalone",
+                source,
+            )
+            require(
+                grouped_standalone is not None and "\n        if:" not in msvc_step,
+                f"{workflow.name}: an unconditional MSVC gate requires a structurally "
+                "grouped standalone target",
+            )
+            continue
         require(
             condition is not None,
             f"{workflow.name}: the MSVC gate must stay gated on a `matrix.test-mode` "
@@ -2451,6 +2466,120 @@ def validate_msvc_gate_is_reachable() -> None:
             f"either add the mode or drop the step; a gate that cannot run reads as "
             f"coverage that does not exist.",
         )
+
+
+def validate_grouped_unity_correctness() -> None:
+    """Pin per-editor mode isolation and execute the terminal result truth table."""
+    source = WORKFLOW.read_text(encoding="utf-8")
+    job = job_block(source, "unity-tests")
+    require(
+        "name: Unity ${{ matrix.unity-version }} all modes" in job
+        and "matrix.test-mode" not in job,
+        "Unity correctness must use four editor-scoped jobs",
+    )
+    require(
+        "-ProvisioningProfile StandaloneWindowsIl2Cpp" in step_block(
+            job, "Require manually installed Unity editor"
+        ),
+        "grouped correctness must validate the IL2CPP-capable editor once",
+    )
+
+    mode_specs = (
+        ("editmode", "EditMode", "compute", "Run Unity Test Runner", "run_editmode", 90),
+        ("playmode", "PlayMode", "compute_playmode", "Run Unity PlayMode tests", "run_playmode", 90),
+        (
+            "standalone",
+            "standalone",
+            "compute_standalone",
+            "Run Unity standalone tests",
+            "run_standalone",
+            150,
+        ),
+    )
+    run_positions: list[int] = []
+    for mode, display, compute_id, run_name, run_id, timeout in mode_specs:
+        compute_name = (
+            "Compute EditMode test assembly list"
+            if mode == "editmode"
+            else f"Compute {display} test assembly list"
+        )
+        compute = step_block(job, compute_name)
+        require(
+            f"id: {compute_id}" in compute and f"target: {mode}" in compute,
+            f"{mode}: assembly discovery must remain independent",
+        )
+        if mode == "standalone":
+            require('runtime-only: "true"' in compute, "standalone discovery must be runtime-only")
+
+        run = step_block(job, run_name)
+        run_positions.append(job.index(run))
+        for fragment in (
+            f"id: {run_id}",
+            "!cancelled()",
+            f"steps.{compute_id}.outputs.is-empty != 'true'",
+            "steps.acquire_lock.outputs.acquired == 'true'",
+            "continue-on-error: true",
+            f"timeout-minutes: {timeout}",
+            f"DXM_TEST_ASSEMBLIES: ${{{{ steps.{compute_id}.outputs.assemblies }}}}",
+            f"-TestMode {mode}",
+            "-AssemblyNames $env:DXM_TEST_ASSEMBLIES",
+            f"${{{{ matrix.unity-version }}}}-{mode}",
+            "-LicenseReturnOwner Central",
+        ):
+            require(fragment in run, f"{mode}: grouped run missing {fragment!r}")
+        require(
+            "steps." not in run_script(run),
+            f"{mode}: repository-controlled assembly names must enter PowerShell through env",
+        )
+
+        verify = step_block(job, f"Verify {display} tests actually ran")
+        for fragment in (
+            f"id: verify_{mode}",
+            "continue-on-error: true",
+            f"steps.{compute_id}.outcome == 'success'",
+            f"results-dir: .artifacts/unity/${{{{ matrix.unity-version }}}}-{mode}",
+            f"expected-empty: ${{{{ steps.{compute_id}.outputs.is-empty }}}}",
+        ):
+            require(fragment in verify, f"{mode}: result verification missing {fragment!r}")
+
+        upload = step_block(job, f"Upload {display} test artifacts")
+        require(
+            f"unity-${{{{ matrix.unity-version }}}}-{mode}" in upload
+            and f".artifacts/unity/${{{{ matrix.unity-version }}}}-{mode}" in upload,
+            f"{mode}: artifact evidence must remain isolated",
+        )
+    require(run_positions == sorted(run_positions), "grouped Unity modes must run in order")
+    require(job.count("-LicenseReturnOwner Central") == 3, "every grouped mode needs central cleanup")
+
+    gate = step_block(job, "Require every Unity mode to pass")
+    require(
+        "!cancelled() && steps.acquire_lock.outputs.acquired == 'true'" in gate
+        and "Empty -eq 'true' -and $mode.Run -ne 'skipped'" in gate
+        and 'throw "Unity mode failures:' in gate,
+        "grouped mode gate must fail closed on run, skip, and verification outcomes",
+    )
+    if shutil.which("pwsh"):
+        baseline = {
+            "EDIT_COMPUTE": "success", "EDIT_EMPTY": "false", "EDIT_RUN": "success", "EDIT_VERIFY": "success",
+            "PLAY_COMPUTE": "success", "PLAY_EMPTY": "false", "PLAY_RUN": "success", "PLAY_VERIFY": "success",
+            "STANDALONE_COMPUTE": "success", "STANDALONE_EMPTY": "false", "STANDALONE_RUN": "success", "STANDALONE_VERIFY": "success",
+        }
+        cases = (
+            ("all modes pass", {}, 0),
+            ("empty mode stays skipped", {"EDIT_EMPTY": "true", "EDIT_RUN": "skipped"}, 0),
+            ("early run fails", {"EDIT_RUN": "failure"}, 1),
+            ("nonempty run skips", {"PLAY_RUN": "skipped"}, 1),
+            ("empty mode runs", {"EDIT_EMPTY": "true"}, 1),
+            ("verification fails", {"STANDALONE_VERIFY": "failure"}, 1),
+        )
+        for name, mutation, expected in cases:
+            environment = os.environ.copy()
+            environment.update(baseline | mutation)
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"],
+                input=run_script(gate), env=environment, capture_output=True, text=True, check=False,
+            )
+            require(result.returncode == expected, f"grouped mode gate {name}: {result.stderr}")
 
 
 def validate_post_merge_terminal_gate() -> None:
@@ -4155,6 +4284,7 @@ fi"""
     validate_stuck_job_watchdog()
     validate_post_merge_push_loop()
     validate_msvc_gate_is_reachable()
+    validate_grouped_unity_correctness()
     validate_post_merge_terminal_gate()
     validate_post_merge_cancellation_policy()
     validate_post_merge_steps()

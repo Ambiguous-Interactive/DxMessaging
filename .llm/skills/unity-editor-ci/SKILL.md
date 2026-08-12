@@ -1,6 +1,6 @@
 ---
 name: unity-editor-ci
-description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 4 Unity versions x {editmode, playmode, standalone}, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, adding a matrix cell, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow."
+description: "Unity CI on self-hosted Windows runners: the unity-tests.yml matrix of 4 editor-scoped jobs that each run editmode, playmode, and standalone, manual administrator installation under RUNNER_TOOL_CACHE/u6-v3, validation-only workflow checks with ensure-editor.ps1 -RequireHealthyExisting, the organization build-lock and timeout invariants that protect the two-seat Unity serial, Windows host prerequisites for 0xC0000135 startup failures, and repo-wide GitHub Action version pins. Use when bumping a Unity version, changing an editor job or test mode, triaging an IL2CPP-only, license, or editor-validation failure, or editing a Unity workflow."
 metadata:
   category: "unity"
   tags: "unity, ci, matrix, il2cpp, lts, game-ci"
@@ -9,8 +9,9 @@ metadata:
 # Unity Editor CI
 
 The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self-hosted
-Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions x
-`{editmode, playmode, standalone}` = 12 cells; `standalone` builds and runs a
+Windows runners. `unity-tests.yml` is a four-version matrix. Each editor-scoped
+job runs `editmode`, `playmode`, and `standalone` as separate invocations under
+one lock and cleanup window; `standalone` builds and runs a
 `StandaloneWindows64` IL2CPP player from a runner-local project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`.
 
@@ -43,7 +44,7 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
 ### License seat, lock, and timeouts
 
 - The Unity serial has two activation seats org-wide with no server-side reclaim. Two controls
-  protect it: `strategy.max-parallel: 1` serializes cells WITHIN a run, and the external
+  protect it: `strategy.max-parallel: 1` serializes editor jobs WITHIN a run, and the external
   `Ambiguous-Interactive/ambiguous-organization-build-lock` actions admit at most two runners
   ACROSS runs and repositories.
 - `max-parallel: 1` goes under `strategy:` on the matrix workflows (`unity-tests.yml`,
@@ -51,7 +52,8 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
   `concurrency.group: wallstop-organization-builds` is repository-scoped and is FORBIDDEN.
 - Timeout invariant: every step before and including the cleanup gate has an explicit positive
   timeout. Editor validation is capped at `10`, the acquire step cap (`305`) exceeds its
-  internal wait (`300`), licensed work is capped at `120` to `180`, and cleanup uses `5`/`2`/`5`/`2`
+  internal wait (`300`). Grouped correctness invocations use `90`/`90`/`150` caps;
+  other licensed work is capped at `120` to `180`. Cleanup uses `5`/`2`/`5`/`2`
   for return/classify/release/gate. The `900`-minute job cap must retain at least 60 minutes
   beyond the sum of those enforced step caps.
 - Editors and modules are installed manually by a runner administrator under
@@ -60,8 +62,9 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
 
 ### The compute-unity-assemblies is-empty gate
 
-- The compute step carries `id: compute`. Editor validation and the Unity work step
-  may skip an empty assembly selection, but lock acquisition remains
+- Each Unity invocation has its own compute id. Grouped correctness uses `compute`,
+  `compute_playmode`, and `compute_standalone`; the last one is runtime-only.
+  The matching Unity work step may skip an empty assembly selection, but lock acquisition remains
   unconditional because each static matrix is structurally non-empty and the
   analyzer must be able to prove every acquisition.
 - `Verify tests actually ran` must require `steps.compute.outcome == 'success'` plus either
@@ -71,8 +74,10 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
 ### Editor validation and manual maintenance (`scripts/unity/ensure-editor.ps1`)
 
 - CI must pass `-CiManagedOnly -RequireHealthyExisting` plus `-ProvisioningProfile`
-  explicitly: `EditorOnly` for editmode, playmode, benchmarks, and release checks;
-  `StandaloneWindowsIl2Cpp` for standalone (verifies `windows-il2cpp`); `Android` and `Full`
+  explicitly. The grouped correctness job validates `StandaloneWindowsIl2Cpp` once because
+  that superset serves all three invocations. Other jobs use `EditorOnly` for editmode,
+  playmode, benchmarks, and release checks, or `StandaloneWindowsIl2Cpp` for standalone
+  (verifies `windows-il2cpp`); `Android` and `Full`
   remain manual-maintenance profiles.
 - `unity install-path` with NO arguments is a GETTER. The SET form uses a flag (`-s`, then
   `--set` as fallback) and is best-effort only; discovery always relies on the getter.
@@ -120,10 +125,10 @@ Windows runners. `unity-tests.yml` is one unified matrix of four Unity versions 
 
 ## References
 
-| Document                                                                                    | Purpose                                                                                                                  |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| [github-actions-version-consistency.md](./references/github-actions-version-consistency.md) | Repo-wide action major pins, the audit and upstream-tag verification commands, and artifact action pairing               |
-| [unity-ci-matrix.md](./references/unity-ci-matrix.md)                                       | The 12-cell matrix, build-lock and timeout invariants, is-empty gate, IL2CPP-only failure catalog, and log reading order |
-| [unity-editor-cli-bootstrap.md](./references/unity-editor-cli-bootstrap.md)                 | ensure-editor.ps1 internals: PATH refresh, getter-based discovery, module desired state, and quarantine/reinstall repair |
-| [unity-runner-host-prereqs.md](./references/unity-runner-host-prereqs.md)                   | The four-layer Windows host prereq defense, both VC++ generations, and detection contracts                               |
-| [unity-version-single-source.md](./references/unity-version-single-source.md)               | The canonical unity-versions.json contract, the three consumer policies, and how to bump a version                       |
+| Document                                                                                    | Purpose                                                                                                                         |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [github-actions-version-consistency.md](./references/github-actions-version-consistency.md) | Repo-wide action major pins, the audit and upstream-tag verification commands, and artifact action pairing                      |
+| [unity-ci-matrix.md](./references/unity-ci-matrix.md)                                       | The editor-grouped matrix, build-lock and timeout invariants, is-empty gate, IL2CPP-only failure catalog, and log reading order |
+| [unity-editor-cli-bootstrap.md](./references/unity-editor-cli-bootstrap.md)                 | ensure-editor.ps1 internals: PATH refresh, getter-based discovery, module desired state, and quarantine/reinstall repair        |
+| [unity-runner-host-prereqs.md](./references/unity-runner-host-prereqs.md)                   | The four-layer Windows host prereq defense, both VC++ generations, and detection contracts                                      |
+| [unity-version-single-source.md](./references/unity-version-single-source.md)               | The canonical unity-versions.json contract, the three consumer policies, and how to bump a version                              |

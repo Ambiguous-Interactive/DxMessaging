@@ -24,7 +24,7 @@ verification was completed.
 | Release workflow                        | `.github/workflows/release.yml`                                            |
 | Documentation workflow                  | `.github/workflows/deploy-docs.yml`                                        |
 | npm package validation                  | `.github/workflows/release.yml` (`npm run validate:all` + `npm pack` step) |
-| Unity test workflow                     | `.github/workflows/unity-tests.yml` (editmode/playmode/standalone matrix)  |
+| Unity test workflow                     | `.github/workflows/unity-tests.yml` (four editor jobs, all three modes)    |
 | Unity benchmark workflow                | `.github/workflows/unity-benchmarks.yml`                                   |
 | Unity organization lock                 | `wallstop-organization-builds` via `ambiguous-organization-build-lock`     |
 | GitHub Pages environment                | `github-pages`                                                             |
@@ -124,8 +124,8 @@ always()`. Never use `wallstop-organization-builds` as a native GitHub
 - Each Unity-credential-using job runs
   `./.github/actions/validate-unity-license` before acquiring the central lock
   so missing GitHub secrets fail before blocking the shared Unity seat. IL2CPP
-  is the `standalone` entry in the `unity-tests` `test-mode` matrix, not a
-  separate job.
+  is the final mode inside each editor-scoped `unity-tests` job, not a separate
+  matrix job.
 - Confirm the lock repository allows organization-owned consumers and the
   shared writer App credentials are available through organization secrets
   before the Unity workflows are expected to pass.

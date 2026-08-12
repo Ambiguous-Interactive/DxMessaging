@@ -23,12 +23,14 @@ domain reload, on self-hosted runners). The local MCP editor is warm and already
 finishes PlayMode in tens of seconds, so locally you trust relative deltas, not
 the absolute number.
 
-## The modes (CI matrix)
+## The modes (editor-grouped CI)
 
-`.github/workflows/unity-tests.yml` runs **12 legs** = 4 Unity versions (from
-`.github/unity-versions.json`) x 3 modes (`editmode`, `playmode`, `standalone`),
-`max-parallel: 1`. Each mode is a separate Unity invocation against a separate
-runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`. The
+`.github/workflows/unity-tests.yml` runs four version jobs (from
+`.github/unity-versions.json`) with `max-parallel: 1`. Each job validates its
+editor and acquires the organization lock once, then runs `editmode`, `playmode`,
+and `standalone` as separate Unity invocations. Each mode uses a separate
+runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, result
+verification, and artifact. The
 correctness legs exclude the heavy categories
 (`Stress;Performance;Allocation;MemoryReclaim;UnityRuntime;PerfBench;PerfGate;PerfBaseline`),
 which run in their own dedicated scopes so a perf change cannot hide in the
@@ -45,9 +47,9 @@ the code. In short:
   committed source of truth). The local
   `.unity-test-project/ProjectSettings/EditorSettings.asset` carries the same fields
   but is gitignored, so it is a per-developer convenience, not committed. Only the
-  PlayMode legs benefit (editmode and standalone never enter in-editor play mode);
-  in batchmode CI each leg is a fresh project with one play-mode entry, so the
-  saving is one reload per PlayMode leg, and the persistent-domain path the
+  PlayMode invocations benefit (editmode and standalone never enter in-editor play mode);
+  in batchmode CI each mode uses a separate project with one play-mode entry, so the
+  saving is one reload per PlayMode invocation, and the persistent-domain path the
   `MessageTypeIdStabilityTests` fix protects is a local back-to-back-run property,
   not a CI one.
 - **One teardown frame, not one per object.** Deferred destroys are batched and

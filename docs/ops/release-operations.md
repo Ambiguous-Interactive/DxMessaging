@@ -23,8 +23,8 @@ Canonical public identifiers:
   before the licensed `game-ci/unity-test-runner@v4` section and releases
   it with `if: always()`. Native GitHub `concurrency` is repository-scoped,
   so `wallstop-organization-builds` must not be used as a native
-  `concurrency.group`. IL2CPP is the `standalone` entry in the
-  `unity-tests` `test-mode` matrix, not a separate job.
+  `concurrency.group`. IL2CPP is the final mode inside each editor-scoped
+  `unity-tests` job, not a separate matrix job.
 - Unity runner labels: uniform static `runs-on: [self-hosted, Windows,
 RAM-64GB]` across all Unity-credential-using jobs, so either
   ELI-MACHINE or DAD-MACHINE can pick up any Unity job. The `fast`
