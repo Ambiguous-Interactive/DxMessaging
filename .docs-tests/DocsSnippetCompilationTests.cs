@@ -91,13 +91,13 @@ internal sealed class DocsSnippetCompilationTests
     );
 
     private static readonly System.Text.RegularExpressions.Regex TargetedHealthOutcomeRegex = new(
-        @"(?:DxTargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Targeted(?:WithoutTargeting|PostProcessor|Interceptor)?\s*<\s*)(?<type>TookDamage|DamageTaken|DamageApplied|HealthLost|HealthChanged|HealthReduced|[A-Za-z0-9_]*(?:Damaged|Healed))(?![A-Za-z0-9_])",
+        @"(?:DxTargetedMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Targeted(?:WithoutTargeting)?(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>TookDamage|DamageTaken|DamageApplied|HealthLost|HealthChanged|HealthReduced|[A-Za-z0-9_]*(?:Damaged|Healed))(?![A-Za-z0-9_])",
         System.Text.RegularExpressions.RegexOptions.Compiled
             | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
     private static readonly System.Text.RegularExpressions.Regex BroadcastHealthCommandRegex = new(
-        @"(?:DxBroadcastMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Broadcast(?:WithoutSource|PostProcessor|Interceptor)?\s*<\s*)(?<type>Heal(?:Request(?:ed)?)?|HealPlayerRequested|ApplyDamage|DealDamage|DamageMessage|DamageRequested|InflictDamage)(?![A-Za-z0-9_])",
+        @"(?:DxBroadcastMessage\](?:(?!Dx(?:Untargeted|Targeted|Broadcast)Message).){0,180}?\b(?:struct|class)\s+|Register(?:GameObject|Component)?Broadcast(?:WithoutSource)?(?:PostProcessor|Interceptor)?\s*<\s*)(?<type>Heal(?:Request(?:ed)?)?|HealPlayerRequested|ApplyDamage|DealDamage|DamageMessage|DamageRequested|InflictDamage)(?![A-Za-z0-9_])",
         System.Text.RegularExpressions.RegexOptions.Compiled
             | System.Text.RegularExpressions.RegexOptions.Singleline
     );
@@ -497,9 +497,13 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("[DxTargetedMessage] struct DamageApplied { }", true)]
     [TestCase("[DxTargetedMessage] struct HealthReduced { }", true)]
     [TestCase("[DxTargetedMessage] struct ApplyDamage { }", false)]
+    [TestCase("token.RegisterTargetedWithoutTargetingPostProcessor<DamageApplied>(Observe);", true)]
+    [TestCase("token.RegisterTargetedWithoutTargetingInterceptor<ApplyDamage>(Validate);", false)]
     [TestCase("[DxBroadcastMessage] struct DamageRequested { }", true)]
     [TestCase("[DxBroadcastMessage] struct InflictDamage { }", true)]
     [TestCase("[DxBroadcastMessage] struct TookDamage { }", false)]
+    [TestCase("token.RegisterBroadcastWithoutSourcePostProcessor<DamageRequested>(Observe);", true)]
+    [TestCase("token.RegisterBroadcastWithoutSourceInterceptor<TookDamage>(Observe);", false)]
     [TestCase("[DxUntargetedMessage] struct PlayerSpawned { }", true)]
     [TestCase("[DxUntargetedMessage] struct GameStarted { }", false)]
     public void EntityRouteSemanticGuardDistinguishesCommandsFactsAndGlobals(
