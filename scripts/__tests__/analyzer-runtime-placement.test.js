@@ -4,6 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { walkFiles } = require("../lib/repo-files");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -12,28 +13,8 @@ const FIRST_PARTY_ANALYZER_DLLS = [
   "WallstopStudios.DxMessaging.Analyzer.dll"
 ];
 
-function walkDllMetas(dir, out) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walkDllMetas(full, out);
-    } else if (entry.isFile() && entry.name.endsWith(".dll.meta")) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
 function hasRoslynAnalyzerLabel(metaPath) {
-  const text = fs.readFileSync(metaPath, "utf8");
-  return /(^|\n)labels:\s*(\n\s*-\s.*)*\n\s*-\s*RoslynAnalyzer\b/.test(text) ||
-    /(^|\n)\s*-\s*RoslynAnalyzer\b/.test(text);
+  return /(^|\n)\s*-\s*RoslynAnalyzer\b/.test(fs.readFileSync(metaPath, "utf8"));
 }
 
 function nearestAsmdef(startDir) {
@@ -69,15 +50,19 @@ function isEditorOnlyAsmdef(asmdef) {
 }
 
 function findLabeledAnalyzerDlls() {
-  const metas = [];
-  walkDllMetas(path.join(REPO_ROOT, "Runtime"), metas);
-  walkDllMetas(path.join(REPO_ROOT, "Editor"), metas);
+  const options = { match: (_full, entry) => entry.name.toLowerCase().endsWith(".dll.meta") };
+  const metas = ["Runtime", "Editor"].flatMap((dir) =>
+    walkFiles(path.join(REPO_ROOT, dir), options)
+  );
   return metas
     .filter((metaPath) => hasRoslynAnalyzerLabel(metaPath))
     .map((metaPath) => ({
       metaPath,
       dllPath: metaPath.replace(/\.meta$/, ""),
-      relative: path.relative(REPO_ROOT, metaPath.replace(/\.meta$/, "")).split(path.sep).join("/")
+      relative: path
+        .relative(REPO_ROOT, metaPath.replace(/\.meta$/, ""))
+        .split(path.sep)
+        .join("/")
     }));
 }
 
@@ -89,11 +74,29 @@ test("the source generator + analyzer ship under Runtime/Analyzers (issue #229)"
       `${dll} must ship under Runtime/Analyzers/ for Unity analyzer scope. ` +
         `Missing: ${path.relative(REPO_ROOT, expected)}`
     );
+    const meta = `${expected}.meta`;
     assert.ok(
-      fs.existsSync(`${expected}.meta`),
+      fs.existsSync(meta),
       `${dll}.meta (carrying the RoslynAnalyzer label) must ship alongside it.`
     );
+    assert.ok(hasRoslynAnalyzerLabel(meta), `${dll}.meta must carry the RoslynAnalyzer label.`);
   }
+});
+
+test("Runtime/Analyzers ships only first-party compiler extensions (issue #371)", () => {
+  const analyzerDir = path.join(REPO_ROOT, "Runtime", "Analyzers");
+  const shippedDlls = walkFiles(analyzerDir, {
+    match: (_full, entry) => entry.name.toLowerCase().endsWith(".dll")
+  })
+    .map((dllPath) => path.relative(analyzerDir, dllPath).split(path.sep).join("/"))
+    .sort();
+
+  assert.deepEqual(
+    shippedDlls,
+    [...FIRST_PARTY_ANALYZER_DLLS].sort(),
+    "Unity supplies Roslyn's runtime assemblies. Shipping private compiler-support DLLs " +
+      "adds package weight and can diverge from the editor's compiler host."
+  );
 });
 
 test("no RoslynAnalyzer-labeled DLL is scoped under an editor-only asmdef (issue #229)", () => {

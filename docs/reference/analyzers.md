@@ -438,6 +438,9 @@ folder-resident analyzer to the assembly defined by the nearest enclosing
 by the all-platforms runtime asmdef, the analyzer reaches the DxMessaging runtime
 assembly and everything referencing it -- including the predefined
 `Assembly-CSharp` -- so nothing is copied into the consuming project.
+The package contains only the two DxMessaging compiler extensions. Unity's
+compiler host supplies Roslyn and `System.Collections.Immutable`; DxMessaging
+does not bundle private copies of those compiler assemblies.
 
 `Editor/SetupCscRsp.cs` is still used for the base-call ignore sidecar. It keeps
 `csc.rsp` in sync by removing stale DxMessaging analyzer `-a:` entries (left
@@ -461,10 +464,15 @@ normalization.
 
 ## Unity 2021 setup notes
 
-DxMessaging ships **two** Roslyn DLLs because Unity 2021's analyzer loader has a hard requirement that Unity 2022+ does not:
+DxMessaging splits its compiler extensions into two DLLs: one analyzer and one source generator.
+Both target Roslyn 3.8.0 for Unity 2021 compatibility:
 
-- `WallstopStudios.DxMessaging.Analyzer.dll` -- the base-call analyzer (DXMSG006/007/008/009/010). Pinned to **Roslyn 3.8.0**. Unity 2021 rejects analyzer DLLs built against Roslyn 4.x; Microsoft's `Microsoft.Unity.Analyzers` package pins 3.8.0 for the same reason.
-- `WallstopStudios.DxMessaging.SourceGenerators.dll` -- the source generators (DXMSG002/003/004/005). Also pinned to **Roslyn 3.8.0** and implemented with classic `ISourceGenerator` APIs so Unity 2021 can instantiate the generators.
+- `WallstopStudios.DxMessaging.Analyzer.dll` contains the base-call analyzer
+  (DXMSG006/007/008/009/010). Unity 2021 rejects analyzers built against Roslyn 4.x;
+  Microsoft's `Microsoft.Unity.Analyzers` package pins Roslyn 3.8.0 for the same reason.
+- `WallstopStudios.DxMessaging.SourceGenerators.dll` contains the source generators
+  (DXMSG002/003/004/005). They use the classic `ISourceGenerator` API so Unity 2021 can
+  instantiate them.
 
 Both DLLs ship under the package's `Runtime/Analyzers/` folder, tagged
 `RoslynAnalyzer`, and excluded from every build platform (the Editor included).
