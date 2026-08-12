@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduce cold untargeted-handler registration allocations when registering many
+  message types that have not emitted yet. Per-message-type dispatch snapshot
+  state now materializes on the first emission instead of the first registration
+  ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
 - Stop generated message and constructor source from disabling all compiler
   warnings. Generated code now participates in the consumer's warning policy,
   while repository CI compiles every shipped sample and generated output with

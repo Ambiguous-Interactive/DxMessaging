@@ -29,6 +29,12 @@ for design details.
 - **Throughput.** Reported as emits per second. Higher is better. Registration
   scenarios report wall-clock time instead, where lower is better. The published
   throughput numbers come from the Standalone (IL2CPP) leg.
+- **Cold registration storage.** Registering a per-message-type handler or
+  post-processor does not create dispatch snapshot state for its routing slot.
+  That state materializes on the first matching emission, so a slot that is
+  registered but never emitted does not retain unused snapshot bookkeeping.
+  Registrations made after the first emission still invalidate the existing
+  snapshot for the next dispatch.
 - **Allocations.** Reported as the COUNT of managed GC allocations (and a companion
   byte total) observed over one measurement batch (lower is better; `0` is best for
   hot-path dispatch). Both come from Unity's `GC.Alloc` profiler recorder, which is
