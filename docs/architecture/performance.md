@@ -29,12 +29,9 @@ for design details.
 - **Throughput.** Reported as emits per second. Higher is better. Registration
   scenarios report wall-clock time instead, where lower is better. The published
   throughput numbers come from the Standalone (IL2CPP) leg.
-- **Cold registration storage.** Registering a per-message-type handler or
-  post-processor does not create dispatch snapshot state for its routing slot.
-  That state materializes on the first matching emission, so a slot that is
-  registered but never emitted does not retain unused snapshot bookkeeping.
-  Registrations made after the first emission still invalidate the existing
-  snapshot for the next dispatch.
+- **Cold registration storage.** See
+  [Cold registration storage](#cold-registration-storage) for the state omitted
+  until a message type needs it.
 - **Allocations.** Reported as the COUNT of managed GC allocations (and a companion
   byte total) observed over one measurement batch (lower is better; `0` is best for
   hot-path dispatch). Both come from Unity's `GC.Alloc` profiler recorder, which is
@@ -58,6 +55,21 @@ for design details.
   technology per scenario column is rendered in bold (ties are all bolded;
   `N/A` never wins). The GC-allocations and GC-allocated-bytes matrices are not
   bolded: an allocation count or byte total is a property to read, not a race.
+
+## Cold registration storage
+
+> **Changed in v3.3.0**
+
+Registering a per-message-type handler or post-processor does not create dispatch
+snapshot state for its routing slot. That state materializes on the first matching
+emission, so a slot that is registered but never emitted does not retain unused
+snapshot bookkeeping. Registrations made after the first emission still invalidate
+the existing snapshot for the next dispatch.
+
+Ordinary per-message-type handlers also omit the six-slot global accept-all table.
+Only the `IMessage` facade used by `RegisterGlobalAcceptAll` owns that table. A local
+Mono construction A/B/A removed one allocation and 80 allocated bytes per ordinary
+typed handler while leaving global handler construction unchanged.
 
 ## Registration-order bulk teardown
 

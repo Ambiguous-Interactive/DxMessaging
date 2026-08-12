@@ -485,8 +485,10 @@ namespace DxMessaging.Core.Internal
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The typed handler holds an array of 6 <see cref="TypedGlobalSlot"/>
-    /// entries. The per-(<see cref="DispatchKind"/>,
+    /// The <see cref="TypedHandler{T}"/> specialization for <see cref="IMessage"/>
+    /// holds an array of 6 <see cref="TypedGlobalSlot"/> entries. Other
+    /// specializations share an empty array because they cannot accept global
+    /// registrations. The per-(<see cref="DispatchKind"/>,
     /// <see cref="DispatchVariant"/>) indexing scheme maps the six global
     /// flavours (3 kinds {<c>Untargeted</c>, <c>Targeted</c>,
     /// <c>Broadcast</c>} times 2 variants {<c>Default</c>, <c>Fast</c>}) to

@@ -1,7 +1,7 @@
 namespace DxMessaging.Core.Internal
 {
     /// <summary>
-    /// Const-int positions into <c>TypedHandler&lt;T&gt;._globalSlots[]</c>.
+    /// Const-int positions into <c>TypedHandler&lt;IMessage&gt;._globalSlots[]</c>.
     /// Indices are hand-written so call sites inline as immediate operands.
     /// Array length and per-index <c>null</c>-ness are validated in DEBUG
     /// builds via <c>TypedHandler&lt;T&gt;.ValidateSlotArrays()</c>.

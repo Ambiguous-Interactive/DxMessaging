@@ -148,9 +148,13 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void GlobalSlotIndexLengthMatchesArrayLengthOnFreshTypedHandler()
         {
-            object handler = MakeFreshTypedHandler();
+            object handler = MakeFreshTypedHandler(typeof(IMessage));
             Array slots = ReadArrayField(handler, "_globalSlots");
-            Assert.AreEqual(TypedGlobalSlotIndex.Length, slots.Length);
+            Assert.AreEqual(
+                TypedGlobalSlotIndex.Length,
+                slots.Length,
+                "TypedHandler<IMessage> must expose one slot for every global index."
+            );
         }
 
         [Test]
@@ -202,9 +206,39 @@ namespace DxMessaging.Tests.Editor.Contract
             }
 
             Array globalSlots = ReadArrayField(handler, "_globalSlots");
+            Assert.Zero(
+                globalSlots.Length,
+                "Ordinary TypedHandler<T> instances cannot use global registration slots."
+            );
+            Assert.AreSame(
+                Array.Empty<TypedGlobalSlot>(),
+                globalSlots,
+                "Ordinary TypedHandler<T> instances must share Array.Empty<TypedGlobalSlot>() "
+                    + "instead of allocating a distinct zero-length array."
+            );
             for (int i = 0; i < globalSlots.Length; ++i)
             {
                 Assert.IsNull(globalSlots.GetValue(i), "_globalSlots[" + i + "] must be null.");
+            }
+        }
+
+        [Test]
+        public void GlobalTypedHandlerRetainsEveryGlobalSlot()
+        {
+            object handler = MakeFreshTypedHandler(typeof(IMessage));
+            Array globalSlots = ReadArrayField(handler, "_globalSlots");
+
+            Assert.AreEqual(
+                TypedGlobalSlotIndex.Length,
+                globalSlots.Length,
+                "TypedHandler<IMessage> must retain every global registration slot."
+            );
+            for (int i = 0; i < globalSlots.Length; ++i)
+            {
+                Assert.IsNull(
+                    globalSlots.GetValue(i),
+                    "_globalSlots[" + i + "] must populate lazily on first registration."
+                );
             }
         }
 
