@@ -8,6 +8,27 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    [Test]
+    public void DocsTestSdkAcceptsAvailableNet9FeatureBands()
+    {
+        string globalJsonPath = Path.Combine(ResolveRepoRoot(), ".docs-tests", "global.json");
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(globalJsonPath)
+        );
+        System.Text.Json.JsonElement sdk = document.RootElement.GetProperty("sdk");
+
+        Assert.That(
+            sdk.GetProperty("version").GetString(),
+            Is.EqualTo("9.0.100"),
+            "The docs test SDK must use the first .NET 9 feature-band floor so Dependabot can run on any available .NET 9 SDK."
+        );
+        Assert.That(
+            sdk.GetProperty("rollForward").GetString(),
+            Is.EqualTo("latestFeature"),
+            "The docs test SDK must roll forward across installed .NET 9 feature bands."
+        );
+    }
+
     private static readonly HashSet<string> ContextOnlyDiagnosticIds = new(StringComparer.Ordinal)
     {
         "CS0103", // A surrounding example supplies the named local, field, or method.
