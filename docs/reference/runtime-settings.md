@@ -197,10 +197,14 @@ subscriptions from previous Play mode sessions from firing.
 
 `DxMessagingRuntimeSettingsProvider.Override(DxMessagingRuntimeSettings settings)`
 pushes a test-supplied settings instance as the active `Current` value and
-returns an `IDisposable`. Disposing the token restores the previous instance
-(LIFO; if a deeper override was pushed on top, dispose is a no-op until the
-deeper override is popped first). Both the push and the pop raise
-`SettingsChanged` so subscribed buses re-apply caps in both directions.
+returns an `IDisposable`. Each call allocates one sealed reference token; the
+interface return does not add boxing. Disposing nested tokens in any order
+restores the nearest active ancestor, or the settings that were current before
+the override chain began. Ending a covered ancestor does not raise a transient
+event. The push and each effective restore raise `SettingsChanged` so subscribed
+buses re-apply caps in both directions. `DxMessagingStaticState.Reset()`
+invalidates every older token, so disposing stale test state cannot replace a
+new configuration.
 
 ```csharp
 using System;

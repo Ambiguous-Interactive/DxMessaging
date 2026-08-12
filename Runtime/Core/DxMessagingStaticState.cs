@@ -1,6 +1,7 @@
 namespace DxMessaging.Core
 {
     using System;
+    using Configuration;
     using MessageBus;
 
     /// <summary>
@@ -46,6 +47,7 @@ namespace DxMessaging.Core
                 IMessageBus.GlobalDiagnosticsTargets = Baseline.GlobalDiagnosticsTargets;
                 IMessageBus.GlobalMessageBufferSize = Baseline.GlobalMessageBufferSize;
                 IMessageBus.GlobalSequentialIndex = Baseline.GlobalSequentialIndex;
+                DxMessagingRuntimeSettingsProvider.ResetForTests();
 
                 MessageRegistrationBuilder.SetSyntheticOwnerCounter(Baseline.SyntheticOwnerCounter);
 

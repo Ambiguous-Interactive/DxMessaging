@@ -63,16 +63,17 @@ and writer App secrets to this repository.
 
 Do not declare native `concurrency.group: wallstop-organization-builds`;
 that name is reserved for the central lock action input, not GitHub's
-repository-scoped concurrency feature. IL2CPP is the `standalone` entry in
-the `unity-tests` `test-mode` matrix. The direct Windows runner
+repository-scoped concurrency feature. Each editor-scoped `unity-tests` job
+runs `standalone` after its EditMode and PlayMode invocations. The direct Windows runner
 (`scripts/unity/run-ci-tests.ps1`) maps that mode to `StandaloneWindows64`
 and configures IL2CPP in the generated project, not a separate job.
 
 Unity editors and modules are installed manually by a runner administrator.
 Every workflow validates the exact tool-cache editor before the license lock
 with `ensure-editor.ps1 -CiManagedOnly -RequireHealthyExisting` and an explicit
-`-ProvisioningProfile`: `EditorOnly` for editmode, playmode, benchmarks, and
-release Unity checks; `StandaloneWindowsIl2Cpp` for standalone; and `Android`
+`-ProvisioningProfile`: `StandaloneWindowsIl2Cpp` once for each grouped
+correctness job; `EditorOnly` for editmode, playmode, benchmarks, and release
+Unity checks in single-mode jobs; `StandaloneWindowsIl2Cpp` for standalone; and `Android`
 only for jobs that actually need Android SDK/NDK tooling. Workflows never
 install, repair, uninstall, or quarantine editors.
 
@@ -329,8 +330,8 @@ Workflow-shape contract checklist:
 1. Confirm each of those jobs runs `./.github/actions/validate-unity-license`
    before the direct Unity runner.
 1. Confirm each `ensure-editor.ps1 -CiManagedOnly` validation step passes
-   `-RequireHealthyExisting` and an explicit `-ProvisioningProfile` matching
-   the Unity test mode.
+   `-RequireHealthyExisting` and an explicit `-ProvisioningProfile` covering
+   every Unity mode that the job runs.
 1. Confirm each of those jobs releases the organization lock after the direct
    Unity runner with `if: always()`.
 1. Confirm each of those jobs declares the uniform static label set
@@ -350,7 +351,7 @@ Workflow-shape contract checklist:
 
 Trigger safe workflows after transfer:
 
-1. `workflow_dispatch` for Unity Tests with one Unity version and one mode.
+1. `workflow_dispatch` for Unity Tests; confirm all four editor jobs run all three modes.
 1. `workflow_dispatch` for Unity IL2CPP.
 1. `workflow_dispatch` for Unity Benchmarks if runner capacity allows it.
 1. A same-repository pull request to confirm licensed checks land on a

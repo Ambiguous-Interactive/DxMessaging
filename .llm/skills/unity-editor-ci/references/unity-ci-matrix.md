@@ -2,7 +2,7 @@
 
 # Unity CI Matrix
 
-> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` is one unified matrix of four Unity versions x {editmode, playmode, standalone} = 12 jobs, where `standalone` builds and runs a `StandaloneWindows64` IL2CPP player from a runner-local project.
+> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` has four editor-scoped jobs, and each job invokes editmode, playmode, and standalone separately under one lock and cleanup window.
 
 ## When to Use
 
@@ -18,15 +18,16 @@
 
 ## Current Matrix
 
-`unity-tests.yml` (active; direct Unity on self-hosted Windows; one unified matrix):
+`unity-tests.yml` (active; direct Unity on self-hosted Windows; editor-grouped matrix):
 
-| Axis            | Values                                                    |
+| Matrix axis     | Values                                                    |
 | --------------- | --------------------------------------------------------- |
 | `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1`, `6000.5.2f1` |
-| `test-mode`     | `editmode`, `playmode`, `standalone`                      |
 
-Twelve matrix cells. `editmode`/`playmode` run in-editor on Mono; `standalone`
-builds and runs a `StandaloneWindows64` IL2CPP player. The direct runner
+Four jobs each run three independent modes. `editmode`/`playmode` run in-editor
+on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP player.
+Each mode keeps its own result verification, artifact, timeout, and runner-local
+project. The direct runner
 generates a package host project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, imports the repo package with a
 `file:` dependency, sets `testables`, and configures IL2CPP before running
@@ -57,7 +58,7 @@ The Unity serial has two activation seats shared across the organization and no 
 **Matrix serialization and organization admission.** `strategy.max-parallel: 1` serializes matrix cells WITHIN a single run. The external `ambiguous-organization-build-lock` action admits at most two distinct runners ACROSS runs, workflows, and repositories while accounting for cooldowns, quarantines, and account incidents.
 
 - `max-parallel: 1` only: cannot prevent two separate runs (two pushes, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
-- The lock only: leaves all 12 cells spawning at once, so idle cells burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
+- The lock only: leaves all four editor jobs spawning at once, so idle jobs burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
 
 With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows (`unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`); single-job release workflows rely on the lock for cross-run admission.
 
@@ -67,13 +68,13 @@ With both controls, a run consumes at most one seat while another repository can
 job timeout-minutes >= sum(all capped steps through cleanup gate) + 60
 ```
 
-Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Licensed work is capped at 120 to 180 minutes, and return/classify/release/gate at 5/2/5/2 minutes. The licensed jobs use `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
+Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Grouped correctness modes use 90/90/150-minute caps; other licensed work uses 120 to 180 minutes. Return/classify/release/gate use 5/2/5/2 minutes. The licensed jobs use `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
 
 The step-level caps protect the in-use seat from a hung editor or ancillary action. They must remain strictly below the job timeout so the step fails first and the cleanup chain still runs. This matters because `stuck-job-watchdog.yml` ignores any `in_progress` job; without step caps, a wedged action can squat the seat until the whole job is cancelled.
 
 Runner administrators manually install every exact editor and required module under `RUNNER_TOOL_CACHE/u6-v3`. Workflows validate that root with `-CiManagedOnly -RequireHealthyExisting` before acquiring the organization lock; they never install or repair editors. Release the lock only after the always-run return and cleanup-classification steps.
 
-**Operator note (standalone IL2CPP):** the `standalone` cells require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. `scripts/unity/ensure-editor.ps1` must be called with an explicit provisioning profile: `EditorOnly` for editmode/playmode/benchmarks/release checks, and `StandaloneWindowsIl2Cpp` for standalone so `windows-il2cpp` is verified. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for manual maintenance details.
+**Operator note (standalone IL2CPP):** the grouped correctness jobs require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. They validate the `StandaloneWindowsIl2Cpp` profile once before the lock, then reuse that editor for all three modes. Other workflows still select `EditorOnly` or `StandaloneWindowsIl2Cpp` according to their one mode. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for manual maintenance details.
 
 `unity-benchmarks.yml` (active; manual-only, NEVER on PRs):
 
@@ -86,11 +87,11 @@ The active `unity-benchmarks.yml` explicitly omits `pull_request` and `push` per
 
 ## compute-unity-assemblies is-empty Gate
 
-Every workflow that consumes `./.github/actions/compute-unity-assemblies` mirrors the canonical wiring in `unity-tests.yml`: the compute step carries `id: compute`, and editor validation plus Unity work skip when `is-empty == 'true'`. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
+Every workflow that consumes `./.github/actions/compute-unity-assemblies` gives each Unity invocation a stable compute id. Grouped correctness uses `compute`, `compute_playmode`, and `compute_standalone`; each run receives only its matching assembly output through an environment variable. Unity work skips when its selection is empty. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
 
 The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/editor-validation/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
 
-When editing these workflows, keep every compute step carrying an `id` and every license-consuming step gated on `steps.<compute-id>.outputs.is-empty != 'true'`. Do not gate verify on is-empty, and do not remove the gated steps; mirror `unity-tests.yml`.
+When editing these workflows, keep every compute step carrying an `id` and every license-consuming step gated on `steps.<compute-id>.outputs.is-empty != 'true'`. In a grouped job, let mode runs and verifiers continue so later modes retain evidence, then fail closed in one terminal mode gate before cleanup. Do not gate verify on is-empty, and do not remove the gated steps; mirror `unity-tests.yml`.
 
 ## When to Add a Unity Version
 

@@ -93,9 +93,9 @@ If the asmdef ends up in the `core` bucket instead, the most common cause is the
 The active `.github/workflows/unity-*.yml` workflows run Unity directly on
 self-hosted Windows runners through `scripts/unity/run-ci-tests.ps1` (benchmarks
 included). The `.github/workflows-disabled/*` files are the ubuntu reference
-mirrors kept for parity, not the live templates. Note: IL2CPP is now the
-`standalone` entry in the `unity-tests.yml` `test-mode` matrix; the direct runner
-maps it to `StandaloneWindows64` and configures IL2CPP in the generated project.
+mirrors kept for parity, not the live templates. Note: each editor-scoped
+`unity-tests.yml` job runs `standalone` after EditMode and PlayMode; the direct
+runner maps it to `StandaloneWindows64` and configures IL2CPP in the generated project.
 Verify the active workflows still exist any time you edit them:
 
 ```bash

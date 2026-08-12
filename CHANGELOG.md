@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix nested runtime-settings overrides restoring ended settings when their
+  tokens are disposed out of order. Static reset now invalidates older override
+  tokens so they cannot replace newer configuration
+  ([#384](https://github.com/Ambiguous-Interactive/DxMessaging/issues/384)).
 - Fix copied `GlobalMessageBusScope` and `RegistrationDisposable` values restoring or removing
   newer state. Global bus override scopes now share disposal state, unwind nested scopes safely in
   either order, ignore stale disposal after an explicit set or reset, and allocate nothing per scope
