@@ -14,11 +14,9 @@ const SOURCE_GENERATORS_DIR = path.join(REPO_ROOT, "SourceGenerators");
 // The two first-party RoslynAnalyzer-labeled DLLs ship under Runtime/Analyzers so Unity
 // scopes the source generator to the DxMessaging runtime assembly and every assembly that
 // references it (including the predefined Assembly-CSharp), without copying anything into
-// consumer projects. Their co-located Roslyn runtime dependency DLLs (Microsoft.CodeAnalysis*,
-// System.*) are committed in the SAME folder so Unity's analyzer host can resolve the
-// analyzer's reference closure on every supported Unity (notably 2021's loader). This
-// script rebuilds and byte-verifies only the two first-party DLLs; the committed dependency
-// bytes are left untouched.
+// consumer projects. The Roslyn and System.Collections.Immutable references are PrivateAssets
+// build inputs; Unity's compiler host supplies their runtime assemblies. This script rebuilds
+// and byte-verifies both first-party compiler-extension DLLs.
 const COMMITTED_ANALYZERS_DIR = path.join(REPO_ROOT, "Runtime", "Analyzers");
 const ARTIFACT_ROOT = path.join(REPO_ROOT, ".artifacts", "analyzer-payload");
 const CONFIGURATION = "Release";

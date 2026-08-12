@@ -66,12 +66,9 @@ $PerformanceFrameworkVersion = '3.4.2'
 # NATIVELY: Unity scopes the Runtime/Analyzers/ RoslynAnalyzer-labeled DLLs to the
 # runtime assembly and EVERYTHING that references it (the test assemblies + the
 # predefined Assembly-CSharp), so the generator runs at the first compile with no
-# in-project analyzer copy or -a:csc.rsp entry. Runtime/Analyzers/ ALSO ships the
-# Roslyn runtime deps (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
-# System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe) the generator
-# loads at compile time; those ride along as platform-EXCLUDED analyzer dependencies
-# co-located with the labeled analyzers (Unity passes co-located deps to the compiler
-# alongside the analyzer; they are not loaded as managed plugins).
+# in-project analyzer copy or -a:csc.rsp entry. Roslyn and System.Collections.Immutable
+# are PrivateAssets build references; every supported Unity compiler host supplies their
+# runtime assemblies, so the package ships no private compiler-support DLLs.
 $RequiredDxMessagingAnalyzerDllNames = @(
     'WallstopStudios.DxMessaging.SourceGenerators.dll',
     'WallstopStudios.DxMessaging.Analyzer.dll'

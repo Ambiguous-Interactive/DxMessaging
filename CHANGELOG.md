@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduce the package download by relying on Unity's Roslyn compiler assemblies instead of
+  bundling private copies with the DxMessaging source generator and analyzer
+  ([#371](https://github.com/Ambiguous-Interactive/DxMessaging/issues/371)).
 - Reduce cold untargeted-handler registration allocations when registering many
   message types that have not emitted yet. Per-message-type dispatch snapshot
   state now materializes on the first emission instead of the first registration

@@ -24,16 +24,11 @@
   <!-- Post-build copy of the source-generator DLL into the analyzer payload
        directory selected by AnalyzerPayloadOutputDir.
 
-       This target copies ONLY the freshly-built source-generator DLL.
-       The pinned Roslyn dependency DLLs the analyzer host needs
-       (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
-       System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe)
-       are committed co-located in Runtime/Analyzers/ as fixed bytes and are
-       NOT re-copied by this build: a normal (non-clean) rebuild therefore
-       leaves those committed dep DLLs untouched. Do NOT wipe
-       Runtime/Analyzers/ wholesale; the committed dep bytes are the proven,
-       Unity-validated set (notably for Unity 2021's analyzer loader) and are
-       not reproduced by this 3.8.0-pinned build.
+       This target copies ONLY the freshly-built source-generator DLL. Roslyn
+       and System.Collections.Immutable remain PrivateAssets compile references;
+       Unity's compiler host already supplies their runtime assemblies. Shipping
+       private copies beside the generator duplicates the editor toolchain and
+       adds no analyzer capability.
 
        AnalyzerPayloadOutputDir defaults to Runtime/Analyzers for local refresh
        builds. CI freshness checks pass a temp directory so builds do not dirty

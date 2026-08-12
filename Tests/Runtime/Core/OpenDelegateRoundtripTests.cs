@@ -53,7 +53,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void OpenInstanceDelegateOverRefStructParameterRoundTrips()
+        public void OpenInstanceDelegateOverRefValueTypeParameterRoundTrips()
         {
             MethodInfo method = typeof(StructReceiver).GetMethod(
                 nameof(StructReceiver.Handle),
@@ -82,7 +82,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 23,
                 payload.value,
-                "ref struct payload mutations must round-trip through the open delegate."
+                "ref value-type payload mutations must round-trip through the open delegate."
             );
         }
 

@@ -47,15 +47,11 @@
   <!-- Post-build copy of the analyzer DLL into the analyzer payload directory
        selected by AnalyzerPayloadOutputDir.
 
-       This target copies ONLY the freshly-built analyzer DLL. The pinned
-       Roslyn dependency DLLs the analyzer host needs
-       (Microsoft.CodeAnalysis[.CSharp], System.Collections.Immutable,
-       System.Reflection.Metadata, System.Runtime.CompilerServices.Unsafe)
-       are committed co-located in Runtime/Analyzers/ as fixed bytes; the
-       PrivateAssets=all PackageReferences below keep this project's build from
-       emitting its own (3.8.0-pinned) copies of those deps, so a normal rebuild
-       leaves the committed dep DLLs untouched. Do NOT wipe Runtime/Analyzers/
-       wholesale; the committed dep bytes are the proven, Unity-validated set.
+       This target copies ONLY the freshly-built analyzer DLL. Roslyn and
+       System.Collections.Immutable remain PrivateAssets compile references;
+       Unity's compiler host already supplies their runtime assemblies. Shipping
+       private copies beside the analyzer duplicates the editor toolchain and
+       adds no analyzer capability.
 
        AnalyzerPayloadOutputDir defaults to Runtime/Analyzers for local refresh
        builds. CI freshness checks pass a temp directory so builds do not dirty
