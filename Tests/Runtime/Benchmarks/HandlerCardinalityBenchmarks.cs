@@ -342,13 +342,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         HandlerCache,
         PrioritySlot,
         BusPriorityOwner,
+        OrdinaryTypedHandler,
+        GlobalTypedHandler,
     }
 
     /// <summary>
     /// Isolates the eager object count, bytes, and fixed-batch construction latency of
-    /// the handler-entry cache, typed priority slot, and bus priority owner. These rows run once
-    /// per benchmark execution,
-    /// independently of the cardinality matrix.
+    /// the handler-entry cache, typed priority slot, bus priority owner, ordinary typed handler,
+    /// and global typed handler. These rows run once per benchmark execution, independently of
+    /// the cardinality matrix.
     /// </summary>
     public sealed class HandlerStorageConstructionBenchmarks
     {
@@ -361,6 +363,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(HandlerStorageConstructionKind.HandlerCache)]
         [TestCase(HandlerStorageConstructionKind.PrioritySlot)]
         [TestCase(HandlerStorageConstructionKind.BusPriorityOwner)]
+        [TestCase(HandlerStorageConstructionKind.OrdinaryTypedHandler)]
+        [TestCase(HandlerStorageConstructionKind.GlobalTypedHandler)]
         public void HandlerStorageConstructionBenchmark(HandlerStorageConstructionKind kind)
         {
             HandlerStorageConstructionBenchmarkResult result = RunScenario(kind);
@@ -382,7 +386,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 int constructed = ConstructBatch(kind, ConstructionSamples);
                 long endTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                 s_constructionSink = null;
-                Assert.AreEqual(ConstructionSamples, constructed);
+                Assert.AreEqual(
+                    ConstructionSamples,
+                    constructed,
+                    $"Construction kind {kind} must construct the requested sample count."
+                );
                 double elapsedSeconds =
                     (endTimestamp - startTimestamp)
                     / (double)System.Diagnostics.Stopwatch.Frequency;
@@ -408,7 +416,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 Assert.AreEqual(
                     ConstructionSamples,
                     allocation.Diagnostics,
-                    "The selected allocation attempt must construct the reported sample count."
+                    $"Construction kind {kind} must construct the reported sample count in the "
+                        + "selected allocation attempt."
                 );
             }
 
@@ -447,6 +456,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         s_constructionSink = MessageBus.CreatePriorityStorageOwnerForBenchmark();
                     }
                     return count;
+                case HandlerStorageConstructionKind.OrdinaryTypedHandler:
+                    for (int index = 0; index < count; ++index)
+                    {
+                        s_constructionSink =
+                            new MessageHandler.TypedHandler<StorageConstructionMessage>();
+                    }
+                    return count;
+                case HandlerStorageConstructionKind.GlobalTypedHandler:
+                    for (int index = 0; index < count; ++index)
+                    {
+                        s_constructionSink = new MessageHandler.TypedHandler<IMessage>();
+                    }
+                    return count;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
             }
@@ -454,18 +476,61 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static void ValidateFreshConstruction(HandlerStorageConstructionKind kind)
         {
-            Assert.AreEqual(1, ConstructBatch(kind, 1));
+            Assert.AreEqual(
+                1,
+                ConstructBatch(kind, 1),
+                $"Construction kind {kind} must create one fresh storage owner."
+            );
             if (kind == HandlerStorageConstructionKind.BusPriorityOwner)
             {
                 Assert.IsTrue(
                     MessageBus.TryObservePriorityStorageOwnerForBenchmark(
                         s_constructionSink,
                         out MessageBus.PriorityStorageObservation observation
-                    )
+                    ),
+                    $"Construction kind {kind} must expose its fresh storage observation."
                 );
-                Assert.Zero(observation.Entries);
-                Assert.Zero(observation.MapCapacity);
-                Assert.Zero(observation.OrderCapacity);
+                Assert.Zero(
+                    observation.Entries,
+                    $"Construction kind {kind} must start with zero priority entries."
+                );
+                Assert.Zero(
+                    observation.MapCapacity,
+                    $"Construction kind {kind} must not eagerly allocate the priority map."
+                );
+                Assert.Zero(
+                    observation.OrderCapacity,
+                    $"Construction kind {kind} must not eagerly allocate priority order storage."
+                );
+            }
+            else if (kind == HandlerStorageConstructionKind.OrdinaryTypedHandler)
+            {
+                MessageHandler.TypedHandler<StorageConstructionMessage> handler =
+                    (MessageHandler.TypedHandler<StorageConstructionMessage>)s_constructionSink;
+                Assert.AreEqual(
+                    TypedSlotIndex.Length,
+                    handler._slots.Length,
+                    $"Construction kind {kind} must retain every ordinary typed slot."
+                );
+                Assert.Zero(
+                    handler._globalSlots.Length,
+                    $"Construction kind {kind} must omit global registration slots."
+                );
+            }
+            else if (kind == HandlerStorageConstructionKind.GlobalTypedHandler)
+            {
+                MessageHandler.TypedHandler<IMessage> handler =
+                    (MessageHandler.TypedHandler<IMessage>)s_constructionSink;
+                Assert.AreEqual(
+                    TypedSlotIndex.Length,
+                    handler._slots.Length,
+                    $"Construction kind {kind} must retain every ordinary typed slot."
+                );
+                Assert.AreEqual(
+                    TypedGlobalSlotIndex.Length,
+                    handler._globalSlots.Length,
+                    $"Construction kind {kind} must retain every global registration slot."
+                );
             }
             s_constructionSink = null;
         }

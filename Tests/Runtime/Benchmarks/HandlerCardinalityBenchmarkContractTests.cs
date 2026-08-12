@@ -242,6 +242,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     HandlerStorageConstructionKind.HandlerCache,
                     HandlerStorageConstructionKind.PrioritySlot,
                     HandlerStorageConstructionKind.BusPriorityOwner,
+                    HandlerStorageConstructionKind.OrdinaryTypedHandler,
+                    HandlerStorageConstructionKind.GlobalTypedHandler,
                 },
                 (HandlerStorageConstructionKind[])
                     Enum.GetValues(typeof(HandlerStorageConstructionKind))

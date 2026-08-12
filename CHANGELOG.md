@@ -29,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#371](https://github.com/Ambiguous-Interactive/DxMessaging/issues/371)).
 - Reduce cold untargeted-handler registration allocations when registering many
   message types that have not emitted yet. Per-message-type dispatch snapshot
-  state now materializes on the first emission instead of the first registration
+  state now materializes on the first emission instead of the first registration,
+  and ordinary typed handlers no longer allocate global accept-all slots they cannot use
   ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
 - Reduce registration-order bulk deregistration from quadratic to linear time
   when one token owns many distinct same-priority handlers for the same message

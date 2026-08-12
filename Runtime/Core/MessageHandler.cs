@@ -3175,13 +3175,16 @@ namespace DxMessaging.Core
         internal sealed class TypedHandler<T> : ITypedHandlerSlotSweeper
             where T : IMessage
         {
-            // Typed storage: 20 typed slots + 6 global slots. The legacy
-            // named fields were deleted so new handler variants must pick an
+            // Every message type owns 20 typed slots. Only the IMessage facade used by
+            // global accept-all registration can address the six global slots; ordinary
+            // typed handlers share the empty array instead of allocating unusable storage.
+            // The legacy named fields were deleted so new handler variants must pick an
             // explicit axis-indexed slot.
             internal readonly TypedSlot<T>[] _slots = new TypedSlot<T>[TypedSlotIndex.Length];
-            internal readonly TypedGlobalSlot[] _globalSlots = new TypedGlobalSlot[
-                TypedGlobalSlotIndex.Length
-            ];
+            internal readonly TypedGlobalSlot[] _globalSlots =
+                typeof(T) == typeof(IMessage)
+                    ? new TypedGlobalSlot[TypedGlobalSlotIndex.Length]
+                    : Array.Empty<TypedGlobalSlot>();
 
             // Constructor exists solely so the [Conditional("DEBUG")]
             // validator below runs at construction time. In Release builds
@@ -3408,10 +3411,12 @@ namespace DxMessaging.Core
                         $"_slots length is {_slots.Length} but TypedSlotIndex.Length is {TypedSlotIndex.Length}."
                     );
                 }
-                if (_globalSlots.Length != TypedGlobalSlotIndex.Length)
+                int expectedGlobalSlotCount =
+                    typeof(T) == typeof(IMessage) ? TypedGlobalSlotIndex.Length : 0;
+                if (_globalSlots.Length != expectedGlobalSlotCount)
                 {
                     throw new InvalidOperationException(
-                        $"_globalSlots length is {_globalSlots.Length} but TypedGlobalSlotIndex.Length is {TypedGlobalSlotIndex.Length}."
+                        $"_globalSlots length is {_globalSlots.Length} but the expected length for {typeof(T)} is {expectedGlobalSlotCount}."
                     );
                 }
                 // Lazy registration writers update the slot arrays; this assertion still
