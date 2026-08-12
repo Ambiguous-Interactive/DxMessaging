@@ -42,6 +42,175 @@ namespace DxMessaging.Tests.Runtime.Core
             DxMessagingStaticState.Reset();
         }
 
+        [TestCase(true)]
+        [TestCase(false)]
+        public void CopiedRegistrationDisposableCannotRemoveReusedSlot(bool disposeCopyFirst)
+        {
+            BusType innerBus = new();
+            ReentrantReplayRemovalBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            using LeakWatcher watcher = new(
+                bus,
+                throwOnLeak: true,
+                label: nameof(CopiedRegistrationDisposableCannotRemoveReusedSlot)
+            );
+            MessageRegistrationHandle originalHandle =
+                token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priority: 1
+                );
+            token.Enable();
+            MessageRegistrationToken.RegistrationDisposable disposable = token.AsDisposable(
+                originalHandle
+            );
+            MessageRegistrationToken.RegistrationDisposable copy = disposable;
+
+            if (disposeCopyFirst)
+            {
+                copy.Dispose();
+            }
+            else
+            {
+                disposable.Dispose();
+            }
+
+            Assert.AreEqual(
+                1,
+                bus.DeregistrationAttempts,
+                "The first copy disposed must deregister the original exactly once. copyFirst={0}",
+                disposeCopyFirst
+            );
+            Assert.AreEqual(
+                0,
+                bus.RegisteredUntargeted,
+                "The original registration must be gone before its slot is reused. copyFirst={0}",
+                disposeCopyFirst
+            );
+
+            DxMessagingStaticState.Reset();
+            MessageRegistrationHandle replacementHandle =
+                token.RegisterUntargeted<SimpleUntargetedMessage>(
+                    (ref SimpleUntargetedMessage _) => { },
+                    priority: 2
+                );
+            Assert.AreEqual(
+                originalHandle.Slot,
+                replacementHandle.Slot,
+                "The regression requires the replacement to recycle the original arena slot. copyFirst={0}",
+                disposeCopyFirst
+            );
+            Assert.AreNotEqual(
+                originalHandle,
+                replacementHandle,
+                "A recycled slot must receive a new opaque identity after static reset. copyFirst={0}",
+                disposeCopyFirst
+            );
+            Assert.AreEqual(
+                1,
+                bus.RegisteredUntargeted,
+                "The replacement registration must be live before stale-copy disposal. copyFirst={0}",
+                disposeCopyFirst
+            );
+
+            if (disposeCopyFirst)
+            {
+                disposable.Dispose();
+            }
+            else
+            {
+                copy.Dispose();
+            }
+
+            Assert.AreEqual(
+                1,
+                bus.DeregistrationAttempts,
+                "The stale copy must not reach the bus after slot reuse. copyFirst={0}",
+                disposeCopyFirst
+            );
+            Assert.AreEqual(
+                1,
+                bus.RegisteredUntargeted,
+                "The stale copy must not remove the replacement registration. copyFirst={0}",
+                disposeCopyFirst
+            );
+
+            token.Dispose();
+            Assert.AreEqual(
+                2,
+                bus.DeregistrationAttempts,
+                "Token disposal must still remove the replacement registration. copyFirst={0}",
+                disposeCopyFirst
+            );
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CopiedRegistrationDisposableRetriesFailedDeregistration(bool disposeCopyFirst)
+        {
+            BusType innerBus = new();
+            FailingDeregistrationBus bus = new(innerBus);
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            using LeakWatcher watcher = new(
+                bus,
+                throwOnLeak: true,
+                label: nameof(CopiedRegistrationDisposableRetriesFailedDeregistration)
+            );
+            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
+                (ref SimpleUntargetedMessage _) => { }
+            );
+            token.Enable();
+            MessageRegistrationToken.RegistrationDisposable disposable = token.AsDisposable(handle);
+            MessageRegistrationToken.RegistrationDisposable copy = disposable;
+
+            MessageRegistrationToken.RegistrationDisposable first = disposeCopyFirst
+                ? copy
+                : disposable;
+            MessageRegistrationToken.RegistrationDisposable retry = disposeCopyFirst
+                ? disposable
+                : copy;
+            Assert.Throws<InvalidOperationException>(
+                first.Dispose,
+                "The first disposal must surface the bus deregistration failure."
+            );
+            Assert.AreEqual(
+                1,
+                bus.RegisteredUntargeted,
+                "A failed disposal must keep the registration live and retryable."
+            );
+
+            bus.AllowDeregistrations();
+            Assert.DoesNotThrow(
+                retry.Dispose,
+                "A copied wrapper must retry the failed deregistration."
+            );
+            Assert.AreEqual(
+                0,
+                bus.RegisteredUntargeted,
+                "The retry through a copy must remove the registration."
+            );
+            Assert.DoesNotThrow(
+                first.Dispose,
+                "A stale copy after successful retry must be harmless."
+            );
+            Assert.AreEqual(
+                0,
+                bus.RegisteredUntargeted,
+                "A stale copy must not recreate or otherwise change the removed registration."
+            );
+        }
+
+        [Test]
+        public void DefaultRegistrationDisposableDisposalDoesNothing()
+        {
+            MessageRegistrationToken.RegistrationDisposable disposable = default;
+            Assert.DoesNotThrow(
+                disposable.Dispose,
+                "Disposing a default registration wrapper must be a harmless no-op."
+            );
+        }
+
         [Test]
         public void ReplayRemovalAndSlotReuseRetainsOrphanTeardownUntilDisable()
         {

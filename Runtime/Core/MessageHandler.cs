@@ -60,6 +60,18 @@ namespace DxMessaging.Core
         private static IMessageBus _globalMessageBus;
 
         private static MessageBus.MessageBus _defaultGlobalMessageBus = new MessageBus.MessageBus();
+        private const int GlobalMessageBusOverrideBlockShift = 10;
+        private const int GlobalMessageBusOverrideBlockSize =
+            1 << GlobalMessageBusOverrideBlockShift;
+        private const int GlobalMessageBusOverrideBlockMask = GlobalMessageBusOverrideBlockSize - 1;
+        private static GlobalMessageBusOverrideState[][] _globalMessageBusOverrideBlocks =
+        {
+            new GlobalMessageBusOverrideState[GlobalMessageBusOverrideBlockSize],
+        };
+        private static int _globalMessageBusOverrideBlockCount = 1;
+        private static int _globalMessageBusOverrideFreeHead = -1;
+        private static int _globalMessageBusOverrideSlotCount;
+        private static int _latestGlobalMessageBusOverrideSlot = -1;
 
         /// <summary>
         /// Gets the process-wide <see cref="IMessageBus"/> used when no explicit bus is supplied.
@@ -116,7 +128,11 @@ namespace DxMessaging.Core
                 throw new ArgumentNullException(nameof(messageBus));
             }
 
-            _globalMessageBus = messageBus;
+            lock (GlobalResetLock)
+            {
+                InvalidateGlobalMessageBusOverrides();
+                SetGlobalMessageBusCore(messageBus);
+            }
         }
 
         /// <summary>
@@ -133,7 +149,11 @@ namespace DxMessaging.Core
                 throw new ArgumentNullException(nameof(messageBus));
             }
 
-            _globalMessageBus = messageBus;
+            lock (GlobalResetLock)
+            {
+                InvalidateGlobalMessageBusOverrides();
+                SetGlobalMessageBusCore(messageBus);
+            }
         }
 
         /// <summary>
@@ -146,7 +166,8 @@ namespace DxMessaging.Core
         {
             lock (GlobalResetLock)
             {
-                _globalMessageBus = _defaultGlobalMessageBus;
+                InvalidateGlobalMessageBusOverrides();
+                SetGlobalMessageBusCore(_defaultGlobalMessageBus);
             }
         }
 
@@ -154,7 +175,18 @@ namespace DxMessaging.Core
         /// Temporarily overrides the global message bus until the returned scope is disposed.
         /// </summary>
         /// <param name="messageBus">Message bus to expose for the duration of the scope.</param>
-        /// <returns>An <see cref="IDisposable"/> scope that restores the previous bus on dispose.</returns>
+        /// <returns>
+        /// A <see cref="GlobalMessageBusScope"/> that restores the previous bus on dispose. Keep
+        /// the returned concrete value type instead of converting it to <see cref="IDisposable"/>
+        /// to avoid boxing. Scope creation and disposal allocate no managed objects while reusing
+        /// established slot capacity; a new peak occupancy grows the table in fixed blocks.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="messageBus"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when the representable override slot index space is exhausted.
+        /// </exception>
         public static GlobalMessageBusScope OverrideGlobalMessageBus(IMessageBus messageBus)
         {
             return new GlobalMessageBusScope(messageBus);
@@ -171,17 +203,144 @@ namespace DxMessaging.Core
             lock (GlobalResetLock)
             {
                 _defaultGlobalMessageBus.ResetState();
-                _globalMessageBus = _defaultGlobalMessageBus;
+                InvalidateGlobalMessageBusOverrides();
+                SetGlobalMessageBusCore(_defaultGlobalMessageBus);
             }
+        }
+
+        private static void SetGlobalMessageBusCore(IMessageBus messageBus)
+        {
+            _globalMessageBus = messageBus;
+        }
+
+        private static void InvalidateGlobalMessageBusOverrides()
+        {
+            int slot = _latestGlobalMessageBusOverrideSlot;
+            _latestGlobalMessageBusOverrideSlot = -1;
+            while (slot >= 0)
+            {
+                int previous = GetGlobalMessageBusOverrideState(slot).PreviousSlot;
+                ReleaseGlobalMessageBusOverrideSlot(slot);
+                slot = previous;
+            }
+        }
+
+        private static int AcquireGlobalMessageBusOverrideSlot(out long generation)
+        {
+            while (true)
+            {
+                int slot = _globalMessageBusOverrideFreeHead;
+                if (slot >= 0)
+                {
+                    _globalMessageBusOverrideFreeHead = GetGlobalMessageBusOverrideState(
+                        slot
+                    ).NextFree;
+                }
+                else
+                {
+                    if (_globalMessageBusOverrideSlotCount == int.MaxValue)
+                    {
+                        throw new InvalidOperationException(
+                            "The global message bus override slot index is exhausted."
+                        );
+                    }
+
+                    slot = _globalMessageBusOverrideSlotCount;
+                    EnsureGlobalMessageBusOverrideBlock(slot >> GlobalMessageBusOverrideBlockShift);
+                    ++_globalMessageBusOverrideSlotCount;
+                }
+
+                ref GlobalMessageBusOverrideState state = ref GetGlobalMessageBusOverrideState(
+                    slot
+                );
+                if (state.Generation == -1)
+                {
+                    // Every nonzero 64-bit generation was issued for this slot. Burn it instead of
+                    // wrapping to a generation an ancient stale scope could still carry.
+                    continue;
+                }
+                unchecked
+                {
+                    ++state.Generation;
+                    if (state.Generation == 0)
+                    {
+                        ++state.Generation;
+                    }
+                }
+
+                generation = state.Generation;
+                return slot;
+            }
+        }
+
+        private static void ReleaseGlobalMessageBusOverrideSlot(int slot)
+        {
+            ref GlobalMessageBusOverrideState state = ref GetGlobalMessageBusOverrideState(slot);
+            state.PreviousBus = null;
+            state.PreviousSlot = -1;
+            state.Disposed = true;
+            state.NextFree = _globalMessageBusOverrideFreeHead;
+            _globalMessageBusOverrideFreeHead = slot;
+        }
+
+        private static ref GlobalMessageBusOverrideState GetGlobalMessageBusOverrideState(int slot)
+        {
+            return ref _globalMessageBusOverrideBlocks[slot >> GlobalMessageBusOverrideBlockShift][
+                slot & GlobalMessageBusOverrideBlockMask
+            ];
+        }
+
+        private static void EnsureGlobalMessageBusOverrideBlock(int block)
+        {
+            if (block < _globalMessageBusOverrideBlockCount)
+            {
+                return;
+            }
+
+            int required = block + 1;
+            if (required > _globalMessageBusOverrideBlocks.Length)
+            {
+                int capacity = _globalMessageBusOverrideBlocks.Length * 2;
+                while (capacity < required)
+                {
+                    capacity *= 2;
+                }
+
+                GlobalMessageBusOverrideState[][] grown = new GlobalMessageBusOverrideState[
+                    capacity
+                ][];
+                Array.Copy(
+                    _globalMessageBusOverrideBlocks,
+                    grown,
+                    _globalMessageBusOverrideBlockCount
+                );
+                _globalMessageBusOverrideBlocks = grown;
+            }
+
+            for (int i = _globalMessageBusOverrideBlockCount; i < required; ++i)
+            {
+                _globalMessageBusOverrideBlocks[i] = new GlobalMessageBusOverrideState[
+                    GlobalMessageBusOverrideBlockSize
+                ];
+            }
+
+            _globalMessageBusOverrideBlockCount = required;
         }
 
         /// <summary>
         /// Represents a disposable override scope for the global message bus.
         /// </summary>
-        public struct GlobalMessageBusScope : IDisposable
+        /// <remarks>
+        /// Copies share their disposal state. Disposing any copy ends the override once, and a
+        /// later disposal cannot restore stale state over a newer global-bus change.
+        /// Create, dispose, set, and reset global-bus configuration on Unity's main thread; message
+        /// bus operations follow DxMessaging's single-threaded runtime contract.
+        /// <para><b>Fixed in v3.2.3.</b></para>
+        /// </remarks>
+        public readonly struct GlobalMessageBusScope : IDisposable
         {
-            private readonly IMessageBus _previous;
-            private bool _disposed;
+            private readonly int _slot;
+            private readonly long _generation;
 
             internal GlobalMessageBusScope(IMessageBus messageBus)
             {
@@ -190,16 +349,19 @@ namespace DxMessaging.Core
                     throw new ArgumentNullException(nameof(messageBus));
                 }
 
-                _previous = MessageBus;
-                _disposed = false;
-
-                if (messageBus is MessageBus.MessageBus concrete)
+                lock (GlobalResetLock)
                 {
-                    SetGlobalMessageBus(concrete);
-                }
-                else
-                {
-                    SetGlobalMessageBus(messageBus);
+                    int slot = AcquireGlobalMessageBusOverrideSlot(out long generation);
+                    _slot = slot + 1;
+                    ref GlobalMessageBusOverrideState state = ref GetGlobalMessageBusOverrideState(
+                        slot
+                    );
+                    _generation = generation;
+                    state.PreviousBus = MessageBus;
+                    state.PreviousSlot = _latestGlobalMessageBusOverrideSlot;
+                    state.Disposed = false;
+                    SetGlobalMessageBusCore(messageBus);
+                    _latestGlobalMessageBusOverrideSlot = slot;
                 }
             }
 
@@ -208,26 +370,58 @@ namespace DxMessaging.Core
             /// </summary>
             public void Dispose()
             {
-                if (_disposed)
+                if (_slot == 0)
                 {
                     return;
                 }
 
-                if (_previous is MessageBus.MessageBus concrete)
+                lock (GlobalResetLock)
                 {
-                    SetGlobalMessageBus(concrete);
-                }
-                else if (_previous != null)
-                {
-                    SetGlobalMessageBus(_previous);
-                }
-                else
-                {
-                    ResetGlobalMessageBus();
-                }
+                    int slot = _slot - 1;
+                    ref GlobalMessageBusOverrideState state = ref GetGlobalMessageBusOverrideState(
+                        slot
+                    );
+                    if (state.Generation != _generation || state.Disposed)
+                    {
+                        return;
+                    }
 
-                _disposed = true;
+                    state.Disposed = true;
+                    if (_latestGlobalMessageBusOverrideSlot != slot)
+                    {
+                        return;
+                    }
+
+                    IMessageBus restore = state.PreviousBus;
+                    int releaseSlot = slot;
+                    int previousSlot = state.PreviousSlot;
+                    while (
+                        previousSlot >= 0 && GetGlobalMessageBusOverrideState(previousSlot).Disposed
+                    )
+                    {
+                        ref GlobalMessageBusOverrideState previousState =
+                            ref GetGlobalMessageBusOverrideState(previousSlot);
+                        restore = previousState.PreviousBus;
+                        int nextPreviousSlot = previousState.PreviousSlot;
+                        ReleaseGlobalMessageBusOverrideSlot(releaseSlot);
+                        releaseSlot = previousSlot;
+                        previousSlot = nextPreviousSlot;
+                    }
+
+                    SetGlobalMessageBusCore(restore ?? _defaultGlobalMessageBus);
+                    ReleaseGlobalMessageBusOverrideSlot(releaseSlot);
+                    _latestGlobalMessageBusOverrideSlot = previousSlot;
+                }
             }
+        }
+
+        private struct GlobalMessageBusOverrideState
+        {
+            internal IMessageBus PreviousBus;
+            internal long Generation;
+            internal int PreviousSlot;
+            internal int NextFree;
+            internal bool Disposed;
         }
 
         /// <summary>

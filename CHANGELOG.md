@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix copied `GlobalMessageBusScope` and `RegistrationDisposable` values restoring or removing
+  newer state. Global bus override scopes now share disposal state, unwind nested scopes safely in
+  either order, ignore stale disposal after an explicit set or reset, and allocate nothing per scope
+  when retained as their concrete value type while reusing established slot capacity. New peak
+  occupancy grows the slot table in fixed blocks instead of imposing a fixed 1,024 nesting cap.
+  Registration handle identities now remain unique across static resets so a stale copied wrapper
+  cannot remove a new registration that reused its token slot
+  ([#375](https://github.com/Ambiguous-Interactive/DxMessaging/issues/375)).
 - Fix the optional Reflex integration and DI sample for Reflex 14's registration
   API while retaining support for earlier Reflex releases. The pinned Reflex
   14.3.1 test dependency also removes its obsolete non-generic TreeView usage on
