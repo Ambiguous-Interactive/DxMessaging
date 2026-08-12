@@ -188,12 +188,14 @@ using (MessageHandler.OverrideGlobalMessageBus(testBus))
 // previous global bus restored here
 ```
 
-The concrete scope allocates no managed objects per use after `MessageHandler` static initialization
-and is safe to copy. Do not store it as `IDisposable`, which boxes the value. Nested scopes restore
-the nearest active parent even when disposed out of order. An explicit `SetGlobalMessageBus`,
+The concrete scope allocates no managed objects while reusing established slot capacity and is safe
+to copy. Do not store it as `IDisposable`, which boxes the value. Nested scopes restore the nearest
+active parent even when disposed out of order. An explicit `SetGlobalMessageBus`,
 `ResetGlobalMessageBus`, or `DxMessagingStaticState.Reset` invalidates older scopes instead of
-letting them restore stale state. The scope throws for `null` and when all 1,024 process-wide
-override slots are occupied; out-of-order-disposed parents keep their slots until newer scopes end.
+letting them restore stale state. The scope throws for `null`. New peak occupancy grows the table in
+fixed 1,024-slot blocks instead of imposing a fixed 1,024 nesting cap. Growth allocates the new
+block and may also grow the small block directory. Out-of-order-disposed parents keep their slots
+until newer scopes end. Grown blocks remain available for reuse until domain reload.
 Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These APIs
 follow DxMessaging's single-threaded runtime contract.
 Pair this with `IMessageRegistrationBuilder` for clean test lifecycles.

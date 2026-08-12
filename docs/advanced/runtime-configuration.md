@@ -59,12 +59,14 @@ var handler = new MessageHandler(new InstanceId(1)) { active = true };
 
 ### Temporarily Overriding the Global Bus
 
-> **Fixed in v3.2.3:** Override scopes are safe to copy and allocate no managed objects per scope
-> after `MessageHandler` static initialization. Keep the result as the concrete
+> **Fixed in v3.2.3:** Override scopes are safe to copy and allocate no managed objects while
+> reusing established slot capacity. Keep the result as the concrete
 > `GlobalMessageBusScope` type because converting a value type to `IDisposable` boxes it. Disposing
 > any copy ends the override once. Nested scopes restore the nearest active parent even when
 > disposed out of order. A later `SetGlobalMessageBus`, `ResetGlobalMessageBus`, or
 > `DxMessagingStaticState.Reset` invalidates older scopes so they cannot restore stale state.
+> New peak occupancy grows the table in fixed 1,024-slot blocks instead of imposing a fixed 1,024
+> nesting cap. Growth allocates the new block and may also grow the small block directory.
 
 Use `OverrideGlobalMessageBus()` when you want to temporarily replace the bus and automatically restore it later:
 
@@ -94,9 +96,11 @@ Assert.AreSame(originalBus, MessageHandler.MessageBus);
 - For scoped gameplay features that need their own message channel
 
 **Pattern:** This returns a `GlobalMessageBusScope` struct. Use the concrete return value directly
-with a `using` statement for allocation-free cleanup after static initialization. When the scope
-exits, the nearest active previous bus is restored. The process-wide table supports 1,024 occupied
-override slots. An out-of-order-disposed parent keeps its slot until all newer scopes have ended.
+with a `using` statement for zero-GC cleanup while established slot capacity is reused. When the
+scope exits, the nearest active previous bus is restored. New peak occupancy grows the process-wide
+table in fixed 1,024-slot blocks; growth allocates a block and may also grow the small block
+directory. Grown blocks remain available for reuse until domain reload. An out-of-order-disposed
+parent keeps its slot until all newer scopes have ended.
 Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These
 configuration APIs follow DxMessaging's single-threaded runtime contract.
 
@@ -398,17 +402,17 @@ public class DynamicComponentManager
 
 ## Quick Reference
 
-| API                                            | Purpose                                            | Use Case                        |
-| ---------------------------------------------- | -------------------------------------------------- | ------------------------------- |
-| `MessageHandler.MessageBus`                    | Access current global bus                          | Normal message emission         |
-| `MessageHandler.InitialGlobalMessageBus`       | Access original startup bus                        | Diagnostics, debugging          |
-| `MessageHandler.SetGlobalMessageBus(bus)`      | Permanently replace global bus                     | DI integration, test setup      |
-| `MessageHandler.OverrideGlobalMessageBus(bus)` | Temporarily override with a concrete zero-GC scope | Test isolation, scoped features |
-| `MessageHandler.ResetGlobalMessageBus()`       | Restore original startup bus                       | Test teardown, reset state      |
-| `component.Configure(bus, mode)`               | Set component's bus                                | Component configuration         |
-| `token.RetargetMessageBus(bus, mode)`          | Retarget a token                                   | Fine-grained control            |
-| `MessageBusRebindMode.PreserveRegistrations`   | Keep existing registrations on old bus             | Gradual migration               |
-| `MessageBusRebindMode.RebindActive`            | Move all registrations to new bus                  | Atomic switching                |
+| API                                            | Purpose                                     | Use Case                        |
+| ---------------------------------------------- | ------------------------------------------- | ------------------------------- |
+| `MessageHandler.MessageBus`                    | Access current global bus                   | Normal message emission         |
+| `MessageHandler.InitialGlobalMessageBus`       | Access original startup bus                 | Diagnostics, debugging          |
+| `MessageHandler.SetGlobalMessageBus(bus)`      | Permanently replace global bus              | DI integration, test setup      |
+| `MessageHandler.OverrideGlobalMessageBus(bus)` | Temporarily override; zero-GC on slot reuse | Test isolation, scoped features |
+| `MessageHandler.ResetGlobalMessageBus()`       | Restore original startup bus                | Test teardown, reset state      |
+| `component.Configure(bus, mode)`               | Set component's bus                         | Component configuration         |
+| `token.RetargetMessageBus(bus, mode)`          | Retarget a token                            | Fine-grained control            |
+| `MessageBusRebindMode.PreserveRegistrations`   | Keep existing registrations on old bus      | Gradual migration               |
+| `MessageBusRebindMode.RebindActive`            | Move all registrations to new bus           | Atomic switching                |
 
 ---
 

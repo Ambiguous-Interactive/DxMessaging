@@ -7,9 +7,9 @@ Issues: #375 copy-safe disposal and #354 docs-test SDK availability
 ## Outcome
 
 The two public disposable structs now remain safe when copied without allocating managed objects
-per operation after static initialization:
+per operation while established slot capacity is reused:
 
-- `GlobalMessageBusScope` stores a versioned index into a preallocated, reusable process-wide slot
+- `GlobalMessageBusScope` stores a versioned index into a segmented, reusable process-wide slot
   table. Copies share the authoritative slot state. Nested scopes restore the nearest active parent
   in either disposal order, explicit global-bus changes invalidate prior scopes, and stale copies
   cannot affect a scope that later recycles the same slot.
@@ -19,10 +19,12 @@ per operation after static initialization:
 - Registration handle identities no longer rewind during `DxMessagingStaticState.Reset`, preventing
   a pre-reset stale wrapper from colliding with a post-reset registration that reused its arena slot.
 
-The global override table has 1,024 occupied slots. Out-of-order-disposed ancestors retain their
-slots until all newer scopes have ended. Capacity failure, non-mutation, unwind, and reuse are
-covered and documented. Concrete scope use is zero-GC after static initialization; conversion to
-`IDisposable` boxes the value and is documented accordingly. Dispatch still reads the direct global
+The global override table starts with 1,024 slots and grows in fixed blocks when a new peak crosses
+established capacity, matching the segmented-table pattern used by UnityHelpers. Existing blocks
+never move. Out-of-order-disposed ancestors retain their slots until all newer scopes have ended.
+Growth beyond the first block, unwind, and reuse are covered and documented. Concrete scope use is
+zero-GC while established capacity is reused; a new peak allocates its block and may grow the small
+block directory. Conversion to `IDisposable` boxes the value. Dispatch still reads the direct global
 bus field and gained no per-emit work.
 
 ## Disposable Sweep
@@ -45,12 +47,13 @@ The allocation matrix now proves zero `GC.Alloc` activity after warmup for:
 
 - balanced global override creation and disposal;
 - nested slot acquisition, out-of-order unwind, and explicit invalidation;
+- repeated reuse after growing through three 1,024-slot blocks;
 - concrete `AsDisposable(handle).Dispose()` forwarding.
 
 Closures, buses, tokens, and registrations are constructed outside measured windows. Independent
 allocation review confirmed the measured paths contain no boxing, reference construction, delegate
-creation, LINQ, collection growth, or dispatch-path change. The one-time static override table is
-explicitly outside the per-operation contract.
+creation, LINQ, collection growth, or dispatch-path change. Fixed-block growth occurs only when a
+new peak crosses established capacity and is explicitly outside the steady-state contract.
 
 ## CI Improvement
 
@@ -69,6 +72,8 @@ Fresh assembly reflection proved the new runtime and allocation tests were loade
   skipped, 8 inconclusive in 294.02 seconds.
 - Post-review focused runtime fixtures: 76 passed, 0 failed in 0.24 seconds.
 - Post-review focused allocation rows: 3 passed, 0 failed in 3.85 seconds.
+- Final post-cap-removal global override fixture: 26 passed, 0 failed in 0.16 seconds.
+- Final post-cap-removal allocation rows: 4 passed, 0 failed in 4.07 seconds.
 
 The editor ended stopped, idle, outside prefab mode, with its open scene clean.
 
@@ -85,7 +90,12 @@ The editor ended stopped, idle, outside prefab mode, with its open scene clean.
 ## Review
 
 Three independent passes reviewed correctness, test coverage, and allocation behavior. Their findings
-added true generation-recycling coverage, the capacity boundary and tombstone recovery case, both
-failed-disposal retry orders, default/null cases, broader allocation branches, SDK floor correction,
-boxing and single-thread documentation, and accurate occupied-slot wording. Final allocation and
-test re-reviews reported no actionable issue.
+added true generation-recycling coverage, growth beyond the initial block and tombstone recovery,
+both failed-disposal retry orders, default/null cases, broader allocation branches, SDK floor
+correction, boxing and single-thread documentation, and removal of the initial fixed 1,024 nesting
+cap. Final re-review reported no actionable production, allocation, test, or documentation finding.
+
+## Pull Request
+
+Draft PR #385 contains the implementation and its evidence:
+https://github.com/Ambiguous-Interactive/DxMessaging/pull/385

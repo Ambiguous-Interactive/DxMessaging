@@ -289,6 +289,48 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         [Test]
         [Category("Allocation")]
+        public void GlobalMessageBusOverrideScopeIsZeroAllocAfterGrowingBeyondOneBlock()
+        {
+            const int scopeCount = 2049;
+            IMessageBus entryBus = MessageHandler.MessageBus;
+            MessageBus original = new MessageBus();
+            MessageBus overrideBus = new MessageBus();
+            MessageHandler.GlobalMessageBusScope[] scopes =
+                new MessageHandler.GlobalMessageBusScope[scopeCount];
+            MessageHandler.SetGlobalMessageBus(original);
+            Action deepOverrideCycle = () =>
+            {
+                for (int i = 0; i < scopes.Length; ++i)
+                {
+                    scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
+                }
+
+                for (int i = scopes.Length - 1; i >= 0; --i)
+                {
+                    scopes[i].Dispose();
+                }
+            };
+
+            try
+            {
+                AllocationAssertions.AssertNoAllocations(
+                    nameof(GlobalMessageBusOverrideScopeIsZeroAllocAfterGrowingBeyondOneBlock),
+                    deepOverrideCycle
+                );
+                Assert.AreSame(
+                    original,
+                    MessageHandler.MessageBus,
+                    "Every deep measured cycle must restore the original global bus."
+                );
+            }
+            finally
+            {
+                MessageHandler.SetGlobalMessageBus(entryBus);
+            }
+        }
+
+        [Test]
+        [Category("Allocation")]
         public void RegistrationDisposableIsZeroAllocAfterWarmup()
         {
             MessageBus bus = new MessageBus();

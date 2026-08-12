@@ -1,6 +1,7 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
+    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
@@ -301,28 +302,24 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void OverrideSlotCapacityFailsWithoutMutationAndIsReusableAfterUnwind()
+        public void OverrideSlotTableGrowsBeyondOneBlockAndIsReusableAfterUnwind()
         {
-            const int capacity = 1024;
+            const int scopeCount = 2049;
             GlobalMessageBus original = new GlobalMessageBus();
             GlobalMessageBus overrideBus = new GlobalMessageBus();
             MessageHandler.SetGlobalMessageBus(original);
             MessageHandler.GlobalMessageBusScope[] scopes =
-                new MessageHandler.GlobalMessageBusScope[capacity];
+                new MessageHandler.GlobalMessageBusScope[scopeCount];
 
             for (int i = 0; i < scopes.Length; ++i)
             {
                 scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
             }
 
-            Assert.Throws<InvalidOperationException>(
-                () => MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus()),
-                "The first scope beyond the documented slot capacity must fail."
-            );
             Assert.AreSame(
                 overrideBus,
                 MessageHandler.MessageBus,
-                "A capacity failure must not mutate the active global bus."
+                "The first scope in a third block must become active without a fixed-block cap."
             );
 
             for (int i = 0; i < scopes.Length - 1; ++i)
@@ -330,9 +327,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 scopes[i].Dispose();
             }
 
-            Assert.Throws<InvalidOperationException>(
-                () => MessageHandler.OverrideGlobalMessageBus(overrideBus),
-                "Out-of-order-disposed ancestors keep their slots until the newest scope ends."
+            Assert.AreSame(
+                overrideBus,
+                MessageHandler.MessageBus,
+                "Out-of-order-disposed ancestors must leave the newest scope active."
             );
             scopes[scopes.Length - 1].Dispose();
             Assert.AreSame(
@@ -346,15 +344,183 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreSame(
                     overrideBus,
                     MessageHandler.MessageBus,
-                    "Unwound slots must be reusable after capacity recovery."
+                    "Unwound slots must be reusable after multi-block recovery."
                 );
             }
 
             Assert.AreSame(
                 original,
                 MessageHandler.MessageBus,
-                "The recovered scope must restore the pre-capacity-test bus."
+                "The recovered scope must restore the pre-growth-test bus."
             );
+        }
+
+        [Test]
+        public void OverrideSlotStorageUsesFixedSizeSegmentsInsteadOfOneHardCapArray()
+        {
+            const int expectedBlockSize = 1024;
+            const int scopeCount = (expectedBlockSize * 2) + 1;
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+            FieldInfo blocksField = typeof(MessageHandler).GetField(
+                "_globalMessageBusOverrideBlocks",
+                flags
+            );
+            FieldInfo blockSizeField = typeof(MessageHandler).GetField(
+                "GlobalMessageBusOverrideBlockSize",
+                flags
+            );
+
+            Assert.IsNotNull(
+                blocksField,
+                "Override state must use a segmented directory instead of a fixed monolithic arena."
+            );
+            Assert.IsNotNull(blockSizeField, "The fixed segment size must remain explicit.");
+            Assert.IsTrue(
+                blocksField.FieldType.IsArray
+                    && blocksField.FieldType.GetElementType()?.IsArray == true,
+                "Override storage must be a jagged array so existing state blocks never move when capacity grows."
+            );
+            Assert.AreEqual(
+                expectedBlockSize,
+                (int)blockSizeField.GetRawConstantValue(),
+                "Override storage must grow in bounded fixed-size segments."
+            );
+
+            MessageHandler.GlobalMessageBusScope[] scopes =
+                new MessageHandler.GlobalMessageBusScope[scopeCount];
+            GlobalMessageBus overrideBus = new GlobalMessageBus();
+            try
+            {
+                for (int i = 0; i < scopes.Length; ++i)
+                {
+                    scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
+                }
+
+                Array blocks = (Array)blocksField.GetValue(null);
+                int realizedBlockCount = 0;
+                foreach (Array block in blocks)
+                {
+                    if (block == null)
+                    {
+                        continue;
+                    }
+
+                    ++realizedBlockCount;
+                    Assert.AreEqual(
+                        expectedBlockSize,
+                        block.Length,
+                        "Every realized override-state segment must use the fixed block size."
+                    );
+                }
+
+                Assert.GreaterOrEqual(
+                    realizedBlockCount,
+                    3,
+                    "Crossing two boundaries must realize at least three fixed-size blocks."
+                );
+            }
+            finally
+            {
+                for (int i = scopes.Length - 1; i >= 0; --i)
+                {
+                    scopes[i].Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void OverrideSlotIndexExhaustionFailsWithoutChangingTheGlobalBus()
+        {
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+            FieldInfo slotCountField = typeof(MessageHandler).GetField(
+                "_globalMessageBusOverrideSlotCount",
+                flags
+            );
+            FieldInfo freeHeadField = typeof(MessageHandler).GetField(
+                "_globalMessageBusOverrideFreeHead",
+                flags
+            );
+            GlobalMessageBus current = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(current);
+            int originalSlotCount = (int)slotCountField.GetValue(null);
+            int originalFreeHead = (int)freeHeadField.GetValue(null);
+
+            try
+            {
+                slotCountField.SetValue(null, int.MaxValue);
+                freeHeadField.SetValue(null, -1);
+
+                Assert.Throws<InvalidOperationException>(
+                    () => MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus()),
+                    "A fresh slot outside the representable range must fail closed."
+                );
+                Assert.AreSame(
+                    current,
+                    MessageHandler.MessageBus,
+                    "Slot-index exhaustion must not change the active global bus."
+                );
+            }
+            finally
+            {
+                slotCountField.SetValue(null, originalSlotCount);
+                freeHeadField.SetValue(null, originalFreeHead);
+            }
+        }
+
+        [Test]
+        public void ExhaustedGenerationSlotIsBurnedAndStaleCopyCannotEndReplacement()
+        {
+            GlobalMessageBus original = new GlobalMessageBus();
+            GlobalMessageBus replacementBus = new GlobalMessageBus();
+            MessageHandler.SetGlobalMessageBus(original);
+            MessageHandler.GlobalMessageBusScope bootstrap =
+                MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
+            int exhaustedSlot = GetScopeSlot(bootstrap);
+            bootstrap.Dispose();
+            long originalGeneration = GetOverrideStateGeneration(exhaustedSlot);
+            SetOverrideStateGeneration(exhaustedSlot, -2);
+            MessageHandler.GlobalMessageBusScope exhaustedScope = default;
+            MessageHandler.GlobalMessageBusScope replacement = default;
+
+            try
+            {
+                exhaustedScope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
+                Assert.AreEqual(
+                    exhaustedSlot,
+                    GetScopeSlot(exhaustedScope),
+                    "The prepared slot must issue its final nonzero generation."
+                );
+                MessageHandler.GlobalMessageBusScope staleCopy = exhaustedScope;
+                exhaustedScope.Dispose();
+
+                replacement = MessageHandler.OverrideGlobalMessageBus(replacementBus);
+                Assert.AreNotEqual(
+                    exhaustedSlot,
+                    GetScopeSlot(replacement),
+                    "A slot that issued generation -1 must be burned instead of wrapping."
+                );
+
+                staleCopy.Dispose();
+                Assert.AreSame(
+                    replacementBus,
+                    MessageHandler.MessageBus,
+                    "The exhausted stale scope must not end the replacement scope."
+                );
+
+                replacement.Dispose();
+                Assert.AreSame(
+                    original,
+                    MessageHandler.MessageBus,
+                    "The replacement scope must restore the original bus."
+                );
+            }
+            finally
+            {
+                MessageHandler.SetGlobalMessageBus(original);
+                exhaustedScope.Dispose();
+                replacement.Dispose();
+                RestoreBurnedOverrideSlot(exhaustedSlot, originalGeneration);
+            }
         }
 
         [TestCase(false, false)]
@@ -410,6 +576,69 @@ namespace DxMessaging.Tests.Runtime.Core
                 disposeOuterFirst,
                 disposeCopies
             );
+        }
+
+        private static int GetScopeSlot(MessageHandler.GlobalMessageBusScope scope)
+        {
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            FieldInfo slotField = typeof(MessageHandler.GlobalMessageBusScope).GetField(
+                "_slot",
+                flags
+            );
+            return (int)slotField.GetValue(scope) - 1;
+        }
+
+        private static long GetOverrideStateGeneration(int slot)
+        {
+            object state = GetOverrideState(slot, out _, out _);
+            return (long)GetOverrideStateField(state, "Generation").GetValue(state);
+        }
+
+        private static void SetOverrideStateGeneration(int slot, long generation)
+        {
+            object state = GetOverrideState(slot, out Array block, out int offset);
+            GetOverrideStateField(state, "Generation").SetValue(state, generation);
+            block.SetValue(state, offset);
+        }
+
+        private static void RestoreBurnedOverrideSlot(int slot, long generation)
+        {
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+            FieldInfo freeHeadField = typeof(MessageHandler).GetField(
+                "_globalMessageBusOverrideFreeHead",
+                flags
+            );
+            int freeHead = (int)freeHeadField.GetValue(null);
+            object state = GetOverrideState(slot, out Array block, out int offset);
+            GetOverrideStateField(state, "PreviousBus").SetValue(state, null);
+            GetOverrideStateField(state, "Generation").SetValue(state, generation);
+            GetOverrideStateField(state, "PreviousSlot").SetValue(state, -1);
+            GetOverrideStateField(state, "NextFree").SetValue(state, freeHead);
+            GetOverrideStateField(state, "Disposed").SetValue(state, true);
+            block.SetValue(state, offset);
+            freeHeadField.SetValue(null, slot);
+        }
+
+        private static FieldInfo GetOverrideStateField(object state, string fieldName)
+        {
+            const BindingFlags flags =
+                BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
+            return state.GetType().GetField(fieldName, flags);
+        }
+
+        private static object GetOverrideState(int slot, out Array block, out int offset)
+        {
+            const int blockShift = 10;
+            const int blockMask = (1 << blockShift) - 1;
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+            FieldInfo blocksField = typeof(MessageHandler).GetField(
+                "_globalMessageBusOverrideBlocks",
+                flags
+            );
+            Array blocks = (Array)blocksField.GetValue(null);
+            block = (Array)blocks.GetValue(slot >> blockShift);
+            offset = slot & blockMask;
+            return block.GetValue(offset);
         }
 
 #if UNITY_2021_3_OR_NEWER
