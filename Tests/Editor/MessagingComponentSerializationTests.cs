@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System.Collections.Generic;
+    using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Unity;
     using NUnit.Framework;
@@ -46,11 +47,9 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void SerializedProviderHandleSurvivesJsonRoundtrip()
         {
-            MessageBus messageBus = new();
-            TestScriptableMessageBusProvider provider = Track(
-                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            CurrentGlobalMessageBusProvider provider = Track(
+                ScriptableObject.CreateInstance<CurrentGlobalMessageBusProvider>()
             );
-            provider.Configure(messageBus);
             string assetPath = AssetDatabase.GenerateUniqueAssetPath(
                 "Assets/__TempTestProvider.asset"
             );
@@ -59,7 +58,12 @@ namespace DxMessaging.Tests.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.ImportAsset(assetPath);
 
-            GameObject owner = Track(new GameObject("OriginalComponentOwner"));
+            GameObject owner = Track(
+                EditorUtility.CreateGameObjectWithHideFlags(
+                    "OriginalComponentOwner",
+                    HideFlags.HideAndDontSave
+                )
+            );
             MessagingComponent original = owner.AddComponent<MessagingComponent>();
             original.Configure(
                 new MessageBusProviderHandle(provider),
@@ -80,7 +84,12 @@ namespace DxMessaging.Tests.Editor
                 "JSON serialization should produce content."
             );
 
-            GameObject cloneOwner = Track(new GameObject("ClonedComponentOwner"));
+            GameObject cloneOwner = Track(
+                EditorUtility.CreateGameObjectWithHideFlags(
+                    "ClonedComponentOwner",
+                    HideFlags.HideAndDontSave
+                )
+            );
             MessagingComponent clone = cloneOwner.AddComponent<MessagingComponent>();
             EditorJsonUtility.FromJsonOverwrite(serializedJson, clone);
 
@@ -99,9 +108,9 @@ namespace DxMessaging.Tests.Editor
 
             IMessageBus resolvedBus = clone.SerializedProviderHandle.ResolveBus();
             Assert.AreSame(
-                messageBus,
+                MessageHandler.MessageBus,
                 resolvedBus,
-                "Resolved bus should match the original provider configuration."
+                "The deserialized provider should retain its production resolution behavior."
             );
         }
 
@@ -114,21 +123,6 @@ namespace DxMessaging.Tests.Editor
             }
 
             return unityObject;
-        }
-
-        private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
-        {
-            private IMessageBus _bus;
-
-            internal void Configure(IMessageBus bus)
-            {
-                _bus = bus;
-            }
-
-            public override IMessageBus Resolve()
-            {
-                return _bus;
-            }
         }
     }
 }

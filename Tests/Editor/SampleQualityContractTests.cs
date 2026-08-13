@@ -11,7 +11,6 @@ namespace DxMessaging.Tests.Editor
     using DxMessaging.Core.MessageBus;
     using NUnit.Framework;
     using UnityEditor;
-    using UnityEditor.SceneManagement;
     using UnityEngine;
     using UnityEngine.SceneManagement;
     using Object = UnityEngine.Object;
@@ -77,22 +76,21 @@ namespace DxMessaging.Tests.Editor
                 return;
             }
 
-            Scene originalScene = SceneManager.GetActiveScene();
-            Scene isolatedScene = EditorSceneManager.OpenScene(
-                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity",
-                OpenSceneMode.Additive
+            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored(
+                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity"
             );
             GameObject? host = null;
 
             try
             {
                 Assert.That(
-                    SceneManager.SetActiveScene(isolatedScene),
+                    isolatedScene.Scene.IsValid(),
                     Is.True,
-                    "The fallback test must own an isolated active scene."
+                    "The fallback test must open an isolated scene."
                 );
-                Type bootType = FindSceneComponent(isolatedScene, "Boot").GetType();
-                host = new GameObject("Mini Combat fallback owner");
+                isolatedScene.Activate();
+                Type bootType = FindSceneComponent(isolatedScene.Scene, "Boot").GetType();
+                host = isolatedScene.CreateGameObject("Mini Combat fallback owner");
                 Component boot = host.AddComponent(bootType);
                 FieldInfo playerField =
                     bootType.GetField("player", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -139,16 +137,6 @@ namespace DxMessaging.Tests.Editor
                 {
                     Object.DestroyImmediate(host);
                 }
-
-                if (originalScene.IsValid() && originalScene.isLoaded)
-                {
-                    _ = SceneManager.SetActiveScene(originalScene);
-                }
-
-                if (isolatedScene.IsValid() && isolatedScene.isLoaded)
-                {
-                    _ = EditorSceneManager.CloseScene(isolatedScene, removeScene: true);
-                }
             }
         }
 
@@ -161,10 +149,8 @@ namespace DxMessaging.Tests.Editor
                 return;
             }
 
-            Scene originalScene = SceneManager.GetActiveScene();
-            Scene isolatedScene = EditorSceneManager.OpenScene(
-                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity",
-                OpenSceneMode.Additive
+            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored(
+                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity"
             );
             GameObject? host = null;
             GameObject? assignedPlayer = null;
@@ -174,16 +160,17 @@ namespace DxMessaging.Tests.Editor
             try
             {
                 Assert.That(
-                    SceneManager.SetActiveScene(isolatedScene),
+                    isolatedScene.Scene.IsValid(),
                     Is.True,
-                    "The mixed-ownership test must own an isolated active scene."
+                    "The mixed-ownership test must open an isolated scene."
                 );
-                Type bootType = FindSceneComponent(isolatedScene, "Boot").GetType();
-                Type playerType = FindSceneComponent(isolatedScene, "Player").GetType();
-                Type overlayType = FindSceneComponent(isolatedScene, "UIOverlay").GetType();
-                host = new GameObject("Mini Combat mixed owner");
-                assignedPlayer = new GameObject("Scene-owned Player");
-                assignedOverlay = new GameObject("Scene-owned UI Overlay");
+                isolatedScene.Activate();
+                Type bootType = FindSceneComponent(isolatedScene.Scene, "Boot").GetType();
+                Type playerType = FindSceneComponent(isolatedScene.Scene, "Player").GetType();
+                Type overlayType = FindSceneComponent(isolatedScene.Scene, "UIOverlay").GetType();
+                host = isolatedScene.CreateGameObject("Mini Combat mixed owner");
+                assignedPlayer = isolatedScene.CreateGameObject("Scene-owned Player");
+                assignedOverlay = isolatedScene.CreateGameObject("Scene-owned UI Overlay");
                 Component player = assignedPlayer.AddComponent(playerType);
                 Component overlay = assignedOverlay.AddComponent(overlayType);
                 Component boot = host.AddComponent(bootType);
@@ -228,7 +215,6 @@ namespace DxMessaging.Tests.Editor
                 DestroyImmediateIfAlive(host);
                 DestroyImmediateIfAlive(assignedPlayer);
                 DestroyImmediateIfAlive(assignedOverlay);
-                RestoreAndCloseScene(originalScene, isolatedScene);
             }
         }
 
@@ -265,10 +251,8 @@ namespace DxMessaging.Tests.Editor
                 ?? throw new AssertionException(
                     "The diagnostics sample requires the default concrete global MessageBus."
                 );
-            Scene originalScene = SceneManager.GetActiveScene();
-            Scene isolatedScene = EditorSceneManager.OpenScene(
-                $"{importedSamplesRoot}/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity",
-                OpenSceneMode.Additive
+            using OwnedEditModeScene isolatedScene = OwnedEditModeScene.OpenAuthored(
+                $"{importedSamplesRoot}/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity"
             );
             GameObject? firstHost = null;
             GameObject? secondHost = null;
@@ -277,15 +261,19 @@ namespace DxMessaging.Tests.Editor
             try
             {
                 Assert.That(
-                    SceneManager.SetActiveScene(isolatedScene),
+                    isolatedScene.Scene.IsValid(),
                     Is.True,
-                    "The diagnostics ownership test must own an isolated active scene."
+                    "The diagnostics ownership test must open an isolated scene."
                 );
-                exerciserType = FindSceneComponent(isolatedScene, "DiagnosticsToolingExerciser")
+                isolatedScene.Activate();
+                exerciserType = FindSceneComponent(
+                        isolatedScene.Scene,
+                        "DiagnosticsToolingExerciser"
+                    )
                     .GetType();
                 messageBus.DiagnosticsMode = originalMode;
-                firstHost = new GameObject("Diagnostics owner 1");
-                secondHost = new GameObject("Diagnostics owner 2");
+                firstHost = isolatedScene.CreateGameObject("Diagnostics owner 1");
+                secondHost = isolatedScene.CreateGameObject("Diagnostics owner 2");
                 Component first = firstHost.AddComponent(exerciserType);
                 Component second = secondHost.AddComponent(exerciserType);
 
@@ -334,24 +322,13 @@ namespace DxMessaging.Tests.Editor
                 }
 
                 messageBus.DiagnosticsMode = originalMode;
-                if (originalScene.IsValid() && originalScene.isLoaded)
-                {
-                    _ = SceneManager.SetActiveScene(originalScene);
-                }
-
-                if (isolatedScene.IsValid() && isolatedScene.isLoaded)
-                {
-                    _ = EditorSceneManager.CloseScene(isolatedScene, removeScene: true);
-                }
             }
         }
 
         private static void AssertMiniCombatMessageFlow(string importedSamplesRoot)
         {
-            Scene originalScene = SceneManager.GetActiveScene();
-            Scene sampleScene = EditorSceneManager.OpenScene(
-                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity",
-                OpenSceneMode.Additive
+            using OwnedEditModeScene sampleScene = OwnedEditModeScene.OpenAuthored(
+                $"{importedSamplesRoot}/Mini Combat/MiniCombat.unity"
             );
             Component? player = null;
             Component? overlay = null;
@@ -359,13 +336,14 @@ namespace DxMessaging.Tests.Editor
             try
             {
                 Assert.That(
-                    SceneManager.SetActiveScene(sampleScene),
+                    sampleScene.Scene.IsValid(),
                     Is.True,
-                    "The Mini Combat smoke test must activate its imported scene."
+                    "The Mini Combat smoke test must open its imported scene."
                 );
-                Component boot = FindSceneComponent(sampleScene, "Boot");
-                player = FindSceneComponent(sampleScene, "Player");
-                overlay = FindSceneComponent(sampleScene, "UIOverlay");
+                sampleScene.Activate();
+                Component boot = FindSceneComponent(sampleScene.Scene, "Boot");
+                player = FindSceneComponent(sampleScene.Scene, "Player");
+                overlay = FindSceneComponent(sampleScene.Scene, "UIOverlay");
 
                 InvokeRequired(player, "Awake");
                 InvokeRequired(overlay, "Awake");
@@ -395,29 +373,27 @@ namespace DxMessaging.Tests.Editor
             {
                 ReleaseMessageAwareComponent(player);
                 ReleaseMessageAwareComponent(overlay);
-                RestoreAndCloseScene(originalScene, sampleScene);
             }
         }
 
         private static void AssertUiButtonsMessageFlow(string importedSamplesRoot)
         {
-            Scene originalScene = SceneManager.GetActiveScene();
-            Scene sampleScene = EditorSceneManager.OpenScene(
-                $"{importedSamplesRoot}/UI Buttons + Inspector/UIButtonsInspector.unity",
-                OpenSceneMode.Additive
+            using OwnedEditModeScene sampleScene = OwnedEditModeScene.OpenAuthored(
+                $"{importedSamplesRoot}/UI Buttons + Inspector/UIButtonsInspector.unity"
             );
             Component? observer = null;
 
             try
             {
                 Assert.That(
-                    SceneManager.SetActiveScene(sampleScene),
+                    sampleScene.Scene.IsValid(),
                     Is.True,
-                    "The UI Buttons smoke test must activate its imported scene."
+                    "The UI Buttons smoke test must open its imported scene."
                 );
-                observer = FindSceneComponent(sampleScene, "MessagingObserver");
+                sampleScene.Activate();
+                observer = FindSceneComponent(sampleScene.Scene, "MessagingObserver");
                 Type observerType = observer.GetType();
-                Component emitter = FindSceneComponent(sampleScene, "UIButtonEmitter");
+                Component emitter = FindSceneComponent(sampleScene.Scene, "UIButtonEmitter");
                 GetRequiredField(observerType, "logTypedClicks").SetValue(observer, false);
 
                 InvokeRequired(observer, "Awake");
@@ -448,7 +424,6 @@ namespace DxMessaging.Tests.Editor
             finally
             {
                 ReleaseMessageAwareComponent(observer);
-                RestoreAndCloseScene(originalScene, sampleScene);
             }
         }
 
@@ -638,10 +613,9 @@ namespace DxMessaging.Tests.Editor
                 $"The CI sample fixture must copy {scenePath}."
             );
 
-            Scene scene = default;
-            try
+            using (OwnedEditModeScene ownedScene = OwnedEditModeScene.OpenAuthored(scenePath))
             {
-                scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+                Scene scene = ownedScene.Scene;
                 Assert.That(scene.IsValid(), Is.True, $"Unity must open {scenePath}.");
                 Assert.That(scene.isLoaded, Is.True, $"Unity must load {scenePath}.");
 
@@ -657,13 +631,6 @@ namespace DxMessaging.Tests.Editor
                             $"{scenePath} contains a missing script on '{child.name}'."
                         );
                     }
-                }
-            }
-            finally
-            {
-                if (scene.IsValid() && scene.isLoaded)
-                {
-                    _ = EditorSceneManager.CloseScene(scene, removeScene: true);
                 }
             }
         }
@@ -743,19 +710,6 @@ namespace DxMessaging.Tests.Editor
             if (gameObject != null)
             {
                 Object.DestroyImmediate(gameObject);
-            }
-        }
-
-        private static void RestoreAndCloseScene(Scene originalScene, Scene ownedScene)
-        {
-            if (originalScene.IsValid() && originalScene.isLoaded)
-            {
-                _ = SceneManager.SetActiveScene(originalScene);
-            }
-
-            if (ownedScene.IsValid() && ownedScene.isLoaded)
-            {
-                _ = EditorSceneManager.CloseScene(ownedScene, removeScene: true);
             }
         }
 

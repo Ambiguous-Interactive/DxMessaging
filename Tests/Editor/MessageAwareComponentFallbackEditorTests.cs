@@ -1601,7 +1601,10 @@ namespace DxMessaging.Tests.Editor
 
         private GameObject CreateTrackedObject(string name)
         {
-            GameObject gameObject = new(name);
+            GameObject gameObject = EditorUtility.CreateGameObjectWithHideFlags(
+                name,
+                HideFlags.HideAndDontSave
+            );
             _createdObjects.Add(gameObject);
             return gameObject;
         }

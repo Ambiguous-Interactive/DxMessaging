@@ -10,6 +10,7 @@ namespace DxMessaging.Tests.Editor
     using DxMessaging.Editor.CustomEditors;
     using DxMessaging.Unity;
     using NUnit.Framework;
+    using UnityEditor;
     using UnityEngine;
     using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
@@ -838,7 +839,10 @@ namespace DxMessaging.Tests.Editor
             out MessagingComponent messagingComponent
         )
         {
-            GameObject host = new(nameof(MessageAwareComponentSubscriptionsViewTests));
+            GameObject host = EditorUtility.CreateGameObjectWithHideFlags(
+                nameof(MessageAwareComponentSubscriptionsViewTests),
+                HideFlags.HideAndDontSave
+            );
             _createdObjects.Add(host);
             messagingComponent = host.AddComponent<MessagingComponent>();
             return host.AddComponent<SubscriptionsTestComponent>();

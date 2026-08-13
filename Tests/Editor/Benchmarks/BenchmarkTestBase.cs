@@ -8,6 +8,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
     using DxMessaging.Tests.Runtime.Core;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Unity;
+    using UnityEditor;
     using UnityEngine;
     using Object = UnityEngine.Object;
 
@@ -62,8 +63,9 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
         protected GameObject CreateBenchmarkGameObject()
         {
-            GameObject target = new(
+            GameObject target = EditorUtility.CreateGameObjectWithHideFlags(
                 "Benchmark",
+                HideFlags.HideAndDontSave,
                 typeof(EmptyMessageAwareComponent),
                 typeof(SpriteRenderer),
                 typeof(Rigidbody2D),
