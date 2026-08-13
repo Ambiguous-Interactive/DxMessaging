@@ -253,6 +253,18 @@
     -unity-font-style: bold;
     margin-bottom: 6px;
 }
+.dxmessaging-flow-graph-details-relationship .dx-card__label {
+    color: var(--dx-text);
+    font-size: 11px;
+}
+.dxmessaging-flow-graph-details-relationship .dx-kv__v {
+    color: var(--dx-text);
+    font-size: 12px;
+}
+.dxmessaging-flow-graph-details-relationship .dx-detail__frame {
+    color: var(--dx-text-dim);
+    font-size: 11px;
+}
 .dx-kv { flex-direction: row; align-items: center; margin-bottom: 3px; }
 .dx-kv__k { width: 74px; color: var(--dx-text-muted); font-size: 11px; }
 .dx-kv__v { flex-grow: 1; flex-shrink: 1; white-space: normal; color: var(--dx-text-dim); font-size: 11px; }

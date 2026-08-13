@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Flow Graph object navigation and relationship-card readability. Live
+  component and route details can select and ping their exact receiver. Broadcast
+  and targeted route details also expose a source or target action when the
+  snapshot captured that exact live context object; destroyed references remain
+  inert
+  ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
 - Fix Message Monitor resizing so one persisted divider controls the complete
   log details area. Wrapped stack frames now keep their full line height without
   clipped text or extra vertical gaps

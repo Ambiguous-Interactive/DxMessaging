@@ -197,6 +197,10 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-flow-graph-details-overflow";
         internal const string DetailsCopyDiagnosticsButtonName =
             "dxmessaging-flow-graph-details-copy-diagnostics";
+        internal const string DetailsRevealReceiverButtonName =
+            "dxmessaging-flow-graph-details-reveal-receiver";
+        internal const string DetailsRevealContextButtonName =
+            "dxmessaging-flow-graph-details-reveal-context";
         internal const string GraphNodeMetricClassName = "dxmessaging-flow-graph-node-metric";
         internal const string WarningLabelName = "dxmessaging-flow-graph-warning";
         internal const string GlobalObserverMessageName = "ANY MESSAGE";
@@ -852,7 +856,8 @@ namespace DxMessaging.Editor.Windows
                             listenerCount,
                             registrationCount,
                             callCount,
-                            localMessageCount
+                            localMessageCount,
+                            component
                         )
                     );
 
@@ -918,7 +923,8 @@ namespace DxMessaging.Editor.Windows
                             listenerCount: 0,
                             registrationCount: 0,
                             callCount: 0,
-                            localMessageCount: 0
+                            localMessageCount: 0,
+                            receiverObject: component
                         )
                     );
                     warnings.Add($"{hierarchyPath}: diagnostics capture failed: {exception}");
@@ -6293,6 +6299,7 @@ namespace DxMessaging.Editor.Windows
                     )
                 );
             }
+            AddDetailsObjectActions(header, selectedItem, visibleSnapshot);
             details.Add(header);
 
             switch (selectedItem.Kind)
@@ -6627,6 +6634,90 @@ namespace DxMessaging.Editor.Windows
                 Populate();
             }
             return roster;
+        }
+
+        private static void AddDetailsObjectActions(
+            VisualElement header,
+            FlowGraphSelectedItem selectedItem,
+            FlowGraphVisibleSnapshot visibleSnapshot
+        )
+        {
+            if (selectedItem.Kind == FlowGraphSelectionKind.Component)
+            {
+                AddRevealObjectButton(
+                    header,
+                    DetailsRevealReceiverButtonName,
+                    "Select receiver",
+                    selectedItem.Component.ReceiverObject
+                );
+                return;
+            }
+
+            if (selectedItem.Kind != FlowGraphSelectionKind.Edge)
+            {
+                return;
+            }
+
+            UnityEngine.Object receiverObject = visibleSnapshot
+                .ComponentNodes.Where(component =>
+                    string.Equals(
+                        component.Id,
+                        selectedItem.Edge.TargetComponentId,
+                        StringComparison.Ordinal
+                    )
+                )
+                .Select(component => component.ReceiverObject)
+                .FirstOrDefault(candidate => candidate != null);
+            AddRevealObjectButton(
+                header,
+                DetailsRevealReceiverButtonName,
+                "Select receiver",
+                receiverObject
+            );
+
+            UnityEngine.Object contextObject = selectedItem.Edge.ContextObject;
+            if (contextObject == null || contextObject == receiverObject)
+            {
+                return;
+            }
+
+            string routeKind = DxMessagingEditorPalette.NormalizeRouteKind(
+                selectedItem.Edge.RegistrationTypeName
+            );
+            string contextLabel =
+                routeKind == DxMessagingEditorPalette.BroadcastKind ? "Select source"
+                : routeKind == DxMessagingEditorPalette.TargetedKind ? "Select target"
+                : "Select scope";
+            AddRevealObjectButton(
+                header,
+                DetailsRevealContextButtonName,
+                contextLabel,
+                contextObject
+            );
+        }
+
+        private static void AddRevealObjectButton(
+            VisualElement parent,
+            string name,
+            string text,
+            UnityEngine.Object unityObject
+        )
+        {
+            if (parent == null || unityObject == null)
+            {
+                return;
+            }
+
+            Button reveal = new() { name = name, text = text };
+            reveal.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
+            reveal.AddToClassList(DxMessagingEditorTheme.ToolButtonClassName);
+            DxMessagingEditorSourceLinks.MakeActivatable(
+                reveal,
+                "Select and ping this object in the Hierarchy.",
+                () => DxMessagingEditorSourceLinks.TryRevealObject(unityObject),
+                addLinkClass: false
+            );
+            parent.Add(reveal);
         }
 
         private static VisualElement CreateDetailsRouteRow(
@@ -8980,7 +9071,8 @@ namespace DxMessaging.Editor.Windows
                     RecentTracedDeliveryCount,
                     Context,
                     EmissionSites.OrderBy(site => site, StringComparer.Ordinal).ToArray(),
-                    ContextId?.Id ?? 0
+                    ContextId?.Id ?? 0,
+                    ContextId
                 );
             }
         }
@@ -9792,7 +9884,8 @@ namespace DxMessaging.Editor.Windows
             int listenerCount,
             int registrationCount,
             int callCount,
-            int localMessageCount
+            int localMessageCount,
+            UnityEngine.Object receiverObject = null
         )
         {
             Id = id ?? string.Empty;
@@ -9803,6 +9896,7 @@ namespace DxMessaging.Editor.Windows
             RegistrationCount = registrationCount;
             CallCount = callCount;
             LocalMessageCount = localMessageCount;
+            ReceiverObject = receiverObject;
         }
 
         internal string Id { get; }
@@ -9820,6 +9914,8 @@ namespace DxMessaging.Editor.Windows
         internal int CallCount { get; }
 
         internal int LocalMessageCount { get; }
+
+        internal UnityEngine.Object ReceiverObject { get; }
 
         internal bool Matches(string filterText)
         {
@@ -10014,7 +10110,8 @@ namespace DxMessaging.Editor.Windows
             int recentTracedDeliveryCount = 0,
             string context = "",
             IReadOnlyList<string> recentEmissionSites = null,
-            int contextId = 0
+            int contextId = 0,
+            InstanceId? contextIdentity = null
         )
         {
             MessageTypeName = messageTypeName ?? string.Empty;
@@ -10027,6 +10124,7 @@ namespace DxMessaging.Editor.Windows
             Context = context ?? string.Empty;
             RecentEmissionSites = recentEmissionSites ?? Array.Empty<string>();
             ContextId = contextId;
+            ContextIdentity = contextIdentity;
         }
 
         internal string MessageTypeName { get; }
@@ -10048,6 +10146,10 @@ namespace DxMessaging.Editor.Windows
         internal IReadOnlyList<string> RecentEmissionSites { get; }
 
         internal int ContextId { get; }
+
+        internal InstanceId? ContextIdentity { get; }
+
+        internal UnityEngine.Object ContextObject => ContextIdentity?.Object;
 
         internal bool Matches(string filterText)
         {
