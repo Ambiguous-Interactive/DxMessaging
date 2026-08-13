@@ -317,7 +317,10 @@ namespace DxMessaging.Tests.Editor
 
         private VisualElement CreateInspectorWarningPanel()
         {
-            GameObject host = new(nameof(CreateInspectorWarningPanel));
+            GameObject host = EditorUtility.CreateGameObjectWithHideFlags(
+                nameof(CreateInspectorWarningPanel),
+                HideFlags.HideAndDontSave
+            );
             _createdObjects.Add(host);
             MessageAwareComponent component =
                 host.AddComponent<EmptyMessageAwareComponentForCaptureTest>();

@@ -16,13 +16,14 @@ namespace DxMessaging.Tests.Editor
     using UnityEditor;
     using UnityEditor.SceneManagement;
     using UnityEngine;
-    using UnityEngine.SceneManagement;
     using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
 
     [TestFixture]
     public sealed class DxMessagingMessageMonitorWindowTests
     {
+        private const string SceneSafetyFixturePath =
+            "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
         private readonly List<Object> _createdObjects = new();
         private readonly List<string> _createdAssetPaths = new();
         private readonly List<EditorWindow> _createdWindows = new();
@@ -3490,13 +3491,20 @@ namespace DxMessaging.Tests.Editor
             string sceneName = "SceneComponentHost-" + suffix;
             string prefabName = "PrefabComponentHost-" + suffix;
             string prefabPath = $"Assets/{prefabName}.prefab";
-            GameObject sceneHost = CreateTrackedObject(sceneName);
-            MessagingComponent sceneComponent = sceneHost.AddComponent<MessagingComponent>();
-            GameObject prefabHost = new(prefabName);
+            GameObject prefabHost = null;
             _createdAssetPaths.Add(prefabPath);
 
+            using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(
+                SceneSafetyFixturePath
+            );
             try
             {
+                // Investigation (2026-08-13): NewScene(Additive) cannot run while the shared
+                // editor has an unsaved untitled scene. Open this package-owned fixture instead.
+                testScene.Activate();
+                GameObject sceneHost = testScene.CreateGameObject(sceneName);
+                MessagingComponent sceneComponent = sceneHost.AddComponent<MessagingComponent>();
+                prefabHost = testScene.CreateGameObject(prefabName);
                 prefabHost.AddComponent<MessagingComponent>();
                 GameObject prefabAsset = null;
                 EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
@@ -3575,45 +3583,29 @@ namespace DxMessaging.Tests.Editor
             string suffix = Guid.NewGuid().ToString("N");
             string sceneName = "MonitorSceneHost-" + suffix;
             string previewName = "MonitorPreviewHost-" + suffix;
-            GameObject sceneHost = CreateTrackedObject(sceneName);
+            using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(
+                SceneSafetyFixturePath
+            );
+            using OwnedEditModeScene previewScene = OwnedEditModeScene.CreatePreview();
+
+            testScene.Activate();
+            GameObject sceneHost = testScene.CreateGameObject(sceneName);
             sceneHost.AddComponent<MessagingComponent>();
-            Scene previewScene = EditorSceneManager.NewPreviewScene();
-            GameObject previewHost = new(previewName);
+            GameObject previewHost = previewScene.CreateGameObject(previewName);
+            MessagingComponent previewComponent = previewHost.AddComponent<MessagingComponent>();
+            Assert.That(previewComponent.gameObject.scene.IsValid(), Is.True);
+            Assert.That(EditorSceneManager.IsPreviewSceneObject(previewHost), Is.True);
 
-            try
-            {
-                SceneManager.MoveGameObjectToScene(previewHost, previewScene);
-                MessagingComponent previewComponent =
-                    previewHost.AddComponent<MessagingComponent>();
-                Assert.That(previewComponent.gameObject.scene.IsValid(), Is.True);
-                Assert.That(EditorSceneManager.IsPreviewSceneObject(previewHost), Is.True);
+            IReadOnlyList<ComponentMonitorEntry> components = Array.Empty<ComponentMonitorEntry>();
+            EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
+                components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots()
+            );
 
-                IReadOnlyList<ComponentMonitorEntry> components =
-                    Array.Empty<ComponentMonitorEntry>();
-                EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(() =>
-                    components = DxMessagingMessageMonitorWindow.CaptureComponentSnapshots()
-                );
-
-                Assert.That(
-                    components.Any(component => component.HierarchyPath == sceneName),
-                    Is.True
-                );
-                Assert.That(
-                    components.Any(component => component.HierarchyPath == previewName),
-                    Is.False
-                );
-            }
-            finally
-            {
-                if (previewHost != null)
-                {
-                    Object.DestroyImmediate(previewHost);
-                }
-                if (previewScene.IsValid())
-                {
-                    EditorSceneManager.ClosePreviewScene(previewScene);
-                }
-            }
+            Assert.That(components.Any(component => component.HierarchyPath == sceneName), Is.True);
+            Assert.That(
+                components.Any(component => component.HierarchyPath == previewName),
+                Is.False
+            );
         }
 
         [Test]
@@ -3836,7 +3828,10 @@ namespace DxMessaging.Tests.Editor
 
         private GameObject CreateTrackedObject(string name)
         {
-            GameObject gameObject = new(name);
+            GameObject gameObject = EditorUtility.CreateGameObjectWithHideFlags(
+                name,
+                HideFlags.HideAndDontSave
+            );
             _createdObjects.Add(gameObject);
             return gameObject;
         }

@@ -15,6 +15,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
+    using UnityEditor;
     using UnityEngine;
     using UnityEngine.TestTools;
 
@@ -301,15 +302,17 @@ namespace DxMessaging.Tests.Editor.Allocations
                         parentReceiver = parent.AddComponent<SimpleMessageAwareComponent>();
                     }
 
-                    GameObject grandParent = new(
+                    GameObject grandParent = EditorUtility.CreateGameObjectWithHideFlags(
                         "BenchmarkReflexiveGrandParent",
+                        HideFlags.HideAndDontSave,
                         typeof(SimpleMessageAwareComponent)
                     );
                     _spawned.Add(grandParent);
                     parent.transform.SetParent(grandParent.transform);
 
-                    GameObject child = new(
+                    GameObject child = EditorUtility.CreateGameObjectWithHideFlags(
                         "BenchmarkReflexiveChild",
+                        HideFlags.HideAndDontSave,
                         typeof(SimpleMessageAwareComponent)
                     );
                     _spawned.Add(child);
