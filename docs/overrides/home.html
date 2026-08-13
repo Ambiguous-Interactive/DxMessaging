@@ -191,24 +191,24 @@
 
   /* Progressive enhancement: tint the window toward the selected route. */
   .dxm-window:has(#dxm-sample-untargeted:checked) {
-    border-color: rgba(127, 166, 216, 0.35);
+    border-color: rgba(var(--dxm-route-untargeted-rgb), 0.35);
     box-shadow:
       var(--dxm-window-shadow),
-      0 0 48px -24px rgba(127, 166, 216, 0.35);
+      0 0 48px -24px rgba(var(--dxm-route-untargeted-rgb), 0.35);
   }
 
   .dxm-window:has(#dxm-sample-targeted:checked) {
-    border-color: rgba(236, 70, 97, 0.35);
+    border-color: rgba(var(--dxm-route-targeted-rgb), 0.35);
     box-shadow:
       var(--dxm-window-shadow),
-      0 0 48px -24px rgba(236, 70, 97, 0.35);
+      0 0 48px -24px rgba(var(--dxm-route-targeted-rgb), 0.35);
   }
 
   .dxm-window:has(#dxm-sample-broadcast:checked) {
-    border-color: rgba(127, 184, 138, 0.35);
+    border-color: rgba(var(--dxm-route-broadcast-rgb), 0.35);
     box-shadow:
       var(--dxm-window-shadow),
-      0 0 48px -24px rgba(127, 184, 138, 0.35);
+      0 0 48px -24px rgba(var(--dxm-route-broadcast-rgb), 0.35);
   }
 
   /* Ink on paper: keep the route border tint in light mode but drop the haze. */
@@ -305,20 +305,20 @@
 
   /* Active tab takes its route color. */
   #dxm-sample-untargeted:checked ~ .dxm-sample-labels label[for="dxm-sample-untargeted"] {
-    background: rgba(127, 166, 216, 0.14);
-    border-color: rgba(127, 166, 216, 0.45);
+    background: rgba(var(--dxm-route-untargeted-rgb), 0.14);
+    border-color: rgba(var(--dxm-route-untargeted-rgb), 0.45);
     color: var(--dxm-route-untargeted);
   }
 
   #dxm-sample-targeted:checked ~ .dxm-sample-labels label[for="dxm-sample-targeted"] {
-    background: rgba(236, 70, 97, 0.14);
-    border-color: rgba(236, 70, 97, 0.45);
+    background: rgba(var(--dxm-route-targeted-rgb), 0.14);
+    border-color: rgba(var(--dxm-route-targeted-rgb), 0.45);
     color: var(--dxm-route-targeted);
   }
 
   #dxm-sample-broadcast:checked ~ .dxm-sample-labels label[for="dxm-sample-broadcast"] {
-    background: rgba(127, 184, 138, 0.14);
-    border-color: rgba(127, 184, 138, 0.45);
+    background: rgba(var(--dxm-route-broadcast-rgb), 0.14);
+    border-color: rgba(var(--dxm-route-broadcast-rgb), 0.45);
     color: var(--dxm-route-broadcast);
   }
 
@@ -437,15 +437,15 @@
   }
 
   .dxm-card--untargeted:hover {
-    border-color: rgba(127, 166, 216, 0.45);
+    border-color: rgba(var(--dxm-route-untargeted-rgb), 0.45);
   }
 
   .dxm-card--targeted:hover {
-    border-color: rgba(236, 70, 97, 0.45);
+    border-color: rgba(var(--dxm-route-targeted-rgb), 0.45);
   }
 
   .dxm-card--broadcast:hover {
-    border-color: rgba(127, 184, 138, 0.45);
+    border-color: rgba(var(--dxm-route-broadcast-rgb), 0.45);
   }
 
   .dxm-card-head {
@@ -600,13 +600,13 @@
         />
         <div class="dxm-sample-labels">
           <label class="dxm-sample-label" for="dxm-sample-untargeted"
-            ><i style="background: #7fa6d8"></i>Untargeted</label
+            ><i style="background: var(--dxm-route-untargeted)"></i>Untargeted</label
           >
           <label class="dxm-sample-label" for="dxm-sample-targeted"
-            ><i style="background: #ec4661"></i>Targeted</label
+            ><i style="background: var(--dxm-route-targeted)"></i>Targeted</label
           >
           <label class="dxm-sample-label" for="dxm-sample-broadcast"
-            ><i style="background: #7fb88a"></i>Broadcast</label
+            ><i style="background: var(--dxm-route-broadcast)"></i>Broadcast</label
           >
         </div>
         <div class="dxm-sample-panels">
@@ -645,7 +645,7 @@
   <div class="dxm-card dxm-card--untargeted">
     <div class="dxm-card-head">
       <div class="k" style="color: var(--dxm-route-untargeted)">
-        <i style="background: #7fa6d8"></i>01 &middot; UNTARGETED
+        <i style="background: var(--dxm-route-untargeted)"></i>01 &middot; UNTARGETED
       </div>
       <img
         class="dxm-glyph--dark"
@@ -672,7 +672,7 @@
   <div class="dxm-card dxm-card--targeted">
     <div class="dxm-card-head">
       <div class="k" style="color: var(--dxm-route-targeted)">
-        <i style="background: #ec4661"></i>02 &middot; TARGETED
+        <i style="background: var(--dxm-route-targeted)"></i>02 &middot; TARGETED
       </div>
       <img
         class="dxm-glyph--dark"
@@ -697,7 +697,7 @@
   <div class="dxm-card dxm-card--broadcast">
     <div class="dxm-card-head">
       <div class="k" style="color: var(--dxm-route-broadcast)">
-        <i style="background: #7fb88a"></i>03 &middot; BROADCAST
+        <i style="background: var(--dxm-route-broadcast)"></i>03 &middot; BROADCAST
       </div>
       <img
         class="dxm-glyph--dark"

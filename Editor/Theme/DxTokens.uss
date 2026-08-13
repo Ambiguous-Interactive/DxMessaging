@@ -13,14 +13,16 @@
 
     /* ---- Message taxonomy: one hue per type ---- */
     --dx-untargeted: #7fa6d8;      /* blue  */
-    --dx-targeted: #ec4661;        /* ember */
+    --dx-targeted: #9569d9;        /* purple */
     --dx-broadcast: #7fb88a;       /* green */
     --dx-untargeted-text: #a9c4e2; /* readable on dark rows */
-    --dx-targeted-text: #f4c3cc;
+    --dx-targeted-text: #c8a6ff;
     --dx-broadcast-text: #a8d3b2;
 
     /* ---- Semantic ---- */
     --dx-record: #e5484d;
+    --dx-danger: #ec4661;
+    --dx-danger-text: #f4c3cc;
     --dx-ok: #7fb88a;
 
     /* ---- Brand surfaces (docs / branded chrome) ---- */
@@ -64,8 +66,9 @@
     --dx-accent-ink: #0d1117;
 
     --dx-untargeted-text: #35536f;
-    --dx-targeted-text: #a3283b;
+    --dx-targeted-text: #7148a6;
     --dx-broadcast-text: #33684a;
+    --dx-danger-text: #a3283b;
 
     --dx-tool-window: #f4f1ea;
     --dx-tool-tabstrip: #ece7db;

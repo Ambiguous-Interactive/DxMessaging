@@ -1092,7 +1092,7 @@ namespace DxMessaging.Editor.Windows
             VisualElement notice = new() { name = GapNoticeName };
             notice.AddToClassList(DxMessagingEditorTheme.AdmonitionClassName);
             notice.AddToClassList(DxMessagingEditorTheme.DangerClassName);
-            DxMessagingEditorTheme.ApplyCompleteBorder(notice, DxMessagingEditorPalette.Targeted);
+            DxMessagingEditorTheme.ApplyCompleteBorder(notice, DxMessagingEditorPalette.Danger);
 
             Label title = new("The log has gaps") { name = GapNoticeTitleName };
             title.AddToClassList(DxMessagingEditorTheme.AdmonitionTitleClassName);

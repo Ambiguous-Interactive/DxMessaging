@@ -493,9 +493,9 @@ def on_post_build(config):
 
     for route_marker, description in (
         ("#3d8a55", "board-spec window-bar green dot"),
-        ("rgba(127, 166, 216", "untargeted route tint"),
-        ("rgba(236, 70, 97", "targeted route tint"),
-        ("rgba(127, 184, 138", "broadcast route tint"),
+        ("var(--dxm-route-untargeted-rgb)", "untargeted route tint"),
+        ("var(--dxm-route-targeted-rgb)", "targeted route tint"),
+        ("var(--dxm-route-broadcast-rgb)", "broadcast route tint"),
     ):
         if route_marker not in html and route_marker.replace(", ", ",") not in html:
             failures.append(f"homepage hero is missing the {description} ({route_marker})")
@@ -529,6 +529,34 @@ def on_post_build(config):
 
     extra_css_path = site_dir / "stylesheets" / "extra.css"
     extra_css = extra_css_path.read_text(encoding="utf-8") if extra_css_path.exists() else ""
+    compact_css = re.sub(r"\s+", "", extra_css).lower()
+    for css_marker, description in (
+        ("--dxm-purple:#9569d9", "Targeted purple token"),
+        ("--dxm-danger:#ec4661", "danger red token"),
+        ("--dxm-route-targeted:var(--dxm-purple)", "dark Targeted route mapping"),
+        ("--dxm-route-targeted:#7148a6", "light Targeted route mapping"),
+        ("--dxm-route-targeted-rgb:149,105,217", "dark Targeted tint components"),
+        ("--dxm-route-targeted-rgb:113,72,166", "light Targeted tint components"),
+    ):
+        if css_marker not in compact_css:
+            failures.append(f"extra.css is missing the {description}: {css_marker}")
+
+    for asset_path, expected_color in (
+        ("images/DxMessaging-banner.svg", "#9569d9"),
+        ("images/glyph-targeted.svg", "#9569d9"),
+        ("images/glyph-targeted-light.svg", "#7148a6"),
+    ):
+        generated_asset_path = site_dir / asset_path
+        asset_text = (
+            generated_asset_path.read_text(encoding="utf-8").lower()
+            if generated_asset_path.exists()
+            else ""
+        )
+        if expected_color not in asset_text:
+            failures.append(f"{asset_path} is missing Targeted color {expected_color}")
+        if "#ec4661" in asset_text or "#b8324b" in asset_text:
+            failures.append(f"{asset_path} still uses the old Targeted red")
+
     if not re.search(r"\.md-button(?![-:])[^{]*\{[^}]*[^-]color\s*:", extra_css):
         failures.append(
             "extra.css does not declare an explicit color for secondary .md-button "

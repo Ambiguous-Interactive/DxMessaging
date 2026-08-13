@@ -29,7 +29,7 @@ Use it when one system needs to announce a fact, command a target, or broadcast 
 openupm add com.wallstop-studios.dxmessaging
 ```
 
-The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics are built around that model: Message Monitor shows recent emissions and filters, Flow Graph shows registration topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes.
+The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics mark them blue, purple, and green, respectively, and reserve red for problems. Message Monitor shows recent emissions and filters, Flow Graph shows registration topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes.
 
 See the [Install Guide](docs/getting-started/install.md) for Git URL, scoped registry, and release tarball options.
 

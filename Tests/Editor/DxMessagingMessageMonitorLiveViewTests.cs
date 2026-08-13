@@ -767,6 +767,23 @@ namespace DxMessaging.Tests.Editor
                 notice.ClassListContains(DxMessagingEditorTheme.DangerClassName),
                 "A hole in the log is a danger, not a caution."
             );
+            Assert.That(
+                notice.style.borderTopColor.value,
+                Is.EqualTo(DxMessagingEditorPalette.Danger),
+                "Problem notices must use semantic danger red, not a message taxonomy color."
+            );
+            Assert.That(
+                notice.style.borderRightColor.value,
+                Is.EqualTo(DxMessagingEditorPalette.Danger)
+            );
+            Assert.That(
+                notice.style.borderBottomColor.value,
+                Is.EqualTo(DxMessagingEditorPalette.Danger)
+            );
+            Assert.That(
+                notice.style.borderLeftColor.value,
+                Is.EqualTo(DxMessagingEditorPalette.Danger)
+            );
             Assert.IsTrue(
                 root.Q<Label>(DxMessagingMessageMonitorLiveView.GapNoticeTitleName)
                     .ClassListContains(DxMessagingEditorTheme.AdmonitionTitleClassName)

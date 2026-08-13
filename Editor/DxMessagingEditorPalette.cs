@@ -9,8 +9,9 @@ namespace DxMessaging.Editor
         internal static readonly Color Amber = FromHex(0xf4, 0xa8, 0x36);
         internal static readonly Color AmberSoft = FromHex(0xff, 0xd4, 0x8e);
         internal static readonly Color Untargeted = FromHex(0x7f, 0xa6, 0xd8);
-        internal static readonly Color Targeted = FromHex(0xec, 0x46, 0x61);
+        internal static readonly Color Targeted = FromHex(0x95, 0x69, 0xd9);
         internal static readonly Color Broadcast = FromHex(0x7f, 0xb8, 0x8a);
+        internal static readonly Color Danger = FromHex(0xec, 0x46, 0x61);
         internal static readonly Color Trace = FromHex(0x7f, 0xa6, 0xd8);
         internal static readonly Color TraceMessage = FromHex(0x7f, 0xb8, 0x8a);
         internal static readonly Color TraceTarget = FromHex(0xff, 0xd4, 0x8e);
