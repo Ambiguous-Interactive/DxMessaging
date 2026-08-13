@@ -864,7 +864,7 @@ namespace DxMessaging.Tests.Editor
             VisualElement detail = root.Q<VisualElement>(
                 DxMessagingMessageMonitorLiveView.DetailName
             );
-            Assert.IsNotNull(detail);
+            Assert.IsNotNull(detail, "The selected live row must render its details pane.");
 
             RenderBody(body, recorder);
 
@@ -993,6 +993,326 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void LiveModeUsesTheSharedLogDetailsDividerAndRememberedHeight()
+        {
+            const float RememberedHeight = 240f;
+            float resizedHeight = 0f;
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, 600f, 700f);
+            window.rootVisualElement.style.width = 600f;
+            window.rootVisualElement.style.height = 700f;
+            VisualElement root = DxMessagingMessageMonitorLiveView.Create(
+                Recorder(
+                    Enumerable
+                        .Range(1, 20)
+                        .Select(index => Entry(index, $"PlayerSpawned{index}"))
+                        .ToArray()
+                ),
+                MessageMonitorLiveViewState.Default,
+                diagnosticsEnabled: true,
+                callbacks: new MessageMonitorLiveViewCallbacks
+                {
+                    InitialDetailsPaneHeight = RememberedHeight,
+                    OnDetailsPaneHeightChanged = height => resizedHeight = height,
+                }
+            );
+            window.rootVisualElement.Add(root);
+
+            VisualElement divider = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneResizerName
+            );
+            Assert.IsNotNull(divider, "Live mode must use the same log/details divider.");
+            VisualElement detail = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.DetailName
+            );
+            Assert.IsNotNull(detail, "The selected live row must render its details pane.");
+            Assert.AreEqual(
+                RememberedHeight,
+                detail.parent.style.height.value.value,
+                "The height remembered by the window must carry across the mode switch."
+            );
+            Assert.IsNull(
+                root.Q<VisualElement>("dxmessaging-monitor-details-stack-resizer"),
+                "Live mode must not restore the nested stack-trace resizer."
+            );
+
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+            // The first pass realizes the virtualized rows and changes the list's content basis;
+            // the second measures the settled split that the reader sees.
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+            float initialDetailsHeight = detail.parent.resolvedStyle.height;
+            ListView list = root.Q<ListView>();
+            Assert.IsNotNull(list, "A populated live view must render its scrolling log.");
+            float initialListHeight = list.resolvedStyle.height;
+
+            DragResizeHandle(divider, deltaY: -80f);
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+
+            Assert.Greater(
+                detail.parent.resolvedStyle.height,
+                initialDetailsHeight,
+                "Dragging the live divider upward must grow the visible details pane."
+            );
+            Assert.Less(
+                list.resolvedStyle.height,
+                initialListHeight,
+                "The live log must give the space moved into the details pane."
+            );
+            Assert.Greater(
+                resizedHeight,
+                RememberedHeight,
+                "A real live-mode drag must report its new height to the host window."
+            );
+        }
+
+        [Test]
+        public void LiveModeKeepsWrappedStackFramesInsideItsScrollingDetailsPane()
+        {
+            string longFrame =
+                "WallstopStudios.Sample.Deep.Namespace.ExerciserWithALongTypeName:"
+                + "EmitOneOfEachWithALongMethodName (at Packages/"
+                + "com.wallstop-studios.dxmessaging/Editor/Windows/"
+                + "DxMessagingMessageMonitorWindow.cs:185)";
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, 420f, 380f);
+            window.rootVisualElement.style.width = 420f;
+            window.rootVisualElement.style.height = 380f;
+            VisualElement root = DxMessagingMessageMonitorLiveView.Create(
+                Recorder(
+                    Entry(
+                        1,
+                        "PlayerSpawned",
+                        stackTrace: longFrame + "\n" + longFrame.Replace(":185)", ":138)")
+                    )
+                ),
+                MessageMonitorLiveViewState.Default,
+                diagnosticsEnabled: true
+            );
+            window.rootVisualElement.Add(root);
+
+            VisualElement detail = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.DetailName
+            );
+            Assert.IsNotNull(detail, "The live selection must render its details pane.");
+            ScrollView detailScroll = detail.Q<ScrollView>();
+            Assert.IsNotNull(
+                detailScroll,
+                "The whole live details body must scroll, including an expanded stack trace."
+            );
+            Foldout stack = root.Q<Foldout>(
+                DxMessagingMessageMonitorLiveView.DetailStackFoldoutName
+            );
+            Assert.IsNotNull(stack, "A captured live trace must expose its stack disclosure.");
+            stack.value = true;
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+
+            List<VisualElement> rows = stack
+                .Query<VisualElement>(
+                    className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
+                )
+                .ToList();
+            Assert.AreEqual(2, rows.Count, "Both live caller frames must remain visible.");
+            foreach (VisualElement row in rows)
+            {
+                Label label = row.Q<Label>();
+                Assert.IsNotNull(label, "Every live stack row must render its frame text.");
+                Assert.AreEqual(
+                    WhiteSpace.Normal,
+                    label.resolvedStyle.whiteSpace,
+                    "A long live frame must keep wrapping enabled."
+                );
+                Assert.Greater(
+                    label.worldBound.height,
+                    label.resolvedStyle.fontSize * 1.5f,
+                    "The deliberately long live frame must wrap onto multiple lines."
+                );
+                Assert.GreaterOrEqual(
+                    row.worldBound.height,
+                    label.worldBound.height - 0.5f,
+                    "The live frame row must contain the full wrapped label."
+                );
+                Button open = row.Q<Button>();
+                Assert.IsNotNull(
+                    open,
+                    "A real package source path must render its live Open link in the regression."
+                );
+                Assert.LessOrEqual(
+                    open.resolvedStyle.height,
+                    18.5f,
+                    "A toolbar-height live Open button must not add blank lines between frames."
+                );
+            }
+
+            float gap = rows[1].worldBound.yMin - rows[0].worldBound.yMax;
+            Assert.That(
+                gap,
+                Is.InRange(0f, 4f),
+                $"Live stack rows should read continuously; measured gap was {gap}px."
+            );
+        }
+
+        [Test]
+        public void LiveModeConstrainsRememberedTallDetailsInsideTheMinimumWindow()
+        {
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, 420f, 320f);
+            window.rootVisualElement.style.width = 420f;
+            window.rootVisualElement.style.height = 320f;
+            float resizedHeight = 0f;
+            VisualElement root = DxMessagingMessageMonitorLiveView.Create(
+                Recorder(Entry(1, "PlayerSpawned")),
+                MessageMonitorLiveViewState.Default,
+                diagnosticsEnabled: true,
+                new MessageMonitorLiveViewCallbacks
+                {
+                    InitialDetailsPaneHeight =
+                        DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight,
+                    OnDetailsPaneHeightChanged = height => resizedHeight = height,
+                }
+            );
+            window.rootVisualElement.Add(root);
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                root.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+
+            VisualElement detail = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.DetailName
+            );
+            VisualElement divider = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneResizerName
+            );
+            VisualElement header = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.ListHeaderName
+            );
+            ListView list = root.Q<ListView>();
+            VisualElement footer = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.FooterName
+            );
+            Assert.IsNotNull(detail, "The minimum live window must retain selected details.");
+            Assert.IsNotNull(divider, "The minimum live window must retain its divider.");
+            Assert.IsNotNull(header, "The minimum live window must retain its list header.");
+            Assert.IsNotNull(list, "The minimum live window must retain its scrolling log.");
+            Assert.IsNotNull(footer, "The minimum live window must retain its footer.");
+
+            foreach (VisualElement element in new[] { header, list, divider, detail, footer })
+            {
+                Assert.GreaterOrEqual(
+                    element.worldBound.yMin,
+                    root.worldBound.yMin - 0.5f,
+                    $"{element.name} must start inside the minimum live window."
+                );
+                Assert.LessOrEqual(
+                    element.worldBound.yMax,
+                    root.worldBound.yMax + 0.5f,
+                    $"{element.name} must end inside the minimum live window."
+                );
+            }
+
+            float visibleHeight = detail.parent.resolvedStyle.height;
+            Assert.Less(
+                visibleHeight,
+                DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight,
+                "The live hierarchy must constrain a 900px preference in its minimum window."
+            );
+            DragResizeHandle(divider, deltaY: -20f);
+            Assert.AreEqual(
+                Mathf.Clamp(
+                    visibleHeight + 20f,
+                    DxMessagingMessageMonitorWindow.DetailsPaneMinHeight,
+                    DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight
+                ),
+                resizedHeight,
+                1f,
+                "The first live drag must start from the visible height, then honor the pane bounds."
+            );
+        }
+
+        [Test]
+        public void LiveModeHidesTheDetailsDividerWhenThereIsNoSelectedRow()
+        {
+            MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "PlayerSpawned"));
+            VisualElement root = CreateView(
+                recorder,
+                callbacks: new MessageMonitorLiveViewCallbacks { InitialDetailsPaneHeight = 240f }
+            );
+            VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
+            VisualElement detailSlot = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.DetailName
+            ).parent;
+
+            VisualElement divider = root.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneResizerName
+            );
+            Assert.IsNotNull(divider, "The persistent body keeps its divider for later rows.");
+            Assert.AreEqual(
+                DisplayStyle.Flex,
+                detailSlot.style.display.value,
+                "A selected row must begin with its live details slot visible."
+            );
+
+            RenderBody(
+                body,
+                recorder,
+                new MessageMonitorLiveViewState(
+                    filterText: "does-not-match",
+                    showUntargeted: true,
+                    showTargeted: true,
+                    showBroadcast: true
+                )
+            );
+            Assert.AreEqual(
+                DisplayStyle.None,
+                divider.style.display.value,
+                "An empty log must not show a divider that has no details pane to resize."
+            );
+            Assert.AreEqual(
+                DisplayStyle.None,
+                detailSlot.style.display.value,
+                "A filter-empty log must not reserve the remembered detail height as blank space."
+            );
+
+            RenderBody(body, recorder);
+            Assert.AreEqual(
+                DisplayStyle.Flex,
+                divider.style.display.value,
+                "The live divider must return when filtered rows become visible again."
+            );
+            Assert.AreEqual(
+                DisplayStyle.Flex,
+                detailSlot.style.display.value,
+                "The existing detail slot must return when rows become visible again."
+            );
+        }
+
+        [Test]
         public void TheLiveButtonIsDisabledWhenNoHostCanSwitchModes()
         {
             EditorWindow window = CreateTrackedEditorWindow();
@@ -1032,6 +1352,9 @@ namespace DxMessaging.Tests.Editor
             MessageBus messageBus = MessageHandler.MessageBus as MessageBus;
             Assert.IsNotNull(messageBus);
             bool previousDiagnosticsMode = messageBus.DiagnosticsMode;
+            string preferenceKey = DxMessagingMessageMonitorWindow.DetailsPaneHeightPreferenceKey;
+            bool hadPreviousHeight = EditorPrefs.HasKey(preferenceKey);
+            float previousHeight = EditorPrefs.GetFloat(preferenceKey, 0f);
             DxMessagingMessageMonitorWindow window =
                 ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
             _createdWindows.Add(window);
@@ -1043,6 +1366,7 @@ namespace DxMessaging.Tests.Editor
                 LiveModeProbeMessage message = default;
                 messageBus.UntargetedBroadcast(ref message);
 
+                window.position = new Rect(0f, 0f, 700f, 700f);
                 EditorWindowTestUtility.ShowWindow(window);
                 VisualElement root = window.rootVisualElement;
 
@@ -1050,14 +1374,40 @@ namespace DxMessaging.Tests.Editor
                     root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.RootName),
                     "The window opens in snapshot mode."
                 );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    System.Array.Empty<object>()
+                );
+                VisualElement snapshotDivider = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneResizerName
+                );
+                Assert.IsNotNull(
+                    snapshotDivider,
+                    "Snapshot mode must expose the shared divider before switching modes."
+                );
+                DragResizeHandle(snapshotDivider, deltaY: -60f);
+                float draggedHeight = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneName
+                ).parent.style.height.value.value;
 
                 SendClick(root.Q<Button>(DxMessagingMessageMonitorWindow.LiveButtonName));
 
-                Assert.IsNotNull(root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.RootName));
+                Assert.IsNotNull(
+                    root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.RootName),
+                    "The Live button must replace the snapshot surface with the live view."
+                );
                 Assert.AreEqual(
                     nameof(LiveModeProbeMessage),
                     root.Q<Label>(DxMessagingMessageMonitorLiveView.DetailTitleLabelName)?.text,
                     "Entering live mode drains what the bus was already holding."
+                );
+                Assert.AreEqual(
+                    draggedHeight,
+                    root.Q<VisualElement>(
+                        DxMessagingMessageMonitorLiveView.DetailName
+                    ).parent.style.height.value.value,
+                    "A height dragged in snapshot mode must render after switching to live mode."
                 );
 
                 SendClick(root.Q<Button>(DxMessagingMessageMonitorLiveView.SnapshotButtonName));
@@ -1066,12 +1416,35 @@ namespace DxMessaging.Tests.Editor
                     root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.RootName),
                     "The Snapshot button swaps back."
                 );
-                Assert.IsNotNull(root.Q<Button>(DxMessagingMessageMonitorWindow.LiveButtonName));
+                Assert.IsNotNull(
+                    root.Q<Button>(DxMessagingMessageMonitorWindow.LiveButtonName),
+                    "Switching back must restore the snapshot Live button."
+                );
+                Assert.AreEqual(
+                    draggedHeight,
+                    root.Q<VisualElement>(
+                        DxMessagingMessageMonitorWindow.DetailsPaneName
+                    ).parent.style.height.value.value,
+                    "The shared height must still render after switching back to snapshot mode."
+                );
             }
             finally
             {
                 messageBus.DiagnosticsMode = previousDiagnosticsMode;
                 messageBus._emissionBuffer.Clear();
+                // Close first because production OnDisable persists the dragged value. Restore
+                // the developer's preference afterwards so this fixture is order-independent and
+                // leaves the shared editor exactly as it found it.
+                EditorWindowTestUtility.CloseWindow(window);
+                _createdWindows.Remove(window);
+                if (hadPreviousHeight)
+                {
+                    EditorPrefs.SetFloat(preferenceKey, previousHeight);
+                }
+                else
+                {
+                    EditorPrefs.DeleteKey(preferenceKey);
+                }
             }
         }
 
@@ -1117,6 +1490,53 @@ namespace DxMessaging.Tests.Editor
                 diagnosticsEnabled: true,
                 callbacks
             );
+        }
+
+        private static void DragResizeHandle(VisualElement handle, float deltaY)
+        {
+            Vector2 start = new(handle.worldBound.center.x, handle.worldBound.center.y);
+            using (
+                PointerDownEvent down = PointerDownEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseDown,
+                        mousePosition = start,
+                        button = 0,
+                    }
+                )
+            )
+            {
+                down.target = handle;
+                handle.SendEvent(down);
+            }
+            using (
+                PointerMoveEvent move = PointerMoveEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseDrag,
+                        mousePosition = new Vector2(start.x, start.y + deltaY),
+                        button = 0,
+                    }
+                )
+            )
+            {
+                move.target = handle;
+                handle.SendEvent(move);
+            }
+            using (
+                PointerUpEvent up = PointerUpEvent.GetPooled(
+                    new Event
+                    {
+                        type = EventType.MouseUp,
+                        mousePosition = new Vector2(start.x, start.y + deltaY),
+                        button = 0,
+                    }
+                )
+            )
+            {
+                up.target = handle;
+                handle.SendEvent(up);
+            }
         }
 
         private static MessageMonitorLiveRecorder Recorder(params MessageMonitorEntry[] entries)

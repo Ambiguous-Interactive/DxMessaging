@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Message Monitor resizing so one persisted divider controls the complete
+  log details area. Wrapped stack frames now keep their full line height without
+  clipped text or extra vertical gaps
+  ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
 - Fix nested runtime-settings overrides restoring ended settings when their
   tokens are disposed out of order. Static reset now invalidates older override
   tokens so they cannot replace newer configuration

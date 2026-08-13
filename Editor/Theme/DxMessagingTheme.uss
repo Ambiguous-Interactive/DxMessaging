@@ -53,6 +53,14 @@
     color: var(--dx-text);
 }
 .dx-tool-btn:hover { background-color: var(--dx-tool-btn-hover); }
+.dx-detail__stack-link {
+    height: 18px;
+    min-height: 18px;
+    padding-left: 4px;
+    padding-right: 4px;
+    margin-top: 0;
+    margin-bottom: 0;
+}
 
 /* record toggle */
 .dx-record {
@@ -260,7 +268,7 @@
     border-radius: var(--dx-r-chip);
 }
 
-/* Grab strip under a resizable panel. Fixed height and no growth, so it never takes
+/* Grab strip next to a resizable panel. Fixed height and no growth, so it never takes
    space from the panel it resizes. */
 .dx-resizer {
     height: 5px;
