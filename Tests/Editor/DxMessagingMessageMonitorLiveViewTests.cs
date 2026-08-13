@@ -1244,10 +1244,14 @@ namespace DxMessaging.Tests.Editor
             );
             DragResizeHandle(divider, deltaY: -20f);
             Assert.AreEqual(
-                visibleHeight + 20f,
+                Mathf.Clamp(
+                    visibleHeight + 20f,
+                    DxMessagingMessageMonitorWindow.DetailsPaneMinHeight,
+                    DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight
+                ),
                 resizedHeight,
                 1f,
-                "The first live drag must start from the constrained visible height."
+                "The first live drag must start from the visible height, then honor the pane bounds."
             );
         }
 

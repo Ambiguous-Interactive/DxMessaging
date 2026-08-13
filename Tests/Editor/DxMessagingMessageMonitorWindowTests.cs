@@ -1017,8 +1017,15 @@ namespace DxMessaging.Tests.Editor
 
                 Assert.That(
                     rememberedHeight,
-                    Is.EqualTo(visibleHeight + 20f).Within(1f),
-                    "The first new drag must start from the visible height, not the hidden 900px request."
+                    Is.EqualTo(
+                            Mathf.Clamp(
+                                visibleHeight + 20f,
+                                DxMessagingMessageMonitorWindow.DetailsPaneMinHeight,
+                                DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight
+                            )
+                        )
+                        .Within(1f),
+                    "The first new drag must start from the visible height, then honor the pane bounds."
                 );
             }
             finally
