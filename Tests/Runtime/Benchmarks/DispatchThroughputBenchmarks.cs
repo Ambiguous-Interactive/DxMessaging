@@ -56,6 +56,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     public sealed class DispatchThroughputBenchmarks
     {
+        internal const int PublishedDispatchOrder = 0;
+        internal const int DeregistrationAttributionOrder = 1;
+
         [Test, Performance, Category("PerfBench")]
         public void MessageRegistrationHandlePhysicalSize()
         {
@@ -122,11 +125,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // deliberately measure one-time first-touch JIT cost, which cannot be re-measured cold.
         private const int WarmFloodTrials = 7;
 
-        [Test, Performance, Category("PerfBench")]
+        [Test, Performance, Category("PerfBench"), Order(PublishedDispatchOrder)]
         [TestCaseSource(nameof(DispatchBenchmarkCases))]
         public void DispatchBenchmark(DispatchBenchmarkScenario scenario)
         {
             _ = RunScenario(scenario);
+        }
+
+        [Test, Performance, Category("PerfBench"), Order(DeregistrationAttributionOrder)]
+        [TestCaseSource(nameof(DeregistrationAttributionBenchmarkCases))]
+        public void DeregistrationAttributionBenchmark(DeregistrationAttributionOperation operation)
+        {
+            DispatchBenchmarkResult result = DeregistrationAttributionBenchmarks.RunScenario(
+                operation
+            );
+            Debug.Log(result.ToStructuredLog());
+            TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
         [Test, Explicit, Performance, Category("PerfBaseline")]
@@ -207,6 +221,20 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
             {
                 yield return new TestCaseData(scenario).SetName(scenario.ToString());
+            }
+        }
+
+        private static IEnumerable<TestCaseData> DeregistrationAttributionBenchmarkCases()
+        {
+            foreach (
+                DeregistrationAttributionOperation operation in Enum.GetValues(
+                    typeof(DeregistrationAttributionOperation)
+                )
+            )
+            {
+                yield return new TestCaseData(operation).SetName(
+                    DeregistrationAttributionBenchmarks.ScenarioKey(operation)
+                );
             }
         }
 

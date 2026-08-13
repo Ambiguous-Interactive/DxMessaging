@@ -144,9 +144,11 @@ they are report-only -- rendered as wall clock, never gated.
   multi-second destructive windows collect ambient editor allocations, and a
   faster implementation would look like an allocation win merely by shortening
   exposure. Prove allocation changes with structural or short-window differential
-  guards instead. These diagnostic wall-clock rows are not hard regression gates.
-  Do not compare them with the 1000-type flood rows because their registration
-  topology differs.
+  guards instead. The attribution entry and the published dispatch entry share
+  `DispatchThroughputBenchmarks`: method-level NUnit `Order` runs every dispatch
+  scenario before the repeated 131072-registration attribution setup. These
+  diagnostic wall-clock rows are not hard regression gates. Do not compare them
+  with the 1000-type flood rows because their registration topology differs.
 - **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms
   operation on a shared CI runner swings run-to-run by tens of percent (scheduler
   preemption, or a GC landing inside the timed window). Two mitigations: (1) the

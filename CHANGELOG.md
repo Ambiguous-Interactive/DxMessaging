@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore isolated IL2CPP dispatch measurements by running high-cardinality
+  deregistration attribution after the published throughput windows
+  ([#397](https://github.com/Ambiguous-Interactive/DxMessaging/issues/397)).
+- Fix `DxMessagingStaticState.Reset()` from inside an interceptor so it stops
+  the remaining copied interceptor snapshot and handler pipeline instead of
+  invoking callbacks against reset bus state
+  ([#395](https://github.com/Ambiguous-Interactive/DxMessaging/issues/395)).
 - Fix Flow Graph object navigation and relationship-card readability. Live
   component and route details can select and ping their exact receiver. Broadcast
   and targeted route details also expose a source or target action when the

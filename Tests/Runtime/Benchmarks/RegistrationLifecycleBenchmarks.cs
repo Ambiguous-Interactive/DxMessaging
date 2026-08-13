@@ -463,19 +463,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     /// state. Every row uses a high-cardinality, same-type population so the timed region is long
     /// enough to compare without folding registration setup into the clock.
     /// </summary>
-    public sealed class DeregistrationAttributionBenchmarks
+    internal static class DeregistrationAttributionBenchmarks
     {
         internal const int Cardinality = 131_072;
         private const int TimingTrials = 7;
-
-        [Test, Performance, Category("PerfBench")]
-        [TestCaseSource(nameof(BenchmarkCases))]
-        public void DeregistrationAttributionBenchmark(DeregistrationAttributionOperation operation)
-        {
-            DispatchBenchmarkResult result = RunScenario(operation);
-            Debug.Log(result.ToStructuredLog());
-            TestContext.Out.WriteLine(result.ToCsvRow());
-        }
 
         internal static DeregistrationAttributionObservation ExecuteOnceForContract(
             DeregistrationAttributionOperation operation,
@@ -539,20 +530,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     $"DeregistrationAttribution_TokenDisable_{Cardinality}",
                 _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
             };
-        }
-
-        private static IEnumerable<TestCaseData> BenchmarkCases()
-        {
-            foreach (
-                DeregistrationAttributionOperation operation in Enum.GetValues(
-                    typeof(DeregistrationAttributionOperation)
-                )
-            )
-            {
-                yield return new TestCaseData(operation).SetName(
-                    $"DeregistrationAttribution_{operation}_{Cardinality}"
-                );
-            }
         }
 
         private static void ValidateCardinality(int cardinality)
