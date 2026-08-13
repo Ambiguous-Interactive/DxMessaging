@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change the editor and documentation taxonomy to mark Untargeted routes blue,
+  Targeted routes purple, and Broadcast routes green while reserving red for
+  problem states ([#353](https://github.com/Ambiguous-Interactive/DxMessaging/issues/353)).
 - Reduce the package download by relying on Unity's Roslyn compiler assemblies instead of
   bundling private copies with the DxMessaging source generator and analyzer
   ([#371](https://github.com/Ambiguous-Interactive/DxMessaging/issues/371)).

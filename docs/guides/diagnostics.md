@@ -136,6 +136,10 @@ they sit above the log and each carries how many matching entries it stands for;
 in live mode they sit in the toolbar without a count, because the log is still
 filling.
 
+The same taxonomy applies across Message Monitor, Flow Graph, the documentation,
+and shipped artwork: blue marks Untargeted, purple marks Targeted, and green marks
+Broadcast. Red is reserved for problems such as a live-log gap notice.
+
 The text filter keeps plain text matching and also supports complete
 whitespace-separated field facets backed by captured entry data: `type:`,
 `message:`, `context:`, and `stack:`. Facet terms can be combined, for example

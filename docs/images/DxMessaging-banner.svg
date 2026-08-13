@@ -61,10 +61,10 @@
         <text x="132" y="58" fill="#7fa6d8">Untargeted</text>
       </g>
       <g>
-        <circle cx="32" cy="78" r="4.5" fill="#ec4661"/>
-        <line x1="40" y1="78" x2="118" y2="78" stroke="#ec4661" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 4" opacity="0.75"/>
-        <polygon points="120,78 113,74.5 113,81.5" fill="#ec4661"/>
-        <text x="132" y="82" fill="#ec4661">Targeted</text>
+        <circle cx="32" cy="78" r="4.5" fill="#9569d9"/>
+        <line x1="40" y1="78" x2="118" y2="78" stroke="#9569d9" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 4" opacity="0.75"/>
+        <polygon points="120,78 113,74.5 113,81.5" fill="#9569d9"/>
+        <text x="132" y="82" fill="#9569d9">Targeted</text>
       </g>
       <g>
         <circle cx="32" cy="102" r="4.5" fill="#7fb88a"/>

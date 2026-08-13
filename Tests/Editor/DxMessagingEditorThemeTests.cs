@@ -78,6 +78,7 @@ namespace DxMessaging.Tests.Editor
             AssertColor(DxMessagingEditorPalette.Untargeted, ReadTokenColor("--dx-untargeted"));
             AssertColor(DxMessagingEditorPalette.Targeted, ReadTokenColor("--dx-targeted"));
             AssertColor(DxMessagingEditorPalette.Broadcast, ReadTokenColor("--dx-broadcast"));
+            AssertColor(DxMessagingEditorPalette.Danger, ReadTokenColor("--dx-danger"));
             AssertColor(DxMessagingEditorPalette.Trace, ReadTokenColor("--dx-untargeted"));
             AssertColor(DxMessagingEditorPalette.TraceMessage, ReadTokenColor("--dx-broadcast"));
             AssertColor(DxMessagingEditorPalette.TraceTarget, ReadTokenColor("--dx-accent-soft"));
@@ -97,6 +98,86 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingEditorPalette.AmberOnLight,
                 ReadTokenColor("--dx-accent", lightSkin: true)
             );
+        }
+
+        [Test]
+        public void TaxonomyPaletteUsesBluePurpleGreenAndReservesRedForProblems()
+        {
+            Color untargeted = ReadTokenColor("--dx-untargeted");
+            Color targeted = ReadTokenColor("--dx-targeted");
+            Color broadcast = ReadTokenColor("--dx-broadcast");
+            Color danger = ReadTokenColor("--dx-danger");
+
+            AssertHueBetween(untargeted, 0.52f, 0.66f, "Untargeted must stay blue.");
+            AssertHueBetween(targeted, 0.70f, 0.82f, "Targeted must be purple.");
+            AssertHueBetween(broadcast, 0.27f, 0.43f, "Broadcast must stay green.");
+
+            Color.RGBToHSV(
+                danger,
+                out float dangerHue,
+                out float dangerSaturation,
+                out float dangerValue
+            );
+            Assert.That(
+                dangerHue,
+                Is.LessThanOrEqualTo(0.04f).Or.GreaterThanOrEqualTo(0.96f),
+                "Problem states must keep the red hue removed from the message taxonomy."
+            );
+            Assert.That(dangerSaturation, Is.GreaterThanOrEqualTo(0.5f));
+            Assert.That(dangerValue, Is.GreaterThanOrEqualTo(0.5f));
+            Assert.That(danger, Is.Not.EqualTo(targeted));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TargetedRouteHueMeetsNonTextContrastInBothSkins(bool lightSkin)
+        {
+            Color targeted = ReadTokenColor("--dx-targeted");
+            string[] surfaceTokens =
+            {
+                "--dx-tool-window",
+                "--dx-tool-card",
+                "--dx-tool-row-a",
+                "--dx-tool-row-b",
+            };
+
+            foreach (string surfaceToken in surfaceTokens)
+            {
+                Color surface = ReadTokenColor(surfaceToken, lightSkin);
+                Assert.That(
+                    ContrastRatio(targeted, surface),
+                    Is.GreaterThanOrEqualTo(3f),
+                    $"Targeted route lines and complete borders must remain visible against {surfaceToken} in both editor skins."
+                );
+            }
+        }
+
+        [Test]
+        public void TargetedBadgeInkMeetsNormalTextContrast()
+        {
+            Color targeted = ReadTokenColor("--dx-targeted");
+            Color ink = ReadTokenColor("--dx-accent-ink");
+
+            Assert.That(
+                ContrastRatio(ink, targeted),
+                Is.GreaterThanOrEqualTo(4.5f),
+                "Targeted chips and type badges use 10 px text, so their ink must satisfy normal-text contrast."
+            );
+        }
+
+        [Test]
+        public void DangerAdmonitionUsesProblemTokensInsteadOfTaxonomyColor()
+        {
+            string theme = System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath);
+            Match dangerRule = Regex.Match(
+                theme,
+                @"\.dx-danger\s+\.dx-admonition__title\s*\{(?<body>[^}]*)\}",
+                RegexOptions.Singleline
+            );
+
+            Assert.That(dangerRule.Success, Is.True, "The danger-title rule is missing.");
+            Assert.That(dangerRule.Groups["body"].Value, Does.Contain("var(--dx-danger-text)"));
+            Assert.That(dangerRule.Groups["body"].Value, Does.Not.Contain("var(--dx-targeted)"));
         }
 
         [TestCase(false)]
@@ -496,6 +577,19 @@ namespace DxMessaging.Tests.Editor
             Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.0001f), message);
             Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.0001f), message);
             Assert.That(actual.a, Is.EqualTo(expected.a).Within(0.0001f), message);
+        }
+
+        private static void AssertHueBetween(
+            Color color,
+            float minimum,
+            float maximum,
+            string message
+        )
+        {
+            Color.RGBToHSV(color, out float hue, out float saturation, out float value);
+            Assert.That(hue, Is.InRange(minimum, maximum), message);
+            Assert.That(saturation, Is.GreaterThanOrEqualTo(0.25f), message);
+            Assert.That(value, Is.GreaterThanOrEqualTo(0.5f), message);
         }
 
         private static float ContrastRatio(Color first, Color second)
