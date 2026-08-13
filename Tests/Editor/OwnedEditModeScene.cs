@@ -155,7 +155,12 @@ namespace DxMessaging.Tests.Editor
                 {
                     if (_isPreviewScene)
                     {
-                        EditorSceneManager.ClosePreviewScene(_scene);
+                        if (!EditorSceneManager.ClosePreviewScene(_scene))
+                        {
+                            throw new InvalidOperationException(
+                                "Unity refused to close the fixture-owned preview scene."
+                            );
+                        }
                     }
                     else if (_scene.isLoaded)
                     {

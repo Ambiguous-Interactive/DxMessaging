@@ -457,7 +457,6 @@ namespace DxMessaging.Tests.Editor
                 );
             }
 
-            string before = source.Substring(0, constructionIndex);
             if (Regex.IsMatch(statement, @"\breturn\b"))
             {
                 if (IsInsideGameObjectReturningMethod(source, constructionIndex, gameObjectTypes))
