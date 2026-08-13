@@ -29,6 +29,7 @@ namespace DxMessaging.Tests.Editor
         private readonly List<Object> _createdObjects = new();
         private readonly List<string> _createdAssetPaths = new();
         private readonly List<EditorWindow> _createdWindows = new();
+        private Object _selectionBeforeTest;
         private const string MessageLanesName = "dxmessaging-flow-graph-message-lanes";
         private const string MessageLaneRowClassName = "dxmessaging-flow-graph-message-lane-row";
         private const string MessageLanesSummaryLabelName =
@@ -104,6 +105,12 @@ namespace DxMessaging.Tests.Editor
         private const string TraceIdLaneDetailsLabelName =
             "dxmessaging-flow-graph-trace-id-lane-details";
 
+        [SetUp]
+        public void SetUp()
+        {
+            _selectionBeforeTest = Selection.activeObject;
+        }
+
         [TearDown]
         public void TearDown()
         {
@@ -145,6 +152,7 @@ namespace DxMessaging.Tests.Editor
             _createdAssetPaths.Clear();
 
             EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+            Selection.activeObject = _selectionBeforeTest;
 
             if (MessageHandler.MessageBus is MessageBus messageBus)
             {
@@ -4223,6 +4231,272 @@ namespace DxMessaging.Tests.Editor
                 routes[1].ClassListContains(DxMessagingFlowGraphWindow.SelectedRowClassName),
                 Is.False
             );
+        }
+
+        [Test]
+        public void SelectedComponentCanRevealItsLiveReceiverInTheEditor()
+        {
+            GameObject host = CreateTrackedObject("FlowGraphSelectableReceiver");
+            MessagingComponent receiver = host.AddComponent<MessagingComponent>();
+            FlowGraphComponentNode component = new(
+                "component:receiver",
+                "Root/FlowGraphSelectableReceiver",
+                nameof(MessagingComponent),
+                activeInHierarchy: true,
+                listenerCount: 1,
+                registrationCount: 0,
+                callCount: 0,
+                localMessageCount: 0,
+                receiverObject: receiver
+            );
+            FlowGraphSnapshot snapshot = new(
+                new[] { component },
+                new[] { new FlowGraphMessageNode("FlowGraphReceiverMessage", 1, 0) },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        "FlowGraphReceiverMessage",
+                        component.Id,
+                        component.HierarchyPath,
+                        "Untargeted",
+                        registrationCount: 1,
+                        callCount: 0
+                    ),
+                },
+                Array.Empty<string>()
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                window.rootVisualElement,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        component
+                    )
+                )
+            );
+
+            Button reveal = window.rootVisualElement.Q<Button>(
+                DxMessagingFlowGraphWindow.DetailsRevealReceiverButtonName
+            );
+            Assert.That(
+                reveal,
+                Is.Not.Null,
+                "A selected live receiver should expose a direct Hierarchy/Inspector action."
+            );
+            using (ClickEvent click = ClickEvent.GetPooled())
+            {
+                click.target = reveal;
+                reveal.SendEvent(click);
+            }
+            Assert.That(
+                Selection.activeObject,
+                Is.SameAs(receiver),
+                "The receiver action should select the exact captured component, not only its display name."
+            );
+
+            Object.DestroyImmediate(host);
+            DxMessagingFlowGraphWindow.RefreshGraphContent(
+                window.rootVisualElement,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        component
+                    )
+                )
+            );
+            Assert.That(
+                window.rootVisualElement.Q<Button>(
+                    DxMessagingFlowGraphWindow.DetailsRevealReceiverButtonName
+                ),
+                Is.Null,
+                "A captured receiver that has been destroyed must not keep a dead action."
+            );
+        }
+
+        [Test]
+        public void SelectedSyntheticComponentDoesNotOfferAReceiverAction()
+        {
+            FlowGraphComponentNode synthetic = new(
+                "component:synthetic",
+                "Root/Synthetic",
+                nameof(MessagingComponent),
+                activeInHierarchy: true,
+                listenerCount: 1,
+                registrationCount: 0,
+                callCount: 0,
+                localMessageCount: 0
+            );
+            VisualElement root = new();
+            FlowGraphEdge edge = new(
+                "FlowGraphSyntheticMessage",
+                synthetic.Id,
+                synthetic.HierarchyPath,
+                "Untargeted",
+                registrationCount: 1,
+                callCount: 0
+            );
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                root,
+                new FlowGraphSnapshot(
+                    new[] { synthetic },
+                    new[] { new FlowGraphMessageNode(edge.MessageTypeName, 1, 0) },
+                    new[] { edge },
+                    Array.Empty<string>()
+                ),
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        synthetic
+                    )
+                )
+            );
+
+            Assert.That(
+                root.Q<Button>(DxMessagingFlowGraphWindow.DetailsRevealReceiverButtonName),
+                Is.Null,
+                "A synthetic snapshot must not advertise an object action that cannot resolve."
+            );
+        }
+
+        [TestCase(RouteDetailCase.Broadcast, "Broadcast", "Select source")]
+        [TestCase(RouteDetailCase.Targeted, "Targeted", "Select target")]
+        [TestCase(RouteDetailCase.Untargeted, "Untargeted", null)]
+        [TestCase(RouteDetailCase.GlobalAcceptAll, "GlobalAcceptAll", null)]
+        public void CapturedRouteDetailsExposeOnlyExactLiveContextActions(
+            RouteDetailCase routeCase,
+            string expectedRegistrationType,
+            string expectedContextActionLabel
+        )
+        {
+            GameObject receiverHost = CreateTrackedObject("FlowGraphRouteReceiver");
+            MessagingComponent receiver = receiverHost.AddComponent<MessagingComponent>();
+            TestListener listener = receiverHost.AddComponent<TestListener>();
+            GameObject contextObject = null;
+            InstanceId contextIdentity = default;
+            MessageRegistrationToken token = receiver.Create(listener);
+            switch (routeCase)
+            {
+                case RouteDetailCase.Broadcast:
+                    contextObject = CreateTrackedObject("FlowGraphRouteSource");
+                    contextIdentity = contextObject;
+                    token.RegisterBroadcast<FlowGraphBroadcastMessage>(
+                        contextIdentity,
+                        listener.OnFlowGraphBroadcast
+                    );
+                    break;
+                case RouteDetailCase.Targeted:
+                    contextObject = CreateTrackedObject("FlowGraphRouteTarget");
+                    contextIdentity = contextObject;
+                    token.RegisterTargeted<FlowGraphTargetedMessage>(
+                        contextIdentity,
+                        listener.OnFlowGraphTargeted
+                    );
+                    break;
+                case RouteDetailCase.Untargeted:
+                    token.RegisterUntargeted<FlowGraphMessage>(listener.OnFlowGraphMessage);
+                    break;
+                case RouteDetailCase.GlobalAcceptAll:
+                    token.RegisterGlobalAcceptAll(
+                        listener.OnGlobalUntargeted,
+                        listener.OnGlobalTargeted,
+                        listener.OnGlobalBroadcast
+                    );
+                    break;
+                default:
+                    Assert.Fail("Unsupported route-detail test case: " + routeCase);
+                    break;
+            }
+            token.Enable();
+
+            FlowGraphSnapshot snapshot = DxMessagingFlowGraphWindow.CaptureSnapshot(
+                new[] { receiver }
+            );
+            FlowGraphComponentNode component = snapshot.ComponentNodes.Single();
+            FlowGraphEdge edge = snapshot.Edges.Single(candidate =>
+                candidate.RegistrationTypeName == expectedRegistrationType
+            );
+            string scenario =
+                routeCase + " / " + (expectedContextActionLabel ?? "no context action");
+            Assert.That(
+                component.ReceiverObject,
+                Is.SameAs(receiver),
+                "[" + scenario + "] Capture should retain the exact receiver object."
+            );
+            if (contextObject != null)
+            {
+                Assert.That(
+                    edge.ContextObject,
+                    Is.SameAs(contextObject),
+                    "[" + scenario + "] Capture should retain the exact live route context."
+                );
+            }
+            else
+            {
+                Assert.That(
+                    edge.ContextObject == null,
+                    Is.True,
+                    "[" + scenario + "] A context-free registration must keep ContextObject null."
+                );
+            }
+
+            EditorWindow window = CreateTrackedEditorWindow();
+            EditorWindowTestUtility.ShowWindow(window);
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                window.rootVisualElement,
+                snapshot,
+                new FlowGraphViewState(
+                    selectedItemKey: DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(edge)
+                )
+            );
+
+            Button receiverAction = window.rootVisualElement.Q<Button>(
+                DxMessagingFlowGraphWindow.DetailsRevealReceiverButtonName
+            );
+            Button contextAction = window.rootVisualElement.Q<Button>(
+                DxMessagingFlowGraphWindow.DetailsRevealContextButtonName
+            );
+            Assert.That(
+                receiverAction,
+                Is.Not.Null,
+                "[" + scenario + "] Every captured route should expose its live receiver."
+            );
+            if (expectedContextActionLabel == null)
+            {
+                Assert.That(
+                    contextAction,
+                    Is.Null,
+                    "[" + scenario + "] A context-free route must not invent a context action."
+                );
+            }
+            else
+            {
+                Assert.That(
+                    contextAction,
+                    Is.Not.Null,
+                    "[" + scenario + "] A route with an exact live context should expose it."
+                );
+                Assert.That(
+                    contextAction.text,
+                    Is.EqualTo(expectedContextActionLabel),
+                    "[" + scenario + "] The context action label should match route semantics."
+                );
+                using (ClickEvent click = ClickEvent.GetPooled())
+                {
+                    click.target = contextAction;
+                    contextAction.SendEvent(click);
+                }
+                Assert.That(
+                    Selection.activeObject,
+                    Is.SameAs(contextObject),
+                    "[" + scenario + "] The captured route action should select its exact context."
+                );
+            }
+
+            receiver.EditorResetRuntimeState();
         }
 
         [Test]
@@ -10176,6 +10450,11 @@ namespace DxMessaging.Tests.Editor
             Assert.That(snapshot.ComponentNodes[0].CallCount, Is.EqualTo(1));
             Assert.That(snapshot.ComponentNodes[0].LocalMessageCount, Is.EqualTo(1));
             Assert.That(
+                snapshot.ComponentNodes[0].ReceiverObject,
+                Is.SameAs(messagingComponent),
+                "A live snapshot must retain the exact receiver for Hierarchy/Inspector navigation."
+            );
+            Assert.That(
                 snapshot.MessageNodes[0].MessageTypeName,
                 Does.Contain(nameof(FlowGraphMessage))
             );
@@ -10508,6 +10787,11 @@ namespace DxMessaging.Tests.Editor
                 edge.ContextId,
                 Is.EqualTo(contextId),
                 "Destroyed contexts must retain their exact registration identity."
+            );
+            Assert.That(
+                edge.ContextObject == null,
+                Is.True,
+                "Destroyed contexts must not expose a dead Unity object through ContextObject."
             );
 
             messagingComponent.EditorResetRuntimeState();
@@ -11702,6 +11986,14 @@ namespace DxMessaging.Tests.Editor
         private readonly struct FlowGraphMixedMessage : IBroadcastMessage, ITargetedMessage { }
 
         private readonly struct EvidenceOnlyFlowGraphMessage : IUntargetedMessage { }
+
+        public enum RouteDetailCase
+        {
+            Broadcast,
+            Targeted,
+            Untargeted,
+            GlobalAcceptAll,
+        }
 
         private static class SourceLinkAlpha
         {

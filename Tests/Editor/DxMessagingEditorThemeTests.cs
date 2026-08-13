@@ -210,6 +210,43 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        [Test]
+        public void FlowGraphRelationshipCardsUseReadableTextTokensAndSizes()
+        {
+            string uss = StripBlockComments(
+                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
+            );
+
+            string roleBody = FindRuleBody(
+                uss,
+                ".dxmessaging-flow-graph-details-relationship .dx-card__label"
+            );
+            string identityBody = FindRuleBody(
+                uss,
+                ".dxmessaging-flow-graph-details-relationship .dx-kv__v"
+            );
+            string metadataBody = FindRuleBody(
+                uss,
+                ".dxmessaging-flow-graph-details-relationship .dx-detail__frame"
+            );
+
+            Assert.That(
+                roleBody,
+                Does.Contain("color: var(--dx-text);").And.Contain("font-size: 11px;"),
+                "Relationship role labels should not inherit the tiny muted card-caption treatment."
+            );
+            Assert.That(
+                identityBody,
+                Does.Contain("color: var(--dx-text);").And.Contain("font-size: 12px;"),
+                "Relationship identities should be larger than generic diagnostic values."
+            );
+            Assert.That(
+                metadataBody,
+                Does.Contain("color: var(--dx-text-dim);").And.Contain("font-size: 11px;"),
+                "Relationship metadata should use readable secondary text instead of the faint token."
+            );
+        }
+
         /// <summary>
         /// Issue #344: "There is no 'pointer' intelligence for anything clickable." A hover
         /// background only tells a reader who already guessed the element was interactive, so
@@ -522,6 +559,27 @@ namespace DxMessaging.Tests.Editor
             }
 
             return stripped.ToString();
+        }
+
+        private static string FindRuleBody(string uss, string selector)
+        {
+            foreach (string block in uss.Split('}'))
+            {
+                int open = block.IndexOf('{');
+                if (open < 0)
+                {
+                    continue;
+                }
+
+                string blockSelector = block.Substring(0, open).Trim().Replace("\n", " ");
+                if (string.Equals(blockSelector, selector, StringComparison.Ordinal))
+                {
+                    return block.Substring(open + 1);
+                }
+            }
+
+            Assert.Fail($"The stylesheet declares no `{selector}` rule.");
+            return null;
         }
 
         private static string ReadEditorSourceText()

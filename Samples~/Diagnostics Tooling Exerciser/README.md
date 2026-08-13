@@ -70,6 +70,10 @@ After the default play-start burst:
   rows. Breadcrumbs backed by exact captured Unity-object identities and
   relationship endpoints select the matching graph item; **Route roster** reveals
   each exact receiver ID, registration subtype, context, and context ID on demand.
+  Selecting a live component or route exposes a direct receiver action. Broadcast
+  and targeted routes also expose source or target actions when the snapshot
+  captured that exact live context object. These actions select and ping the
+  object in the Hierarchy and Inspector.
   Diagnostics split route health from trace coverage; component and message
   selections show distinct busiest paths as directed relationship records,
   while route selections omit those redundant aggregates. The full text report

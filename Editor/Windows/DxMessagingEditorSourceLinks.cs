@@ -1210,14 +1210,21 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         internal static bool TryRevealContext(InstanceId? context)
         {
-            UnityEngine.Object contextObject = FindContextObject(context);
-            if (contextObject == null)
+            return TryRevealObject(FindContextObject(context));
+        }
+
+        /// <summary>
+        /// Selects and pings a captured Unity object when it is still alive.
+        /// </summary>
+        internal static bool TryRevealObject(UnityEngine.Object unityObject)
+        {
+            if (unityObject == null)
             {
                 return false;
             }
 
-            Selection.activeObject = contextObject;
-            EditorGUIUtility.PingObject(contextObject);
+            Selection.activeObject = unityObject;
+            EditorGUIUtility.PingObject(unityObject);
             return true;
         }
     }

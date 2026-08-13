@@ -195,6 +195,11 @@ when the filtered capture resolves exactly one; unresolved instance fallbacks
 remain plain text instead of presenting a dead action. Captured call sites separate a compact
 `Type.Method()` identity from the file and line, and keep the source action on
 the same row; stale asset paths remain readable without a dead button.
+Select a live component to use **Select receiver** and reveal its exact
+`MessagingComponent` in the Hierarchy and Inspector. A selected route also
+offers **Select receiver** plus **Select source** or **Select target** when its
+captured context object is still alive. Destroyed and synthetic snapshot
+objects do not render these actions.
 The graph does not invent a sender object because targeted emission APIs carry
 a target, not a sender.
 Global accept-all registrations appear as
@@ -213,7 +218,9 @@ activity metrics first; emission evidence and diagnostics start collapsed.
 Diagnostics split route health from trace coverage. For component and message
 selections, their distinct busiest route and trace path use bordered, directed
 relationship records with compact message and receiver identities instead of
-report sentences. Select either endpoint to move to that message or receiver.
+report sentences. Their role, identity, and activity text use primary and
+secondary text treatments instead of the smaller muted card-caption style.
+Select either endpoint to move to that message or receiver.
 Captured context breadcrumbs become links only when diagnostics retained the
 exact Unity-object-to-component identity and that component is visible in the
 filtered graph; ambiguous, destroyed, or filtered-out contexts remain text.
