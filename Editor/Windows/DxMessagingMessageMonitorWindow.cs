@@ -64,7 +64,7 @@ namespace DxMessaging.Editor.Windows
         internal const string DetailsContextRowName = "dxmessaging-monitor-details-context-row";
         internal const string DetailsStackFrameRowClassName =
             "dxmessaging-monitor-details-stack-frame";
-        internal const string DetailsStackResizerName = "dxmessaging-monitor-details-stack-resizer";
+        internal const string DetailsPaneResizerName = "dxmessaging-monitor-details-resizer";
         internal const string ComponentResizerName = "dxmessaging-monitor-component-resizer";
         internal const string BreakdownFoldoutName = "dxmessaging-monitor-breakdown";
         internal const string VisibleMessageTypeLanesName =
@@ -117,6 +117,9 @@ namespace DxMessaging.Editor.Windows
         internal const string SnapshotModeHintText =
             "Buffered bus history as of the last Refresh. One row per emission, newest first, nothing merged.";
 
+        internal const string DetailsPaneHeightPreferenceKey =
+            "WallstopStudios.DxMessaging.MessageMonitor.DetailsPaneHeight";
+
         /// <summary>
         /// How the log and the detail pane divide a window that can be dragged down to its 320 px
         /// minimum.
@@ -134,6 +137,10 @@ namespace DxMessaging.Editor.Windows
 
         private const int DetailsMaxHeightPercent = 45;
 
+        internal const int DetailsPaneMinHeight = 80;
+
+        internal const int DetailsPaneResizeMaxHeight = 900;
+
         /// <summary>
         /// Floor for a disclosure section, sized to its own toggle header. A <see cref="Foldout"/>
         /// that shrinks has to keep at least the row a reader clicks to open it: without this floor
@@ -141,8 +148,6 @@ namespace DxMessaging.Editor.Windows
         /// of the window. Compression below the floor goes to the scrolling lists inside instead.
         /// </summary>
         private const int FoldoutHeaderMinHeight = 22;
-
-        private const int DetailsStackTraceMaxHeight = 140;
 
         private const int LanePillScrollMaxHeight = 96;
 
@@ -152,10 +157,6 @@ namespace DxMessaging.Editor.Windows
         /// #344's resize request is that the shipped caps were chosen for a window the reader
         /// does not have.
         /// </summary>
-        internal const int StackTraceMinHeight = 40;
-
-        internal const int StackTraceResizeMaxHeight = 640;
-
         internal const int ComponentPanelMinHeight = 60;
 
         internal const int ComponentPanelResizeMaxHeight = 720;
@@ -168,6 +169,9 @@ namespace DxMessaging.Editor.Windows
 
         [SerializeField]
         private bool _liveMode;
+
+        [SerializeField]
+        private float _detailsPaneHeight;
 
         private MessageMonitorViewState _viewState = MessageMonitorViewState.Default;
         private MessageMonitorLiveRecorder _liveRecorder;
@@ -198,6 +202,10 @@ namespace DxMessaging.Editor.Windows
 
         private void OnEnable()
         {
+            if (_detailsPaneHeight <= 0f)
+            {
+                _detailsPaneHeight = EditorPrefs.GetFloat(DetailsPaneHeightPreferenceKey, 0f);
+            }
             EditorApplication.playModeStateChanged += HandlePlayModeStateChanged;
             DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
                 HandleMessageSourceIndexChanged;
@@ -211,6 +219,10 @@ namespace DxMessaging.Editor.Windows
             DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
                 HandleMessageSourceIndexChanged;
             StopLivePump();
+            if (_detailsPaneHeight > 0f)
+            {
+                EditorPrefs.SetFloat(DetailsPaneHeightPreferenceKey, _detailsPaneHeight);
+            }
         }
 
         /// <summary>
@@ -322,7 +334,9 @@ namespace DxMessaging.Editor.Windows
                 Refresh,
                 exportText => EditorGUIUtility.systemCopyBuffer = exportText,
                 components,
-                EnterLiveMode
+                EnterLiveMode,
+                _detailsPaneHeight,
+                RememberDetailsPaneHeight
             );
         }
 
@@ -374,6 +388,8 @@ namespace DxMessaging.Editor.Windows
                             RenderLiveBody();
                         },
                         OnExitLiveMode = ExitLiveMode,
+                        InitialDetailsPaneHeight = _detailsPaneHeight,
+                        OnDetailsPaneHeightChanged = RememberDetailsPaneHeight,
                     }
                 )
             );
@@ -408,8 +424,15 @@ namespace DxMessaging.Editor.Windows
                         _liveViewState = state;
                         RenderLiveBody();
                     },
+                    InitialDetailsPaneHeight = _detailsPaneHeight,
+                    OnDetailsPaneHeightChanged = RememberDetailsPaneHeight,
                 }
             );
+        }
+
+        private void RememberDetailsPaneHeight(float height)
+        {
+            _detailsPaneHeight = height;
         }
 
         private void StartLivePump()
@@ -545,7 +568,9 @@ namespace DxMessaging.Editor.Windows
             Action onRefresh = null,
             Action<string> onCopyExport = null,
             IReadOnlyList<ComponentMonitorEntry> componentEntries = null,
-            Action onEnterLiveMode = null
+            Action onEnterLiveMode = null,
+            float initialDetailsPaneHeight = 0f,
+            Action<float> onDetailsPaneHeightChanged = null
         )
         {
             if (root == null)
@@ -565,6 +590,8 @@ namespace DxMessaging.Editor.Windows
                 State = viewState,
                 OnViewStateChanged = onViewStateChanged,
                 OnCopyExport = onCopyExport,
+                DetailsPaneHeight = initialDetailsPaneHeight,
+                OnDetailsPaneHeightChanged = onDetailsPaneHeightChanged,
             };
 
             // The surface keeps a handle to its own state so a background source index that
@@ -648,7 +675,9 @@ namespace DxMessaging.Editor.Windows
             /// </summary>
             internal float ComponentPanelHeight { get; set; }
 
-            internal float StackTraceHeight { get; set; }
+            internal float DetailsPaneHeight { get; set; }
+
+            internal Action<float> OnDetailsPaneHeightChanged { get; set; }
 
             internal Action<MessageMonitorViewState> OnViewStateChanged { get; set; }
 
@@ -745,7 +774,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             ui.DetailsSlot.Clear();
-            ui.DetailsSlot.Add(CreateDetailsPane(rows[selectedEntryIndex], ui));
+            ui.DetailsSlot.Add(CreateDetailsPane(rows[selectedEntryIndex]));
         }
 
         /// <summary>
@@ -1003,12 +1032,32 @@ namespace DxMessaging.Editor.Windows
             ui.List = list;
 
             VisualElement detailsSlot = new();
-            // Capped AND shrinkable, with no floor of its own. The cap keeps the pane from taking
-            // the window on a tall window; the shrink keeps it inside one whose chrome is taller
-            // than expected, which is how 2021.3 differs from 6000.x for the same window size.
+            // The detail pane is the one resizable lower area. Its handle sits above it, so an
+            // upward drag grows the pane and gives the scrolling log less room. It remains
+            // shrinkable at short window heights so the existing no-overflow contract wins over
+            // a remembered size from a taller layout.
             detailsSlot.style.flexShrink = 1;
-            detailsSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
-            detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex], ui));
+            if (ui.DetailsPaneHeight <= 0f)
+            {
+                detailsSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
+            }
+            messageSection.Add(
+                DxMessagingEditorTheme.CreateResizeHandle(
+                    detailsSlot,
+                    DetailsPaneMinHeight,
+                    DetailsPaneResizeMaxHeight,
+                    DetailsPaneResizerName,
+                    ui.DetailsPaneHeight,
+                    height =>
+                    {
+                        ui.DetailsPaneHeight = height;
+                        ui.OnDetailsPaneHeightChanged?.Invoke(height);
+                    },
+                    growsUpward: true,
+                    allowTargetShrink: true
+                )
+            );
+            detailsSlot.Add(CreateDetailsPane(filteredEntries[selectedEntryIndex]));
             messageSection.Add(detailsSlot);
             ui.DetailsSlot = detailsSlot;
         }
@@ -2266,15 +2315,13 @@ namespace DxMessaging.Editor.Windows
         /// route kind and message type, the emission's fields, and the stack trace behind a
         /// disclosure that starts closed.
         /// </summary>
-        private static VisualElement CreateDetailsPane(
-            MessageMonitorEntry entry,
-            MonitorUi ui = null
-        )
+        private static VisualElement CreateDetailsPane(MessageMonitorEntry entry)
         {
             VisualElement details = new() { name = DetailsPaneName };
             details.AddToClassList(DxMessagingEditorTheme.DetailClassName);
             // The pane gives space back when the window is short, and its body scrolls rather than
             // spilling out of the bottom, so a 320 px window still shows the log above it.
+            details.style.flexGrow = 1;
             details.style.flexShrink = 1;
             details.style.minHeight = 0;
             details.style.overflow = Overflow.Hidden;
@@ -2323,16 +2370,7 @@ namespace DxMessaging.Editor.Windows
                 CreateStackTraceSection(
                     entry,
                     DetailsStackFoldoutName,
-                    DetailsStackFirstFrameLabelName,
-                    DetailsStackTraceMaxHeight,
-                    ui?.StackTraceHeight ?? 0f,
-                    height =>
-                    {
-                        if (ui != null)
-                        {
-                            ui.StackTraceHeight = height;
-                        }
-                    }
+                    DetailsStackFirstFrameLabelName
                 )
             );
 
@@ -2413,10 +2451,7 @@ namespace DxMessaging.Editor.Windows
         internal static VisualElement CreateStackTraceSection(
             MessageMonitorEntry entry,
             string foldoutName,
-            string labelName,
-            float maxHeight,
-            float initialHeight = 0f,
-            Action<float> onHeightChanged = null
+            string labelName
         )
         {
             IReadOnlyList<string> frames = DxMessagingEditorSourceLinks.ReadCallSiteFrames(
@@ -2443,15 +2478,14 @@ namespace DxMessaging.Editor.Windows
                     + "by default because a stack per row is what buries the log. Unity's own "
                     + "stack-capture frames are left out.",
             };
-            ScrollView stackScroll = new(ScrollViewMode.Vertical);
-            stackScroll.style.maxHeight = maxHeight;
+            VisualElement stackFrames = new();
 
             if (!captured)
             {
                 Label empty = new(emptyBody) { name = labelName };
                 empty.style.whiteSpace = WhiteSpace.Normal;
-                stackScroll.Add(empty);
-                stackFoldout.Add(stackScroll);
+                stackFrames.Add(empty);
+                stackFoldout.Add(stackFrames);
                 return stackFoldout;
             }
 
@@ -2461,7 +2495,8 @@ namespace DxMessaging.Editor.Windows
                 VisualElement frameRow = new();
                 frameRow.AddToClassList(DetailsStackFrameRowClassName);
                 frameRow.style.flexDirection = FlexDirection.Row;
-                frameRow.style.flexShrink = 1;
+                frameRow.style.alignItems = Align.FlexStart;
+                frameRow.style.flexShrink = 0;
 
                 Label frameLabel = new(frame) { tooltip = frame };
                 // The first surviving frame is the emitting call site, so it reads as the answer
@@ -2474,6 +2509,10 @@ namespace DxMessaging.Editor.Windows
                 }
                 frameLabel.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
                 frameLabel.style.whiteSpace = WhiteSpace.Normal;
+                frameLabel.style.flexGrow = 1;
+                frameLabel.style.flexShrink = 1;
+                frameLabel.style.marginTop = 0;
+                frameLabel.style.marginBottom = 0;
                 frameRow.Add(frameLabel);
 
                 if (
@@ -2484,28 +2523,18 @@ namespace DxMessaging.Editor.Windows
                     && AssetDatabase.LoadMainAssetAtPath(frameLocation.AssetPath) != null
                 )
                 {
-                    frameRow.Add(
-                        DxMessagingEditorSourceLinks.CreateSourceLinkButton(
-                            "Open",
-                            frameLocation,
-                            includeLocationInText: false
-                        )
+                    Button open = DxMessagingEditorSourceLinks.CreateSourceLinkButton(
+                        "Open",
+                        frameLocation,
+                        includeLocationInText: false
                     );
+                    open.AddToClassList(DxMessagingEditorTheme.DetailStackLinkClassName);
+                    frameRow.Add(open);
                 }
-                stackScroll.Add(frameRow);
+                stackFrames.Add(frameRow);
             }
 
-            stackFoldout.Add(stackScroll);
-            stackFoldout.Add(
-                DxMessagingEditorTheme.CreateResizeHandle(
-                    stackScroll,
-                    StackTraceMinHeight,
-                    StackTraceResizeMaxHeight,
-                    DetailsStackResizerName,
-                    initialHeight,
-                    onHeightChanged
-                )
-            );
+            stackFoldout.Add(stackFrames);
             return stackFoldout;
         }
 

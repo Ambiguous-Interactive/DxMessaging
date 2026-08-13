@@ -76,6 +76,7 @@ namespace DxMessaging.Editor
         internal const string DetailTitleClassName = "dx-detail__title";
         internal const string DetailFrameClassName = "dx-detail__frame";
         internal const string DetailLinkClassName = "dx-detail__link";
+        internal const string DetailStackLinkClassName = "dx-detail__stack-link";
         internal const string DetailActiveClassName = "dx-detail__active";
 
         /// <summary>
@@ -86,7 +87,7 @@ namespace DxMessaging.Editor
         internal const string ClickableClassName = "dx-clickable";
 
         /// <summary>
-        /// The grab strip <see cref="CreateResizeHandle"/> renders under a resizable panel.
+        /// The grab strip <see cref="CreateResizeHandle"/> renders next to a resizable panel.
         /// </summary>
         internal const string ResizerClassName = "dx-resizer";
         internal const string KeyValueClassName = "dx-kv";
@@ -294,13 +295,23 @@ namespace DxMessaging.Editor
         /// <param name="onHeightChanged">
         /// Raised with each dragged height so the caller can remember it across those rebuilds.
         /// </param>
+        /// <param name="growsUpward">
+        /// Whether dragging upward increases the target height. Use this when the handle sits
+        /// above its target, such as the divider between a log and its lower details pane.
+        /// </param>
+        /// <param name="allowTargetShrink">
+        /// Whether layout may shrink the resized target below its requested height when its
+        /// parent has less room. Keep this enabled for a persisted pane in a resizable window.
+        /// </param>
         internal static VisualElement CreateResizeHandle(
             VisualElement target,
             float minHeight,
             float maxHeight,
             string name = null,
             float initialHeight = 0f,
-            Action<float> onHeightChanged = null
+            Action<float> onHeightChanged = null,
+            bool growsUpward = false,
+            bool allowTargetShrink = false
         )
         {
             VisualElement handle = new();
@@ -317,7 +328,7 @@ namespace DxMessaging.Editor
 
             if (initialHeight > 0f)
             {
-                ApplyResizedHeight(target, initialHeight, minHeight, maxHeight);
+                ApplyResizedHeight(target, initialHeight, minHeight, maxHeight, allowTargetShrink);
             }
 
             float pointerStartY = 0f;
@@ -332,14 +343,16 @@ namespace DxMessaging.Editor
                 }
 
                 pointerStartY = evt.position.y;
-                // Prefer the inline style once one exists, because a shrinkable target resolves
-                // to whatever space it was given and successive drags would otherwise each start
-                // from a different origin than the last one ended at. UI Toolkit reports
+                // A window-level target may resolve below its remembered inline height when the
+                // window is short. Start that drag from what the reader can see or a small drag
+                // would have to erase hundreds of hidden pixels before anything moved. Fixed-size
+                // targets keep using their inline height so successive drags start where the last
+                // one ended. UI Toolkit reports
                 // `Undefined` when a pixel value IS set and `Null` when none is -- measured, and
                 // the opposite of what the names suggest -- so before the first drag this falls
                 // back to the resolved height rather than reading a `value` of 0 and jumping.
                 startHeight =
-                    target.style.height.keyword == StyleKeyword.Undefined
+                    !allowTargetShrink && target.style.height.keyword == StyleKeyword.Undefined
                         ? target.style.height.value.value
                         : target.resolvedStyle.height;
                 handle.CapturePointer(evt.pointerId);
@@ -352,9 +365,10 @@ namespace DxMessaging.Editor
                     return;
                 }
 
-                float requested = startHeight + (evt.position.y - pointerStartY);
+                float pointerDelta = evt.position.y - pointerStartY;
+                float requested = startHeight + (growsUpward ? -pointerDelta : pointerDelta);
                 onHeightChanged?.Invoke(
-                    ApplyResizedHeight(target, requested, minHeight, maxHeight)
+                    ApplyResizedHeight(target, requested, minHeight, maxHeight, allowTargetShrink)
                 );
                 evt.StopPropagation();
             });
@@ -374,13 +388,15 @@ namespace DxMessaging.Editor
         /// the height actually used. The cap has to move with it -- a `max-height` left below the
         /// dragged height silently wins -- and so does `flex-shrink`: these panels are built
         /// shrinkable so they give space back when the window is short, which also means a plain
-        /// height is only a starting size that Yoga takes straight back.
+        /// height is only a starting size that Yoga takes straight back unless the caller
+        /// explicitly keeps shrink enabled for a window-level pane.
         /// </summary>
         internal static float ApplyResizedHeight(
             VisualElement target,
             float requestedHeight,
             float minHeight,
-            float maxHeight
+            float maxHeight,
+            bool allowTargetShrink = false
         )
         {
             if (target == null)
@@ -391,7 +407,7 @@ namespace DxMessaging.Editor
             float clamped = Mathf.Clamp(requestedHeight, minHeight, maxHeight);
             target.style.height = clamped;
             target.style.maxHeight = maxHeight;
-            target.style.flexShrink = 0f;
+            target.style.flexShrink = allowTargetShrink ? 1f : 0f;
             return clamped;
         }
 

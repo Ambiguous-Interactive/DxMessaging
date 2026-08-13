@@ -132,6 +132,12 @@ namespace DxMessaging.Editor.Windows
 
         /// <summary>Raised by the Snapshot button to leave live mode.</summary>
         internal Action OnExitLiveMode { get; set; }
+
+        /// <summary>Remembered height of the shared log/details divider, or 0 for its default.</summary>
+        internal float InitialDetailsPaneHeight { get; set; }
+
+        /// <summary>Raised while the reader drags the shared log/details divider.</summary>
+        internal Action<float> OnDetailsPaneHeightChanged { get; set; }
     }
 
     /// <summary>
@@ -215,7 +221,9 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         private const int ChipLabelWidth = 0;
 
-        private const int DetailStackTraceMaxHeight = 120;
+        private const int DetailsMaxHeightPercent = 45;
+
+        private const int MessageListMinHeight = 56;
 
         // The body renders into four fixed slots so a poll can update each independently. Named
         // only so the UI Toolkit debugger reads clearly; nothing queries them.
@@ -244,6 +252,8 @@ namespace DxMessaging.Editor.Windows
             internal VisualElement ListSlot { get; set; }
 
             internal VisualElement DetailSlot { get; set; }
+
+            internal VisualElement DetailsResizer { get; set; }
 
             internal VisualElement FooterSlot { get; set; }
 
@@ -301,6 +311,8 @@ namespace DxMessaging.Editor.Windows
             internal void DropDetail()
             {
                 DetailSlot.Clear();
+                DetailSlot.style.display = DisplayStyle.None;
+                DetailsResizer.style.display = DisplayStyle.None;
                 _detailFirstTraceId = 0;
                 _detailLastTraceId = 0;
                 _detailCount = 0;
@@ -332,6 +344,8 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement body = new() { name = BodyName };
             body.style.flexGrow = 1;
+            body.style.flexShrink = 1;
+            body.style.minHeight = 0;
             root.Add(body);
             RenderBody(body, recorder, viewState, diagnosticsEnabled, callbacks);
             return root;
@@ -367,9 +381,10 @@ namespace DxMessaging.Editor.Windows
                 throw new ArgumentNullException(nameof(recorder));
             }
 
-            LiveBodyState state = EnsureBodyState(body);
+            callbacks ??= new MessageMonitorLiveViewCallbacks();
+            LiveBodyState state = EnsureBodyState(body, callbacks);
             state.ViewState = viewState;
-            state.Callbacks = callbacks ?? new MessageMonitorLiveViewCallbacks();
+            state.Callbacks = callbacks;
 
             List<MessageMonitorLiveEntry> rows = FilterRows(recorder.Entries, viewState);
             if (rows.Count == 0)
@@ -905,6 +920,8 @@ namespace DxMessaging.Editor.Windows
 
             state.DetailSlot.Clear();
             state.DetailSlot.Add(CreateDetail(row));
+            state.DetailSlot.style.display = DisplayStyle.Flex;
+            state.DetailsResizer.style.display = DisplayStyle.Flex;
             state.RememberDetail(row);
         }
 
@@ -912,7 +929,10 @@ namespace DxMessaging.Editor.Windows
         /// Builds the body's four slots on first render and hands back the state they are tracked
         /// in. A body that already carries state keeps every element it has.
         /// </summary>
-        private static LiveBodyState EnsureBodyState(VisualElement body)
+        private static LiveBodyState EnsureBodyState(
+            VisualElement body,
+            MessageMonitorLiveViewCallbacks callbacks
+        )
         {
             if (body.userData is LiveBodyState existing)
             {
@@ -920,14 +940,32 @@ namespace DxMessaging.Editor.Windows
             }
 
             body.Clear();
-            LiveBodyState state = new();
+            LiveBodyState state = new() { Callbacks = callbacks };
             body.Add(CreateListHeader());
 
             state.ListSlot = new VisualElement { name = ListSlotName };
             state.ListSlot.style.flexGrow = 1;
+            state.ListSlot.style.flexShrink = 1;
+            state.ListSlot.style.minHeight = MessageListMinHeight;
             body.Add(state.ListSlot);
 
             state.DetailSlot = new VisualElement { name = DetailSlotName };
+            state.DetailSlot.style.flexShrink = 1;
+            if (callbacks.InitialDetailsPaneHeight <= 0f)
+            {
+                state.DetailSlot.style.maxHeight = Length.Percent(DetailsMaxHeightPercent);
+            }
+            state.DetailsResizer = DxMessagingEditorTheme.CreateResizeHandle(
+                state.DetailSlot,
+                DxMessagingMessageMonitorWindow.DetailsPaneMinHeight,
+                DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight,
+                DxMessagingMessageMonitorWindow.DetailsPaneResizerName,
+                callbacks.InitialDetailsPaneHeight,
+                height => state.Callbacks.OnDetailsPaneHeightChanged?.Invoke(height),
+                growsUpward: true,
+                allowTargetShrink: true
+            );
+            body.Add(state.DetailsResizer);
             body.Add(state.DetailSlot);
 
             state.FooterSlot = new VisualElement { name = FooterSlotName };
@@ -956,6 +994,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement detail = new() { name = DetailName };
             detail.AddToClassList(DxMessagingEditorTheme.DetailClassName);
+            detail.style.flexGrow = 1;
+            detail.style.flexShrink = 1;
+            detail.style.minHeight = 0;
+            detail.style.overflow = Overflow.Hidden;
             DxMessagingEditorTheme.ApplyCompleteBorder(
                 detail,
                 DxMessagingEditorPalette.BorderPanel
@@ -963,6 +1005,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement head = new();
             head.AddToClassList(DxMessagingEditorTheme.DetailHeadClassName);
+            head.style.flexShrink = 0;
             string routeKind = DxMessagingEditorPalette.NormalizeRouteKind(row.Entry.RouteKind);
             Label badge = new(string.IsNullOrEmpty(routeKind) ? "Other" : routeKind);
             DxMessagingEditorTheme.AddRouteKindTypeBadgeClasses(badge, routeKind);
@@ -999,16 +1042,19 @@ namespace DxMessaging.Editor.Windows
             card.Add(CreateKeyValue("Count", row.Count.ToString(CultureInfo.InvariantCulture)));
             card.Add(CreateKeyValue("Dispatch", CreateTraceRangeText(row)));
             card.Add(CreateKeyValue("Observed", CreateObservedRangeText(row)));
-            detail.Add(card);
-
-            detail.Add(
+            ScrollView detailBody = new(ScrollViewMode.Vertical);
+            detailBody.style.flexGrow = 1;
+            detailBody.style.flexShrink = 1;
+            detailBody.style.minHeight = 0;
+            detailBody.Add(card);
+            detailBody.Add(
                 DxMessagingMessageMonitorWindow.CreateStackTraceSection(
                     row.Entry,
                     DetailStackFoldoutName,
-                    DetailStackFirstFrameLabelName,
-                    DetailStackTraceMaxHeight
+                    DetailStackFirstFrameLabelName
                 )
             );
+            detail.Add(detailBody);
 
             return detail;
         }

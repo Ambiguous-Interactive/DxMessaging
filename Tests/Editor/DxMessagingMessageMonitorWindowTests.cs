@@ -506,6 +506,180 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        [Test]
+        public void ExpandedStackFramesKeepTheirFullWrappedHeightWithoutVerticalGaps()
+        {
+            string longFrame =
+                "WallstopStudios.Sample.Deep.Namespace.ExerciserWithALongTypeName:"
+                + "EmitOneOfEachWithALongMethodName (at Packages/"
+                + "com.wallstop-studios.dxmessaging/Editor/Windows/"
+                + "DxMessagingMessageMonitorWindow.cs:185)";
+            MessageMonitorEntry entry = new(
+                nameof(OlderMessage),
+                "Context: Player",
+                longFrame + "\n" + longFrame.Replace(":185)", ":138)")
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                window.position = new Rect(0f, 0f, 480f, 520f);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = 480f;
+                root.style.height = 520f;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[] { entry }
+                    )
+                );
+
+                Foldout stack = root.Q<Foldout>(
+                    DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
+                );
+                Assert.That(stack, Is.Not.Null, "A captured trace must expose its disclosure.");
+                stack.value = true;
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                List<VisualElement> rows = stack
+                    .Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
+                    )
+                    .ToList();
+                Assert.That(rows.Count, Is.EqualTo(2), "Both caller frames must be visible.");
+                for (int index = 0; index < rows.Count; ++index)
+                {
+                    VisualElement row = rows[index];
+                    Label label = row.Q<Label>();
+                    Assert.That(label, Is.Not.Null, "Every stack row must render its frame text.");
+                    Assert.That(
+                        label.resolvedStyle.whiteSpace,
+                        Is.EqualTo(WhiteSpace.Normal),
+                        "A long frame must wrap instead of collapsing to one clipped line."
+                    );
+                    Assert.That(
+                        label.worldBound.height,
+                        Is.GreaterThan(label.resolvedStyle.fontSize * 1.5f),
+                        "The deliberately long frame must occupy more than one rendered line."
+                    );
+                    Assert.That(
+                        row.resolvedStyle.flexShrink,
+                        Is.EqualTo(0f),
+                        "A frame row must not be compressed below its wrapped label."
+                    );
+                    Assert.That(
+                        row.worldBound.height,
+                        Is.GreaterThanOrEqualTo(label.worldBound.height - 0.5f),
+                        "The full wrapped frame must fit inside its row instead of being clipped."
+                    );
+                    Button open = row.Q<Button>();
+                    Assert.That(
+                        open,
+                        Is.Not.Null,
+                        "A real package source path must render its Open link in the regression."
+                    );
+                    Assert.That(
+                        open.resolvedStyle.height,
+                        Is.LessThanOrEqualTo(18.5f),
+                        "A toolbar-height Open button must not add blank lines between frames."
+                    );
+                }
+
+                float gap = rows[1].worldBound.yMin - rows[0].worldBound.yMax;
+                Assert.That(
+                    gap,
+                    Is.InRange(0f, 4f),
+                    $"Stack rows should read continuously; measured vertical gap was {gap}px."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        [Test]
+        public void ResolvableOneLineStackFramesKeepCompactTextSpacing()
+        {
+            const string SourcePath = "Packages/com.wallstop-studios.dxmessaging/package.json";
+            MessageMonitorEntry entry = new(
+                nameof(OlderMessage),
+                "Context: Player",
+                $"Sample.First:Emit () (at {SourcePath}:185)\n"
+                    + $"Sample.Second:Call () (at {SourcePath}:138)"
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+
+            try
+            {
+                window.position = new Rect(0f, 0f, 900f, 420f);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = 900f;
+                root.style.height = 420f;
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[] { entry }
+                    )
+                );
+
+                Foldout stack = root.Q<Foldout>(
+                    DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
+                );
+                Assert.That(stack, Is.Not.Null, "A captured trace must expose its disclosure.");
+                stack.value = true;
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                List<VisualElement> rows = stack
+                    .Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.DetailsStackFrameRowClassName
+                    )
+                    .ToList();
+                Assert.That(rows.Count, Is.EqualTo(2), "Both one-line frames must be visible.");
+                Label first = rows[0].Q<Label>();
+                Label second = rows[1].Q<Label>();
+                Assert.That(first, Is.Not.Null, "The first frame must render its text.");
+                Assert.That(second, Is.Not.Null, "The second frame must render its text.");
+                Assert.That(
+                    first.worldBound.height,
+                    Is.LessThanOrEqualTo(first.resolvedStyle.fontSize * 1.5f),
+                    "The first compact-frame precondition must remain one rendered line."
+                );
+                Assert.That(
+                    second.worldBound.height,
+                    Is.LessThanOrEqualTo(second.resolvedStyle.fontSize * 1.5f),
+                    "The second compact-frame precondition must remain one rendered line."
+                );
+                Assert.That(rows[0].Q<Button>(), Is.Not.Null, "The first frame must render Open.");
+                Assert.That(rows[1].Q<Button>(), Is.Not.Null, "The second frame must render Open.");
+
+                float labelGap = second.worldBound.yMin - first.worldBound.yMax;
+                Assert.That(
+                    labelGap,
+                    Is.InRange(0f, 5f),
+                    $"Compact Open buttons must not add blank lines; measured gap was {labelGap}px."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
         /// <summary>
         /// Issue #344's second round: "We need to ideally be able to link/click the contexts."
         /// A context whose object is still alive selects and pings it; one whose object is gone
@@ -595,12 +769,12 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
-        /// Issue #344's second round: "The Component Diagnostics and other areas are not
-        /// resizable." Each capped panel now carries a drag handle, and a drag past the shipped
-        /// cap actually takes effect -- a `max-height` left in place would silently win.
+        /// Issue #344's final resize feedback asks for the entire lower log/details area to move,
+        /// rather than a nested stack-trace viewport. The outer divider and Component Diagnostics
+        /// each keep their useful drag handle.
         /// </summary>
         [Test]
-        public void CappedPanelsCarryAResizeHandleThatCanGrowThemPastTheirShippedCap()
+        public void LogDetailsDividerResizesTheWholeLowerPaneAndSurvivesARebuild()
         {
             // Pointer capture needs a real panel, so this drives the shown window.
             EditorWindow window = CreateTrackedEditorWindow();
@@ -640,15 +814,28 @@ namespace DxMessaging.Tests.Editor
                     Is.Not.Null,
                     "Component Diagnostics is the panel #344 named; it must be resizable."
                 );
-                VisualElement stackResizer = root.Q<VisualElement>(
-                    DxMessagingMessageMonitorWindow.DetailsStackResizerName
+                VisualElement detailsResizer = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneResizerName
                 );
-                Assert.That(stackResizer, Is.Not.Null, "The stack trace is capped too.");
+                Assert.That(
+                    detailsResizer,
+                    Is.Not.Null,
+                    "The divider must resize the entire details pane below the log."
+                );
+                Assert.That(
+                    root.Query<VisualElement>("dxmessaging-monitor-details-stack-resizer").First(),
+                    Is.Null,
+                    "The old nested stack-trace resizer made the middle of the pane move instead."
+                );
 
                 ScrollView componentScroll = root.Q<ScrollView>(
                     DxMessagingMessageMonitorWindow.ComponentScrollViewName
                 );
-                Assert.That(componentScroll, Is.Not.Null);
+                Assert.That(
+                    componentScroll,
+                    Is.Not.Null,
+                    "Component Diagnostics must expose its scrolling resize target."
+                );
                 Assert.That(
                     componentScroll.style.maxHeight.value.value,
                     Is.EqualTo(180f),
@@ -685,29 +872,214 @@ namespace DxMessaging.Tests.Editor
                         + "drag would not survive layout."
                 );
 
-                // The dragged height has to survive the rebuild every filter keystroke causes, for
-                // the same reason the disclosures remember whether they were open.
-                float dragged = componentScroll.style.height.value.value;
+                VisualElement detailsPane = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneName
+                );
+                Assert.That(
+                    detailsPane,
+                    Is.Not.Null,
+                    "The selected snapshot row must render its details pane."
+                );
+                VisualElement detailsSlot = detailsPane.parent;
+                float initialDetailsHeight = detailsSlot.resolvedStyle.height;
+                DragResizeHandle(detailsResizer, deltaY: -140f);
+                float draggedDetailsHeight = detailsSlot.style.height.value.value;
+                Assert.That(
+                    draggedDetailsHeight,
+                    Is.GreaterThan(initialDetailsHeight),
+                    "Dragging the divider upward must grow the whole details area."
+                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+                Assert.That(
+                    detailsPane.worldBound.height,
+                    Is.EqualTo(detailsSlot.worldBound.height).Within(1f),
+                    "The bordered details pane must fill the complete area moved by the divider."
+                );
+
+                // Both dragged heights have to survive the rebuild every filter keystroke causes.
+                float draggedComponentHeight = componentScroll.style.height.value.value;
                 TextField filter = root.Q<TextField>(
                     DxMessagingMessageMonitorWindow.FilterFieldName
                 );
-                Assert.That(filter, Is.Not.Null);
+                Assert.That(filter, Is.Not.Null, "Snapshot mode must render its filter field.");
                 filter.value = "Sample";
 
                 ScrollView rebuiltScroll = root.Q<ScrollView>(
                     DxMessagingMessageMonitorWindow.ComponentScrollViewName
                 );
-                Assert.That(rebuiltScroll, Is.Not.Null);
+                Assert.That(
+                    rebuiltScroll,
+                    Is.Not.Null,
+                    "Filtering must rebuild Component Diagnostics with its scroll target."
+                );
                 Assert.That(
                     rebuiltScroll.style.height.value.value,
-                    Is.EqualTo(dragged),
+                    Is.EqualTo(draggedComponentHeight),
                     "A filter keystroke rebuilds this section; the height a reader dragged must come "
                         + "back with it."
+                );
+                VisualElement rebuiltDetailsPane = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneName
+                );
+                Assert.That(
+                    rebuiltDetailsPane,
+                    Is.Not.Null,
+                    "Filtering must rebuild the selected snapshot details pane."
+                );
+                Assert.That(
+                    rebuiltDetailsPane.parent.style.height.value.value,
+                    Is.EqualTo(draggedDetailsHeight),
+                    "The shared log/details divider must keep the reader's height after filtering."
                 );
             }
             finally
             {
                 EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        [Test]
+        public void RememberedTallDetailsPaneStartsItsNextDragFromTheVisibleShortWindowHeight()
+        {
+            EditorWindow window = CreateTrackedEditorWindow();
+            try
+            {
+                window.position = new Rect(0f, 0f, 420f, 320f);
+                EditorWindowTestUtility.ShowWindow(window);
+                VisualElement root = window.rootVisualElement;
+                root.style.width = 420f;
+                root.style.height = 320f;
+                float rememberedHeight = 0f;
+
+                DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                    root,
+                    new MessageMonitorSnapshot(
+                        diagnosticsEnabled: true,
+                        capacity: 8,
+                        entries: new[]
+                        {
+                            new MessageMonitorEntry(
+                                nameof(OlderMessage),
+                                "Context: Player",
+                                CapturedStackTrace
+                            ),
+                        }
+                    ),
+                    MessageMonitorViewState.Default,
+                    initialDetailsPaneHeight: DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight,
+                    onDetailsPaneHeightChanged: height => rememberedHeight = height
+                );
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    root.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                VisualElement detailsPane = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneName
+                );
+                Assert.That(
+                    detailsPane,
+                    Is.Not.Null,
+                    "A remembered height must still render the snapshot details pane."
+                );
+                VisualElement detailsSlot = detailsPane.parent;
+                VisualElement divider = root.Q<VisualElement>(
+                    DxMessagingMessageMonitorWindow.DetailsPaneResizerName
+                );
+                Assert.That(
+                    divider,
+                    Is.Not.Null,
+                    "A remembered height must still render the snapshot divider."
+                );
+                float visibleHeight = detailsSlot.resolvedStyle.height;
+                Assert.That(
+                    visibleHeight,
+                    Is.LessThan(DxMessagingMessageMonitorWindow.DetailsPaneResizeMaxHeight),
+                    "The short window must constrain the remembered tall-pane request."
+                );
+                Assert.That(
+                    divider.worldBound.yMin,
+                    Is.GreaterThanOrEqualTo(root.worldBound.yMin - 0.5f),
+                    "The constrained snapshot divider must stay inside the short window."
+                );
+                Assert.That(
+                    detailsSlot.worldBound.yMax,
+                    Is.LessThanOrEqualTo(root.worldBound.yMax + 0.5f),
+                    "The constrained snapshot details pane must stay inside the short window."
+                );
+
+                DragResizeHandle(divider, deltaY: -20f);
+
+                Assert.That(
+                    rememberedHeight,
+                    Is.EqualTo(visibleHeight + 20f).Within(1f),
+                    "The first new drag must start from the visible height, not the hidden 900px request."
+                );
+            }
+            finally
+            {
+                EditorWindowTestUtility.CloseWindow(window);
+            }
+        }
+
+        [Test]
+        public void WindowRestoresTheSharedDetailsPaneHeightAfterCloseAndReopen()
+        {
+            const float RememberedHeight = 237f;
+            string preferenceKey = DxMessagingMessageMonitorWindow.DetailsPaneHeightPreferenceKey;
+            bool hadPreviousValue = EditorPrefs.HasKey(preferenceKey);
+            float previousValue = EditorPrefs.GetFloat(preferenceKey, 0f);
+            FieldInfo heightField = typeof(DxMessagingMessageMonitorWindow).GetField(
+                "_detailsPaneHeight",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            MethodInfo rememberHeight = typeof(DxMessagingMessageMonitorWindow).GetMethod(
+                "RememberDetailsPaneHeight",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(heightField, Is.Not.Null, "The window must retain the divider position.");
+            Assert.That(rememberHeight, Is.Not.Null, "The resize callback must update the window.");
+
+            DxMessagingMessageMonitorWindow first = null;
+            DxMessagingMessageMonitorWindow reopened = null;
+            try
+            {
+                EditorPrefs.DeleteKey(preferenceKey);
+                first = ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
+                rememberHeight.Invoke(first, new object[] { RememberedHeight });
+                EditorWindowTestUtility.CloseWindow(first);
+                first = null;
+
+                reopened = ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
+                Assert.That(
+                    (float)heightField.GetValue(reopened),
+                    Is.EqualTo(RememberedHeight),
+                    "OnDisable must persist the dragged height and OnEnable must restore it."
+                );
+            }
+            finally
+            {
+                if (first != null)
+                {
+                    EditorWindowTestUtility.CloseWindow(first);
+                }
+                if (reopened != null)
+                {
+                    EditorWindowTestUtility.CloseWindow(reopened);
+                }
+                if (hadPreviousValue)
+                {
+                    EditorPrefs.SetFloat(preferenceKey, previousValue);
+                }
+                else
+                {
+                    EditorPrefs.DeleteKey(preferenceKey);
+                }
             }
         }
 
