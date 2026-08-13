@@ -36,7 +36,6 @@ namespace DxMessaging.Tests.Runtime.Core
     [TestFixture]
     public sealed class TokenInterceptorBusRoutingTests
     {
-        private const int OwnerInstanceId = 23;
         private const int ContextInstanceId = 29;
 
         [SetUp]
@@ -57,7 +56,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            using TokenScope scope = TokenScope.Create();
+            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create();
             InstanceId context = new(ContextInstanceId);
             int intercepted = 0;
 
@@ -107,7 +106,7 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void InterceptorsStagedWhileDisabledLandOnTokenBusAtEnable()
         {
-            using TokenScope scope = TokenScope.Create(enable: false);
+            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(enable: false);
             InstanceId context = new(ContextInstanceId);
             int untargetedIntercepted = 0;
             int targetedIntercepted = 0;
@@ -195,7 +194,10 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType originalBus = new();
             BusType retargetedBus = new();
-            using TokenScope scope = TokenScope.Create(enable: false, bus: originalBus);
+            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(
+                enable: false,
+                bus: originalBus
+            );
             int intercepted = 0;
 
             using (
@@ -260,7 +262,10 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             BusType originalBus = new();
             BusType retargetedBus = new();
-            using TokenScope scope = TokenScope.Create(enable: true, bus: originalBus);
+            using TokenBusRoutingScope scope = TokenBusRoutingScope.Create(
+                enable: true,
+                bus: originalBus
+            );
             int intercepted = 0;
 
             using (
@@ -324,57 +329,58 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleBroadcastMessage broadcast = new();
             broadcast.EmitBroadcast(context, messageBus);
         }
+    }
 
-        /// <summary>
-        /// Pairs a fresh isolated <see cref="BusType"/>, an active
-        /// <see cref="MessageHandler"/> with NO default bus, and a
-        /// <see cref="MessageRegistrationToken"/> bound to that bus so the token's
-        /// bus binding is the only route to the custom bus.
-        /// </summary>
-        private sealed class TokenScope : IDisposable
+    /// <summary>
+    /// Pairs an isolated bus with an active handler that has no default bus and a token bound to
+    /// that bus. Routing fixtures share this scope so the token binding is their only custom-bus
+    /// route.
+    /// </summary>
+    internal sealed class TokenBusRoutingScope : IDisposable
+    {
+        private const int OwnerInstanceId = 23;
+        private bool _disposed;
+
+        internal IMessageBus Bus { get; }
+
+        internal MessageHandler Handler { get; }
+
+        internal MessageRegistrationToken Token { get; }
+
+        private TokenBusRoutingScope(
+            IMessageBus bus,
+            MessageHandler handler,
+            MessageRegistrationToken token
+        )
         {
-            private bool _disposed;
+            Bus = bus;
+            Handler = handler;
+            Token = token;
+        }
 
-            internal BusType Bus { get; }
-
-            internal MessageHandler Handler { get; }
-
-            internal MessageRegistrationToken Token { get; }
-
-            private TokenScope(BusType bus, MessageHandler handler, MessageRegistrationToken token)
+        internal static TokenBusRoutingScope Create(bool enable = true, IMessageBus bus = null)
+        {
+            IMessageBus resolvedBus = bus ?? new BusType();
+            MessageHandler handler = new(new InstanceId(OwnerInstanceId)) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, resolvedBus);
+            if (enable)
             {
-                Bus = bus;
-                Handler = handler;
-                Token = token;
+                token.Enable();
             }
 
-            internal static TokenScope Create(bool enable = true, BusType bus = null)
-            {
-                BusType resolvedBus = bus ?? new BusType();
-                MessageHandler handler = new(new InstanceId(OwnerInstanceId)) { active = true };
-                MessageRegistrationToken token = MessageRegistrationToken.Create(
-                    handler,
-                    resolvedBus
-                );
-                if (enable)
-                {
-                    token.Enable();
-                }
+            return new TokenBusRoutingScope(resolvedBus, handler, token);
+        }
 
-                return new TokenScope(resolvedBus, handler, token);
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
             }
 
-            public void Dispose()
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
-                Token.Dispose();
-                Handler.active = false;
-            }
+            _disposed = true;
+            Token.Dispose();
+            Handler.active = false;
         }
     }
 }

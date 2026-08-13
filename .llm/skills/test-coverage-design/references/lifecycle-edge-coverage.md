@@ -25,28 +25,29 @@ deregistration, interceptor / post-processor pipeline) is expected to keep
 this scenario list green. New dispatch behavior must add scenarios when the
 mechanism it introduces is not already covered.
 
-| Scenario                                            | Pinned by                                      | Notes                                                                |
-| --------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
-| `SceneUnloadMidDispatchDrainsInFlightEmission`      | `LifecycleEdgeCasesTests`                      | Handler triggers `SceneManager.UnloadSceneAsync` from inside body.   |
-| `SceneTransitionWithDontDestroyOnLoad`              | `LifecycleEdgeCasesTests`                      | DDOL host survives an additive scene unload and keeps receiving.     |
-| `RegisterDuringSceneLoadCallback`                   | `LifecycleEdgeCasesTests`                      | `SceneManager.sceneLoaded` callback registers a handler.             |
-| `PrefabPoolingEnableDisableCycles`                  | `LifecycleEdgeCasesTests` (with `LeakWatcher`) | 100-cycle SetActive churn; bus must not leak registrations.          |
-| `TokenDisableMidDispatch`                           | `LifecycleEdgeCasesTests`                      | Snapshot semantics: B still runs after A disables the token.         |
-| `TokenReEnableMidDispatch`                          | `LifecycleEdgeCasesTests`                      | Re-enable mid-dispatch does not retroactively join current emission. |
-| `EmitOnEmptyBusIsSilentNoOp`                        | `LifecycleEdgeCasesTests`                      | Emit with zero handlers must not throw or perturb counters.          |
-| `EmitImmediatelyAfterResetIsSilentNoOp`             | `LifecycleEdgeCasesTests`                      | Reset-generation guard: pre-reset handlers must NOT fire.            |
-| `OnApplicationQuitDrainsCleanly`                    | `LifecycleEdgeCasesTests` (with `LeakWatcher`) | Quit must not throw and must not leak registrations.                 |
-| `HostDestroyMidDispatchDoesNotCrash`                | `LifecycleEdgeCasesTests`                      | `Object.Destroy(host)` from a handler must not crash dispatch.       |
-| `CrossKindReentrancyChainCompletes`                 | `ReentrantEmissionExtendedTests`               | All 6 (outer, inner) cross-kind permutations.                        |
-| `DeepRecursion10Levels`                             | `ReentrantEmissionExtendedTests`               | Bounded self-recursion plus `IMessageBus.EmissionId` invariant.      |
-| `ReentrantUnsubscribeThenResubscribeSelf`           | `ReentrantEmissionExtendedTests`               | Snapshot semantics for self-modifying handlers.                      |
-| `NestedHandlerThrowsDuringReentrantEmit`            | `ReentrantEmissionExtendedTests`               | Inner throw aborts outer trailing handlers consistently.             |
-| `ReentrantInterceptorVeto`                          | `ReentrantEmissionExtendedTests`               | Inner vetoed re-emit; outer trailing handler still runs.             |
-| `InterceptorMutationDuringReemitObservesFreshState` | `ReentrantEmissionExtendedTests`               | Interceptor sees fresh state on re-emit, no carry-over.              |
+| Scenario                                                      | Pinned by                                      | Notes                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
+| `SceneUnloadMidDispatchDrainsInFlightEmission`                | `LifecycleEdgeCasesTests`                      | Handler triggers `SceneManager.UnloadSceneAsync` from inside body.   |
+| `SceneTransitionWithDontDestroyOnLoad`                        | `LifecycleEdgeCasesTests`                      | DDOL host survives an additive scene unload and keeps receiving.     |
+| `RegisterDuringSceneLoadCallback`                             | `LifecycleEdgeCasesTests`                      | `SceneManager.sceneLoaded` callback registers a handler.             |
+| `PrefabPoolingEnableDisableCycles`                            | `LifecycleEdgeCasesTests` (with `LeakWatcher`) | 100-cycle SetActive churn; bus must not leak registrations.          |
+| `TokenDisableMidDispatch`                                     | `LifecycleEdgeCasesTests`                      | Snapshot semantics: B still runs after A disables the token.         |
+| `TokenReEnableMidDispatch`                                    | `LifecycleEdgeCasesTests`                      | Re-enable mid-dispatch does not retroactively join current emission. |
+| `EmitOnEmptyBusIsSilentNoOp`                                  | `LifecycleEdgeCasesTests`                      | Emit with zero handlers must not throw or perturb counters.          |
+| `EmitImmediatelyAfterResetIsSilentNoOp`                       | `LifecycleEdgeCasesTests`                      | Reset-generation guard: pre-reset handlers must NOT fire.            |
+| `ResetFromInterceptorStopsSnapshotAndAllowsFreshRegistration` | `MutationInterceptorTests`                     | Reset stops copied interceptors and the handler phase.               |
+| `OnApplicationQuitDrainsCleanly`                              | `LifecycleEdgeCasesTests` (with `LeakWatcher`) | Quit must not throw and must not leak registrations.                 |
+| `HostDestroyMidDispatchDoesNotCrash`                          | `LifecycleEdgeCasesTests`                      | `Object.Destroy(host)` from a handler must not crash dispatch.       |
+| `CrossKindReentrancyChainCompletes`                           | `ReentrantEmissionExtendedTests`               | All 6 (outer, inner) cross-kind permutations.                        |
+| `DeepRecursion10Levels`                                       | `ReentrantEmissionExtendedTests`               | Bounded self-recursion plus `IMessageBus.EmissionId` invariant.      |
+| `ReentrantUnsubscribeThenResubscribeSelf`                     | `ReentrantEmissionExtendedTests`               | Snapshot semantics for self-modifying handlers.                      |
+| `NestedHandlerThrowsDuringReentrantEmit`                      | `ReentrantEmissionExtendedTests`               | Inner throw aborts outer trailing handlers consistently.             |
+| `ReentrantInterceptorVeto`                                    | `ReentrantEmissionExtendedTests`               | Inner vetoed re-emit; outer trailing handler still runs.             |
+| `InterceptorMutationDuringReemitObservesFreshState`           | `ReentrantEmissionExtendedTests`               | Interceptor sees fresh state on re-emit, no carry-over.              |
 
 ## Where the Canonical Fixtures Live
 
-Two fixtures, both parameterized by `MessageScenario`:
+Three fixtures, all parameterized by `MessageScenario`:
 
 - `Tests/Runtime/Core/LifecycleEdgeCasesTests.cs` -- destruction, scene
   loading, token disable / re-enable, post-Reset, OnApplicationQuit,
@@ -54,6 +55,8 @@ Two fixtures, both parameterized by `MessageScenario`:
 - `Tests/Runtime/Core/ReentrantEmissionExtendedTests.cs` -- cross-kind
   reentrancy, deep recursion, self-resubscribe, nested-throw, interceptor
   veto, interceptor mutation. Default category (no gating).
+- `Tests/Runtime/Core/MutationInterceptorTests.cs` -- interceptor mutation and
+  reset from the interceptor phase. Default category (no gating).
 
 The supporting `LeakWatcher` utility lives at
 `Tests/Runtime/TestUtilities/LeakWatcher.cs`. See

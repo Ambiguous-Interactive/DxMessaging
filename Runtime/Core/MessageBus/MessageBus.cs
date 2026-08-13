@@ -5138,6 +5138,7 @@ namespace DxMessaging.Core.MessageBus
                 return true;
             }
 
+            long resetGeneration = _resetGeneration;
             try
             {
                 IList<List<object>> prioritizedInterceptors = interceptorHandlers.Values;
@@ -5152,7 +5153,7 @@ namespace DxMessaging.Core.MessageBus
                         UntargetedInterceptor<T> typedTransformer = DxUnsafe.As<
                             UntargetedInterceptor<T>
                         >(interceptorObjects[i]);
-                        if (!typedTransformer(ref message))
+                        if (!typedTransformer(ref message) || _resetGeneration != resetGeneration)
                         {
                             return false;
                         }
@@ -5161,7 +5162,10 @@ namespace DxMessaging.Core.MessageBus
             }
             finally
             {
-                _innerInterceptorsStack.Push(interceptorObjects);
+                if (_resetGeneration == resetGeneration)
+                {
+                    _innerInterceptorsStack.Push(interceptorObjects);
+                }
             }
 
             return true;
@@ -5180,6 +5184,7 @@ namespace DxMessaging.Core.MessageBus
                 return true;
             }
 
+            long resetGeneration = _resetGeneration;
             try
             {
                 IList<List<object>> prioritizedInterceptors = interceptorHandlers.Values;
@@ -5194,7 +5199,10 @@ namespace DxMessaging.Core.MessageBus
                         TargetedInterceptor<T> typedTransformer = DxUnsafe.As<
                             TargetedInterceptor<T>
                         >(interceptorObjects[i]);
-                        if (!typedTransformer(ref target, ref message))
+                        if (
+                            !typedTransformer(ref target, ref message)
+                            || _resetGeneration != resetGeneration
+                        )
                         {
                             return false;
                         }
@@ -5203,7 +5211,10 @@ namespace DxMessaging.Core.MessageBus
             }
             finally
             {
-                _innerInterceptorsStack.Push(interceptorObjects);
+                if (_resetGeneration == resetGeneration)
+                {
+                    _innerInterceptorsStack.Push(interceptorObjects);
+                }
             }
 
             return true;
@@ -5222,6 +5233,7 @@ namespace DxMessaging.Core.MessageBus
                 return true;
             }
 
+            long resetGeneration = _resetGeneration;
             try
             {
                 IList<List<object>> prioritizedInterceptors = interceptorHandlers.Values;
@@ -5236,7 +5248,10 @@ namespace DxMessaging.Core.MessageBus
                         BroadcastInterceptor<T> typedTransformer = DxUnsafe.As<
                             BroadcastInterceptor<T>
                         >(interceptorObjects[i]);
-                        if (!typedTransformer(ref source, ref message))
+                        if (
+                            !typedTransformer(ref source, ref message)
+                            || _resetGeneration != resetGeneration
+                        )
                         {
                             return false;
                         }
@@ -5245,7 +5260,10 @@ namespace DxMessaging.Core.MessageBus
             }
             finally
             {
-                _innerInterceptorsStack.Push(interceptorObjects);
+                if (_resetGeneration == resetGeneration)
+                {
+                    _innerInterceptorsStack.Push(interceptorObjects);
+                }
             }
 
             return true;

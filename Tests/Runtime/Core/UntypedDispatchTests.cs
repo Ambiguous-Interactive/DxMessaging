@@ -4,11 +4,13 @@ namespace DxMessaging.Tests.Runtime.Core
     using System;
     using System.Collections.Generic;
     using DxMessaging.Core;
+    using DxMessaging.Core.Attributes;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
+    using BusType = DxMessaging.Core.MessageBus.MessageBus;
 
     public sealed class UntypedDispatchTests : MessagingTestBase
     {
@@ -114,6 +116,29 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        [Test]
+        public void FirstUntypedDispatchUsesGeneratedAotBridge(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            IMessageBus bus = new BusType();
+            InstanceId target = new(0x6A17_3001);
+            InstanceId source = new(0x6A17_3002);
+
+            Assert.DoesNotThrow(
+                () => DispatchFirstGeneratedMessage(bus, scenario.Kind, target, source),
+                "[{0}] A source-generated message must support its first-ever untyped dispatch without a prior registration or typed emit.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                bus.EmissionId,
+                "[{0}] The generated bridge must enter the typed dispatch path exactly once.",
+                scenario.Kind
+            );
+        }
+
         public readonly struct MultiKindMessage
             : IUntargetedMessage,
                 ITargetedMessage,
@@ -201,6 +226,38 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
             }
         }
+
+        private static void DispatchFirstGeneratedMessage(
+            IMessageBus bus,
+            MessageKind kind,
+            InstanceId target,
+            InstanceId source
+        )
+        {
+            switch (kind)
+            {
+                case MessageKind.Untargeted:
+                    bus.UntypedUntargetedBroadcast(new ColdUntargetedMessage());
+                    break;
+                case MessageKind.Targeted:
+                    bus.UntypedTargetedBroadcast(target, new ColdTargetedMessage());
+                    break;
+                case MessageKind.Broadcast:
+                    bus.UntypedSourcedBroadcast(source, new ColdBroadcastMessage());
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+            }
+        }
     }
+
+    [DxUntargetedMessage]
+    internal readonly partial struct ColdUntargetedMessage { }
+
+    [DxTargetedMessage]
+    internal readonly partial struct ColdTargetedMessage { }
+
+    [DxBroadcastMessage]
+    internal readonly partial struct ColdBroadcastMessage { }
 }
 #endif

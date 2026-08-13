@@ -171,6 +171,110 @@ namespace DxMessaging.Tests.Runtime.Core
             token.RemoveRegistration(outerHandle);
         }
 
+        [Test]
+        public void PostProcessorCrossKindReentrancyRestoresOuterEmissionId(
+            [ValueSource(nameof(CrossKindReentrancyPairs))] CrossKindReentrancyCase pair
+        )
+        {
+            using LeakWatcher watcher = LeakWatcher.Watch(pair.ToString());
+            MessageScenario outerScenario = pair.Outer;
+            MessageScenario innerScenario = pair.Inner;
+            GameObject host = new(
+                nameof(PostProcessorCrossKindReentrancyRestoresOuterEmissionId)
+                    + outerScenario.Kind
+                    + innerScenario.Kind,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
+            MessageRegistrationToken token = GetToken(component);
+            InstanceId hostId = host;
+            IMessageBus bus = MessageHandler.MessageBus;
+
+            long outerBeforeNested = -1;
+            long nested = -1;
+            long outerAfterNested = -1;
+            long trailingOuter = -1;
+            List<string> trace = new(4);
+
+            try
+            {
+                _ = RegisterCountingHandler(outerScenario, token, hostId, () => { });
+                _ = RegisterCountingHandler(
+                    innerScenario,
+                    token,
+                    hostId,
+                    () =>
+                    {
+                        trace.Add("nested-handler");
+                        nested = bus.EmissionId;
+                    }
+                );
+                _ = ScenarioCallbacks.RegisterCountingPostProcessor(
+                    outerScenario,
+                    token,
+                    hostId,
+                    () =>
+                    {
+                        trace.Add("outer-before");
+                        outerBeforeNested = bus.EmissionId;
+                        EmitForScenario(innerScenario, hostId);
+                        outerAfterNested = bus.EmissionId;
+                        trace.Add("outer-after");
+                    },
+                    priority: 0
+                );
+                _ = ScenarioCallbacks.RegisterCountingPostProcessor(
+                    outerScenario,
+                    token,
+                    hostId,
+                    () =>
+                    {
+                        trace.Add("outer-trailing");
+                        trailingOuter = bus.EmissionId;
+                    },
+                    priority: 1
+                );
+
+                EmitForScenario(outerScenario, hostId);
+
+                CollectionAssert.AreEqual(
+                    new[] { "outer-before", "nested-handler", "outer-after", "outer-trailing" },
+                    trace,
+                    "[{0}] Cross-kind post-processor reentrancy order changed.",
+                    pair
+                );
+                Assert.AreNotEqual(
+                    outerBeforeNested,
+                    nested,
+                    "[{0}] A nested emission must receive a distinct EmissionId.",
+                    pair
+                );
+                Assert.AreEqual(
+                    outerBeforeNested + 1,
+                    nested,
+                    "[{0}] The synchronous nested emission must immediately follow the outer emission.",
+                    pair
+                );
+                Assert.AreEqual(
+                    outerBeforeNested,
+                    outerAfterNested,
+                    "[{0}] The outer post-processor must regain its scoped EmissionId after the nested emission returns.",
+                    pair
+                );
+                Assert.AreEqual(
+                    outerBeforeNested,
+                    trailingOuter,
+                    "[{0}] A trailing outer post-processor must observe the restored outer EmissionId.",
+                    pair
+                );
+            }
+            finally
+            {
+                token.UnregisterAll();
+            }
+        }
+
         /// <summary>
         /// Self-recursion bounded at <see cref="DeepRecursionLimit"/> levels.
         /// Cross-checks invocation count via the test-side <c>depth</c>

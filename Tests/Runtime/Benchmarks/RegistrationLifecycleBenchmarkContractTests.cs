@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Reflection;
     using NUnit.Framework;
 
     public sealed class RegistrationLifecycleBenchmarkContractTests
@@ -143,6 +144,55 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     $"{operation}: scenario key must encode the calibrated cardinality."
                 );
             }
+        }
+
+        [Test]
+        public void PublishedDispatchAndAttributionUseSameSupportedMethodOrderBoundary()
+        {
+            MethodInfo dispatchMethod = typeof(DispatchThroughputBenchmarks).GetMethod(
+                nameof(DispatchThroughputBenchmarks.DispatchBenchmark)
+            );
+            MethodInfo attributionMethod = typeof(DispatchThroughputBenchmarks).GetMethod(
+                nameof(DispatchThroughputBenchmarks.DeregistrationAttributionBenchmark)
+            );
+
+            Assert.IsNotNull(dispatchMethod);
+            Assert.IsNotNull(attributionMethod);
+            Assert.AreEqual(typeof(DispatchThroughputBenchmarks), dispatchMethod.DeclaringType);
+            Assert.AreEqual(typeof(DispatchThroughputBenchmarks), attributionMethod.DeclaringType);
+
+            OrderAttribute dispatchOrder = dispatchMethod.GetCustomAttribute<OrderAttribute>();
+            OrderAttribute attributionOrder =
+                attributionMethod.GetCustomAttribute<OrderAttribute>();
+            Assert.IsNotNull(dispatchOrder);
+            Assert.IsNotNull(attributionOrder);
+            Assert.AreEqual(
+                DispatchThroughputBenchmarks.PublishedDispatchOrder,
+                dispatchOrder.Order
+            );
+            Assert.AreEqual(
+                DispatchThroughputBenchmarks.DeregistrationAttributionOrder,
+                attributionOrder.Order
+            );
+            Assert.Less(
+                dispatchOrder.Order,
+                attributionOrder.Order,
+                "Published dispatch windows must complete before high-cardinality attribution."
+            );
+
+            MethodInfo[] independentAttributionEntries = typeof(DeregistrationAttributionBenchmarks)
+                .GetMethods(
+                    BindingFlags.Public
+                        | BindingFlags.NonPublic
+                        | BindingFlags.Static
+                        | BindingFlags.Instance
+                )
+                .Where(method => method.GetCustomAttribute<TestAttribute>() != null)
+                .ToArray();
+            Assert.IsEmpty(
+                independentAttributionEntries,
+                "Attribution must not regain an independently scheduled benchmark fixture entry."
+            );
         }
 
         private static IEnumerable<TestCaseData> LifecycleOperationCases()

@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime
 {
     using System;
     using DxMessaging.Core;
+    using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
 
@@ -165,6 +166,20 @@ namespace DxMessaging.Tests.Runtime
                         priority
                     );
                 }
+                case MessageKind.TargetedWithoutTargeting:
+                {
+                    return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
+                        (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked(),
+                        priority: priority
+                    );
+                }
+                case MessageKind.BroadcastWithoutSource:
+                {
+                    return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
+                        (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked(),
+                        priority: priority
+                    );
+                }
                 default:
                 {
                     throw new ArgumentOutOfRangeException(
@@ -274,15 +289,17 @@ namespace DxMessaging.Tests.Runtime
                     return;
                 }
                 case MessageKind.Targeted:
+                case MessageKind.TargetedWithoutTargeting:
                 {
                     SimpleTargetedMessage message = new();
-                    ScenarioHarness.EmitTargeted(scenario, ref message, context, messageBus);
+                    message.EmitTargeted(context, messageBus);
                     return;
                 }
                 case MessageKind.Broadcast:
+                case MessageKind.BroadcastWithoutSource:
                 {
                     SimpleBroadcastMessage message = new();
-                    ScenarioHarness.EmitBroadcast(scenario, ref message, context, messageBus);
+                    message.EmitBroadcast(context, messageBus);
                     return;
                 }
                 default:
