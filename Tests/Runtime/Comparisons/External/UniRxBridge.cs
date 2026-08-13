@@ -13,11 +13,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     /// so state never leaks between cases and the comparison stays fair against the other
     /// dedicated-container bridges. Global dispatch is <c>broker.Receive&lt;T&gt;().Subscribe</c>
     /// + <c>broker.Publish</c>; the struct scenario publishes a <see cref="ComparisonStructPayload"/>
-    /// through the generic broker (no boxing on the dispatch path). The same <c>int</c>
-    /// payload used by the zero-dependency bridges is reused for parity.
+    /// through the generic broker (no boxing on the dispatch path). Non-struct scenarios reuse
+    /// the same <c>int</c> payload as the zero-dependency bridges.
     ///
-    /// UniRx's MessageBroker is a flat global-by-type bus with no keyed routing, priority,
-    /// filtering, or post-processing hook, so those scenarios are declared unsupported.
+    /// UniRx's MessageBroker is a flat global-by-type bus with no keyed routing, priority, or
+    /// post-processing hook. Filtering uses UniRx's idiomatic <c>Where</c> operator.
     /// </summary>
     public sealed class UniRxBridge : IMessagingTechBridge
     {
@@ -34,6 +34,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         private FanOut _fanOut;
 
         private MessageBroker _broker;
+        private IObservable<int> _intStream;
         private readonly List<IDisposable> _subscriptions = new();
 
         // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
@@ -46,6 +47,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 case ComparisonScenario.GlobalToOneSubscriber:
                 case ComparisonScenario.GlobalToManySubscribers:
+                case ComparisonScenario.FilteredDispatch:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                 case ComparisonScenario.StructMessageNoBoxing:
                     return true;
@@ -85,20 +87,27 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             switch (scenario)
             {
                 case ComparisonScenario.GlobalToOneSubscriber:
-                    _subscriptions.Add(_broker.Receive<int>().Subscribe(Handle));
+                    _intStream = _broker.Receive<int>();
+                    _subscriptions.Add(_intStream.Subscribe(Handle));
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
                     // Genuinely-distinct subscribers model 16 independent listeners; this keeps
                     // every bridge's fan-out immune to value-equality dedup. See FanOut.
                     _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
+                    _intStream = _broker.Receive<int>();
                     foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
-                        _subscriptions.Add(_broker.Receive<int>().Subscribe(subscriber.Handle));
+                        _subscriptions.Add(_intStream.Subscribe(subscriber.Handle));
                     }
+                    return;
+                case ComparisonScenario.FilteredDispatch:
+                    _intStream = _broker.Receive<int>().Where(Allow);
+                    _subscriptions.Add(_intStream.Subscribe(Handle));
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     // No persistent registration; EmitOnce performs one subscribe/dispose
-                    // cycle using the cached handler below.
+                    // cycle using the cached stream and handler below.
+                    _intStream = _broker.Receive<int>();
                     _churnHandler = Handle;
                     return;
                 case ComparisonScenario.StructMessageNoBoxing:
@@ -121,7 +130,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             switch (_scenario)
             {
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                    IDisposable subscription = _broker.Receive<int>().Subscribe(_churnHandler);
+                    IDisposable subscription = _intStream.Subscribe(_churnHandler);
                     subscription.Dispose();
                     _progress++;
                     return;
@@ -143,8 +152,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             _subscriptions.Clear();
             _broker?.Dispose();
             _broker = null;
+            _intStream = null;
             _churnHandler = null;
             _fanOut = null;
+        }
+
+        private static bool Allow(int message)
+        {
+            return true;
         }
     }
 #endif

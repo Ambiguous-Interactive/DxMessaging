@@ -48,6 +48,18 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 return;
             }
 
+            long invocationsPerOperation = bridge.InvocationsPerOperation(scenario);
+            long canonicalInvocations = ComparisonScenarios.ExpectedInvocationsPerOperation(
+                scenario
+            );
+            Assert.AreEqual(
+                canonicalInvocations,
+                invocationsPerOperation,
+                $"{bridge.TechName} '{ComparisonScenarios.DisplayName(scenario)}' declares "
+                    + $"{invocationsPerOperation} invocation(s) per operation, but the published "
+                    + $"scenario requires the canonical fan-out {canonicalInvocations}."
+            );
+
             bridge.Prepare(scenario);
             // Capture the warm-up count ONCE so the warm-up loop and the fan-out
             // assertion below stay coupled: expectedInvocations adds warmupEmits, so if
@@ -77,7 +89,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             // BatchSize and the exact-equality fan-out check fails for every case. This stays
             // an EXACT correctness check (no tolerance): it must still catch a library that
             // drops, duplicates, or dedups any message.
-            long invocationsPerOperation = bridge.InvocationsPerOperation(scenario);
             long expectedInvocations =
                 invocationsPerOperation * (warmupEmits + measurement.TotalEmittedOperations);
             long observedInvocations = bridge.ProgressMarker;

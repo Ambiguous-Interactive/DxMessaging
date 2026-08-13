@@ -5,19 +5,21 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
     using System;
     using System.Collections.Generic;
     using DxMessaging.Tests.Runtime.Comparisons;
+    using global::UnityAtoms;
     using global::UnityAtoms.BaseAtoms;
     using UnityEngine;
+
+    internal sealed class ComparisonStructAtomEvent : AtomEvent<ComparisonStructPayload> { }
 
     /// <summary>
     /// Bridges Unity Atoms using its idiomatic <see cref="IntEvent"/> ScriptableObject event
     /// asset. Global dispatch is <c>event.Register(Action&lt;int&gt;)</c> + <c>event.Raise(int)</c>
     /// on a single asset; keyed dispatch uses 16 distinct <see cref="IntEvent"/> assets and
-    /// raises exactly one. All created assets are destroyed in <see cref="Dispose"/>.
-    ///
-    /// The boxing-free struct scenario is unsupported because Unity Atoms' idiomatic event
-    /// assets are concrete per-type ScriptableObjects (e.g. <see cref="IntEvent"/>) with no
-    /// idiomatic generic <c>ComparisonStructPayload</c>-carrying event, so faking it with an
-    /// <c>int</c> would be a non-apples-to-apples datapoint.
+    /// raises exactly one. Struct dispatch uses a local
+    /// <see cref="AtomEvent{T}"/> specialization for <see cref="ComparisonStructPayload"/>.
+    /// Every event disables replay buffering so the benchmark measures dispatch rather than
+    /// retaining the last payload, and all created assets are destroyed synchronously in
+    /// <see cref="Dispose"/>.
     ///
     /// Sixteen-subscriber fan-out registers 16 DISTINCT handler delegates (rather than the
     /// same delegate 16 times) so the fan-out count is exactly 16 regardless of whether the
@@ -45,7 +47,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         private FanOut _fanOut;
 
         private IntEvent _event;
-        private readonly List<IntEvent> _events = new();
+        private ComparisonStructAtomEvent _structEvent;
+        private readonly List<ScriptableObject> _events = new();
+
+        internal IReadOnlyList<ScriptableObject> CreatedEvents => _events;
 
         // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
         // event register/unregister cost rather than per-cycle delegate allocation.
@@ -59,6 +64,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                 case ComparisonScenario.GlobalToManySubscribers:
                 case ComparisonScenario.KeyedToOneOfMany:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
+                case ComparisonScenario.StructMessageNoBoxing:
                     return true;
                 default:
                     return false;
@@ -74,7 +80,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         public Type DispatchedPayloadType(ComparisonScenario scenario)
         {
-            return Supports(scenario) ? typeof(int) : null;
+            if (!Supports(scenario))
+            {
+                return null;
+            }
+
+            return scenario == ComparisonScenario.StructMessageNoBoxing
+                ? typeof(ComparisonStructPayload)
+                : typeof(int);
         }
 
         public void Prepare(ComparisonScenario scenario)
@@ -118,8 +131,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     _event = CreateEvent();
                     _churnHandler = Handle;
                     return;
+                case ComparisonScenario.StructMessageNoBoxing:
+                    _structEvent = CreateStructEvent();
+                    _structEvent.Register(HandleStruct);
+                    return;
                 default:
                     return;
+            }
+
+            void HandleStruct(ComparisonStructPayload value)
+            {
+                _progress++;
             }
         }
 
@@ -132,6 +154,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     _event.Unregister(_churnHandler);
                     _progress++;
                     return;
+                case ComparisonScenario.StructMessageNoBoxing:
+                    _structEvent.Raise(new ComparisonStructPayload(1));
+                    return;
                 default:
                     _event.Raise(DispatchKey);
                     return;
@@ -142,7 +167,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         {
             for (int index = _events.Count - 1; index >= 0; index--)
             {
-                IntEvent created = _events[index];
+                ScriptableObject created = _events[index];
                 if (created != null)
                 {
                     UnityEngine.Object.DestroyImmediate(created);
@@ -150,6 +175,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
             }
             _events.Clear();
             _event = null;
+            _structEvent = null;
             _churnHandler = null;
             _fanOut = null;
         }
@@ -157,6 +183,16 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         private IntEvent CreateEvent()
         {
             IntEvent created = ScriptableObject.CreateInstance<IntEvent>();
+            created.ReplayBufferSize = 0;
+            _events.Add(created);
+            return created;
+        }
+
+        private ComparisonStructAtomEvent CreateStructEvent()
+        {
+            ComparisonStructAtomEvent created =
+                ScriptableObject.CreateInstance<ComparisonStructAtomEvent>();
+            created.ReplayBufferSize = 0;
             _events.Add(created);
             return created;
         }

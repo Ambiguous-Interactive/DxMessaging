@@ -47,7 +47,7 @@
         "category": "performance",
         "tags": "performance, benchmarks, methodology, throughput, measurement, gc"
       },
-      "lineCount": 146,
+      "lineCount": 147,
       "references": [
         ".llm/skills/benchmark-methodology/references/benchmark-methodology-total-over-window.md",
         ".llm/skills/benchmark-methodology/references/benchmarks-run-in-highest-fidelity-scope.md",

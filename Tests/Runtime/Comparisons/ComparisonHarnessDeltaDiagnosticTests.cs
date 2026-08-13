@@ -11,6 +11,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// stays arithmetically exact and the defect is visible. These are pure-function tests
     /// (no measurement window), so they are plain fast tests, not PerfBench.
     /// </summary>
+    [Category("ComparisonContract")]
     public sealed class ComparisonHarnessDeltaDiagnosticTests
     {
         [Test]

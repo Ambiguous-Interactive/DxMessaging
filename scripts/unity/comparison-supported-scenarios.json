@@ -1,0 +1,28 @@
+{
+  "DxMessaging": [
+    "GlobalToOne",
+    "GlobalToMany",
+    "KeyedToOne",
+    "PriorityOrdered",
+    "Filtered",
+    "PostProcess",
+    "SubUnsub",
+    "StructNoBox"
+  ],
+  "MessagePipe": [
+    "GlobalToOne",
+    "GlobalToMany",
+    "KeyedToOne",
+    "Filtered",
+    "PostProcess",
+    "SubUnsub",
+    "StructNoBox"
+  ],
+  "UniRx": ["GlobalToOne", "GlobalToMany", "Filtered", "SubUnsub", "StructNoBox"],
+  "ZenjectSignalBus": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],
+  "UnityAtoms": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],
+  "ScriptableObject": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],
+  "UnityEvent": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],
+  "CsEvent": ["GlobalToOne", "GlobalToMany", "KeyedToOne", "SubUnsub", "StructNoBox"],
+  "UnitySendMessage": ["KeyedToOne"]
+}

@@ -56,11 +56,13 @@ through a fake event) or a boxed payload. `IMessagingTechBridge.DispatchedPayloa
 declares what the bridge actually dispatches, and the contract test
 `StructScenarioDispatchesNonPrimitiveStructPayload`
 (`ComparisonBridgeContract.AssertStructScenarioPayloadFidelity`) enforces it: a
-bridge that does not support the scenario must return null, a bridge that does
-must return a non-primitive, non-enum value type, and every non-DxMessaging
-bridge must dispatch exactly `ComparisonStructPayload`. Unity Atoms has no
-idiomatic boxing-free struct event, so it marks the struct scenario unsupported
-(`N/A`) rather than dispatching an `int`.
+bridge that does not support the scenario must return null, and every supporting
+bridge must dispatch exactly the same non-primitive, non-enum
+`ComparisonStructPayload`. The canonical payload implements DxMessaging's
+`IUntargetedMessage<ComparisonStructPayload>` contract, so DxMessaging does not need
+a cheaper substitute. Unity Atoms supports the scenario through a custom
+`AtomEvent<ComparisonStructPayload>`; using its generated concrete-event pattern is
+idiomatic and does not box the payload.
 
 ### Allocation honesty: measure idiomatic per-call cost, never hide it
 
@@ -93,55 +95,56 @@ cost", not "must be zero": Zenject's `SignalBus` boxes through its internal `obj
 routing and is measured honestly -- its non-zero count and bytes are its real cost,
 not an artifact.
 
-### Per-(tech, scenario) fan-out assertion
+### Per-(tech, scenario) progress and completeness assertions
 
-The harness asserts one result per (tech, scenario) pair so a dedup or a
-missing bridge registration fails the suite instead of silently shrinking the
-table.
+The harness checks each supported row while it runs. It compares the bridge's
+`InvocationsPerOperation` with the canonical scenario fan-out (16 for
+`GlobalToMany`, 4 for `PriorityOrdered`, and 1 otherwise), then verifies that the
+row made progress and delivered the expected invocations. Fast bridge contracts
+also pin the canonical fan-out and supported capability shape.
 
-```csharp
-foreach (IMessagingTechBridge bridge in bridges)
-{
-    foreach (ComparisonScenario scenario in ComparisonScenarios.All)
-    {
-        if (!bridge.Supports(scenario))
-        {
-            continue;
-        }
-        ComparisonResult result = harness.Run(bridge, scenario);
-        Assert.IsNotNull(
-            result,
-            $"Missing result for ({bridge.TechName}, {scenario}).");
-    }
-}
-```
+Those current-row checks cannot prove that the runner executed the complete
+matrix. The performance workflow extracts the published comparison IDs and runs
+`scripts/unity/require-comparison-rows.ps1`, which requires an exact match with
+the 46-row capability manifest in `scripts/unity/perf-scenarios.js`. Missing,
+extra, duplicate, and zero-row outputs all fail before reporting switches to
+trusted base code.
 
 ### Comparison vs dispatch topology
 
 The comparison matrix and the DxMessaging-only dispatch table answer different
 questions, so a comparison cell and its dispatch look-alike usually register a
-DIFFERENT topology and their DxMessaging numbers diverge -- often a lot. Only
-`GlobalToOne` and `StructNoBox` are true topology twins of a dispatch cell
-(`UntargetedFlood_OneHandler`): identical one-token / one-untargeted-handler
-shape, so their DxMessaging throughput must agree within noise. The rest differ on
-purpose: `PriorityOrdered` uses one token with four priorities where the dispatch
-twin uses four separate tokens; `GlobalToMany` fans out to 16 subscribers with no
-dispatch equivalent; `KeyedToOne` registers 16 targets and dispatches to one
-(selectivity), unlike the single-target dispatch cell. Do NOT "fix" a divergence by
-forcing the shapes equal -- that would destroy what each scenario measures. The
+DIFFERENT topology and their DxMessaging numbers diverge -- often a lot.
+`GlobalToOne` is the only true topology twin of a dispatch cell
+(`UntargetedFlood_OneHandler`). `StructNoBox` has the same one-token,
+one-untargeted-handler storage shape but uses the canonical
+`ComparisonStructPayload`, while the dispatch row uses `SimpleUntargetedMessage`.
+The rest differ on purpose: `PriorityOrdered` uses one token with four priorities
+where the dispatch twin uses four separate tokens; `GlobalToMany` fans out to 16
+subscribers with no dispatch equivalent; `KeyedToOne` registers 16 targets and
+dispatches to one (selectivity), unlike the single-target dispatch cell. Do NOT "fix"
+a divergence by forcing the shapes equal -- that would destroy what each scenario measures. The
 relationship is a single source of truth pinned by
 `ComparisonDispatchTopologyTests`, which fails the build if the DxMessaging
 fan-out, the referenced dispatch keys, or the scenario roster drift from the
 [methodology runbook table](../../../../docs/runbooks/perf-benchmark-methodology.md#comparison-vs-dispatch-deliberately-different-topologies).
 
-### Fresh state per case, not shared global state
+### Fresh state and process isolation
 
-A divergence is always topology, never leaked state. `ComparisonHarness.Run`
-builds a fresh bridge per (tech, scenario) via the factory and disposes it with
-`using`, so no subscriber, GameObject, ScriptableObject, or DI container survives
-into the next case; the DxMessaging path uses a fresh `new MessageBus()` per
-scenario. The fan-out assertion below is the tripwire: a leaked cross-case
-subscriber would make a later case over-count and fail it loudly.
+The published workflow builds internal benchmarks and comparisons into separate
+Standalone IL2CPP players. A high-cardinality internal diagnostic therefore cannot
+leave heap state behind for the matrix. `ComparisonHarness.Run` builds a fresh bridge
+per (tech, scenario) and disposes it with `using`. It does not force collections between
+rows; the dedicated player provides the clean process boundary without adding GC work to
+each case. MessagePipe resolves through its row-local service provider
+instead of assigning `GlobalMessagePipe`; Unity object bridges destroy row-local
+objects synchronously. The fan-out assertion catches current-row deduplication and
+fan-out mismatches; teardown contracts cover observable object and event cleanup.
+
+Comparison cases are scenario-major within each roster assembly, so related cells run
+closer together inside that roster. Assembly boundaries still separate parts of the
+full matrix. Use repeated runs with rotated technology order before claiming a close
+cross-library ranking; one pass does not prove temporal parity.
 
 ### Zero-dependency baselines always compile
 
@@ -159,7 +162,7 @@ built-in packages live. Bump a version or module THERE and nowhere else:
 ```json
 {
   "packages": {
-    "com.cysharp.messagepipe": "1.8.1",
+    "com.cysharp.messagepipe": "1.8.2",
     "com.neuecc.unirx": "7.1.0",
     "com.svermeulen.extenject": "9.2.0-stcf3"
   },
@@ -198,9 +201,11 @@ package) and never constrain a define the asmdef does not produce locally.
 
 - "I will fake the unsupported cell so the row is full." Render `N/A`; do not
   invent a capability.
-- "My library has no struct event, so I will dispatch an int for the struct
-  scenario." Mark it unsupported (`N/A`); never raise a primitive for
-  `StructMessageNoBoxing`. `DispatchedPayloadType` plus the
+- "My library has no built-in concrete struct event, so I will dispatch an int for
+  the struct scenario." Check whether its documented generic/custom-event extension
+  pattern supports the canonical payload first. Otherwise mark it unsupported
+  (`N/A`); never raise a primitive for `StructMessageNoBoxing`.
+  `DispatchedPayloadType` plus the
   `StructScenarioDispatchesNonPrimitiveStructPayload` contract test fail any
   bridge that claims the scenario while dispatching a primitive or boxed payload.
 - "I will bump the pin in the manifest only." Bump

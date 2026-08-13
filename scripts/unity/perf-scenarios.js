@@ -112,6 +112,8 @@ const COMPARISON_TECH_ORDER = [
 
 const COMPARISON_TECH_SET = new Set(COMPARISON_TECH_ORDER);
 
+const COMPARISON_SUPPORTED_SCENARIOS = require("./comparison-supported-scenarios.json");
+
 // Human-readable technology labels for the first matrix column.
 const COMPARISON_TECH_LABELS = {
   DxMessaging: "DxMessaging",
@@ -131,6 +133,12 @@ function buildComparisonScenarioId(techKey, scenarioKey) {
 
 const COMPARISON_SCENARIO_IDS = COMPARISON_TECH_ORDER.flatMap((techKey) =>
   COMPARISON_SCENARIO_ORDER.map((scenarioKey) => buildComparisonScenarioId(techKey, scenarioKey))
+);
+
+const COMPARISON_SUPPORTED_SCENARIO_IDS = COMPARISON_TECH_ORDER.flatMap((techKey) =>
+  COMPARISON_SUPPORTED_SCENARIOS[techKey].map((scenarioKey) =>
+    buildComparisonScenarioId(techKey, scenarioKey)
+  )
 );
 
 // Parse a comparison row scenario id ("Comparison_<TechKey>_<ScenarioKey>") into
@@ -189,6 +197,8 @@ module.exports = {
   COMPARISON_TECH_ORDER,
   COMPARISON_TECH_LABELS,
   COMPARISON_SCENARIO_IDS,
+  COMPARISON_SUPPORTED_SCENARIOS,
+  COMPARISON_SUPPORTED_SCENARIO_IDS,
   buildComparisonScenarioId,
   parseComparisonScenario,
   isComparisonScenario,

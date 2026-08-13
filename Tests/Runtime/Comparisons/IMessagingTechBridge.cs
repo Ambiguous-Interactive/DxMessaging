@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Comparisons
 {
     using System;
+    using DxMessaging.Core.Messages;
 
     /// <summary>
     /// A bridge benchmarks ONE messaging technology. A fresh instance is created per
@@ -50,21 +51,20 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// dispatch, allocate, or require Prepare. The fidelity contract asserts the
         /// StructMessageNoBoxing payload is a non-primitive value type (never int/float), so a
         /// bridge cannot mark the struct scenario Supported while secretly raising a boxed
-        /// primitive. Non-DxMessaging bridges that SUPPORT the struct scenario must return exactly
-        /// typeof(ComparisonStructPayload); scenarios they do not support return null. DxMessaging
-        /// returns its own IUntargetedMessage struct.
+        /// primitive. Every bridge that supports the struct scenario must return exactly
+        /// typeof(ComparisonStructPayload); scenarios they do not support return null.
         /// </summary>
         Type DispatchedPayloadType(ComparisonScenario scenario);
     }
 
     /// <summary>
-    /// Plain value type used by the non-DxMessaging bridges for the
+    /// Canonical value type used by every bridge for the
     /// <see cref="ComparisonScenario.StructMessageNoBoxing"/> scenario. Carrying this
     /// through a generic delegate (e.g. <c>Action&lt;ComparisonStructPayload&gt;</c>) avoids
     /// boxing, while carrying it through a non-generic/object channel forces a box; the
     /// allocation column then reveals which technology copies or boxes the payload.
     /// </summary>
-    public struct ComparisonStructPayload
+    public struct ComparisonStructPayload : IUntargetedMessage<ComparisonStructPayload>
     {
         public int Value;
 

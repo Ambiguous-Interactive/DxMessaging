@@ -113,11 +113,18 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
 
             long fanOut = bridge.InvocationsPerOperation(scenario);
+            long expectedFanOut = ComparisonScenarios.ExpectedInvocationsPerOperation(scenario);
             Assert.Greater(
                 fanOut,
                 0,
                 $"Bridge '{rosterKey}' supports '{scenario}' so it must declare a positive fan-out "
                     + "(InvocationsPerOperation > 0)."
+            );
+            Assert.AreEqual(
+                expectedFanOut,
+                fanOut,
+                $"Bridge '{rosterKey}' scenario '{scenario}' declares {fanOut} invocations per operation; "
+                    + $"the canonical workload requires {expectedFanOut}."
             );
 
             bridge.Prepare(scenario);
@@ -144,7 +151,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// bridge. If the bridge does not support the struct scenario, its
         /// <see cref="IMessagingTechBridge.DispatchedPayloadType"/> must be null; if it does,
         /// the declared payload must be a non-primitive, non-enum value type, and every
-        /// non-DxMessaging bridge must declare exactly <see cref="ComparisonStructPayload"/>.
+        /// bridge must declare exactly <see cref="ComparisonStructPayload"/>.
         /// This is pure metadata, so it opens no benchmark window.
         /// </summary>
         public static void AssertStructScenarioPayloadFidelity(
@@ -180,18 +187,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             Assert.IsTrue(
                 payload.IsValueType && !payload.IsPrimitive && !payload.IsEnum,
                 $"Bridge '{rosterKey}' marks the struct scenario Supported but dispatches '{payload.Name}', "
-                    + "which is not a boxing-free non-primitive struct. Dispatch ComparisonStructPayload (or, for "
-                    + "DxMessaging, an IUntargetedMessage struct) or mark the scenario unsupported."
+                    + "which is not a boxing-free non-primitive struct. Dispatch the canonical "
+                    + "ComparisonStructPayload or mark the scenario unsupported."
             );
-            if (!string.Equals(bridge.TechKey, "DxMessaging", StringComparison.Ordinal))
-            {
-                Assert.AreEqual(
-                    typeof(ComparisonStructPayload),
-                    payload,
-                    $"Bridge '{rosterKey}' must dispatch the canonical ComparisonStructPayload for the struct scenario; "
-                        + $"it declared '{payload.FullName}'."
-                );
-            }
+            Assert.AreEqual(
+                typeof(ComparisonStructPayload),
+                payload,
+                $"Bridge '{rosterKey}' must dispatch the canonical ComparisonStructPayload for the struct scenario; "
+                    + $"it declared '{payload.FullName}'."
+            );
         }
     }
 }
