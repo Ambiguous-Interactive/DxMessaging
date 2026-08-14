@@ -167,6 +167,8 @@ namespace DxMessaging.Tests.Editor.Allocations
         // possible.
         private static readonly InstanceId StableTarget = new InstanceId(0x5757_5757);
         private static readonly InstanceId StableSource = new InstanceId(0x4242_4242);
+        private static readonly InstanceId RewrittenTarget = new InstanceId(0x5757_5758);
+        private static readonly InstanceId RewrittenSource = new InstanceId(0x4242_4243);
         private static readonly InstanceId HandlerOwner = new InstanceId(0x6363_6363);
 
         private DiagnosticsScope _diagnosticsScope;
@@ -523,6 +525,88 @@ namespace DxMessaging.Tests.Editor.Allocations
                             + "the bus-wide plan stamp again, so ordinary spawn/despawn churn "
                             + "reallocates it on every emit.",
                         scenario.Kind
+                    );
+                }
+            );
+        }
+
+        /// <summary>
+        /// Pins the zero-allocation path that resolves a context-specific post
+        /// sink after an interceptor rewrites the target or source. This route
+        /// differs from the ordinary interceptor rows because the post phase
+        /// must resolve the rewritten destination while preserving the
+        /// emission-start listener set.
+        /// </summary>
+        [Test]
+        [Category("Allocation")]
+        public void EmitWithRewrittenContextPostProcessorIsZeroAlloc(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.KindsWithComponentTarget)
+            )]
+                MessageScenario scenario
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    Action emit = BuildEmitClosure(scenario, bus);
+                    switch (scenario.Kind)
+                    {
+                        case MessageKind.Targeted:
+                        {
+                            ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
+                                scenario,
+                                token,
+                                RewrittenTarget,
+                                NoOpTargeted
+                            );
+                            ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                                scenario,
+                                token,
+                                RewrittenTarget,
+                                NoOpTargeted
+                            );
+                            ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
+                                scenario,
+                                token,
+                                RewriteTarget
+                            );
+                            break;
+                        }
+                        case MessageKind.Broadcast:
+                        {
+                            ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
+                                scenario,
+                                token,
+                                RewrittenSource,
+                                NoOpBroadcast
+                            );
+                            ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                                scenario,
+                                token,
+                                RewrittenSource,
+                                NoOpBroadcast
+                            );
+                            ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
+                                scenario,
+                                token,
+                                RewriteSource
+                            );
+                            break;
+                        }
+                        default:
+                        {
+                            throw new InvalidOperationException(
+                                $"Unhandled MessageKind {scenario.Kind}."
+                            );
+                        }
+                    }
+
+                    AllocationAssertions.AssertNoAllocations(
+                        $"Emit+RewrittenContextPost-{scenario.Kind}",
+                        emit
                     );
                 }
             );
@@ -1484,6 +1568,18 @@ namespace DxMessaging.Tests.Editor.Allocations
             ref SimpleBroadcastMessage message
         )
         {
+            return true;
+        }
+
+        private static bool RewriteTarget(ref InstanceId target, ref SimpleTargetedMessage message)
+        {
+            target = RewrittenTarget;
+            return true;
+        }
+
+        private static bool RewriteSource(ref InstanceId source, ref SimpleBroadcastMessage message)
+        {
+            source = RewrittenSource;
             return true;
         }
 

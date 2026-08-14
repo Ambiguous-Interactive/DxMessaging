@@ -20,6 +20,11 @@ the frozen rule above; deregistering a handler from an interceptor takes effect
 immediately. Post-processor snapshots are taken before interceptors run, so they
 follow the frozen rule in every case.
 
+In 3.2.3 and later, this rule also covers the first post-processor registered
+for a message type and one registered for a target or source that an interceptor
+selects during the emission. Both start on the next emission. A processor removed
+from an interceptor-selected route still finishes the current emission.
+
 #### Example
 
 ```csharp

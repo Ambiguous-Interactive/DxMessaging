@@ -196,58 +196,71 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Edge pin (pre-existing public behavior, preserved by the
-        /// flattening redesign): when the ONLY remaining untargeted
-        /// post-processor for a message type is deregistered during the
-        /// handler phase, the post-process phase is skipped for that
-        /// emission entirely. The bus re-reads the live post-process sink
-        /// count after the handler phase, and the sink is empty by then, so
-        /// the frozen snapshot is never consulted. This differs from the
-        /// peer-remains case above, where the frozen snapshot still fires
-        /// the deregistered entry.
+        /// The final post-processor follows the same frozen-snapshot rule as
+        /// a removed processor that still has a peer: deregistration during
+        /// the handler phase takes effect on the next emission.
         /// </summary>
         [Test]
-        public void LastPostProcessorDeregisteredDuringHandlerSkipsPostPhaseThatEmission()
+        public void LastPostProcessorDeregisteredDuringHandlerStillFiresSameEmission()
         {
             MessageHandler handler = new(new InstanceId(127)) { active = true };
             MessageBus messageBus = new();
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, messageBus);
 
             int postProcessCount = 0;
-            MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => postProcessCount++,
-                priority: 0
-            );
+            int firstEmissionCount;
+            int secondEmissionCount;
+            using (
+                LeakWatcher watcher = new LeakWatcher(
+                    messageBus,
+                    label: nameof(SimpleUntargetedMessage)
+                )
+            )
+            {
+                MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor(
+                    (ref SimpleUntargetedMessage _) => postProcessCount++,
+                    priority: 0
+                );
 
-            bool removed = false;
-            _ = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage _) =>
-                {
-                    if (!removed)
+                bool removed = false;
+                _ = token.RegisterUntargeted(
+                    (ref SimpleUntargetedMessage _) =>
                     {
-                        removed = true;
-                        token.RemoveRegistration(postHandle);
+                        if (!removed)
+                        {
+                            removed = true;
+                            token.RemoveRegistration(postHandle);
+                        }
                     }
-                }
-            );
+                );
 
-            token.Enable();
+                token.Enable();
 
-            SimpleUntargetedMessage message = new();
-            messageBus.UntargetedBroadcast(ref message);
+                SimpleUntargetedMessage message = new();
+                messageBus.UntargetedBroadcast(ref message);
+                firstEmissionCount = postProcessCount;
+                messageBus.UntargetedBroadcast(ref message);
+                secondEmissionCount = postProcessCount;
+                token.Disable();
+            }
+
             Assert.AreEqual(
-                0,
-                postProcessCount,
-                "Deregistering the LAST untargeted post-processor during the handler "
-                    + "phase empties the live post-process sink, so the post phase is "
-                    + "skipped for that emission (live count gate runs before the frozen "
-                    + "snapshot is consulted)."
+                1,
+                firstEmissionCount,
+                "Deregistering the final untargeted post-processor during the handler "
+                    + "phase must not change the frozen post-process snapshot. "
+                    + "firstEmissionCount={0}, secondEmissionCount={1}.",
+                firstEmissionCount,
+                secondEmissionCount
             );
-
-            messageBus.UntargetedBroadcast(ref message);
-            Assert.AreEqual(0, postProcessCount);
-
-            token.Disable();
+            Assert.AreEqual(
+                1,
+                secondEmissionCount,
+                "The final post-processor removed during the previous emission must not run "
+                    + "again. firstEmissionCount={0}, secondEmissionCount={1}.",
+                firstEmissionCount,
+                secondEmissionCount
+            );
         }
 
         [Test]

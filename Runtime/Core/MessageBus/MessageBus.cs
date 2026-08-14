@@ -399,6 +399,114 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
+        /// Captures one context-keyed post route immediately before a registration mutation.
+        /// The first mutation after an emission began owns the exact route snapshot that emission
+        /// must observe if an interceptor later rewrites the target/source to this context.
+        /// Entries live only until the outermost dispatch lease exits.
+        /// </summary>
+        private readonly struct PostRouteSnapshotHistoryEntry
+        {
+            public PostRouteSnapshotHistoryEntry(
+                long resetGeneration,
+                int messageTypeIndex,
+                SlotKey slotKey,
+                InstanceId context,
+                long captureEmissionId,
+                int captureDispatchDepth,
+                long mutationTick,
+                DispatchSnapshot snapshot
+            )
+            {
+                this.resetGeneration = resetGeneration;
+                this.messageTypeIndex = messageTypeIndex;
+                this.slotKey = slotKey;
+                this.context = context;
+                this.captureEmissionId = captureEmissionId;
+                this.captureDispatchDepth = captureDispatchDepth;
+                this.mutationTick = mutationTick;
+                this.snapshot = snapshot;
+            }
+
+            public readonly long resetGeneration;
+            public readonly int messageTypeIndex;
+            public readonly SlotKey slotKey;
+            public readonly InstanceId context;
+            public readonly long captureEmissionId;
+            public readonly int captureDispatchDepth;
+            public readonly long mutationTick;
+            public readonly DispatchSnapshot snapshot;
+
+            public PostRouteSnapshotHistoryEntry ReassignCapture(long emissionId, int dispatchDepth)
+            {
+                return new PostRouteSnapshotHistoryEntry(
+                    resetGeneration,
+                    messageTypeIndex,
+                    slotKey,
+                    context,
+                    emissionId,
+                    dispatchDepth,
+                    mutationTick,
+                    snapshot
+                );
+            }
+        }
+
+        private readonly struct PostRouteKey : IEquatable<PostRouteKey>
+        {
+            private readonly int _messageTypeIndex;
+            private readonly SlotKey _slotKey;
+            private readonly InstanceId _context;
+            private readonly int _hash;
+
+            public PostRouteKey(int messageTypeIndex, SlotKey slotKey, InstanceId context)
+            {
+                _messageTypeIndex = messageTypeIndex;
+                _slotKey = slotKey;
+                _context = context;
+                unchecked
+                {
+                    int hash = 17;
+                    hash = (hash * 31) + messageTypeIndex;
+                    hash = (hash * 31) + slotKey.GetHashCode();
+                    hash = (hash * 31) + context.GetHashCode();
+                    _hash = hash;
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(PostRouteKey other)
+            {
+                return _hash == other._hash
+                    && _messageTypeIndex == other._messageTypeIndex
+                    && _slotKey == other._slotKey
+                    && _context == other._context;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is PostRouteKey other && Equals(other);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override int GetHashCode()
+            {
+                return _hash;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator ==(PostRouteKey left, PostRouteKey right)
+            {
+                return left.Equals(right);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator !=(PostRouteKey left, PostRouteKey right)
+            {
+                return !left.Equals(right);
+            }
+        }
+
+        /// <summary>
         /// Per-(bus, message-type, dispatch-kind) emit-preamble plan: caches
         /// the sink-slot references the emit shells would otherwise resolve
         /// with multiple <see cref="MessageCache{TValue}"/> lookups per
@@ -653,9 +761,19 @@ namespace DxMessaging.Core.MessageBus
                 bus._scopedEmissionId = _previousScopedEmissionId;
                 int depth = bus._dispatchDepth - 1;
                 bus._dispatchDepth = depth;
-                if (depth == 0 && bus._hasDeferredResetTeardown)
+                if (depth == 0)
                 {
-                    bus.FlushDeferredResetTeardown();
+                    if (bus._hasDeferredResetTeardown)
+                    {
+                        bus.FlushDeferredResetTeardown();
+                    }
+
+                    return;
+                }
+
+                if (bus._postRouteSnapshotHistory != null)
+                {
+                    bus.CompactPostRouteSnapshotHistoryForParent(_previousScopedEmissionId, depth);
                 }
             }
         }
@@ -1718,9 +1836,10 @@ namespace DxMessaging.Core.MessageBus
         // loop is still iterating them. Instead, the caches/states are queued
         // here and torn down when the outermost dispatch lease exits --
         // mirroring how Trim/sweep defer eviction via HasActiveDispatchSnapshot
-        // and the _dispatchDepth gate in SweepDirtyTypedHandlerSlots. These
-        // lists allocate only on the rare reset-during-dispatch path; the
-        // steady-state dispatch path pays a single flag check on lease exit.
+        // and the _dispatchDepth gate in SweepDirtyTypedHandlerSlots. The
+        // deferred reset lists allocate only on the rare reset-during-dispatch
+        // path; the steady-state dispatch path pays a single flag check on
+        // lease exit.
         //
         // _deferredDisplacedSnapshots extends the same machinery to dispatch
         // snapshots DISPLACED out of DispatchState.active by a nested
@@ -1736,10 +1855,15 @@ namespace DxMessaging.Core.MessageBus
         // removed from its DispatchState field at the moment it is queued,
         // snapshot instances are never shared between state fields, and
         // Release() is additionally idempotent via its _pooled guard.
+        // _postRouteSnapshotHistory uses the same lease lifetime for standalone
+        // pre-mutation snapshots of rewritten target/source post routes. It
+        // allocates only when a keyed post route mutates during dispatch.
         private bool _hasDeferredResetTeardown;
         private List<HandlerCache<int, HandlerCache>> _deferredResetHandlerCaches;
         private List<DispatchState> _deferredResetDispatchStates;
         private List<DispatchSnapshot> _deferredDisplacedSnapshots;
+        private List<PostRouteSnapshotHistoryEntry> _postRouteSnapshotHistory;
+        private HashSet<PostRouteKey> _postRouteCompactionRoutes;
 
         // Bumped by ResetState. Deregister closures captured before the bump
         // compare their captured generation to this field and silently skip
@@ -1973,6 +2097,21 @@ namespace DxMessaging.Core.MessageBus
             pooledCollectionsEvicted += ContextHandlerByTargetDicts.Trim(
                 force ? 0 : ContextHandlerByTargetDicts.MaxRetained
             );
+            if (
+                force
+                && _dispatchDepth == 0
+                && _postRouteSnapshotHistory != null
+                && _postRouteSnapshotHistory.Count == 0
+            )
+            {
+                _postRouteSnapshotHistory = null;
+                pooledCollectionsEvicted++;
+            }
+            if (force && _dispatchDepth == 0 && _postRouteCompactionRoutes != null)
+            {
+                _postRouteCompactionRoutes = null;
+                pooledCollectionsEvicted++;
+            }
             _lastSweepSeconds = _clock.NowSeconds;
 
             return new TrimResult(
@@ -2721,15 +2860,39 @@ namespace DxMessaging.Core.MessageBus
         private void FlushDeferredResetTeardown()
         {
             _hasDeferredResetTeardown = false;
-            // Displaced snapshots are released FIRST: they are standalone
-            // (queued only after being unlinked from their DispatchState
-            // field, and snapshot instances are never shared between state
-            // fields), so releasing them cannot interact with the cache
-            // clears / state resets below, which release *different* snapshot
-            // objects still referenced by their states. Releasing them ahead
-            // of the clears keeps the pools warm for any rebuilds those
-            // clears trigger later, and Release() stays idempotent via
-            // _pooled should both paths ever observe the same instance.
+            List<PostRouteSnapshotHistoryEntry> routeHistory = _postRouteSnapshotHistory;
+            if (routeHistory != null)
+            {
+                for (int i = 0; i < routeHistory.Count; ++i)
+                {
+                    routeHistory[i].snapshot.Release();
+                }
+
+                // List.Clear clears the DispatchSnapshot references held by
+                // each entry. Retain only a bounded backing array so an
+                // adversarial mutation burst cannot permanently raise this
+                // bus's idle footprint.
+                routeHistory.Clear();
+                if (routeHistory.Capacity > ContextHandlerByTargetDicts.MaxRetained)
+                {
+                    _postRouteSnapshotHistory = null;
+                }
+            }
+
+            HashSet<PostRouteKey> compactionRoutes = _postRouteCompactionRoutes;
+            if (
+                compactionRoutes != null
+                && compactionRoutes.EnsureCapacity(0) > ContextHandlerByTargetDicts.MaxRetained
+            )
+            {
+                _postRouteCompactionRoutes = null;
+            }
+
+            // Displaced snapshots are standalone (queued only after being
+            // unlinked from DispatchState.active), just like the historical
+            // route snapshots released above. Releasing both groups ahead of
+            // cache clears keeps the pools warm and cannot overlap snapshots
+            // still referenced by those states.
             List<DispatchSnapshot> displacedSnapshots = _deferredDisplacedSnapshots;
             if (displacedSnapshots != null)
             {
@@ -3730,9 +3893,8 @@ namespace DxMessaging.Core.MessageBus
             {
                 // No interceptors, no global accept-all, no post-processors
                 // existed when the plan was validated (i.e. at emission
-                // start): handle phase only. Mutations performed BY handlers
-                // bump the plan version; the re-compare below reruns the live
-                // post-phase re-check exactly like the featured path would.
+                // start): handle phase only. A post-processor added by a
+                // handler waits until the next emission.
                 bool fastFound = false;
                 HandlerCache<int, HandlerCache> fastHandlers = plan.scalarHandle;
                 if (fastHandlers != null && 0 < fastHandlers.handlers.Count)
@@ -3747,20 +3909,6 @@ namespace DxMessaging.Core.MessageBus
                     fastFound = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
                 }
 
-                if (
-                    planVersion != _dispatchPlanVersion
-                    && RunUntargetedPostPhase<TMessage>(
-                        ref typedMessage,
-                        planVersion,
-                        DispatchSnapshot.Empty,
-                        emissionId,
-                        touchTick
-                    )
-                )
-                {
-                    fastFound = true;
-                }
-
                 if (!fastFound && MessagingDebug.enabled)
                 {
                     MessagingDebug.Log(
@@ -3772,6 +3920,8 @@ namespace DxMessaging.Core.MessageBus
 
                 return;
             }
+
+            long emissionResetGeneration = _resetGeneration;
 
             // Pre-freeze the post-processing snapshot for this emission so
             // mutations during handlers/post-processors are not observed
@@ -3822,10 +3972,8 @@ namespace DxMessaging.Core.MessageBus
             if (
                 RunUntargetedPostPhase<TMessage>(
                     ref typedMessage,
-                    planVersion,
                     untargetedPostSnapshot,
-                    emissionId,
-                    touchTick
+                    emissionResetGeneration
                 )
             )
             {
@@ -3844,54 +3992,22 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary>
         /// Post-processing phase for untargeted emissions, shared by the
-        /// featured emit path and the fast lane's mid-emission-mutation
-        /// fallback. When <paramref name="planVersion"/> still matches the bus
-        /// stamp, no registration mutation ran during this emission, so the
-        /// snapshot frozen at emission start is exactly what a live re-check
-        /// would produce and the typed sink lookup is skipped. Once the stamp
-        /// has moved, the sink is re-checked LIVE (a post-processor registered
-        /// into a previously-snapshotless sink mid-emission is observed here,
-        /// matching the legacy lazy-freeze placement).
+        /// featured emit path. It dispatches only the snapshot frozen at
+        /// emission start, so a first post-processor registered by an
+        /// interceptor or handler waits until the next emission just like one
+        /// added to an already populated sink.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool RunUntargetedPostPhase<TMessage>(
             ref TMessage typedMessage,
-            long planVersion,
             DispatchSnapshot prefrozenSnapshot,
-            long emissionId,
-            long touchTick
+            long emissionResetGeneration
         )
             where TMessage : IUntargetedMessage
         {
-            if (planVersion == _dispatchPlanVersion)
-            {
-                return prefrozenSnapshot.IsInitialized
-                    && DispatchFlatSnapshot(prefrozenSnapshot, ref typedMessage);
-            }
-
-            if (
-                !_scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
-                || sortedHandlers.handlers.Count == 0
-            )
-            {
-                return false;
-            }
-
-            Touch(sortedHandlers, touchTick);
-            DispatchSnapshot snapshot = !prefrozenSnapshot.IsInitialized
-                ? AcquireDispatchSnapshotFast<TMessage>(
-                    this,
-                    sortedHandlers,
-                    UntargetedPostSlot,
-                    emissionId,
-                    default
-                )
-                : prefrozenSnapshot;
-            // Flat dispatch; see DispatchFlatSnapshot for the frozen-array
-            // semantics that replace prefreeze stamping and for the
-            // reset-generation guard rationale.
-            return DispatchFlatSnapshot(snapshot, ref typedMessage);
+            return emissionResetGeneration == _resetGeneration
+                && prefrozenSnapshot.IsInitialized
+                && DispatchFlatSnapshot(prefrozenSnapshot, ref typedMessage);
         }
 
         /// <summary>
@@ -4079,26 +4195,6 @@ namespace DxMessaging.Core.MessageBus
                     fastFound = true;
                 }
 
-                // Post phases: nothing existed at emission start; only a
-                // mid-emission mutation can have created live post sinks.
-                // The target cannot have been rewritten (no interceptors
-                // ran), so the pre-interceptor target equals the final one.
-                if (
-                    planVersion != _dispatchPlanVersion
-                    && RunTargetedPostPhases<TMessage>(
-                        ref target,
-                        target,
-                        ref typedMessage,
-                        planVersion,
-                        DispatchSnapshot.Empty,
-                        DispatchSnapshot.Empty,
-                        emissionId
-                    )
-                )
-                {
-                    fastFound = true;
-                }
-
                 if (!fastFound && MessagingDebug.enabled)
                 {
                     MessagingDebug.Log(
@@ -4111,6 +4207,8 @@ namespace DxMessaging.Core.MessageBus
 
                 return;
             }
+
+            long emissionResetGeneration = _resetGeneration;
 
             // Pre-freeze targeted post-processing for this emission
             // (target-specific and without targeting). Acquiring the snapshot
@@ -4459,10 +4557,11 @@ namespace DxMessaging.Core.MessageBus
                     ref target,
                     preInterceptorTarget,
                     ref typedMessage,
-                    planVersion,
                     targetedPostSnapshot,
                     targetedWithoutTargetingPostSnapshot,
-                    emissionId
+                    emissionId,
+                    touchTick,
+                    emissionResetGeneration
                 )
             )
             {
@@ -4482,28 +4581,32 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary>
         /// Post-processing phases for targeted emissions (target-keyed then
-        /// without-targeting), shared by the featured emit path and the fast
-        /// lane's mid-emission-mutation fallback. While
-        /// <paramref name="planVersion"/> still matches the bus stamp and no
-        /// interceptor rewrote the target, the snapshots frozen at emission
-        /// start are exactly what a live re-check would produce and both typed
-        /// sink lookups are skipped. Once either changed, both sinks are
-        /// re-checked LIVE, matching the legacy lazy-freeze placement.
+        /// without-targeting). An unchanged target dispatches only the
+        /// snapshots frozen at emission start. A rewritten target resolves
+        /// its final route through the pre-mutation history captured during
+        /// this dispatch, retaining removed processors without admitting ones
+        /// added after the emission began.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool RunTargetedPostPhases<TMessage>(
             ref InstanceId target,
             InstanceId preInterceptorTarget,
             ref TMessage typedMessage,
-            long planVersion,
             DispatchSnapshot targetedPostSnapshot,
             DispatchSnapshot targetedWithoutTargetingPostSnapshot,
-            long emissionId
+            long emissionId,
+            long emissionStartTick,
+            long emissionResetGeneration
         )
             where TMessage : ITargetedMessage
         {
             bool foundAnyHandlers = false;
-            if (planVersion == _dispatchPlanVersion && target == preInterceptorTarget)
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                return false;
+            }
+
+            if (target == preInterceptorTarget)
             {
                 if (
                     targetedPostSnapshot.IsInitialized
@@ -4511,6 +4614,11 @@ namespace DxMessaging.Core.MessageBus
                 )
                 {
                     foundAnyHandlers = true;
+                }
+
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return foundAnyHandlers;
                 }
 
                 if (
@@ -4528,27 +4636,27 @@ namespace DxMessaging.Core.MessageBus
                 return foundAnyHandlers;
             }
 
+            DispatchSnapshot snapshot;
             if (
-                _contextSinks[BusContextIndex.TargetedPostProcessDefault]
-                    .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
-                && targetedHandlers.TryGetValue(
+                !TryGetContextPostRouteAtEmissionStart<TMessage>(
+                    TargetedPostSlot,
                     target,
-                    out HandlerCache<int, HandlerCache> sortedHandlers
+                    emissionStartTick,
+                    emissionResetGeneration,
+                    out snapshot
                 )
-                && sortedHandlers.handlers.Count > 0
             )
             {
-                // Post-processors follow the FINAL (post-interceptor) target. When an
-                // interceptor rewrote the id, the pre-frozen snapshot is keyed by the
-                // ORIGINAL target and must not be dispatched against the new one;
-                // re-resolve for the rewritten target instead, mirroring the
-                // handle-phase re-resolution above. Like that path, this exposes
-                // registrations made mid-emission for the REWRITTEN id (its cache
-                // had no snapshot pinned at emission start); the pre-frozen
-                // snapshot - and its mid-emission registration gating - is
-                // preferred only when the target is unchanged.
-                DispatchSnapshot snapshot;
-                if (target != preInterceptorTarget)
+                snapshot = DispatchSnapshot.Empty;
+                if (
+                    _contextSinks[BusContextIndex.TargetedPostProcessDefault]
+                        .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
+                    && targetedHandlers.TryGetValue(
+                        target,
+                        out HandlerCache<int, HandlerCache> sortedHandlers
+                    )
+                    && sortedHandlers.handlers.Count > 0
+                )
                 {
                     snapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
@@ -4557,43 +4665,28 @@ namespace DxMessaging.Core.MessageBus
                         emissionId,
                         target
                     );
-                }
-                else if (!targetedPostSnapshot.IsInitialized)
-                {
-                    snapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        sortedHandlers,
-                        TargetedPostSlot,
-                        emissionId,
-                        target
-                    );
-                }
-                else
-                {
-                    snapshot = targetedPostSnapshot;
-                }
-                if (DispatchFlatSnapshot(snapshot, ref typedMessage))
-                {
-                    foundAnyHandlers = true;
                 }
             }
 
-            if (
-                _scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> postTwt)
-                && postTwt.handlers.Count > 0
-            )
+            if (snapshot.IsInitialized && DispatchFlatSnapshot(snapshot, ref typedMessage))
             {
-                DispatchSnapshot snapshot = !targetedWithoutTargetingPostSnapshot.IsInitialized
-                    ? AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        postTwt,
-                        TargetedWithoutContextPostSlot,
-                        emissionId,
-                        default
+                foundAnyHandlers = true;
+            }
+
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                return foundAnyHandlers;
+            }
+
+            if (targetedWithoutTargetingPostSnapshot.IsInitialized)
+            {
+                if (
+                    DispatchContextFlatSnapshot(
+                        targetedWithoutTargetingPostSnapshot,
+                        ref target,
+                        ref typedMessage
                     )
-                    : targetedWithoutTargetingPostSnapshot;
-                if (DispatchContextFlatSnapshot(snapshot, ref target, ref typedMessage))
+                )
                 {
                     foundAnyHandlers = true;
                 }
@@ -4804,6 +4897,8 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
+            long emissionResetGeneration = _resetGeneration;
+
             // Pre-freeze broadcast post-processing for this emission
             // (source-specific and without source). Acquiring the snapshot
             // here (before interceptors and handlers run) is sufficient: the
@@ -4943,31 +5038,42 @@ namespace DxMessaging.Core.MessageBus
                 emissionId
             );
 
-            // Post-processors follow the FINAL (post-interceptor) source. The
-            // pre-frozen snapshot above is keyed by the ORIGINAL source; when an
-            // interceptor rewrote it, re-resolve the snapshot for the new source,
-            // mirroring the targeted post-phase re-resolution. Like that path,
-            // this exposes registrations made mid-emission for the REWRITTEN id
-            // (its cache had no snapshot pinned at emission start); the
-            // pre-frozen snapshot - and its mid-emission registration gating -
-            // applies only when the source is unchanged.
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                return;
+            }
+
+            // Post-processors follow the FINAL source. If that route changed
+            // after this emission began, its first pre-mutation snapshot is
+            // the exact frozen view for this emission.
             if (source != preInterceptorSource)
             {
                 broadcastPostSnapshot = DispatchSnapshot.Empty;
                 if (
-                    _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                        .TryGetValue<TMessage>(out broadcastPostHandlers)
-                    && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
-                    && broadcastPostByPriority.handlers.Count > 0
+                    !TryGetContextPostRouteAtEmissionStart<TMessage>(
+                        BroadcastPostSlot,
+                        source,
+                        touchTick,
+                        emissionResetGeneration,
+                        out broadcastPostSnapshot
+                    )
                 )
                 {
-                    broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        broadcastPostByPriority,
-                        BroadcastPostSlot,
-                        emissionId,
-                        source
-                    );
+                    if (
+                        _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
+                            .TryGetValue<TMessage>(out broadcastPostHandlers)
+                        && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
+                        && broadcastPostByPriority.handlers.Count > 0
+                    )
+                    {
+                        broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                            this,
+                            broadcastPostByPriority,
+                            BroadcastPostSlot,
+                            emissionId,
+                            source
+                        );
+                    }
                 }
             }
 
@@ -4977,6 +5083,11 @@ namespace DxMessaging.Core.MessageBus
                 // "found" even when it owns zero resolved delegates.
                 foundAnyHandlers = true;
                 _ = DispatchFlatSnapshot(broadcastPostSnapshot, ref typedMessage);
+            }
+
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                return;
             }
 
             if (broadcastWithoutSourcePostSnapshot.IsInitialized)
@@ -5732,6 +5843,7 @@ namespace DxMessaging.Core.MessageBus
             }
             Touch(handlers, touchTick);
             HandlerCache<int, HandlerCache> capturedHandlers = handlers;
+            CaptureContextPostRouteBeforeMutation<T>(handlers, slotKey, context, touchTick);
 
             if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache))
             {
@@ -5826,6 +5938,12 @@ namespace DxMessaging.Core.MessageBus
                 && cache.handlers.TryGetValue(messageHandler, out int count)
             )
             {
+                CaptureContextPostRouteBeforeMutation<T>(
+                    capturedHandlers,
+                    slotKey,
+                    context,
+                    deregisterTouchTick
+                );
                 _log?.Log(
                     new MessagingRegistration(
                         context,
@@ -6134,6 +6252,215 @@ namespace DxMessaging.Core.MessageBus
                     )
                     || !ReferenceEquals(currentHandlers, capturedHandlers)
                 );
+        }
+
+        private void CaptureContextPostRouteBeforeMutation<TMessage>(
+            HandlerCache<int, HandlerCache> handlers,
+            SlotKey slotKey,
+            InstanceId context,
+            long mutationTick
+        )
+            where TMessage : IMessage
+        {
+            if (
+                _dispatchDepth == 0
+                || slotKey == SlotKey.None
+                || slotKey.Phase != DispatchPhase.PostProcess
+                || slotKey.Variant != DispatchVariant.Default
+            )
+            {
+                return;
+            }
+
+            List<PostRouteSnapshotHistoryEntry> history = _postRouteSnapshotHistory ??=
+                new List<PostRouteSnapshotHistoryEntry>();
+            int messageTypeIndex = MessageHelperIndexer<TMessage>.SequentialId;
+            for (int i = history.Count - 1; 0 <= i; --i)
+            {
+                PostRouteSnapshotHistoryEntry entry = history[i];
+                if (
+                    entry.resetGeneration == _resetGeneration
+                    && entry.messageTypeIndex == messageTypeIndex
+                    && entry.slotKey == slotKey
+                    && entry.context == context
+                )
+                {
+                    if (
+                        entry.captureEmissionId == _scopedEmissionId
+                        && entry.captureDispatchDepth == _dispatchDepth
+                    )
+                    {
+                        return;
+                    }
+
+                    break;
+                }
+            }
+
+            int entryIndex = history.Count;
+
+            // Reserve the history slot before renting/building snapshot
+            // storage. If list growth fails, the registration mutation has
+            // not started and there is no standalone snapshot to release.
+            history.Add(default);
+            try
+            {
+                DispatchSnapshot snapshot = BuildDispatchSnapshot<TMessage>(
+                    this,
+                    handlers,
+                    slotKey,
+                    context
+                );
+                history[entryIndex] = new PostRouteSnapshotHistoryEntry(
+                    _resetGeneration,
+                    messageTypeIndex,
+                    slotKey,
+                    context,
+                    _scopedEmissionId,
+                    _dispatchDepth,
+                    mutationTick,
+                    snapshot
+                );
+                _hasDeferredResetTeardown = true;
+            }
+            catch
+            {
+                history.RemoveAt(entryIndex);
+                throw;
+            }
+        }
+
+        private bool TryGetContextPostRouteAtEmissionStart<TMessage>(
+            SlotKey slotKey,
+            InstanceId context,
+            long emissionStartTick,
+            long emissionResetGeneration,
+            out DispatchSnapshot snapshot
+        )
+            where TMessage : IMessage
+        {
+            snapshot = DispatchSnapshot.Empty;
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                // Reset invalidates the in-flight message. Treat the route as
+                // historically empty so post-reset registrations cannot leak
+                // into the old emission.
+                return true;
+            }
+
+            List<PostRouteSnapshotHistoryEntry> history = _postRouteSnapshotHistory;
+            if (history == null)
+            {
+                return false;
+            }
+
+            int messageTypeIndex = MessageHelperIndexer<TMessage>.SequentialId;
+            int count = history.Count;
+            for (int i = 0; i < count; ++i)
+            {
+                PostRouteSnapshotHistoryEntry entry = history[i];
+                if (
+                    entry.resetGeneration == emissionResetGeneration
+                    && entry.messageTypeIndex == messageTypeIndex
+                    && entry.slotKey == slotKey
+                    && entry.context == context
+                    && unchecked(entry.mutationTick - emissionStartTick) > 0
+                )
+                {
+                    snapshot = entry.snapshot;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void CompactPostRouteSnapshotHistoryForParent(
+            long parentEmissionId,
+            int parentDispatchDepth
+        )
+        {
+            List<PostRouteSnapshotHistoryEntry> history = _postRouteSnapshotHistory;
+            int count = history.Count;
+            if (count == 0 || history[count - 1].captureDispatchDepth <= parentDispatchDepth)
+            {
+                return;
+            }
+
+            HashSet<PostRouteKey> parentRoutes = _postRouteCompactionRoutes;
+            if (parentRoutes == null)
+            {
+                parentRoutes = new HashSet<PostRouteKey>();
+                parentRoutes.EnsureCapacity(count);
+                _postRouteCompactionRoutes = parentRoutes;
+            }
+            else
+            {
+                parentRoutes.Clear();
+                parentRoutes.EnsureCapacity(count);
+            }
+
+            try
+            {
+                int retainedCount = 0;
+                for (int i = 0; i < count; ++i)
+                {
+                    PostRouteSnapshotHistoryEntry entry = history[i];
+                    if (entry.resetGeneration != _resetGeneration)
+                    {
+                        entry.snapshot.Release();
+                        continue;
+                    }
+
+                    if (entry.captureDispatchDepth < parentDispatchDepth)
+                    {
+                        history[retainedCount++] = entry;
+                        continue;
+                    }
+
+                    PostRouteKey route = new PostRouteKey(
+                        entry.messageTypeIndex,
+                        entry.slotKey,
+                        entry.context
+                    );
+                    if (
+                        entry.captureDispatchDepth == parentDispatchDepth
+                        && entry.captureEmissionId == parentEmissionId
+                    )
+                    {
+                        if (parentRoutes.Add(route))
+                        {
+                            history[retainedCount++] = entry;
+                        }
+                        else
+                        {
+                            entry.snapshot.Release();
+                        }
+
+                        continue;
+                    }
+
+                    if (!parentRoutes.Add(route))
+                    {
+                        entry.snapshot.Release();
+                        continue;
+                    }
+
+                    history[retainedCount++] = entry.ReassignCapture(
+                        parentEmissionId,
+                        parentDispatchDepth
+                    );
+                }
+
+                if (retainedCount < count)
+                {
+                    history.RemoveRange(retainedCount, count - retainedCount);
+                }
+            }
+            finally
+            {
+                parentRoutes.Clear();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
