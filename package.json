@@ -5,7 +5,7 @@
   "description": "Synchronous Event Bus for Unity",
   "unity": "2021.3",
   "documentationUrl": "https://ambiguous-interactive.github.io/DxMessaging/",
-  "changelogUrl": "https://raw.githubusercontent.com/Ambiguous-Interactive/DxMessaging/master/CHANGELOG.md",
+  "changelogUrl": "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/CHANGELOG.md",
   "licensesUrl": "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/LICENSE.md",
   "keywords": [
     "messaging",

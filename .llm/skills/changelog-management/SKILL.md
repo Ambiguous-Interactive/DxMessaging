@@ -35,6 +35,20 @@ published GitHub Release body from, so its section headings must stay well-forme
 - Documentation and dependency updates earn an entry only when they change what a consumer
   sees or has to do.
 
+### Entry length
+
+An entry is read in the Unity Package Manager and in the GitHub Release body, by someone
+deciding whether to upgrade. Keep it to what that reader needs:
+
+- One sentence. A second short clause is allowed only when the change removes a limit or
+  changes what the reader must do. Never a paragraph.
+- Two wrapped source lines, three when the issue link does not fit.
+- No implementation narrative: internal data structures, retained capacity, snapshot
+  materialization order, CI policy, pinned test dependencies, and benchmark mechanics are all
+  invisible to the reader and belong in the pull request.
+- Fold entries that describe one user-visible change into one entry with both issue links.
+- Marketing adjectives ("comprehensive", "robust") are banned here exactly as in the docs.
+
 ### Entry quality
 
 - Describe user impact, not implementation. "Improved message routing performance for buses
@@ -75,6 +89,17 @@ published GitHub Release body from, so its section headings must stay well-forme
 - CI can assert the shape: `grep -q "## \[Unreleased\]" CHANGELOG.md` plus a check that the
   `package.json` version has a matching `## [${VERSION}]` heading.
 
+### Where consumers read it
+
+- The Package Manager details panel and its Version History both expose one **Changelog** link
+  built from `package.json`'s `changelogUrl`, with the packaged `CHANGELOG.md` as the offline
+  option. Keep `changelogUrl` pointing at a RENDERED page; a raw Markdown URL opens unformatted
+  text in the browser.
+- Per-version notes shown inline in Version History come from registry metadata
+  (`_upm.changelog`) that `npm publish` strips, so that surface is not available to this package.
+  See [upm-changelog-surface.md](./references/upm-changelog-surface.md) before proposing work on
+  it again.
+
 ### Interaction with the release pipeline
 
 - `scripts/release/release-notes.js` (backed by `scripts/release/changelog.js`) extracts the
@@ -83,9 +108,10 @@ published GitHub Release body from, so its section headings must stay well-forme
 
 ## References
 
-| Document                                                                            | Purpose                                                                                             |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [changelog-entry-writing-part-1.md](./references/changelog-entry-writing-part-1.md) | Why retroactive edits to a released section are wrong                                               |
-| [changelog-entry-writing.md](./references/changelog-entry-writing.md)               | Entry template, worked examples for added/fixed/deprecated/breaking, and the anti-pattern catalog   |
-| [changelog-management.md](./references/changelog-management.md)                     | Keep a Changelog categories, file structure, the change-type eligibility table, and semver mapping  |
-| [changelog-release-workflow.md](./references/changelog-release-workflow.md)         | Unreleased-to-release conversion, version and date formats, compare links, and CI format validation |
+| Document                                                                            | Purpose                                                                                               |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [changelog-entry-writing-part-1.md](./references/changelog-entry-writing-part-1.md) | Why retroactive edits to a released section are wrong                                                 |
+| [changelog-entry-writing.md](./references/changelog-entry-writing.md)               | Entry template, worked examples for added/fixed/deprecated/breaking, and the anti-pattern catalog     |
+| [changelog-management.md](./references/changelog-management.md)                     | Keep a Changelog categories, file structure, the change-type eligibility table, and semver mapping    |
+| [changelog-release-workflow.md](./references/changelog-release-workflow.md)         | Unreleased-to-release conversion, version and date formats, compare links, and CI format validation   |
+| [upm-changelog-surface.md](./references/upm-changelog-surface.md)                   | Where the Unity Package Manager reads the changelog, and why inline per-version notes are unavailable |
