@@ -499,7 +499,7 @@
         "category": "testing",
         "tags": "testing, unity, performance, play-mode, domain-reload"
       },
-      "lineCount": 69,
+      "lineCount": 71,
       "references": [
         ".llm/skills/unity-test-execution/references/fast-unity-tests.md",
         ".llm/skills/unity-test-execution/references/single-thread-contract.md",
