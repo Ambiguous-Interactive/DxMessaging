@@ -32,9 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   policy ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 - Point the Package Manager **Changelog** link at the rendered changelog instead of raw Markdown
   ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
+- Dispatch faster when a message type has interceptors or post-processors: interceptors are
+  resolved once when registrations change instead of being re-collected on every emission, and
+  emissions no longer repeat handler and post-processor lookups the bus already resolved. One
+  interceptor costs roughly half what it did, and four cost roughly a quarter
+  ([#408](https://github.com/Ambiguous-Interactive/DxMessaging/issues/408)).
 
 ### Fixed
 
+- Fix an interceptor registered or removed at a different priority than the running interceptor
+  taking effect during that same emission; interceptor changes now wait for the next emission, as
+  the snapshot semantics documentation already described
+  ([#408](https://github.com/Ambiguous-Interactive/DxMessaging/issues/408)).
 - Fix `DxMessagingStaticState.Reset()` from inside an interceptor so it stops the rest of the
   dispatch instead of invoking callbacks against reset bus state
   ([#395](https://github.com/Ambiguous-Interactive/DxMessaging/issues/395)).
