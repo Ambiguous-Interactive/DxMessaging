@@ -106,6 +106,29 @@ test("run writes the field, is idempotent, and satisfies its own --check", (t) =
   assert.doesNotThrow(() => run({ ...options, check: true }));
 });
 
+test("run --check ignores formatting that Prettier owns", (t) => {
+  const fixture = makeFixture(t);
+  const options = {
+    repoRoot: fixture.directory,
+    packagePath: fixture.packagePath,
+    changelogPath: fixture.changelogPath
+  };
+  run(options);
+
+  // Re-indent the file the way another formatter might. The value is still
+  // correct, so --check must pass; otherwise --check and format:check could
+  // demand contradictory contents and neither fixer could satisfy both.
+  const reformatted = JSON.stringify(
+    JSON.parse(fs.readFileSync(fixture.packagePath, "utf8")),
+    null,
+    4
+  );
+  fs.writeFileSync(fixture.packagePath, `${reformatted}\n`, "utf8");
+
+  assert.doesNotThrow(() => run({ ...options, check: true }));
+  assert.equal(run(options).changed, false);
+});
+
 test("run --check reports drift and names the fix command", (t) => {
   const fixture = makeFixture(t, {
     manifest: { ...MANIFEST, _upm: { changelog: "stale" } }
@@ -136,7 +159,7 @@ test("the CLI exits non-zero on drift and zero once synced", (t) => {
     encoding: "utf8"
   });
   assert.equal(drifted.status, 1);
-  assert.match(drifted.stderr, /stale/);
+  assert.match(drifted.stderr, /does not match/);
 
   const fixed = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
   assert.equal(fixed.status, 0);

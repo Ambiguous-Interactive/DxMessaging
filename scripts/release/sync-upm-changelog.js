@@ -79,24 +79,31 @@ function run({ repoRoot, check, packagePath, changelogPath } = {}) {
   const logPath = changelogPath ?? path.join(root, "CHANGELOG.md");
   const original = fs.readFileSync(pkgPath, "utf8");
   const changelog = fs.readFileSync(logPath, "utf8");
-  const expected = serialize(applyUpmChangelog(JSON.parse(original), changelog));
+  const manifest = JSON.parse(original);
+  const updated = applyUpmChangelog(manifest, changelog);
 
-  if (expected === original) {
-    return { changed: false, version: JSON.parse(original).version };
+  // Compare the VALUE, not the serialized file. Prettier owns package.json's
+  // formatting; if its output ever diverged from this writer's, a text-level
+  // comparison would make `--check` and `format:check` fight each other with no
+  // fixer able to satisfy both.
+  const current = manifest._upm ? manifest._upm.changelog : undefined;
+  if (current === updated._upm.changelog) {
+    return { changed: false, version: manifest.version };
   }
   if (check) {
     throw new Error(
-      `${path.relative(root, pkgPath)} '_upm.changelog' is stale. ` +
+      `${path.relative(root, pkgPath)} '_upm.changelog' does not match the ` +
+        `'## [${manifest.version}]' CHANGELOG.md section. ` +
         "Run `npm run sync:upm-changelog`."
     );
   }
-  fs.writeFileSync(pkgPath, expected, "utf8");
+  fs.writeFileSync(pkgPath, serialize(updated), "utf8");
   // Re-verify the written state so the writer can never leave `--check` failing.
-  const written = fs.readFileSync(pkgPath, "utf8");
-  if (written !== expected) {
+  const written = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  if (written._upm.changelog !== updated._upm.changelog) {
     throw new Error(`Failed to write ${path.relative(root, pkgPath)}.`);
   }
-  return { changed: true, version: JSON.parse(expected).version };
+  return { changed: true, version: manifest.version };
 }
 
 function main() {
