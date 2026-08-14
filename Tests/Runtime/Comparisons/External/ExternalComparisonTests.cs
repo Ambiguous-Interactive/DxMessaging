@@ -14,29 +14,33 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     /// assembly only compiles when every external package is present (see the asmdef's
     /// defineConstraints), so each bridge can be referenced directly here.
     /// </summary>
-    [Category("Performance"), Category("PerfBench"), Category("PerfComparison")]
+    [Category("Performance"), Category("PerfComparison")]
     public sealed class ExternalComparisonTests
     {
         private static IEnumerable<TestCaseData> Cases()
         {
-            (string key, Func<IMessagingTechBridge> factory)[] techs =
+            for (
+                int scenarioIndex = 0;
+                scenarioIndex < ComparisonScenarios.All.Length;
+                scenarioIndex++
+            )
             {
-                ("MessagePipe", () => new MessagePipeBridge()),
-                ("UniRx", () => new UniRxBridge()),
-                ("ZenjectSignalBus", () => new ZenjectSignalBusBridge()),
-            };
-            foreach ((string key, Func<IMessagingTechBridge> factory) in techs)
-            {
-                foreach (ComparisonScenario scenario in ComparisonScenarios.All)
+                ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
+                foreach (
+                    (
+                        string key,
+                        Func<IMessagingTechBridge> factory
+                    ) in ExternalComparisonRoster.Bridges
+                )
                 {
                     yield return new TestCaseData(factory, scenario).SetName(
-                        $"Comparison_{key}_{ComparisonScenarios.Key(scenario)}"
+                        ComparisonScenarios.PerformanceCaseName(scenarioIndex, key, scenario)
                     );
                 }
             }
         }
 
-        [Test, Category("PerfBench"), Category("PerfComparison")]
+        [Test, Category("PerfComparison")]
         [TestCaseSource(nameof(Cases))]
         public void Benchmark(Func<IMessagingTechBridge> bridgeFactory, ComparisonScenario scenario)
         {

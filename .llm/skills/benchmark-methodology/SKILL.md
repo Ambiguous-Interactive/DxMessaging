@@ -111,8 +111,9 @@ over a separate untimed batch. Never median-of-runs, never a single untimed pass
 - A perf asmdef in the `core` bucket almost always means its `name` field is
   missing the magic substring. Verify with
   `node scripts/unity/lib/asmdef-discovery.js`.
-- `unity-tests.yml` excludes perf; `unity-benchmarks.yml` includes it;
-  `perf-numbers.yml` passes `include-comparisons: "true"` on every PR and push.
+- `unity-tests.yml` excludes perf; `unity-benchmarks.yml` includes it.
+  `perf-numbers.yml` runs isolated internal and comparison matrix entries on every
+  eligible PR and push; only the comparison entry sets `include-comparisons: true`.
   External comparison package versions come only from
   `.github/comparison-packages.json`.
 

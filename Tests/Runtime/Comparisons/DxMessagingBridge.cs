@@ -42,6 +42,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         private long _progress;
 
         private SimpleUntargetedMessage _untargeted;
+        private ComparisonStructPayload _structPayload = new(1);
         private SimpleTargetedMessage _targeted;
         private InstanceId _dispatchTarget;
 
@@ -64,13 +65,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public Type DispatchedPayloadType(ComparisonScenario scenario)
         {
-            // The keyed scenario broadcasts SimpleTargetedMessage; every other scenario
-            // broadcasts (or registers a handler for) SimpleUntargetedMessage. Both are
-            // non-primitive IUntargetedMessage/ITargetedMessage value-type structs, so the
-            // StructMessageNoBoxing entry is boxing-free without faking a primitive payload.
-            return scenario == ComparisonScenario.KeyedToOneOfMany
-                ? typeof(SimpleTargetedMessage)
-                : typeof(SimpleUntargetedMessage);
+            return scenario switch
+            {
+                ComparisonScenario.KeyedToOneOfMany => typeof(SimpleTargetedMessage),
+                ComparisonScenario.StructMessageNoBoxing => typeof(ComparisonStructPayload),
+                _ => typeof(SimpleUntargetedMessage),
+            };
         }
 
         public void Prepare(ComparisonScenario scenario)
@@ -84,6 +84,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 _progress++;
             }
 
+            void HandleStruct(ref ComparisonStructPayload message)
+            {
+                _progress++;
+            }
+
             void HandleTargeted(ref SimpleTargetedMessage message)
             {
                 _progress++;
@@ -92,8 +97,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             switch (scenario)
             {
                 case ComparisonScenario.GlobalToOneSubscriber:
-                case ComparisonScenario.StructMessageNoBoxing:
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
+                    return;
+                case ComparisonScenario.StructMessageNoBoxing:
+                    _ = _token.RegisterUntargeted<ComparisonStructPayload>(HandleStruct);
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
                     // 16 subscribers == 16 components == 16 distinct MessageHandlers behind 16
@@ -160,6 +167,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                         _token.RegisterUntargeted<SimpleUntargetedMessage>(_churnHandler);
                     _token.RemoveRegistration(handle);
                     _progress++;
+                    return;
+                case ComparisonScenario.StructMessageNoBoxing:
+                    _bus.UntargetedBroadcast(ref _structPayload);
                     return;
                 default:
                     _bus.UntargetedBroadcast(ref _untargeted);

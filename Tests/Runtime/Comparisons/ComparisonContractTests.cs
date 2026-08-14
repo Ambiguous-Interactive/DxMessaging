@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using System.Collections.Generic;
     using System.Linq;
     using NUnit.Framework;
+    using UnityEngine;
 
     /// <summary>
     /// Fast contract test that locks the cross-library comparison conventions in place
@@ -13,7 +14,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// Adding a comparison scenario or zero-dependency bridge without correct metadata or
     /// dispatch accounting fails this suite automatically.
     /// </summary>
-    [Category("Comparison")]
+    [Category("ComparisonContract")]
     public sealed class ComparisonContractTests
     {
         private static IEnumerable<TestCaseData> ComparisonScenarioCases()
@@ -120,6 +121,34 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         }
 
         [Test]
+        public void PerformanceCaseNamesSortInScenarioOrder()
+        {
+            List<string> names = new();
+            for (
+                int scenarioIndex = 0;
+                scenarioIndex < ComparisonScenarios.All.Length;
+                scenarioIndex++
+            )
+            {
+                ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
+                names.Add(
+                    ComparisonScenarios.PerformanceCaseName(scenarioIndex, "ATech", scenario)
+                );
+                names.Add(
+                    ComparisonScenarios.PerformanceCaseName(scenarioIndex, "ZTech", scenario)
+                );
+            }
+
+            List<string> sorted = names.OrderBy(name => name, StringComparer.Ordinal).ToList();
+            CollectionAssert.AreEqual(
+                names,
+                sorted,
+                "Parameterized comparison case names must sort scenario-major because a runner "
+                    + "may order generated cases by display name rather than source enumeration."
+            );
+        }
+
+        [Test]
         [TestCaseSource(nameof(RosterCases))]
         public void RosterBridgeHasNonEmptyTechMetadata(
             string rosterKey,
@@ -210,6 +239,51 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     dxMessaging.Supports(scenario),
                     $"DxMessaging is the full-featured baseline and must support every comparison scenario, including '{scenario}'."
                 );
+            }
+        }
+
+        [Test]
+        public void UnitySendMessageOnlySupportsAddressedKeyedDispatch()
+        {
+            using IMessagingTechBridge bridge = new UnitySendMessageBridge();
+
+            Assert.IsFalse(
+                bridge.Supports(ComparisonScenario.GlobalToOneSubscriber),
+                "Unity SendMessage addresses a GameObject, so it must not claim global-to-one dispatch."
+            );
+            Assert.IsFalse(
+                bridge.Supports(ComparisonScenario.GlobalToManySubscribers),
+                "Unity SendMessage addresses a GameObject, so it must not claim global fan-out."
+            );
+            Assert.IsTrue(
+                bridge.Supports(ComparisonScenario.KeyedToOneOfMany),
+                "Unity SendMessage must retain its addressed keyed-dispatch comparison."
+            );
+        }
+
+        [Test]
+        public void UnitySendMessageDisposesReceiversSynchronously()
+        {
+            UnitySendMessageBridge bridge = new();
+            try
+            {
+                bridge.Prepare(ComparisonScenario.KeyedToOneOfMany);
+                GameObject dispatchTarget = bridge.DispatchTargetForTests;
+                Assert.IsFalse(
+                    dispatchTarget == null,
+                    "Preparing keyed SendMessage dispatch must create its addressed receiver."
+                );
+
+                bridge.Dispose();
+
+                Assert.IsTrue(
+                    dispatchTarget == null,
+                    "Dispose must synchronously destroy SendMessage receivers before the next benchmark case."
+                );
+            }
+            finally
+            {
+                bridge.Dispose();
             }
         }
 

@@ -4,8 +4,9 @@ name: Performance Numbers
 # same-repository pull request change, every push to master/main, or a controlled
 # manual dispatch, this workflow runs the dispatch benchmarks on ELI-MACHINE
 # (the `fast` runner)
-# at the LATEST Unity version in one Standalone IL2CPP Release player. This is the
-# AOT backend shipped games run and the only published scope. A Release player
+# at the LATEST Unity version in two isolated Standalone IL2CPP Release players:
+# one for internal benchmarks and one for comparisons. This is the AOT backend
+# shipped games run, and Standalone is the only published scope. A Release player
 # strips the GC.Alloc profiler recorder, so the renderer omits allocation columns
 # rather than publishing editor-only Mono measurements. The committed regression
 # baseline uses the same Standalone scope (extract-perf-baseline.js --scope Standalone).
@@ -186,13 +187,13 @@ jobs:
           fi
 
   perf-benchmarks:
-    name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+    name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-suite }}
     needs:
       - runner-preflight
     # Licensed Unity runs only for protected code, controlled dispatches, and trusted
     # same-repository pull requests. Fork and Dependabot pull requests cannot
     # reach this job or its Unity/build-lock credentials.
-    # The sole published leg is a Standalone IL2CPP Release player.
+    # Both published matrix entries use isolated Standalone IL2CPP Release players.
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
     env:
@@ -214,6 +215,12 @@ jobs:
         # omits allocation columns instead of adding a second Mono benchmark leg.
         test-mode:
           - standalone
+        # Internal diagnostics and cross-library comparisons run in separate
+        # players so destructive registration benchmarks cannot leave heap or
+        # global-library state behind for the comparison matrix.
+        benchmark-suite:
+          - internal
+          - comparisons
     steps:
       - name: Require current PR head before self-hosted setup
         timeout-minutes: 2
@@ -335,16 +342,15 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      # Single source of truth for the assembly include list. Perf benchmarks
-      # OPT IN to the Benchmarks/Allocations assemblies via include-perf, exactly
-      # as unity-benchmarks.yml does.
+      # Each suite opts into only its own test assemblies. The separate matrix
+      # entries build separate players and therefore separate managed heaps.
       - name: Compute benchmark assembly list
         id: compute
         timeout-minutes: 5
         uses: ./.github/actions/compute-unity-assemblies
         with:
-          include-perf: "true"
-          include-comparisons: "true"
+          include-perf: ${{ matrix.benchmark-suite == 'internal' }}
+          include-comparisons: ${{ matrix.benchmark-suite == 'comparisons' }}
           target: "${{ matrix.test-mode }}"
 
       # Capture privacy-safe machine specs for the doc/comment provenance line
@@ -358,7 +364,7 @@ jobs:
         timeout-minutes: 2
         shell: pwsh
         run: |
-          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
           New-Item -ItemType Directory -Force -Path $artifactsPath | Out-Null
           ./scripts/unity/collect-machine-specs.ps1 `
             -OutputJson (Join-Path $artifactsPath 'machine-specs.json') `
@@ -391,7 +397,7 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@e6fa595a336e95d800c1139bdebf6d749ee6f186 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
-          holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
           runner-id: ${{ runner.name }}
           github-token: ${{ github.token }}
           pull-request-number: ${{ github.event.pull_request.number }}
@@ -412,14 +418,69 @@ jobs:
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: perf-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          name: perf-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
           path: ${{ runner.temp }}/dx-unity-editor-validation
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Run comparison contracts
+        id: run_contracts
+        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 30
+        shell: pwsh
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DXM_UNITY_TEST_CATEGORY: ComparisonContract
+        run: |
+          # Investigation (2026-08-13): keep this name distinct from
+          # PerfComparison. Unity's category filter uses substring matching,
+          # so the old Comparison name ran the entire published matrix during
+          # the contract preflight.
+          $contractProjectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-comparison-contracts'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
+          ./scripts/unity/run-ci-tests.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -TestMode 'playmode' `
+            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+            -ArtifactsPath '.artifacts/unity/perf-contracts/${{ matrix.unity-version }}' `
+            -ProjectPath $contractProjectPath `
+            -CachePath $cachePath `
+            -LicenseReturnOwner Central `
+            -IncludeComparisons
+
+      - name: Verify comparison contracts actually ran
+        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_contracts.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: ./.github/actions/verify-unity-results
+        with:
+          results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
+          label: Comparison contracts ${{ matrix.unity-version }}
+
+      - name: Upload comparison contract artifacts
+        if: ${{ always() && matrix.benchmark-suite == 'comparisons' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: comparison-contracts-${{ matrix.unity-version }}
+          path: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Dump comparison contract log tail on failure or cancellation
+        if: ${{ (failure() || cancelled()) && matrix.benchmark-suite == 'comparisons' }}
+        timeout-minutes: 5
+        uses: ./.github/actions/dump-unity-log-tail
+        with:
+          results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
+          label: Comparison contracts ${{ matrix.unity-version }}
+
       - name: Run Unity Test Runner
         id: run_tests
-        if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ success() && steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         # 180 (not 120): the Standalone leg builds an IL2CPP player and may run
         # cold after runner maintenance. Stays strictly below the job-level
         # timeout (900) so the step clock fires first and releases the shared
@@ -432,7 +493,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DX_PERF_COMMIT: ${{ env.MEASURED_SHA }}
-          DXM_UNITY_TEST_CATEGORY: "PerfBench;Comparison"
+          DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison' }}
         run: |
           # HASHTABLE splat (not an array): array splatting passes elements
           # POSITIONALLY, so '-IncludeComparisons' would bind to $RepoRoot. A
@@ -443,30 +504,30 @@ jobs:
           # published numbers come from a true Release IL2CPP player
           # (Release C++ config, isDebugBuild=false).
           $extra = @{
-              IncludeComparisons = $true
+              IncludeComparisons = '${{ matrix.benchmark-suite }}' -eq 'comparisons'
               ReleaseCodeOptimization = $true
               ReleasePlayerBuild = $true
               StandaloneScriptingBackend = 'IL2CPP'
           }
-          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}' `
             -ProjectPath $projectPath `
             -CachePath $cachePath `
             -LicenseReturnOwner Central `
             @extra
 
       - name: Capture exact standalone player size
-        if: ${{ matrix.test-mode == 'standalone' && steps.run_tests.outcome == 'success' }}
+        if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
         run: |
-          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-internal'
           $playerDir = Join-Path $projectPath 'Build\DxmTestPlayer'
           $playerExe = Join-Path $playerDir 'DxmTestPlayer.exe'
           if (-not (Test-Path -LiteralPath $playerExe -PathType Leaf)) {
@@ -485,7 +546,7 @@ jobs:
             executableBytes = (Get-Item -LiteralPath $playerExe).Length
             fileCount = $files.Count
           }
-          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone'
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-internal'
           $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.json') -Encoding utf8
           "totalBytes=$totalBytes executableBytes=$($manifest.executableBytes) fileCount=$($files.Count)" |
             Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.txt') -Encoding utf8
@@ -496,8 +557,8 @@ jobs:
         timeout-minutes: 5
         uses: ./.github/actions/dump-unity-log-tail
         with:
-          results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+          results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
+          label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-suite }}
 
       - name: Verify tests actually ran
         if: >-
@@ -509,17 +570,38 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/verify-unity-results
         with:
-          results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+          results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
+          label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-suite }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
+
+      - name: Require every supported comparison row
+        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_tests.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
+          $inputs = @(Get-ChildItem -LiteralPath $artifactsPath -File -Recurse |
+              Where-Object { $_.Name -in @('unity.log', 'results.xml') } |
+              ForEach-Object { @('--input', $_.FullName) })
+          if ($inputs.Count -eq 0) {
+            throw "No comparison result inputs were found under $artifactsPath."
+          }
+          $currentBaseline = Join-Path $artifactsPath 'comparison-rows.csv'
+          & node scripts/unity/extract-perf-baseline.js @inputs `
+            --scope Standalone `
+            --output $currentBaseline
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Comparison baseline extraction failed.'
+          }
+          ./scripts/unity/require-comparison-rows.ps1 -BaselinePath $currentBaseline
 
       - name: Upload perf benchmark artifacts
         if: always()
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          name: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
+          path: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
           if-no-files-found: warn
           retention-days: 14
 
@@ -554,7 +636,7 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@e6fa595a336e95d800c1139bdebf6d749ee6f186 # post-v1.10.0
         with:
           lock-name: wallstop-organization-builds
-          holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
           runner-id: ${{ runner.name }}
           resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
           resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
@@ -1107,6 +1189,17 @@ jobs:
             --output "${PERF_BASELINE}" \
             --replace \
             --scope Standalone
+          node -e \
+            "require('./scripts/unity/perf-scenarios.js').COMPARISON_SUPPORTED_SCENARIO_IDS.forEach((id) => console.log(id))" \
+            | sort > .artifacts/perf-expected-comparison-rows.txt
+          awk -F, 'NR > 1 && $1 ~ /^Comparison_/ { print $1 }' "${PERF_BASELINE}" \
+            | sort > .artifacts/perf-actual-comparison-rows.txt
+          if ! diff -u \
+            .artifacts/perf-expected-comparison-rows.txt \
+            .artifacts/perf-actual-comparison-rows.txt; then
+            echo '::error::Published comparison rows do not match the pinned capability manifest.'
+            exit 1
+          fi
           # The doc OR the baseline moving counts as a change to commit. Check both
           # tracked paths so a baseline-only refresh is still committed.
           if git diff --quiet -- "${PERF_DOC}" "${PERF_BASELINE}"; then

@@ -7,12 +7,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// Bridges Unity's <c>GameObject.SendMessage</c> reflection-based dispatch. One receiver
-    /// MonoBehaviour models global-to-one; many receivers on a single GameObject model fan-out;
-    /// many GameObjects with SendMessage to one model keyed dispatch. SendMessage requires
-    /// PlayMode (it operates on live GameObjects) and has no priority, filtering, post-processing,
-    /// idiomatic churn, or boxing-free struct path, so only the dispatch-shape scenarios are
-    /// supported.
+    /// Bridges Unity's <c>GameObject.SendMessage</c> reflection-based, addressed dispatch. Sixteen
+    /// GameObjects with <c>SendMessage</c> to one model keyed dispatch. Global-to-one and
+    /// global-to-many are unsupported because <c>SendMessage</c> always addresses a specific
+    /// GameObject rather than a global channel. <c>SendMessage</c> requires PlayMode (it operates
+    /// on live GameObjects) and has no priority, filtering, post-processing, idiomatic churn, or
+    /// boxing-free struct path, so only keyed dispatch is supported.
     /// </summary>
     public sealed class UnitySendMessageBridge : IMessagingTechBridge
     {
@@ -36,14 +36,20 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         // call site also casts to object explicitly as a second guard.
         private static readonly int PingPayload = 0;
 
+        private sealed class InvocationCounter
+        {
+            public long Count;
+        }
+
         private sealed class PingReceiver : MonoBehaviour
         {
-            public Action Callback;
+            [NonSerialized]
+            public InvocationCounter Counter;
 
             // ReSharper disable once UnusedMember.Local - invoked by UnityEngine.GameObject.SendMessage.
             private void OnPing(int payload)
             {
-                Callback?.Invoke();
+                Counter.Count++;
             }
         }
 
@@ -53,7 +59,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public bool RequiresPlayMode => true;
 
-        public long ProgressMarker => _progress;
+        public long ProgressMarker => _counter.Count;
 
         private const int DispatchKey = 0;
 
@@ -61,19 +67,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         // lookup-table size stays identical (1:1) across every comparison bridge.
         private const int KeyCount = ComparisonScenarios.KeyedListenerCount;
 
-        private ComparisonScenario _scenario;
-        private long _progress;
+        private readonly InvocationCounter _counter = new();
 
-        private GameObject _primary;
         private readonly List<GameObject> _keyed = new();
         private GameObject _dispatchTarget;
+
+        internal GameObject DispatchTargetForTests => _dispatchTarget;
 
         public bool Supports(ComparisonScenario scenario)
         {
             switch (scenario)
             {
-                case ComparisonScenario.GlobalToOneSubscriber:
-                case ComparisonScenario.GlobalToManySubscribers:
                 case ComparisonScenario.KeyedToOneOfMany:
                     return true;
                 default:
@@ -81,12 +85,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
         }
 
-        public long InvocationsPerOperation(ComparisonScenario scenario) =>
-            scenario switch
-            {
-                ComparisonScenario.GlobalToManySubscribers => ComparisonScenarios.FanOutSubscribers,
-                _ => 1,
-            };
+        public long InvocationsPerOperation(ComparisonScenario scenario) => 1;
 
         public Type DispatchedPayloadType(ComparisonScenario scenario)
         {
@@ -95,23 +94,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public void Prepare(ComparisonScenario scenario)
         {
-            _scenario = scenario;
-
             switch (scenario)
             {
-                case ComparisonScenario.GlobalToOneSubscriber:
-                    _primary = CreateReceiverObject("SendMessageReceiver", 1);
-                    return;
-                case ComparisonScenario.GlobalToManySubscribers:
-                    _primary = CreateReceiverObject(
-                        "SendMessageReceiver",
-                        ComparisonScenarios.FanOutSubscribers
-                    );
-                    return;
                 case ComparisonScenario.KeyedToOneOfMany:
                     for (int key = 0; key < KeyCount; key++)
                     {
-                        GameObject receiver = CreateReceiverObject($"SendMessageReceiver{key}", 1);
+                        GameObject receiver = CreateReceiverObject($"SendMessageReceiver{key}");
                         _keyed.Add(receiver);
                         if (key == DispatchKey)
                         {
@@ -126,21 +114,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public void EmitOnce()
         {
-            switch (_scenario)
-            {
-                case ComparisonScenario.KeyedToOneOfMany:
-                    SendPing(_dispatchTarget);
-                    return;
-                default:
-                    SendPing(_primary);
-                    return;
-            }
+            SendPing(_dispatchTarget);
         }
 
         public void Dispose()
         {
-            DestroyObject(_primary);
-            _primary = null;
             for (int index = 0; index < _keyed.Count; index++)
             {
                 DestroyObject(_keyed[index]);
@@ -149,20 +127,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             _dispatchTarget = null;
         }
 
-        private GameObject CreateReceiverObject(string name, int receiverCount)
+        private GameObject CreateReceiverObject(string name)
         {
             GameObject gameObject = new(name);
-            for (int index = 0; index < receiverCount; index++)
-            {
-                PingReceiver receiver = gameObject.AddComponent<PingReceiver>();
-                receiver.Callback = Increment;
-            }
+            PingReceiver receiver = gameObject.AddComponent<PingReceiver>();
+            receiver.Counter = _counter;
             return gameObject;
-        }
-
-        private void Increment()
-        {
-            _progress++;
         }
 
         private static void SendPing(GameObject gameObject)
@@ -181,14 +151,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 return;
             }
-            if (Application.isPlaying)
-            {
-                Object.Destroy(gameObject);
-            }
-            else
-            {
-                Object.DestroyImmediate(gameObject);
-            }
+            Object.DestroyImmediate(gameObject);
         }
     }
 }

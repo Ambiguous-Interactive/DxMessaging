@@ -15,27 +15,33 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
     /// Kept in its OWN assembly so the Unity Atoms dependency can never break the proven
     /// zero-dependency or other external-package bridges.
     /// </summary>
-    [Category("Performance"), Category("PerfBench"), Category("PerfComparison")]
+    [Category("Performance"), Category("PerfComparison")]
     public sealed class UnityAtomsComparisonTests
     {
         private static IEnumerable<TestCaseData> Cases()
         {
-            (string key, Func<IMessagingTechBridge> factory)[] techs =
+            for (
+                int scenarioIndex = 0;
+                scenarioIndex < ComparisonScenarios.All.Length;
+                scenarioIndex++
+            )
             {
-                ("UnityAtoms", () => new UnityAtomsBridge()),
-            };
-            foreach ((string key, Func<IMessagingTechBridge> factory) in techs)
-            {
-                foreach (ComparisonScenario scenario in ComparisonScenarios.All)
+                ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
+                foreach (
+                    (
+                        string key,
+                        Func<IMessagingTechBridge> factory
+                    ) in UnityAtomsComparisonRoster.Bridges
+                )
                 {
                     yield return new TestCaseData(factory, scenario).SetName(
-                        $"Comparison_{key}_{ComparisonScenarios.Key(scenario)}"
+                        ComparisonScenarios.PerformanceCaseName(scenarioIndex, key, scenario)
                     );
                 }
             }
         }
 
-        [Test, Category("PerfBench"), Category("PerfComparison")]
+        [Test, Category("PerfComparison")]
         [TestCaseSource(nameof(Cases))]
         public void Benchmark(Func<IMessagingTechBridge> bridgeFactory, ComparisonScenario scenario)
         {

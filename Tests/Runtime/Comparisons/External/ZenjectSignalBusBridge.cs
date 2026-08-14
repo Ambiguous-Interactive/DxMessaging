@@ -14,10 +14,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     /// <see cref="ComparisonStructPayload"/> signal; Zenject routes signals through an
     /// <c>object</c>-typed internal path, so the value type boxes there. That boxing is
     /// Zenject's real cost and is measured honestly (no artificial boxing is inserted). The
-    /// same <c>int</c> payload used by the zero-dependency bridges is reused for parity.
+    /// Non-struct scenarios reuse the same <c>int</c> payload as the zero-dependency bridges.
     ///
-    /// Zenject's SignalBus is a flat by-type bus with no keyed routing, priority, filtering,
-    /// or post-processing hook, so those scenarios are declared unsupported.
+    /// Zenject's SignalBus supports keyed routing through signal identifiers. It has no
+    /// subscriber-priority, filtering, or post-processing hook, so those scenarios are
+    /// declared unsupported.
     /// </summary>
     public sealed class ZenjectSignalBusBridge : IMessagingTechBridge
     {
@@ -36,6 +37,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         private DiContainer _container;
         private SignalBus _bus;
 
+        private const int DispatchKey = 0;
+
         // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
         // bus subscribe/unsubscribe cost rather than per-cycle delegate allocation.
         private Action<int> _churnHandler;
@@ -46,6 +49,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 case ComparisonScenario.GlobalToOneSubscriber:
                 case ComparisonScenario.GlobalToManySubscribers:
+                case ComparisonScenario.KeyedToOneOfMany:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                 case ComparisonScenario.StructMessageNoBoxing:
                     return true;
@@ -118,6 +122,18 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                         _bus.Subscribe<int>(subscriber.Handle);
                     }
                     return;
+                case ComparisonScenario.KeyedToOneOfMany:
+                    for (int key = 0; key < ComparisonScenarios.KeyedListenerCount; key++)
+                    {
+                        _container.DeclareSignal<int>().WithId(key);
+                    }
+                    _container.ResolveRoots();
+                    _bus = _container.Resolve<SignalBus>();
+                    for (int key = 0; key < ComparisonScenarios.KeyedListenerCount; key++)
+                    {
+                        _bus.SubscribeId<int>(key, Handle);
+                    }
+                    return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     _container.DeclareSignal<int>();
                     _container.ResolveRoots();
@@ -133,6 +149,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         {
             switch (_scenario)
             {
+                case ComparisonScenario.KeyedToOneOfMany:
+                    _bus.FireId<int>(DispatchKey, DispatchKey);
+                    return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     _bus.Subscribe(_churnHandler);
                     _bus.TryUnsubscribe(_churnHandler);

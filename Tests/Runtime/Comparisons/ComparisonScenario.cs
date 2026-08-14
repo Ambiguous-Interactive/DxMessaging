@@ -45,6 +45,29 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// </summary>
         public static int WarmupEmits(ComparisonScenario scenario) => BenchmarkProtocol.WarmupEmits;
 
+        /// <summary>
+        /// Canonical amount of work performed by one operation. Every supporting bridge must
+        /// report this exact fan-out so a matrix column never compares different workloads.
+        /// </summary>
+        public static long ExpectedInvocationsPerOperation(ComparisonScenario scenario) =>
+            scenario switch
+            {
+                ComparisonScenario.GlobalToManySubscribers => FanOutSubscribers,
+                ComparisonScenario.PriorityOrderedDispatch => 4,
+                _ => 1,
+            };
+
+        /// <summary>
+        /// Prefix the scenario index so runners that order generated cases by display name keep
+        /// execution scenario-major inside every roster assembly instead of silently reverting
+        /// to technology-major order.
+        /// </summary>
+        public static string PerformanceCaseName(
+            int scenarioIndex,
+            string techKey,
+            ComparisonScenario scenario
+        ) => $"Comparison_{scenarioIndex:D2}_{Key(scenario)}_{techKey}";
+
         // Stable MACHINE key used inside the row scenario id. Never change.
         public static string Key(ComparisonScenario s)
         {

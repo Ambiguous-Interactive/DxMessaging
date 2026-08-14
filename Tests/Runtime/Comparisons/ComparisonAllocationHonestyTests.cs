@@ -34,7 +34,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// This is the C# complement to the renderer surfacing a GC-allocated-BYTES comparison matrix:
     /// together they make the boxing cost visible AND impossible to hide.
     /// </summary>
-    [Category("Comparison"), Category("Allocation")]
+    [Category("ComparisonContract"), Category("Allocation")]
     public sealed class ComparisonAllocationHonestyTests
     {
         // The discriminator is per-dispatch allocation RATE: forced boxing is a DETERMINISTIC one

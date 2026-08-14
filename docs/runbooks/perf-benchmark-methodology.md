@@ -335,7 +335,7 @@ silently desync.
 | Comparison cell   | DxMessaging shape                    | Nearest dispatch cell                         | True twin? | Why they differ                                                                                                                                       |
 | ----------------- | ------------------------------------ | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GlobalToOne`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Identical shape; the DxMessaging numbers must agree within noise.                                                                                     |
-| `StructNoBox`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Same shape as `GlobalToOne`; this row exists to expose other libraries' boxing in the GC-allocations column.                                          |
+| `StructNoBox`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | No         | Same storage shape, but the comparison uses the canonical `ComparisonStructPayload` while the dispatch row uses `SimpleUntargetedMessage`.            |
 | `GlobalToMany`    | 16 tokens, 16 untargeted handlers    | (none)                                        | No         | No dispatch scenario fans untargeted dispatch out to 16 handlers (the dispatch family caps untargeted fan-out at four).                               |
 | `KeyedToOne`      | 16 targets registered, dispatch to 1 | `TargetedFlood_OneListener`                   | No         | Measures lookup selectivity (16 registered, 1 fires); the dispatch cell registers a single target.                                                    |
 | `PriorityOrdered` | 1 token, 4 priorities                | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
@@ -343,14 +343,30 @@ silently desync.
 | `PostProcess`     | 1 post-processor + 1 handler         | `PostProcessingHeavy_FourPostProcessors`      | No         | Comparison runs one post-processor; the dispatch cell runs four.                                                                                      |
 | `SubUnsub`        | register/unregister churn cycle      | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe-throughput scenario.                                                                                 |
 
-**Fresh-state guarantee.** Every bridge is constructed fresh per (tech, scenario)
-case by `ComparisonHarness.Run` (factory + `using`), so no subscriber, GameObject,
-ScriptableObject, or DI container survives into the next case. The DxMessaging path
-uses a fresh `new MessageBus()` per scenario, mirroring the dispatch benchmarks'
-isolated bus. The harness's `ProgressMarker` assertion is a hard tripwire that fails
-loudly if any case ever fans out more (or fewer) invocations than declared, which is
-exactly what a leaked cross-case subscriber would do. So a comparison/dispatch
-divergence is always topology, never shared global state.
+**Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player;
+the internal benchmark player, including the 131072-registration teardown rows,
+cannot leave heap state behind for it. Every matrix row then constructs and disposes
+a fresh bridge. The harness does not force collections between rows; the dedicated player
+provides the required clean process boundary without adding GC work to each case. The DxMessaging path uses a fresh
+`new MessageBus()` per scenario,
+MessagePipe resolves from a row-local provider instead of its static global provider,
+and Unity object bridges destroy their row-local objects synchronously. The harness
+also requires each bridge's declared fan-out to equal the scenario's canonical fan-out
+before its `ProgressMarker` assertion reconciles the full measurement. This catches
+current-row deduplication and fan-out mismatches. Teardown contracts separately verify
+synchronous cleanup where the pinned API exposes observable Unity objects or assets.
+
+Cases run scenario-major within each roster assembly. This keeps same-scenario cells
+closer together inside the zero-dependency, external-package, and Unity Atoms rosters,
+but assembly boundaries still separate the complete matrix. A single pass cannot
+eliminate machine drift, so close rankings require repeated, rotated runs as described
+in [Pull-request performance evidence](#pull-request-performance-evidence).
+
+Capability cells follow the pinned libraries' public APIs. MessagePipe uses predicate
+subscription and pre/post filters, UniRx uses `Where`, Zenject uses signal identifiers,
+and Unity Atoms uses a custom `AtomEvent<ComparisonStructPayload>` with replay disabled.
+Unity `SendMessage` is an addressed GameObject API, so its keyless S1 and S2 cells are
+`N/A`; its keyed cell measures the addressed operation it actually provides.
 
 ## How CI produces and publishes the numbers
 
@@ -358,13 +374,16 @@ The [Performance Numbers workflow](https://github.com/Ambiguous-Interactive/DxMe
 (`.github/workflows/perf-numbers.yml`) runs on eligible same-repository pull
 requests and on pushes to `master`. Fork and Dependabot pull requests skip the
 licensed jobs; generated performance-doc pull requests do not trigger this
-workflow because both generated paths are ignored. It runs one published leg with
-comparisons enabled (`-IncludeComparisons`): **Standalone (IL2CPP Release
-player)**, a built IL2CPP player with
-`BuildOptions.Development` stripped and the Release IL2CPP C++ configuration;
-the throughput headline scope.
+workflow because both generated paths are ignored. It runs two sequential published
+matrix entries: one **Standalone IL2CPP Release player** for internal benchmarks and
+one fresh **Standalone IL2CPP Release player** containing only real cross-library
+comparison rows. The comparison job first runs bridge contracts in a disposable Mono
+editor process; the IL2CPP player starts afterward with a separate managed heap. Both
+published players have `BuildOptions.Development` stripped and use the Release IL2CPP
+C++ configuration. Contract fixtures that open synthetic five-second windows are
+excluded from both published categories.
 
-After the leg finishes, `scripts/unity/render-perf-doc.js` reads the benchmark
+After both published entries finish, `scripts/unity/render-perf-doc.js` reads the benchmark
 rows and rewrites the AUTOGENERATED region of
 `docs/architecture/performance.md`. The renderer derives the execution scope
 from each row's platform string (`Standalone`, `PlayMode`, `EditMode`), emits

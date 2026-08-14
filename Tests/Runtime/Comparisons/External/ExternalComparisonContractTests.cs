@@ -14,21 +14,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
     /// bridge -- e.g. a fan-out that Zenject's value-equality dedup collapsed -- fails here in
     /// milliseconds with a precise message instead of inside the multi-minute performance run.
     /// </summary>
-    [Category("Comparison")]
+    [Category("ComparisonContract")]
     public sealed class ExternalComparisonContractTests
     {
-        private static readonly (string key, Func<IMessagingTechBridge> factory)[] Bridges =
-        {
-            ("MessagePipe", () => new MessagePipeBridge()),
-            ("UniRx", () => new UniRxBridge()),
-            ("ZenjectSignalBus", () => new ZenjectSignalBusBridge()),
-        };
-
         private static IEnumerable<TestCaseData> BridgeCases() =>
-            ComparisonBridgeContract.IdentityCases(Bridges);
+            ComparisonBridgeContract.IdentityCases(ExternalComparisonRoster.Bridges);
 
         private static IEnumerable<TestCaseData> BridgeScenarioCases() =>
-            ComparisonBridgeContract.EmitOnceAccountingCases(Bridges);
+            ComparisonBridgeContract.EmitOnceAccountingCases(ExternalComparisonRoster.Bridges);
 
         [Test]
         [TestCaseSource(nameof(BridgeCases))]
@@ -63,6 +56,24 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 rosterKey,
                 factory,
                 scenario
+            );
+        }
+
+        [Test]
+        [TestCase("MessagePipe", ComparisonScenario.FilteredDispatch)]
+        [TestCase("MessagePipe", ComparisonScenario.PostProcessingDispatch)]
+        [TestCase("UniRx", ComparisonScenario.FilteredDispatch)]
+        [TestCase("ZenjectSignalBus", ComparisonScenario.KeyedToOneOfMany)]
+        public void BridgeSupportsItsIdiomaticComparisonScenario(
+            string rosterKey,
+            ComparisonScenario scenario
+        )
+        {
+            using IMessagingTechBridge bridge = ExternalComparisonRoster.Create(rosterKey);
+
+            Assert.IsTrue(
+                bridge.Supports(scenario),
+                $"Bridge '{rosterKey}' must support its idiomatic '{scenario}' scenario; reporting N/A would hide a capability the external package provides."
             );
         }
     }

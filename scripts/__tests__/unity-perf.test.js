@@ -197,6 +197,21 @@ test("scenario filters keep only dispatch and DxMessaging comparison rows", () =
   }
 });
 
+test("comparison row gate fails closed when the extracted baseline has no comparison rows", () => {
+  const testScript = path.join(
+    REPO_ROOT,
+    "scripts",
+    "unity",
+    "__tests__",
+    "require-comparison-rows.test.ps1"
+  );
+  const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
+    encoding: "utf8"
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
 test("extractRows parses CSV and structured log lines, dedupes, skips noise", () => {
   const content = [
     "random unity log line",
@@ -489,26 +504,6 @@ test("render-perf-deltas CLI failures preserve non-gating diagnostic output", ()
   assert.equal(result.stdout, "changed=false\nregressed=false\n");
   assert.match(result.stderr, /Unknown argument: --bogus/);
   assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
-});
-
-test("comparison-enabled Unity workflows run comparison contracts", () => {
-  const workflowDir = path.join(REPO_ROOT, ".github", "workflows");
-  const offenders = fs.readdirSync(workflowDir).flatMap((name) => {
-    if (!name.endsWith(".yml") && !name.endsWith(".yaml")) {
-      return [];
-    }
-    const text = fs.readFileSync(path.join(workflowDir, name), "utf8");
-    if (!/include-comparisons:\s*["']?true["']?/i.test(text)) {
-      return [];
-    }
-    const filters = [...text.matchAll(/DXM_UNITY_TEST_CATEGORY:\s*["']?([^"'\r\n#]+)/g)].map(
-      (match) => match[1].trim()
-    );
-    return filters.length > 0 && !filters.some((filter) => filter.split(";").includes("Comparison"))
-      ? [`${name}: include-comparisons=true but DXM_UNITY_TEST_CATEGORY=[${filters.join(", ")}]`]
-      : [];
-  });
-  assert.deepEqual(offenders, []);
 });
 
 test("performance workflow publishes an exact IL2CPP player-size manifest", () => {

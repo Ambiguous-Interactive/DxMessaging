@@ -21,7 +21,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// drifts from the actual bridge fan-out, the dispatch scenario keys, or the scenario
     /// roster, so a future topology change cannot quietly desync the two tables.
     /// </summary>
-    [Category("Comparison")]
+    [Category("ComparisonContract")]
     public sealed class ComparisonDispatchTopologyTests
     {
         /// <summary>
@@ -115,12 +115,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 [ComparisonScenario.StructMessageNoBoxing] = new TopologyMapping(
                     1,
                     DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                    isTrueTopologyTwin: true,
-                    "DxMessaging dispatches the same SimpleUntargetedMessage shape as "
-                        + "GlobalToOne (one token, one handler); only the cross-library intent "
-                        + "differs (this row exists to expose other libraries' payload boxing "
-                        + "in the bytes/op column), so the DxMessaging throughput agrees with "
-                        + "GlobalToOne and UntargetedFlood_OneHandler."
+                    isTrueTopologyTwin: false,
+                    "Uses one token and one handler, but dispatches the canonical "
+                        + "ComparisonStructPayload required across every technology instead of "
+                        + "the dispatch row's SimpleUntargetedMessage. The storage topology "
+                        + "matches while the closed generic payload path differs."
                 ),
             };
 
@@ -187,6 +186,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
         }
 
+        /// <remarks>
+        /// Investigation (2026-08-13): Canonicalizing StructNoBox across technologies changed
+        /// DxMessaging's closed generic payload from SimpleUntargetedMessage to
+        /// ComparisonStructPayload. Its storage shape remains the same, but only GlobalToOne is
+        /// byte-for-byte identical to the dispatch benchmark payload and is therefore a true twin.
+        /// </remarks>
         [Test]
         public void TrueTopologyTwinsShareTheOneHandlerUntargetedShape()
         {
@@ -201,14 +206,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 .ToList();
 
             CollectionAssert.AreEquivalent(
-                new[]
-                {
-                    ComparisonScenario.GlobalToOneSubscriber,
-                    ComparisonScenario.StructMessageNoBoxing,
-                },
+                new[] { ComparisonScenario.GlobalToOneSubscriber },
                 trueTwins,
-                "The true topology twins are exactly GlobalToOne and StructNoBox (both reduce to "
-                    + "DxMessaging's one-handler untargeted shape). Changing this set means the "
+                "The only true topology twin is GlobalToOne. StructNoBox uses the same storage "
+                    + "shape but a different canonical payload type. Changing this set means the "
                     + "comparison/dispatch parity guarantee moved; update the runbook to match."
             );
 

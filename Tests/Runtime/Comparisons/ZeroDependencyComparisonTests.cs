@@ -12,28 +12,33 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// package bridges (Zenject, MessagePipe, UniRx, ...) arrive in a later slice and
     /// reuse the same harness from their own assembly.
     /// </summary>
-    [Category("Performance"), Category("PerfBench"), Category("PerfComparison")]
+    [Category("Performance"), Category("PerfComparison")]
     public sealed class ZeroDependencyComparisonTests
     {
         private static IEnumerable<TestCaseData> Cases()
         {
-            foreach (
-                (
-                    string key,
-                    Func<IMessagingTechBridge> factory
-                ) in ZeroDependencyComparisonRoster.Bridges
+            for (
+                int scenarioIndex = 0;
+                scenarioIndex < ComparisonScenarios.All.Length;
+                scenarioIndex++
             )
             {
-                foreach (ComparisonScenario scenario in ComparisonScenarios.All)
+                ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
+                foreach (
+                    (
+                        string key,
+                        Func<IMessagingTechBridge> factory
+                    ) in ZeroDependencyComparisonRoster.Bridges
+                )
                 {
                     yield return new TestCaseData(factory, scenario).SetName(
-                        $"Comparison_{key}_{ComparisonScenarios.Key(scenario)}"
+                        ComparisonScenarios.PerformanceCaseName(scenarioIndex, key, scenario)
                     );
                 }
             }
         }
 
-        [Test, Category("PerfBench"), Category("PerfComparison")]
+        [Test, Category("PerfComparison")]
         [TestCaseSource(nameof(Cases))]
         public void Benchmark(Func<IMessagingTechBridge> bridgeFactory, ComparisonScenario scenario)
         {
