@@ -21,6 +21,12 @@ namespace DxMessaging.Tests.Runtime.Core
             BroadcastWithoutSource,
         }
 
+        public enum PostProcessorDelegateShape
+        {
+            Fast,
+            Action,
+        }
+
         public static IEnumerable<PostProcessorVariant> AllVariants
         {
             get
@@ -39,6 +45,28 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 yield return PostProcessorVariant.Targeted;
                 yield return PostProcessorVariant.Broadcast;
+            }
+        }
+
+        public static IEnumerable<TestCaseData> FirstPostProcessorCases
+        {
+            get
+            {
+                foreach (PostProcessorVariant variant in AllVariants)
+                {
+                    yield return new TestCaseData(variant, PostProcessorDelegateShape.Fast).SetName(
+                        $"{nameof(AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission)}({variant},Fast)"
+                    );
+                    if (variant != PostProcessorVariant.Untargeted)
+                    {
+                        yield return new TestCaseData(
+                            variant,
+                            PostProcessorDelegateShape.Action
+                        ).SetName(
+                            $"{nameof(AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission)}({variant},Action)"
+                        );
+                    }
+                }
             }
         }
 
@@ -157,6 +185,85 @@ namespace DxMessaging.Tests.Runtime.Core
                 originalPpCount,
                 newPpCount
             );
+        }
+
+        [TestCaseSource(nameof(FirstPostProcessorCases))]
+        public void AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission(
+            PostProcessorVariant variant,
+            PostProcessorDelegateShape delegateShape
+        )
+        {
+            GameObject host = new(
+                nameof(AddFirstPostProcessorDuringInterceptorDoesNotRunInSameEmission)
+                    + "_"
+                    + variant,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            MessageRegistrationToken token = GetToken(
+                host.GetComponent<EmptyMessageAwareComponent>()
+            );
+            InstanceId hostId = host;
+            int latePostCount = 0;
+            bool added = false;
+            List<MessageRegistrationHandle> handles = new();
+
+            using (LeakWatcher watcher = LeakWatcher.Watch(label: variant + "/" + delegateShape))
+            {
+                handles.Add(
+                    RegisterInterceptor(
+                        variant,
+                        token,
+                        () =>
+                        {
+                            if (!added)
+                            {
+                                added = true;
+                                handles.Add(
+                                    RegisterPostProcessor(
+                                        variant,
+                                        token,
+                                        hostId,
+                                        () => ++latePostCount,
+                                        delegateShape: delegateShape
+                                    )
+                                );
+                            }
+                        }
+                    )
+                );
+                handles.Add(RegisterHandler(variant, token, hostId, () => { }));
+
+                Emit(variant, host);
+                int firstEmissionCount = latePostCount;
+
+                Emit(variant, host);
+                foreach (MessageRegistrationHandle handle in handles)
+                {
+                    token.RemoveRegistration(handle);
+                }
+
+                Assert.AreEqual(
+                    0,
+                    firstEmissionCount,
+                    "[{0}, {1}] The first post-processor registered during an interceptor must "
+                        + "wait until the next emission. firstEmissionCount={2}, totalCount={3}.",
+                    variant,
+                    delegateShape,
+                    firstEmissionCount,
+                    latePostCount
+                );
+                Assert.AreEqual(
+                    1,
+                    latePostCount,
+                    "[{0}, {1}] The post-processor registered during the previous emission must "
+                        + "run once on the next emission. firstEmissionCount={2}, totalCount={3}.",
+                    variant,
+                    delegateShape,
+                    firstEmissionCount,
+                    latePostCount
+                );
+            }
         }
 
         [Test]
@@ -533,7 +640,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token,
             InstanceId source,
             Action onInvoked,
-            int priority = 0
+            int priority = 0,
+            PostProcessorDelegateShape delegateShape = PostProcessorDelegateShape.Fast
         )
         {
             switch (variant)
@@ -547,6 +655,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 case PostProcessorVariant.Targeted:
                 {
+                    if (delegateShape == PostProcessorDelegateShape.Action)
+                    {
+                        return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                            source,
+                            (SimpleTargetedMessage _) => onInvoked(),
+                            priority: priority
+                        );
+                    }
+
                     return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
                         source,
                         (ref SimpleTargetedMessage _) => onInvoked(),
@@ -555,6 +672,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 case PostProcessorVariant.Broadcast:
                 {
+                    if (delegateShape == PostProcessorDelegateShape.Action)
+                    {
+                        return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                            source,
+                            (SimpleBroadcastMessage _) => onInvoked(),
+                            priority: priority
+                        );
+                    }
+
                     return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
                         source,
                         (ref SimpleBroadcastMessage _) => onInvoked(),
@@ -563,6 +689,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 case PostProcessorVariant.TargetedWithoutTargeting:
                 {
+                    if (delegateShape == PostProcessorDelegateShape.Action)
+                    {
+                        return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
+                            (InstanceId _, SimpleTargetedMessage __) => onInvoked(),
+                            priority: priority
+                        );
+                    }
+
                     return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
                         (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked(),
                         priority: priority
@@ -570,9 +704,68 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 case PostProcessorVariant.BroadcastWithoutSource:
                 {
+                    if (delegateShape == PostProcessorDelegateShape.Action)
+                    {
+                        return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
+                            (InstanceId _, SimpleBroadcastMessage __) => onInvoked(),
+                            priority: priority
+                        );
+                    }
+
                     return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
                         (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked(),
                         priority: priority
+                    );
+                }
+                default:
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(variant),
+                        variant,
+                        "Unsupported post-processor variant."
+                    );
+                }
+            }
+        }
+
+        private static MessageRegistrationHandle RegisterInterceptor(
+            PostProcessorVariant variant,
+            MessageRegistrationToken token,
+            Action onInvoked
+        )
+        {
+            switch (variant)
+            {
+                case PostProcessorVariant.Untargeted:
+                {
+                    return token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
+                        (ref SimpleUntargetedMessage _) =>
+                        {
+                            onInvoked();
+                            return true;
+                        }
+                    );
+                }
+                case PostProcessorVariant.Targeted:
+                case PostProcessorVariant.TargetedWithoutTargeting:
+                {
+                    return token.RegisterTargetedInterceptor<SimpleTargetedMessage>(
+                        (ref InstanceId _, ref SimpleTargetedMessage __) =>
+                        {
+                            onInvoked();
+                            return true;
+                        }
+                    );
+                }
+                case PostProcessorVariant.Broadcast:
+                case PostProcessorVariant.BroadcastWithoutSource:
+                {
+                    return token.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
+                        (ref InstanceId _, ref SimpleBroadcastMessage __) =>
+                        {
+                            onInvoked();
+                            return true;
+                        }
                     );
                 }
                 default:

@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make initially empty and interceptor-rewritten post routes obey frozen snapshots: additions wait
+  until the next emission, while removals finish the current post phase
+  ([#413](https://github.com/Ambiguous-Interactive/DxMessaging/issues/413)).
 - Fix an interceptor registered or removed at a different priority than the running interceptor
   taking effect during that same emission; interceptor changes now wait for the next emission, as
   the snapshot semantics documentation already described

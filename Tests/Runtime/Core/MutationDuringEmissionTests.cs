@@ -1540,9 +1540,9 @@ namespace DxMessaging.Tests.Runtime.Core
         /// featured lane can reuse the emission's dispatch plan when no
         /// registration mutated during the emission -- so a plan-validity
         /// check captured too early silently skips the new listener on one
-        /// lane only. This asserts parity rather than a specific count, so it
-        /// stays correct if the freeze semantics are deliberately changed
-        /// later (see issue #413) while still catching lane divergence.
+        /// lane only. Issue #413 made post-processor additions consistently
+        /// defer, without changing this handler-listener path; this assertion
+        /// keeps the two lanes aligned on that existing behavior.
         /// </para>
         /// </summary>
         [Test]

@@ -32,6 +32,129 @@ namespace DxMessaging.Tests.Runtime.Core
     /// </remarks>
     public sealed class ResetMidDispatchTests : MessagingTestBase
     {
+        [Test]
+        public void ResetFromHandlerSuppressesEveryPrefrozenPostPhase(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(ResetFromHandlerSuppressesEveryPrefrozenPostPhase) + scenario.Kind,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            MessageRegistrationToken token = GetToken(
+                host.GetComponent<EmptyMessageAwareComponent>()
+            );
+            InstanceId hostId = host;
+            int resettingCount = 0;
+            int postCount = 0;
+
+            _ = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () =>
+                {
+                    ++resettingCount;
+                    DxMessagingStaticState.Reset();
+                }
+            );
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(
+                scenario,
+                token,
+                hostId,
+                () => ++postCount
+            );
+
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
+            Assert.AreEqual(
+                1,
+                resettingCount,
+                "[{0}] The resetting handler must run once.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                0,
+                postCount,
+                "[{0}] A post snapshot frozen before Reset must not start a new dispatch "
+                    + "phase after the reset generation changes.",
+                scenario.Kind
+            );
+        }
+
+        [Test]
+        public void ResetFromKeyedPostProcessorSuppressesWithoutContextPostPhase(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.KindsWithComponentTarget)
+            )]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(ResetFromKeyedPostProcessorSuppressesWithoutContextPostPhase)
+                    + scenario.Kind,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            MessageRegistrationToken token = GetToken(
+                host.GetComponent<EmptyMessageAwareComponent>()
+            );
+            InstanceId hostId = host;
+            int keyedPostCount = 0;
+            int withoutContextPostCount = 0;
+
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(
+                scenario,
+                token,
+                hostId,
+                () =>
+                {
+                    ++keyedPostCount;
+                    DxMessagingStaticState.Reset();
+                }
+            );
+            switch (scenario.Kind)
+            {
+                case MessageKind.Targeted:
+                {
+                    _ = token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
+                        (ref InstanceId _, ref SimpleTargetedMessage __) =>
+                            ++withoutContextPostCount
+                    );
+                    break;
+                }
+                case MessageKind.Broadcast:
+                {
+                    _ = token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
+                        (ref InstanceId _, ref SimpleBroadcastMessage __) =>
+                            ++withoutContextPostCount
+                    );
+                    break;
+                }
+                default:
+                {
+                    throw new InvalidOperationException($"Unhandled MessageKind {scenario.Kind}.");
+                }
+            }
+
+            Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
+            Assert.AreEqual(
+                1,
+                keyedPostCount,
+                "[{0}] The keyed post-processor must run once and reset the bus.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                0,
+                withoutContextPostCount,
+                "[{0}] Reset in the keyed post phase must suppress the later without-context "
+                    + "post phase.",
+                scenario.Kind
+            );
+        }
+
         /// <summary>
         /// Reset mid-dispatch with the resetting handler and a trailing peer
         /// at DIFFERENT priorities (separate dispatch buckets). The emission

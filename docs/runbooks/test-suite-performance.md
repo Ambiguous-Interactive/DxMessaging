@@ -131,10 +131,12 @@ SECOND, persistent run).
   unless the file is on the `pendingMigration` allowlist -- now empty, so the rule
   covers the whole tree and a new synchronous test cannot regress back into a
   coroutine costume.
-- `SuiteWallClockBudgetTest` (Runtime) is the pre-existing speed backstop: it fails
-  the default correctness suite when its wall clock exceeds a per-version hard
-  ceiling (300 s on 2021.3, 180 s on 2022.3 / 6000.x) and warns past a 60 s soft
-  budget, so a slowdown is unmissable regardless of which lever regressed.
+- `SuiteWallClockBudgetTest` covers the Runtime assembly. It fails that assembly
+  when its wall clock exceeds a per-version hard ceiling (300 s on 2021.3, 180 s
+  on 2022.3 / 6000.x) and warns past a 60 s soft budget. It does not cover
+  EditMode regressions or identify which Unity test step slowed down; compare the
+  `Run Unity Test Runner`, `Run Unity PlayMode tests`, and `Run Unity standalone
+tests` step durations when the full workflow gets slower.
 
 ## Status and follow-ups
 
