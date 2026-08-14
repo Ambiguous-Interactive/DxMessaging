@@ -761,10 +761,10 @@ def validate_lock_window_timeout_budget(job: str, label: str) -> None:
     )
 
 
-def concurrency_groups(source: str) -> list[str]:
-    """Return the `group:` value of every workflow-level and job-level concurrency block."""
+def concurrency_groups(source: str) -> list[str | None]:
+    """Return each concurrency block's `group:`, or None where the block declares none."""
     lines = source.splitlines()
-    groups = []
+    groups: list[str | None] = []
     for index, line in enumerate(lines):
         block = re.match(r"^(?P<indent>[ \t]*)concurrency:[ \t]*$", line)
         if block is None:
@@ -792,8 +792,9 @@ def validate_per_head_concurrency(source: str, label: str) -> None:
             group is not None,
             f"{label}: every concurrency block must name a group",
         )
+        assert group is not None
         require(
-            str(group).endswith(PER_HEAD_CONCURRENCY_KEY),
+            group.endswith(PER_HEAD_CONCURRENCY_KEY),
             f"{label}: concurrency group {group!r} must end with the per-head key "
             f"{PER_HEAD_CONCURRENCY_KEY!r} so a superseded pull-request run cannot "
             "hold it while the run for the current head waits",
