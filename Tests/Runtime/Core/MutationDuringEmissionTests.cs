@@ -1528,6 +1528,94 @@ namespace DxMessaging.Tests.Runtime.Core
                 token.RemoveRegistration(lowHandle);
             }
         }
+
+        /// <summary>
+        /// A targeted emission takes the no-feature fast lane or the featured
+        /// lane depending on whether any interceptor, global accept-all, or
+        /// post-processor exists for the type. Both lanes must report the same
+        /// thing when a target-keyed handler registers the FIRST
+        /// without-targeting listener for that type mid-emission.
+        /// <para>
+        /// The lanes resolve the without-targeting sink differently -- the
+        /// featured lane can reuse the emission's dispatch plan when no
+        /// registration mutated during the emission -- so a plan-validity
+        /// check captured too early silently skips the new listener on one
+        /// lane only. This asserts parity rather than a specific count, so it
+        /// stays correct if the freeze semantics are deliberately changed
+        /// later (see issue #413) while still catching lane divergence.
+        /// </para>
+        /// </summary>
+        [Test]
+        public void WithoutTargetingRegisteredByTargetedHandlerMatchesAcrossDispatchLanes()
+        {
+            int fastLane = CountWithoutTargetingRegisteredMidEmission(featuredLane: false);
+            int featuredLane = CountWithoutTargetingRegisteredMidEmission(featuredLane: true);
+
+            Assert.AreEqual(
+                fastLane,
+                featuredLane,
+                "The fast lane and the featured lane must agree on whether a without-targeting "
+                    + "listener registered by a target-keyed handler runs in that same emission. "
+                    + "Fast lane saw {0}, featured lane saw {1}.",
+                fastLane,
+                featuredLane
+            );
+        }
+
+        private int CountWithoutTargetingRegisteredMidEmission(bool featuredLane)
+        {
+            GameObject host = new(
+                nameof(WithoutTargetingRegisteredByTargetedHandlerMatchesAcrossDispatchLanes)
+                    + (featuredLane ? "_Featured" : "_Fast"),
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
+            MessageRegistrationToken token = GetToken(component);
+
+            int withoutTargetingCount = 0;
+            bool registered = false;
+
+            if (featuredLane)
+            {
+                // Any post-processor for the type forces the featured lane.
+                _ = token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
+                    host,
+                    (ref SimpleTargetedMessage _) => { }
+                );
+            }
+
+            // The handler parameter is deliberately NOT named "_": a discard
+            // assignment inside the body would bind to it instead.
+            _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
+                host,
+                (ref SimpleTargetedMessage targeted) =>
+                {
+                    if (registered)
+                    {
+                        return;
+                    }
+
+                    registered = true;
+                    _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                        (_, _) => ++withoutTargetingCount
+                    );
+                }
+            );
+
+            SimpleTargetedMessage message = new();
+            message.EmitGameObjectTargeted(host);
+
+            Assert.IsTrue(
+                registered,
+                "Precondition: the target-keyed handler must run and register the "
+                    + "without-targeting listener ({0} lane).",
+                featuredLane ? "featured" : "fast"
+            );
+
+            token.UnregisterAll();
+            return withoutTargetingCount;
+        }
     }
 }
 

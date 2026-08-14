@@ -4384,10 +4384,15 @@ namespace DxMessaging.Core.MessageBus
                 }
             }
 
+            // Re-compare rather than reusing planStillValid: the target-keyed
+            // handle phase above ran user code, and a handler that mutated
+            // registrations must be observed here exactly as the live lookup
+            // this replaces would have observed it.
+            bool planValidAfterHandlers = planVersion == _dispatchPlanVersion;
             if (
                 DispatchTargetedWithoutTargetingPhase(
-                    planStillValid ? plan.scalarHandle : null,
-                    planStillValid,
+                    planValidAfterHandlers ? plan.scalarHandle : null,
+                    planValidAfterHandlers,
                     ref target,
                     ref typedMessage,
                     emissionId
