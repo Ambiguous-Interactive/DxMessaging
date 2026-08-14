@@ -81,7 +81,7 @@ jobs:
             if files="$(gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
               --jq '.[] | .filename, (.previous_filename // empty)')"; then
-              documentation_only_pattern='^(docs/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)(\.meta)?$|(AGENTS|GOAL|PLAN)\.md(\.meta)?$|llms\.txt$|mkdocs\.yml$|requirements-docs\.txt$)'
+              documentation_only_pattern='^(docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)(\.meta)?$|(AGENTS|GOAL|PLAN)\.md(\.meta)?$|llms\.txt$|mkdocs\.yml$|requirements-docs\.txt$)'
               non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
               if [ -n "${files}" ] && [ -z "${non_documentation}" ]; then
                 echo "::notice::Only documentation and agent-context files changed; skipping licensed Unity tests."
