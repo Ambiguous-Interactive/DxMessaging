@@ -636,22 +636,19 @@ Three pieces of API expose memory-reclamation state on `IMessageBus`:
   the work performed. `MessageHandler.TrimAll(force)` is the convenience
   wrapper for the global bus.
 
-Both counters aggregate on read by walking the per-kind caches; the cost is
-O(n) in the number of distinct message types known to the bus. Snapshot the
-values at region boundaries (start of a scene unload, end of a leak-watching
-scope) rather than polling them every frame.
-
-A typical leak-watching pattern uses these counters together with the
-internal test-suite `LeakWatcher` utility (see
-`Tests/Runtime/TestUtilities/LeakWatcher.cs` for the pattern; users can build
-their own equivalent for production diagnostics):
+The counters are calculated when read. Snapshot them at useful boundaries, such
+as before and after unloading a gameplay area, instead of polling every frame.
+To check whether a scoped operation left registrations behind:
 
 1. Snapshot `OccupiedTypeSlots` and `OccupiedTargetSlots` at the start of a
    scoped operation.
 1. Run the operation.
 1. Call `Trim(force: true)` to reset every empty slot.
-1. Compare the post-trim counters against the snapshot. Surviving slots
-   correspond to active registrations.
+1. Compare the post-trim counters against the snapshot.
+
+An increase after trimming means the bus still has live registrations or other
+occupied routing state. Use Message Monitor or Flow Graph to find the owners
+before deciding that the increase is a leak.
 
 For the full reclamation model, tuning recommendations, and worked examples,
 see the [Memory Reclamation guide](memory-reclamation.md).

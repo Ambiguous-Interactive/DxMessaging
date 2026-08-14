@@ -43,68 +43,46 @@ using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Extensions;
 using DxMessaging.Unity;
 using UnityEngine;
-using UnityEngine.UI;
 
 [DxTargetedMessage]
 [DxAutoConstructor]
-public readonly partial struct HealPlayerRequested
+public readonly partial struct DamageRequested
 {
     public readonly int Amount;
 }
 
-public sealed class PlayerHealth : MessageAwareComponent
+public sealed class DamageReceiver : MessageAwareComponent
 {
-    private const int MaximumHealth = 100;
-
-    public int CurrentHealth { get; private set; } = 50;
+    public int Health { get; private set; } = 100;
 
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterGameObjectTargeted<HealPlayerRequested>(gameObject, OnHealRequested);
+        _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    private void OnHealRequested(ref HealPlayerRequested message)
+    private void OnDamageRequested(ref DamageRequested message)
     {
-        CurrentHealth = Mathf.Min(MaximumHealth, CurrentHealth + Mathf.Max(0, message.Amount));
+        Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
     }
 }
 
-[RequireComponent(typeof(Button))]
-public sealed class HealButton : MonoBehaviour
+public sealed class Hazard : MonoBehaviour
 {
-    private Button _button;
-    private PlayerHealth _playerHealth;
+    public int Damage = 25;
 
-    private void Awake()
+    private void OnTriggerEnter(Collider other)
     {
-        _button = GetComponent<Button>();
-        _playerHealth = GetComponentInParent<PlayerHealth>();
-        if (_playerHealth == null)
-        {
-            Debug.LogError("HealButton must be placed under a PlayerHealth component.", this);
-            return;
-        }
-        _button.onClick.AddListener(Click);
-    }
-
-    private void OnDestroy()
-    {
-        _button.onClick.RemoveListener(Click);
-    }
-
-    private void Click()
-    {
-        HealPlayerRequested request = new HealPlayerRequested(25);
-        request.EmitGameObjectTargeted(_playerHealth.gameObject);
+        DamageRequested request = new DamageRequested(Damage);
+        request.EmitGameObjectTargeted(other.gameObject);
     }
 }
 ```
 
-Put `HealButton` on a Unity `Button` under the player's `PlayerHealth` object. The component
-wires the click and finds that player automatically; there is no `On Click` event or player
-reference to assign in the Inspector. The heal request is targeted because it changes one
-player's health.
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
+**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
+GameObject. The hazard targets that exact object without knowing whether it is a player, enemy,
+crate, or future gameplay type. Neither component holds a reference to the other.
 
 ## Why Teams Use It
 

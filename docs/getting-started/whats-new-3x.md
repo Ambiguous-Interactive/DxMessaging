@@ -17,23 +17,15 @@ is faster, safer, or new opt-in surface.
 
 ## Faster dispatch, still zero-allocation
 
-The dispatch core was rebuilt around flat, pre-resolved delegate arrays and a
-cached per-message dispatch plan. Sending a message now runs a tight loop over a
-frozen handler array instead of walking dictionaries and per-handler wrapper
-objects. The result is materially higher dispatch throughput -- with the biggest
-gains on multi-handler fan-out -- while keeping the property the library has
-always promised: **zero heap allocations on the steady-state send path**. Cold
-registration got faster too.
+Message dispatch and registration are faster across the 3.x line, with the
+largest dispatch gains when one message reaches several handlers. The
+steady-state send path still allocates no managed objects.
 
-Dispatch semantics are unchanged: per-emission snapshot freezing, priority and
-registration ordering, and mid-emission registration visibility all behave
-exactly as before (covered by tests). For the current measured numbers on the
-published backend, see the [Performance](../architecture/performance.md) page --
-it is regenerated from CI benchmark runs, so it never goes stale.
-
-On IL2CPP players (console and mobile builds), the dispatch hot loops get
-additional low-level optimizations that remove per-iteration safety checks;
-under Mono and in the Editor there is no behavior change.
+Delivery behavior is unchanged: handlers keep their priority and registration
+order, and registration changes made during an emission take effect on the next
+emission. The [Performance](../architecture/performance.md) page shows the
+current Standalone IL2CPP results. Compare Editor and player numbers only within
+the same backend.
 
 ## Catch lifecycle mistakes before you run
 
@@ -73,39 +65,14 @@ and the optional Unity console bridge that feeds the inspector overlay.
 The Inspector is no longer the only diagnostics surface. 3.x also adds
 dedicated windows under **Tools > Wallstop Studios > DxMessaging**:
 
-- **Message Monitor** shows recent global-bus emissions in most-recent-first
-  order, including message type, context, stack trace, filtering, selected-entry
-  details, typed `type:` / `message:` / `context:` / `stack:` filters, visible
-  active-filter summary and Clear action, visible message-type/context lanes
-  with Filter shortcuts, exact quoted context shortcuts, Copy JSON export, and a
-  component diagnostics panel for loaded scene
-  `MessagingComponent` instances.
-- **Flow Graph** shows loaded-scene registration topology, route-map call
-  shares, route-kind mix, widest target-component fan-out, hottest visible
-  routes, most-routed targets, inactive routed-target hints, no-call route hints,
-  visible traced-route coverage, busiest traced-route, traced-message, and
-  traced-target share, visible message lanes grouped by message type, visible
-  target lanes grouped by target component, visible trace context volume and
-  share, visible trace route-kind lanes grouped by traced registration kind,
-  visible trace message lanes grouped by traced message type, visible trace
-  target lanes grouped by traced target component, visible trace-id lanes grouped
-  by positive trace id, visible trace context lanes grouped by normalized
-  context, visible trace-id breadth, visible trace-message/target/path
-  concentration, visible flow corridors grouped by trace message and target
-  component, message/component/registration-edge details,
-  selected component/message route-health and busiest traced-route details,
-  selected-component busiest traced-message details, selected-message
-  busiest traced-target details, selected-component, selected-message, and
-  selected-route visible traced-share details, selected-component,
-  selected-message, and selected-route trace context volume and delivery,
-  trace-id breadth, selected-component trace-message, selected-message
-  trace-target, busiest-context-share, busiest-path, and busiest-path-share
-  breakdowns, Copy JSON export, exact recent traced delivery counts, and recent
-  trace-path/context evidence, including exact trace-id export arrays, distinct
-  trace-id counts, visible trace-route-kind lanes, visible trace-id lanes,
-  widest visible trace ids, busiest trace context share, busiest trace-message,
-  trace-target, and trace-path shares, when diagnostics capture token delivery
-  records with positive trace ids.
+- **Message Monitor** shows recent emissions with message type, route kind,
+  context, stack trace, search filters, component details, and JSON export. Use
+  Live mode while reproducing a problem or Snapshot mode to inspect buffered
+  history.
+- **Flow Graph** maps messages to receivers through their active registrations.
+  Select a message, component, or route to inspect delivery activity, source
+  locations, context, and recent trace evidence. Filtering and JSON export help
+  with dense scenes.
 
 See the [Diagnostics guide](../guides/diagnostics.md) for the current semantics.
 Trace paths are recent evidence aggregates, not a replacement for a full

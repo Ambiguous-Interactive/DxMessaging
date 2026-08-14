@@ -4,7 +4,7 @@
 
 ---
 
-**Goal:** Get a working message system in 5 minutes. Copy, paste, run.
+**Goal:** Get a working message system in 5 minutes. Copy the scripts, add two components, and run.
 
 **Stuck?** -> [Troubleshooting](../reference/troubleshooting.md) | [FAQ](../reference/faq.md)
 
@@ -24,75 +24,42 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 ## Your First Message (3 Steps)
 
-### Step 1: Define messages
+### Step 1: Define a damage command
 
 ```csharp
-using DxMessaging.Core.Messages;
 using DxMessaging.Core.Attributes;
 
-// Recommended: attributes + auto constructor (beginner-friendly)
-[DxUntargetedMessage]
-[DxAutoConstructor]
-public readonly partial struct WorldRegenerated
-{
-    public readonly int seed;
-}
-
-[DxUntargetedMessage]
-[DxAutoConstructor]
-public readonly partial struct VideoSettingsChanged
-{
-    public readonly int width;
-    public readonly int height;
-}
-
 [DxTargetedMessage]
 [DxAutoConstructor]
-public readonly partial struct Heal
+public readonly partial struct DamageRequested
 {
-    public readonly int amount;
-}
-
-[DxBroadcastMessage]
-[DxAutoConstructor]
-public readonly partial struct TookDamage
-{
-    public readonly int amount;
-}
-
-// Performance option: keep [DxTargetedMessage] on a readonly struct to stay zero-boxing friendly, and drop [DxAutoConstructor] only if you need custom constructor logic.
-
-// Optional parameters with custom defaults
-[DxTargetedMessage]
-[DxAutoConstructor]
-public readonly partial struct HealAdvanced
-{
-    public readonly int amount;
-    [DxOptionalParameter(true)]  // Custom default value
-    public readonly bool showEffect;
-    [DxOptionalParameter]  // Defaults to default(Color)
-    public readonly Color effectColor;
+    public readonly int Amount;
 }
 ```
 
-### Step 2: Add a messaging component
+The source generator adds the constructor and targeted message identity. The emit helper is a
+DxMessaging extension method.
+
+### Step 2: Receive damage
 
 ```csharp
 using DxMessaging.Unity;
-using DxMessaging.Core.Messages;
 using UnityEngine;
 
-public sealed class HealthUI : MessageAwareComponent
+public sealed class DamageReceiver : MessageAwareComponent
 {
+    public int Health { get; private set; } = 100;
+
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterUntargeted<WorldRegenerated>(OnWorld);
-        _ = Token.RegisterComponentBroadcast<TookDamage>(this, OnDamage);
+        _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    private void OnWorld(ref WorldRegenerated m) { /* update UI */ }
-    private void OnDamage(ref TookDamage m) { /* flash damage */ }
+    private void OnDamageRequested(ref DamageRequested message)
+    {
+        Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
+    }
 }
 ```
 
@@ -116,27 +83,28 @@ The five guarded methods, with what breaks if you forget the base call:
 
 See [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call) and the symptom-first [troubleshooting guide](../reference/troubleshooting.md).
 
-### Step 3: Send messages
+### Step 3: Add a hazard
 
 ```csharp
-using DxMessaging.Core.Extensions;   // Emit helpers
+using DxMessaging.Core.Extensions;
 using UnityEngine;
 
-// Untargeted (global)
-var world = new WorldRegenerated(42);
-world.Emit();
+public sealed class Hazard : MonoBehaviour
+{
+    public int Damage = 25;
 
-// Targeted (to a specific component or GameObject)
-var heal = new Heal(10);
-heal.EmitGameObjectTargeted(gameObject);     // no InstanceId cast needed
-
-// Broadcast (from a specific source)
-var hit = new TookDamage(5);
-hit.EmitGameObjectBroadcast(gameObject);     // no InstanceId cast needed
-
-// String convenience (global)
-"Saved".Emit();
+    private void OnTriggerEnter(Collider other)
+    {
+        DamageRequested request = new DamageRequested(Damage);
+        request.EmitGameObjectTargeted(other.gameObject);
+    }
+}
 ```
+
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
+**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
+GameObject. The hazard sends the same command to whatever enters the trigger without a player
+field, receiver lookup, interface, or UnityEvent.
 
 ---
 
@@ -144,9 +112,9 @@ hit.EmitGameObjectBroadcast(gameObject);     // no InstanceId cast needed
 
 You have:
 
-1. Defined 4 message types
-1. Created a component that listens
-1. Sent messages from anywhere
+1. Defined a targeted gameplay command
+1. Registered a receiver against its own GameObject
+1. Sent the command to the object discovered by a physics event
 
 Registration cleanup is automatic. Messages are type-safe.
 
@@ -154,9 +122,9 @@ Registration cleanup is automatic. Messages are type-safe.
 
 ## What You Built
 
-- **Untargeted messages** (`WorldRegenerated`, `VideoSettingsChanged`) -> Global announcements anyone can hear
-- **Targeted messages** (`Heal`) -> Commands to a specific object
-- **Broadcast messages** (`TookDamage`) -> Events from a source that others observe
+The hazard and damage receiver share only the `DamageRequested` contract. You can add shields,
+breakable props, enemies, or test doubles without changing `Hazard`. Use the message-type guide next
+to learn when a global announcement or source-bound event fits better than this targeted command.
 
 ---
 
@@ -185,11 +153,11 @@ Registration cleanup is automatic. Messages are type-safe.
 ### Do's
 
 - Use `MessageAwareComponent` for Unity components (automatic lifecycle)
-- Store struct in variable before emitting: `var msg = new Heal(10); msg.EmitGameObjectTargeted(playerGO);`
+- Store the struct in a variable before emitting: `var message = new DamageRequested(10); message.EmitGameObjectTargeted(target);`
 - Call `base.RegisterMessageHandlers()` when overriding
 
 ### Don'ts
 
-- Don't emit from temporaries: `new Heal(10).EmitGameObjectTargeted(playerGO)` won't compile (struct emit methods require `ref this`)
+- Don't emit from temporaries: `new DamageRequested(10).EmitGameObjectTargeted(target)` won't compile (struct emit methods require `ref this`)
 - Don't use Untargeted for commands to one object (use Targeted instead)
 - Don't forget `using DxMessaging.Core.Extensions;` for `Emit*` methods

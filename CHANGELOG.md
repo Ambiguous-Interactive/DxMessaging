@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use a collision-driven first-message guide and remove maintainer details from user docs
+  ([#404](https://github.com/Ambiguous-Interactive/DxMessaging/issues/404),
+  [#411](https://github.com/Ambiguous-Interactive/DxMessaging/issues/411)).
 - Color Untargeted routes blue, Targeted purple, and Broadcast green in the editor and the docs; red
   now marks problems ([#353](https://github.com/Ambiguous-Interactive/DxMessaging/issues/353)).
 - Shrink the package download by using Unity's Roslyn assemblies instead of bundling private copies
