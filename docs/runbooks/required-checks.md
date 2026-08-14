@@ -90,12 +90,16 @@ and each is validated rather than assumed:
 - **A superseded head.** `concurrency` on this workflow sets
   `cancel-in-progress: false` on purpose, because hard-cancelling a run that
   holds the organization build lock is the scenario the license-return guarantee
-  exists to prevent. Without a gate, the run for the older commit keeps the
-  concurrency group through every matrix leg and the current head cannot start. The
-  `head-check` job compares the event's head SHA against the live pull-request
-  head on `ubuntu-latest`, before the lock is in reach, and publishes a
-  `superseded` output that both licensed jobs gate on. It fails open: a lookup
-  that returns no SHA runs the full matrix. The per-leg
+  exists to prevent. The group is keyed by pull-request head SHA so that policy
+  does not also queue the current head behind a superseded run: push runs keep
+  the `github.ref` key and stay serialized, pull-request runs partition per head,
+  and every job-level group in the file uses the same key. Nothing is cancelled,
+  and licensed work stays mutually exclusive through the organization build lock.
+  On top of that, the `head-check` job compares the event's head SHA against the
+  live pull-request head on `ubuntu-latest`, before the lock is in reach, and
+  publishes a `superseded` output that both licensed jobs gate on, so a
+  superseded run costs one cheap hosted job instead of four self-hosted ones. It
+  fails open: a lookup that returns no SHA runs the full matrix. The per-leg
   `Require current PR head before setup` guard still covers a push that lands
   after `head-check` has already passed.
 
