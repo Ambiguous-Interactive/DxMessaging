@@ -80,12 +80,13 @@
         "category": "documentation",
         "tags": "changelog, documentation, versioning, semantic-versioning, release-notes, keep-a-changelog, user-communication"
       },
-      "lineCount": 91,
+      "lineCount": 119,
       "references": [
         ".llm/skills/changelog-management/references/changelog-entry-writing-part-1.md",
         ".llm/skills/changelog-management/references/changelog-entry-writing.md",
         ".llm/skills/changelog-management/references/changelog-management.md",
-        ".llm/skills/changelog-management/references/changelog-release-workflow.md"
+        ".llm/skills/changelog-management/references/changelog-release-workflow.md",
+        ".llm/skills/changelog-management/references/upm-changelog-surface.md"
       ]
     },
     {

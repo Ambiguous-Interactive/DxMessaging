@@ -9,90 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add ready-to-run scenes to Mini Combat and UI Buttons + Inspector. The samples
-  now start without manual Inspector wiring, release fallback objects and scoped
-  diagnostics they own, and keep demonstration work bounded
-  ([#372](https://github.com/Ambiguous-Interactive/DxMessaging/issues/372)).
-- Add an auto-opening guided tour to the Diagnostics Tooling Exerciser sample.
-  Its live status and ordered actions start the scene, emit and reset deterministic
-  traffic, open Message Monitor and Flow Graph, select the sample receivers, and
-  link to DxMessaging Project Settings
-  ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
-- Add the standard .NET constructors to `MessageRegistrationBuildException`.
-  Builder-thrown instances continue to include the retryable lease and both
-  activation and cleanup failures ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Add ready-to-run scenes to the Mini Combat and UI Buttons + Inspector samples, so neither needs
+  Inspector wiring ([#372](https://github.com/Ambiguous-Interactive/DxMessaging/issues/372)).
+- Add a guided tour to the Diagnostics Tooling Exerciser sample that emits traffic and opens Message
+  Monitor and Flow Graph ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
+- Add the standard .NET constructors to `MessageRegistrationBuildException`
+  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Show the installed version's release notes in the Unity Package Manager Version History tab
+  ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
 
 ### Changed
 
-- Change the editor and documentation taxonomy to mark Untargeted routes blue,
-  Targeted routes purple, and Broadcast routes green while reserving red for
-  problem states ([#353](https://github.com/Ambiguous-Interactive/DxMessaging/issues/353)).
-- Reduce the package download by relying on Unity's Roslyn compiler assemblies instead of
-  bundling private copies with the DxMessaging source generator and analyzer
+- Color Untargeted routes blue, Targeted purple, and Broadcast green in the editor and the docs; red
+  now marks problems ([#353](https://github.com/Ambiguous-Interactive/DxMessaging/issues/353)).
+- Shrink the package download by using Unity's Roslyn assemblies instead of bundling private copies
   ([#371](https://github.com/Ambiguous-Interactive/DxMessaging/issues/371)).
-- Reduce cold untargeted-handler registration allocations when registering many
-  message types that have not emitted yet. Per-message-type dispatch snapshot
-  state now materializes on the first emission instead of the first registration,
-  and ordinary typed handlers no longer allocate global accept-all slots they cannot use
+- Allocate less when registering many message types that have not emitted yet
   ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
-- Reduce registration-order bulk deregistration from quadratic to linear time
-  when one token owns many distinct same-priority handlers for the same message
-  type, while preserving registration-order dispatch for surviving handlers.
-  During fixed-cardinality churn, logical order storage retains fewer than the larger
-  of 64 or the live count in skipped prefix entries before compaction, while the
-  underlying list retains its geometric high-water capacity until the typed slot is
-  reclaimed. The representation adds no per-handler index
-  ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
-- Stop generated message and constructor source from disabling all compiler
-  warnings. Generated code now participates in the consumer's warning policy,
-  while repository CI compiles every shipped sample and generated output with
-  warnings treated as errors. Strict .NET analysis uses all SDK 9 rules, and
-  Unity EditMode CI adds a non-shipping Roslynator pass across the project
-  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Deregister in linear instead of quadratic time when one token owns many same-priority handlers for
+  one message type ([#374](https://github.com/Ambiguous-Interactive/DxMessaging/issues/374)).
+- Stop generated code from suppressing compiler warnings, so it follows your project's warning
+  policy ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Point the Package Manager **Changelog** link at the rendered changelog instead of raw Markdown
+  ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
 
 ### Fixed
 
-- Restore isolated IL2CPP dispatch measurements by running high-cardinality
-  deregistration attribution after the published throughput windows
-  ([#397](https://github.com/Ambiguous-Interactive/DxMessaging/issues/397)).
-- Fix `DxMessagingStaticState.Reset()` from inside an interceptor so it stops
-  the remaining copied interceptor snapshot and handler pipeline instead of
-  invoking callbacks against reset bus state
+- Fix `DxMessagingStaticState.Reset()` from inside an interceptor so it stops the rest of the
+  dispatch instead of invoking callbacks against reset bus state
   ([#395](https://github.com/Ambiguous-Interactive/DxMessaging/issues/395)).
-- Fix Flow Graph object navigation and relationship-card readability. Live
-  component and route details can select and ping their exact receiver. Broadcast
-  and targeted route details also expose a source or target action when the
-  snapshot captured that exact live context object; destroyed references remain
-  inert
+- Fix Flow Graph so route and component details select and ping the object they name
   ([#345](https://github.com/Ambiguous-Interactive/DxMessaging/issues/345)).
-- Fix Message Monitor resizing so one persisted divider controls the complete
-  log details area. Wrapped stack frames now keep their full line height without
-  clipped text or extra vertical gaps
-  ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
-- Fix nested runtime-settings overrides restoring ended settings when their
-  tokens are disposed out of order. Static reset now invalidates older override
-  tokens so they cannot replace newer configuration
+- Fix Message Monitor resizing so one divider controls the log detail area and wrapped stack frames
+  keep their height ([#344](https://github.com/Ambiguous-Interactive/DxMessaging/issues/344)).
+- Fix disposing nested runtime-settings override tokens out of order restoring ended settings
   ([#384](https://github.com/Ambiguous-Interactive/DxMessaging/issues/384)).
-- Fix copied `GlobalMessageBusScope` and `RegistrationDisposable` values restoring or removing
-  newer state. Global bus override scopes now share disposal state, unwind nested scopes safely in
-  either order, ignore stale disposal after an explicit set or reset, and allocate nothing per scope
-  when retained as their concrete value type while reusing established slot capacity. New peak
-  occupancy grows the slot table in fixed blocks instead of imposing a fixed 1,024 nesting cap.
-  Registration handle identities now remain unique across static resets so a stale copied wrapper
-  cannot remove a new registration that reused its token slot
+- Fix copied `GlobalMessageBusScope` and `RegistrationDisposable` values restoring or removing newer
+  state, and remove the 1,024 nested-scope cap
   ([#375](https://github.com/Ambiguous-Interactive/DxMessaging/issues/375)).
-- Fix the optional Reflex integration and DI sample for Reflex 14's registration
-  API while retaining support for earlier Reflex releases. The pinned Reflex
-  14.3.1 test dependency also removes its obsolete non-generic TreeView usage on
-  Unity 6000.5 ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
-- Keep Message Monitor, Flow Graph, and the Diagnostics Tooling Exerciser compiling
-  on Unity 6000.5 after Unity replaced the object-discovery sort-mode overloads.
-  Older supported editors retain their matching API path
-  ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
-- Fix the Message Monitor failing to compile on Unity 6000.5 after Unity made
-  its integer object-lookup API a compile error. Context links now use the
-  package's centralized `InstanceId` object reference on every supported editor
-  ([#365](https://github.com/Ambiguous-Interactive/DxMessaging/issues/365)).
+- Fix the Reflex integration and DI sample for Reflex 14 while keeping earlier Reflex releases
+  working ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Fix editor tooling failing to compile on Unity 6000.5 after Unity changed its object-discovery and
+  object-lookup APIs ([#365](https://github.com/Ambiguous-Interactive/DxMessaging/issues/365),
+  [#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
 
 ## [3.2.2]
 
