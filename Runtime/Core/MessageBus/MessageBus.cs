@@ -429,6 +429,19 @@ namespace DxMessaging.Core.MessageBus
             public ContextHandlerMap contextPost;
 
             /// <summary>
+            /// Interceptor store for this message type, or <c>null</c> when
+            /// none were registered at refresh time (which is also the
+            /// emit-path gate). The flattened, priority-ordered array lives on
+            /// the store rather than here on purpose: this plan is invalidated
+            /// by ANY registration anywhere on the bus and by every idle
+            /// sweep, so caching the array here would rebuild - and therefore
+            /// allocate - on the next emission after unrelated churn. Keyed to
+            /// the store's own dirty flag, the array survives everything
+            /// except an actual interceptor mutation.
+            /// </summary>
+            public InterceptorCache<object> interceptorCache;
+
+            /// <summary>
             /// Drops every cached sink reference and forces a refresh on the
             /// next emission. Called by the sweep registry so evicted sink
             /// slots are not kept alive by plan references, and by
@@ -442,6 +455,7 @@ namespace DxMessaging.Core.MessageBus
                 scalarPost = null;
                 contextHandle = null;
                 contextPost = null;
+                interceptorCache = null;
             }
         }
 
@@ -490,10 +504,97 @@ namespace DxMessaging.Core.MessageBus
             public readonly SortedList<int, List<TValue>> handlers = new();
             public long lastTouchTicks;
 
+            /// <summary>
+            /// <see cref="handlers"/> flattened into one priority-ordered
+            /// array (ascending priority group, then registration order within
+            /// a group - the order the old per-emit walk produced). The
+            /// interceptor phase iterates this directly, so it costs one array
+            /// read plus the delegate call per interceptor instead of a
+            /// scratch-list rent and a defensive <see cref="List{T}"/> copy per
+            /// priority group per emission.
+            /// <para>
+            /// Rebuilt lazily, only after <see cref="MarkFlatDirty"/>, which
+            /// every interceptor mutation calls. It deliberately does NOT key
+            /// off the bus-wide dispatch-plan stamp: that stamp moves on any
+            /// registration anywhere and on every idle sweep, which would make
+            /// steady-state emission allocate a fresh array after unrelated
+            /// churn.
+            /// </para>
+            /// </summary>
+            private TValue[] _flat = Array.Empty<TValue>();
+            private int _flatCount;
+            private bool _flatDirty = true;
+
+            /// <summary>
+            /// Invalidates the flattened view AND drops its references, so a
+            /// deregistered interceptor is not kept alive by this cache until
+            /// the next emission or sweep. Assigning a fresh empty array rather
+            /// than clearing in place preserves the frozen view any emission
+            /// currently walking the old array still holds.
+            /// </summary>
+            public void MarkFlatDirty()
+            {
+                _flat = Array.Empty<TValue>();
+                _flatCount = 0;
+                _flatDirty = true;
+            }
+
+            /// <summary>
+            /// Returns the flattened, priority-ordered interceptors, rebuilding
+            /// first when dirty. A rebuild always ALLOCATES a new array rather
+            /// than writing into the existing one, so an emission already
+            /// iterating the previous array keeps a stable, complete view: a
+            /// mutation performed by an interceptor or handler is observed by
+            /// the NEXT emission, matching the handler path's snapshot freeze
+            /// (see <see cref="DispatchSnapshot"/>).
+            /// </summary>
+            public TValue[] EnsureFlat(out int count)
+            {
+                if (_flatDirty)
+                {
+                    RebuildFlat();
+                }
+
+                count = _flatCount;
+                return _flat;
+            }
+
+            private void RebuildFlat()
+            {
+                IList<List<TValue>> groups = handlers.Values;
+                int total = 0;
+                for (int index = 0; index < groups.Count; ++index)
+                {
+                    total += groups[index].Count;
+                }
+
+                if (total == 0)
+                {
+                    _flat = Array.Empty<TValue>();
+                    _flatCount = 0;
+                    _flatDirty = false;
+                    return;
+                }
+
+                TValue[] flattened = new TValue[total];
+                int next = 0;
+                for (int index = 0; index < groups.Count; ++index)
+                {
+                    List<TValue> group = groups[index];
+                    group.CopyTo(flattened, next);
+                    next += group.Count;
+                }
+
+                _flat = flattened;
+                _flatCount = next;
+                _flatDirty = false;
+            }
+
             public void Clear()
             {
                 handlers.Clear();
                 lastTouchTicks = 0;
+                MarkFlatDirty();
             }
         }
 
@@ -1567,7 +1668,6 @@ namespace DxMessaging.Core.MessageBus
             Type,
             Action<InstanceId, IBroadcastMessage>
         > _sourcedBroadcastMethodsByType = new();
-        private readonly Stack<List<object>> _innerInterceptorsStack = new();
 
         private readonly Dictionary<
             Type,
@@ -2918,7 +3018,6 @@ namespace DxMessaging.Core.MessageBus
             _untargetedBroadcastMethodsByType.Clear();
             _targetedBroadcastMethodsByType.Clear();
             _sourcedBroadcastMethodsByType.Clear();
-            _innerInterceptorsStack.Clear();
             _methodCache.Clear();
             _dirtyTypes.Clear();
             ReturnAllDirtyTargetCollections();
@@ -3277,6 +3376,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 count = 0;
                 interceptors.Add(interceptor);
+                prioritizedInterceptors.MarkFlatDirty();
             }
 
             priorityCount[priority] = count + 1;
@@ -3348,6 +3448,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 count = 0;
                 interceptors.Add(interceptor);
+                prioritizedInterceptors.MarkFlatDirty();
             }
 
             priorityCount[priority] = count + 1;
@@ -3419,6 +3520,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 count = 0;
                 interceptors.Add(interceptor);
+                prioritizedInterceptors.MarkFlatDirty();
             }
 
             priorityCount[priority] = count + 1;
@@ -3649,6 +3751,7 @@ namespace DxMessaging.Core.MessageBus
                     planVersion != _dispatchPlanVersion
                     && RunUntargetedPostPhase<TMessage>(
                         ref typedMessage,
+                        planVersion,
                         DispatchSnapshot.Empty,
                         emissionId,
                         touchTick
@@ -3693,7 +3796,11 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
-            if (!RunUntargetedInterceptors(ref typedMessage))
+            InterceptorCache<object> untargetedInterceptors = plan.interceptorCache;
+            if (
+                untargetedInterceptors != null
+                && !RunUntargetedInterceptors(ref typedMessage, untargetedInterceptors)
+            )
             {
                 return;
             }
@@ -3704,11 +3811,18 @@ namespace DxMessaging.Core.MessageBus
                 BroadcastGlobalUntargeted(ref untargetedMessage, emissionId);
             }
 
-            bool foundAnyHandlers = InternalUntargetedBroadcast(ref typedMessage, emissionId);
+            // While the plan stamp still matches, no registration mutation has
+            // run since the plan was validated, so plan.scalarHandle IS what a
+            // live sink lookup returns. Only the mutated case pays the lookup.
+            bool foundAnyHandlers =
+                planVersion == _dispatchPlanVersion
+                    ? DispatchUntargetedHandlePhase(plan.scalarHandle, ref typedMessage, emissionId)
+                    : InternalUntargetedBroadcast(ref typedMessage, emissionId);
 
             if (
                 RunUntargetedPostPhase<TMessage>(
                     ref typedMessage,
+                    planVersion,
                     untargetedPostSnapshot,
                     emissionId,
                     touchTick
@@ -3729,23 +3843,32 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
-        /// Live post-processing phase for untargeted emissions, shared by
-        /// the featured emit path and the fast lane's mid-emission-mutation
-        /// fallback. Re-checks the post sink LIVE (a post-processor
-        /// registered into a previously-snapshotless sink mid-emission is
-        /// observed here, matching the legacy lazy-freeze placement) and
-        /// dispatches the pre-frozen snapshot when one was acquired at
-        /// emission start.
+        /// Post-processing phase for untargeted emissions, shared by the
+        /// featured emit path and the fast lane's mid-emission-mutation
+        /// fallback. When <paramref name="planVersion"/> still matches the bus
+        /// stamp, no registration mutation ran during this emission, so the
+        /// snapshot frozen at emission start is exactly what a live re-check
+        /// would produce and the typed sink lookup is skipped. Once the stamp
+        /// has moved, the sink is re-checked LIVE (a post-processor registered
+        /// into a previously-snapshotless sink mid-emission is observed here,
+        /// matching the legacy lazy-freeze placement).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool RunUntargetedPostPhase<TMessage>(
             ref TMessage typedMessage,
+            long planVersion,
             DispatchSnapshot prefrozenSnapshot,
             long emissionId,
             long touchTick
         )
             where TMessage : IUntargetedMessage
         {
+            if (planVersion == _dispatchPlanVersion)
+            {
+                return prefrozenSnapshot.IsInitialized
+                    && DispatchFlatSnapshot(prefrozenSnapshot, ref typedMessage);
+            }
+
             if (
                 !_scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
                     .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
@@ -3788,15 +3911,38 @@ namespace DxMessaging.Core.MessageBus
             plan.scalarPost = post;
             plan.contextHandle = null;
             plan.contextPost = null;
-            bool hasInterceptors =
-                _untargetedInterceptsByType.TryGetValue<TMessage>(
-                    out InterceptorCache<object> interceptors
-                )
-                && interceptors.handlers.Count != 0;
+            _ = _untargetedInterceptsByType.TryGetValue<TMessage>(
+                out InterceptorCache<object> interceptors
+            );
+            bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
             bool hasPost = post != null && 0 < post.handlers.Count;
             plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
             plan.version = _dispatchPlanVersion;
+        }
+
+        /// <summary>
+        /// Caches the interceptor store for this message type on the plan and
+        /// reports whether any interceptor is registered. The store owns the
+        /// flattened array (see <see cref="InterceptorCache{TValue}.EnsureFlat"/>);
+        /// the plan only caches the reference, so an unrelated registration or
+        /// an idle sweep invalidating the plan does not discard the flattened
+        /// view and force a reallocation.
+        /// </summary>
+        /// <returns><c>true</c> when at least one interceptor is registered.</returns>
+        private static bool RefreshInterceptorPlan(
+            DispatchPlan plan,
+            InterceptorCache<object> interceptors
+        )
+        {
+            if (interceptors == null || interceptors.handlers.Count == 0)
+            {
+                plan.interceptorCache = null;
+                return false;
+            }
+
+            plan.interceptorCache = interceptors;
+            return true;
         }
 
         /// <inheritdoc />
@@ -3921,7 +4067,9 @@ namespace DxMessaging.Core.MessageBus
                     }
                 }
                 else if (
-                    InternalTargetedWithoutTargetingBroadcast(
+                    DispatchTargetedWithoutTargetingPhase(
+                        null,
+                        false,
                         ref target,
                         ref typedMessage,
                         emissionId
@@ -3941,6 +4089,7 @@ namespace DxMessaging.Core.MessageBus
                         ref target,
                         target,
                         ref typedMessage,
+                        planVersion,
                         DispatchSnapshot.Empty,
                         DispatchSnapshot.Empty,
                         emissionId
@@ -4012,7 +4161,11 @@ namespace DxMessaging.Core.MessageBus
             // Capture the pre-interceptor target so post-processing can detect a
             // rewritten id and re-resolve its snapshot against the final target.
             InstanceId preInterceptorTarget = target;
-            if (!RunTargetedInterceptors(ref typedMessage, ref target))
+            InterceptorCache<object> targetedInterceptors = plan.interceptorCache;
+            if (
+                targetedInterceptors != null
+                && !RunTargetedInterceptors(ref typedMessage, ref target, targetedInterceptors)
+            )
             {
                 return;
             }
@@ -4241,9 +4394,24 @@ namespace DxMessaging.Core.MessageBus
 #endif
             }
 
+            // The target-keyed handle sink is re-resolved LIVE only once the
+            // plan stamp has moved; while it still matches, no interceptor or
+            // global handler mutated registrations and plan.contextHandle IS
+            // what a live lookup returns.
+            bool planStillValid = planVersion == _dispatchPlanVersion;
+            ContextHandlerMap targetedHandlers;
+            if (planStillValid)
+            {
+                targetedHandlers = plan.contextHandle;
+            }
+            else
+            {
+                _ = _contextSinks[BusContextIndex.TargetedHandleDefault]
+                    .TryGetValue<TMessage>(out targetedHandlers);
+            }
+
             if (
-                _contextSinks[BusContextIndex.TargetedHandleDefault]
-                    .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
+                targetedHandlers != null
                 && targetedHandlers.TryGetValue(
                     target,
                     out HandlerCache<int, HandlerCache> sortedHandlers
@@ -4268,7 +4436,20 @@ namespace DxMessaging.Core.MessageBus
                 }
             }
 
-            if (InternalTargetedWithoutTargetingBroadcast(ref target, ref typedMessage, emissionId))
+            // Re-compare rather than reusing planStillValid: the target-keyed
+            // handle phase above ran user code, and a handler that mutated
+            // registrations must be observed here exactly as the live lookup
+            // this replaces would have observed it.
+            bool planValidAfterHandlers = planVersion == _dispatchPlanVersion;
+            if (
+                DispatchTargetedWithoutTargetingPhase(
+                    planValidAfterHandlers ? plan.scalarHandle : null,
+                    planValidAfterHandlers,
+                    ref target,
+                    ref typedMessage,
+                    emissionId
+                )
+            )
             {
                 foundAnyHandlers = true;
             }
@@ -4278,6 +4459,7 @@ namespace DxMessaging.Core.MessageBus
                     ref target,
                     preInterceptorTarget,
                     ref typedMessage,
+                    planVersion,
                     targetedPostSnapshot,
                     targetedWithoutTargetingPostSnapshot,
                     emissionId
@@ -4299,9 +4481,13 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
-        /// Live post-processing phases for targeted emissions (target-keyed
-        /// then without-targeting), shared by the featured emit path and the
-        /// fast lane's mid-emission-mutation fallback. Both sinks are
+        /// Post-processing phases for targeted emissions (target-keyed then
+        /// without-targeting), shared by the featured emit path and the fast
+        /// lane's mid-emission-mutation fallback. While
+        /// <paramref name="planVersion"/> still matches the bus stamp and no
+        /// interceptor rewrote the target, the snapshots frozen at emission
+        /// start are exactly what a live re-check would produce and both typed
+        /// sink lookups are skipped. Once either changed, both sinks are
         /// re-checked LIVE, matching the legacy lazy-freeze placement.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -4309,6 +4495,7 @@ namespace DxMessaging.Core.MessageBus
             ref InstanceId target,
             InstanceId preInterceptorTarget,
             ref TMessage typedMessage,
+            long planVersion,
             DispatchSnapshot targetedPostSnapshot,
             DispatchSnapshot targetedWithoutTargetingPostSnapshot,
             long emissionId
@@ -4316,6 +4503,31 @@ namespace DxMessaging.Core.MessageBus
             where TMessage : ITargetedMessage
         {
             bool foundAnyHandlers = false;
+            if (planVersion == _dispatchPlanVersion && target == preInterceptorTarget)
+            {
+                if (
+                    targetedPostSnapshot.IsInitialized
+                    && DispatchFlatSnapshot(targetedPostSnapshot, ref typedMessage)
+                )
+                {
+                    foundAnyHandlers = true;
+                }
+
+                if (
+                    targetedWithoutTargetingPostSnapshot.IsInitialized
+                    && DispatchContextFlatSnapshot(
+                        targetedWithoutTargetingPostSnapshot,
+                        ref target,
+                        ref typedMessage
+                    )
+                )
+                {
+                    foundAnyHandlers = true;
+                }
+
+                return foundAnyHandlers;
+            }
+
             if (
                 _contextSinks[BusContextIndex.TargetedPostProcessDefault]
                     .TryGetValue<TMessage>(out ContextHandlerMap targetedHandlers)
@@ -4413,11 +4625,10 @@ namespace DxMessaging.Core.MessageBus
             plan.contextPost = contextPost;
             plan.scalarHandle = scalarHandle;
             plan.scalarPost = scalarPost;
-            bool hasInterceptors =
-                _targetedInterceptsByType.TryGetValue<TMessage>(
-                    out InterceptorCache<object> interceptors
-                )
-                && interceptors.handlers.Count != 0;
+            _ = _targetedInterceptsByType.TryGetValue<TMessage>(
+                out InterceptorCache<object> interceptors
+            );
+            bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
             bool hasPost =
                 (contextPost != null && 0 < contextPost.Count)
@@ -4642,7 +4853,11 @@ namespace DxMessaging.Core.MessageBus
             // Capture the pre-interceptor source so post-processing can detect a
             // rewritten id and re-resolve its snapshot against the final source.
             InstanceId preInterceptorSource = source;
-            if (!RunBroadcastInterceptors(ref typedMessage, ref source))
+            InterceptorCache<object> broadcastInterceptors = plan.interceptorCache;
+            if (
+                broadcastInterceptors != null
+                && !RunBroadcastInterceptors(ref typedMessage, ref source, broadcastInterceptors)
+            )
             {
                 return;
             }
@@ -4658,14 +4873,29 @@ namespace DxMessaging.Core.MessageBus
             // interceptors and the global walk, before the source-keyed
             // handle phase), so registrations made by a source-keyed handler
             // this emission are not observed - acquisition alone freezes the
-            // fully-resolved flat array. LIVE lookup: interceptors and
-            // global handlers (user code) ran above.
+            // fully-resolved flat array. The sinks are re-resolved LIVE only
+            // once the plan stamp has moved: interceptors and global handlers
+            // (user code) run above, but while the stamp still matches, none
+            // of them mutated registrations and the plan's cached sinks ARE
+            // what a live lookup returns.
+            bool planStillValid = planVersion == _dispatchPlanVersion;
+            HandlerCache<int, HandlerCache> bwsHandlers;
+            ContextHandlerMap broadcastHandlers;
+            if (planStillValid)
+            {
+                bwsHandlers = plan.scalarHandle;
+                broadcastHandlers = plan.contextHandle;
+            }
+            else
+            {
+                _ = _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
+                    .TryGetValue<TMessage>(out bwsHandlers);
+                _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
+                    .TryGetValue<TMessage>(out broadcastHandlers);
+            }
+
             DispatchSnapshot broadcastWithoutSourceHandleSnapshot = DispatchSnapshot.Empty;
-            if (
-                _scalarSinks[BusSinkIndex.BroadcastHandleWithoutContext]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> bwsHandlers)
-                && bwsHandlers.handlers.Count > 0
-            )
+            if (bwsHandlers != null && bwsHandlers.handlers.Count > 0)
             {
                 Touch(bwsHandlers, touchTick);
                 broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshotFast<TMessage>(
@@ -4678,8 +4908,6 @@ namespace DxMessaging.Core.MessageBus
             }
 
             bool foundAnyHandlers = false;
-            _ = _contextSinks[BusContextIndex.BroadcastHandleDefault]
-                .TryGetValue<TMessage>(out ContextHandlerMap broadcastHandlers);
             if (
                 broadcastHandlers != null
                 && broadcastHandlers.TryGetValue(
@@ -4797,11 +5025,10 @@ namespace DxMessaging.Core.MessageBus
             plan.contextPost = contextPost;
             plan.scalarHandle = scalarHandle;
             plan.scalarPost = scalarPost;
-            bool hasInterceptors =
-                _broadcastInterceptsByType.TryGetValue<TMessage>(
-                    out InterceptorCache<object> interceptors
-                )
-                && interceptors.handlers.Count != 0;
+            _ = _broadcastInterceptsByType.TryGetValue<TMessage>(
+                out InterceptorCache<object> interceptors
+            );
+            bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
             bool hasPost =
                 (contextPost != null && 0 < contextPost.Count)
@@ -5041,228 +5268,105 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private bool TryGetUntargetedInterceptorCaches<TMessage>(
-            out SortedList<int, List<object>> interceptorHandlers,
-            out List<object> interceptorObjects
-        )
-            where TMessage : IUntargetedMessage
-        {
-            if (
-                !_untargetedInterceptsByType.TryGetValue<TMessage>(
-                    out InterceptorCache<object> interceptors
-                )
-                || interceptors.handlers.Count == 0
-            )
-            {
-                interceptorHandlers = default;
-                interceptorObjects = default;
-                return false;
-            }
-
-            interceptorHandlers = interceptors.handlers;
-
-            if (!_innerInterceptorsStack.TryPop(out interceptorObjects))
-            {
-                interceptorObjects = new List<object>();
-            }
-
-            return true;
-        }
-
-        private bool TryGetTargetedInterceptorCaches<TMessage>(
-            out SortedList<int, List<object>> interceptorHandlers,
-            out List<object> interceptorObjects
-        )
-            where TMessage : ITargetedMessage
-        {
-            if (
-                !_targetedInterceptsByType.TryGetValue<TMessage>(
-                    out InterceptorCache<object> interceptors
-                )
-                || interceptors.handlers.Count == 0
-            )
-            {
-                interceptorHandlers = default;
-                interceptorObjects = default;
-                return false;
-            }
-
-            interceptorHandlers = interceptors.handlers;
-
-            if (!_innerInterceptorsStack.TryPop(out interceptorObjects))
-            {
-                interceptorObjects = new List<object>();
-            }
-
-            return true;
-        }
-
-        private bool TryGetBroadcastInterceptorCaches<TMessage>(
-            out SortedList<int, List<object>> interceptorHandlers,
-            out List<object> interceptorObjects
-        )
-            where TMessage : IBroadcastMessage
-        {
-            if (
-                !_broadcastInterceptsByType.TryGetValue<TMessage>(
-                    out InterceptorCache<object> interceptors
-                )
-                || interceptors.handlers.Count == 0
-            )
-            {
-                interceptorHandlers = default;
-                interceptorObjects = default;
-                return false;
-            }
-
-            interceptorHandlers = interceptors.handlers;
-
-            if (!_innerInterceptorsStack.TryPop(out interceptorObjects))
-            {
-                interceptorObjects = new List<object>();
-            }
-
-            return true;
-        }
-
-        private bool RunUntargetedInterceptors<T>(ref T message)
+        /// <summary>
+        /// Runs the untargeted interceptor phase over the plan's frozen,
+        /// priority-ordered interceptor array. Callers gate on
+        /// <see cref="DispatchPlan.interceptorCount"/>, so this method is
+        /// entered only when at least one interceptor was registered when the
+        /// plan was refreshed.
+        /// </summary>
+        /// <remarks>
+        /// The array is never mutated in place (see
+        /// <see cref="RefreshInterceptorPlan"/>), so an interceptor that
+        /// registers or deregisters interceptors cannot shorten, lengthen, or
+        /// reorder the walk in progress; its mutation is observed by the next
+        /// emission. The <see cref="_resetGeneration"/> guard still aborts the
+        /// phase mid-walk, because a reset invalidates the message itself, not
+        /// just the interceptor set.
+        /// </remarks>
+        // IL2CPP check elision on the frozen array walk: entries are non-null
+        // by plan construction and the loop bound is the plan's own count.
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+        private bool RunUntargetedInterceptors<T>(ref T message, InterceptorCache<object> cache)
             where T : IUntargetedMessage
         {
-            if (
-                !TryGetUntargetedInterceptorCaches<T>(
-                    out SortedList<int, List<object>> interceptorHandlers,
-                    out List<object> interceptorObjects
-                )
-            )
-            {
-                return true;
-            }
-
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
-            try
+            for (int index = 0; index < count; ++index)
             {
-                IList<List<object>> prioritizedInterceptors = interceptorHandlers.Values;
-                for (int s = 0; s < prioritizedInterceptors.Count; ++s)
+                UntargetedInterceptor<T> typedTransformer = DxUnsafe.As<UntargetedInterceptor<T>>(
+                    interceptors[index]
+                );
+                if (!typedTransformer(ref message) || _resetGeneration != resetGeneration)
                 {
-                    interceptorObjects.Clear();
-                    List<object> interceptors = prioritizedInterceptors[s];
-                    interceptorObjects.AddRange(interceptors);
-
-                    for (int i = 0; i < interceptorObjects.Count; ++i)
-                    {
-                        UntargetedInterceptor<T> typedTransformer = DxUnsafe.As<
-                            UntargetedInterceptor<T>
-                        >(interceptorObjects[i]);
-                        if (!typedTransformer(ref message) || _resetGeneration != resetGeneration)
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                if (_resetGeneration == resetGeneration)
-                {
-                    _innerInterceptorsStack.Push(interceptorObjects);
+                    return false;
                 }
             }
 
             return true;
         }
 
-        private bool RunTargetedInterceptors<T>(ref T message, ref InstanceId target)
+        /// <summary>
+        /// Targeted counterpart of
+        /// <see cref="RunUntargetedInterceptors{T}"/>; see that method for the
+        /// frozen-array semantics.
+        /// </summary>
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+        private bool RunTargetedInterceptors<T>(
+            ref T message,
+            ref InstanceId target,
+            InterceptorCache<object> cache
+        )
             where T : ITargetedMessage
         {
-            if (
-                !TryGetTargetedInterceptorCaches<T>(
-                    out SortedList<int, List<object>> interceptorHandlers,
-                    out List<object> interceptorObjects
-                )
-            )
-            {
-                return true;
-            }
-
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
-            try
+            for (int index = 0; index < count; ++index)
             {
-                IList<List<object>> prioritizedInterceptors = interceptorHandlers.Values;
-                for (int s = 0; s < prioritizedInterceptors.Count; ++s)
+                TargetedInterceptor<T> typedTransformer = DxUnsafe.As<TargetedInterceptor<T>>(
+                    interceptors[index]
+                );
+                if (
+                    !typedTransformer(ref target, ref message)
+                    || _resetGeneration != resetGeneration
+                )
                 {
-                    interceptorObjects.Clear();
-                    List<object> interceptors = prioritizedInterceptors[s];
-                    interceptorObjects.AddRange(interceptors);
-
-                    for (int i = 0; i < interceptorObjects.Count; ++i)
-                    {
-                        TargetedInterceptor<T> typedTransformer = DxUnsafe.As<
-                            TargetedInterceptor<T>
-                        >(interceptorObjects[i]);
-                        if (
-                            !typedTransformer(ref target, ref message)
-                            || _resetGeneration != resetGeneration
-                        )
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                if (_resetGeneration == resetGeneration)
-                {
-                    _innerInterceptorsStack.Push(interceptorObjects);
+                    return false;
                 }
             }
 
             return true;
         }
 
-        private bool RunBroadcastInterceptors<T>(ref T message, ref InstanceId source)
+        /// <summary>
+        /// Broadcast counterpart of
+        /// <see cref="RunUntargetedInterceptors{T}"/>; see that method for the
+        /// frozen-array semantics.
+        /// </summary>
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+        private bool RunBroadcastInterceptors<T>(
+            ref T message,
+            ref InstanceId source,
+            InterceptorCache<object> cache
+        )
             where T : IBroadcastMessage
         {
-            if (
-                !TryGetBroadcastInterceptorCaches<T>(
-                    out SortedList<int, List<object>> interceptorHandlers,
-                    out List<object> interceptorObjects
-                )
-            )
-            {
-                return true;
-            }
-
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
-            try
+            for (int index = 0; index < count; ++index)
             {
-                IList<List<object>> prioritizedInterceptors = interceptorHandlers.Values;
-                for (int s = 0; s < prioritizedInterceptors.Count; ++s)
+                BroadcastInterceptor<T> typedTransformer = DxUnsafe.As<BroadcastInterceptor<T>>(
+                    interceptors[index]
+                );
+                if (
+                    !typedTransformer(ref source, ref message)
+                    || _resetGeneration != resetGeneration
+                )
                 {
-                    interceptorObjects.Clear();
-                    List<object> interceptors = prioritizedInterceptors[s];
-                    interceptorObjects.AddRange(interceptors);
-
-                    for (int i = 0; i < interceptorObjects.Count; ++i)
-                    {
-                        BroadcastInterceptor<T> typedTransformer = DxUnsafe.As<
-                            BroadcastInterceptor<T>
-                        >(interceptorObjects[i]);
-                        if (
-                            !typedTransformer(ref source, ref message)
-                            || _resetGeneration != resetGeneration
-                        )
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                if (_resetGeneration == resetGeneration)
-                {
-                    _innerInterceptorsStack.Push(interceptorObjects);
+                    return false;
                 }
             }
 
@@ -5272,11 +5376,26 @@ namespace DxMessaging.Core.MessageBus
         private bool InternalUntargetedBroadcast<TMessage>(ref TMessage message, long emissionId)
             where TMessage : IUntargetedMessage
         {
-            if (
-                !_scalarSinks[BusSinkIndex.UntargetedHandleDefault]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
-                || sortedHandlers.handlers.Count == 0
-            )
+            _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault]
+                .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers);
+            return DispatchUntargetedHandlePhase(sortedHandlers, ref message, emissionId);
+        }
+
+        /// <summary>
+        /// Untargeted handle phase over an already-resolved sink. Callers that
+        /// still hold a valid dispatch plan pass its cached sink directly;
+        /// callers whose plan may have been invalidated mid-emission re-resolve
+        /// the sink first (see <see cref="InternalUntargetedBroadcast{TMessage}"/>).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool DispatchUntargetedHandlePhase<TMessage>(
+            HandlerCache<int, HandlerCache> sortedHandlers,
+            ref TMessage message,
+            long emissionId
+        )
+            where TMessage : IUntargetedMessage
+        {
+            if (sortedHandlers == null || sortedHandlers.handlers.Count == 0)
             {
                 return false;
             }
@@ -5297,18 +5416,30 @@ namespace DxMessaging.Core.MessageBus
             return DispatchFlatSnapshot(snapshot, ref message);
         }
 
-        private bool InternalTargetedWithoutTargetingBroadcast<TMessage>(
+        /// <summary>
+        /// Targeted without-targeting handle phase. When
+        /// <paramref name="sinkResolved"/> is true the caller's dispatch plan
+        /// was still valid, so <paramref name="sortedHandlers"/> is the live
+        /// sink and the typed lookup is skipped; otherwise the sink is
+        /// re-resolved here.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool DispatchTargetedWithoutTargetingPhase<TMessage>(
+            HandlerCache<int, HandlerCache> sortedHandlers,
+            bool sinkResolved,
             ref InstanceId target,
             ref TMessage message,
             long emissionId
         )
             where TMessage : ITargetedMessage
         {
-            if (
-                !_scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> sortedHandlers)
-                || sortedHandlers.handlers.Count == 0
-            )
+            if (!sinkResolved)
+            {
+                _ = _scalarSinks[BusSinkIndex.TargetedHandleWithoutContext]
+                    .TryGetValue<TMessage>(out sortedHandlers);
+            }
+
+            if (sortedHandlers == null || sortedHandlers.handlers.Count == 0)
             {
                 return false;
             }
@@ -5896,6 +6027,11 @@ namespace DxMessaging.Core.MessageBus
                         {
                             _ = prioritizedInterceptors.handlers.Remove(priority);
                         }
+
+                        // Drops the flattened view's references too, so the
+                        // removed interceptor is not kept alive until the next
+                        // emission or sweep.
+                        prioritizedInterceptors.MarkFlatDirty();
                     }
                 }
 

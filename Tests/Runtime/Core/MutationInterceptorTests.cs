@@ -2,8 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections.Generic;
-    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -146,30 +144,13 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 trailingCount,
-                "[{0}] Reset must stop later interceptors from the copied in-flight snapshot.",
+                "[{0}] Reset must stop later interceptors from the in-flight interceptor walk.",
                 scenario.Kind
             );
             Assert.AreEqual(
                 0,
                 handlerCount,
                 "[{0}] Reset in the interceptor phase must stop the handler phase.",
-                scenario.Kind
-            );
-            FieldInfo interceptorStackField = typeof(MessageBus).GetField(
-                "_innerInterceptorsStack",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            );
-            Assert.IsNotNull(
-                interceptorStackField,
-                "[{0}] The interceptor snapshot cache field must remain discoverable.",
-                scenario.Kind
-            );
-            Stack<List<object>> interceptorStack =
-                (Stack<List<object>>)interceptorStackField.GetValue(bus);
-            Assert.AreEqual(
-                0,
-                interceptorStack.Count,
-                "[{0}] Reset must not retain the in-flight interceptor snapshot in the cache.",
                 scenario.Kind
             );
             Assert.AreEqual(0, bus.RegisteredUntargeted, "[{0}] Untargeted leak.", scenario.Kind);
@@ -240,6 +221,190 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind
             );
             rebornToken.UnregisterAll();
+        }
+
+        /// <summary>
+        /// The documented snapshot contract
+        /// (docs/concepts/interceptors-and-ordering.md) says a listener added
+        /// during an emission never runs for that emission, and names
+        /// interceptors explicitly.
+        /// <see cref="MutationDuringEmissionTests.AddInterceptorDuringInterceptorDoesNotRunInSameEmission"/>
+        /// pins that for an interceptor added to the SAME priority group. This
+        /// case pins the one the group-at-a-time walk used to get wrong: an
+        /// interceptor added to a LATER priority group, whose group had not
+        /// been reached yet and so was picked up mid-emission.
+        /// </summary>
+        [Test]
+        public void InterceptorAddedToLaterPriorityGroupDoesNotRunInSameEmission(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(InterceptorAddedToLaterPriorityGroupDoesNotRunInSameEmission)
+                    + "_"
+                    + scenario.Kind,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
+            MessageRegistrationToken token = GetToken(component);
+            InstanceId hostId = host;
+
+            // Opened after the host's own registrations exist so the baseline
+            // covers only the interceptors this test adds and removes.
+            using LeakWatcher watcher = LeakWatcher.Watch(scenario.DisplayName);
+
+            int earlyCount = 0;
+            int lateCount = 0;
+            MessageRegistrationHandle? lateHandle = null;
+
+            MessageRegistrationHandle earlyHandle = RegisterInterceptor(
+                scenario,
+                token,
+                () =>
+                {
+                    ++earlyCount;
+                    lateHandle ??= RegisterInterceptor(
+                        scenario,
+                        token,
+                        () =>
+                        {
+                            ++lateCount;
+                            return true;
+                        },
+                        priority: 10
+                    );
+                    return true;
+                },
+                priority: 0
+            );
+
+            EmitForScenario(scenario, hostId);
+            Assert.AreEqual(
+                1,
+                earlyCount,
+                "[{0}] The priority-0 interceptor must run exactly once.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                0,
+                lateCount,
+                "[{0}] An interceptor registered into a later priority group must NOT run in the "
+                    + "emission that registered it; the interceptor walk is frozen at emission start.",
+                scenario.Kind
+            );
+
+            EmitForScenario(scenario, hostId);
+            Assert.AreEqual(
+                2,
+                earlyCount,
+                "[{0}] The priority-0 interceptor must run again on the second emission.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                lateCount,
+                "[{0}] The later-group interceptor must start running on the NEXT emission.",
+                scenario.Kind
+            );
+
+            token.RemoveRegistration(earlyHandle);
+            if (lateHandle.HasValue)
+            {
+                token.RemoveRegistration(lateHandle.Value);
+            }
+        }
+
+        /// <summary>
+        /// Removal counterpart of
+        /// <see cref="InterceptorAddedToLaterPriorityGroupDoesNotRunInSameEmission"/>: a listener
+        /// removed during an emission still completes its execution for that
+        /// message. The group-at-a-time walk honoured a same-group removal but
+        /// dropped a later-group one mid-emission; the frozen walk runs it.
+        /// </summary>
+        [Test]
+        public void InterceptorRemovedFromLaterPriorityGroupStillRunsInSameEmission(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(InterceptorRemovedFromLaterPriorityGroupStillRunsInSameEmission)
+                    + "_"
+                    + scenario.Kind,
+                typeof(EmptyMessageAwareComponent)
+            );
+            _spawned.Add(host);
+            EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
+            MessageRegistrationToken token = GetToken(component);
+            InstanceId hostId = host;
+
+            // Opened after the host's own registrations exist so the baseline
+            // covers only the interceptors this test adds and removes.
+            using LeakWatcher watcher = LeakWatcher.Watch(scenario.DisplayName);
+
+            int earlyCount = 0;
+            int lateCount = 0;
+            bool removed = false;
+
+            MessageRegistrationHandle lateHandle = RegisterInterceptor(
+                scenario,
+                token,
+                () =>
+                {
+                    ++lateCount;
+                    return true;
+                },
+                priority: 10
+            );
+            MessageRegistrationHandle earlyHandle = RegisterInterceptor(
+                scenario,
+                token,
+                () =>
+                {
+                    ++earlyCount;
+                    if (!removed)
+                    {
+                        removed = true;
+                        token.RemoveRegistration(lateHandle);
+                    }
+
+                    return true;
+                },
+                priority: 0
+            );
+
+            EmitForScenario(scenario, hostId);
+            Assert.AreEqual(
+                1,
+                earlyCount,
+                "[{0}] The priority-0 interceptor must run exactly once.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                lateCount,
+                "[{0}] An interceptor removed from a later priority group must still run for the "
+                    + "in-flight message; the interceptor walk is frozen at emission start.",
+                scenario.Kind
+            );
+
+            EmitForScenario(scenario, hostId);
+            Assert.AreEqual(
+                2,
+                earlyCount,
+                "[{0}] The priority-0 interceptor must run again on the second emission.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                1,
+                lateCount,
+                "[{0}] The removed interceptor must not run on the next emission.",
+                scenario.Kind
+            );
+
+            token.RemoveRegistration(earlyHandle);
         }
 
         private static MessageRegistrationHandle RegisterInterceptor(

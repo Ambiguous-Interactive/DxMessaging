@@ -12,6 +12,14 @@
 - This behavior applies to all registration types: handlers, interceptors, and post-processors
 - This behavior applies to all message categories: Untargeted, Targeted, and Broadcast
 
+One phase boundary is deliberately not frozen. Interceptors run **before** the
+handler snapshot is taken, so a handler that an interceptor deregisters is gone
+before that snapshot exists and does **not** run for the current message.
+Deregistering a handler from another handler or from a post-processor follows
+the frozen rule above; deregistering a handler from an interceptor takes effect
+immediately. Post-processor snapshots are taken before interceptors run, so they
+follow the frozen rule in every case.
+
 #### Example
 
 ```csharp
