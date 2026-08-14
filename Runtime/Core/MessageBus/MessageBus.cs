@@ -429,26 +429,17 @@ namespace DxMessaging.Core.MessageBus
             public ContextHandlerMap contextPost;
 
             /// <summary>
-            /// Interceptors for this message type, flattened into one
-            /// priority-ordered array at plan-refresh time (ascending priority
-            /// group, then registration order within a group - the same order
-            /// the per-emit walk over
-            /// <see cref="InterceptorCache{TValue}.handlers"/> produced). The
-            /// interceptor phase iterates this array directly, so it costs one
-            /// array read plus the delegate call per interceptor instead of a
-            /// typed cache lookup, a scratch-list rent, and a defensive
-            /// <see cref="List{T}"/> copy per priority group per emission.
-            /// <para>
-            /// <see cref="RefreshInterceptorPlan{TValue}"/> always assigns a
-            /// NEW array rather than mutating in place, so an emission already
-            /// iterating the previous array keeps a stable, frozen view: a
-            /// mutation performed by an interceptor or handler is observed by
-            /// the NEXT emission, matching the handler path's snapshot freeze
-            /// (see <see cref="DispatchSnapshot"/>).
-            /// </para>
+            /// Interceptor store for this message type, or <c>null</c> when
+            /// none were registered at refresh time (which is also the
+            /// emit-path gate). The flattened, priority-ordered array lives on
+            /// the store rather than here on purpose: this plan is invalidated
+            /// by ANY registration anywhere on the bus and by every idle
+            /// sweep, so caching the array here would rebuild - and therefore
+            /// allocate - on the next emission after unrelated churn. Keyed to
+            /// the store's own dirty flag, the array survives everything
+            /// except an actual interceptor mutation.
             /// </summary>
-            public object[] interceptors = Array.Empty<object>();
-            public int interceptorCount;
+            public InterceptorCache<object> interceptorCache;
 
             /// <summary>
             /// Drops every cached sink reference and forces a refresh on the
@@ -464,8 +455,7 @@ namespace DxMessaging.Core.MessageBus
                 scalarPost = null;
                 contextHandle = null;
                 contextPost = null;
-                interceptors = Array.Empty<object>();
-                interceptorCount = 0;
+                interceptorCache = null;
             }
         }
 
@@ -514,10 +504,97 @@ namespace DxMessaging.Core.MessageBus
             public readonly SortedList<int, List<TValue>> handlers = new();
             public long lastTouchTicks;
 
+            /// <summary>
+            /// <see cref="handlers"/> flattened into one priority-ordered
+            /// array (ascending priority group, then registration order within
+            /// a group - the order the old per-emit walk produced). The
+            /// interceptor phase iterates this directly, so it costs one array
+            /// read plus the delegate call per interceptor instead of a
+            /// scratch-list rent and a defensive <see cref="List{T}"/> copy per
+            /// priority group per emission.
+            /// <para>
+            /// Rebuilt lazily, only after <see cref="MarkFlatDirty"/>, which
+            /// every interceptor mutation calls. It deliberately does NOT key
+            /// off the bus-wide dispatch-plan stamp: that stamp moves on any
+            /// registration anywhere and on every idle sweep, which would make
+            /// steady-state emission allocate a fresh array after unrelated
+            /// churn.
+            /// </para>
+            /// </summary>
+            private TValue[] _flat = Array.Empty<TValue>();
+            private int _flatCount;
+            private bool _flatDirty = true;
+
+            /// <summary>
+            /// Invalidates the flattened view AND drops its references, so a
+            /// deregistered interceptor is not kept alive by this cache until
+            /// the next emission or sweep. Assigning a fresh empty array rather
+            /// than clearing in place preserves the frozen view any emission
+            /// currently walking the old array still holds.
+            /// </summary>
+            public void MarkFlatDirty()
+            {
+                _flat = Array.Empty<TValue>();
+                _flatCount = 0;
+                _flatDirty = true;
+            }
+
+            /// <summary>
+            /// Returns the flattened, priority-ordered interceptors, rebuilding
+            /// first when dirty. A rebuild always ALLOCATES a new array rather
+            /// than writing into the existing one, so an emission already
+            /// iterating the previous array keeps a stable, complete view: a
+            /// mutation performed by an interceptor or handler is observed by
+            /// the NEXT emission, matching the handler path's snapshot freeze
+            /// (see <see cref="DispatchSnapshot"/>).
+            /// </summary>
+            public TValue[] EnsureFlat(out int count)
+            {
+                if (_flatDirty)
+                {
+                    RebuildFlat();
+                }
+
+                count = _flatCount;
+                return _flat;
+            }
+
+            private void RebuildFlat()
+            {
+                IList<List<TValue>> groups = handlers.Values;
+                int total = 0;
+                for (int index = 0; index < groups.Count; ++index)
+                {
+                    total += groups[index].Count;
+                }
+
+                if (total == 0)
+                {
+                    _flat = Array.Empty<TValue>();
+                    _flatCount = 0;
+                    _flatDirty = false;
+                    return;
+                }
+
+                TValue[] flattened = new TValue[total];
+                int next = 0;
+                for (int index = 0; index < groups.Count; ++index)
+                {
+                    List<TValue> group = groups[index];
+                    group.CopyTo(flattened, next);
+                    next += group.Count;
+                }
+
+                _flat = flattened;
+                _flatCount = next;
+                _flatDirty = false;
+            }
+
             public void Clear()
             {
                 handlers.Clear();
                 lastTouchTicks = 0;
+                MarkFlatDirty();
             }
         }
 
@@ -3299,6 +3376,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 count = 0;
                 interceptors.Add(interceptor);
+                prioritizedInterceptors.MarkFlatDirty();
             }
 
             priorityCount[priority] = count + 1;
@@ -3370,6 +3448,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 count = 0;
                 interceptors.Add(interceptor);
+                prioritizedInterceptors.MarkFlatDirty();
             }
 
             priorityCount[priority] = count + 1;
@@ -3441,6 +3520,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 count = 0;
                 interceptors.Add(interceptor);
+                prioritizedInterceptors.MarkFlatDirty();
             }
 
             priorityCount[priority] = count + 1;
@@ -3716,7 +3796,11 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
-            if (0 < plan.interceptorCount && !RunUntargetedInterceptors(ref typedMessage, plan))
+            InterceptorCache<object> untargetedInterceptors = plan.interceptorCache;
+            if (
+                untargetedInterceptors != null
+                && !RunUntargetedInterceptors(ref typedMessage, untargetedInterceptors)
+            )
             {
                 return;
             }
@@ -3838,59 +3922,26 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
-        /// Flattens an interceptor store's priority groups into the plan's
-        /// frozen, priority-ordered array and reports whether any interceptor
-        /// remains. Runs only on plan refresh (registration churn, sweep,
-        /// reset, settings reload), never per emission.
+        /// Caches the interceptor store for this message type on the plan and
+        /// reports whether any interceptor is registered. The store owns the
+        /// flattened array (see <see cref="InterceptorCache{TValue}.EnsureFlat"/>);
+        /// the plan only caches the reference, so an unrelated registration or
+        /// an idle sweep invalidating the plan does not discard the flattened
+        /// view and force a reallocation.
         /// </summary>
-        /// <remarks>
-        /// The rebuilt array is always a fresh allocation. An emission that is
-        /// mid-iteration over the previous array therefore keeps walking a
-        /// stable, complete view even when an interceptor it invokes registers
-        /// or deregisters interceptors; the mutation lands in the array the
-        /// NEXT emission builds. That is the same freeze the handler phase
-        /// gets from <see cref="DispatchSnapshot"/>, applied to the
-        /// interceptor phase.
-        /// </remarks>
         /// <returns><c>true</c> when at least one interceptor is registered.</returns>
         private static bool RefreshInterceptorPlan(
             DispatchPlan plan,
             InterceptorCache<object> interceptors
         )
         {
-            SortedList<int, List<object>> groupsByPriority = interceptors?.handlers;
-            if (groupsByPriority == null || groupsByPriority.Count == 0)
+            if (interceptors == null || interceptors.handlers.Count == 0)
             {
-                plan.interceptors = Array.Empty<object>();
-                plan.interceptorCount = 0;
+                plan.interceptorCache = null;
                 return false;
             }
 
-            IList<List<object>> groups = groupsByPriority.Values;
-            int total = 0;
-            for (int index = 0; index < groups.Count; ++index)
-            {
-                total += groups[index].Count;
-            }
-
-            if (total == 0)
-            {
-                plan.interceptors = Array.Empty<object>();
-                plan.interceptorCount = 0;
-                return false;
-            }
-
-            object[] flattened = new object[total];
-            int next = 0;
-            for (int index = 0; index < groups.Count; ++index)
-            {
-                List<object> group = groups[index];
-                group.CopyTo(flattened, next);
-                next += group.Count;
-            }
-
-            plan.interceptors = flattened;
-            plan.interceptorCount = next;
+            plan.interceptorCache = interceptors;
             return true;
         }
 
@@ -4110,9 +4161,10 @@ namespace DxMessaging.Core.MessageBus
             // Capture the pre-interceptor target so post-processing can detect a
             // rewritten id and re-resolve its snapshot against the final target.
             InstanceId preInterceptorTarget = target;
+            InterceptorCache<object> targetedInterceptors = plan.interceptorCache;
             if (
-                0 < plan.interceptorCount
-                && !RunTargetedInterceptors(ref typedMessage, ref target, plan)
+                targetedInterceptors != null
+                && !RunTargetedInterceptors(ref typedMessage, ref target, targetedInterceptors)
             )
             {
                 return;
@@ -4801,9 +4853,10 @@ namespace DxMessaging.Core.MessageBus
             // Capture the pre-interceptor source so post-processing can detect a
             // rewritten id and re-resolve its snapshot against the final source.
             InstanceId preInterceptorSource = source;
+            InterceptorCache<object> broadcastInterceptors = plan.interceptorCache;
             if (
-                0 < plan.interceptorCount
-                && !RunBroadcastInterceptors(ref typedMessage, ref source, plan)
+                broadcastInterceptors != null
+                && !RunBroadcastInterceptors(ref typedMessage, ref source, broadcastInterceptors)
             )
             {
                 return;
@@ -5235,11 +5288,10 @@ namespace DxMessaging.Core.MessageBus
         // by plan construction and the loop bound is the plan's own count.
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
-        private bool RunUntargetedInterceptors<T>(ref T message, DispatchPlan plan)
+        private bool RunUntargetedInterceptors<T>(ref T message, InterceptorCache<object> cache)
             where T : IUntargetedMessage
         {
-            object[] interceptors = plan.interceptors;
-            int count = plan.interceptorCount;
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
@@ -5265,12 +5317,11 @@ namespace DxMessaging.Core.MessageBus
         private bool RunTargetedInterceptors<T>(
             ref T message,
             ref InstanceId target,
-            DispatchPlan plan
+            InterceptorCache<object> cache
         )
             where T : ITargetedMessage
         {
-            object[] interceptors = plan.interceptors;
-            int count = plan.interceptorCount;
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
@@ -5299,12 +5350,11 @@ namespace DxMessaging.Core.MessageBus
         private bool RunBroadcastInterceptors<T>(
             ref T message,
             ref InstanceId source,
-            DispatchPlan plan
+            InterceptorCache<object> cache
         )
             where T : IBroadcastMessage
         {
-            object[] interceptors = plan.interceptors;
-            int count = plan.interceptorCount;
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
@@ -5977,6 +6027,11 @@ namespace DxMessaging.Core.MessageBus
                         {
                             _ = prioritizedInterceptors.handlers.Remove(priority);
                         }
+
+                        // Drops the flattened view's references too, so the
+                        // removed interceptor is not kept alive until the next
+                        // emission or sweep.
+                        prioritizedInterceptors.MarkFlatDirty();
                     }
                 }
 

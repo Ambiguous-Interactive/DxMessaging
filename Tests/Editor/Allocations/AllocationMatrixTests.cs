@@ -448,6 +448,87 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         /// <summary>
+        /// The interceptor phase dispatches a flattened, priority-ordered view
+        /// of the interceptor store. That view must survive registration churn
+        /// on UNRELATED message types.
+        /// <para>
+        /// <see cref="EmitIsZeroAllocAcrossInterceptorPresence"/> cannot catch a
+        /// regression here: it measures a churn-free emit loop, and
+        /// <see cref="AllocationProbe.MeasureMin"/> takes the MINIMUM across
+        /// attempts, which structurally hides an allocation that only occurs on
+        /// the first emit after an invalidation. This test puts the unrelated
+        /// registration in <c>prepare</c> -- run before each window and never
+        /// counted -- so every measured emit is the first one after the bus-wide
+        /// dispatch-plan stamp moved, which is exactly the case that regressed.
+        /// </para>
+        /// </summary>
+        [Test]
+        [Category("Allocation")]
+        public void EmitWithInterceptorIsZeroAllocAfterUnrelatedRegistrationChurn(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    Action emit = BuildEmitClosure(scenario, bus);
+                    RegisterHandler(scenario, token);
+                    RegisterAllowingInterceptor(scenario, token);
+
+                    // A registration for a message type NO scenario emits, so it
+                    // cannot touch the sink under measurement -- SimpleUntargetedMessage
+                    // would be the emitted type on the Untargeted row and would
+                    // legitimately rebuild that sink's own dispatch snapshot. It
+                    // touches no interceptor store either, but it does bump the
+                    // bus-wide dispatch-plan stamp, which is what used to discard
+                    // the flattened interceptor view.
+                    MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
+                        ref ComplexUntargetedMessage _
+                    ) => { };
+
+                    void InvalidateThePlan()
+                    {
+                        MessageRegistrationHandle churnHandle =
+                            token.RegisterUntargeted<ComplexUntargetedMessage>(churnHandler);
+                        token.RemoveRegistration(churnHandle);
+                    }
+
+                    // Warm both the emit path and the churn path.
+                    for (int i = 0; i < 8; ++i)
+                    {
+                        InvalidateThePlan();
+                        emit();
+                    }
+
+                    long delta = AllocationProbe.MeasureMin(
+                        AllocationMeasurementAttempts,
+                        prepare: InvalidateThePlan,
+                        operation: emit
+                    );
+                    if (delta == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            "The GC.Alloc allocation probe is non-functional on this backend."
+                        );
+                    }
+
+                    Assert.AreEqual(
+                        0,
+                        delta,
+                        "[{0}] Emitting with an interceptor registered must allocate nothing even "
+                            + "when an unrelated registration invalidated the dispatch plan first. "
+                            + "A non-zero count means the flattened interceptor view is keyed to "
+                            + "the bus-wide plan stamp again, so ordinary spawn/despawn churn "
+                            + "reallocates it on every emit.",
+                        scenario.Kind
+                    );
+                }
+            );
+        }
+
+        /// <summary>
         /// Pins zero-allocation emission across both post-processor-present
         /// and post-processor-absent rows. The scenario flag drives whether a
         /// post-processor is registered, so this single test covers both
