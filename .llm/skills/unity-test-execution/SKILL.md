@@ -42,12 +42,14 @@ How the DxMessaging Unity suites are hosted, selected, and executed, plus the le
 1. **`[UnityTest]` only when the body yields.** A no-yield `[UnityTest]` still pays per-method enumerator scheduling. Convert it to `[Test]`; it stays in the PlayMode assembly, so `MessageAwareComponent.OnEnable` and the `[UnitySetUp]`/`[UnityTearDown]` brackets still run. The migration is complete and the `pendingMigration` allowlist is empty.
 1. **No real-time waits.** `Thread.Sleep`, `Task.Delay`, `WaitForSeconds`, `WaitForSecondsRealtime`, and `Time.timeScale` are banned everywhere under `Tests/`. Poll a frame budget or a synchronous condition instead.
 1. **Keep the standalone leg on Release C++.** Debug C++ saves native compile time but makes the IL2CPP player far slower overall. Never touch `Il2CppCodeGeneration` on the correctness leg; that codegen fidelity is why the leg exists.
+1. **Source-scanning contract tests stay linear in corpus size.** A test that scans `Tests/`, `Runtime/`, or `Editor/` grows with the tree it guards, so a scan that is superlinear in file length spends its CI margin silently and then fails on the largest file. Never re-scan the whole source, or a `Substring(0, index)` prefix of it, inside a per-candidate loop, and never build an interpolated `Regex` inside one - interpolated patterns evict each other from the 15-entry regex cache and recompile every call. Compute per-file lookups once (line starts, matching braces, enclosing scope ends, declarations grouped by name) and query them, as `EditModeGameObjectConstructionScanner.ScanIndex` does. That one fix took `WallstopStudios.DxMessaging.Tests.Editor` from 432 s to 107 s. Verify a scanner rewrite by diffing its findings against the previous implementation over every C# file in the repository, not by re-running the suite.
 
 ### Drift guards
 
 - `TestAttributeContractTests.TestSourcesAvoidRealTimeWaitAntiPatterns` source-scans `Tests/` for banned wait tokens.
 - `TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest` source-scans for `[UnityTest]` methods that never yield. A source scan is required: a `yield break`-only method is still a compiler iterator, so reflection cannot detect it.
 - `scripts/__tests__/run-ci-tests-enter-play-mode.test.js` asserts the runner emits the reload-disable into each ephemeral project, not into the gitignored `.unity-test-project`.
+- `EditModeSceneSafetyContractTests.ScannerResultsDoNotDependOnSurroundingFileSize` runs every scanner case alone and again after unrelated surrounding code, so a per-file index that resolves the wrong entry in a large file fails there rather than in the corpus scan.
 - `SuiteWallClockBudgetTest` fails the default suite past a per-version hard ceiling (300 s on 2021.3, 180 s on 2022.3 and 6000.x) and warns past a 60 s soft budget. Write new budget assertions RED first.
 
 ### Single-thread contract
