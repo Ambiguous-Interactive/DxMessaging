@@ -136,16 +136,21 @@ jobs:
           node scripts/release/prepare-release.js "${args[@]}"
 
       - name: Sync the version into generated files
-        # The banner SVG and llms.txt both embed the package version, and the
-        # bug-report template's version dropdown is derived from it; validate:all's
-        # check:llms-txt / check:issue-template-versions (and CI's validate-banner)
-        # fail when they drift from package.json, so regenerate all three for the
-        # release commit.
+        # The banner SVG and llms.txt both embed the package version, the
+        # bug-report template's version dropdown is derived from it, and
+        # package.json's `_upm.changelog` mirrors the new version's CHANGELOG
+        # section (what the Unity Package Manager shows in Version History);
+        # validate:all's check:llms-txt / check:issue-template-versions /
+        # check:upm-changelog (and CI's validate-banner) fail when they drift
+        # from package.json, so regenerate all four for the release commit.
+        # Run the changelog mirror AFTER prepare-release.js has rotated
+        # CHANGELOG.md and bumped the version, so it reads the new section.
         run: |
           set -euo pipefail
           npm run sync:banner
           npm run update:llms-txt
           npm run update:issue-template-versions
+          npm run sync:upm-changelog
 
       - name: Validate the prepared tree
         run: |
@@ -209,7 +214,8 @@ jobs:
           git checkout -b "${BRANCH}"
           # Stage every file the bump + "Sync the version into generated files"
           # step can touch. Keep this list in lockstep with those generators
-          # (sync:banner, update:llms-txt, update:issue-template-versions); an
+          # (sync:banner, update:llms-txt, update:issue-template-versions,
+          # sync:upm-changelog); an
           # omitted artifact is regenerated, passes validate:all, then is silently
           # dropped from the release commit.
           git add package.json CHANGELOG.md docs/images/DxMessaging-banner.svg llms.txt .github/ISSUE_TEMPLATE/bug_report.yml

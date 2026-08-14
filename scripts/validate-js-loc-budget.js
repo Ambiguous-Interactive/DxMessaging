@@ -100,7 +100,14 @@ const path = require("path");
 //     Actionlint cannot enforce repository key ordering, permissions, concurrency,
 //     timeouts, checkout credential persistence, or same-repository formatting
 //     guards, so issue #379 adds those checks to the existing workflow suite: 17710.
-const TOTAL_BUDGET = 17710;
+// 079 package.json `_upm.changelog` mirror (#362). The Unity Package Manager
+//     renders the Version History changelog from the resolved package's own
+//     package.json, and `npm publish` strips every `_`-prefixed key from the
+//     published metadata, so shipping the field in the manifest is the only
+//     path that reaches every install route. 128 source + 159 test lines for a
+//     generator whose `--check` gate is the only thing that would catch the
+//     field going stale against CHANGELOG.md: 18010.
+const TOTAL_BUDGET = 18010;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

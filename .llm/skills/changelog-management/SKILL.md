@@ -91,14 +91,16 @@ deciding whether to upgrade. Keep it to what that reader needs:
 
 ### Where consumers read it
 
-- The Package Manager details panel and its Version History both expose one **Changelog** link
-  built from `package.json`'s `changelogUrl`, with the packaged `CHANGELOG.md` as the offline
-  option. Keep `changelogUrl` pointing at a RENDERED page; a raw Markdown URL opens unformatted
-  text in the browser.
-- Per-version notes shown inline in Version History come from registry metadata
-  (`_upm.changelog`) that `npm publish` strips, so that surface is not available to this package.
-  See [upm-changelog-surface.md](./references/upm-changelog-surface.md) before proposing work on
-  it again.
+- The Package Manager's Version History tab renders `package.json`'s `_upm.changelog`, which
+  mirrors the section for the shipped version. `npm run sync:upm-changelog` writes it,
+  `release-prepare.yml` regenerates it after the version bump, and `check:upm-changelog` gates
+  drift in `validate:all`. Never hand-edit the field.
+- The details panel and Version History also expose one **Changelog** link built from
+  `changelogUrl`, with the packaged `CHANGELOG.md` as the offline option. Keep `changelogUrl`
+  pointing at a RENDERED page; a raw Markdown URL opens unformatted text in the browser.
+- Both surfaces were traced in the editor, including why the field ships in the manifest rather
+  than in registry metadata. See
+  [upm-changelog-surface.md](./references/upm-changelog-surface.md) before changing either.
 
 ### Interaction with the release pipeline
 

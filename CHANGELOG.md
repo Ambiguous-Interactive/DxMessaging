@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Monitor and Flow Graph ([#346](https://github.com/Ambiguous-Interactive/DxMessaging/issues/346)).
 - Add the standard .NET constructors to `MessageRegistrationBuildException`
   ([#367](https://github.com/Ambiguous-Interactive/DxMessaging/issues/367)).
+- Show the installed version's release notes in the Unity Package Manager Version History tab
+  ([#362](https://github.com/Ambiguous-Interactive/DxMessaging/issues/362)).
 
 ### Changed
 
