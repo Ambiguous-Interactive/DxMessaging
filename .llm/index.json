@@ -196,7 +196,7 @@
         "category": "github-actions",
         "tags": "github-actions, ci-cd, workflow, security, consistency, yaml"
       },
-      "lineCount": 150,
+      "lineCount": 154,
       "references": [
         ".llm/skills/github-workflow-consistency/references/cicd-devcontainer-workflows.md",
         ".llm/skills/github-workflow-consistency/references/git-renormalize-patterns.md",

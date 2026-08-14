@@ -69,8 +69,14 @@ on:
 # this workflow do not race each other. A separate freshness check still guards
 # against unrelated default-branch pushes landing while the benchmarks run. We do
 # NOT cancel in-progress runs -- that would abort an in-flight benchmark.
+#
+# Pull-request runs add the head SHA, so that merge-path serialization does not
+# also queue a pull request's current head behind a superseded run whose only
+# remaining act is to abort on the per-leg head guard (#332). Benchmarks stay
+# mutually exclusive through the organization build lock, and every licensed leg
+# re-checks the pull-request head before it can reach that lock.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
   cancel-in-progress: false
 
 # Top-level least-privilege. The default-branch refresh job (commit-perf-doc)
@@ -152,7 +158,12 @@ jobs:
       actions: read
       contents: read
     concurrency:
-      group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
+      # Keyed exactly like the workflow-level group. A `github.ref`-only key was
+      # unreachable while that group serialized every run of a pull request; now
+      # that it does not, the key has to match, or a newer run would cancel a
+      # superseded run's preflight, skip that run's benchmarks, and leave its
+      # aggregate reporting a result shape the gate below does not describe.
+      group: ${{ github.workflow }}-runner-preflight-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
       cancel-in-progress: true
     outputs:
       has-autocommit-app: ${{ steps.check-autocommit-app.outputs.has-app }}

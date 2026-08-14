@@ -13,7 +13,18 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: unity-tests-${{ github.event.pull_request.number || github.ref }}
+  # Push runs share one group per ref, so consecutive default-branch pushes stay
+  # serialized. Pull-request runs add the head SHA. Serializing those bought
+  # nothing and cost the head that matters: `cancel-in-progress: false` below is
+  # deliberate (a hard cancel mid-lease is the seat leak the four-layer
+  # license-return guarantee exists to prevent), so a superseded run held the
+  # shared group while its remaining legs waited on a scarce self-hosted runner
+  # purely to abort on the per-leg head guard, and the run for the current head
+  # sat pending with zero jobs for as long as that took -- 33 minutes on #402.
+  # Licensed Unity work is serialized by the organization build lock, not by this
+  # group, and every leg re-checks the pull-request head before it can reach that
+  # lock, so two runs of one pull request can never both do licensed work (#332).
+  group: unity-tests-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -26,16 +37,15 @@ jobs:
   head-check:
     name: Unity head freshness
     # A second push to a pull request queues a second full matrix and does not
-    # retire the first. `cancel-in-progress: false` above is deliberate -- a
-    # hard cancel mid-lock is the exact scenario the four-layer license-return
-    # guarantee exists to avoid -- so the superseded run keeps the concurrency
-    # group until it has burned through every leg, and the run for the commit
-    # that matters cannot start. `Unity CI Success` is then absent on the
-    # current head, which reads as a blocked pull request on a check nobody
-    # misconfigured.
+    # retire the first: `cancel-in-progress: false` above is deliberate, because
+    # a hard cancel mid-lock is the exact scenario the four-layer license-return
+    # guarantee exists to avoid. The head-SHA-keyed concurrency group above lets
+    # the new run start anyway, so what is left to avoid is the superseded run
+    # handing a scarce self-hosted runner to every remaining leg purely so that
+    # leg can abort.
     #
     # Deciding it here, on GitHub-hosted infrastructure and before the lock is
-    # in reach, costs a superseded run one cheap job instead of nine
+    # in reach, costs a superseded run one cheap job instead of four
     # self-hosted ones. The per-leg `Require current PR head before setup`
     # guard stays: it covers the push that lands after this job has already
     # passed.
@@ -109,7 +119,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     concurrency:
-      group: ${{ github.workflow }}-runner-preflight-${{ github.ref }}
+      # Keyed exactly like the workflow-level group. A `github.ref`-only key was
+      # unreachable while that group serialized every run of a pull request; now
+      # that it does not, the key has to match, or a newer run would cancel a
+      # superseded run's preflight, skip that run's whole matrix, and leave its
+      # aggregate reporting a result shape the gate below does not describe.
+      group: ${{ github.workflow }}-runner-preflight-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
       cancel-in-progress: true
     steps:
       - name: Require a registered Unity runner

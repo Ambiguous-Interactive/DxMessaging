@@ -59,6 +59,20 @@ BLANKET_PR_REJECTION = re.compile(
 SUPERSEDED_GUARD = re.compile(
     r"needs\.head-check\.outputs\.superseded\s*!=\s*'true'\s*&&"
 )
+# `cancel-in-progress: false` stays, so the concurrency GROUP carries the head
+# instead: push runs serialize per ref, pull-request runs partition per head SHA.
+# Without the SHA a superseded run held the group while its remaining legs waited
+# on a scarce self-hosted runner purely to abort, and the run for the current head
+# sat pending with zero jobs for as long as that took (#332). Every group in the
+# workflow must use this one key -- a job-level group keyed only by `github.ref`
+# would let a newer run cancel a superseded run's preflight, skipping that run's
+# licensed matrix and leaving its aggregate to report a result shape the gate
+# does not enumerate.
+PER_HEAD_CONCURRENCY_KEY = (
+    "${{ github.event.pull_request.number && "
+    "format('{0}-{1}', github.event.pull_request.number, "
+    "github.event.pull_request.head.sha) || github.ref }}"
+)
 WORKFLOW_EDITOR_MUTATION = re.compile(
     r"^\s*(?:"
     r"(?:Start-Process(?:\s+-FilePath)?|&|cmd(?:\.exe)?\s+/[ck])\s+"
@@ -747,6 +761,45 @@ def validate_lock_window_timeout_budget(job: str, label: str) -> None:
     )
 
 
+def concurrency_groups(source: str) -> list[str]:
+    """Return the `group:` value of every workflow-level and job-level concurrency block."""
+    lines = source.splitlines()
+    groups = []
+    for index, line in enumerate(lines):
+        block = re.match(r"^(?P<indent>[ \t]*)concurrency:[ \t]*$", line)
+        if block is None:
+            continue
+        indent = len(block.group("indent"))
+        found = None
+        for nested in lines[index + 1 :]:
+            if nested.strip() == "":
+                continue
+            if len(nested) - len(nested.lstrip()) <= indent:
+                break
+            key = re.match(r"^[ \t]*group: (?P<value>.+?)[ \t]*$", nested)
+            if key is not None:
+                found = key.group("value")
+        groups.append(found)
+    return groups
+
+
+def validate_per_head_concurrency(source: str, label: str) -> None:
+    """Every concurrency group in a licensed Unity workflow partitions per head SHA."""
+    groups = concurrency_groups(source)
+    require(bool(groups), f"{label}: no concurrency block declared")
+    for group in groups:
+        require(
+            group is not None,
+            f"{label}: every concurrency block must name a group",
+        )
+        require(
+            str(group).endswith(PER_HEAD_CONCURRENCY_KEY),
+            f"{label}: concurrency group {group!r} must end with the per-head key "
+            f"{PER_HEAD_CONCURRENCY_KEY!r} so a superseded pull-request run cannot "
+            "hold it while the run for the current head waits",
+        )
+
+
 def validate_licensed_workflow_policy(source: str) -> str:
     concurrency = re.search(
         r"^concurrency:\n(?P<body>(?:^  .+\n)+)",
@@ -760,6 +813,7 @@ def validate_licensed_workflow_policy(source: str) -> str:
         == ["  cancel-in-progress: false"],
         "Unity workflow concurrency must use one literal cancel-in-progress: false",
     )
+    validate_per_head_concurrency(source, "unity-tests.yml")
 
     licensed = job_block(source, "unity-tests")
     require(
@@ -3214,6 +3268,7 @@ def validate_perf_pr_policy() -> None:
     """Keep PR performance evidence trusted, current, and credential-free."""
     perf_path = Path(".github/workflows/perf-numbers.yml")
     source = perf_path.read_text(encoding="utf-8")
+    validate_per_head_concurrency(source, "perf-numbers.yml")
     preflight = job_block(source, "runner-preflight")
     benchmark = job_block(source, "perf-benchmarks")
     comment = job_block(source, "comment-perf-doc")
@@ -4115,6 +4170,12 @@ steps:
         "  cancel-in-progress: false\n",
         "  cancel-in-progress: true\n",
         "top-level cancellation policy",
+    )
+    require_policy_mutation_rejected(
+        source,
+        f"  group: unity-tests-{PER_HEAD_CONCURRENCY_KEY}\n",
+        "  group: unity-tests-${{ github.event.pull_request.number || github.ref }}\n",
+        "per-head concurrency group",
     )
     require_policy_mutation_rejected(
         source,

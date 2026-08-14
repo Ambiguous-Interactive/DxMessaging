@@ -29,6 +29,10 @@ publishing, and the tag-selected manual release dispatch.
 - Every workflow declares
   `concurrency: { group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true }`
   and an explicit `permissions` block (default `contents: read`; never omit it).
+- A workflow that must keep `cancel-in-progress: false` because a mid-run cancel leaks a
+  resource -- the licensed Unity workflows and their Unity seat -- keys its group, and every
+  job-level group in the same file, by pull-request head SHA, so a superseded run cannot hold
+  the group while the current head waits. `npm run validate:unity-pr-policy` enforces the key.
 - Every job declares `timeout-minutes`. Guides: lint 5, build 15-30, tests 30-60, deploy 10-15.
 - Every `actions/checkout` declares `persist-credentials` explicitly and uses `false`. Push
   credentials are scoped to the one step that needs them: either
