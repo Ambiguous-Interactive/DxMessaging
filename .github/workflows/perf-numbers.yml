@@ -688,7 +688,7 @@ jobs:
             $uniqueBodyKeys = @(
               $bodyCandidates |
                 ForEach-Object { $_.Lines -join "`n" } |
-                Sort-Object -Unique
+                Sort-Object -CaseSensitive -Unique
             )
             if ($uniqueBodyKeys.Count -ne 1) {
               $bodyCountMessage =
@@ -792,11 +792,11 @@ jobs:
             @(
               'inline void Duplicate_m123 ()',
               '{',
-              '// first body',
+              '// case-sensitive body',
               '}',
               'inline void Duplicate_m123 ()',
               '{',
-              '// second body',
+              '// Case-sensitive body',
               '}'
             ) | Set-Content -LiteralPath $multipleBodyPath -Encoding utf8
             $cppPaths = @($multipleBodyPath)

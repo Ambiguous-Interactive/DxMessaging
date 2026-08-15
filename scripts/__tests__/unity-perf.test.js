@@ -527,7 +527,7 @@ test("performance workflow publishes exact player-size and codegen evidence", ()
   assert.match(workflow, /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force/);
   assert.match(
     workflow,
-    /repeated identical body[\s\S]*Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*GenericInterface[\s\S]*_\+messageBus[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*definitionOccurrenceCount[\s\S]*typed-deregistration-codegen\.txt/
+    /Sort-Object -CaseSensitive -Unique[\s\S]*repeated identical body[\s\S]*Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*GenericInterface[\s\S]*_\+messageBus[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*definitionOccurrenceCount[\s\S]*typed-deregistration-codegen\.txt/
   );
   assert.match(workflow, /player-size\.json/);
 });
