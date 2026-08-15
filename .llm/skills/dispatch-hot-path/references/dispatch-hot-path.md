@@ -1,5 +1,7 @@
 # DxMessaging Dispatch Hot Path
 
+<!-- cspell:ignore gshared -->
+
 > **One-line summary**: The emission path through `MessageBus` and
 > `MessageHandler` carries a strict zero-allocation, near-zero-overhead
 > contract; per-emit operations are budgeted in nanoseconds, not "fine".
@@ -131,6 +133,18 @@ dispatch of `T`, which every `Register*<T>` path and the first typed emit both
 guarantee. On Mono the calls are compiled out (a provable no-op). Guarded by the
 `UntypedDispatchTests.TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch`
 fixture, which runs on the standalone IL2CPP leg.
+
+### Keep targeted post-phase state as loose parameters
+
+Do not replace `RunTargetedPostPhases<TMessage>`'s immutable snapshot, emission,
+and reset arguments with a readonly struct passed by `in`. A fresh Standalone
+IL2CPP Release A/B/B/A bracket regressed its three targeted post-route rows by
+16.22-32.21%, while all broadcast sibling-control means stayed within 2.12%.
+Generated C++ constructed the bundle, passed its address to the shared inline
+helper, and retained separate accessor calls; it did not scalarize the state at
+that stage. Keep `ref target` and `ref typedMessage` plus the loose immutable
+arguments. The complete evidence and revisit rule live in the
+[runtime performance campaign decisions](../../benchmark-methodology/references/runtime-performance-campaign-decisions.md).
 
 ### Sealed everywhere on the dispatch chain
 
