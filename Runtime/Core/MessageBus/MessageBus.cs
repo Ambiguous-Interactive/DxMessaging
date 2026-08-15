@@ -4552,16 +4552,19 @@ namespace DxMessaging.Core.MessageBus
                 foundAnyHandlers = true;
             }
 
+            TargetedPostPhaseState targetedPostPhaseState = new(
+                preInterceptorTarget,
+                targetedPostSnapshot,
+                targetedWithoutTargetingPostSnapshot,
+                emissionId,
+                touchTick,
+                emissionResetGeneration
+            );
             if (
                 RunTargetedPostPhases<TMessage>(
                     ref target,
-                    preInterceptorTarget,
                     ref typedMessage,
-                    targetedPostSnapshot,
-                    targetedWithoutTargetingPostSnapshot,
-                    emissionId,
-                    touchTick,
-                    emissionResetGeneration
+                    in targetedPostPhaseState
                 )
             )
             {
@@ -4580,6 +4583,41 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
+        /// Immutable emission-start state consumed by the targeted post phases.
+        /// </summary>
+        private readonly struct TargetedPostPhaseState
+        {
+            internal TargetedPostPhaseState(
+                InstanceId preInterceptorTarget,
+                DispatchSnapshot targetedPostSnapshot,
+                DispatchSnapshot targetedWithoutTargetingPostSnapshot,
+                long emissionId,
+                long emissionStartTick,
+                long emissionResetGeneration
+            )
+            {
+                PreInterceptorTarget = preInterceptorTarget;
+                TargetedPostSnapshot = targetedPostSnapshot;
+                TargetedWithoutTargetingPostSnapshot = targetedWithoutTargetingPostSnapshot;
+                EmissionId = emissionId;
+                EmissionStartTick = emissionStartTick;
+                EmissionResetGeneration = emissionResetGeneration;
+            }
+
+            internal InstanceId PreInterceptorTarget { get; }
+
+            internal DispatchSnapshot TargetedPostSnapshot { get; }
+
+            internal DispatchSnapshot TargetedWithoutTargetingPostSnapshot { get; }
+
+            internal long EmissionId { get; }
+
+            internal long EmissionStartTick { get; }
+
+            internal long EmissionResetGeneration { get; }
+        }
+
+        /// <summary>
         /// Post-processing phases for targeted emissions (target-keyed then
         /// without-targeting). An unchanged target dispatches only the
         /// snapshots frozen at emission start. A rewritten target resolves
@@ -4590,41 +4628,36 @@ namespace DxMessaging.Core.MessageBus
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool RunTargetedPostPhases<TMessage>(
             ref InstanceId target,
-            InstanceId preInterceptorTarget,
             ref TMessage typedMessage,
-            DispatchSnapshot targetedPostSnapshot,
-            DispatchSnapshot targetedWithoutTargetingPostSnapshot,
-            long emissionId,
-            long emissionStartTick,
-            long emissionResetGeneration
+            in TargetedPostPhaseState state
         )
             where TMessage : ITargetedMessage
         {
             bool foundAnyHandlers = false;
-            if (emissionResetGeneration != _resetGeneration)
+            if (state.EmissionResetGeneration != _resetGeneration)
             {
                 return false;
             }
 
-            if (target == preInterceptorTarget)
+            if (target == state.PreInterceptorTarget)
             {
                 if (
-                    targetedPostSnapshot.IsInitialized
-                    && DispatchFlatSnapshot(targetedPostSnapshot, ref typedMessage)
+                    state.TargetedPostSnapshot.IsInitialized
+                    && DispatchFlatSnapshot(state.TargetedPostSnapshot, ref typedMessage)
                 )
                 {
                     foundAnyHandlers = true;
                 }
 
-                if (emissionResetGeneration != _resetGeneration)
+                if (state.EmissionResetGeneration != _resetGeneration)
                 {
                     return foundAnyHandlers;
                 }
 
                 if (
-                    targetedWithoutTargetingPostSnapshot.IsInitialized
+                    state.TargetedWithoutTargetingPostSnapshot.IsInitialized
                     && DispatchContextFlatSnapshot(
-                        targetedWithoutTargetingPostSnapshot,
+                        state.TargetedWithoutTargetingPostSnapshot,
                         ref target,
                         ref typedMessage
                     )
@@ -4641,8 +4674,8 @@ namespace DxMessaging.Core.MessageBus
                 !TryGetContextPostRouteAtEmissionStart<TMessage>(
                     TargetedPostSlot,
                     target,
-                    emissionStartTick,
-                    emissionResetGeneration,
+                    state.EmissionStartTick,
+                    state.EmissionResetGeneration,
                     out snapshot
                 )
             )
@@ -4662,7 +4695,7 @@ namespace DxMessaging.Core.MessageBus
                         this,
                         sortedHandlers,
                         TargetedPostSlot,
-                        emissionId,
+                        state.EmissionId,
                         target
                     );
                 }
@@ -4673,16 +4706,16 @@ namespace DxMessaging.Core.MessageBus
                 foundAnyHandlers = true;
             }
 
-            if (emissionResetGeneration != _resetGeneration)
+            if (state.EmissionResetGeneration != _resetGeneration)
             {
                 return foundAnyHandlers;
             }
 
-            if (targetedWithoutTargetingPostSnapshot.IsInitialized)
+            if (state.TargetedWithoutTargetingPostSnapshot.IsInitialized)
             {
                 if (
                     DispatchContextFlatSnapshot(
-                        targetedWithoutTargetingPostSnapshot,
+                        state.TargetedWithoutTargetingPostSnapshot,
                         ref target,
                         ref typedMessage
                     )
