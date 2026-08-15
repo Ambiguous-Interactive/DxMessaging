@@ -43,13 +43,13 @@ const {
   DISPATCH_DISPLAY_NAMES,
   buildComparisonScenarioId
 } = require("../unity/perf-scenarios.js");
+const EXPECTED_POST_ROUTE_SCENARIOS = require("./post-route-perf-scenarios.expected.json");
 
 const PLATFORM = "Unity 6000.3.16f1 Linux PlayMode Mono";
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
 const EDITOR_PLAYMODE_PLATFORM =
   "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-
 test("dispatch baseline scenarios keep stable order and labels", () => {
   const expected = [
     ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
@@ -65,18 +65,23 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
       "Untargeted Flood (Sixteen Handlers, One Priority)"
     ],
     ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"],
+    ...EXPECTED_POST_ROUTE_SCENARIOS,
     ["MessageBusConstruction_1000", "Message Bus Construction (1000)"],
     [
       "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
       "Registration Token Construction (1000, Prebuilt Handler + Bus)"
     ]
   ];
-
   for (const [key, label] of expected) {
     assert.ok(SCENARIO_ORDER.includes(key), `${key} must be rendered`);
+    assert.equal(isKeptScenario(key), true, `${key} must be extracted`);
     assert.equal(DISPATCH_DISPLAY_NAMES[key], label);
   }
-
+  assert.deepEqual(
+    SCENARIO_ORDER.filter((key) => /^(Targeted|Broadcast)Post_/.test(key)),
+    EXPECTED_POST_ROUTE_SCENARIOS.map(([key]) => key)
+  );
+  assert.equal(SCENARIO_ORDER.indexOf(EXPECTED_POST_ROUTE_SCENARIOS[0][0]), 16);
   const registrationLabel = "Registration Attribution";
   const deregistrationLabel = "Deregistration Attribution";
   const attributionLabels = {
@@ -92,7 +97,6 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
   for (const [key, label] of Object.entries(attributionLabels)) {
     assert.equal(DISPATCH_DISPLAY_NAMES[key], label, `${key} must retain its stable label`);
   }
-
   assert.deepEqual(SCENARIO_ORDER.slice(1, 6), [
     "UntargetedFlood_OneHandler",
     "UntargetedFlood_OneDirectHandler",
@@ -100,7 +104,6 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
     "UntargetedFlood_ThreeHandlers_OnePriority",
     "UntargetedFlood_FourHandlers_OnePriority"
   ]);
-
   assert.equal(new Set(SCENARIO_ORDER).size, SCENARIO_ORDER.length);
   const attributionKeys = Object.keys(attributionLabels);
   assert.deepEqual([...WALL_CLOCK_SCENARIOS].slice(-8, -4), attributionKeys.slice(0, 4));
@@ -234,7 +237,6 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     `{scenario:"RegistrationAttribution_TokenActive_131072",platform:"${PLATFORM}",commit:"abc1234",runIndex:-1,emitsPerSec:0,gcAllocations:10000,wallClockMs:42.5,gcAllocatedBytes:640000}`,
     `UnknownScenario,${PLATFORM},abc1234,0,1,0,1,0`
   ].join("\n");
-
   const rows = extractRows(content);
   assert.deepEqual(
     rows.map(({ scenario, emitsPerSecond, gcAllocations, gcAllocatedBytes }) => [
@@ -255,10 +257,8 @@ test("legacy 7-column CSV rows default gcAllocatedBytes to the -1 sentinel", () 
   const legacy = `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`;
   const [parsed] = extractRows(legacy);
   assert.equal(parsed.gcAllocatedBytes, "-1");
-
   const reparsed = extractRows(buildCsv([parsed]));
   assert.deepEqual(reparsed, [parsed]);
-
   const legacyLog = `{scenario:"UntargetedFlood_OneHandler",platform:"${PLATFORM}",commit:"abc1234",runIndex:0,emitsPerSec:1000000,gcAllocations:0,wallClockMs:12.5}`;
   assert.equal(extractRows(legacyLog)[0].gcAllocatedBytes, "-1");
 });
@@ -266,7 +266,6 @@ test("legacy 7-column CSV rows default gcAllocatedBytes to the -1 sentinel", () 
 test("extract-perf-baseline CSV and args helpers cover round-trip and errors", () => {
   const rows = extractRows(`UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5`);
   assert.deepEqual(extractRows(buildCsv(rows)), rows);
-
   const options = parseArgs(["node", "x", "--input", "a.log", "--input", "b.log", "--append"]);
   assert.deepEqual(options.inputs, ["a.log", "b.log"]);
   assert.equal(options.append, true);
@@ -291,7 +290,6 @@ test("compareRow reports throughput deltas beyond tolerance", () => {
   const baseline = row(scenario, "1000000.000");
   const improved = compareRow(scenario, row(scenario, "1100000.000"), baseline, 0.02);
   const steady = compareRow(scenario, row(scenario, "1010000.000"), baseline, 0.02);
-
   assert.equal(improved.moved, true);
   assert.equal(improved.cells[0], scenarioLabel(scenario));
   assert.ok(improved.cells[3].includes("+10.00%"));
@@ -303,7 +301,6 @@ test("delta sign is normalized so + is always better and - is always worse", () 
   assert.ok(goodnessRelativeChange(90, 100, true) < 0, "less throughput is worse (-)");
   assert.ok(goodnessRelativeChange(90, 100, false) > 0, "lower latency is better (+)");
   assert.ok(goodnessRelativeChange(110, 100, false) < 0, "higher latency is worse (-)");
-
   assert.equal(formatAllocDelta(-5), "5 fewer allocs");
   assert.equal(formatAllocDelta(5), "5 more allocs");
 
@@ -527,6 +524,7 @@ test("performance workflow publishes exact player-size and codegen evidence", ()
     path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
     "utf8"
   );
+  assert.match(workflow, /post-route-perf-scenarios\\\.json\$/);
   assert.match(
     workflow,
     /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force[\s\S]*player-size\.json[\s\S]*Set-StrictMode -Version Latest[\s\S]*HashSet\[string\][\s\S]*StringComparer\]::Ordinal(?![A-Za-z0-9_])[\s\S]*DefinitionLocations[\s\S]*repeated identical body[\s\S]*case-distinct bodies[\s\S]*StringComparison\]::Ordinal[\s\S]*Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*GenericInterface[\s\S]*_\+messageBus[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*definitionOccurrenceCount[\s\S]*definitionLocation=[\s\S]*typed-deregistration-codegen\.txt[\s\S]*capture-targeted-post-codegen\.ps1/
