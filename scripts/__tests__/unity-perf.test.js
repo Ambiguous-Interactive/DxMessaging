@@ -527,8 +527,8 @@ test("performance workflow publishes an exact IL2CPP player-size manifest", () =
   assert.match(workflow, /name: Capture exact standalone player size/);
   assert.match(workflow, /matrix\.test-mode == 'standalone'/);
   assert.match(workflow, /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force/);
-  assert.match(workflow, /totalBytes = \$totalBytes/);
-  assert.match(workflow, /executableBytes = \(Get-Item -LiteralPath \$playerExe\)\.Length/);
+  for (const marker of ["shippableBytes", "typed-deregistration-codegen.txt"])
+    assert.ok(workflow.includes(marker));
   assert.match(workflow, /player-size\.json/);
 });
 

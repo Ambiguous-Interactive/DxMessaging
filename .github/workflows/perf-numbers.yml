@@ -545,7 +545,22 @@ jobs:
             throw "Validated standalone player was not found at $playerExe"
           }
           $files = @(Get-ChildItem -LiteralPath $playerDir -File -Recurse -Force)
+          $shippableFiles = @($files | Where-Object {
+              $_.FullName -notlike '*_BackUpThisFolder_ButDontShipItWithYourGame*' -and
+              $_.FullName -notlike '*_BurstDebugInformation_DoNotShip*'
+          })
+          $gameAssemblies = @($files | Where-Object { $_.Name -eq 'GameAssembly.dll' })
+          $metadataFiles = @($files | Where-Object { $_.Name -eq 'global-metadata.dat' })
+          if ($gameAssemblies.Count -ne 1) {
+            throw "Expected exactly one GameAssembly.dll under $playerDir; found $($gameAssemblies.Count)."
+          }
+          if ($metadataFiles.Count -ne 1) {
+            throw "Expected exactly one global-metadata.dat under $playerDir; found $($metadataFiles.Count)."
+          }
+          $gameAssembly = $gameAssemblies[0]
+          $metadata = $metadataFiles[0]
           [long]$totalBytes = ($files | Measure-Object -Property Length -Sum).Sum
+          [long]$shippableBytes = ($shippableFiles | Measure-Object -Property Length -Sum).Sum
           $manifest = [ordered]@{
             commit = '${{ env.MEASURED_SHA }}'
             unityVersion = '${{ matrix.unity-version }}'
@@ -554,14 +569,104 @@ jobs:
             il2CppConfiguration = 'Release'
             apiCompatibility = '.NET Standard 2.1'
             totalBytes = $totalBytes
+            shippableBytes = $shippableBytes
             executableBytes = (Get-Item -LiteralPath $playerExe).Length
+            gameAssemblyBytes = $gameAssembly.Length
+            gameAssemblyPath = $gameAssembly.FullName.Substring($playerDir.Length).TrimStart(
+              [System.IO.Path]::DirectorySeparatorChar,
+              [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            gameAssemblySha256 = (
+              Get-FileHash -LiteralPath $gameAssembly.FullName -Algorithm SHA256
+            ).Hash
+            globalMetadataBytes = $metadata.Length
+            globalMetadataPath = $metadata.FullName.Substring($playerDir.Length).TrimStart(
+              [System.IO.Path]::DirectorySeparatorChar,
+              [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            globalMetadataSha256 = (
+              Get-FileHash -LiteralPath $metadata.FullName -Algorithm SHA256
+            ).Hash
             fileCount = $files.Count
+            shippableFileCount = $shippableFiles.Count
           }
           $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-internal'
-          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.json') -Encoding utf8
-          "totalBytes=$totalBytes executableBytes=$($manifest.executableBytes) fileCount=$($files.Count)" |
+          $manifest |
+            ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.json') -Encoding utf8
+          "totalBytes=$totalBytes shippableBytes=$shippableBytes " +
+            "executableBytes=$($manifest.executableBytes) " +
+            "gameAssemblyBytes=$($manifest.gameAssemblyBytes) " +
+            "globalMetadataBytes=$($manifest.globalMetadataBytes) " +
+            "fileCount=$($files.Count) shippableFileCount=$($shippableFiles.Count)" |
             Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.txt') -Encoding utf8
-          Write-Host "Exact standalone player size: $totalBytes bytes across $($files.Count) files."
+          Write-Host "Exact standalone player size: $totalBytes total bytes; $shippableBytes shippable bytes."
+
+          $beeArtifacts = Join-Path $projectPath 'Library\Bee\artifacts'
+          $il2cppRoots = @(
+            Get-ChildItem `
+              -LiteralPath $beeArtifacts `
+              -Directory `
+              -Recurse `
+              -Filter 'il2cppOutput' `
+              -ErrorAction SilentlyContinue
+          )
+          if ($il2cppRoots.Count -eq 0) {
+            throw "No il2cppOutput directory was found under $beeArtifacts."
+          }
+          $il2cppRoot = $il2cppRoots |
+            Sort-Object -Property LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          $cppFiles = @(
+            Get-ChildItem -LiteralPath $il2cppRoot.FullName -File -Recurse -Filter '*.cpp'
+          )
+          if ($cppFiles.Count -eq 0) {
+            throw "No generated C++ files were found under $($il2cppRoot.FullName)."
+          }
+          $codegenPatterns = @(
+            'TypedHandlerDeregistrationState',
+            'DeregisterTypedCache',
+            'DeregisterErasedCache',
+            'HandlerActionCache',
+            'FastHandlerWithContext'
+          )
+          $cppPaths = @($cppFiles | ForEach-Object { $_.FullName })
+          $codegenMatches = @(
+            foreach ($pattern in $codegenPatterns) {
+              Select-String -LiteralPath $cppPaths -Pattern $pattern -SimpleMatch -Context 1, 1 |
+                Select-Object -First 48
+            }
+          )
+          if ($codegenMatches.Count -eq 0) {
+            throw 'Generated C++ did not contain any typed-deregistration evidence markers.'
+          }
+          $evidence = [System.Collections.Generic.List[string]]::new()
+          $evidence.Add("il2cppOutput=$($il2cppRoot.FullName)")
+          $evidence.Add("cppFileCount=$($cppFiles.Count)")
+          $evidence.Add("boundedMatchCount=$($codegenMatches.Count)")
+          foreach ($group in @($codegenMatches | Group-Object -Property Path)) {
+            $relativePath = $group.Name.Substring($il2cppRoot.FullName.Length).TrimStart(
+              [System.IO.Path]::DirectorySeparatorChar,
+              [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            $evidence.Add('')
+            $hash = (Get-FileHash -LiteralPath $group.Name -Algorithm SHA256).Hash
+            $evidence.Add("file=$relativePath sha256=$hash")
+            foreach ($match in @($group.Group)) {
+              $evidence.Add("line=$($match.LineNumber) text=$($match.Line.Trim())")
+              foreach ($line in @($match.Context.PreContext)) {
+                $evidence.Add("before=$($line.Trim())")
+              }
+              foreach ($line in @($match.Context.PostContext)) {
+                $evidence.Add("after=$($line.Trim())")
+              }
+            }
+          }
+          $evidence |
+            Set-Content `
+              -LiteralPath (Join-Path $artifactsPath 'typed-deregistration-codegen.txt') `
+              -Encoding utf8
+          Write-Host "Captured $($codegenMatches.Count) bounded typed-deregistration C++ matches."
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}

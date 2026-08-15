@@ -60,6 +60,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal const int PublishedDispatchOrder = 0;
         internal const int RegistrationAttributionOrder = 1;
         internal const int DeregistrationAttributionOrder = 2;
+        internal const int DispatchTwinDiagnosticOrder = 3;
 
         [Test, Performance, Category("PerfBench")]
         public void MessageRegistrationHandlePhysicalSize()
@@ -154,6 +155,55 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
             Debug.Log(result.ToStructuredLog());
             TestContext.Out.WriteLine(result.ToCsvRow());
+        }
+
+        [Test, Performance, Category("PerfBench"), Order(DispatchTwinDiagnosticOrder)]
+        public void DirectAndTokenDispatchTwinPalindromeDiagnostic()
+        {
+            DispatchBenchmarkResult tokenA = RunScenario(
+                DispatchBenchmarkScenario.UntargetedFloodOneHandler,
+                logResult: false
+            );
+            DispatchBenchmarkResult directA = RunScenario(
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler,
+                logResult: false
+            );
+            DispatchBenchmarkResult directB = RunScenario(
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler,
+                logResult: false
+            );
+            DispatchBenchmarkResult tokenB = RunScenario(
+                DispatchBenchmarkScenario.UntargetedFloodOneHandler,
+                logResult: false
+            );
+
+            Assert.Greater(tokenA.EmitsPerSecond, 0d);
+            Assert.Greater(directA.EmitsPerSecond, 0d);
+            Assert.Greater(directB.EmitsPerSecond, 0d);
+            Assert.Greater(tokenB.EmitsPerSecond, 0d);
+
+            double tokenToDirectA = tokenA.EmitsPerSecond / directA.EmitsPerSecond;
+            double tokenToDirectB = tokenB.EmitsPerSecond / directB.EmitsPerSecond;
+            double ratioSpreadPercent = Math.Abs(tokenToDirectB / tokenToDirectA - 1d) * 100d;
+            double centeredTokenToDirect = Math.Sqrt(tokenToDirectA * tokenToDirectB);
+            double tokenDriftPercent =
+                Math.Abs(tokenB.EmitsPerSecond / tokenA.EmitsPerSecond - 1d) * 100d;
+            double directDriftPercent =
+                Math.Abs(directB.EmitsPerSecond / directA.EmitsPerSecond - 1d) * 100d;
+
+            Debug.Log(
+                "DXM_DISPATCH_TWIN "
+                    + $"tokenA={tokenA.EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture)} "
+                    + $"directA={directA.EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture)} "
+                    + $"directB={directB.EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture)} "
+                    + $"tokenB={tokenB.EmitsPerSecond.ToString("F3", CultureInfo.InvariantCulture)} "
+                    + $"tokenToDirectA={tokenToDirectA.ToString("F6", CultureInfo.InvariantCulture)} "
+                    + $"tokenToDirectB={tokenToDirectB.ToString("F6", CultureInfo.InvariantCulture)} "
+                    + $"ratioSpreadPercent={ratioSpreadPercent.ToString("F3", CultureInfo.InvariantCulture)} "
+                    + $"centeredTokenToDirect={centeredTokenToDirect.ToString("F6", CultureInfo.InvariantCulture)} "
+                    + $"tokenDriftPercent={tokenDriftPercent.ToString("F3", CultureInfo.InvariantCulture)} "
+                    + $"directDriftPercent={directDriftPercent.ToString("F3", CultureInfo.InvariantCulture)}"
+            );
         }
 
         [Test, Explicit, Performance, Category("PerfBaseline")]
