@@ -1307,6 +1307,15 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         private MessageRegistrationHandle InternalRegister(Registration registration)
         {
+            // Enabled registrations are caller-visible immediately. Validate before
+            // allocating a token slot so a rejected call cannot leave inaccessible
+            // metadata behind. Disabled tokens deliberately retain lazy validation:
+            // staged registrations are validated when Enable() replays them.
+            if (_enabled)
+            {
+                registration.Validate();
+            }
+
             int slotIndex = AllocateSlot();
             MessageRegistrationHandle handle =
                 MessageRegistrationHandle.CreateMessageRegistrationHandle(slotIndex);
@@ -1334,7 +1343,8 @@ namespace DxMessaging.Core
             // (re)register on Enable().
             if (_enabled)
             {
-                MessageHandler.HandlerDeregistration actualDeregistration = registration.Register();
+                MessageHandler.HandlerDeregistration actualDeregistration =
+                    registration.RegisterValidated();
                 AddDeregistration(slotIndex, handle.Id, actualDeregistration);
             }
 
@@ -2514,7 +2524,18 @@ namespace DxMessaging.Core
             // binds to the active bus, unchanged from when _messageBus was captured by
             // the staging closure at call time -- the staging closure also read the
             // field, not a snapshot).
-            public abstract MessageHandler.HandlerDeregistration Register();
+            public MessageHandler.HandlerDeregistration Register()
+            {
+                Validate();
+                return RegisterValidated();
+            }
+
+            internal abstract MessageHandler.HandlerDeregistration RegisterValidated();
+
+            // Rejects invalid staged state without mutating the token or bus. Register()
+            // repeats this validation because disabled-token replay and retargeting do
+            // not pass through InternalRegister.
+            public abstract void Validate();
 
             public abstract MessageRegistrationMetadata Metadata { get; }
 
@@ -2570,6 +2591,14 @@ namespace DxMessaging.Core
                 IMessageBus messageBus = Token._messageBus;
                 _registeredMessageBus = messageBus ?? Token._messageHandler?.DefaultMessageBus;
                 return messageBus;
+            }
+
+            protected static void ThrowIfNullHandler(object handler, string parameterName)
+            {
+                if (handler == null)
+                {
+                    throw new ArgumentNullException(parameterName);
+                }
             }
 
             protected void RecordDiagnosticEmission(IMessage message, InstanceId? context = null)
@@ -2662,7 +2691,7 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -2759,6 +2788,31 @@ namespace DxMessaging.Core
                 }
             }
 
+            public override void Validate()
+            {
+                string parameterName;
+                switch (_kind)
+                {
+                    case RegistrationKind.TargetedHandlerAction:
+                    case RegistrationKind.TargetedHandlerFast:
+                        parameterName = "targetedHandler";
+                        break;
+                    case RegistrationKind.TargetedPostProcessorAction:
+                    case RegistrationKind.TargetedPostProcessorFast:
+                        parameterName = "targetedPostProcessor";
+                        break;
+                    case RegistrationKind.TargetedWithoutTargetingAction:
+                    case RegistrationKind.TargetedWithoutTargetingFast:
+                        parameterName = "messageHandler";
+                        break;
+                    default:
+                        parameterName = "postProcessor";
+                        break;
+                }
+
+                ThrowIfNullHandler(_userHandler, parameterName);
+            }
+
             // Scalar invokers (targeted handler / post-processor). The user's handler is
             // the identity/dedup key; this flat invoker runs for the default slot. Calls
             // the typed field directly (no castclass) then records the (message, _context)
@@ -2837,7 +2891,7 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -2878,6 +2932,15 @@ namespace DxMessaging.Core
                             $"Unexpected registration kind {_kind} for UntargetedRegistration<{typeof(T)}>."
                         );
                 }
+            }
+
+            public override void Validate()
+            {
+                string parameterName =
+                    _kind == RegistrationKind.UntargetedPostProcessorFast
+                        ? "untargetedPostProcessor"
+                        : "untargetedHandler";
+                ThrowIfNullHandler(_userHandler, parameterName);
             }
 
             // Untargeted scalar invokers. No context: emission data carries the message
@@ -2945,7 +3008,7 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -3040,6 +3103,23 @@ namespace DxMessaging.Core
                             $"Unexpected registration kind {_kind} for BroadcastRegistration<{typeof(T)}>."
                         );
                 }
+            }
+
+            public override void Validate()
+            {
+                string parameterName;
+                switch (_kind)
+                {
+                    case RegistrationKind.BroadcastPostProcessorAction:
+                    case RegistrationKind.BroadcastPostProcessorFast:
+                        parameterName = "broadcastPostProcessor";
+                        break;
+                    default:
+                        parameterName = "broadcastHandler";
+                        break;
+                }
+
+                ThrowIfNullHandler(_userHandler, parameterName);
             }
 
             // Broadcast scalar invokers. Emission data carries the stored source
@@ -3146,7 +3226,7 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterUntargetedInterceptor(
@@ -3155,6 +3235,11 @@ namespace DxMessaging.Core
                         ResolveRegistrationMessageBus()
                     )
                 );
+            }
+
+            public override void Validate()
+            {
+                ThrowIfNullHandler(_interceptor, "interceptor");
             }
         }
 
@@ -3181,7 +3266,7 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterTargetedInterceptor(
@@ -3190,6 +3275,11 @@ namespace DxMessaging.Core
                         ResolveRegistrationMessageBus()
                     )
                 );
+            }
+
+            public override void Validate()
+            {
+                ThrowIfNullHandler(_interceptor, "interceptor");
             }
         }
 
@@ -3216,7 +3306,7 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterBroadcastInterceptor(
@@ -3225,6 +3315,11 @@ namespace DxMessaging.Core
                         ResolveRegistrationMessageBus()
                     )
                 );
+            }
+
+            public override void Validate()
+            {
+                ThrowIfNullHandler(_interceptor, "interceptor");
             }
         }
 
@@ -3286,7 +3381,7 @@ namespace DxMessaging.Core
                 _broadcastFast = broadcast;
             }
 
-            public override MessageHandler.HandlerDeregistration Register()
+            internal override MessageHandler.HandlerDeregistration RegisterValidated()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -3316,6 +3411,22 @@ namespace DxMessaging.Core
                         messageBus
                     )
                 );
+            }
+
+            public override void Validate()
+            {
+                if (_kind == RegistrationKind.GlobalAcceptAllAction)
+                {
+                    ThrowIfNullHandler(_untargetedAction, "acceptAllUntargeted");
+                    ThrowIfNullHandler(_targetedAction, "acceptAllTargeted");
+                    ThrowIfNullHandler(_broadcastAction, "acceptAllBroadcast");
+                }
+                else
+                {
+                    ThrowIfNullHandler(_untargetedFast, "acceptAllUntargeted");
+                    ThrowIfNullHandler(_targetedFast, "acceptAllTargeted");
+                    ThrowIfNullHandler(_broadcastFast, "acceptAllBroadcast");
+                }
             }
 
             internal override void Deregister()

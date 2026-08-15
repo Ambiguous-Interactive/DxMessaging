@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix active `MessageRegistrationToken` registrations with null callbacks leaving partial token or
+  bus state behind after throwing ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
 - Make initially empty and interceptor-rewritten post routes obey frozen snapshots: additions wait
   until the next emission, while removals finish the current post phase
   ([#413](https://github.com/Ambiguous-Interactive/DxMessaging/issues/413)).
