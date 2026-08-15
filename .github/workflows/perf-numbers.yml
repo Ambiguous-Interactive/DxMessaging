@@ -899,14 +899,19 @@ jobs:
           for ($index = 0; $index -lt $typedHandlerSharedBody.Lines.Count; $index++) {
             if (
               $typedHandlerSharedBody.Lines[$index] -notmatch
-                'InterfaceActionInvoker|InterfaceFuncInvoker|VirtualActionInvoker|GetInterfaceInvokeData'
+                'InterfaceActionInvoker|InterfaceFuncInvoker|GenericInterfaceActionInvoker|GenericInterfaceFuncInvoker|VirtualActionInvoker|GetInterfaceInvokeData'
             ) {
               continue
             }
-            $windowStart = [Math]::Max(0, $index - 3)
-            $windowEnd = [Math]::Min($typedHandlerSharedBody.Lines.Count - 1, $index + 3)
+            $windowStart = [Math]::Max(0, $index - 6)
+            $windowEnd = [Math]::Min($typedHandlerSharedBody.Lines.Count - 1, $index + 6)
             $dispatchWindow = $typedHandlerSharedBody.Lines[$windowStart..$windowEnd] -join ' '
-            if ($dispatchWindow -match 'IMessageBus') {
+            $explicitIMessageBusDispatch = $dispatchWindow -match 'IMessageBus'
+            $rgctxMessageBusDispatch =
+              $typedHandlerSharedBody.Lines[$index] -match
+                'GenericInterface(?:Action|Func)Invoker' -and
+              $dispatchWindow -match '_+messageBus'
+            if ($explicitIMessageBusDispatch -or $rgctxMessageBusDispatch) {
               $typedInterfaceDispatchEvidence.Add($typedHandlerSharedBody.Lines[$index])
             }
           }
