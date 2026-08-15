@@ -626,7 +626,7 @@ jobs:
             throw "No generated C++ files were found under $($il2cppRoot.FullName)."
           }
           $cppPaths = @($cppFiles | ForEach-Object { $_.FullName })
-          # cspell:ignore gshared
+          # cspell:ignore gshared rgctx
           function Get-GeneratedMethodDefinition {
             param(
               [Parameter(Mandatory)] [string] $Label,
