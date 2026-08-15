@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduce message-handler deregistration overhead by using typed cache operations for the built-in
+  handler shapes ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
 - Use a collision-driven first-message guide and remove maintainer details from user docs
   ([#404](https://github.com/Ambiguous-Interactive/DxMessaging/issues/404),
   [#411](https://github.com/Ambiguous-Interactive/DxMessaging/issues/411)).
