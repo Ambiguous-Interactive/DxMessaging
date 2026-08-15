@@ -685,11 +685,12 @@ jobs:
                 }
               )
             }
-            $uniqueBodyKeys = @(
-              $bodyCandidates |
-                ForEach-Object { $_.Lines -join "`n" } |
-                Sort-Object -CaseSensitive -Unique
+            $uniqueBodyKeys = [System.Collections.Generic.HashSet[string]]::new(
+              [System.StringComparer]::Ordinal
             )
+            foreach ($bodyCandidate in $bodyCandidates) {
+              $null = $uniqueBodyKeys.Add($bodyCandidate.Lines -join "`n")
+            }
             if ($uniqueBodyKeys.Count -ne 1) {
               $bodyCountMessage =
                 "Expected one unique generated body for $Label, " +
@@ -792,14 +793,25 @@ jobs:
             }
 
             $multipleBodyPath = Join-Path $extractorTestRoot 'multiple.cpp'
+            $composedBodyMarker = [string][char]0x00E9
+            $decomposedBodyMarker = "e$([char]0x0301)"
+            if (
+              [string]::Equals(
+                $composedBodyMarker,
+                $decomposedBodyMarker,
+                [System.StringComparison]::Ordinal
+              )
+            ) {
+              throw 'Generated-method extractor Unicode self-test inputs were not distinct.'
+            }
             @(
               'inline void Duplicate_m123 ()',
               '{',
-              '// case-sensitive body',
+              "// $composedBodyMarker body",
               '}',
               'inline void Duplicate_m123 ()',
               '{',
-              '// Case-sensitive body',
+              "// $decomposedBodyMarker body",
               '}'
             ) | Set-Content -LiteralPath $multipleBodyPath -Encoding utf8
             $cppPaths = @($multipleBodyPath)
@@ -814,7 +826,7 @@ jobs:
                   'found 2 unique bodies across 2 definitions from 2 signatures'
             }
             if (!$multipleRejected) {
-              throw 'Generated-method extractor did not reject multiple bodies.'
+              throw 'Generated-method extractor did not reject ordinally distinct bodies.'
             }
             Write-Host 'Generated-method extractor self-test passed.'
           } finally {
