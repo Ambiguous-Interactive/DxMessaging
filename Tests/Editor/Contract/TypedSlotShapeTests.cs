@@ -1065,7 +1065,7 @@ namespace DxMessaging.Tests.Editor.Contract
         /// <see cref="IHandlerActionCache.LastSeenEmissionId"/>,
         /// <see cref="IHandlerActionCache.IsEmpty"/>,
         /// <see cref="IHandlerActionCache.Reset"/>, plus the non-generic
-        /// per-handle teardown ops the unified deregistration object uses:
+        /// fallback teardown ops the unified deregistration object retains:
         /// <see cref="IHandlerActionCache.ContainsEntry"/>,
         /// <see cref="IHandlerActionCache.BumpVersion"/>, and
         /// <see cref="IHandlerActionCache.DeregisterEntry"/>. Adding or removing

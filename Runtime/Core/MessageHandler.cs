@@ -3109,20 +3109,55 @@ namespace DxMessaging.Core
                 }
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal bool ContainsEntry(T originalHandler)
+            {
+                return entries.ContainsKey(originalHandler);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void BumpVersion()
+            {
+                version++;
+            }
+
+            internal bool DeregisterEntry(T originalHandler, out bool wasLastForEntry)
+            {
+                wasLastForEntry = false;
+                if (!entries.TryGetValue(originalHandler, out Entry entry))
+                {
+                    return false;
+                }
+
+                if (entry.count <= 1)
+                {
+                    _ = entries.Remove(originalHandler);
+                    version++;
+                    wasLastForEntry = true;
+                    return true;
+                }
+
+                entries[originalHandler] = new Entry(
+                    entry.handler,
+                    entry.count - 1,
+                    entry.flatInvoker
+                );
+                return true;
+            }
+
             /// <summary>
             /// Non-generic membership probe; casts the boxed key to the
-            /// cache's delegate shape. Mirrors
-            /// <c>entries.ContainsKey(originalHandler)</c>.
+            /// cache's delegate shape and forwards to the typed implementation.
             /// </summary>
             bool DxMessaging.Core.Internal.IHandlerActionCache.ContainsEntry(object originalHandler)
             {
-                return entries.ContainsKey((T)originalHandler);
+                return ContainsEntry((T)originalHandler);
             }
 
             /// <summary>Bumps <see cref="version"/> by one (the closure's top-of-body <c>version++</c>).</summary>
             void DxMessaging.Core.Internal.IHandlerActionCache.BumpVersion()
             {
-                version++;
+                BumpVersion();
             }
 
             /// <summary>
@@ -3134,23 +3169,7 @@ namespace DxMessaging.Core
                 out bool wasLastForEntry
             )
             {
-                wasLastForEntry = false;
-                T key = (T)originalHandler;
-                if (!entries.TryGetValue(key, out Entry entry))
-                {
-                    return false;
-                }
-
-                if (entry.count <= 1)
-                {
-                    _ = entries.Remove(key);
-                    version++;
-                    wasLastForEntry = true;
-                    return true;
-                }
-
-                entries[key] = new Entry(entry.handler, entry.count - 1, entry.flatInvoker);
-                return true;
+                return DeregisterEntry((T)originalHandler, out wasLastForEntry);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -3206,12 +3225,11 @@ namespace DxMessaging.Core
             /// used to build and return. All of the closure's captured locals
             /// are stored as fields; <see cref="Deregister"/> re-expresses the
             /// closure body verbatim, choosing the scalar or context cache
-            /// resolution by <see cref="_keyed"/> and using the non-generic
-            /// <see cref="IHandlerActionCache"/> teardown ops
-            /// (<c>ContainsEntry</c> / <c>BumpVersion</c> / <c>DeregisterEntry</c>)
-            /// so it needs no delegate-shape type argument. Tokens embed this value
-            /// in their existing Registration object; compatibility callers can
-            /// convert it to an allocation-backed wrapper or <see cref="Action"/>.
+            /// resolution by <see cref="_keyed"/>. The four expected delegate
+            /// shapes use concrete cache operations; the erased operations remain
+            /// as a compatibility fallback. Tokens embed this value in their existing
+            /// Registration object; compatibility callers can convert it to an
+            /// allocation-backed wrapper or <see cref="Action"/>.
             /// </summary>
             internal readonly struct TypedHandlerDeregistrationState
             {
@@ -3330,29 +3348,94 @@ namespace DxMessaging.Core
                         }
                     }
 
+                    // Every typed slot owns one of four closed cache shapes. Re-enter the
+                    // concrete shape after resolving the CURRENT cache so the common path
+                    // avoids three erased interface calls. Keep the erased fallback for an
+                    // unexpected custom/internal shape rather than changing its behavior.
+                    if (cache is HandlerActionCache<FastHandler<T>> fastCache)
+                    {
+                        DeregisterTypedCache(fastCache, (FastHandler<T>)_originalHandler);
+                        return;
+                    }
+                    if (cache is HandlerActionCache<Action<T>> actionCache)
+                    {
+                        DeregisterTypedCache(actionCache, (Action<T>)_originalHandler);
+                        return;
+                    }
+                    if (cache is HandlerActionCache<FastHandlerWithContext<T>> fastContextCache)
+                    {
+                        DeregisterTypedCache(
+                            fastContextCache,
+                            (FastHandlerWithContext<T>)_originalHandler
+                        );
+                        return;
+                    }
+                    if (cache is HandlerActionCache<Action<InstanceId, T>> actionContextCache)
+                    {
+                        DeregisterTypedCache(
+                            actionContextCache,
+                            (Action<InstanceId, T>)_originalHandler
+                        );
+                        return;
+                    }
+
+                    DeregisterErasedCache(cache);
+                    // Deliberately keep the priority and context mappings to
+                    // preserve frozen snapshots for the current emission.
+                }
+
+                private void DeregisterTypedCache<THandler>(
+                    HandlerActionCache<THandler> cache,
+                    THandler originalHandler
+                )
+                {
+                    if (!cache.ContainsEntry(originalHandler))
+                    {
+                        return;
+                    }
+
+                    cache.BumpVersion();
+                    _messageBus.Deregister<T>(in _busRegistration);
+                    TouchSlot();
+
+                    // Re-read after the bus call. A custom IMessageBus can re-enter user
+                    // code or throw, and the existing erased path always observes the
+                    // post-call entry state before decrementing the refcount.
+                    _ = cache.DeregisterEntry(originalHandler, out bool wasLastForEntry);
+                    if (wasLastForEntry && _slot != null)
+                    {
+                        _slot.liveCount--;
+                    }
+                }
+
+                private void DeregisterErasedCache(IHandlerActionCache cache)
+                {
                     if (!cache.ContainsEntry(_originalHandler))
                     {
                         return;
                     }
 
                     cache.BumpVersion();
-
                     _messageBus.Deregister<T>(in _busRegistration);
-                    if (_slot != null)
-                    {
-                        _slot.lastTouchTicks =
-                            global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                                _messageBus
-                            );
-                    }
-
+                    TouchSlot();
                     _ = cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
                     if (wasLastForEntry && _slot != null)
                     {
                         _slot.liveCount--;
                     }
-                    // Deliberately keep the priority and context mappings to
-                    // preserve frozen snapshots for the current emission.
+                }
+
+                private void TouchSlot()
+                {
+                    if (_slot == null)
+                    {
+                        return;
+                    }
+
+                    _slot.lastTouchTicks =
+                        global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
+                            _messageBus
+                        );
                 }
 
                 public static implicit operator HandlerDeregistration(
@@ -5233,10 +5316,11 @@ namespace DxMessaging.Core
                 // The per-handle teardown object re-expresses the old
                 // deregistration closure verbatim (generation + slot-version
                 // guards, cache resolution, version bumps, refcount
-                // decrement-or-remove, liveCount, keep-key-during-emission)
-                // using the non-generic IHandlerActionCache teardown ops, so it
-                // carries no TU type argument and replaces the closure's display
-                // class + delegate with this single object.
+                // decrement-or-remove, liveCount, keep-key-during-emission).
+                // Expected delegate shapes use concrete cache operations, with
+                // the erased IHandlerActionCache operations retained as fallback.
+                // The state replaces the closure's display class + delegate with
+                // this single object.
                 return new TypedHandlerDeregistrationState(
                     messageBus,
                     localResetGeneration,
