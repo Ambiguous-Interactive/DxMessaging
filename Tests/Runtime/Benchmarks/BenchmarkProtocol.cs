@@ -541,6 +541,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
                     "TargetedFlood_SixteenListeners",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler => "BroadcastFlood_OneHandler",
+                DispatchBenchmarkScenario.TargetedPostStableRoute => "TargetedPost_StableRoute",
+                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
+                    "TargetedPost_Rewritten_EmptyFinalRoute",
+                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute =>
+                    "TargetedPost_Rewritten_PopulatedFinalRoute",
+                DispatchBenchmarkScenario.BroadcastPostStableRoute => "BroadcastPost_StableRoute",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute =>
+                    "BroadcastPost_Rewritten_EmptyFinalRoute",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute =>
+                    "BroadcastPost_Rewritten_PopulatedFinalRoute",
                 DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors =>
                     "InterceptorHeavy_FourInterceptors",
                 DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>
@@ -601,6 +611,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Targeted Flood (Sixteen Listeners)",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler =>
                     "Broadcast Flood (One Handler)",
+                DispatchBenchmarkScenario.TargetedPostStableRoute => "Targeted Post Route (Stable)",
+                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
+                    "Targeted Post Route (Rewritten, Empty Final Route)",
+                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute =>
+                    "Targeted Post Route (Rewritten, Populated Final Route)",
+                DispatchBenchmarkScenario.BroadcastPostStableRoute =>
+                    "Broadcast Post Route (Stable)",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute =>
+                    "Broadcast Post Route (Rewritten, Empty Final Route)",
+                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute =>
+                    "Broadcast Post Route (Rewritten, Populated Final Route)",
                 DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors =>
                     "Interceptor Heavy (Four Interceptors)",
                 DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors =>

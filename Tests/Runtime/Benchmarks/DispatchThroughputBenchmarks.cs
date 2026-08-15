@@ -39,6 +39,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         TargetedFloodOneListener,
         TargetedFloodSixteenListeners,
         BroadcastFloodOneHandler,
+        TargetedPostStableRoute,
+        TargetedPostRewrittenEmptyFinalRoute,
+        TargetedPostRewrittenPopulatedFinalRoute,
+        BroadcastPostStableRoute,
+        BroadcastPostRewrittenEmptyFinalRoute,
+        BroadcastPostRewrittenPopulatedFinalRoute,
         InterceptorHeavyFourInterceptors,
         PostProcessingHeavyFourPostProcessors,
         MessageBusConstruction1000,
@@ -84,6 +90,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static readonly InstanceId Target = new(31001);
         private static readonly InstanceId Source = new(31002);
         private static readonly InstanceId MissingTarget = new(31003);
+        private static readonly InstanceId RewrittenTarget = new(31004);
+        private static readonly InstanceId RewrittenSource = new(31005);
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
 
         // Marginal registration scenarios register this many additional handlers of a
@@ -429,8 +437,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler:
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
+                case DispatchBenchmarkScenario.TargetedPostStableRoute:
+                case DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute:
+                case DispatchBenchmarkScenario.BroadcastPostStableRoute:
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute:
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                     return 1;
+                case DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute:
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute:
+                    return 0;
                 case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
                     return 2;
                 case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
@@ -1253,7 +1268,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static void ConfigureScenario(
             BenchmarkRegistrationScope scope,
             DispatchBenchmarkScenario scenario,
-            InvocationCounter handlerInvocations
+            InvocationCounter handlerInvocations,
+            RewriteContextObserver rewriteObserver = null
         )
         {
             switch (scenario)
@@ -1314,6 +1330,54 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
                     RegisterBroadcast(scope, handlerInvocations, 0);
                     return;
+                case DispatchBenchmarkScenario.TargetedPostStableRoute:
+                    _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                        Target,
+                        CountTargetedPostProcessed
+                    );
+                    return;
+                case DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute:
+                    IMessageBus.TargetedInterceptor<SimpleTargetedMessage> emptyTargetInterceptor =
+                        rewriteObserver == null ? RewriteTarget : rewriteObserver.RewriteTarget;
+                    _ = scope.PrimaryToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(
+                        emptyTargetInterceptor
+                    );
+                    return;
+                case DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute:
+                    IMessageBus.TargetedInterceptor<SimpleTargetedMessage> targetInterceptor =
+                        rewriteObserver == null ? RewriteTarget : rewriteObserver.RewriteTarget;
+                    _ = scope.PrimaryToken.RegisterTargetedInterceptor<SimpleTargetedMessage>(
+                        targetInterceptor
+                    );
+                    _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                        RewrittenTarget,
+                        CountTargetedPostProcessed
+                    );
+                    return;
+                case DispatchBenchmarkScenario.BroadcastPostStableRoute:
+                    _ = scope.PrimaryToken.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                        Source,
+                        CountBroadcastPostProcessed
+                    );
+                    return;
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute:
+                    IMessageBus.BroadcastInterceptor<SimpleBroadcastMessage> emptySourceInterceptor =
+                        rewriteObserver == null ? RewriteSource : rewriteObserver.RewriteSource;
+                    _ = scope.PrimaryToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
+                        emptySourceInterceptor
+                    );
+                    return;
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute:
+                    IMessageBus.BroadcastInterceptor<SimpleBroadcastMessage> sourceInterceptor =
+                        rewriteObserver == null ? RewriteSource : rewriteObserver.RewriteSource;
+                    _ = scope.PrimaryToken.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
+                        sourceInterceptor
+                    );
+                    _ = scope.PrimaryToken.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                        RewrittenSource,
+                        CountBroadcastPostProcessed
+                    );
+                    return;
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
                     for (int priority = 0; priority < 4; priority++)
                     {
@@ -1344,6 +1408,28 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 handlerInvocations.Increment();
             }
+
+            void CountTargetedPostProcessed(ref SimpleTargetedMessage message)
+            {
+                handlerInvocations.Increment();
+            }
+
+            void CountBroadcastPostProcessed(ref SimpleBroadcastMessage message)
+            {
+                handlerInvocations.Increment();
+            }
+        }
+
+        private static bool RewriteTarget(ref InstanceId target, ref SimpleTargetedMessage message)
+        {
+            target = RewrittenTarget;
+            return true;
+        }
+
+        private static bool RewriteSource(ref InstanceId source, ref SimpleBroadcastMessage message)
+        {
+            source = RewrittenSource;
+            return true;
         }
 
         private static void RegisterUntargeted(
@@ -1419,6 +1505,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     return;
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                 case DispatchBenchmarkScenario.TargetedFloodSixteenListeners:
+                case DispatchBenchmarkScenario.TargetedPostStableRoute:
                     SimpleTargetedMessage targeted = new();
                     InstanceId target = Target;
                     for (int index = 0; index < count; index++)
@@ -1426,12 +1513,33 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         bus.TargetedBroadcast(ref target, ref targeted);
                     }
                     return;
+                case DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute:
+                case DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute:
+                    SimpleTargetedMessage rewrittenTargeted = new();
+                    InstanceId rewrittenTarget = Target;
+                    for (int index = 0; index < count; index++)
+                    {
+                        rewrittenTarget = Target;
+                        bus.TargetedBroadcast(ref rewrittenTarget, ref rewrittenTargeted);
+                    }
+                    return;
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
+                case DispatchBenchmarkScenario.BroadcastPostStableRoute:
                     SimpleBroadcastMessage broadcast = new();
                     InstanceId source = Source;
                     for (int index = 0; index < count; index++)
                     {
                         bus.SourcedBroadcast(ref source, ref broadcast);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute:
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute:
+                    SimpleBroadcastMessage rewrittenBroadcast = new();
+                    InstanceId rewrittenSource = Source;
+                    for (int index = 0; index < count; index++)
+                    {
+                        rewrittenSource = Source;
+                        bus.SourcedBroadcast(ref rewrittenSource, ref rewrittenBroadcast);
                     }
                     return;
                 default:
@@ -1480,6 +1588,104 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 scope.TokenRegistrations,
                 scope.HasDirectUntargetedRegistration
             );
+        }
+
+        internal static RewriteBatchContractObservation ObserveRewrittenPostRouteBatchForContract(
+            DispatchBenchmarkScenario scenario
+        )
+        {
+            switch (scenario)
+            {
+                case DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute:
+                case DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute:
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute:
+                case DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute:
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+            }
+
+            using BenchmarkRegistrationScope scope = new();
+            InvocationCounter handlerInvocations = new();
+            RewriteContextObserver observer = new();
+            ConfigureScenario(scope, scenario, handlerInvocations, observer);
+            EmitMany(scope.Bus, scenario, 2);
+            return new RewriteBatchContractObservation(
+                observer.InvocationCount,
+                observer.FirstInput,
+                observer.SecondInput,
+                observer.LastFinal,
+                handlerInvocations.Count
+            );
+        }
+
+        internal readonly struct RewriteBatchContractObservation
+        {
+            internal RewriteBatchContractObservation(
+                int invocationCount,
+                InstanceId firstInput,
+                InstanceId secondInput,
+                InstanceId lastFinal,
+                long handlerInvocations
+            )
+            {
+                InvocationCount = invocationCount;
+                FirstInput = firstInput;
+                SecondInput = secondInput;
+                LastFinal = lastFinal;
+                HandlerInvocations = handlerInvocations;
+            }
+
+            internal int InvocationCount { get; }
+
+            internal InstanceId FirstInput { get; }
+
+            internal InstanceId SecondInput { get; }
+
+            internal InstanceId LastFinal { get; }
+
+            internal long HandlerInvocations { get; }
+        }
+
+        private sealed class RewriteContextObserver
+        {
+            internal int InvocationCount { get; private set; }
+
+            internal InstanceId FirstInput { get; private set; }
+
+            internal InstanceId SecondInput { get; private set; }
+
+            internal InstanceId LastFinal { get; private set; }
+
+            internal bool RewriteTarget(ref InstanceId target, ref SimpleTargetedMessage message)
+            {
+                ObserveInput(target);
+                target = RewrittenTarget;
+                LastFinal = target;
+                return true;
+            }
+
+            internal bool RewriteSource(ref InstanceId source, ref SimpleBroadcastMessage message)
+            {
+                ObserveInput(source);
+                source = RewrittenSource;
+                LastFinal = source;
+                return true;
+            }
+
+            private void ObserveInput(InstanceId input)
+            {
+                if (InvocationCount == 0)
+                {
+                    FirstInput = input;
+                }
+                else if (InvocationCount == 1)
+                {
+                    SecondInput = input;
+                }
+
+                InvocationCount++;
+            }
         }
 
         internal readonly struct DispatchScenarioContractObservation

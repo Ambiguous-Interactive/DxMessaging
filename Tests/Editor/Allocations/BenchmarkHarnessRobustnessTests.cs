@@ -457,6 +457,42 @@ namespace DxMessaging.Tests.Editor.Allocations
                 1,
                 1
             ).SetName("DispatchBaselineSetup_InactiveHandler");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedPostStableRoute,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_TargetedPostStableRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute,
+                0,
+                0,
+                1
+            ).SetName("DispatchBaselineSetup_TargetedPostRewrittenEmptyFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute,
+                1,
+                1,
+                2
+            ).SetName("DispatchBaselineSetup_TargetedPostRewrittenPopulatedFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastPostStableRoute,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_BroadcastPostStableRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute,
+                0,
+                0,
+                1
+            ).SetName("DispatchBaselineSetup_BroadcastPostRewrittenEmptyFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute,
+                1,
+                1,
+                2
+            ).SetName("DispatchBaselineSetup_BroadcastPostRewrittenPopulatedFinalRoute");
         }
 
         [Test]
@@ -521,6 +557,73 @@ namespace DxMessaging.Tests.Editor.Allocations
             Assert.IsTrue(
                 direct.HasDirectUntargetedRegistration,
                 "The direct row must retain the handler-owned deregistration state."
+            );
+        }
+
+        private static IEnumerable<TestCaseData> RewrittenPostRouteCases()
+        {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute,
+                31001,
+                31004,
+                0
+            ).SetName("RewrittenPostRoute_TargetedEmptyFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute,
+                31001,
+                31004,
+                2
+            ).SetName("RewrittenPostRoute_TargetedPopulatedFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute,
+                31002,
+                31005,
+                0
+            ).SetName("RewrittenPostRoute_BroadcastEmptyFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastPostRewrittenPopulatedFinalRoute,
+                31002,
+                31005,
+                2
+            ).SetName("RewrittenPostRoute_BroadcastPopulatedFinalRoute");
+        }
+
+        [Test]
+        [TestCaseSource(nameof(RewrittenPostRouteCases))]
+        public void RewrittenPostRouteScenariosResetAndRewriteContextOnConsecutiveEmits(
+            DispatchBenchmarkScenario scenario,
+            int expectedInitialId,
+            int expectedFinalId,
+            int expectedHandlerInvocations
+        )
+        {
+            DispatchThroughputBenchmarks.RewriteBatchContractObservation observation =
+                DispatchThroughputBenchmarks.ObserveRewrittenPostRouteBatchForContract(scenario);
+
+            Assert.AreEqual(
+                2,
+                observation.InvocationCount,
+                $"Scenario '{scenario}' must run its interceptor once for each contract emit."
+            );
+            Assert.AreEqual(
+                expectedInitialId,
+                observation.FirstInput.Id,
+                $"Scenario '{scenario}' must start its first emit at the original context."
+            );
+            Assert.AreEqual(
+                expectedInitialId,
+                observation.SecondInput.Id,
+                $"Scenario '{scenario}' must reset its consecutive emit to the original context."
+            );
+            Assert.AreEqual(
+                expectedFinalId,
+                observation.LastFinal.Id,
+                $"Scenario '{scenario}' must rewrite its consecutive emit to the final context."
+            );
+            Assert.AreEqual(
+                expectedHandlerInvocations,
+                observation.HandlerInvocations,
+                $"Scenario '{scenario}' must preserve empty versus populated final-route fan-out across both emits."
             );
         }
 
