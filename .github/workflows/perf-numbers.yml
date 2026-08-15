@@ -770,7 +770,10 @@ jobs:
             $repeatedBody = Get-GeneratedMethodDefinition `
               -Label 'extractor self-test repeated identical body' `
               -Pattern '(?<![A-Za-z0-9_])Repeated_m456\s*\('
-            if ($repeatedBody.DefinitionOccurrenceCount -ne 2) {
+            if (
+              $repeatedBody.DefinitionOccurrenceCount -ne 2 -or
+              $repeatedBody.DefinitionLocations.Count -ne 2
+            ) {
               throw 'Generated-method extractor did not retain repeated identical definitions.'
             }
 
