@@ -43,7 +43,8 @@ separately.
   regressed targeted stable, rewritten-empty-final, and
   rewritten-populated-final throughput by 32.21%, 28.98%, and 16.22%. The
   broadcast sibling-control means moved only +0.43%, -1.68%, and +2.12%.
-  Candidate size manifests and hashed code/metadata payloads were identical;
+  Candidate player size measurements and hashed code/metadata payloads were
+  identical;
   separate editor rewritten-route allocation contracts remained green;
   shippable size grew 3,308 bytes (+0.0039%). Generated C++ constructed
   `TargetedPostPhaseState`, passed its address to the `_gshared_inline` helper,
