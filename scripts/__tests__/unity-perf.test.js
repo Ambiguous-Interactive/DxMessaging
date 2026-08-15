@@ -53,6 +53,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 test("dispatch baseline scenarios keep stable order and labels", () => {
   const expected = [
     ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
+    ["UntargetedFlood_OneDirectHandler", "Untargeted Flood (One Direct Handler)"],
     ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
     [
       "UntargetedFlood_ThreeHandlers_OnePriority",
@@ -68,11 +69,7 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
     [
       "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
       "Registration Token Construction (1000, Prebuilt Handler + Bus)"
-    ],
-    ...["Direct Bus", "Direct Handler", "Token Remove", "Token Disable"].map((label) => [
-      `DeregistrationAttribution_${label.replaceAll(" ", "")}_131072`,
-      `Deregistration Attribution (${label}, 131072)`
-    ])
+    ]
   ];
 
   for (const [key, label] of expected) {
@@ -80,18 +77,33 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
     assert.equal(DISPATCH_DISPLAY_NAMES[key], label);
   }
 
-  assert.ok(
-    SCENARIO_ORDER.indexOf("EmptyBus_Dispatch") <
-      SCENARIO_ORDER.indexOf("UntargetedFlood_OneHandler")
-  );
-  assert.deepEqual(SCENARIO_ORDER.slice(1, 5), [
+  const registrationLabel = "Registration Attribution";
+  const deregistrationLabel = "Deregistration Attribution";
+  const attributionLabels = {
+    RegistrationAttribution_DirectBus_131072: `${registrationLabel} (Direct Bus, 131072)`,
+    RegistrationAttribution_DirectHandler_131072: `${registrationLabel} (Direct Handler, 131072)`,
+    RegistrationAttribution_TokenStage_131072: `${registrationLabel} (Token Stage, 131072)`,
+    RegistrationAttribution_TokenActive_131072: `${registrationLabel} (Token Active, 131072)`,
+    DeregistrationAttribution_DirectBus_131072: `${deregistrationLabel} (Direct Bus, 131072)`,
+    DeregistrationAttribution_DirectHandler_131072: `${deregistrationLabel} (Direct Handler, 131072)`,
+    DeregistrationAttribution_TokenRemove_131072: `${deregistrationLabel} (Token Remove, 131072)`,
+    DeregistrationAttribution_TokenDisable_131072: `${deregistrationLabel} (Token Disable, 131072)`
+  };
+  for (const [key, label] of Object.entries(attributionLabels)) {
+    assert.equal(DISPATCH_DISPLAY_NAMES[key], label, `${key} must retain its stable label`);
+  }
+
+  assert.deepEqual(SCENARIO_ORDER.slice(1, 6), [
     "UntargetedFlood_OneHandler",
+    "UntargetedFlood_OneDirectHandler",
     "UntargetedFlood_TwoHandlers_OnePriority",
     "UntargetedFlood_ThreeHandlers_OnePriority",
     "UntargetedFlood_FourHandlers_OnePriority"
   ]);
 
   assert.equal(new Set(SCENARIO_ORDER).size, SCENARIO_ORDER.length);
+  const attributionKeys = Object.keys(attributionLabels);
+  assert.deepEqual([...WALL_CLOCK_SCENARIOS].slice(-8, -4), attributionKeys.slice(0, 4));
   assert.deepEqual(
     [...Object.keys(DISPATCH_DISPLAY_NAMES)].sort(),
     [...SCENARIO_ORDER].sort(),
@@ -219,7 +231,7 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     `2026-01-01T00:00:00 UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
     `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
     `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,gcAllocations:64,wallClockMs:8.25,gcAllocatedBytes:4096}`,
-    `{scenario:"DeregistrationAttribution_DirectHandler_131072",platform:"${PLATFORM}",commit:"abc1234",runIndex:-1,emitsPerSec:0,gcAllocations:-1,wallClockMs:42.5,gcAllocatedBytes:-1}`,
+    `{scenario:"RegistrationAttribution_TokenActive_131072",platform:"${PLATFORM}",commit:"abc1234",runIndex:-1,emitsPerSec:0,gcAllocations:10000,wallClockMs:42.5,gcAllocatedBytes:640000}`,
     `UnknownScenario,${PLATFORM},abc1234,0,1,0,1,0`
   ].join("\n");
 
@@ -234,7 +246,7 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     [
       ["UntargetedFlood_OneHandler", "1000000.000", "0", "2048"],
       ["TargetedFlood_OneListener", "2500000.500", "64", "4096"],
-      ["DeregistrationAttribution_DirectHandler_131072", "0.000", "-1", "-1"]
+      ["RegistrationAttribution_TokenActive_131072", "0.000", "10000", "640000"]
     ]
   );
 });

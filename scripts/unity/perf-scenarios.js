@@ -6,6 +6,7 @@ const COMPARISON_SCENARIO_PREFIX = "Comparison_";
 const SCENARIO_DEFINITIONS = [
   ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
   ["UntargetedFlood_OneHandler", "Untargeted Flood (One Handler)"],
+  ["UntargetedFlood_OneDirectHandler", "Untargeted Flood (One Direct Handler)"],
   ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
   ["UntargetedFlood_ThreeHandlers_OnePriority", "Untargeted Flood (Three Handlers, One Priority)"],
   ["UntargetedFlood_FourHandlers_OnePriority", "Untargeted Flood (Four Handlers, One Priority)"],
@@ -40,26 +41,17 @@ const SCENARIO_DEFINITIONS = [
   ["BroadcastRegistration_Marginal", "Broadcast Registration (Marginal, 1000 Same-Type)", true],
   ["DeregistrationFlood_1000Types_Cold", "Deregistration Flood (1000 Types, Cold)", true],
   ["DeregistrationFlood_1000Types_WarmJit", "Deregistration Flood (1000 Types, Warm JIT)", true],
-  [
-    "DeregistrationAttribution_DirectBus_131072",
-    "Deregistration Attribution (Direct Bus, 131072)",
+  // SYNC: both attribution ScenarioKey methods in RegistrationLifecycleBenchmarks.cs own these keys.
+  ...["Direct Bus", "Direct Handler", "Token Stage", "Token Active"].map((label) => [
+    `RegistrationAttribution_${label.replaceAll(" ", "")}_131072`,
+    `Registration Attribution (${label}, 131072)`,
     true
-  ],
-  [
-    "DeregistrationAttribution_DirectHandler_131072",
-    "Deregistration Attribution (Direct Handler, 131072)",
+  ]),
+  ...["Direct Bus", "Direct Handler", "Token Remove", "Token Disable"].map((label) => [
+    `DeregistrationAttribution_${label.replaceAll(" ", "")}_131072`,
+    `Deregistration Attribution (${label}, 131072)`,
     true
-  ],
-  [
-    "DeregistrationAttribution_TokenRemove_131072",
-    "Deregistration Attribution (Token Remove, 131072)",
-    true
-  ],
-  [
-    "DeregistrationAttribution_TokenDisable_131072",
-    "Deregistration Attribution (Token Disable, 131072)",
-    true
-  ]
+  ])
 ];
 
 const SCENARIO_ORDER = SCENARIO_DEFINITIONS.map(([key]) => key);

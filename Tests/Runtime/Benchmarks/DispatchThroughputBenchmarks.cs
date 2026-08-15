@@ -28,6 +28,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     {
         EmptyBusDispatch,
         UntargetedFloodOneHandler,
+        UntargetedFloodOneDirectHandler,
         UntargetedFloodTwoHandlersOnePriority,
         UntargetedFloodThreeHandlersOnePriority,
         UntargetedFloodFourHandlersOnePriority,
@@ -57,7 +58,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     public sealed class DispatchThroughputBenchmarks
     {
         internal const int PublishedDispatchOrder = 0;
-        internal const int DeregistrationAttributionOrder = 1;
+        internal const int RegistrationAttributionOrder = 1;
+        internal const int DeregistrationAttributionOrder = 2;
 
         [Test, Performance, Category("PerfBench")]
         public void MessageRegistrationHandlePhysicalSize()
@@ -130,6 +132,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public void DispatchBenchmark(DispatchBenchmarkScenario scenario)
         {
             _ = RunScenario(scenario);
+        }
+
+        [Test, Performance, Category("PerfBench"), Order(RegistrationAttributionOrder)]
+        [TestCaseSource(nameof(RegistrationAttributionBenchmarkCases))]
+        public void RegistrationAttributionBenchmark(RegistrationAttributionOperation operation)
+        {
+            DispatchBenchmarkResult result = RegistrationAttributionBenchmarks.RunScenario(
+                operation
+            );
+            Debug.Log(result.ToStructuredLog());
+            TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
         [Test, Performance, Category("PerfBench"), Order(DeregistrationAttributionOrder)]
@@ -238,6 +251,20 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
+        private static IEnumerable<TestCaseData> RegistrationAttributionBenchmarkCases()
+        {
+            foreach (
+                RegistrationAttributionOperation operation in Enum.GetValues(
+                    typeof(RegistrationAttributionOperation)
+                )
+            )
+            {
+                yield return new TestCaseData(operation).SetName(
+                    RegistrationAttributionBenchmarks.ScenarioKey(operation)
+                );
+            }
+        }
+
         private static DispatchBenchmarkResult MeasureEmitScenario(
             DispatchBenchmarkScenario scenario
         )
@@ -317,6 +344,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.TargetedFloodNoMatchingTarget:
                     return 0;
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
+                case DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler:
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
                 case DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors:
@@ -1153,6 +1181,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
                     RegisterUntargeted(scope, handlerInvocations, 0);
                     return;
+                case DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler:
+                    scope.RegisterUntargetedDirect(handlerInvocations);
+                    return;
                 case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
                     for (int index = 0; index < 2; index++)
                     {
@@ -1281,6 +1312,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 case DispatchBenchmarkScenario.EmptyBusDispatch:
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
+                case DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler:
                 case DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority:
                 case DispatchBenchmarkScenario.UntargetedFloodFourHandlersOnePriority:
@@ -1362,7 +1394,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             return new DispatchScenarioContractObservation(
                 scenarioFanOut,
                 handlerInvocations.Count,
-                registrationBuckets
+                registrationBuckets,
+                scope.TokenRegistrations,
+                scope.HasDirectUntargetedRegistration
             );
         }
 
@@ -1371,12 +1405,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             internal DispatchScenarioContractObservation(
                 long scenarioFanOut,
                 long controlFanOut,
-                int registrationBuckets
+                int registrationBuckets,
+                int tokenRegistrations,
+                bool hasDirectUntargetedRegistration
             )
             {
                 ScenarioFanOut = scenarioFanOut;
                 ControlFanOut = controlFanOut;
                 RegistrationBuckets = registrationBuckets;
+                TokenRegistrations = tokenRegistrations;
+                HasDirectUntargetedRegistration = hasDirectUntargetedRegistration;
             }
 
             internal long ScenarioFanOut { get; }
@@ -1384,6 +1422,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             internal long ControlFanOut { get; }
 
             internal int RegistrationBuckets { get; }
+
+            internal int TokenRegistrations { get; }
+
+            internal bool HasDirectUntargetedRegistration { get; }
         }
 
         private static bool AllowUntargeted(ref SimpleUntargetedMessage message)
@@ -1933,6 +1975,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             private readonly List<MessageRegistrationToken> _tokens = new();
             private readonly List<MessageHandler> _handlers = new();
+            private MessageHandler.TypedHandler<SimpleUntargetedMessage>.TypedHandlerDeregistrationState _directUntargetedDeregistration;
+            private bool _hasDirectUntargetedDeregistration;
             private int _nextOwner = 32000;
 
             public BenchmarkRegistrationScope()
@@ -1949,6 +1993,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public MessageRegistrationToken PrimaryToken { get; }
 
+            public int TokenRegistrations
+            {
+                get
+                {
+                    int count = 0;
+                    for (int index = 0; index < _tokens.Count; index++)
+                    {
+                        count += _tokens[index]._metadata.Count;
+                    }
+                    return count;
+                }
+            }
+
+            public bool HasDirectUntargetedRegistration => _hasDirectUntargetedDeregistration;
+
             public MessageRegistrationToken CreateToken(bool active = true)
             {
                 MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = active };
@@ -1958,6 +2017,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 _handlers.Add(handler);
                 _tokens.Add(token);
                 return token;
+            }
+
+            public void RegisterUntargetedDirect(InvocationCounter handlerInvocations)
+            {
+                MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = true };
+                MessageHandler.FastHandler<SimpleUntargetedMessage> callback = (
+                    ref SimpleUntargetedMessage message
+                ) => handlerInvocations.Increment();
+                _directUntargetedDeregistration = handler.RegisterUntargetedMessageHandler(
+                    callback,
+                    callback,
+                    messageBus: Bus
+                );
+                _hasDirectUntargetedDeregistration = true;
+                _handlers.Add(handler);
             }
 
             public void SetAllHandlersActive(bool active)
@@ -1970,10 +2044,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public void Dispose()
             {
-                for (int index = _tokens.Count - 1; index >= 0; index--)
+                try
                 {
-                    _tokens[index].UnregisterAll();
-                    _tokens[index].Dispose();
+                    if (_hasDirectUntargetedDeregistration)
+                    {
+                        _directUntargetedDeregistration.Deregister();
+                        _hasDirectUntargetedDeregistration = false;
+                    }
+                }
+                finally
+                {
+                    for (int index = _tokens.Count - 1; index >= 0; index--)
+                    {
+                        _tokens[index].UnregisterAll();
+                        _tokens[index].Dispose();
+                    }
                 }
             }
         }
