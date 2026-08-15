@@ -113,7 +113,7 @@ function Get-GeneratedSharedImplementation {
         [Parameter(Mandatory = $true)] [string]$WrapperSymbol
     )
 
-    if ($WrapperSymbol -match '_gshared$') {
+    if ($WrapperSymbol -match '_gshared(?:_inline)?$') {
         return [pscustomobject]@{
             Wrapper          = $Wrapper
             Implementation   = $Wrapper
@@ -121,8 +121,9 @@ function Get-GeneratedSharedImplementation {
         }
     }
 
-    $sharedCallPattern = "(?<![A-Za-z0-9_]){0}_gshared" -f [regex]::Escape(
-        $WrapperSymbol
+    $wrapperBaseSymbol = $WrapperSymbol -replace '_inline$', ''
+    $sharedCallPattern = "(?<![A-Za-z0-9_]){0}_gshared(?:_inline)?(?![A-Za-z0-9_])" -f (
+        [regex]::Escape($wrapperBaseSymbol)
     )
     $sharedCallSymbols = [System.Collections.Generic.List[string]]::new()
     foreach ($line in $Wrapper.Lines) {
@@ -175,6 +176,8 @@ function Get-GeneratedBodySha256 {
     }
 }
 
+$targetedPostCallPattern =
+    '(?<![A-Za-z0-9_])MessageBus_RunTargetedPostPhases_Tis[A-Za-z0-9_]+_m[0-9A-F]+(?:_gshared)?(?:_inline)?(?![A-Za-z0-9_])'
 $extractorTestRoot = Join-Path (
     [System.IO.Path]::GetTempPath()
 ) ("dxm-targeted-codegen-{0}" -f [guid]::NewGuid().ToString('N'))
@@ -182,11 +185,12 @@ New-Item -ItemType Directory -Path $extractorTestRoot | Out-Null
 try {
     $forwardedBodyPath = Join-Path $extractorTestRoot 'forwarded.cpp'
     @(
-        'inline void Forwarded_m789 ()',
+        'inline void Forwarded_m789_inline ()',
         '{',
-        'Forwarded_m789_gshared();',
+        'Forwarded_m789_gshared_inline();',
+        'MessageBus_RunTargetedPostPhases_TisShared_t123_mABCDEF_gshared_inline();',
         '}',
-        'inline void Forwarded_m789_gshared ()',
+        'inline void Forwarded_m789_gshared_inline ()',
         '{',
         'if (true)',
         '{',
@@ -200,14 +204,33 @@ try {
     $script:CppPaths = @($forwardedBodyPath)
     $forwardedWrapper = Get-GeneratedMethodDefinition `
         -Label 'extractor self-test forwarded wrapper' `
-        -Pattern '(?<![A-Za-z0-9_])Forwarded_m789\s*\('
+        -Pattern '(?<![A-Za-z0-9_])Forwarded_m789_inline\s*\('
+    $discoveredPostSymbols = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $forwardedWrapper.Lines) {
+        foreach (
+            $symbolMatch in [regex]::Matches(
+                $line,
+                $targetedPostCallPattern,
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+            )
+        ) {
+            $discoveredPostSymbols.Add($symbolMatch.Value)
+        }
+    }
+    if (
+        $discoveredPostSymbols.Count -ne 1 -or
+        $discoveredPostSymbols[0] -ne
+            'MessageBus_RunTargetedPostPhases_TisShared_t123_mABCDEF_gshared_inline'
+    ) {
+        throw 'Targeted codegen extractor truncated the post-phase call symbol.'
+    }
     $forwarded = Get-GeneratedSharedImplementation `
         -Label 'extractor self-test forwarded method' `
         -Wrapper $forwardedWrapper `
-        -WrapperSymbol 'Forwarded_m789'
+        -WrapperSymbol 'Forwarded_m789_inline'
     $selfTestHash = Get-GeneratedBodySha256 -Method $forwarded.Implementation
     if (
-        $forwarded.SharedCallSymbol -ne 'Forwarded_m789_gshared' -or
+        $forwarded.SharedCallSymbol -ne 'Forwarded_m789_gshared_inline' -or
         @(
             $forwarded.Implementation.Lines |
                 Where-Object { $_ -match 'actual shared implementation' }
@@ -296,9 +319,9 @@ $targetedBroadcast = Get-GeneratedSharedImplementation `
     -Label 'MessageBus.TargetedBroadcast<SimpleTargetedMessage>' `
     -Wrapper $targetedBroadcastWrapper `
     -WrapperSymbol $targetedBroadcastSymbols[0]
+Write-Host "Targeted broadcast generated symbol: $($targetedBroadcastSymbols[0])"
+Write-Host "Targeted broadcast shared symbol: $($targetedBroadcast.SharedCallSymbol)"
 
-$targetedPostCallPattern =
-    '(?<![A-Za-z0-9_])MessageBus_RunTargetedPostPhases_Tis[A-Za-z0-9_]+_m[0-9A-F]+(?:_gshared)?'
 $targetedPostCallSymbols = [System.Collections.Generic.List[string]]::new()
 foreach ($line in $targetedBroadcast.Implementation.Lines) {
     foreach (
@@ -318,6 +341,7 @@ if ($targetedPostCallSymbols.Count -ne 1) {
         "targeted post-phase method, found $($targetedPostCallSymbols.Count)."
     )
 }
+Write-Host "Targeted post generated call symbol: $($targetedPostCallSymbols[0])"
 
 $targetedPostWrapper = Get-GeneratedMethodDefinition `
     -Label 'MessageBus.RunTargetedPostPhases<SimpleTargetedMessage>' `
