@@ -517,19 +517,20 @@ test("render-perf-deltas CLI failures preserve non-gating diagnostic output", ()
   assert.match(result.stderr, /Unknown argument: --bogus/);
   assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
 });
-
 test("performance workflow publishes exact player-size and codegen evidence", () => {
+  const selfTest = spawnSync(
+    "pwsh -NoProfile -File scripts/unity/capture-targeted-post-codegen.ps1 -SelfTestOnly",
+    { cwd: REPO_ROOT, shell: true }
+  );
+  assert.equal(selfTest.status, 0, selfTest.stderr?.toString());
   const workflow = fs.readFileSync(
     path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
     "utf8"
   );
-
-  assert.match(workflow, /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force/);
   assert.match(
     workflow,
-    /Set-StrictMode -Version Latest[\s\S]*HashSet\[string\][\s\S]*StringComparer\]::Ordinal(?![A-Za-z0-9_])[\s\S]*DefinitionLocations[\s\S]*Get-GeneratedSharedImplementation[\s\S]*Get-GeneratedBodySha256[\s\S]*repeated identical body[\s\S]*actual shared implementation[\s\S]*case-distinct bodies[\s\S]*StringComparison\]::Ordinal[\s\S]*Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*GenericInterface[\s\S]*_\+messageBus[\s\S]*MessageBus_TargetedBroadcast_TisSimpleTargetedMessage_t[\s\S]*MessageBus_RunTargetedPostPhases_Tis\[A-Za-z0-9_\][\s\S]*targetedBroadcastSharedCallSymbol[\s\S]*targetedPostCallSymbol[\s\S]*targetedPostSharedCallSymbol[\s\S]*bodySha256[\s\S]*targeted-post-codegen\.txt[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*definitionOccurrenceCount[\s\S]*definitionLocation=[\s\S]*typed-deregistration-codegen\.txt/
+    /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force[\s\S]*player-size\.json[\s\S]*Set-StrictMode -Version Latest[\s\S]*HashSet\[string\][\s\S]*StringComparer\]::Ordinal(?![A-Za-z0-9_])[\s\S]*DefinitionLocations[\s\S]*repeated identical body[\s\S]*case-distinct bodies[\s\S]*StringComparison\]::Ordinal[\s\S]*Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*GenericInterface[\s\S]*_\+messageBus[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*definitionOccurrenceCount[\s\S]*definitionLocation=[\s\S]*typed-deregistration-codegen\.txt[\s\S]*capture-targeted-post-codegen\.ps1/
   );
-  assert.match(workflow, /player-size\.json/);
 });
 
 test("Unity workflows reuse isolated runner-local projects without network Library caches", () => {
@@ -539,7 +540,6 @@ test("Unity workflows reuse isolated runner-local projects without network Libra
     ["unity-benchmarks.yml", "b"],
     ["perf-numbers.yml", "p"]
   ]);
-
   for (const [name, scope] of scopes) {
     const workflow = fs.readFileSync(path.join(workflowDir, name), "utf8");
     assert.ok(!workflow.includes("Cache Unity Library"));
