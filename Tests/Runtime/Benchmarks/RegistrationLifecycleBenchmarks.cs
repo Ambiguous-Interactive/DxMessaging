@@ -5,10 +5,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Globalization;
+    using System.Runtime.CompilerServices;
     using DxMessaging.Core;
     using DxMessaging.Core.Internal;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
+    using DxMessaging.Tests.Runtime;
     using NUnit.Framework;
     using UnityEngine;
     using Debug = UnityEngine.Debug;
@@ -449,6 +451,484 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
     }
 
+    public enum RegistrationAttributionOperation
+    {
+        DirectBus,
+        DirectHandler,
+        TokenStage,
+        TokenActive,
+    }
+
+    /// <summary>
+    /// Attributes the complete register/remove cycle across the bus, handler cache, disabled token,
+    /// and active token layers. Each row reuses one by-ref delegate and returns to an empty state
+    /// after every cycle. The active-token row matches the comparison suite's
+    /// subscribe/unsubscribe workload.
+    /// </summary>
+    internal static class RegistrationAttributionBenchmarks
+    {
+        internal const int CycleCount = 131_072;
+        internal const int AllocationCycleCount = BenchmarkProtocol.BatchSize;
+        private const int TimingTrials = 7;
+        private const int AllocationAttempts = 7;
+
+        internal static RegistrationAttributionObservation ExecuteOnceForContract(
+            RegistrationAttributionOperation operation
+        )
+        {
+            using RegistrationAttributionState state = new(operation);
+            using LeakWatcher watcher = new(
+                state.Bus,
+                label: $"registration attribution observed cycle ({operation})"
+            );
+            return state.ExecuteSingleCycleWithObservation();
+        }
+
+        internal static void ExecuteCyclesForContract(
+            RegistrationAttributionOperation operation,
+            int cycleCount
+        )
+        {
+            using RegistrationAttributionState state = new(operation);
+            using LeakWatcher watcher = new(
+                state.Bus,
+                label: $"registration attribution repeated cycles ({operation})"
+            );
+            state.ExecuteCycles(cycleCount);
+            state.ExecuteCycles(cycleCount);
+            state.VerifyFinal(expectedCycles: cycleCount * 2);
+        }
+
+        internal static DispatchBenchmarkResult RunScenario(
+            RegistrationAttributionOperation operation
+        )
+        {
+            using (RegistrationAttributionState warmup = new(operation))
+            {
+                warmup.ExecuteCycles(cycleCount: 16);
+                warmup.VerifyFinal(expectedCycles: 16);
+            }
+
+            AllocationProbe.SettleHeapForMeasurement();
+            double minElapsedSeconds = double.MaxValue;
+            for (int trial = 0; trial < TimingTrials; trial++)
+            {
+                using RegistrationAttributionState state = new(operation);
+                long startTimestamp = Stopwatch.GetTimestamp();
+                state.ExecuteCycles(CycleCount);
+                long endTimestamp = Stopwatch.GetTimestamp();
+                state.VerifyFinal(CycleCount);
+                double elapsedSeconds =
+                    (endTimestamp - startTimestamp) / (double)Stopwatch.Frequency;
+                if (elapsedSeconds < minElapsedSeconds)
+                {
+                    minElapsedSeconds = elapsedSeconds;
+                }
+            }
+
+            AllocationProbe.AllocationSample allocation = MeasureAllocation(operation);
+
+            return DispatchBenchmarkResult.ForRegistrationScenario(
+                ScenarioKey(operation),
+                runIndex: -1,
+                allocation.Allocations,
+                allocation.Bytes,
+                minElapsedSeconds * 1000d
+            );
+        }
+
+        private static AllocationProbe.AllocationSample MeasureAllocation(
+            RegistrationAttributionOperation operation
+        )
+        {
+            AllocationProbe.SettleHeapForMeasurement();
+            if (!AllocationProbe.IsFunctional)
+            {
+                return new AllocationProbe.AllocationSample(
+                    AllocationProbe.Unmeasured,
+                    AllocationProbe.Unmeasured
+                );
+            }
+
+            long minimumCount = long.MaxValue;
+            long minimumBytes = AllocationProbe.Unmeasured;
+            try
+            {
+                for (int attempt = 0; attempt < AllocationAttempts; attempt++)
+                {
+                    using RegistrationAttributionState state = new(operation);
+                    // Match BenchmarkProtocol.Measure: warm this exact bus/token state before
+                    // opening the profiler recorder, then measure one same-sized steady-state batch.
+                    state.ExecuteCycles(AllocationCycleCount);
+                    AllocationProbe.AllocationSample sample;
+                    using (AllocationProbe.Window window = AllocationProbe.BeginWindow())
+                    {
+                        state.ExecuteCycles(AllocationCycleCount);
+                        sample = window.SampleBoth();
+                    }
+                    state.VerifyFinal(expectedCycles: AllocationCycleCount * 2);
+                    if (
+                        AllocationProbe.ShouldReplaceMinimumAttempt(
+                            sample.Allocations,
+                            sample.Bytes,
+                            minimumCount,
+                            minimumBytes
+                        )
+                    )
+                    {
+                        minimumCount = sample.Allocations;
+                        minimumBytes = sample.Bytes;
+                    }
+                }
+            }
+            finally
+            {
+                AllocationProbe.SettleHeapForMeasurement();
+            }
+
+            return new AllocationProbe.AllocationSample(minimumCount, minimumBytes);
+        }
+
+        internal static string ScenarioKey(RegistrationAttributionOperation operation)
+        {
+            // SYNC: scripts/unity/perf-scenarios.js mirrors these stable rendered keys.
+            return operation switch
+            {
+                RegistrationAttributionOperation.DirectBus =>
+                    $"RegistrationAttribution_DirectBus_{CycleCount}",
+                RegistrationAttributionOperation.DirectHandler =>
+                    $"RegistrationAttribution_DirectHandler_{CycleCount}",
+                RegistrationAttributionOperation.TokenStage =>
+                    $"RegistrationAttribution_TokenStage_{CycleCount}",
+                RegistrationAttributionOperation.TokenActive =>
+                    $"RegistrationAttribution_TokenActive_{CycleCount}",
+                _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
+            };
+        }
+
+        private readonly struct AttributionMessage : IUntargetedMessage { }
+
+        private interface IRegistrationCyclePath
+        {
+            RegistrationAttributionStateObservation ExecuteObservedCycle(
+                RegistrationAttributionState state
+            );
+
+            void ExecuteCycles(RegistrationAttributionState state, int cycleCount);
+        }
+
+        private sealed class DirectBusCyclePath : IRegistrationCyclePath
+        {
+            public RegistrationAttributionStateObservation ExecuteObservedCycle(
+                RegistrationAttributionState state
+            )
+            {
+                MessageBusRegistration registration = state.RegisterDirectBus();
+                RegistrationAttributionStateObservation live = state.ObserveState();
+                state.DeregisterDirectBus(in registration);
+                return live;
+            }
+
+            public void ExecuteCycles(RegistrationAttributionState state, int cycleCount)
+            {
+                for (int index = 0; index < cycleCount; index++)
+                {
+                    MessageBusRegistration registration = state.RegisterDirectBus();
+                    state.DeregisterDirectBus(in registration);
+                }
+            }
+        }
+
+        private sealed class DirectHandlerCyclePath : IRegistrationCyclePath
+        {
+            public RegistrationAttributionStateObservation ExecuteObservedCycle(
+                RegistrationAttributionState state
+            )
+            {
+                MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration =
+                    state.RegisterDirectHandler();
+                RegistrationAttributionStateObservation live = state.ObserveState();
+                state.DeregisterDirectHandler(in deregistration);
+                return live;
+            }
+
+            public void ExecuteCycles(RegistrationAttributionState state, int cycleCount)
+            {
+                for (int index = 0; index < cycleCount; index++)
+                {
+                    MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration =
+                        state.RegisterDirectHandler();
+                    state.DeregisterDirectHandler(in deregistration);
+                }
+            }
+        }
+
+        private sealed class TokenCyclePath : IRegistrationCyclePath
+        {
+            public RegistrationAttributionStateObservation ExecuteObservedCycle(
+                RegistrationAttributionState state
+            )
+            {
+                MessageRegistrationHandle handle = state.RegisterToken();
+                RegistrationAttributionStateObservation live = state.ObserveState();
+                state.RemoveToken(handle);
+                return live;
+            }
+
+            public void ExecuteCycles(RegistrationAttributionState state, int cycleCount)
+            {
+                for (int index = 0; index < cycleCount; index++)
+                {
+                    MessageRegistrationHandle handle = state.RegisterToken();
+                    state.RemoveToken(handle);
+                }
+            }
+        }
+
+        private static readonly IRegistrationCyclePath DirectBusPath = new DirectBusCyclePath();
+        private static readonly IRegistrationCyclePath DirectHandlerPath =
+            new DirectHandlerCyclePath();
+        private static readonly IRegistrationCyclePath TokenPath = new TokenCyclePath();
+
+        private static IRegistrationCyclePath ResolveCyclePath(
+            RegistrationAttributionOperation operation
+        )
+        {
+            return operation switch
+            {
+                RegistrationAttributionOperation.DirectBus => DirectBusPath,
+                RegistrationAttributionOperation.DirectHandler => DirectHandlerPath,
+                RegistrationAttributionOperation.TokenStage => TokenPath,
+                RegistrationAttributionOperation.TokenActive => TokenPath,
+                _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
+            };
+        }
+
+        private sealed class RegistrationAttributionState : IDisposable
+        {
+            private readonly RegistrationAttributionOperation _operation;
+            private readonly IRegistrationCyclePath _cyclePath;
+            private readonly IDisposable _registryScope;
+            private readonly MessageBus _bus;
+            private readonly MessageHandler _handler;
+            private readonly MessageHandler.FastHandler<AttributionMessage> _callback;
+            private readonly MessageRegistrationToken _token;
+            private int _completedCycles;
+            private int _handlerInvocations;
+            private bool _disposed;
+
+            public RegistrationAttributionState(RegistrationAttributionOperation operation)
+            {
+                _operation = operation;
+                _cyclePath = ResolveCyclePath(operation);
+                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _bus = new MessageBus { DiagnosticsMode = false };
+                _handler = new MessageHandler(new InstanceId(43001), _bus) { active = true };
+                _callback = Handle;
+                if (
+                    operation == RegistrationAttributionOperation.TokenStage
+                    || operation == RegistrationAttributionOperation.TokenActive
+                )
+                {
+                    _token = MessageRegistrationToken.Create(_handler, _bus);
+                    _token.DiagnosticMode = false;
+                    if (operation == RegistrationAttributionOperation.TokenActive)
+                    {
+                        _token.Enable();
+                    }
+                }
+            }
+
+            public IMessageBus Bus => _bus;
+
+            public RegistrationAttributionObservation ExecuteSingleCycleWithObservation()
+            {
+                RegistrationAttributionStateObservation live = _cyclePath.ExecuteObservedCycle(
+                    this
+                );
+                _completedCycles = 1;
+                RegistrationAttributionStateObservation final = ObserveState();
+                return new RegistrationAttributionObservation(_operation, live, final);
+            }
+
+            public void ExecuteCycles(int cycleCount)
+            {
+                if (cycleCount <= 0)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(cycleCount),
+                        cycleCount,
+                        "Registration attribution cycle count must be positive."
+                    );
+                }
+                _cyclePath.ExecuteCycles(this, cycleCount);
+                _completedCycles = checked(_completedCycles + cycleCount);
+            }
+
+            public void VerifyFinal(int expectedCycles)
+            {
+                Assert.AreEqual(
+                    expectedCycles,
+                    _completedCycles,
+                    $"{_operation}: completed cycle count drifted."
+                );
+                RegistrationAttributionStateObservation final = ObserveState();
+                Assert.AreEqual(
+                    0,
+                    final.BusRegistrations,
+                    $"{_operation}: registration cycles left a bus registration live."
+                );
+                Assert.AreEqual(
+                    0,
+                    final.HandlerRegistrations,
+                    $"{_operation}: registration cycles left a flat handler live."
+                );
+                Assert.AreEqual(
+                    0,
+                    final.TokenRegistrations,
+                    $"{_operation}: registration cycles left token metadata live."
+                );
+                Assert.AreEqual(
+                    0,
+                    final.HandlerInvocations,
+                    $"{_operation}: registration cycles still delivered after removal."
+                );
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public MessageBusRegistration RegisterDirectBus()
+            {
+                return _bus.RegisterUntargeted<AttributionMessage>(_handler);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void DeregisterDirectBus(in MessageBusRegistration registration)
+            {
+                _bus.Deregister<AttributionMessage>(in registration);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState RegisterDirectHandler()
+            {
+                return _handler.RegisterUntargetedMessageHandler(
+                    _callback,
+                    _callback,
+                    messageBus: _bus
+                );
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void DeregisterDirectHandler(
+                in MessageHandler.TypedHandler<AttributionMessage>.TypedHandlerDeregistrationState deregistration
+            )
+            {
+                deregistration.Deregister();
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public MessageRegistrationHandle RegisterToken()
+            {
+                return _token.RegisterUntargeted<AttributionMessage>(_callback);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void RemoveToken(MessageRegistrationHandle handle)
+            {
+                _token.RemoveRegistration(handle);
+            }
+
+            public RegistrationAttributionStateObservation ObserveState()
+            {
+                _handlerInvocations = 0;
+                AttributionMessage message = default;
+                _bus.UntargetedBroadcast(ref message);
+                return new RegistrationAttributionStateObservation(
+                    _bus.RegisteredUntargeted,
+                    CountHandlerRegistrations(),
+                    _token?._metadata.Count ?? 0,
+                    _handlerInvocations
+                );
+            }
+
+            private void Handle(ref AttributionMessage message)
+            {
+                _handlerInvocations++;
+            }
+
+            private int CountHandlerRegistrations()
+            {
+                return _handler.CountFlatHandlers<AttributionMessage>(
+                    _bus,
+                    priority: 0,
+                    fastIndex: TypedSlotIndex.UntargetedHandleFast,
+                    defaultIndex: TypedSlotIndex.UntargetedHandleDefault
+                );
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                try
+                {
+                    _token?.Dispose();
+                }
+                finally
+                {
+                    _registryScope.Dispose();
+                }
+            }
+        }
+    }
+
+    public readonly struct RegistrationAttributionObservation
+    {
+        public RegistrationAttributionObservation(
+            RegistrationAttributionOperation operation,
+            RegistrationAttributionStateObservation live,
+            RegistrationAttributionStateObservation final
+        )
+        {
+            Operation = operation;
+            Live = live;
+            Final = final;
+        }
+
+        public RegistrationAttributionOperation Operation { get; }
+
+        public RegistrationAttributionStateObservation Live { get; }
+
+        public RegistrationAttributionStateObservation Final { get; }
+    }
+
+    public readonly struct RegistrationAttributionStateObservation
+    {
+        public RegistrationAttributionStateObservation(
+            int busRegistrations,
+            int handlerRegistrations,
+            int tokenRegistrations,
+            int handlerInvocations
+        )
+        {
+            BusRegistrations = busRegistrations;
+            HandlerRegistrations = handlerRegistrations;
+            TokenRegistrations = tokenRegistrations;
+            HandlerInvocations = handlerInvocations;
+        }
+
+        public int BusRegistrations { get; }
+
+        public int HandlerRegistrations { get; }
+
+        public int TokenRegistrations { get; }
+
+        public int HandlerInvocations { get; }
+    }
+
     public enum DeregistrationAttributionOperation
     {
         DirectBus,
@@ -518,6 +998,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         internal static string ScenarioKey(DeregistrationAttributionOperation operation)
         {
+            // SYNC: scripts/unity/perf-scenarios.js mirrors these stable rendered keys.
             return operation switch
             {
                 DeregistrationAttributionOperation.DirectBus =>

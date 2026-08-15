@@ -521,6 +521,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 DispatchBenchmarkScenario.EmptyBusDispatch => "EmptyBus_Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler => "UntargetedFlood_OneHandler",
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler =>
+                    "UntargetedFlood_OneDirectHandler",
                 DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
                     "UntargetedFlood_TwoHandlers_OnePriority",
                 DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>
@@ -577,6 +579,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 DispatchBenchmarkScenario.EmptyBusDispatch => "Empty Bus Dispatch",
                 DispatchBenchmarkScenario.UntargetedFloodOneHandler =>
                     "Untargeted Flood (One Handler)",
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler =>
+                    "Untargeted Flood (One Direct Handler)",
                 DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority =>
                     "Untargeted Flood (Two Handlers, One Priority)",
                 DispatchBenchmarkScenario.UntargetedFloodThreeHandlersOnePriority =>

@@ -428,6 +428,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 1
             ).SetName("DispatchBaselineSetup_TargetedNoMatchingTarget");
             yield return new TestCaseData(
+                DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_UntargetedOneDirectHandler");
+            yield return new TestCaseData(
                 DispatchBenchmarkScenario.UntargetedFloodTwoHandlersOnePriority,
                 2,
                 2,
@@ -483,6 +489,38 @@ namespace DxMessaging.Tests.Editor.Allocations
                 expectedRegistrationBuckets,
                 observation.RegistrationBuckets,
                 $"Scenario '{scenario}' must configure the expected public bus registration buckets."
+            );
+        }
+
+        [Test]
+        public void DirectAndTokenOneHandlerScenariosKeepDistinctRegistrationOwnership()
+        {
+            DispatchThroughputBenchmarks.DispatchScenarioContractObservation token =
+                DispatchThroughputBenchmarks.ConfigureAndEmitOnceForContract(
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler
+                );
+            DispatchThroughputBenchmarks.DispatchScenarioContractObservation direct =
+                DispatchThroughputBenchmarks.ConfigureAndEmitOnceForContract(
+                    DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler
+                );
+
+            Assert.AreEqual(
+                1,
+                token.TokenRegistrations,
+                "The public one-handler row must retain one token-owned registration."
+            );
+            Assert.IsFalse(
+                token.HasDirectUntargetedRegistration,
+                "The public one-handler row must not bypass the token wrapper."
+            );
+            Assert.AreEqual(
+                0,
+                direct.TokenRegistrations,
+                "The direct row must not stage token metadata."
+            );
+            Assert.IsTrue(
+                direct.HasDirectUntargetedRegistration,
+                "The direct row must retain the handler-owned deregistration state."
             );
         }
 

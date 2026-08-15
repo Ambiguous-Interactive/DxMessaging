@@ -127,6 +127,29 @@ they are report-only -- rendered as wall clock, never gated.
   warm-JIT deregistration flood is repeatable and reports the MINIMUM over
   `WarmFloodTrials` trials. Both are wall-clock rows, symmetric with the
   registration floods.
+- **Registration-cycle attribution.** The four `RegistrationAttribution_*_131072`
+  rows time complete same-type register/remove cycles through the direct bus,
+  direct handler, disabled token, and active token layers. Every row reuses one
+  cached by-ref handler, selects the operation outside the timed loop, and ends
+  with zero bus registrations, flat handlers, token metadata, and deliveries.
+  `TokenActive` matches the DxMessaging subscribe/unsubscribe comparison shape.
+  `TokenStage` is a sibling measurement, not a cumulative lower layer. The
+  `TokenActive` minus `DirectHandler` delta includes registration-object creation,
+  arena/handle work, teardown bookkeeping, and augmented delegate binding; do not
+  label it as token storage alone. Each row warms the exact cycle on throwaway
+  state, settles the heap once, and reports the minimum of seven fresh timing
+  trials. Allocation instrumentation runs afterward over seven fresh states. Each
+  state executes 10000 warm-up cycles before the recorder opens, then measures a
+  second 10000-cycle batch and reports the minimum count with bytes from that same
+  attempt. This matches the comparison harness's warmed allocation batch size and
+  state without putting profiler overhead in the latency clock. A stripped IL2CPP
+  player reports `n/a` for both allocation fields.
+- **Token dispatch attribution.** Compare `UntargetedFlood_OneDirectHandler` with
+  `UntargetedFlood_OneHandler`. Both use the same by-ref fast slot, one active
+  handler, and exact fan-out. The first registers the user delegate directly
+  through `MessageHandler`; the second uses the public enabled-token path and its
+  `AugmentedScalarFast` callback. The token's diagnostics flag remains mutable, so
+  the augmented callback's per-dispatch branch is part of the public contract.
 - **Deregistration attribution.** The four `DeregistrationAttribution_*_131072`
   rows report cumulative layers over one same-type, high-cardinality population:
   direct bus removal; handler-cache plus bus removal; token `RemoveRegistration`
@@ -146,7 +169,7 @@ they are report-only -- rendered as wall clock, never gated.
   exposure. Prove allocation changes with structural or short-window differential
   guards instead. The attribution entry and the published dispatch entry share
   `DispatchThroughputBenchmarks`: method-level NUnit `Order` runs every dispatch
-  scenario before the repeated 131072-registration attribution setup. These
+  scenario before the 131072-cycle and retained-population attribution setup. These
   diagnostic wall-clock rows are not hard regression gates. Do not compare them
   with the 1000-type flood rows because their registration topology differs.
 - **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms
@@ -240,17 +263,16 @@ apples-to-apples set every library bridge implements (or declares unsupported).
 
 ### Dispatch scenarios (DxMessaging only)
 
-The scenario registry contains thirty DxMessaging rows: fourteen continuous-window
-dispatch-throughput rows and sixteen wall-clock rows. The twenty-six established rows
-are defined in
+The scenario registry contains thirty-five DxMessaging rows: fifteen continuous-window
+dispatch-throughput rows and twenty wall-clock rows. Twenty-seven rows are defined in
 [`DispatchThroughputBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs).
-The four diagnostic deregistration-attribution rows are defined in
+The eight diagnostic registration/deregistration attribution rows are defined in
 [`RegistrationLifecycleBenchmarks.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/RegistrationLifecycleBenchmarks.cs).
-The sixteen cold, warm-JIT, construction, marginal-registration, deregistration, and
+The twenty cold, warm-JIT, construction, marginal-registration, deregistration, and
 attribution rows report zero throughput and wall-clock latency; see
 [Cold vs warm/hot modes](#cold-vs-warmhot-modes). The three marginal-registration
 rows report the GC-allocation cost of an additional same-type registration -- the
-surface the registration allocation work reduced -- and are measurable only where the
+surface where the registration allocation work was reduced -- and are measurable only where the
 profiler is present (an in-editor PlayMode/Mono run; the published Standalone IL2CPP
 leg strips it, so its allocation columns are omitted):
 
@@ -268,6 +290,7 @@ sub-millisecond single shot without changing the reported per-bus cardinality.
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `EmptyBus_Dispatch`                                               | Dispatch with no registered handler.                                   |
 | `UntargetedFlood_OneHandler`                                      | One untargeted handler on one message type.                            |
+| `UntargetedFlood_OneDirectHandler`                                | One direct handler without the token-owned augmented callback.         |
 | `UntargetedFlood_TwoHandlers_OnePriority`                         | Two untargeted handlers sharing priority 0.                            |
 | `UntargetedFlood_ThreeHandlers_OnePriority`                       | Three untargeted handlers sharing priority 0.                          |
 | `UntargetedFlood_FourHandlers_OnePriority`                        | Four untargeted handlers sharing priority 0.                           |
@@ -292,6 +315,10 @@ sub-millisecond single shot without changing the reported per-bus cardinality.
 | `BroadcastRegistration_Marginal`                                  | Marginal cost of 1000 more broadcast handlers on one warm type/source. |
 | `DeregistrationFlood_1000Types_Cold`                              | Tearing down 1000 live registrations, JIT-inclusive (cold flood).      |
 | `DeregistrationFlood_1000Types_WarmJit`                           | Tearing down the same 1000 registrations after a JIT pre-warm.         |
+| `RegistrationAttribution_DirectBus_131072`                        | Direct bus register/remove cycles for one reused handler.              |
+| `RegistrationAttribution_DirectHandler_131072`                    | Handler plus bus register/remove cycles.                               |
+| `RegistrationAttribution_TokenStage_131072`                       | Disabled-token stage/remove cycles.                                    |
+| `RegistrationAttribution_TokenActive_131072`                      | Enabled-token register/remove cycles including lower layers.           |
 | `DeregistrationAttribution_DirectBus_131072`                      | Direct built-in bus teardown for 131072 same-type registrations.       |
 | `DeregistrationAttribution_DirectHandler_131072`                  | Handler-cache teardown including the direct bus layer.                 |
 | `DeregistrationAttribution_TokenRemove_131072`                    | Per-handle token removal including handler and bus layers.             |
@@ -341,10 +368,10 @@ silently desync.
 | `PriorityOrdered` | 1 token, 4 priorities                | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
 | `Filtered`        | 1 interceptor + 1 handler            | `InterceptorHeavy_FourInterceptors`           | No         | Comparison runs one interceptor; the dispatch cell runs four.                                                                                         |
 | `PostProcess`     | 1 post-processor + 1 handler         | `PostProcessingHeavy_FourPostProcessors`      | No         | Comparison runs one post-processor; the dispatch cell runs four.                                                                                      |
-| `SubUnsub`        | register/unregister churn cycle      | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe-throughput scenario.                                                                                 |
+| `SubUnsub`        | register/unregister churn cycle      | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe throughput scenario.                                                                                 |
 
 **Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player;
-the internal benchmark player, including the 131072-registration teardown rows,
+the internal benchmark player, including the 131072-cycle and teardown rows,
 cannot leave heap state behind for it. Every matrix row then constructs and disposes
 a fresh bridge. The harness does not force collections between rows; the dedicated player
 provides the required clean process boundary without adding GC work to each case. The DxMessaging path uses a fresh
