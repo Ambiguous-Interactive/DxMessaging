@@ -685,10 +685,35 @@ jobs:
                 }
               )
             }
-            if ($bodyCandidates.Count -ne 1) {
-              throw "Expected one generated body for $Label, found $($bodyCandidates.Count) from $($signatureMatches.Count) signatures."
+            $uniqueBodyKeys = @(
+              $bodyCandidates |
+                ForEach-Object { $_.Lines -join "`n" } |
+                Sort-Object -Unique
+            )
+            if ($uniqueBodyKeys.Count -ne 1) {
+              $bodyCountMessage =
+                "Expected one unique generated body for $Label, " +
+                "found $($uniqueBodyKeys.Count) unique bodies across " +
+                "$($bodyCandidates.Count) definitions from " +
+                "$($signatureMatches.Count) signatures."
+              throw $bodyCountMessage
             }
-            return $bodyCandidates[0]
+            $canonicalBody = $bodyCandidates[0]
+            $canonicalBody | Add-Member `
+              -NotePropertyName DefinitionOccurrenceCount `
+              -NotePropertyValue $bodyCandidates.Count
+            $canonicalBody | Add-Member `
+              -NotePropertyName DefinitionLocations `
+              -NotePropertyValue @(
+                $bodyCandidates |
+                  ForEach-Object {
+                    [pscustomobject]@{
+                      Path = $_.Path
+                      LineNumber = $_.LineNumber
+                    }
+                  }
+              )
+            return $canonicalBody
           }
 
           $productionCppPaths = $cppPaths
@@ -724,10 +749,29 @@ jobs:
               -Pattern '(?<![A-Za-z0-9_])Target_mABC\s*\('
             if (
               $singleBody.Lines.Count -le 170 -or
+              $singleBody.DefinitionOccurrenceCount -ne 1 -or
               @($singleBody.Lines | Where-Object { $_ -match 'InterfaceActionInvoker' }).Count -ne 1 -or
               @($singleBody.Lines | Where-Object { $_ -match 'Neighbor_mDEF' }).Count -ne 0
             ) {
               throw 'Generated-method extractor truncated or crossed a function boundary.'
+            }
+
+            $repeatedBodyLines = @(
+              'inline void Repeated_m456 ()',
+              '{',
+              '// byte-identical inline definition',
+              '}'
+            )
+            $repeatedBodyPathA = Join-Path $extractorTestRoot 'repeated-a.cpp'
+            $repeatedBodyPathB = Join-Path $extractorTestRoot 'repeated-b.cpp'
+            $repeatedBodyLines | Set-Content -LiteralPath $repeatedBodyPathA -Encoding utf8
+            $repeatedBodyLines | Set-Content -LiteralPath $repeatedBodyPathB -Encoding utf8
+            $cppPaths = @($repeatedBodyPathA, $repeatedBodyPathB)
+            $repeatedBody = Get-GeneratedMethodDefinition `
+              -Label 'extractor self-test repeated identical body' `
+              -Pattern '(?<![A-Za-z0-9_])Repeated_m456\s*\('
+            if ($repeatedBody.DefinitionOccurrenceCount -ne 2) {
+              throw 'Generated-method extractor did not retain repeated identical definitions.'
             }
 
             $zeroRejected = $false
@@ -736,7 +780,9 @@ jobs:
                 -Label 'extractor self-test zero bodies' `
                 -Pattern '(?<![A-Za-z0-9_])Missing_m000\s*\('
             } catch {
-              $zeroRejected = $_.Exception.Message -match 'found 0 from 0 signatures'
+              $zeroRejected =
+                $_.Exception.Message -match
+                  'found 0 unique bodies across 0 definitions from 0 signatures'
             }
             if (!$zeroRejected) {
               throw 'Generated-method extractor did not reject zero bodies.'
@@ -746,9 +792,11 @@ jobs:
             @(
               'inline void Duplicate_m123 ()',
               '{',
+              '// first body',
               '}',
               'inline void Duplicate_m123 ()',
               '{',
+              '// second body',
               '}'
             ) | Set-Content -LiteralPath $multipleBodyPath -Encoding utf8
             $cppPaths = @($multipleBodyPath)
@@ -758,7 +806,9 @@ jobs:
                 -Label 'extractor self-test multiple bodies' `
                 -Pattern '(?<![A-Za-z0-9_])Duplicate_m123\s*\('
             } catch {
-              $multipleRejected = $_.Exception.Message -match 'found 2 from 2 signatures'
+              $multipleRejected =
+                $_.Exception.Message -match
+                  'found 2 unique bodies across 2 definitions from 2 signatures'
             }
             if (!$multipleRejected) {
               throw 'Generated-method extractor did not reject multiple bodies.'
@@ -903,8 +953,19 @@ jobs:
             $hash = (Get-FileHash -LiteralPath $method.Path -Algorithm SHA256).Hash
             $evidence.Add('')
             $evidence.Add(
-              "method=$($method.Label) file=$relativePath sha256=$hash line=$($method.LineNumber) bodyLineCount=$($method.Lines.Count)"
+              "method=$($method.Label) file=$relativePath sha256=$hash line=$($method.LineNumber) bodyLineCount=$($method.Lines.Count) definitionOccurrenceCount=$($method.DefinitionOccurrenceCount)"
             )
+            foreach ($definitionLocation in $method.DefinitionLocations) {
+              $definitionRelativePath = $definitionLocation.Path.Substring(
+                $il2cppRoot.FullName.Length
+              ).TrimStart(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+              )
+              $evidence.Add(
+                "definitionLocation=$definitionRelativePath`:$($definitionLocation.LineNumber)"
+              )
+            }
             foreach ($line in $method.Lines) {
               $evidence.Add($line)
             }
