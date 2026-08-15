@@ -60,7 +60,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal const int PublishedDispatchOrder = 0;
         internal const int RegistrationAttributionOrder = 1;
         internal const int DeregistrationAttributionOrder = 2;
-        internal const int DispatchTwinDiagnosticOrder = 3;
+        internal const int DeregistrationAttributionDiagnosticOrder = 3;
+        internal const int DispatchTwinDiagnosticOrder = 4;
 
         [Test, Performance, Category("PerfBench")]
         public void MessageRegistrationHandlePhysicalSize()
@@ -204,6 +205,37 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     + $"tokenDriftPercent={tokenDriftPercent.ToString("F3", CultureInfo.InvariantCulture)} "
                     + $"directDriftPercent={directDriftPercent.ToString("F3", CultureInfo.InvariantCulture)}"
             );
+        }
+
+        [Test, Performance, Category("PerfBench"), Order(DeregistrationAttributionDiagnosticOrder)]
+        public void DirectHandlerAndBusDeregistrationPalindromeDiagnostic()
+        {
+            DispatchBenchmarkResult handlerA = DeregistrationAttributionBenchmarks.RunScenario(
+                DeregistrationAttributionOperation.DirectHandler
+            );
+            DispatchBenchmarkResult busA = DeregistrationAttributionBenchmarks.RunScenario(
+                DeregistrationAttributionOperation.DirectBus
+            );
+            DispatchBenchmarkResult busB = DeregistrationAttributionBenchmarks.RunScenario(
+                DeregistrationAttributionOperation.DirectBus
+            );
+            DispatchBenchmarkResult handlerB = DeregistrationAttributionBenchmarks.RunScenario(
+                DeregistrationAttributionOperation.DirectHandler
+            );
+
+            // Each arm independently selects its minimum from seven fresh populations. That
+            // rejects interruptions but loses cross-path covariance: interpretable=true is
+            // necessary for a later candidate bracket, never sufficient acceptance evidence.
+            DeregistrationAttributionPalindromeDiagnostic diagnostic =
+                DeregistrationAttributionBenchmarks.AnalyzePalindrome(
+                    handlerA.WallClockMs,
+                    busA.WallClockMs,
+                    busB.WallClockMs,
+                    handlerB.WallClockMs
+                );
+            string evidence = diagnostic.ToStructuredLog();
+            Debug.Log(evidence);
+            TestContext.Out.WriteLine(evidence);
         }
 
         [Test, Explicit, Performance, Category("PerfBaseline")]

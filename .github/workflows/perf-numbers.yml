@@ -602,6 +602,7 @@ jobs:
             Set-Content -LiteralPath (Join-Path $artifactsPath 'player-size.txt') -Encoding utf8
           Write-Host "Exact standalone player size: $totalBytes total bytes; $shippableBytes shippable bytes."
 
+          Set-StrictMode -Version Latest
           $beeArtifacts = Join-Path $projectPath 'Library\Bee\artifacts'
           $il2cppRoots = @(
             Get-ChildItem `
@@ -618,55 +619,301 @@ jobs:
             Sort-Object -Property LastWriteTimeUtc -Descending |
             Select-Object -First 1
           $cppFiles = @(
-            Get-ChildItem -LiteralPath $il2cppRoot.FullName -File -Recurse -Filter '*.cpp'
+            Get-ChildItem -LiteralPath $il2cppRoot.FullName -File -Recurse -Filter '*.cpp' |
+              Sort-Object -Property FullName
           )
           if ($cppFiles.Count -eq 0) {
             throw "No generated C++ files were found under $($il2cppRoot.FullName)."
           }
-          $codegenPatterns = @(
-            'TypedHandlerDeregistrationState',
-            'DeregisterTypedCache',
-            'DeregisterErasedCache',
-            'HandlerActionCache',
-            'FastHandlerWithContext'
-          )
           $cppPaths = @($cppFiles | ForEach-Object { $_.FullName })
-          $codegenMatches = @(
-            foreach ($pattern in $codegenPatterns) {
-              Select-String -LiteralPath $cppPaths -Pattern $pattern -SimpleMatch -Context 1, 1 |
-                Select-Object -First 48
+          # cspell:ignore gshared
+          function Get-GeneratedMethodDefinition {
+            param(
+              [Parameter(Mandatory)] [string] $Label,
+              [Parameter(Mandatory)] [string] $Pattern
+            )
+
+            $signatureMatches = @(
+              Select-String `
+                -LiteralPath $cppPaths `
+                -Pattern $Pattern
+            )
+            $bodyCandidates = [System.Collections.Generic.List[object]]::new()
+            foreach ($signature in $signatureMatches) {
+              $fileLines = @(Get-Content -LiteralPath $signature.Path)
+              $startIndex = $signature.LineNumber - 1
+              $openingBraceIndex = $startIndex
+              $openingBraceOnSignature = $fileLines[$openingBraceIndex] -match '\{'
+              if (!$openingBraceOnSignature) {
+                $openingBraceIndex++
+                while (
+                  $openingBraceIndex -lt $fileLines.Count -and
+                  [string]::IsNullOrWhiteSpace($fileLines[$openingBraceIndex])
+                ) {
+                  $openingBraceIndex++
+                }
+              }
+              if (
+                $openingBraceIndex -ge $fileLines.Count -or
+                (!$openingBraceOnSignature -and $fileLines[$openingBraceIndex].Trim() -ne '{')
+              ) {
+                continue
+              }
+
+              $braceDepth = 0
+              $endIndex = -1
+              for ($index = $openingBraceIndex; $index -lt $fileLines.Count; $index++) {
+                $braceDepth += [regex]::Matches($fileLines[$index], '\{').Count
+                $braceDepth -= [regex]::Matches($fileLines[$index], '\}').Count
+                if ($braceDepth -eq 0) {
+                  $endIndex = $index
+                  break
+                }
+                if ($braceDepth -lt 0) {
+                  break
+                }
+              }
+              if ($endIndex -lt $openingBraceIndex) {
+                throw "Generated definition for $Label had unbalanced braces."
+              }
+              $bodyCandidates.Add(
+                [pscustomobject]@{
+                  Label = $Label
+                  Path = $signature.Path
+                  LineNumber = $signature.LineNumber
+                  Lines = @($fileLines[$startIndex..$endIndex])
+                }
+              )
             }
+            if ($bodyCandidates.Count -ne 1) {
+              throw "Expected one generated body for $Label, found $($bodyCandidates.Count) from $($signatureMatches.Count) signatures."
+            }
+            return $bodyCandidates[0]
+          }
+
+          $productionCppPaths = $cppPaths
+          $extractorTestRoot = Join-Path (
+            [System.IO.Path]::GetTempPath()
+          ) ("dxm-codegen-extractor-{0}" -f [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $extractorTestRoot | Out-Null
+          try {
+            $singleBodyPath = Join-Path $extractorTestRoot 'single.cpp'
+            $singleBodyLines = [System.Collections.Generic.List[string]]::new()
+            $singleBodyLines.Add('IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void Target_mABC () ;')
+            $singleBodyLines.Add('inline void PrefixTarget_mABC ()')
+            $singleBodyLines.Add('{')
+            $singleBodyLines.Add('}')
+            $singleBodyLines.Add('inline void Target_mABC ()')
+            $singleBodyLines.Add('{')
+            $singleBodyLines.Add('if (true)')
+            $singleBodyLines.Add('{')
+            $singleBodyLines.Add('}')
+            foreach ($unusedIndex in 0..170) {
+              $singleBodyLines.Add('// retained body line')
+            }
+            $singleBodyLines.Add('InterfaceActionInvoker IMessageBus')
+            $singleBodyLines.Add('}')
+            $singleBodyLines.Add('inline void Neighbor_mDEF ()')
+            $singleBodyLines.Add('{')
+            $singleBodyLines.Add('}')
+            $singleBodyLines |
+              Set-Content -LiteralPath $singleBodyPath -Encoding utf8
+            $cppPaths = @($singleBodyPath)
+            $singleBody = Get-GeneratedMethodDefinition `
+              -Label 'extractor self-test single body' `
+              -Pattern '(?<![A-Za-z0-9_])Target_mABC\s*\('
+            if (
+              $singleBody.Lines.Count -le 170 -or
+              @($singleBody.Lines | Where-Object { $_ -match 'InterfaceActionInvoker' }).Count -ne 1 -or
+              @($singleBody.Lines | Where-Object { $_ -match 'Neighbor_mDEF' }).Count -ne 0
+            ) {
+              throw 'Generated-method extractor truncated or crossed a function boundary.'
+            }
+
+            $zeroRejected = $false
+            try {
+              $null = Get-GeneratedMethodDefinition `
+                -Label 'extractor self-test zero bodies' `
+                -Pattern '(?<![A-Za-z0-9_])Missing_m000\s*\('
+            } catch {
+              $zeroRejected = $_.Exception.Message -match 'found 0 from 0 signatures'
+            }
+            if (!$zeroRejected) {
+              throw 'Generated-method extractor did not reject zero bodies.'
+            }
+
+            $multipleBodyPath = Join-Path $extractorTestRoot 'multiple.cpp'
+            @(
+              'inline void Duplicate_m123 ()',
+              '{',
+              '}',
+              'inline void Duplicate_m123 ()',
+              '{',
+              '}'
+            ) | Set-Content -LiteralPath $multipleBodyPath -Encoding utf8
+            $cppPaths = @($multipleBodyPath)
+            $multipleRejected = $false
+            try {
+              $null = Get-GeneratedMethodDefinition `
+                -Label 'extractor self-test multiple bodies' `
+                -Pattern '(?<![A-Za-z0-9_])Duplicate_m123\s*\('
+            } catch {
+              $multipleRejected = $_.Exception.Message -match 'found 2 from 2 signatures'
+            }
+            if (!$multipleRejected) {
+              throw 'Generated-method extractor did not reject multiple bodies.'
+            }
+            Write-Host 'Generated-method extractor self-test passed.'
+          } finally {
+            $cppPaths = $productionCppPaths
+            Remove-Item -LiteralPath $extractorTestRoot -Recurse -Force
+          }
+
+          $attributionExecuteMethod = Get-GeneratedMethodDefinition `
+            -Label 'DeregistrationAttributionState.Execute' `
+            -Pattern '(?<![A-Za-z0-9_])DeregistrationAttributionState_Execute_m[0-9A-F]+(?:_gshared)?\s*\('
+
+          $typedCallPattern = '(?<![A-Za-z0-9_])TypedHandlerDeregistrationState_Deregister_m[0-9A-F]+(?:_gshared)?'
+          $typedCallSymbols = [System.Collections.Generic.List[string]]::new()
+          foreach ($line in $attributionExecuteMethod.Lines) {
+            foreach (
+              $symbolMatch in [regex]::Matches(
+                $line,
+                $typedCallPattern,
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+              )
+            ) {
+              $typedCallSymbols.Add($symbolMatch.Value)
+            }
+          }
+          $typedCallSymbols = @($typedCallSymbols | Sort-Object -Unique)
+          if ($typedCallSymbols.Count -ne 1) {
+            throw "Expected DeregistrationAttributionState.Execute to call one exact typed deregistration method, found $($typedCallSymbols.Count)."
+          }
+          $typedHandlerWrapper = Get-GeneratedMethodDefinition `
+            -Label 'TypedHandlerDeregistrationState.Deregister (benchmark wrapper)' `
+            -Pattern ("(?<![A-Za-z0-9_]){0}\s*\(" -f [regex]::Escape($typedCallSymbols[0]))
+
+          if ($typedCallSymbols[0] -match '_gshared$') {
+            $typedSharedCallSymbols = @($typedCallSymbols[0])
+            $typedHandlerSharedBody = $typedHandlerWrapper
+          } else {
+            $typedSharedCallPattern = "(?<![A-Za-z0-9_]){0}_gshared" -f [regex]::Escape(
+              $typedCallSymbols[0]
+            )
+            $typedSharedCallSymbols = [System.Collections.Generic.List[string]]::new()
+            foreach ($line in $typedHandlerWrapper.Lines) {
+              foreach (
+                $symbolMatch in [regex]::Matches(
+                  $line,
+                  $typedSharedCallPattern,
+                  [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+                )
+              ) {
+                $typedSharedCallSymbols.Add($symbolMatch.Value)
+              }
+            }
+            $typedSharedCallSymbols = @($typedSharedCallSymbols | Sort-Object -Unique)
+            if ($typedSharedCallSymbols.Count -gt 1) {
+              throw "Expected the typed deregistration wrapper to call at most one shared body, found $($typedSharedCallSymbols.Count)."
+            }
+            if ($typedSharedCallSymbols.Count -eq 0) {
+              $typedSharedCallSymbols = @('none-specialized-body')
+              $typedHandlerSharedBody = $typedHandlerWrapper
+            } else {
+              $typedHandlerSharedBody = Get-GeneratedMethodDefinition `
+                -Label 'TypedHandlerDeregistrationState.Deregister (shared body)' `
+                -Pattern ("(?<![A-Za-z0-9_]){0}\s*\(" -f [regex]::Escape($typedSharedCallSymbols[0]))
+            }
+          }
+
+          $directBusCallPattern = '(?<![A-Za-z0-9_])MessageBus_Deregister_Tis[A-Za-z0-9_]+_m[0-9A-F]+(?:_gshared)?'
+          $directBusCallSymbols = [System.Collections.Generic.List[string]]::new()
+          foreach ($line in $attributionExecuteMethod.Lines) {
+            foreach (
+              $symbolMatch in [regex]::Matches(
+                $line,
+                $directBusCallPattern,
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+              )
+            ) {
+              $directBusCallSymbols.Add($symbolMatch.Value)
+            }
+          }
+          $directBusCallSymbols = @($directBusCallSymbols | Sort-Object -Unique)
+          if ($directBusCallSymbols.Count -ne 1) {
+            throw "Expected DeregistrationAttributionState.Execute to call one exact MessageBus.Deregister method, found $($directBusCallSymbols.Count)."
+          }
+
+          $typedInterfaceDispatchEvidence = [System.Collections.Generic.List[string]]::new()
+          for ($index = 0; $index -lt $typedHandlerSharedBody.Lines.Count; $index++) {
+            if (
+              $typedHandlerSharedBody.Lines[$index] -notmatch
+                'InterfaceActionInvoker|InterfaceFuncInvoker|VirtualActionInvoker|GetInterfaceInvokeData'
+            ) {
+              continue
+            }
+            $windowStart = [Math]::Max(0, $index - 3)
+            $windowEnd = [Math]::Min($typedHandlerSharedBody.Lines.Count - 1, $index + 3)
+            $dispatchWindow = $typedHandlerSharedBody.Lines[$windowStart..$windowEnd] -join ' '
+            if ($dispatchWindow -match 'IMessageBus') {
+              $typedInterfaceDispatchEvidence.Add($typedHandlerSharedBody.Lines[$index])
+            }
+          }
+          $typedDirectBusDispatchEvidence = @(
+            $typedHandlerSharedBody.Lines |
+              Where-Object { $_ -match 'MessageBus_Deregister' }
           )
-          if ($codegenMatches.Count -eq 0) {
-            throw 'Generated C++ did not contain any typed-deregistration evidence markers.'
+          $typedBusDispatchRecognized =
+            $typedInterfaceDispatchEvidence.Count -gt 0 -or
+            $typedDirectBusDispatchEvidence.Count -gt 0
+          $directBusDispatchEvidence = @(
+            $attributionExecuteMethod.Lines |
+              Where-Object { $_ -match [regex]::Escape($directBusCallSymbols[0]) }
+          )
+          if ($directBusDispatchEvidence.Count -eq 0) {
+            throw 'The exact deregistration attribution Execute method did not expose MessageBus.Deregister dispatch evidence.'
+          }
+
+          $capturedMethods = @($attributionExecuteMethod, $typedHandlerWrapper)
+          if ($typedHandlerSharedBody.Path -ne $typedHandlerWrapper.Path -or
+              $typedHandlerSharedBody.LineNumber -ne $typedHandlerWrapper.LineNumber) {
+            $capturedMethods += $typedHandlerSharedBody
           }
           $evidence = [System.Collections.Generic.List[string]]::new()
           $evidence.Add("il2cppOutput=$($il2cppRoot.FullName)")
           $evidence.Add("cppFileCount=$($cppFiles.Count)")
-          $evidence.Add("boundedMatchCount=$($codegenMatches.Count)")
-          foreach ($group in @($codegenMatches | Group-Object -Property Path)) {
-            $relativePath = $group.Name.Substring($il2cppRoot.FullName.Length).TrimStart(
+          $evidence.Add("capturedMethodCount=$($capturedMethods.Count)")
+          $evidence.Add("typedCallSymbol=$($typedCallSymbols[0])")
+          $evidence.Add("typedSharedCallSymbol=$($typedSharedCallSymbols[0])")
+          $evidence.Add("directBusCallSymbol=$($directBusCallSymbols[0])")
+          $evidence.Add(
+            "typedInterfaceDispatchEvidenceLineCount=$($typedInterfaceDispatchEvidence.Count)"
+          )
+          $evidence.Add(
+            "typedDirectBusDispatchEvidenceLineCount=$($typedDirectBusDispatchEvidence.Count)"
+          )
+          $evidence.Add("typedBusDispatchRecognized=$($typedBusDispatchRecognized.ToString().ToLowerInvariant())")
+          $evidence.Add("directBusDispatchEvidenceLineCount=$($directBusDispatchEvidence.Count)")
+          foreach ($method in $capturedMethods) {
+            $relativePath = $method.Path.Substring($il2cppRoot.FullName.Length).TrimStart(
               [System.IO.Path]::DirectorySeparatorChar,
               [System.IO.Path]::AltDirectorySeparatorChar
             )
+            $hash = (Get-FileHash -LiteralPath $method.Path -Algorithm SHA256).Hash
             $evidence.Add('')
-            $hash = (Get-FileHash -LiteralPath $group.Name -Algorithm SHA256).Hash
-            $evidence.Add("file=$relativePath sha256=$hash")
-            foreach ($match in @($group.Group)) {
-              $evidence.Add("line=$($match.LineNumber) text=$($match.Line.Trim())")
-              foreach ($line in @($match.Context.PreContext)) {
-                $evidence.Add("before=$($line.Trim())")
-              }
-              foreach ($line in @($match.Context.PostContext)) {
-                $evidence.Add("after=$($line.Trim())")
-              }
+            $evidence.Add(
+              "method=$($method.Label) file=$relativePath sha256=$hash line=$($method.LineNumber) bodyLineCount=$($method.Lines.Count)"
+            )
+            foreach ($line in $method.Lines) {
+              $evidence.Add($line)
             }
           }
           $evidence |
             Set-Content `
               -LiteralPath (Join-Path $artifactsPath 'typed-deregistration-codegen.txt') `
               -Encoding utf8
-          Write-Host "Captured $($codegenMatches.Count) bounded typed-deregistration C++ matches."
+          Write-Host "Captured $($capturedMethods.Count) exact typed-deregistration C++ method bodies."
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}

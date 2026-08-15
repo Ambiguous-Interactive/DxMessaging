@@ -518,17 +518,17 @@ test("render-perf-deltas CLI failures preserve non-gating diagnostic output", ()
   assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
 });
 
-test("performance workflow publishes an exact IL2CPP player-size manifest", () => {
+test("performance workflow publishes exact player-size and codegen evidence", () => {
   const workflow = fs.readFileSync(
     path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
     "utf8"
   );
 
-  assert.match(workflow, /name: Capture exact standalone player size/);
-  assert.match(workflow, /matrix\.test-mode == 'standalone'/);
   assert.match(workflow, /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force/);
-  for (const marker of ["shippableBytes", "typed-deregistration-codegen.txt"])
-    assert.ok(workflow.includes(marker));
+  assert.match(
+    workflow,
+    /Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*typed-deregistration-codegen\.txt/
+  );
   assert.match(workflow, /player-size\.json/);
 });
 

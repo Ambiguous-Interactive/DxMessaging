@@ -946,6 +946,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     internal static class DeregistrationAttributionBenchmarks
     {
         internal const int Cardinality = 131_072;
+        internal const double MaxSamePathDriftPercent = 3d;
+        internal const double MaxHandlerExcessSpreadPercent = 3d;
         private const int TimingTrials = 7;
 
         internal static DeregistrationAttributionObservation ExecuteOnceForContract(
@@ -1011,6 +1013,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     $"DeregistrationAttribution_TokenDisable_{Cardinality}",
                 _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
             };
+        }
+
+        internal static DeregistrationAttributionPalindromeDiagnostic AnalyzePalindrome(
+            double handlerA,
+            double busA,
+            double busB,
+            double handlerB
+        )
+        {
+            return new DeregistrationAttributionPalindromeDiagnostic(
+                handlerA,
+                busA,
+                busB,
+                handlerB
+            );
         }
 
         private static void ValidateCardinality(int cardinality)
@@ -1270,6 +1287,158 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
         }
+    }
+
+    internal readonly struct DeregistrationAttributionPalindromeDiagnostic
+    {
+        public DeregistrationAttributionPalindromeDiagnostic(
+            double handlerA,
+            double busA,
+            double busB,
+            double handlerB
+        )
+        {
+            HandlerA = handlerA;
+            BusA = busA;
+            BusB = busB;
+            HandlerB = handlerB;
+        }
+
+        public double HandlerA { get; }
+
+        public double BusA { get; }
+
+        public double BusB { get; }
+
+        public double HandlerB { get; }
+
+        public double HandlerExcessA => HandlerA - BusA;
+
+        public double HandlerExcessB => HandlerB - BusB;
+
+        public double CenteredHandlerExcess => SafePositiveMean(HandlerExcessA, HandlerExcessB);
+
+        public double HandlerDriftPercent => RelativeDriftPercent(HandlerA, HandlerB);
+
+        public double BusDriftPercent => RelativeDriftPercent(BusA, BusB);
+
+        public double HandlerExcessSpreadPercent =>
+            HasFinitePositiveExcesses
+                ? Math.Abs(HandlerExcessB - HandlerExcessA) / CenteredHandlerExcess * 100d
+                : double.PositiveInfinity;
+
+        public bool HandlerDriftWithinThreshold =>
+            WithinSymmetricThreshold(
+                HandlerA,
+                HandlerB,
+                DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent
+            );
+
+        public bool BusDriftWithinThreshold =>
+            WithinSymmetricThreshold(
+                BusA,
+                BusB,
+                DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent
+            );
+
+        public bool HandlerExcessSpreadWithinThreshold =>
+            HasFinitePositiveExcesses
+            && Math.Abs(HandlerExcessB - HandlerExcessA)
+                <= CenteredHandlerExcess
+                    * (DeregistrationAttributionBenchmarks.MaxHandlerExcessSpreadPercent / 100d);
+
+        public bool HasFinitePositiveDurations =>
+            IsFinitePositive(HandlerA)
+            && IsFinitePositive(BusA)
+            && IsFinitePositive(BusB)
+            && IsFinitePositive(HandlerB);
+
+        public bool HasFinitePositiveExcesses =>
+            IsFinitePositive(HandlerExcessA)
+            && IsFinitePositive(HandlerExcessB)
+            && IsFinitePositive(CenteredHandlerExcess);
+
+        public bool Interpretable =>
+            HasFinitePositiveDurations
+            && HasFinitePositiveExcesses
+            && IsFiniteNonNegative(HandlerDriftPercent)
+            && IsFiniteNonNegative(BusDriftPercent)
+            && IsFiniteNonNegative(HandlerExcessSpreadPercent)
+            && HandlerDriftWithinThreshold
+            && BusDriftWithinThreshold
+            && HandlerExcessSpreadWithinThreshold;
+
+        public string ToStructuredLog()
+        {
+            return "DXM_DEREGISTRATION_ATTRIBUTION_PALINDROME "
+                + $"handlerA_ms={Format(HandlerA)} busA_ms={Format(BusA)} "
+                + $"busB_ms={Format(BusB)} handlerB_ms={Format(HandlerB)} "
+                + $"handlerExcessA_ms={Format(HandlerExcessA)} "
+                + $"handlerExcessB_ms={Format(HandlerExcessB)} "
+                + $"centeredHandlerExcess_ms={Format(CenteredHandlerExcess)} "
+                + $"handlerDriftPercent={Format(HandlerDriftPercent)} "
+                + $"busDriftPercent={Format(BusDriftPercent)} "
+                + $"handlerExcessSpreadPercent={Format(HandlerExcessSpreadPercent)} "
+                + $"handlerDriftWithinThreshold={Format(HandlerDriftWithinThreshold)} "
+                + $"busDriftWithinThreshold={Format(BusDriftWithinThreshold)} "
+                + $"handlerExcessSpreadWithinThreshold={Format(HandlerExcessSpreadWithinThreshold)} "
+                + $"maxSamePathDriftPercent={Format(DeregistrationAttributionBenchmarks.MaxSamePathDriftPercent)} "
+                + $"maxHandlerExcessSpreadPercent={Format(DeregistrationAttributionBenchmarks.MaxHandlerExcessSpreadPercent)} "
+                + $"finitePositiveDurations={Format(HasFinitePositiveDurations)} "
+                + $"finitePositiveExcesses={Format(HasFinitePositiveExcesses)} "
+                + $"independentMinima=true diagnosticOnly=true acceptanceEvidence=false "
+                + $"candidateCompared=false interpretable={Format(Interpretable)}";
+        }
+
+        private static string Format(double value) =>
+            value.ToString("R", CultureInfo.InvariantCulture);
+
+        private static string Format(bool value) => value ? "true" : "false";
+
+        private static double RelativeDriftPercent(double first, double second)
+        {
+            if (!IsFinitePositive(first) || !IsFinitePositive(second))
+            {
+                return double.PositiveInfinity;
+            }
+
+            double minimum = Math.Min(first, second);
+            double maximum = Math.Max(first, second);
+            return (maximum - minimum) / minimum * 100d;
+        }
+
+        private static bool WithinSymmetricThreshold(
+            double first,
+            double second,
+            double thresholdPercent
+        )
+        {
+            if (!IsFinitePositive(first) || !IsFinitePositive(second))
+            {
+                return false;
+            }
+
+            double minimum = Math.Min(first, second);
+            double maximum = Math.Max(first, second);
+            return maximum - minimum <= minimum * (thresholdPercent / 100d);
+        }
+
+        private static double SafePositiveMean(double first, double second)
+        {
+            if (!IsFinitePositive(first) || !IsFinitePositive(second))
+            {
+                return double.PositiveInfinity;
+            }
+
+            double minimum = Math.Min(first, second);
+            return minimum + (Math.Max(first, second) - minimum) / 2d;
+        }
+
+        private static bool IsFinitePositive(double value) =>
+            value > 0d && !double.IsInfinity(value) && !double.IsNaN(value);
+
+        private static bool IsFiniteNonNegative(double value) =>
+            value >= 0d && !double.IsInfinity(value) && !double.IsNaN(value);
     }
 
     public readonly struct DeregistrationAttributionObservation
