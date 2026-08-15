@@ -1,9 +1,11 @@
 # Runtime Performance Campaign Decisions
 
+<!-- cspell:ignore gshared -->
+
 > **One-line summary**: Keep the measured physical-two handler-entry map and
-> holder-local flat-dispatch count read; the other small-container,
-> dispatch-switch, and private-pool candidates failed explicit timing or
-> storage gates and were reverted.
+> holder-local flat-dispatch count read; the targeted post-phase state bundle
+> and other small-container, dispatch-switch, and private-pool candidates failed
+> explicit timing or storage gates and were reverted.
 
 ## Decision rule
 
@@ -36,6 +38,20 @@ separately.
 
 ## Rejected runtime candidates
 
+- Do not bundle `RunTargetedPostPhases<TMessage>`'s immutable arguments into a
+  readonly struct passed by `in`. Fresh Standalone IL2CPP Release A/B/B/A means
+  regressed targeted stable, rewritten-empty-final, and
+  rewritten-populated-final throughput by 32.21%, 28.98%, and 16.22%. The
+  broadcast sibling-control means moved only +0.43%, -1.68%, and +2.12%.
+  Candidate player size measurements and hashed code/metadata payloads were
+  identical;
+  separate editor rewritten-route allocation contracts remained green;
+  shippable size grew 3,308 bytes (+0.0039%). Generated C++ constructed
+  `TargetedPostPhaseState`, passed its address to the `_gshared_inline` helper,
+  and retained field-accessor calls, while the control helper received the loose
+  snapshots and scalars directly. Keep the loose parameters. Revisit only with
+  a materially different representation or an IL2CPP backend change that can be
+  proven to scalarize the state.
 - Removing the steady-state `handlers.lastTouchTicks` store from
   `AcquireDispatchSnapshotFast` was semantically safe but had no material Mono
   throughput effect. Freshly compiled A/B/A `Comparison_DxMessaging_GlobalToOne`

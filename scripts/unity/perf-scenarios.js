@@ -1,6 +1,7 @@
 "use strict";
 
 const COMPARISON_SCENARIO_PREFIX = "Comparison_";
+const POST_ROUTE_SCENARIO_DEFINITIONS = require("./post-route-perf-scenarios.json");
 
 // Stable rendered order, labels, and wall-clock classification; mirrors C# keys.
 const SCENARIO_DEFINITIONS = [
@@ -26,6 +27,7 @@ const SCENARIO_DEFINITIONS = [
   ["TargetedFirstDispatch_Cold", "Targeted First Dispatch (Cold, Distinct Types)", true],
   ["BroadcastFlood_OneHandler", "Broadcast Flood (One Handler)"],
   ["BroadcastFirstDispatch_Cold", "Broadcast First Dispatch (Cold, Distinct Types)", true],
+  ...POST_ROUTE_SCENARIO_DEFINITIONS,
   ["InterceptorHeavy_FourInterceptors", "Interceptor Heavy (Four Interceptors)"],
   ["PostProcessingHeavy_FourPostProcessors", "Post-Processing Heavy (Four Post-Processors)"],
   ["MessageBusConstruction_1000", "Message Bus Construction (1000)", true],

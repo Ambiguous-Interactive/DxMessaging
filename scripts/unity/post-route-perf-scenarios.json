@@ -1,0 +1,17 @@
+[
+  ["TargetedPost_StableRoute", "Targeted Post Route (Stable)"],
+  ["TargetedPost_Rewritten_EmptyFinalRoute", "Targeted Post Route (Rewritten, Empty Final Route)"],
+  [
+    "TargetedPost_Rewritten_PopulatedFinalRoute",
+    "Targeted Post Route (Rewritten, Populated Final Route)"
+  ],
+  ["BroadcastPost_StableRoute", "Broadcast Post Route (Stable)"],
+  [
+    "BroadcastPost_Rewritten_EmptyFinalRoute",
+    "Broadcast Post Route (Rewritten, Empty Final Route)"
+  ],
+  [
+    "BroadcastPost_Rewritten_PopulatedFinalRoute",
+    "Broadcast Post Route (Rewritten, Populated Final Route)"
+  ]
+]

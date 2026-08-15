@@ -627,6 +627,8 @@ jobs:
           }
           $cppPaths = @($cppFiles | ForEach-Object { $_.FullName })
           # cspell:ignore gshared rgctx
+          # SYNC: scripts/unity/capture-targeted-post-codegen.ps1 duplicates this
+          # generated-method parser; keep brace and uniqueness handling aligned.
           function Get-GeneratedMethodDefinition {
             param(
               [Parameter(Mandatory)] [string] $Label,
@@ -1022,6 +1024,16 @@ jobs:
               -Encoding utf8
           Write-Host "Captured $($capturedMethods.Count) exact typed-deregistration C++ method bodies."
 
+      - name: Capture targeted post-route codegen
+        if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-internal'
+          ./scripts/unity/capture-targeted-post-codegen.ps1 `
+            -ProjectPath $projectPath `
+            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-internal'
+
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}
         timeout-minutes: 5
@@ -1266,6 +1278,7 @@ jobs:
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
           methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
           methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests)'
+          methodology_pattern+='|scripts/unity/post-route-perf-scenarios\.json$'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
           methodology_pattern+='|\.github/unity-versions\.json$'
