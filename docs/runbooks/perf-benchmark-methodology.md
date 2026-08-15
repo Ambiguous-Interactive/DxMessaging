@@ -172,6 +172,20 @@ they are report-only -- rendered as wall clock, never gated.
   scenario before the 131072-cycle and retained-population attribution setup. These
   diagnostic wall-clock rows are not hard regression gates. Do not compare them
   with the 1000-type flood rows because their registration topology differs.
+- **Deregistration attribution palindrome.** The non-published
+  `DirectHandlerAndBusDeregistrationPalindromeDiagnostic` runs direct handler A,
+  direct bus A, direct bus B, then direct handler B after the published
+  attribution rows. It reports
+  `DXM_DEREGISTRATION_ATTRIBUTION_PALINDROME` with both additive handler-minus-bus
+  excesses and their arithmetic center. Interpret the sample only when both
+  excesses are positive, handler and bus same-path drift are each at most 3%, and
+  the two additive excesses differ by at most 3% of their center. The four arms
+  independently select the minimum of seven fresh populations, so they do not
+  preserve cross-path covariance. `interpretable=true` is a noise-rejection
+  prerequisite, not candidate acceptance. The marker always records
+  `diagnosticOnly=true`, `acceptanceEvidence=false`, and
+  `candidateCompared=false`; require a separate repeated control/candidate
+  bracket before claiming a 3% improvement.
 - **Noise control on the wall-clock floods.** A single one-shot sample of a ~1 ms
   operation on a shared CI runner swings run-to-run by tens of percent (scheduler
   preemption, or a GC landing inside the timed window). Two mitigations: (1) the
