@@ -82,9 +82,11 @@ namespace DxMessaging.Core.Internal
 
         /// <summary>
         /// Non-generic membership probe over the cache's entries map. The
-        /// per-handle teardown object's compatibility fallback uses this to
-        /// decide whether the over-deregistration silent-no-op guard fires
-        /// without down-casting to a concrete cache shape.
+        /// per-handle teardown object (which carries no delegate-shape type
+        /// argument) uses this instead of a typed
+        /// <c>entries.ContainsKey</c> so it can decide whether the
+        /// over-deregistration silent-no-op guard fires without down-casting
+        /// to the concrete <c>HandlerActionCache&lt;TDelegate&gt;</c>.
         /// </summary>
         /// <param name="originalHandler">
         /// The dedup/identity key (boxed delegate) the teardown captured at
@@ -103,7 +105,7 @@ namespace DxMessaging.Core.Internal
         void BumpVersion();
 
         /// <summary>
-        /// Non-generic fallback decrement-or-remove for the captured handler entry.
+        /// Non-generic decrement-or-remove for the captured handler entry.
         /// Mirrors the EXACT refcount logic the legacy deregistration closure
         /// used: if the entry's refcount is at or below one, removes it from
         /// both the entries map and the insertion-order list and bumps
