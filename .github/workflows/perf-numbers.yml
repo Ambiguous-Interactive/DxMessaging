@@ -792,6 +792,32 @@ jobs:
               throw 'Generated-method extractor did not reject zero bodies.'
             }
 
+            $caseDistinctBodyPath = Join-Path $extractorTestRoot 'case-distinct.cpp'
+            @(
+              'inline void CaseDuplicate_m124 ()',
+              '{',
+              '// Alpha body',
+              '}',
+              'inline void CaseDuplicate_m124 ()',
+              '{',
+              '// alpha body',
+              '}'
+            ) | Set-Content -LiteralPath $caseDistinctBodyPath -Encoding utf8
+            $cppPaths = @($caseDistinctBodyPath)
+            $caseDistinctRejected = $false
+            try {
+              $null = Get-GeneratedMethodDefinition `
+                -Label 'extractor self-test case-distinct bodies' `
+                -Pattern '(?<![A-Za-z0-9_])CaseDuplicate_m124\s*\('
+            } catch {
+              $caseDistinctRejected =
+                $_.Exception.Message -match
+                  'found 2 unique bodies across 2 definitions from 2 signatures'
+            }
+            if (!$caseDistinctRejected) {
+              throw 'Generated-method extractor did not reject case-distinct bodies.'
+            }
+
             $multipleBodyPath = Join-Path $extractorTestRoot 'multiple.cpp'
             $composedBodyMarker = [string][char]0x00E9
             $decomposedBodyMarker = "e$([char]0x0301)"
