@@ -36,6 +36,16 @@ separately.
 
 ## Rejected runtime candidates
 
+- Removing the steady-state `handlers.lastTouchTicks` store from
+  `AcquireDispatchSnapshotFast` was semantically safe but had no material Mono
+  throughput effect. Freshly compiled A/B/A `Comparison_DxMessaging_GlobalToOne`
+  samples were 24.786M / 24.844M / 25.208M emits/sec: the candidate was 1.4%
+  below the second control and 0.6% below the control mean, far under the 3%
+  claim threshold. The first stale
+  control falsely suggested a 5.7x gain because only the candidate edit forced a
+  fresh Release assembly; always change and recompile both sides of a local
+  Unity A/B. Keep the touch unless new IL2CPP evidence shows a material backend
+  difference.
 - A 0-4 flat-dispatch `switch` preserved live-active and reset-generation reads
   but regressed representative dispatch by roughly 8-11% versus the compact loop.
 - `[ThreadStatic]` snapshot-holder stacks changed a process-wide 64-holder ceiling

@@ -229,15 +229,10 @@ Two public counters on `IMessageBus` report current slot occupancy:
 - `OccupiedTargetSlots` is the count of distinct target or source context
   slots that are currently occupied on the bus.
 
-Both counters are aggregated on read. The implementation walks the per-kind
-caches, so the call is O(n) in the number of message types or targets known
-to the bus. Snapshot the values at region boundaries (start of a scene
-unload, end of a leak-watching scope) rather than polling them every frame.
-
-These counters integrate with the internal test-suite `LeakWatcher` utility
-(see `Tests/Runtime/TestUtilities/LeakWatcher.cs` for the pattern; users can
-build their own equivalent for production diagnostics). A typical
-verification pattern:
+Reading either counter has a cost proportional to the number of message types
+known to the bus. Snapshot the values at region boundaries, such as the start
+of a scene unload or test and the end, rather than polling them every frame. A
+typical verification pattern:
 
 1. Snapshot `OccupiedTypeSlots` and `OccupiedTargetSlots` at the start of a
    scoped operation.

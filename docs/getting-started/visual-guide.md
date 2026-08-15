@@ -151,7 +151,7 @@ When you send a message, here's what happens:
 
 ```mermaid
 sequenceDiagram
-    participant You as Your Code
+    participant Hazard
     participant Msg as Message
     participant Int as Interceptors<br/>(Optional)
     participant H0 as Handler<br/>priority: 0
@@ -159,11 +159,11 @@ sequenceDiagram
     participant H10 as Handler<br/>priority: 10
     participant PP as Post-Processors<br/>(Optional)
 
-    Note over You: 1. Create message
-    You->>Msg: var heal = new Heal(10);
+    Note over Hazard: 1. Create message
+    Hazard->>Msg: var damage = new DamageRequested(25);
 
-    Note over You,Msg: 2. Emit message
-    You->>Msg: heal.EmitGameObjectTargeted(player);
+    Note over Hazard,Msg: 2. Emit message
+    Hazard->>Msg: damage.EmitGameObjectTargeted(other.gameObject);
 
     Note over Int: 3. Validate & Normalize
     Msg->>Int: Check message
@@ -202,22 +202,26 @@ using DxMessaging.Core.Attributes;
 
 [DxTargetedMessage]     // <- What kind of message?
 [DxAutoConstructor]     // <- Auto-make a constructor
-public readonly partial struct Heal {
-    public readonly int amount;
+public readonly partial struct DamageRequested
+{
+    public readonly int Amount;
 }
 ```
 
 #### What are those `[DxSomething]` tags?
 
-These are **attributes** that work with C# source generators to produce boilerplate code at compile time:
+These attributes declare generated message behavior at compile time:
 
-- **`[DxTargetedMessage]`** - Marks this struct as a targeted message and generates the required emit methods
+- **`[DxTargetedMessage]`** - Adds the targeted message interfaces and identity used by DxMessaging; the library supplies the emit extension methods
 - **`[DxAutoConstructor]`** - Generates a constructor that initializes all fields
 
 For example, `[DxAutoConstructor]` generates this constructor automatically:
 
 ```csharp
-public Heal(int amount) { this.amount = amount; }
+public DamageRequested(int Amount)
+{
+    this.Amount = Amount;
+}
 ```
 
 **Why `partial`?** The `partial` keyword allows the source generator to add the generated code to your type in a separate file during compilation.
@@ -228,17 +232,21 @@ public Heal(int amount) { this.amount = amount; }
 
 ```csharp
 using DxMessaging.Unity;
+using UnityEngine;
 
-public class Player : MessageAwareComponent {
-    protected override void RegisterMessageHandlers() {
+public sealed class DamageReceiver : MessageAwareComponent
+{
+    public int Health { get; private set; } = 100;
+
+    protected override void RegisterMessageHandlers()
+    {
         base.RegisterMessageHandlers();
-        // "When someone sends Heal to ME, call OnHeal"
-        _ = Token.RegisterComponentTargeted<Heal>(this, OnHeal);
+        _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    void OnHeal(ref Heal msg) {
-        health += msg.amount;
-        Debug.Log($"Healed {msg.amount}!");
+    private void OnDamageRequested(ref DamageRequested message)
+    {
+        Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
     }
 }
 ```
@@ -255,12 +263,24 @@ public class Player : MessageAwareComponent {
 ### Step 3: Send It
 
 ```csharp
-// From anywhere in your code:
-var healMsg = new Heal(50);
-healMsg.EmitComponentTargeted(playerComponent);
+using DxMessaging.Core.Extensions;
+using UnityEngine;
 
-// Player will receive this message.
+public sealed class Hazard : MonoBehaviour
+{
+    public int Damage = 25;
+
+    private void OnTriggerEnter(Collider other)
+    {
+        DamageRequested request = new DamageRequested(Damage);
+        request.EmitGameObjectTargeted(other.gameObject);
+    }
+}
 ```
+
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
+**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
+GameObject. The trigger provides that exact target, so `Hazard` does not need a player reference.
 
 ## Common Patterns Visualized
 

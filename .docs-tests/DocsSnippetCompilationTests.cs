@@ -63,6 +63,16 @@ internal sealed class DocsSnippetCompilationTests
         System.Text.RegularExpressions.RegexOptions.Compiled
     );
 
+    private static readonly System.Text.RegularExpressions.Regex HomepageSceneReferenceRegex = new(
+        @"(?m)^\s*(?:\[[^\]\r\n]+\]\s*)*(?:(?:public|private|protected|internal|static|readonly|volatile|new)\s+)+(?:(?:(?:System\.Collections\.Generic\.)?(?:List|IList|IReadOnlyList|IEnumerable|ICollection|IReadOnlyCollection|HashSet)\s*<\s*)?(?:(?:UnityEngine\.)?(?:Object|Component|GameObject|Transform|Collider(?:2D)?|Rigidbody(?:2D)?|MonoBehaviour)|I?[A-Za-z_]\w*(?:Receiver|Target|Listener))\s*(?:>)?\s*(?:\[\s*\]\s*)*)[_A-Za-z]\w*\s*(?:[;={]|$)",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex HomepageComponentLookupRegex = new(
+        @"\b(?:TryGetComponent|GetComponents?(?:InParent|InChildren)?)\s*(?:<|\()",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
     private static readonly System.Text.RegularExpressions.Regex LegacyBroadcastRegex = new(
         @"\.\s*EmitBroadcast\s*\(",
         System.Text.RegularExpressions.RegexOptions.Compiled
@@ -468,14 +478,53 @@ internal sealed class DocsSnippetCompilationTests
         string homepagePath = Path.Combine(docsRoot, "index.md");
         string snippet = ExtractFirstCodeBlock(homepagePath, "csharp");
 
-        Assert.That(snippet, Does.Not.Contain("[SerializeField]"));
         Assert.That(snippet, Does.Contain("[DxTargetedMessage]"));
         Assert.That(snippet, Does.Not.Contain("[DxUntargetedMessage]"));
-        Assert.That(snippet, Does.Contain("RegisterGameObjectTargeted<HealPlayerRequested>"));
-        Assert.That(snippet, Does.Contain("EmitGameObjectTargeted(_playerHealth.gameObject)"));
-        Assert.That(snippet, Does.Contain("[RequireComponent(typeof(Button))]"));
-        Assert.That(snippet, Does.Contain("onClick.AddListener"));
-        Assert.That(snippet, Does.Contain("onClick.RemoveListener"));
+        Assert.That(snippet, Does.Match(@"RegisterGameObjectTargeted<[^>]+>\(gameObject"));
+        Assert.That(
+            snippet,
+            Does.Match(
+                @"(?s)OnTriggerEnter\(Collider\s+(?<target>\w+)\).*?EmitGameObjectTargeted\(\k<target>\.gameObject\)"
+            )
+        );
+        Assert.That(
+            HomepageSceneReferenceRegex.IsMatch(snippet),
+            Is.False,
+            "The homepage must not require a serialized or public scene-object reference."
+        );
+        Assert.That(
+            HomepageComponentLookupRegex.IsMatch(snippet),
+            Is.False,
+            "The homepage must not look up a receiver component."
+        );
+        Assert.That(snippet, Does.Not.Contain("GetComponentInParent"));
+        Assert.That(snippet, Does.Not.Contain("Button"));
+        Assert.That(snippet, Does.Not.Contain("onClick"));
+    }
+
+    [TestCase("[SerializeField] private Collider _target;", true)]
+    [TestCase("public UnityEngine.GameObject Target;", true)]
+    [TestCase("private Component _receiver;", true)]
+    [TestCase("private DamageReceiver[] _receivers;", true)]
+    [TestCase("private List<IDamageReceiver> _receivers;", true)]
+    [TestCase("GetComponent<IDamageReceiver>();", true)]
+    [TestCase("TryGetComponent<Collider>(out var collider);", true)]
+    [TestCase("[SerializeField] private int Damage;", false)]
+    [TestCase("public int Health { get; private set; }", false)]
+    public void HomepageManualWiringGuardClassifiesReferencePatterns(
+        string source,
+        bool expectedViolation
+    )
+    {
+        bool actualViolation =
+            HomepageSceneReferenceRegex.IsMatch(source)
+            || HomepageComponentLookupRegex.IsMatch(source);
+
+        Assert.That(
+            actualViolation,
+            Is.EqualTo(expectedViolation),
+            $"Expected violation={expectedViolation} for source: {source}"
+        );
     }
 
     [Test]

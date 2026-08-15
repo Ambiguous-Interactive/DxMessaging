@@ -55,57 +55,64 @@ By the end of this guide, you will:
 
 ## Quick Start
 
-1. Define messages
+1. Define the command
 
 ```csharp
 using DxMessaging.Core.Attributes;
 
 [DxTargetedMessage]
 [DxAutoConstructor]
-public readonly partial struct Heal
+public readonly partial struct DamageRequested
 {
-    public readonly int amount;
-}
-
-[DxBroadcastMessage]
-[DxAutoConstructor]
-public readonly partial struct TookDamage
-{
-    public readonly int amount;
+    public readonly int Amount;
 }
 ```
 
-1. Listen in a component
+1. Register the receiver
 
 ```csharp
-using DxMessaging.Core;
-using DxMessaging.Core.Extensions;
 using DxMessaging.Unity;
+using UnityEngine;
 
-public class GameUI : MessageAwareComponent
+public sealed class DamageReceiver : MessageAwareComponent
 {
-    // Assume this references a Player GameObject
-    public UnityEngine.GameObject playerGO;
+    public int Health { get; private set; } = 100;
 
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-
-        _ = Token.RegisterGameObjectTargeted<Heal>(playerGO, OnHealRequested);
-        _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
+        _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    private void OnHealRequested(ref Heal m) => ShowRequestedHeal(m.amount);
-    private void OnAnyDamage(InstanceId source, TookDamage m) => ShowDamageEffect(source);
+    private void OnDamageRequested(ref DamageRequested message)
+    {
+        Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
+    }
 }
 ```
 
-1. Send a message
+1. Send the command from a physics event
 
 ```csharp
-var heal = new Heal(10);
-heal.EmitGameObjectTargeted(playerGameObject);
+using DxMessaging.Core.Extensions;
+using UnityEngine;
+
+public sealed class Hazard : MonoBehaviour
+{
+    public int Damage = 25;
+
+    private void OnTriggerEnter(Collider other)
+    {
+        DamageRequested request = new DamageRequested(Damage);
+        request.EmitGameObjectTargeted(other.gameObject);
+    }
+}
 ```
+
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
+**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
+GameObject. The hazard knows only that exact object. It does not know whether the object is a
+player, enemy, or breakable prop, and the receiver does not know which hazard sent the request.
 
 ### Important: Inheritance and base calls
 

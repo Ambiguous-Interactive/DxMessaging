@@ -202,48 +202,66 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 See the [Install Guide](docs/getting-started/install.md) for all options including NPM scoped registries and local tarballs.
 
-### 2. Define Your First Message
+### 2. Define a Damage Command
 
 ```csharp
 using DxMessaging.Core.Attributes;
 
 [DxTargetedMessage]
-[DxAutoConstructor]  // Auto-generates constructor
-public readonly partial struct OpenChest {
-    public readonly int chestId;
-    [DxOptionalParameter(true)]  // Optional with custom default
-    public readonly bool playSound;
+[DxAutoConstructor]
+public readonly partial struct DamageRequested
+{
+    public readonly int Amount;
 }
 ```
 
-### 3. Listen for It
+### 3. Receive Damage
 
 ```csharp
+using UnityEngine;
 using DxMessaging.Unity;
 
-public class ChestController : MessageAwareComponent {
-    protected override void RegisterMessageHandlers() {
+public sealed class DamageReceiver : MessageAwareComponent
+{
+    public int Health { get; private set; } = 100;
+
+    protected override void RegisterMessageHandlers()
+    {
         base.RegisterMessageHandlers();
-        _ = Token.RegisterComponentTargeted<OpenChest>(this, OnOpen);
+        _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    void OnOpen(ref OpenChest msg) {
-        Debug.Log($"Opening chest {msg.chestId}");
+    private void OnDamageRequested(ref DamageRequested message)
+    {
+        Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
     }
 }
 ```
 
 > **Heads-up:** When you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers`, call the base method first or handlers fail silently. See [DXMSG006](docs/reference/analyzers.md#dxmsg006-missing-base-call).
 
-### 4. Send It
+### 4. Add a Hazard
 
 ```csharp
-// From anywhere:
-var msg = new OpenChest(chestId: 42);
-msg.EmitComponentTargeted(chestComponent);
+using DxMessaging.Core.Extensions;
+using UnityEngine;
+
+public sealed class Hazard : MonoBehaviour
+{
+    public int Damage = 25;
+
+    private void OnTriggerEnter(Collider other)
+    {
+        DamageRequested request = new DamageRequested(Damage);
+        request.EmitGameObjectTargeted(other.gameObject);
+    }
+}
 ```
 
-No manual unsubscribe needed. Subscriptions are type-safe and lifecycle-managed.
+On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
+**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
+GameObject. The hazard targets that exact object without knowing its concrete type. Registration
+cleanup follows the receiver's Unity lifecycle.
 
 **Stuck?** See [Troubleshooting](docs/reference/troubleshooting.md) or [FAQ](docs/reference/faq.md)
 
@@ -668,34 +686,10 @@ dedicated Unity editor tools under **Tools > Wallstop Studios > DxMessaging**.
   source links open the exact message declaration or captured call-site line
 - Global accept-all registrations shown as `ANY MESSAGE` observer scope rather
   than as an `IMessage` message type
-- Route-map route-kind mix, call shares, widest-message target-component
-  fan-out, most-routed target, inactive routed-target, hottest-route, and
-  no-call route summaries, recent traced-route coverage, busiest traced-route,
-  traced-message, and traced-target share, visible message lanes grouped by
-  message type, visible target lanes grouped by target component, visible trace
-  route-kind lanes grouped by traced registration kind, visible trace message
-  lanes grouped by traced message type, visible trace target lanes grouped by
-  traced target component, visible trace-id lanes grouped by positive trace id,
-  visible trace context lanes grouped by normalized context, visible trace
-  context volume and share, visible trace-id
-  breadth, visible trace-target/path concentration, selected
-  component/message route-health and busiest traced-route details, selected
-  component busiest traced-message details, selected message busiest
-  traced-target details, selected
-  component/message/route visible traced-share details, and selected
-  component/message/route trace context volume, trace context delivery,
-  busiest-context-share, trace-id breadth, selected component trace-message,
-  selected message trace-target, busiest-path, and busiest-path-share details
-- Recent global/listener emission evidence
-- Exact recent traced delivery counts per registration edge
-- Recent trace-path/context aggregates, including busiest trace context share,
-  busiest trace message/target/path shares, visible flow corridors by
-  message/target pair, visible trace route-kind lanes by traced registration
-  kind, visible trace message lanes by traced message type, visible trace target
-  lanes by traced target component, visible trace context lanes by normalized
-  context, visible trace-id lanes by positive trace id, widest visible trace id
-  by path count, and exact trace-id export arrays when diagnostics capture token
-  delivery records with positive trace ids
+- Route summaries that surface busy, inactive, and uncalled paths
+- Message, target, route-kind, and context lanes for narrowing dense graphs
+- Recent delivery evidence and trace details for the selected route
+- JSON export for sharing a filtered diagnostic snapshot
 
 #### Inspector integration
 

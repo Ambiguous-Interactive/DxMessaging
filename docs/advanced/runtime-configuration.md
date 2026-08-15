@@ -65,8 +65,8 @@ var handler = new MessageHandler(new InstanceId(1)) { active = true };
 > any copy ends the override once. Nested scopes restore the nearest active parent even when
 > disposed out of order. A later `SetGlobalMessageBus`, `ResetGlobalMessageBus`, or
 > `DxMessagingStaticState.Reset` invalidates older scopes so they cannot restore stale state.
-> New peak occupancy grows the table in fixed 1,024-slot blocks instead of imposing a fixed 1,024
-> nesting cap. Growth allocates the new block and may also grow the small block directory.
+> Unusually deep first-time nesting can allocate storage, which later scopes reuse until domain
+> reload.
 
 Use `OverrideGlobalMessageBus()` when you want to temporarily replace the bus and automatically restore it later:
 
@@ -97,10 +97,9 @@ Assert.AreSame(originalBus, MessageHandler.MessageBus);
 
 **Pattern:** This returns a `GlobalMessageBusScope` struct. Use the concrete return value directly
 with a `using` statement for zero-GC cleanup while established slot capacity is reused. When the
-scope exits, the nearest active previous bus is restored. New peak occupancy grows the process-wide
-table in fixed 1,024-slot blocks; growth allocates a block and may also grow the small block
-directory. Grown blocks remain available for reuse until domain reload. An out-of-order-disposed
-parent keeps its slot until all newer scopes have ended.
+scope exits, the nearest active previous bus is restored. New peak nesting depth can allocate more
+storage; that capacity remains available for reuse until domain reload. An out-of-order-disposed
+parent remains restorable until all newer scopes have ended.
 Create and dispose scopes, and set or reset the global bus, on Unity's main thread. These
 configuration APIs follow DxMessaging's single-threaded runtime contract.
 

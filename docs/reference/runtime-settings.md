@@ -100,12 +100,9 @@ reclamation. All four are stable public surface.
 int OccupiedTypeSlots { get; }
 ```
 
-Number of currently occupied per-message-type slots on this bus. Includes
-scalar handler sinks, context handler sinks (one count per (type, dictionary),
-not per (type, target)), interceptor type slots, and dirty-empty
-typed-handler slots. Aggregated on read by walking the per-kind caches; the
-cost is O(n) in the number of distinct message types known to the bus.
-Snapshot at region boundaries rather than reading in a tight loop.
+Number of message-type slots currently occupied on this bus. The read cost
+grows with the number of distinct message types known to the bus, so snapshot
+it at region boundaries rather than reading it in a tight loop.
 
 ### `IMessageBus.OccupiedTargetSlots`
 
@@ -116,8 +113,7 @@ int OccupiedTargetSlots { get; }
 Number of currently occupied per-context target or source slots on this bus.
 Counts (type, target) tuples: five distinct message types each with the
 same target ID counts as 5, not 1. Same aggregation behavior as
-`OccupiedTypeSlots`; the cost is O(n) in the number of distinct message
-types known to the bus.
+`OccupiedTypeSlots`.
 
 ### `IMessageBus.Trim`
 
