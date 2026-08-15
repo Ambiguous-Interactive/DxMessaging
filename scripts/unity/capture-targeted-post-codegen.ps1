@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+# cspell:ignore gshared
 [CmdletBinding()]
 param(
     [string]$ProjectPath,
