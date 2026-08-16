@@ -218,29 +218,40 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test, Performance, Category("PerfBench"), Order(DeregistrationAttributionDiagnosticOrder)]
         public void DirectHandlerAndBusDeregistrationPalindromeDiagnostic()
         {
-            DispatchBenchmarkResult handlerA = DeregistrationAttributionBenchmarks.RunScenario(
-                DeregistrationAttributionOperation.DirectHandler
-            );
-            DispatchBenchmarkResult busA = DeregistrationAttributionBenchmarks.RunScenario(
-                DeregistrationAttributionOperation.DirectBus
-            );
-            DispatchBenchmarkResult busB = DeregistrationAttributionBenchmarks.RunScenario(
-                DeregistrationAttributionOperation.DirectBus
-            );
-            DispatchBenchmarkResult handlerB = DeregistrationAttributionBenchmarks.RunScenario(
-                DeregistrationAttributionOperation.DirectHandler
-            );
-
-            // Each arm independently selects its minimum from seven fresh populations. That
-            // rejects interruptions but loses cross-path covariance: interpretable=true is
-            // necessary for a later candidate bracket, never sufficient acceptance evidence.
             DeregistrationAttributionPalindromeDiagnostic diagnostic =
-                DeregistrationAttributionBenchmarks.AnalyzePalindrome(
-                    handlerA.WallClockMs,
-                    busA.WallClockMs,
-                    busB.WallClockMs,
-                    handlerB.WallClockMs
+                DeregistrationAttributionBenchmarks.RunPairedDiagnostic();
+            Assert.IsTrue(
+                diagnostic.JointTrialSelection,
+                "The measured diagnostic must select one complete trial."
+            );
+            Assert.IsTrue(
+                diagnostic.SameTrialArms,
+                "The measured diagnostic must retain all four arms from one trial."
+            );
+            Assert.IsTrue(
+                diagnostic.PreparationDirectionAlternated,
+                "The measured diagnostic must alternate preparation direction across trials."
+            );
+            Assert.AreEqual(
+                DeregistrationAttributionBenchmarks.PalindromeTimingTrials,
+                diagnostic.TimingTrials,
+                "The measured diagnostic must report its actual trial count."
+            );
+            string[] trialRecords = diagnostic.TrialSequence.Split(',');
+            Assert.AreEqual(
+                DeregistrationAttributionBenchmarks.PalindromeTimingTrials,
+                trialRecords.Length,
+                "The measured diagnostic must retain every trial record."
+            );
+            for (int trial = 0; trial < trialRecords.Length; trial++)
+            {
+                string expectedPrefix = $"{trial}:{((trial & 1) == 0 ? 'F' : 'R')}:";
+                StringAssert.StartsWith(
+                    expectedPrefix,
+                    trialRecords[trial],
+                    $"trial={trial}, expectedPrefix={expectedPrefix}: trial provenance changed."
                 );
+            }
             string evidence = diagnostic.ToStructuredLog();
             Debug.Log(evidence);
             TestContext.Out.WriteLine(evidence);

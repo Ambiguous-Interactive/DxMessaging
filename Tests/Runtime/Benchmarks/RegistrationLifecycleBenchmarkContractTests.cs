@@ -284,13 +284,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int expectedClassification
         )
         {
-            DeregistrationAttributionPalindromeDiagnostic diagnostic =
-                DeregistrationAttributionBenchmarks.AnalyzePalindrome(
-                    handlerA,
-                    busA,
-                    busB,
-                    handlerB
-                );
+            DeregistrationAttributionPalindromeDiagnostic diagnostic = AnalyzePalindrome(
+                handlerA,
+                busA,
+                busB,
+                handlerB
+            );
             int actualClassification =
                 (diagnostic.HandlerDriftWithinThreshold ? 1 : 0)
                 | (diagnostic.BusDriftWithinThreshold ? 2 : 0)
@@ -312,10 +311,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Category("PerfBench")]
         public void DeregistrationPalindromeIsArmSwapInvariant()
         {
-            DeregistrationAttributionPalindromeDiagnostic first =
-                DeregistrationAttributionBenchmarks.AnalyzePalindrome(198.5d, 100d, 101d, 200.5d);
-            DeregistrationAttributionPalindromeDiagnostic swapped =
-                DeregistrationAttributionBenchmarks.AnalyzePalindrome(200.5d, 101d, 100d, 198.5d);
+            DeregistrationAttributionPalindromeDiagnostic first = AnalyzePalindrome(
+                198.5d,
+                100d,
+                101d,
+                200.5d
+            );
+            DeregistrationAttributionPalindromeDiagnostic swapped = AnalyzePalindrome(
+                200.5d,
+                101d,
+                100d,
+                198.5d
+            );
 
             Assert.AreEqual(
                 first.HandlerDriftPercent,
@@ -343,8 +350,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Category("PerfBench")]
         public void DeregistrationPalindromeLogRejectsAcceptanceMeaning()
         {
-            DeregistrationAttributionPalindromeDiagnostic diagnostic =
-                DeregistrationAttributionBenchmarks.AnalyzePalindrome(130d, 100d, 101d, 131d);
+            DeregistrationAttributionPalindromeDiagnostic diagnostic = AnalyzePalindrome(
+                130d,
+                100d,
+                101d,
+                131d
+            );
             string evidence = diagnostic.ToStructuredLog();
 
             Assert.AreEqual(
@@ -373,9 +384,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 "The log must retain each threshold decision."
             );
             StringAssert.Contains(
-                "independentMinima=true diagnosticOnly=true acceptanceEvidence=false candidateCompared=false interpretable=true",
+                "handlerFirstPairTotal_ms=230 busFirstPairTotal_ms=232 palindromeTotal_ms=462 selectedTrial=-1 prepareForward=false jointTrialSelection=false sameTrialArms=false preparationDirectionAlternated=false timingTrials=0 trialSequence=none diagnosticOnly=true acceptanceEvidence=false candidateCompared=false interpretable=true",
                 evidence,
-                "The log must reject acceptance meaning for independently selected minima."
+                "Arithmetic-only diagnostics must not claim measured selection provenance."
             );
             StringAssert.DoesNotContain(
                 " valid=",
@@ -388,11 +399,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Category("PerfBench")]
         public void DeregistrationPalindromeLogDistinguishesExactAndJustOverThreshold()
         {
-            string exact = DeregistrationAttributionBenchmarks
-                .AnalyzePalindrome(1100d, 100d, 103d, 1103d)
-                .ToStructuredLog();
-            string justOver = DeregistrationAttributionBenchmarks
-                .AnalyzePalindrome(1100d, 100d, 103.000001d, 1103.000001d)
+            string exact = AnalyzePalindrome(1100d, 100d, 103d, 1103d).ToStructuredLog();
+            string justOver = AnalyzePalindrome(1100d, 100d, 103.000001d, 1103.000001d)
                 .ToStructuredLog();
 
             Assert.AreNotEqual(
@@ -419,6 +427,88 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 "interpretable=false",
                 justOver,
                 "The just-over threshold sample must remain uninterpretable."
+            );
+        }
+
+        [Test]
+        [Category("PerfBench")]
+        [TestCase(false)]
+        [TestCase(true)]
+        public void DeregistrationPalindromeFloorKeepsAllArmsFromOneTrial(bool prepareForward)
+        {
+            DeregistrationAttributionPalindromeSample current = PalindromeSample(
+                120d,
+                10d,
+                9d,
+                121d,
+                trial: 2,
+                prepareForward
+            );
+            DeregistrationAttributionPalindromeSample mixedArmTrap = PalindromeSample(
+                100d,
+                40d,
+                50d,
+                90d,
+                trial: 3,
+                !prepareForward
+            );
+            DeregistrationAttributionPalindromeSample faster = PalindromeSample(
+                121d,
+                8d,
+                8d,
+                120d,
+                trial: 4,
+                !prepareForward
+            );
+
+            DeregistrationAttributionPalindromeSample kept =
+                DeregistrationAttributionBenchmarks.SelectPalindromeFloor(current, mixedArmTrap);
+            AssertPalindromeSample(
+                current,
+                kept,
+                $"prepareForward={prepareForward}: retained sample"
+            );
+
+            DeregistrationAttributionPalindromeSample replaced =
+                DeregistrationAttributionBenchmarks.SelectPalindromeFloor(current, faster);
+            AssertPalindromeSample(
+                faster,
+                replaced,
+                $"prepareForward={prepareForward}: replacement sample"
+            );
+        }
+
+        [Test]
+        [Category("PerfBench")]
+        [TestCase(0, DeregistrationAttributionOperation.DirectHandler)]
+        [TestCase(1, DeregistrationAttributionOperation.DirectBus)]
+        [TestCase(2, DeregistrationAttributionOperation.DirectBus)]
+        [TestCase(3, DeregistrationAttributionOperation.DirectHandler)]
+        public void DeregistrationPalindromeExecutionOrderIsSymmetric(
+            int armIndex,
+            DeregistrationAttributionOperation expectedOperation
+        )
+        {
+            Assert.AreEqual(
+                expectedOperation,
+                DeregistrationAttributionBenchmarks.PalindromeOperationAt(armIndex),
+                $"armIndex={armIndex}, expectedOperation={expectedOperation}: the timed execution sequence must remain H/B/B/H."
+            );
+        }
+
+        [Test]
+        [Category("PerfBench")]
+        [TestCase(-1)]
+        [TestCase(4)]
+        public void DeregistrationPalindromeRejectsUnknownArmIndex(int armIndex)
+        {
+            ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+                DeregistrationAttributionBenchmarks.PalindromeOperationAt(armIndex)
+            );
+            Assert.AreEqual(
+                nameof(armIndex),
+                exception.ParamName,
+                $"armIndex={armIndex}: the diagnostic must reject an arm outside H/B/B/H."
             );
         }
 
@@ -595,6 +685,59 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 double.MaxValue,
                 15
             );
+        }
+
+        private static DeregistrationAttributionPalindromeDiagnostic AnalyzePalindrome(
+            double handlerA,
+            double busA,
+            double busB,
+            double handlerB
+        )
+        {
+            return DeregistrationAttributionBenchmarks.AnalyzePalindrome(
+                handlerA,
+                busA,
+                busB,
+                handlerB
+            );
+        }
+
+        private static DeregistrationAttributionPalindromeSample PalindromeSample(
+            double handlerA,
+            double busA,
+            double busB,
+            double handlerB,
+            int trial,
+            bool prepareForward
+        )
+        {
+            return new DeregistrationAttributionPalindromeSample(
+                handlerA,
+                busA,
+                busB,
+                handlerB,
+                trial,
+                prepareForward
+            );
+        }
+
+        private static void AssertPalindromeSample(
+            DeregistrationAttributionPalindromeSample expected,
+            DeregistrationAttributionPalindromeSample actual,
+            string context
+        )
+        {
+            Assert.AreEqual(expected.HandlerA, actual.HandlerA, $"{context}: handler A changed.");
+            Assert.AreEqual(expected.BusA, actual.BusA, $"{context}: bus A changed.");
+            Assert.AreEqual(expected.BusB, actual.BusB, $"{context}: bus B changed.");
+            Assert.AreEqual(expected.HandlerB, actual.HandlerB, $"{context}: handler B changed.");
+            Assert.AreEqual(expected.Trial, actual.Trial, $"{context}: trial changed.");
+            Assert.AreEqual(
+                expected.PrepareForward,
+                actual.PrepareForward,
+                $"{context}: preparation direction changed."
+            );
+            Assert.AreEqual(expected.TotalMs, actual.TotalMs, $"{context}: total changed.");
         }
 
         private static TestCaseData PalindromeCase(
