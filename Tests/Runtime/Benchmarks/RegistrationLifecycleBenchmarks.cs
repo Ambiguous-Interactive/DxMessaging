@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Diagnostics;
     using System.Globalization;
     using System.Runtime.CompilerServices;
+    using System.Text;
     using DxMessaging.Core;
     using DxMessaging.Core.Internal;
     using DxMessaging.Core.MessageBus;
@@ -949,6 +950,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal const double MaxSamePathDriftPercent = 3d;
         internal const double MaxHandlerExcessSpreadPercent = 3d;
         private const int TimingTrials = 7;
+        internal const int PalindromeTimingTrials = 8;
 
         internal static DeregistrationAttributionObservation ExecuteOnceForContract(
             DeregistrationAttributionOperation operation,
@@ -956,7 +958,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
         {
             ValidateCardinality(cardinality);
-            using DeregistrationAttributionState state = new(operation, cardinality);
+            using DeregistrationAttributionState state = CreateState(operation, cardinality);
             state.VerifyPrepared();
             state.Execute();
             return state.Verify();
@@ -975,7 +977,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             double minElapsedSeconds = double.MaxValue;
             for (int trial = 0; trial < TimingTrials; trial++)
             {
-                using DeregistrationAttributionState state = new(operation, Cardinality);
+                using DeregistrationAttributionState state = CreateState(operation, Cardinality);
                 state.VerifyPrepared();
                 long startTimestamp = Stopwatch.GetTimestamp();
                 state.Execute();
@@ -1022,12 +1024,257 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             double handlerB
         )
         {
-            return new DeregistrationAttributionPalindromeDiagnostic(
-                handlerA,
-                busA,
-                busB,
-                handlerB
+            return AnalyzePalindrome(
+                new DeregistrationAttributionPalindromeSample(
+                    handlerA,
+                    busA,
+                    busB,
+                    handlerB,
+                    trial: -1,
+                    prepareForward: false
+                ),
+                timingTrials: 0,
+                jointTrialSelection: false,
+                sameTrialArms: false,
+                preparationDirectionAlternated: false,
+                trialSequence: "none"
             );
+        }
+
+        private static DeregistrationAttributionPalindromeDiagnostic AnalyzePalindrome(
+            DeregistrationAttributionPalindromeSample sample,
+            int timingTrials,
+            bool jointTrialSelection,
+            bool sameTrialArms,
+            bool preparationDirectionAlternated,
+            string trialSequence
+        )
+        {
+            return new DeregistrationAttributionPalindromeDiagnostic(
+                sample,
+                timingTrials,
+                jointTrialSelection,
+                sameTrialArms,
+                preparationDirectionAlternated,
+                trialSequence
+            );
+        }
+
+        internal static DeregistrationAttributionPalindromeDiagnostic RunPairedDiagnostic()
+        {
+            _ = ExecuteOnceForContract(
+                DeregistrationAttributionOperation.DirectHandler,
+                cardinality: 16
+            );
+            _ = ExecuteOnceForContract(
+                DeregistrationAttributionOperation.DirectBus,
+                cardinality: 16
+            );
+
+            // Select one joint H/B/B/H floor. All four fresh states in a trial are prepared
+            // before the first stopwatch sample and timed back-to-back. Minimizing the complete
+            // palindrome rejects interrupted trials without combining an arm from another host
+            // phase. Alternate preparation direction so one endpoint is not always hottest.
+            AllocationProbe.SettleHeapForMeasurement();
+            DeregistrationAttributionPalindromeSample sample = MeasurePalindromeFloor(
+                out string trialSequence
+            );
+            return AnalyzePalindrome(
+                sample,
+                PalindromeTimingTrials,
+                jointTrialSelection: true,
+                sameTrialArms: true,
+                preparationDirectionAlternated: true,
+                trialSequence: trialSequence
+            );
+        }
+
+        internal static DeregistrationAttributionPalindromeSample SelectPalindromeFloor(
+            DeregistrationAttributionPalindromeSample current,
+            DeregistrationAttributionPalindromeSample candidate
+        )
+        {
+            return candidate.TotalMs < current.TotalMs ? candidate : current;
+        }
+
+        internal static DeregistrationAttributionOperation PalindromeOperationAt(int armIndex)
+        {
+            return armIndex switch
+            {
+                0 => DeregistrationAttributionOperation.DirectHandler,
+                1 => DeregistrationAttributionOperation.DirectBus,
+                2 => DeregistrationAttributionOperation.DirectBus,
+                3 => DeregistrationAttributionOperation.DirectHandler,
+                _ => throw new ArgumentOutOfRangeException(nameof(armIndex), armIndex, null),
+            };
+        }
+
+        private static DeregistrationAttributionPalindromeSample MeasurePalindromeFloor(
+            out string trialSequence
+        )
+        {
+            DeregistrationAttributionPalindromeSample best = default;
+            bool hasBest = false;
+            StringBuilder sequence = new();
+            for (int trial = 0; trial < PalindromeTimingTrials; trial++)
+            {
+                bool prepareForward = (trial & 1) == 0;
+                DeregistrationAttributionPalindromeSample candidate = MeasurePalindromeTrial(
+                    trial,
+                    prepareForward
+                );
+                if (trial > 0)
+                {
+                    sequence.Append(',');
+                }
+                sequence
+                    .Append(trial)
+                    .Append(':')
+                    .Append(prepareForward ? 'F' : 'R')
+                    .Append(':')
+                    .Append(candidate.TotalMs.ToString("R", CultureInfo.InvariantCulture));
+                best = hasBest ? SelectPalindromeFloor(best, candidate) : candidate;
+                hasBest = true;
+            }
+
+            trialSequence = sequence.ToString();
+            return best;
+        }
+
+        private static DeregistrationAttributionPalindromeSample MeasurePalindromeTrial(
+            int trial,
+            bool prepareForward
+        )
+        {
+            if (prepareForward)
+            {
+                using DeregistrationAttributionState handlerA = NewState(
+                    DeregistrationAttributionOperation.DirectHandler
+                );
+                using DeregistrationAttributionState busA = NewState(
+                    DeregistrationAttributionOperation.DirectBus
+                );
+                using DeregistrationAttributionState busB = NewState(
+                    DeregistrationAttributionOperation.DirectBus
+                );
+                using DeregistrationAttributionState handlerB = NewState(
+                    DeregistrationAttributionOperation.DirectHandler
+                );
+                return MeasurePreparedPalindrome(
+                    handlerA,
+                    busA,
+                    busB,
+                    handlerB,
+                    trial,
+                    prepareForward
+                );
+            }
+
+            using DeregistrationAttributionState reverseHandlerB = NewState(
+                DeregistrationAttributionOperation.DirectHandler
+            );
+            using DeregistrationAttributionState reverseBusB = NewState(
+                DeregistrationAttributionOperation.DirectBus
+            );
+            using DeregistrationAttributionState reverseBusA = NewState(
+                DeregistrationAttributionOperation.DirectBus
+            );
+            using DeregistrationAttributionState reverseHandlerA = NewState(
+                DeregistrationAttributionOperation.DirectHandler
+            );
+            return MeasurePreparedPalindrome(
+                reverseHandlerA,
+                reverseBusA,
+                reverseBusB,
+                reverseHandlerB,
+                trial,
+                prepareForward
+            );
+        }
+
+        private static DeregistrationAttributionState NewState(
+            DeregistrationAttributionOperation operation
+        )
+        {
+            return CreateState(operation, Cardinality);
+        }
+
+        private static DeregistrationAttributionState CreateState(
+            DeregistrationAttributionOperation operation,
+            int cardinality
+        )
+        {
+            IDisposable registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            try
+            {
+                return new DeregistrationAttributionState(operation, cardinality, registryScope);
+            }
+            catch
+            {
+                registryScope.Dispose();
+                throw;
+            }
+        }
+
+        private static DeregistrationAttributionPalindromeSample MeasurePreparedPalindrome(
+            DeregistrationAttributionState handlerA,
+            DeregistrationAttributionState busA,
+            DeregistrationAttributionState busB,
+            DeregistrationAttributionState handlerB,
+            int trial,
+            bool prepareForward
+        )
+        {
+            handlerA.VerifyPrepared();
+            busA.VerifyPrepared();
+            busB.VerifyPrepared();
+            handlerB.VerifyPrepared();
+
+            int nextArm = 0;
+            long startTimestamp = Stopwatch.GetTimestamp();
+            ExecutePalindromeArm(ref nextArm, handlerA);
+            long handlerABoundary = Stopwatch.GetTimestamp();
+            ExecutePalindromeArm(ref nextArm, busA);
+            long busABoundary = Stopwatch.GetTimestamp();
+            ExecutePalindromeArm(ref nextArm, busB);
+            long busBBoundary = Stopwatch.GetTimestamp();
+            ExecutePalindromeArm(ref nextArm, handlerB);
+            long endTimestamp = Stopwatch.GetTimestamp();
+
+            _ = handlerA.Verify();
+            _ = busA.Verify();
+            _ = busB.Verify();
+            _ = handlerB.Verify();
+            return new DeregistrationAttributionPalindromeSample(
+                TimestampDeltaToMilliseconds(startTimestamp, handlerABoundary),
+                TimestampDeltaToMilliseconds(handlerABoundary, busABoundary),
+                TimestampDeltaToMilliseconds(busABoundary, busBBoundary),
+                TimestampDeltaToMilliseconds(busBBoundary, endTimestamp),
+                trial,
+                prepareForward
+            );
+        }
+
+        private static void ExecutePalindromeArm(
+            ref int nextArm,
+            DeregistrationAttributionState state
+        )
+        {
+            DeregistrationAttributionOperation expected = PalindromeOperationAt(nextArm);
+            if (state.Operation != expected)
+            {
+                throw new InvalidOperationException(
+                    $"Deregistration palindrome arm {nextArm} must be {expected}, not {state.Operation}."
+                );
+            }
+
+            state.Execute();
+            nextArm++;
+        }
+
+        private static double TimestampDeltaToMilliseconds(long start, long end)
+        {
+            return (end - start) / (double)Stopwatch.Frequency * 1000d;
         }
 
         private static void ValidateCardinality(int cardinality)
@@ -1074,12 +1321,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             public DeregistrationAttributionState(
                 DeregistrationAttributionOperation operation,
-                int cardinality
+                int cardinality,
+                IDisposable registryScope
             )
             {
                 _operation = operation;
                 _cardinality = cardinality;
-                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _registryScope = registryScope;
                 _bus = new MessageBus { DiagnosticsMode = false };
                 _handler = new MessageHandler(new InstanceId(42001), _bus) { active = true };
                 _counter = new AttributionCounter();
@@ -1137,6 +1385,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     }
                 }
             }
+
+            public DeregistrationAttributionOperation Operation => _operation;
 
             public void VerifyPrepared()
             {
@@ -1289,19 +1539,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
     }
 
-    internal readonly struct DeregistrationAttributionPalindromeDiagnostic
+    internal readonly struct DeregistrationAttributionPalindromeSample
     {
-        public DeregistrationAttributionPalindromeDiagnostic(
+        public DeregistrationAttributionPalindromeSample(
             double handlerA,
             double busA,
             double busB,
-            double handlerB
+            double handlerB,
+            int trial,
+            bool prepareForward
         )
         {
             HandlerA = handlerA;
             BusA = busA;
             BusB = busB;
             HandlerB = handlerB;
+            Trial = trial;
+            PrepareForward = prepareForward;
         }
 
         public double HandlerA { get; }
@@ -1311,6 +1565,52 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public double BusB { get; }
 
         public double HandlerB { get; }
+
+        public int Trial { get; }
+
+        public bool PrepareForward { get; }
+
+        public double TotalMs => HandlerA + BusA + BusB + HandlerB;
+    }
+
+    internal readonly struct DeregistrationAttributionPalindromeDiagnostic
+    {
+        public DeregistrationAttributionPalindromeDiagnostic(
+            DeregistrationAttributionPalindromeSample sample,
+            int timingTrials,
+            bool jointTrialSelection,
+            bool sameTrialArms,
+            bool preparationDirectionAlternated,
+            string trialSequence
+        )
+        {
+            Sample = sample;
+            TimingTrials = timingTrials;
+            JointTrialSelection = jointTrialSelection;
+            SameTrialArms = sameTrialArms;
+            PreparationDirectionAlternated = preparationDirectionAlternated;
+            TrialSequence = trialSequence;
+        }
+
+        public DeregistrationAttributionPalindromeSample Sample { get; }
+
+        public int TimingTrials { get; }
+
+        public bool JointTrialSelection { get; }
+
+        public bool SameTrialArms { get; }
+
+        public bool PreparationDirectionAlternated { get; }
+
+        public string TrialSequence { get; }
+
+        public double HandlerA => Sample.HandlerA;
+
+        public double BusA => Sample.BusA;
+
+        public double BusB => Sample.BusB;
+
+        public double HandlerB => Sample.HandlerB;
 
         public double HandlerExcessA => HandlerA - BusA;
 
@@ -1386,7 +1686,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 + $"maxHandlerExcessSpreadPercent={Format(DeregistrationAttributionBenchmarks.MaxHandlerExcessSpreadPercent)} "
                 + $"finitePositiveDurations={Format(HasFinitePositiveDurations)} "
                 + $"finitePositiveExcesses={Format(HasFinitePositiveExcesses)} "
-                + $"independentMinima=true diagnosticOnly=true acceptanceEvidence=false "
+                + $"handlerFirstPairTotal_ms={Format(HandlerA + BusA)} "
+                + $"busFirstPairTotal_ms={Format(BusB + HandlerB)} "
+                + $"palindromeTotal_ms={Format(Sample.TotalMs)} "
+                + $"selectedTrial={Sample.Trial} prepareForward={Format(Sample.PrepareForward)} "
+                + $"jointTrialSelection={Format(JointTrialSelection)} "
+                + $"sameTrialArms={Format(SameTrialArms)} "
+                + $"preparationDirectionAlternated={Format(PreparationDirectionAlternated)} "
+                + $"timingTrials={TimingTrials} "
+                + $"trialSequence={TrialSequence} "
+                + $"diagnosticOnly=true acceptanceEvidence=false "
                 + $"candidateCompared=false interpretable={Format(Interpretable)}";
         }
 

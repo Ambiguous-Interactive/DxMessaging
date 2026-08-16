@@ -173,16 +173,29 @@ they are report-only -- rendered as wall clock, never gated.
   diagnostic wall-clock rows are not hard regression gates. Do not compare them
   with the 1000-type flood rows because their registration topology differs.
 - **Deregistration attribution palindrome.** The non-published
-  `DirectHandlerAndBusDeregistrationPalindromeDiagnostic` runs direct handler A,
-  direct bus A, direct bus B, then direct handler B after the published
-  attribution rows. It reports
+  `DirectHandlerAndBusDeregistrationPalindromeDiagnostic` measures a
+  handler-then-bus pair followed by a bus-then-handler pair after the published
+  attribution rows. Each trial prepares all four fresh populations before timing,
+  measures the H/B/B/H arms back-to-back, and selects the lowest complete
+  palindrome duration across eight trials. Preparation direction alternates with
+  four forward and four reverse opportunities, so the same endpoint is not always
+  the most recently built state. The diagnostic
+  never combines an arm from one trial with an arm from another. Keeping four
+  populations live increases diagnostic peak memory, but it is required to avoid
+  allocation-heavy setup between timed arms. The 131072 cardinality stays aligned
+  with the published attribution rows and keeps the direct-bus arm near 10 ms on
+  the measured Mono host. This diagnostic runs after the published rows and does
+  not add player/runtime storage. It reports
   `DXM_DEREGISTRATION_ATTRIBUTION_PALINDROME` with both additive handler-minus-bus
   excesses and their arithmetic center. Interpret the sample only when both
   excesses are positive, handler and bus same-path drift are each at most 3%, and
-  the two additive excesses differ by at most 3% of their center. The four arms
-  independently select the minimum of seven fresh populations, so they do not
-  preserve cross-path covariance. `interpretable=true` is a noise-rejection
-  prerequisite, not candidate acceptance. The marker always records
+  the two additive excesses differ by at most 3% of their center. Joint trial
+  selection retains all four arms from one observation and records
+  `jointTrialSelection=true` plus `sameTrialArms=true` in the marker. Its compact
+  `trialSequence` records each trial index, preparation direction, and complete
+  duration so an artifact consumer can verify alternation and the selected floor.
+  `interpretable=true` is still a noise-rejection prerequisite, not candidate
+  acceptance. The marker always records
   `diagnosticOnly=true`, `acceptanceEvidence=false`, and
   `candidateCompared=false`; require a separate repeated control/candidate
   bracket before claiming a 3% improvement.

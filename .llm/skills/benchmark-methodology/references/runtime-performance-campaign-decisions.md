@@ -2,10 +2,11 @@
 
 <!-- cspell:ignore gshared -->
 
-> **One-line summary**: Keep the measured physical-two handler-entry map and
-> holder-local flat-dispatch count read; the targeted post-phase state bundle
-> and other small-container, dispatch-switch, and private-pool candidates failed
-> explicit timing or storage gates and were reverted.
+> **One-line summary**: Keep the measured physical-two handler-entry map,
+> holder-local flat-dispatch count read, and same-trial deregistration
+> diagnostic; the targeted post-phase state bundle and other small-container,
+> dispatch-switch, and private-pool candidates failed explicit timing or storage
+> gates and were reverted.
 
 ## Decision rule
 
@@ -35,6 +36,31 @@ separately.
   representative DxMessaging dispatch rows cleared the regression gate. Keep
   `DispatchSnapshot.entryCount` as lifecycle/topology telemetry, but do not route
   the hot loop through the extra owner.
+
+## Accepted measurement method
+
+- Keep the joint deregistration palindrome. Its predecessor minimized four
+  independent seven-trial windows, so the reported H/B/B/H arms could come from
+  four different host phases. The corrected diagnostic prepares four fresh
+  populations per trial, measures them back-to-back, balances four forward and
+  four reverse preparation opportunities, and selects one complete trial. Its
+  marker retains every trial's direction and total so the floor is independently
+  auditable. The loaded Mono assembly passed 48
+  contract cases, including whole-sample selection and an enforced H/B/B/H
+  execution-order contract. Four
+  fresh-population invocations in one already-loaded Mono editor qualified only
+  two samples under the predeclared 3% gates; the two rejected samples measured
+  3.70% handler drift with 5.13% handler-excess spread and 3.03% bus drift. A
+  separate warmed raw distribution qualified all seven trials. The method stops
+  mixing arms from different host phases, but that intermittent invocation result
+  does not authorize the exact-`MessageBus` candidate. The final balanced
+  eight-trial marker independently rejected itself at 3.79% handler-excess spread.
+  Require repeated
+  interpretable Standalone IL2CPP Release brackets before making that runtime
+  edit. Four simultaneous populations deliberately increase diagnostic-only peak
+  memory: the existing 131072 cardinality keeps the shortest direct-bus arm near
+  10 ms, and preparing all arms first avoids allocation-heavy setup between their
+  timestamps.
 
 ## Rejected runtime candidates
 
