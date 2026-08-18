@@ -69,7 +69,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Windows Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@e6fa595a336e95d800c1139bdebf6d749ee6f186 # post-v1.10.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@c054699118065984d49b97cce685da090d57ab37 # post-v1.10.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
