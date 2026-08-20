@@ -1,5 +1,4 @@
 "use strict";
-
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
@@ -10,16 +9,7 @@ const path = require("node:path");
 const { PassThrough, Writable } = require("node:stream");
 const { before, test } = require("node:test");
 const { pathToFileURL } = require("node:url");
-
-/**
- * `scripts/mcp/unity-mcp.mjs` is ESM because the MCP SDK and smol-toml are ESM-only, while
- * `scripts/index.js` (the entry point `node --test scripts/` resolves to on Node 21+) can only
- * `require` CJS `*.test.js` files. Loading the module lazily inside each test keeps registration
- * synchronous, so the suite is discovered exactly like the rest of the repository's tests.
- * ESM module caching makes every call after the first free.
- */
 const MODULE_URL = pathToFileURL(path.join(__dirname, "..", "mcp", "unity-mcp.mjs")).href;
-
 let DEFAULTS;
 let assertPortAvailable;
 let buildRelayArgs;
@@ -49,7 +39,6 @@ let stripJsonComments;
 let transactionalWrite;
 let validateEndpointPath;
 let validateHost;
-
 before(async () => {
   ({
     DEFAULTS,
@@ -83,24 +72,16 @@ before(async () => {
     validateHost
   } = await import(MODULE_URL));
 });
-
-// Duplicated deliberately: the data-driven cases below are built at registration time, before the
-// module can be awaited. The `DEFAULTS.protocolVersion` test guards the duplication from drifting.
 const PROTOCOL_VERSION = "2025-11-25";
-
 function temporaryDirectory() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "unity-mcp-test-"));
 }
-
-/** A closed-on-cleanup TCP listener, so reachability is exercised for real rather than stubbed. */
 async function listeningPort(t) {
   const server = net.createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   return server.address().port;
 }
-
-/** A port nothing listens on: bind it, record the number, release it. */
 async function closedPort() {
   const server = net.createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -108,8 +89,6 @@ async function closedPort() {
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
-
-/** Swap a console method out for the duration of one test and collect what it was given. */
 function captureConsole(t, method) {
   const captured = [];
   const original = console[method];
@@ -119,7 +98,6 @@ function captureConsole(t, method) {
   });
   return captured;
 }
-
 function probeOptions(overrides = {}) {
   return {
     protocolVersion: PROTOCOL_VERSION,
@@ -129,41 +107,85 @@ function probeOptions(overrides = {}) {
     ...overrides
   };
 }
-
 function initializeResponse(
   body,
   { status = 200, contentType = "application/json", sessionId } = {}
 ) {
-  const headers = new Map([["content-type", contentType]]);
-  if (sessionId) {
-    headers.set("mcp-session-id", sessionId);
-  }
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: (key) => headers.get(key.toLowerCase()) ?? null },
-    text: async () => body
+  const headers = { "content-type": contentType };
+  if (sessionId) headers["mcp-session-id"] = sessionId;
+  return new Response(body, { status, headers });
+}
+const OK_PAYLOAD = `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"${PROTOCOL_VERSION}","capabilities":{"tools":{}},"serverInfo":{"name":"unity","version":"1"}}}`;
+const TOOLS_PAYLOAD =
+  '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"Unity_RunCommand","inputSchema":{"type":"object"}}]}}';
+// prettier-ignore
+function readyProbeFetch(options = {}) {
+  const contentType = options.contentType ?? "application/json";
+  const encode = (payload, ping) => contentType !== "text/event-stream" ? payload :
+    new ReadableStream({ start: (controller) => [ping ? `event: message\ndata: {"jsonrpc":"2.0","id":"ping-1","method":"ping"}\n\n` : "", `event: message\ndata: ${payload.replace(/,"/, ',\ndata: "')}\n\n`].filter(Boolean).forEach((chunk) => controller.enqueue(new TextEncoder().encode(chunk))) });
+  return async (_url, init) => {
+    options.requests?.push(init);
+    if (init.method === "GET") {
+      const lastEventId = new Headers(init.headers).get("last-event-id");
+      if (!lastEventId || !options.resumePayload) return initializeResponse("", { status: 405 });
+      if ((options.resume404s ?? 0) < (options.resumeNotFoundCount ?? 0)) {
+        options.resume404s = (options.resume404s ?? 0) + 1;
+        options.resumePayload = undefined;
+        return initializeResponse("expired", { status: 404, sessionId: "session-1" });
+      }
+      options.resumedId = lastEventId;
+      return initializeResponse(encode(options.resumePayload, true), { contentType: options.resumeContentType ?? contentType, status: options.resumeStatus ?? 200 });
+    }
+    if (init.method === "DELETE") {
+      if (options.deleteError) throw options.deleteError;
+      return initializeResponse("", { status: options.deleteStatus ?? 202 });
+    }
+    const request = JSON.parse(init.body);
+    if (!request.method) {
+      options.pongs?.push(request);
+      return initializeResponse("", { status: 202 });
+    }
+    if (options.hang === request.method) {
+      return new Promise((resolve, reject) => {
+        const abort = () => reject(init.signal.reason);
+        init.signal.aborted ? abort() : init.signal.addEventListener("abort", abort, { once: true });
+      });
+    }
+    if (options.notFoundOnce === request.method && (options.didReturn404 ?? 0) < (options.notFoundCount ?? 1)) {
+      options.didReturn404 = (options.didReturn404 ?? 0) + 1;
+      return initializeResponse("expired", { status: 404 });
+    }
+    if (request.method === "initialize") {
+      if (options.bodyError) {
+        const body = new ReadableStream({ start: (controller) => controller.error(options.bodyError) });
+        return initializeResponse(body, { contentType, sessionId: "session-1" });
+      }
+      const payload = JSON.parse(options.initialize ?? OK_PAYLOAD);
+      payload.id = request.id;
+      return initializeResponse(encode(JSON.stringify(payload)), {
+        contentType,
+        status: options.initializeStatus ?? 200,
+        sessionId: Object.hasOwn(options, "sessionId") ? options.sessionId : "session-1"
+      });
+    }
+    if (request.method === "notifications/initialized") {
+      if (options.initializedError) throw options.initializedError;
+      return initializeResponse("", { status: options.initializedStatus ?? 202 });
+    }
+    const tools = typeof options.tools === "function" ? options.tools(request) : options.tools;
+    const payload = JSON.parse(tools ?? TOOLS_PAYLOAD);
+    payload.id = request.id;
+    const encoded = JSON.stringify(payload);
+    if (options.resume && !options.resumePayload) {
+      options.resumePayload = encoded;
+      return initializeResponse('id: resume-1\nretry: 0\nevent: message\ndata: {"jsonrpc":"2.0","id":"ping-resume","method":"ping"}\n\n', { contentType });
+    }
+    return initializeResponse(encode(encoded), { contentType });
   };
 }
-
-const OK_PAYLOAD = JSON.stringify({
-  jsonrpc: "2.0",
-  id: 1,
-  result: {
-    protocolVersion: PROTOCOL_VERSION,
-    capabilities: {},
-    serverInfo: { name: "unity", version: "1" }
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Argument and environment parsing
-// ---------------------------------------------------------------------------
-
 test("DEFAULTS.protocolVersion matches the protocol version pinned in this suite", () => {
   assert.equal(DEFAULTS.protocolVersion, PROTOCOL_VERSION);
 });
-
 test("parseArgs accepts values, equals form, and flags", () => {
   const parsed = parseArgs(["--host", "1.2.3.4", "--port=9100", "--no-discover"]);
   assert.equal(parsed.host, "1.2.3.4");
@@ -171,13 +193,11 @@ test("parseArgs accepts values, equals form, and flags", () => {
   assert.equal(parsed["no-discover"], true);
   assert.deepEqual(parsed._, []);
 });
-
 for (const [label, argv, message] of [
   ["unknown option", ["--nope", "x"], /Unknown option: --nope/],
   ["missing value", ["--host"], /Missing value for --host/],
   ["value that looks like an option", ["--host", "--port"], /Missing value for --host/],
   ["value given to a flag", ["--no-discover=1"], /--no-discover does not take a value/],
-  // `--host=` used to resolve to "" and then silently fall back to the default host.
   ["empty equals-form value", ["--host="], /--host requires a non-empty value/],
   ["empty separate value", ["--host", ""], /--host requires a non-empty value/]
 ]) {
@@ -185,7 +205,6 @@ for (const [label, argv, message] of [
     assert.throws(() => parseArgs(argv), message);
   });
 }
-
 test("parseDotEnv handles quoting, comments, and export prefixes", () => {
   const parsed = parseDotEnv(
     [
@@ -203,14 +222,10 @@ test("parseDotEnv handles quoting, comments, and export prefixes", () => {
     B: "single"
   });
 });
-
 test("parseDotEnv rejects malformed entries", () => {
   assert.throws(() => parseDotEnv("not an assignment"), /Invalid .* entry on line 1/);
   assert.throws(() => parseDotEnv('A="unterminated'), /Invalid quoted value/);
 });
-
-// A quoted Windows path ends in a backslash, which a naive scanner reads as escaping the closing
-// quote; the docs recommend exactly that shape for UNITY_PROJECT_PATH.
 for (const [label, line, expected] of [
   ["a trailing backslash", 'A="D:\\Program Files\\Proj\\"', "D:\\Program Files\\Proj\\"],
   ["an escaped quote", 'A="say \\"hi\\""', 'say "hi"'],
@@ -223,7 +238,6 @@ for (const [label, line, expected] of [
     assert.deepEqual(parseDotEnv(line), { A: expected });
   });
 }
-
 test("readLocalEnv skips unparsable lines instead of aborting every command", (t) => {
   const repoRoot = temporaryDirectory();
   fs.writeFileSync(
@@ -233,37 +247,26 @@ test("readLocalEnv skips unparsable lines instead of aborting every command", (t
     )
   );
   const warnings = captureConsole(t, "warn");
-
   assert.deepEqual(readLocalEnv(repoRoot), { UNITY_MCP_BRIDGE_HOST: "10.0.0.5", C: "3" });
   assert.equal(warnings.length, 2, "each bad line is reported once");
   assert.match(warnings[0], /line 2/);
   assert.match(warnings[1], /line 3/);
   assert.deepEqual(readLocalEnv(path.join(repoRoot, "absent")), {});
 });
-
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
 for (const value of ["127.0.0.1", "host.docker.internal", "::1", "example.com.", "a-b.example"]) {
   test(`validateHost accepts ${value}`, () => assert.equal(validateHost(value), value));
 }
-
 for (const value of ["", "-bad.example", "bad-.example", "a..b", "has space", "has\nnewline"]) {
   test(`validateHost rejects ${JSON.stringify(value)}`, () =>
     assert.throws(() => validateHost(value)));
 }
-
 test("validateEndpointPath normalizes and rejects traversal", () => {
   assert.equal(validateEndpointPath("mcp"), "/mcp");
   assert.equal(validateEndpointPath("/mcp"), "/mcp");
-  // /%FF is a syntactically valid escape that is not valid UTF-8: decodeURIComponent throws a raw
-  // URIError, which used to escape as "URI malformed" instead of the normal message.
   for (const bad of ["/a//b", "/../etc", "/a/./b", "/%zz", "/%FF", "/%C3%28"]) {
     assert.throws(() => validateEndpointPath(bad), /Invalid MCP endpoint path/);
   }
 });
-
 test("endpointUrl brackets IPv6 literals", () => {
   assert.equal(
     endpointUrl({ host: "10.0.0.5", port: 9020, endpointPath: "/mcp" }),
@@ -274,35 +277,25 @@ test("endpointUrl brackets IPv6 literals", () => {
     "http://[::1]:9020/mcp"
   );
 });
-
-// ---------------------------------------------------------------------------
-// Option resolution
-// ---------------------------------------------------------------------------
-
 test("resolveOptions prefers args over env over .env.local over defaults", () => {
   const local = { UNITY_MCP_BRIDGE_HOST: "local.example", UNITY_MCP_BRIDGE_PORT: "9001" };
   const environment = { UNITY_MCP_BRIDGE_HOST: "env.example" };
-
   const fromArgs = resolveOptions({ host: "arg.example" }, environment, local, "/repo");
   assert.equal(fromArgs.host, "arg.example");
   assert.equal(fromArgs.port, 9001, "port still falls through to .env.local");
-
   const fromEnv = resolveOptions({}, environment, local, "/repo");
   assert.equal(fromEnv.host, "env.example");
-
   const fromDefaults = resolveOptions({}, {}, {}, "/repo");
   assert.equal(fromDefaults.host, DEFAULTS.host);
   assert.equal(fromDefaults.port, DEFAULTS.port);
   assert.equal(fromDefaults.explicitHost, undefined, "an unset host must not look explicit");
   assert.equal(fromDefaults.explicitPort, undefined);
 });
-
 test("resolveOptions does not require a Unity project path", () => {
   const options = resolveOptions({}, {}, {}, "/repo");
   assert.equal(options.projectPath, undefined);
   assert.throws(() => requireProjectPath(options), /Unity project path is required/);
 });
-
 test("requireProjectPath rejects a path that is not a directory", () => {
   const directory = temporaryDirectory();
   const file = path.join(directory, "not-a-directory");
@@ -313,14 +306,17 @@ test("requireProjectPath rejects a path that is not a directory", () => {
   );
   assert.equal(requireProjectPath({ projectPath: directory }), directory);
 });
-
 test("resolveOptions rejects invalid scalars", () => {
   assert.throws(() => resolveOptions({ port: "70000" }, {}, {}, "/repo"), /Port must be between/);
   assert.throws(
     () => resolveOptions({ "log-level": "loud" }, {}, {}, "/repo"),
     /Log level must be/
   );
-  assert.throws(() => resolveOptions({ "protocol-version": "v1" }, {}, {}, "/repo"), /YYYY-MM-DD/);
+  assert.throws(() => resolveOptions({ "protocol-version": "v1" }, {}, {}, "/repo"), /2025-11-25/);
+  assert.throws(
+    () => resolveOptions({ "protocol-version": "2025-06-18" }, {}, {}, "/repo"),
+    /2025-11-25/
+  );
   assert.throws(() => resolveOptions({ token: "short" }, {}, {}, "/repo"), /Bearer token must be/);
   assert.throws(
     () => resolveOptions({ "max-sessions": "0" }, {}, {}, "/repo"),
@@ -329,11 +325,6 @@ test("resolveOptions rejects invalid scalars", () => {
   assert.equal(resolveOptions({}, {}, {}, "/repo").maxSessions, DEFAULTS.maxSessions);
   assert.equal(resolveOptions({ "max-sessions": "3" }, {}, {}, "/repo").maxSessions, 3);
 });
-
-// ---------------------------------------------------------------------------
-// Endpoint discovery
-// ---------------------------------------------------------------------------
-
 test("resolvConfHosts extracts IPv4 nameservers only", () => {
   const raw = [
     "# generated",
@@ -344,7 +335,6 @@ test("resolvConfHosts extracts IPv4 nameservers only", () => {
   assert.deepEqual(resolvConfHosts(raw), ["10.255.255.254"]);
   assert.deepEqual(resolvConfHosts(""), []);
 });
-
 test("procNetRouteGateways decodes little-endian default routes", () => {
   const raw = [
     "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
@@ -354,12 +344,8 @@ test("procNetRouteGateways decodes little-endian default routes", () => {
   assert.deepEqual(procNetRouteGateways(raw), ["192.168.0.1"]);
   assert.deepEqual(procNetRouteGateways(""), []);
 });
-
 const RESOLV_CONF = (filePath) =>
   filePath === "/etc/resolv.conf" ? "nameserver 10.255.255.254\n" : "";
-
-// An explicit host or port is a deliberate setting, so it is the ONLY candidate on that axis.
-// Cross-producing it with the fallbacks used to probe host.docker.internal even for --host X.
 for (const [label, options, expected] of [
   ["host and port", { explicitHost: "10.0.0.5", explicitPort: 9500 }, ["10.0.0.5:9500"]],
   ["host only", { explicitHost: "10.0.0.5" }, ["10.0.0.5:9020", "10.0.0.5:9003"]],
@@ -381,7 +367,6 @@ for (const [label, options, expected] of [
     assert.ok(candidates.every((candidate) => candidate.endpointPath === "/mcp"));
   });
 }
-
 test("endpointCandidates without explicit settings still covers the fallbacks", () => {
   const candidates = endpointCandidates({ endpointPath: "/mcp" }, { readFile: RESOLV_CONF });
   assert.deepEqual(candidates[0], {
@@ -404,7 +389,6 @@ test("endpointCandidates without explicit settings still covers the fallbacks", 
     "the legacy supergateway port stays reachable"
   );
 });
-
 test("probeEndpoint reports an unreachable port without issuing a request", async () => {
   let called = false;
   const result = await probeEndpoint(
@@ -418,18 +402,23 @@ test("probeEndpoint reports an unreachable port without issuing a request", asyn
   assert.equal(result.status, "unreachable");
   assert.equal(called, false, "a closed port must not cost an HTTP round trip");
 });
-
-for (const [label, response, expected] of [
-  ["a healthy handshake", initializeResponse(OK_PAYLOAD), "ok"],
-  ["a rejected token", initializeResponse("nope", { status: 401 }), "unauthorized"],
-  ["a server error", initializeResponse("boom", { status: 500 }), "http-error"],
-  ["a non-JSON body", initializeResponse("<html>", { status: 200 }), "malformed"],
+// prettier-ignore
+for (const [label, fetchImpl, expected] of [
+  ["a healthy handshake", readyProbeFetch(), "ok"],
+  ["a rejected token", async () => initializeResponse("nope", { status: 401 }), "unauthorized"],
+  ["a server error", async () => initializeResponse("boom", { status: 500 }), "http-error"],
+  ["a non-JSON body", async () => initializeResponse("<html>", { status: 200 }), "malformed"],
+  ["an invalid media type", readyProbeFetch({ contentType: "text/plain" }), "malformed"],
+  ["an invalid initialize status", readyProbeFetch({ initializeStatus: 201 }), "malformed"],
+  [
+    "an incomplete InitializeResult",
+    readyProbeFetch({ initialize: `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"${PROTOCOL_VERSION}","capabilities":{}}}` }),
+    "malformed"
+  ],
   [
     "a JSON-RPC error",
-    initializeResponse(
-      JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -1, message: "no" } })
-    ),
-    "malformed"
+    readyProbeFetch({ initialize: '{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"no"}}' }),
+    "jsonrpc-error"
   ]
 ]) {
   test(`probeEndpoint classifies ${label}`, async (t) => {
@@ -437,88 +426,198 @@ for (const [label, response, expected] of [
     const result = await probeEndpoint(
       { host: "127.0.0.1", port, endpointPath: "/mcp" },
       probeOptions(),
-      async () => response
+      fetchImpl
     );
-    assert.equal(result.status, expected);
+    assert.equal(result.status, expected, result.detail);
     assert.equal(result.ok, expected === "ok");
+    if (expected === "jsonrpc-error") assert.match(result.detail, /-32603.*no/);
   });
 }
-
-test("probeEndpoint parses server-sent event payloads and closes the session it opened", async (t) => {
-  const port = await listeningPort(t);
-  const methods = [];
-  const fetchImpl = async (_url, init) => {
-    methods.push(init.method);
-    return init.method === "POST"
-      ? initializeResponse(`event: message\ndata: ${OK_PAYLOAD}\n\n`, {
-          contentType: "text/event-stream",
-          sessionId: "session-1"
-        })
-      : initializeResponse("", { status: 202 });
-  };
-
-  const result = await probeEndpoint(
-    { host: "127.0.0.1", port, endpointPath: "/mcp" },
-    probeOptions(),
-    fetchImpl
-  );
-  assert.equal(result.ok, true);
-  assert.equal(result.protocolVersion, DEFAULTS.protocolVersion);
-  assert.deepEqual(methods, ["POST", "DELETE"], "the probe must not leak a relay session");
-});
-
-// A bridge only answers an authenticated probe, so a probe that forgets the header reports
-// `unauthorized` for a perfectly healthy endpoint.
-for (const [label, token, expected] of [
-  ["sends the configured bearer token", "t".repeat(32), `Bearer ${"t".repeat(32)}`],
-  ["sends no Authorization header when no token is configured", undefined, undefined]
-]) {
-  test(`probeEndpoint ${label}`, async (t) => {
+// prettier-ignore
+test("probeEndpoint verifies editor tools over JSON and server-sent events", async (t) => {
+  for (const contentType of ["application/json", "text/event-stream"]) {
     const port = await listeningPort(t);
-    const seen = [];
-    const fetchImpl = async (_url, init) => {
-      seen.push(init.headers);
-      return init.method === "POST"
-        ? initializeResponse(OK_PAYLOAD, { sessionId: "session-1" })
-        : initializeResponse("", { status: 202 });
-    };
-
+    const requests = [];
+    const pongs = [];
+    const token = "t".repeat(32);
     const result = await probeEndpoint(
       { host: "127.0.0.1", port, endpointPath: "/mcp" },
       probeOptions({ bearerToken: token }),
-      fetchImpl
+      readyProbeFetch({ contentType, requests, pongs, resume: contentType === "text/event-stream" }),
+      true
     );
-    assert.equal(result.ok, true);
-    assert.equal(seen.length, 2, "the handshake POST and the cleanup DELETE");
-    assert.equal(seen[0].Authorization, expected);
-    assert.equal(seen[1].Authorization, expected, "the cleanup DELETE is authenticated too");
+    assert.equal(result.ok, true, result.detail);
+    assert.equal(result.toolCount, 1);
+    assert.deepEqual(
+      requests.filter((request) => request.method !== "GET").map((request) =>
+        request.method === "DELETE" ? "DELETE" : JSON.parse(request.body).method
+      ).filter(Boolean),
+      ["initialize", "notifications/initialized", "tools/list", "DELETE"]
+    );
+    const initialHeaders = new Headers(requests[0].headers);
+    assert.equal(initialHeaders.get("Authorization"), `Bearer ${token}`);
+    assert.equal(initialHeaders.get("MCP-Protocol-Version"), null);
+    assert.equal(initialHeaders.get("Mcp-Session-Id"), null);
+    if (contentType === "text/event-stream") {
+      assert.deepEqual(pongs.find((pong) => pong.id === "ping-1"), { jsonrpc: "2.0", id: "ping-1", result: {} });
+      assert.equal(requests.some((request) => new Headers(request.headers).get("last-event-id") === "resume-1"), true);
+    }
+    for (const request of requests.filter((item) => item.method === "GET" || item.method !== "DELETE" && JSON.parse(item.body).method).slice(1)) {
+      const headers = new Headers(request.headers);
+      assert.equal(headers.get("Authorization"), `Bearer ${token}`);
+      assert.equal(headers.get("Mcp-Session-Id"), "session-1");
+      assert.equal(headers.get("MCP-Protocol-Version"), PROTOCOL_VERSION);
+    }
+  }
+});
+test("probeEndpoint stops dispatch when the lifecycle deadline expires", async (t) => {
+  const requests = [];
+  const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
+  const result = await probeEndpoint(
+    candidate,
+    probeOptions({ timeout: 25 }),
+    readyProbeFetch({ hang: "tools/list", requests }),
+    true
+  );
+  assert.equal(result.status, "transport-error");
+  assert.equal(requests.filter((request) => request.method === "POST").length, 3);
+});
+// prettier-ignore
+for (const [label, fetchOptions, expected] of [
+  [
+    "missing tools capability",
+    { initialize: OK_PAYLOAD.replace('{"tools":{}}', "{}") },
+    "not-ready"
+  ],
+  ["empty tool registry", { tools: TOOLS_PAYLOAD.replace(/\[.*\]/, "[]") }, "not-ready"],
+  ["tools/list JSON-RPC error", { tools: '{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"failed"}}' }, "jsonrpc-error"],
+  ["malformed tools/list result", { tools: '{"jsonrpc":"2.0","id":2,"result":{}}' }, "malformed"],
+  ["malformed tool schema", { tools: '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"bad"}]}}' }, "malformed"],
+  ["rejected initialized notification", { initializedStatus: 500 }, "http-error"],
+  ["wrong initialized status", { initializedStatus: 200 }, "malformed"],
+  ["wrong resumed GET status", { contentType: "text/event-stream", resume: true, resumeStatus: 202 }, "malformed"],
+  ["wrong resumed GET media type", { contentType: "text/event-stream", resume: true, resumeContentType: "application/json" }, "malformed"],
+  ["post-initialize transport failure", { initializedError: new Error("reset") }, "transport-error"]
+]) {
+  test(`probeEndpoint classifies ${label} and closes its session`, async (t) => {
+    const requests = [];
+    const result = await probeEndpoint(
+      { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+      probeOptions(),
+      readyProbeFetch({ ...fetchOptions, requests }),
+      true
+    );
+    assert.equal(result.status, expected);
+    assert.equal(result.host, "127.0.0.1");
+    assert.equal(result.port > 0, true);
+    assert.equal(requests.at(-1).method, "DELETE");
   });
 }
-
-test("probeEndpoint failures name the endpoint that produced them", async (t) => {
-  const port = await listeningPort(t);
+test("probeEndpoint follows opaque tools/list cursors and rejects cursor cycles", async (t) => {
+  const tools = (request) =>
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: request.id,
+      result:
+        request.params.cursor === "page-2"
+          ? { tools: [{ name: "Unity_RunCommand", inputSchema: { type: "object" } }] }
+          : { tools: [], nextCursor: "page-2" }
+    });
+  const requests = [];
+  const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
   const result = await probeEndpoint(
-    { host: "127.0.0.1", port, endpointPath: "/mcp" },
+    candidate,
     probeOptions(),
-    async () => initializeResponse("nope", { status: 401 })
+    readyProbeFetch({ tools, requests }),
+    true
   );
-  assert.equal(result.status, "unauthorized");
-  assert.equal(result.host, "127.0.0.1");
-  assert.equal(result.port, port);
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    requests
+      .filter((r) => JSON.parse(r.body ?? "{}").method === "tools/list")
+      .map((r) => JSON.parse(r.body).params.cursor),
+    [undefined, "page-2"]
+  );
+  const cycle = (request) =>
+    JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { tools: [], nextCursor: "same" } });
+  assert.equal(
+    (await probeEndpoint(candidate, probeOptions(), readyProbeFetch({ tools: cycle }), true))
+      .status,
+    "malformed"
+  );
 });
-
+for (const [label, options, expectedWarning, deletes] of [
+  ["sessionless responses", { sessionId: undefined }, undefined, 0],
+  ["DELETE 405", { deleteStatus: 405 }, undefined, 1],
+  ["DELETE failure", { deleteStatus: 500 }, /HTTP 500/, 1],
+  ["DELETE transport failure", { deleteError: new Error("reset") }, /reset/, 1]
+]) {
+  test(`probeEndpoint bounds and reports cleanup for ${label}`, async (t) => {
+    const requests = [];
+    const result = await probeEndpoint(
+      { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+      probeOptions(),
+      readyProbeFetch({ ...options, requests })
+    );
+    assert.equal(result.ok, true);
+    expectedWarning
+      ? assert.match(result.cleanupWarning, expectedWarning)
+      : assert.equal(result.cleanupWarning, undefined);
+    assert.equal(requests.filter((r) => r.method === "DELETE").length, deletes);
+  });
+}
+// prettier-ignore
+test("probeEndpoint rejects an unsupported negotiated protocol and closes its session", async (t) => {
+  const requests = [];
+  const initialize = OK_PAYLOAD.replace(PROTOCOL_VERSION, "2025-06-18");
+  const result = await probeEndpoint(
+    { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+    probeOptions(),
+    readyProbeFetch({ initialize, requests })
+  );
+  assert.equal(result.status, "malformed");
+  assert.deepEqual(
+    requests.filter((r) => r.method !== "GET").map((r) => (r.method === "DELETE" ? "DELETE" : JSON.parse(r.body).method)),
+    ["initialize", "notifications/initialized", "DELETE"]
+  );
+});
+test("probeEndpoint cleans a captured session when response body consumption fails", async (t) => {
+  const requests = [];
+  const result = await probeEndpoint(
+    { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+    probeOptions(),
+    readyProbeFetch({ bodyError: new Error("body failed"), requests })
+  );
+  assert.equal(result.status, "transport-error");
+  assert.equal(requests.at(-1).method, "DELETE");
+});
+// prettier-ignore
+test("probeEndpoint retries one session-bearing HTTP 404 within its lifecycle", async (t) => {
+  const requests = [];
+  const result = await probeEndpoint(
+    { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+    probeOptions(),
+    readyProbeFetch({ contentType: "text/event-stream", resume: true, resumeNotFoundCount: 1, requests }),
+    true
+  );
+  assert.equal(result.ok, true);
+  assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "initialize").length, 2);
+  assert.equal(requests.filter((r) => r.method === "DELETE").length, 2);
+  requests.length = 0;
+  const failed = await probeEndpoint({ host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ contentType: "text/event-stream", resume: true, resumeNotFoundCount: 2, requests }), true);
+  assert.equal(failed.status, "http-error");
+  assert.match(failed.detail, /tools\/list.*404/);
+  assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "initialize").length, 2);
+});
 test("discoverEndpoint walks candidates in order and stops at the first success", async (t) => {
   const livePort = await listeningPort(t);
   const deadPort = await closedPort();
-  // An explicit candidate list keeps this hermetic: the real fallbacks include host.docker.internal,
-  // which may genuinely be listening on the developer machine running these tests.
   const candidates = [
     { host: "127.0.0.1", port: deadPort, endpointPath: "/mcp" },
     { host: "127.0.0.1", port: livePort, endpointPath: "/mcp" },
     { host: "127.0.0.1", port: livePort, endpointPath: "/never-reached" }
   ];
-  const runtime = { candidates, fetchImpl: async () => initializeResponse(OK_PAYLOAD) };
-
+  const runtime = { candidates, fetchImpl: readyProbeFetch() };
   const { found, attempts } = await discoverEndpoint(probeOptions(), runtime);
   assert.equal(found?.ok, true);
   assert.equal(found.port, livePort);
@@ -526,7 +625,21 @@ test("discoverEndpoint walks candidates in order and stops at the first success"
   assert.equal(attempts.length, 2, "discovery stops before the third candidate");
   assert.equal(attempts[0].status, "unreachable");
 });
-
+// prettier-ignore
+test("discoverEndpoint reports cleanup warnings before a later candidate succeeds", async (t) => {
+  const first = await listeningPort(t);
+  const second = await listeningPort(t);
+  const warnings = captureConsole(t, "warn");
+  const firstFetch = readyProbeFetch({ tools: TOOLS_PAYLOAD.replace(/\[.*\]/, "[]"), deleteStatus: 500 });
+  const secondFetch = readyProbeFetch();
+  const { found } = await discoverEndpoint(probeOptions(), {
+    requireTools: true,
+    candidates: [first, second].map((port) => ({ host: "127.0.0.1", port, endpointPath: "/mcp" })),
+    fetchImpl: (target, init) => String(target).includes(`:${first}/`) ? firstFetch(target, init) : secondFetch(target, init)
+  });
+  assert.equal(found.port, second);
+  assert.match(warnings.join("\n"), /cleanup returned HTTP 500/);
+});
 test("discoverEndpoint reports every attempt when nothing responds", async () => {
   const deadPort = await closedPort();
   const candidates = [
@@ -541,23 +654,17 @@ test("discoverEndpoint reports every attempt when nothing responds", async () =>
   assert.equal(attempts.length, 2);
   assert.ok(attempts.every((attempt) => attempt.ok === false));
 });
-
-// --log-level debug used to be accepted and then never emit anything, because nothing called log()
-// at the debug level.
 test("discoverEndpoint emits per-candidate detail only at log level debug", async (t) => {
   const dead = await closedPort();
   const candidates = [{ host: "127.0.0.1", port: dead, endpointPath: "/mcp" }];
   const runtime = { candidates, fetchImpl: async () => initializeResponse(OK_PAYLOAD) };
-
   const quiet = captureConsole(t, "log");
   await discoverEndpoint(probeOptions({ logLevel: "info" }), runtime);
   assert.deepEqual(quiet, [], "info level stays quiet");
-
   await discoverEndpoint(probeOptions({ logLevel: "debug" }), runtime);
   assert.match(quiet.join("\n"), new RegExp(`Probing http://127\\.0\\.0\\.1:${dead}/mcp`));
   assert.match(quiet.join("\n"), /unreachable/);
 });
-
 test("describeAttempts surfaces classified failures ahead of plain unreachability", () => {
   const description = describeAttempts([
     { url: "http://a:1/mcp", status: "unreachable", detail: "no TCP listener" },
@@ -570,21 +677,14 @@ test("describeAttempts surfaces classified failures ahead of plain unreachabilit
     "noise from dead ports is dropped when a real failure exists"
   );
 });
-
-// ---------------------------------------------------------------------------
-// Client configuration
-// ---------------------------------------------------------------------------
-
 test("prepareJsonServer creates, merges, and rejects malformed documents", () => {
   const directory = temporaryDirectory();
   const filePath = path.join(directory, "mcp.json");
   const server = { type: "http", url: "http://h:1/mcp" };
-
   assert.equal(
     JSON.parse(prepareJsonServer(filePath, "mcpServers", server)).mcpServers["unity-mcp"].url,
     "http://h:1/mcp"
   );
-
   fs.writeFileSync(
     filePath,
     JSON.stringify({ mcpServers: { other: { url: "keep" } }, unrelated: 1 })
@@ -592,19 +692,14 @@ test("prepareJsonServer creates, merges, and rejects malformed documents", () =>
   const merged = JSON.parse(prepareJsonServer(filePath, "mcpServers", server));
   assert.equal(merged.mcpServers.other.url, "keep", "sibling servers survive");
   assert.equal(merged.unrelated, 1, "unrelated keys survive");
-
   fs.writeFileSync(filePath, JSON.stringify({ mcpServers: [] }));
   assert.throws(
     () => prepareJsonServer(filePath, "mcpServers", server),
     /Expected mcpServers to be an object/
   );
-
   fs.writeFileSync(filePath, "{ not json");
   assert.throws(() => prepareJsonServer(filePath, "mcpServers", server), /Invalid JSON/);
 });
-
-// .vscode/mcp.json is JSONC and VS Code's own "MCP: Add Server" scaffolding writes a comment into
-// it, so refusing comments meant `configure` could not run at all for those users.
 for (const [label, raw, expected] of [
   ["a line comment", '{\n  // hint\n  "a": 1\n}', { a: 1 }],
   ["a block comment", '{\n  /* hint\n     more */\n  "a": 1\n}', { a: 1 }],
@@ -626,21 +721,14 @@ for (const [label, raw, expected] of [
     assert.deepEqual(JSON.parse(stripJsonComments(raw)), expected);
   });
 }
-
 test("stripJsonComments stays linear in the number of closing brackets", () => {
-  // Re-scanning the accumulated output on every `}` or `]` (or indexing into it) flattens the rope
-  // V8 builds from repeated concatenation, making the pass quadratic: this input took 150 seconds
-  // before, and a few hundred KB of real `.mcp.json` was enough to make `configure` look hung.
-  // The bound is deliberately loose; only a return to quadratic can breach it.
   const document = `[${Array.from({ length: 64_000 }, () => "{}").join(",")}]`;
   const started = process.hrtime.bigint();
   const stripped = stripJsonComments(document);
   const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
-
   assert.equal(stripped, document, "comment-free JSON must round-trip unchanged");
   assert.ok(elapsedMs < 2_000, `took ${elapsedMs.toFixed(0)}ms; expected well under 2000ms`);
 });
-
 test("prepareJsonServer merges into a JSONC document", () => {
   const filePath = path.join(temporaryDirectory(), "mcp.json");
   fs.writeFileSync(
@@ -652,12 +740,10 @@ test("prepareJsonServer merges into a JSONC document", () => {
   );
   assert.equal(merged.servers["unity-mcp"].url, "http://h:1/mcp");
 });
-
 test("mergeCodexToml appends, replaces in place, and preserves neighbours", () => {
   const fresh = mergeCodexToml("", "http://h:1/mcp", "t".repeat(32));
   assert.match(fresh, /\[mcp_servers\.unity-mcp\]/);
   assert.match(fresh, /Authorization = "Bearer t{32}"/);
-
   const withNeighbour = `[other]\nkeep = true\n\n${fresh}`;
   const replaced = mergeCodexToml(withNeighbour, "http://h:2/mcp", "u".repeat(32));
   assert.match(replaced, /keep = true/, "neighbouring tables survive");
@@ -668,8 +754,6 @@ test("mergeCodexToml appends, replaces in place, and preserves neighbours", () =
   );
   assert.match(replaced, /http:\/\/h:2\/mcp/);
   assert.doesNotMatch(replaced, /http:\/\/h:1\/mcp/);
-
-  // A table following ours must not be swallowed by the replacement.
   const trailing = mergeCodexToml(
     `${fresh}\n[after]\nvalue = 1\n`,
     "http://h:3/mcp",
@@ -678,7 +762,6 @@ test("mergeCodexToml appends, replaces in place, and preserves neighbours", () =
   assert.match(trailing, /\[after\]/);
   assert.match(trailing, /value = 1/);
 });
-
 test("mergeCodexToml refuses inputs it cannot safely rewrite", () => {
   assert.throws(
     () => mergeCodexToml("[unclosed", "http://h:1/mcp", "t".repeat(32)),
@@ -688,13 +771,8 @@ test("mergeCodexToml refuses inputs it cannot safely rewrite", () => {
     () => mergeCodexToml('mcp_servers.unity-mcp = { url = "x" }', "http://h:1/mcp", "t".repeat(32)),
     /Unsupported inline or dotted/
   );
-  // A literally duplicated table is already invalid TOML, so the parser rejects it first.
   const duplicated = `[mcp_servers.unity-mcp]\nurl = "a"\n\n[mcp_servers.unity-mcp]\nurl = "b"\n`;
   assert.throws(() => mergeCodexToml(duplicated, "http://h:1/mcp", "t".repeat(32)), /Invalid TOML/);
-
-  // The duplicate guard covers what line scanning alone cannot see: a header-shaped line inside a
-  // multi-line string. The document parses, but two lines look like our table, so the rewrite region
-  // is ambiguous and the only safe move is to refuse rather than splice over a string literal.
   const ambiguous = [
     'note = """',
     "[mcp_servers.unity-mcp]",
@@ -709,9 +787,6 @@ test("mergeCodexToml refuses inputs it cannot safely rewrite", () => {
     /Duplicate unity-mcp table/
   );
 });
-
-// With exactly ONE header-shaped line inside a multi-line string the duplicate guard never fires,
-// so the line scanner used to splice across the string literal and then blame its own generator.
 test("mergeCodexToml refuses a lone header-shaped line inside a multi-line value", () => {
   const raw = ['note = """', "[mcp_servers.unity-mcp]", '"""', ""].join("\n");
   assert.throws(
@@ -724,7 +799,6 @@ test("mergeCodexToml refuses a lone header-shaped line inside a multi-line value
     }
   );
 });
-
 test("mergeCodexToml normalizes CRLF input so a second run is a no-op", () => {
   const appended = mergeCodexToml("[other]\r\nkeep = true\r\n", "http://h:1/mcp", "t".repeat(32));
   assert.doesNotMatch(appended, /\r/, "the append path must not emit mixed line endings");
@@ -734,13 +808,11 @@ test("mergeCodexToml normalizes CRLF input so a second run is a no-op", () => {
     "configure converges on run 2, not run 3"
   );
 });
-
 test("transactionalWrite commits every file or none", () => {
   const directory = temporaryDirectory();
   const first = path.join(directory, "first.json");
   const second = path.join(directory, "nested", "second.json");
   fs.writeFileSync(first, "original\n");
-
   const written = transactionalWrite([
     [first, "updated\n"],
     [second, "created\n"]
@@ -748,13 +820,11 @@ test("transactionalWrite commits every file or none", () => {
   assert.deepEqual(written.sort(), [first, second].sort());
   assert.equal(fs.readFileSync(first, "utf8"), "updated\n");
   assert.equal(fs.readFileSync(second, "utf8"), "created\n");
-
   assert.deepEqual(
     transactionalWrite([[first, "updated\n"]]),
     [],
     "unchanged content is not rewritten"
   );
-
   assert.throws(
     () =>
       transactionalWrite(
@@ -773,12 +843,10 @@ test("transactionalWrite commits every file or none", () => {
   assert.equal(fs.readFileSync(first, "utf8"), "updated\n", "the committed file is rolled back");
   assert.equal(fs.readFileSync(second, "utf8"), "created\n");
 });
-
 test("transactionalWrite removes files it created when a later commit fails", () => {
   const directory = temporaryDirectory();
   const created = path.join(directory, "created.json");
   const other = path.join(directory, "other.json");
-
   assert.throws(
     () =>
       transactionalWrite(
@@ -800,10 +868,6 @@ test("transactionalWrite removes files it created when a later commit fails", ()
     "a file that did not exist before is removed on rollback"
   );
 });
-
-// Windows returns EPERM from rename whenever an editor holds the destination open, which is exactly
-// what these four config files are. A rollback that throws must not replace the original error nor
-// abandon the files it has not restored yet.
 test("transactionalWrite finishes rollback and rethrows the original error", () => {
   const directory = temporaryDirectory();
   const first = path.join(directory, "first.json");
@@ -812,9 +876,7 @@ test("transactionalWrite finishes rollback and rethrows the original error", () 
   for (const filePath of [first, second, third]) {
     fs.writeFileSync(filePath, "original\n");
   }
-
   const originalChmod = fs.chmodSync;
-  // atomicWrite is the rollback primitive; failing its chmod fails exactly one restore.
   fs.chmodSync = (target, mode) => {
     if (String(target).includes("second.json")) {
       throw new Error("rollback failure");
@@ -840,7 +902,6 @@ test("transactionalWrite finishes rollback and rethrows the original error", () 
   } finally {
     fs.chmodSync = originalChmod;
   }
-
   assert.equal(thrown?.message, "commit failure", "the original error survives");
   assert.ok(thrown.cause instanceof AggregateError, "rollback failures are attached, not thrown");
   assert.equal(thrown.cause.errors.length, 1);
@@ -851,13 +912,11 @@ test("transactionalWrite finishes rollback and rethrows the original error", () 
   );
   assert.equal(fs.readFileSync(third, "utf8"), "original\n", "third was never committed");
 });
-
 test("transactionalWrite cleans up temporaries when staging itself fails", () => {
   const directory = temporaryDirectory();
   const good = path.join(directory, "good.json");
   const blocker = path.join(directory, "blocker");
   fs.writeFileSync(blocker, "");
-  // Staging the second write must fail: its parent directory cannot be created over a file.
   assert.throws(() =>
     transactionalWrite([
       [good, "new\n"],
@@ -871,8 +930,6 @@ test("transactionalWrite cleans up temporaries when staging itself fails", () =>
   );
   assert.equal(fs.existsSync(good), false, "nothing is committed when staging fails");
 });
-
-// Only POSIX carries a meaningful permission bit; on Windows chmod moves the read-only flag alone.
 test(
   "transactionalWrite rollback restores the original file mode",
   { skip: process.platform === "win32" },
@@ -883,7 +940,6 @@ test(
     fs.writeFileSync(first, "original\n", { mode: 0o644 });
     fs.chmodSync(first, 0o644);
     fs.writeFileSync(second, "original\n");
-
     assert.throws(
       () =>
         transactionalWrite(
@@ -906,17 +962,14 @@ test(
     );
   }
 );
-
 test("configure writes every client config and is idempotent", () => {
   const repoRoot = temporaryDirectory();
   const options = { repoRoot, bearerToken: "a".repeat(32) };
   const endpoint = { host: "10.0.0.5", port: 9020, endpointPath: "/mcp" };
-
   const firstRun = configure(options, endpoint);
   assert.equal(firstRun.url, "http://10.0.0.5:9020/mcp");
   const paths = clientConfigPaths(repoRoot);
   assert.deepEqual(firstRun.written.sort(), Object.values(paths).sort());
-
   assert.equal(
     JSON.parse(fs.readFileSync(paths.claudeCode, "utf8")).mcpServers["unity-mcp"].headers
       .Authorization,
@@ -931,21 +984,14 @@ test("configure writes every client config and is idempotent", () => {
     firstRun.url
   );
   assert.match(fs.readFileSync(paths.codex, "utf8"), /\[mcp_servers\.unity-mcp\]/);
-
   assert.deepEqual(configure(options, endpoint).written, [], "a second run changes nothing");
 });
-
 test("configure generates and persists a bearer token when none is supplied", () => {
   const repoRoot = temporaryDirectory();
   configure({ repoRoot, bearerToken: undefined }, { host: "h", port: 1, endpointPath: "/mcp" });
   const envLocal = fs.readFileSync(path.join(repoRoot, ".env.local"), "utf8");
   assert.match(envLocal, /^UNITY_MCP_BEARER_TOKEN=[0-9a-f]{64}$/m);
 });
-
-// ---------------------------------------------------------------------------
-// Relay discovery
-// ---------------------------------------------------------------------------
-
 test("relayCandidates is platform specific", () => {
   const windows = relayCandidates({ platform: "win32", home: "/home/u" });
   assert.ok(windows[0].endsWith("relay_win.exe"));
@@ -953,25 +999,19 @@ test("relayCandidates is platform specific", () => {
   assert.ok(linux[0].endsWith("relay_linux_x64"));
   assert.deepEqual(relayCandidates({ platform: "aix", home: "/home/u" }), []);
 });
-
 test("findRelay requires an existing file and reports what it searched", () => {
   const directory = temporaryDirectory();
   const relay = path.join(directory, "relay_linux_x64");
   assert.throws(() => findRelay(relay, { platform: "linux" }), /Unity MCP relay not found/);
   assert.throws(() => findRelay(directory, { platform: "linux" }), /Unity MCP relay not found/);
-
   fs.writeFileSync(relay, "#!/bin/sh\n", { mode: 0o755 });
   assert.equal(findRelay(relay, { platform: "linux" }), relay);
 });
-
-// Windows has no execute bit: fs.accessSync(X_OK) succeeds for any existing file, so this
-// assertion is only meaningful on a POSIX filesystem.
 test("findRelay rejects a non-executable relay", { skip: process.platform === "win32" }, () => {
   const relay = path.join(temporaryDirectory(), "relay_linux_x64");
   fs.writeFileSync(relay, "#!/bin/sh\n", { mode: 0o644 });
   assert.throws(() => findRelay(relay, { platform: "linux" }), /not found or not executable/);
 });
-
 test("buildRelayArgs passes the resolved project path", () => {
   assert.deepEqual(buildRelayArgs("/tmp/project"), [
     "--mcp",
@@ -979,7 +1019,6 @@ test("buildRelayArgs passes the resolved project path", () => {
     path.resolve("/tmp/project")
   ]);
 });
-
 test("assertPortAvailable rejects a port that is already bound", async (t) => {
   const port = await listeningPort(t);
   await assert.rejects(
@@ -988,13 +1027,7 @@ test("assertPortAvailable rejects a port that is already bound", async (t) => {
   );
   await assertPortAvailable(await closedPort(), "127.0.0.1");
 });
-
-// ---------------------------------------------------------------------------
-// Bridge server
-// ---------------------------------------------------------------------------
-
 const BRIDGE_TOKEN = "b".repeat(32);
-
 /**
  * A relay stand-in: it speaks the same newline-delimited JSON-RPC over stdio that the real Unity
  * relay does, so the bridge is exercised end to end without a Unity install or a network dependency.
@@ -1042,14 +1075,12 @@ function createFakeRelay() {
   };
   return child;
 }
-
 async function startTestBridge(t, overrides = {}) {
   const repoRoot = temporaryDirectory();
   const projectPath = path.join(repoRoot, "project");
   fs.mkdirSync(projectPath);
   const relayPath = path.join(repoRoot, "relay");
   fs.writeFileSync(relayPath, "#!/bin/sh\n", { mode: 0o755 });
-
   const relays = [];
   const running = await startBridge(
     {
@@ -1057,7 +1088,6 @@ async function startTestBridge(t, overrides = {}) {
       projectPath,
       relayPath,
       bindHost: "127.0.0.1",
-      // Port 0 lets the OS pick a free port, which keeps parallel test runs hermetic.
       port: 0,
       endpointPath: "/mcp",
       bearerToken: BRIDGE_TOKEN,
@@ -1078,7 +1108,6 @@ async function startTestBridge(t, overrides = {}) {
   t.after(() => running.close());
   return { running, relays, repoRoot, port: running.httpServer.address().port };
 }
-
 /** `null` means "send no Authorization header at all", which is a distinct case from a bad token. */
 function mcpHeaders(token = BRIDGE_TOKEN, extra = {}) {
   return {
@@ -1088,7 +1117,6 @@ function mcpHeaders(token = BRIDGE_TOKEN, extra = {}) {
     ...extra
   };
 }
-
 function initializeBody(id = 1) {
   return JSON.stringify({
     jsonrpc: "2.0",
@@ -1101,7 +1129,6 @@ function initializeBody(id = 1) {
     }
   });
 }
-
 /** A raw HTTP request, for the cases fetch cannot express (a stalled or over-large body). */
 function rawRequest(port, { method = "POST", requestPath = "/mcp", headers = {}, body, stall }) {
   return new Promise((resolve, reject) => {
@@ -1131,7 +1158,6 @@ function rawRequest(port, { method = "POST", requestPath = "/mcp", headers = {},
     }
   });
 }
-
 async function openSession(port) {
   const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
@@ -1140,7 +1166,6 @@ async function openSession(port) {
   });
   return { response, sessionId: response.headers.get("mcp-session-id") };
 }
-
 for (const [label, token, expected] of [
   ["no Authorization header", null, 401],
   ["a wrong bearer token", "z".repeat(32), 401],
@@ -1163,16 +1188,13 @@ for (const [label, token, expected] of [
     }
   });
 }
-
 test("startBridge completes a handshake, reuses the session, and tears it down", async (t) => {
   const { port, relays } = await startTestBridge(t);
-
   const { response, sessionId } = await openSession(port);
   assert.equal(response.status, 200);
   assert.ok(sessionId, "the transport assigns a session id");
   assert.equal(relays.length, 1, "one relay child per session");
   assert.equal(relays[0].received[0].method, "initialize", "the relay saw the handshake");
-
   const reused = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
     headers: mcpHeaders(BRIDGE_TOKEN, {
@@ -1184,7 +1206,6 @@ test("startBridge completes a handshake, reuses the session, and tears it down",
   assert.equal(reused.status, 200);
   assert.deepEqual((await reused.json()).result, { echoed: "tools/list" });
   assert.equal(relays.length, 1, "an existing session must not spawn a second relay");
-
   const deleted = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "DELETE",
     headers: mcpHeaders(BRIDGE_TOKEN, {
@@ -1194,7 +1215,6 @@ test("startBridge completes a handshake, reuses the session, and tears it down",
   });
   assert.ok(deleted.status < 300, `DELETE tears the session down (got ${deleted.status})`);
   assert.deepEqual(relays[0].signals, ["SIGTERM"], "DELETE reaps the relay child");
-
   const afterDelete = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
     headers: mcpHeaders(BRIDGE_TOKEN, {
@@ -1206,21 +1226,17 @@ test("startBridge completes a handshake, reuses the session, and tears it down",
   assert.equal(afterDelete.status, 404);
   assert.equal((await afterDelete.json()).error.code, -32001);
 });
-
 test("startBridge close() reaps every relay child", async (t) => {
   const { port, relays, running } = await startTestBridge(t);
   await openSession(port);
   assert.equal(relays.length, 1);
   assert.equal(relays[0].exitCode, null);
-
   await running.close();
   assert.deepEqual(relays[0].signals, ["SIGTERM"]);
   assert.equal(relays[0].exitCode, 0, "the relay child is not left running");
   await running.close();
   await running.closed;
 });
-
-// /healthz reveals nothing, and a liveness probe an orchestrator has to authenticate is useless.
 for (const [label, token] of [
   ["without a token", undefined],
   ["with a token", BRIDGE_TOKEN]
@@ -1234,8 +1250,6 @@ for (const [label, token] of [
     assert.equal(await response.text(), "ok");
   });
 }
-
-// A client error reported as an internal server error makes well-behaved clients retry forever.
 for (const [label, body, status, code] of [
   ["malformed JSON", "{ not json", 400, -32700],
   ["a non-initialize first request", '{"jsonrpc":"2.0","id":1,"method":"tools/list"}', 400, -32001]
@@ -1250,7 +1264,6 @@ for (const [label, body, status, code] of [
     assert.equal(JSON.parse(response.text).error.code, code);
   });
 }
-
 test("startBridge answers an over-large body with 413 rather than a reset connection", async (t) => {
   const { port } = await startTestBridge(t);
   const response = await rawRequest(port, {
@@ -1260,16 +1273,13 @@ test("startBridge answers an over-large body with 413 rather than a reset connec
   assert.equal(response.status, 413);
   assert.match(JSON.parse(response.text).error.message, /too large/);
 });
-
 test("startBridge abandons a stalled body and still shuts down promptly", async (t) => {
-  // The body timeout is capped by the session timeout, so a short session timeout shortens it.
   const { port, running } = await startTestBridge(t, { sessionTimeout: 250 });
   const response = await rawRequest(port, {
     headers: mcpHeaders(BRIDGE_TOKEN, { "Content-Length": "4096" }),
     stall: true
   });
   assert.equal(response.status, 408);
-
   const started = Date.now();
   await running.close();
   assert.ok(
@@ -1277,13 +1287,10 @@ test("startBridge abandons a stalled body and still shuts down promptly", async 
     "close() must not wait out Node's 300s request timeout on a half-open connection"
   );
 });
-
 test("startBridge caps concurrent sessions, each of which owns a relay child", async (t) => {
   const { port, relays } = await startTestBridge(t, { maxSessions: 1 });
   const first = await openSession(port);
   assert.equal(first.response.status, 200);
-
-  // Concurrent initializes: the cap counts sessions still being created, not just registered ones.
   const rejected = await Promise.all(
     [2, 3].map((id) =>
       fetch(`http://127.0.0.1:${port}/mcp`, {
@@ -1301,7 +1308,6 @@ test("startBridge caps concurrent sessions, each of which owns a relay child", a
   }
   assert.equal(relays.length, 1, "a rejected initialize must not spawn a relay");
 });
-
 test("startBridge rejects unknown paths and methods", async (t) => {
   const { port } = await startTestBridge(t);
   for (const [requestPath, method] of [
@@ -1315,11 +1321,6 @@ test("startBridge rejects unknown paths and methods", async (t) => {
     assert.equal(response.status, 404, `${method} ${requestPath}`);
   }
 });
-
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
-
 function commandOptions(repoRoot, overrides = {}) {
   return {
     repoRoot,
@@ -1331,45 +1332,27 @@ function commandOptions(repoRoot, overrides = {}) {
     ...overrides
   };
 }
-
-test("runProbe reports the endpoint it handshook with", async (t) => {
+test("runProbe reports the endpoint advertising Unity_RunCommand", async (t) => {
   const port = await listeningPort(t);
   const logged = captureConsole(t, "log");
   const found = await runProbe(commandOptions(temporaryDirectory()), {
     candidates: [{ host: "127.0.0.1", port, endpointPath: "/mcp" }],
-    fetchImpl: async () => initializeResponse(OK_PAYLOAD)
+    fetchImpl: readyProbeFetch()
   });
   assert.equal(found.port, port);
-  assert.match(logged.join("\n"), /Unity MCP is reachable at http:\/\/127\.0\.0\.1:/);
-
-  const dead = await closedPort();
-  await assert.rejects(
-    () =>
-      runProbe(commandOptions(temporaryDirectory()), {
-        candidates: [{ host: "127.0.0.1", port: dead, endpointPath: "/mcp" }],
-        fetchImpl: async () => initializeResponse(OK_PAYLOAD)
-      }),
-    /No Unity MCP endpoint responded/
-  );
+  assert.match(logged.join("\n"), /advertises Unity_RunCommand/);
 });
-
-// Deliberately no injected `candidates`: passing one masks the narrowing --no-discover performs,
-// which is how `probe --no-discover` shipped always-failing with an empty attempts list. The
-// endpoint has to come from options.host/options.port.
-test("--no-discover probes the configured endpoint rather than skipping the handshake", async (t) => {
-  const runtime = { fetchImpl: async () => initializeResponse(OK_PAYLOAD) };
+test("--no-discover probes the configured endpoint rather than skipping readiness", async (t) => {
+  const runtime = { fetchImpl: readyProbeFetch() };
   captureConsole(t, "log");
   captureConsole(t, "warn");
-
   const live = { discover: false, host: "127.0.0.1", port: await listeningPort(t) };
   assert.equal(
     (await runProbe(commandOptions(temporaryDirectory(), live), runtime)).port,
     live.port
   );
-
   const repoRoot = temporaryDirectory();
   const dead = { discover: false, host: "127.0.0.1", port: await closedPort() };
-  // The regression was an EMPTY attempts list, so naming the endpoint is the assertion.
   await assert.rejects(
     () => runProbe(commandOptions(repoRoot, dead), runtime),
     (error) => {
@@ -1377,16 +1360,11 @@ test("--no-discover probes the configured endpoint rather than skipping the hand
       return true;
     }
   );
-
-  // configure still writes the endpoint the caller named when the probe finds nothing there.
   const url = await runConfigure(commandOptions(repoRoot, dead), runtime);
   assert.equal(url, `http://127.0.0.1:${dead.port}/mcp`);
   const written = JSON.parse(fs.readFileSync(clientConfigPaths(repoRoot).claudeCode, "utf8"));
   assert.equal(written.mcpServers["unity-mcp"].url, url);
 });
-
-// `unauthorized` means a bridge IS running there; only the token is wrong. Falling back to the
-// default endpoint and minting a fresh token guarantees a 401 and persists the bogus token.
 test("runConfigure refuses to write when a bridge rejects the token", async (t) => {
   const repoRoot = temporaryDirectory();
   const port = await listeningPort(t);
@@ -1415,26 +1393,31 @@ test("runConfigure refuses to write when a bridge rejects the token", async (t) 
     "no client config is written"
   );
 });
-
+// prettier-ignore
 test("runConfigure still configures when a later candidate handshakes", async (t) => {
   const repoRoot = temporaryDirectory();
   captureConsole(t, "log");
   const rejecting = await listeningPort(t);
   const accepting = await listeningPort(t);
+  const requests = [];
+  const acceptingFetch = readyProbeFetch({ requests });
   const url = await runConfigure(commandOptions(repoRoot, { logLevel: "none" }), {
     candidates: [
       { host: "127.0.0.1", port: rejecting, endpointPath: "/mcp" },
       { host: "127.0.0.1", port: accepting, endpointPath: "/mcp" }
     ],
-    fetchImpl: async (target) =>
-      target.includes(`:${rejecting}/`)
+    fetchImpl: async (target, init) =>
+      String(target).includes(`:${rejecting}/`)
         ? initializeResponse("nope", { status: 401 })
-        : initializeResponse(OK_PAYLOAD)
+        : acceptingFetch(target, init)
   });
   assert.equal(url, `http://127.0.0.1:${accepting}/mcp`);
   assert.ok(fs.existsSync(clientConfigPaths(repoRoot).claudeCode));
+  assert.deepEqual(
+    requests.filter((r) => r.method !== "GET").map((r) => (r.method === "DELETE" ? "DELETE" : JSON.parse(r.body).method)),
+    ["initialize", "notifications/initialized", "DELETE"]
+  );
 });
-
 test("runConfigure falls back to the configured endpoint when nothing is listening", async (t) => {
   const repoRoot = temporaryDirectory();
   const warnings = captureConsole(t, "warn");
@@ -1444,14 +1427,13 @@ test("runConfigure falls back to the configured endpoint when nothing is listeni
     fetchImpl: async () => initializeResponse(OK_PAYLOAD)
   });
   assert.equal(url, "http://10.0.0.5:9020/mcp");
-  assert.match(warnings.join("\n"), /No Unity MCP endpoint responded/);
+  assert.match(warnings.join("\n"), /No Unity MCP endpoint completed initialization/);
   assert.match(
     fs.readFileSync(path.join(repoRoot, ".env.local"), "utf8"),
     /^UNITY_MCP_BEARER_TOKEN=[0-9a-f]{64}$/m,
     "an unreachable endpoint is a fresh setup, so a token is generated"
   );
 });
-
 for (const [label, argv, expected] of [
   ["no command", [], /Usage: node scripts\/mcp\/unity-mcp\.mjs/],
   ["--help", ["--help"], /Usage: node scripts\/mcp\/unity-mcp\.mjs/],
@@ -1463,7 +1445,6 @@ for (const [label, argv, expected] of [
     assert.match(logged.join("\n"), expected);
   });
 }
-
 for (const [label, argv, expected] of [
   ["an unknown command", ["explode"], /Unknown command: explode/],
   ["a stray positional", ["probe", "extra"], /Unexpected argument: extra/],

@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-
 /**
  * Unity MCP endpoint discovery, client auto-configuration, and streamable-HTTP bridge.
  *
- *   node scripts/mcp/unity-mcp.mjs probe       Find a live Unity MCP endpoint and handshake with it.
+ *   node scripts/mcp/unity-mcp.mjs probe       Find an endpoint advertising Unity_RunCommand.
  *   node scripts/mcp/unity-mcp.mjs configure   Discover, then write every MCP client config.
  *   node scripts/mcp/unity-mcp.mjs bridge      Serve the Unity relay over authenticated HTTP.
  *
@@ -12,7 +11,6 @@
  * Unity project directory, which is why `--project` is validated for that command alone -- the
  * project path names a host filesystem location that does not exist inside the container.
  */
-
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
@@ -22,14 +20,16 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { isInitializeRequest, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { parse as parseToml } from "smol-toml";
-
 export const REPO_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-
 export const DEFAULTS = Object.freeze({
   bindHost: "0.0.0.0",
   host: "host.docker.internal",
@@ -46,16 +46,13 @@ export const DEFAULTS = Object.freeze({
   bodyTimeout: 15_000,
   maxSessions: 8
 });
-
 // Ports tried during discovery, after any explicitly configured one. 9020 is the bridge default;
 // 9003 is the port the retired supergateway bridge used, kept so an already-running host keeps working.
 export const FALLBACK_PORTS = Object.freeze([9020, 9003]);
-
 // Hosts tried during discovery, after any explicitly configured one. host.docker.internal is the
 // Docker Desktop bridge; the resolv.conf nameserver and default gateway cover WSL2 and plain Linux
 // bridge networking respectively; localhost covers running the agent on the same box as Unity.
 export const FALLBACK_HOSTS = Object.freeze(["host.docker.internal", "127.0.0.1"]);
-
 const OPTION_NAMES = new Set([
   "bind",
   "host",
@@ -73,9 +70,7 @@ const OPTION_NAMES = new Set([
   "token",
   "no-discover"
 ]);
-
 const FLAG_NAMES = new Set(["no-discover"]);
-
 const ENV_KEYS = Object.freeze({
   bindHost: "UNITY_MCP_BIND_HOST",
   host: "UNITY_MCP_BRIDGE_HOST",
@@ -92,19 +87,13 @@ const ENV_KEYS = Object.freeze({
   logLevel: "UNITY_MCP_LOG_LEVEL",
   bearerToken: "UNITY_MCP_BEARER_TOKEN"
 });
-
 function fail(message) {
   throw new Error(message);
 }
-
 function first(...values) {
   return values.find((value) => value !== undefined && value !== "");
 }
-
-// ---------------------------------------------------------------------------
 // Argument and .env.local parsing
-// ---------------------------------------------------------------------------
-
 export function parseArgs(argv) {
   const result = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
@@ -136,7 +125,6 @@ export function parseArgs(argv) {
   }
   return result;
 }
-
 // A quoted value runs to the last quote that leaves only whitespace or a comment behind. The
 // alternation lets the engine backtrack over a trailing backslash, so a Windows path written as
 // "D:\Program Files\Proj\" parses while an escaped quote inside the value ("say \"hi\"") still does.
@@ -144,7 +132,6 @@ const QUOTED_VALUE = Object.freeze({
   '"': /^"((?:\\"|[^"])*)"\s*(?:#.*)?$/,
   "'": /^'((?:\\'|[^'])*)'\s*(?:#.*)?$/
 });
-
 export function parseDotEnv(raw, source = ".env.local") {
   const values = {};
   for (const [index, original] of raw.split(/\r?\n/).entries()) {
@@ -175,7 +162,6 @@ export function parseDotEnv(raw, source = ".env.local") {
   }
   return values;
 }
-
 /**
  * `.env.local` is shared with unrelated tooling, so one line this parser cannot read must not abort
  * `probe`, `configure`, or `bridge`. Each line is parsed on its own and a bad one is warned about and
@@ -196,11 +182,7 @@ export function readLocalEnv(repoRoot) {
   }
   return values;
 }
-
-// ---------------------------------------------------------------------------
 // Validation
-// ---------------------------------------------------------------------------
-
 function integer(value, name, minimum, maximum) {
   if (!/^\d+$/.test(String(value))) {
     fail(`${name} must be an integer`);
@@ -211,14 +193,12 @@ function integer(value, name, minimum, maximum) {
   }
   return parsed;
 }
-
 function validateText(value, name) {
   if (/[\0\r\n]/.test(value)) {
     fail(`${name} contains an invalid control character`);
   }
   return value;
 }
-
 export function validateHost(value, name = "Host") {
   validateText(value, name);
   if (net.isIP(value)) {
@@ -236,7 +216,6 @@ export function validateHost(value, name = "Host") {
   }
   return value;
 }
-
 export function validateEndpointPath(value) {
   const normalized = value.startsWith("/") ? value : `/${value}`;
   if (
@@ -258,7 +237,6 @@ export function validateEndpointPath(value) {
   }
   return normalized;
 }
-
 function validateToken(value) {
   if (value === undefined) {
     return undefined;
@@ -268,10 +246,7 @@ function validateToken(value) {
   }
   return value;
 }
-
-// ---------------------------------------------------------------------------
 // Option resolution
-// ---------------------------------------------------------------------------
 
 /**
  * `repoRoot` is where MCP client configs and `.env.local` live; it is always this repository.
@@ -341,8 +316,8 @@ export function resolveOptions(args, environment = process.env, localValues, rep
   if (!/^(?:debug|info|none)$/.test(options.logLevel)) {
     fail("Log level must be debug, info, or none");
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(options.protocolVersion)) {
-    fail("Protocol version must use YYYY-MM-DD format");
+  if (options.protocolVersion !== DEFAULTS.protocolVersion) {
+    fail(`Protocol version must be ${DEFAULTS.protocolVersion}`);
   }
   return options;
 }
@@ -362,9 +337,7 @@ export function endpointUrl({ host, port, endpointPath }) {
   return `http://${formatted}:${port}${endpointPath}`;
 }
 
-// ---------------------------------------------------------------------------
 // Endpoint discovery
-// ---------------------------------------------------------------------------
 
 /** Nameserver entries in /etc/resolv.conf. Under WSL2 this is the Windows host. */
 export function resolvConfHosts(raw) {
@@ -460,114 +433,164 @@ export function tcpReachable(host, port, timeout) {
   });
 }
 
-function parseProbePayload(contentType, body) {
-  const candidates = contentType.includes("text/event-stream")
-    ? body
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .filter((line) => line && line !== "[DONE]")
-    : [body];
-  for (const candidate of candidates) {
-    try {
-      const message = JSON.parse(candidate);
-      if (message?.jsonrpc === "2.0" && message.id === 1) {
-        return message;
-      }
-    } catch {
-      /* Continue to the next server-sent event. */
-    }
-  }
-  return undefined;
-}
-
-/**
- * Complete an MCP `initialize` handshake against one endpoint. Returns a classified result rather
- * than throwing so discovery can report every attempt; `status: "unauthorized"` in particular means
- * a bridge is running but the local bearer token does not match it, which needs different advice
- * from "nothing is listening".
- */
-export async function probeEndpoint(candidate, options, fetchImpl = fetch) {
+/** Complete the pinned MCP lifecycle and optionally inspect the editor tool registry. */
+export async function probeEndpoint(candidate, options, fetchImpl = fetch, requireTools = false) {
   const url = endpointUrl(candidate);
-  // Failures carry the candidate too, so callers can act on the endpoint that produced them (an
-  // `unauthorized` attempt names the bridge whose token needs copying).
   const classify = (status, detail) => ({ ...candidate, url, ok: false, status, detail });
+  const succeed = (extra) => ({ ...candidate, url, ok: true, status: "ok", ...extra });
   if (!(await tcpReachable(candidate.host, candidate.port, options.connectTimeout))) {
     return classify("unreachable", "no TCP listener");
   }
-
-  const headers = {
-    Accept: "application/json, text/event-stream",
-    "Content-Type": "application/json",
-    "MCP-Protocol-Version": options.protocolVersion
+  const lifecycleSignal = AbortSignal.timeout(options.timeout);
+  const authorization = options.bearerToken
+    ? { Authorization: `Bearer ${options.bearerToken}` }
+    : {};
+  const cleanupWarnings = [];
+  const cleanup = async (sessionId, protocolVersion) => {
+    if (!sessionId) return;
+    try {
+      const response = await fetchImpl(url, {
+        method: "DELETE",
+        headers: {
+          ...authorization,
+          "Mcp-Session-Id": sessionId,
+          "MCP-Protocol-Version": protocolVersion
+        },
+        signal: AbortSignal.timeout(Math.min(options.timeout, 1_000))
+      });
+      await response.body?.cancel();
+      if (!response.ok && response.status !== 405) {
+        cleanupWarnings.push(`session cleanup returned HTTP ${response.status}`);
+      }
+    } catch (error) {
+      cleanupWarnings.push(`session cleanup failed: ${error.message}`);
+    }
   };
-  if (options.bearerToken) {
-    headers.Authorization = `Bearer ${options.bearerToken}`;
-  }
-
-  let response;
-  let body;
-  try {
-    response = await fetchImpl(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: options.protocolVersion,
-          capabilities: {},
-          clientInfo: { name: "unity-mcp-probe", version: "1.0.0" }
+  const failure = (error, operation) => {
+    const message = error?.message ?? String(error);
+    if (error?.probeStatus) return classify(error.probeStatus, message);
+    if (error instanceof StreamableHTTPError) {
+      const status = [401, 403].includes(error.code)
+        ? "unauthorized"
+        : error.code === -1
+          ? "malformed"
+          : "http-error";
+      return classify(status, `${operation}: HTTP ${error.code}: ${message}`);
+    }
+    if (error instanceof McpError) {
+      const status = lifecycleSignal.aborted ? "transport-error" : "jsonrpc-error";
+      return classify(status, `${operation}: ${message}`);
+    }
+    const malformed = error instanceof SyntaxError || Array.isArray(error?.issues);
+    return classify(malformed ? "malformed" : "transport-error", `${operation}: ${message}`);
+  };
+  let result;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    result = undefined;
+    let operation = "initialize";
+    let sessionId;
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: authorization },
+      fetch: async (target, init = {}) => {
+        if (lifecycleSignal.aborted) throw lifecycleSignal.reason;
+        const request = init.body ? JSON.parse(init.body) : undefined;
+        operation = request?.method ?? operation;
+        const lastEventId = new Headers(init.headers).get("last-event-id");
+        if (init.method === "GET" && !lastEventId) return new Response(null, { status: 405 });
+        const signal = init.signal
+          ? AbortSignal.any([init.signal, lifecycleSignal])
+          : lifecycleSignal;
+        const response = await fetchImpl(target, { ...init, signal });
+        sessionId ||= response.headers.get("mcp-session-id") ?? undefined;
+        const responseType = response.headers.get("content-type") ?? "";
+        const isSse = /^text\/event-stream\s*(?:;|$)/i.test(responseType);
+        const resumeOk = response.status === 200 && isSse;
+        if (lastEventId && response.ok && !resumeOk) {
+          await response.body?.cancel();
+          const error = new Error(`resume GET returned HTTP ${response.status} ${responseType}`);
+          error.probeStatus = "malformed";
+          throw error;
         }
-      }),
-      signal: AbortSignal.timeout(options.timeout)
+        const messages = Array.isArray(request) ? request : [request];
+        const expectsResponse = messages.some((message) => message?.method && "id" in message);
+        const expectedStatus = expectsResponse ? 200 : 202;
+        if (request && response.ok && response.status !== expectedStatus) {
+          await response.body?.cancel();
+          const error = new Error(`${operation}: HTTP ${response.status}, want ${expectedStatus}`);
+          error.probeStatus = "malformed";
+          throw error;
+        }
+        return response;
+      }
     });
-    body = await response.text();
-  } catch (error) {
-    return classify("unreachable", error.message);
+    const client = new Client({ name: "unity-mcp-probe", version: "1.0.0" });
+    let reportTransportError;
+    const transportError = new Promise((_, reject) => (reportTransportError = reject));
+    client.onerror = reportTransportError;
+    const awaited = (promise) => Promise.race([promise, transportError]);
+    let retry = false;
+    try {
+      await awaited(client.connect(transport, { signal: lifecycleSignal }));
+      const protocolVersion = transport.protocolVersion;
+      if (protocolVersion !== options.protocolVersion) {
+        const error = new Error(`server negotiated unsupported protocol ${protocolVersion}`);
+        error.probeStatus = "malformed";
+        throw error;
+      }
+      if (!requireTools) {
+        result = succeed({ sessionId, protocolVersion });
+      } else if (!client.getServerCapabilities()?.tools) {
+        result = classify("not-ready", "server did not advertise MCP tools");
+      } else {
+        const cursors = new Set();
+        let cursor;
+        let toolCount = 0;
+        operation = "tools/list";
+        for (let page = 0; page < 100; page += 1) {
+          const params = cursor === undefined ? {} : { cursor };
+          const listed = await awaited(client.listTools(params, { signal: lifecycleSignal }));
+          toolCount += listed.tools.length;
+          if (listed.tools.some((tool) => tool.name === "Unity_RunCommand")) {
+            result = succeed({ sessionId, protocolVersion, toolCount });
+            break;
+          }
+          if (listed.nextCursor === undefined) {
+            result = classify("not-ready", "Unity_RunCommand was not advertised");
+            break;
+          }
+          if (cursors.has(listed.nextCursor)) {
+            result = classify("malformed", "tools/list returned a repeated cursor");
+            break;
+          }
+          cursors.add(listed.nextCursor);
+          cursor = listed.nextCursor;
+        }
+        result ??= classify("malformed", "tools/list exceeded 100 pages");
+      }
+    } catch (error) {
+      const expired = error instanceof StreamableHTTPError && error.code === 404;
+      retry = attempt === 0 && Boolean(sessionId) && expired;
+      result = failure(error, operation);
+    } finally {
+      await client.close().catch(() => {});
+      await cleanup(sessionId, transport.protocolVersion ?? options.protocolVersion);
+    }
+    if (!retry || lifecycleSignal.aborted) break;
   }
-
-  if (response.status === 401 || response.status === 403) {
-    return classify("unauthorized", `HTTP ${response.status}`);
-  }
-  if (!response.ok) {
-    return classify("http-error", `HTTP ${response.status} ${body.slice(0, 120)}`);
-  }
-
-  const message = parseProbePayload(response.headers.get("content-type") ?? "", body);
-  if (!message || message.error || typeof message.result?.protocolVersion !== "string") {
-    return classify("malformed", body.slice(0, 120) || "no JSON-RPC result");
-  }
-
-  const sessionId = response.headers.get("mcp-session-id");
-  const negotiated = message.result.protocolVersion;
-  if (sessionId) {
-    // Close the session we just opened so probing does not leak relay child processes on the host.
-    await fetchImpl(url, {
-      method: "DELETE",
-      headers: {
-        Accept: "application/json, text/event-stream",
-        ...(options.bearerToken ? { Authorization: `Bearer ${options.bearerToken}` } : {}),
-        "Mcp-Session-Id": sessionId,
-        "MCP-Protocol-Version": negotiated
-      },
-      signal: AbortSignal.timeout(options.timeout)
-    }).catch(() => {});
-  }
-
-  return { url, ok: true, status: "ok", sessionId, protocolVersion: negotiated, ...candidate };
+  if (cleanupWarnings.length) result.cleanupWarning = cleanupWarnings.join("; ");
+  return result;
 }
 
-/** Probe every candidate in order and return the first that completes a handshake. */
+/** Probe candidates in order and return the first that meets the requested readiness level. */
 export async function discoverEndpoint(options, runtime = {}) {
   const fetchImpl = runtime.fetchImpl ?? fetch;
   const candidates = runtime.candidates ?? endpointCandidates(options, runtime);
   const attempts = [];
   for (const candidate of candidates) {
     log(options, "debug", `Probing ${endpointUrl(candidate)}`);
-    const result = await probeEndpoint(candidate, options, fetchImpl);
+    const result = await probeEndpoint(candidate, options, fetchImpl, runtime.requireTools);
     log(options, "debug", `  ${result.status}: ${result.detail ?? "ok"}`);
+    if (result.cleanupWarning) console.warn(`${result.url}: ${result.cleanupWarning}`);
     attempts.push(result);
     if (result.ok) {
       return { found: result, attempts };
@@ -580,13 +603,14 @@ export function describeAttempts(attempts) {
   const interesting = attempts.filter((attempt) => attempt.status !== "unreachable");
   const shown = interesting.length > 0 ? interesting : attempts;
   return shown
-    .map((attempt) => `  ${attempt.url} - ${attempt.status} (${attempt.detail ?? "no detail"})`)
+    .map(
+      (attempt) =>
+        `  ${attempt.url} - ${attempt.status} (${[attempt.detail, attempt.cleanupWarning].filter(Boolean).join("; ") || "no detail"})`
+    )
     .join("\n");
 }
 
-// ---------------------------------------------------------------------------
 // Client configuration
-// ---------------------------------------------------------------------------
 
 function stageFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -886,9 +910,7 @@ export function configure(inputOptions, endpoint, beforeCommit) {
   return { url, written };
 }
 
-// ---------------------------------------------------------------------------
 // Relay discovery and the bridge server
-// ---------------------------------------------------------------------------
 
 export function relayCandidates({
   platform = process.platform,
@@ -1328,13 +1350,11 @@ export async function startBridge(inputOptions, runtime = {}) {
   return { close, closed, httpServer, options, bearerToken: options.bearerToken };
 }
 
-// ---------------------------------------------------------------------------
 // Commands
-// ---------------------------------------------------------------------------
 
 /**
  * `--no-discover` narrows the candidate list to the configured endpoint; it does not skip the
- * handshake. Returning early without probing left `runProbe` with no `found` and an empty attempts
+ * readiness check. Returning early without probing left `runProbe` with no `found` and empty attempts
  * list, so `probe --no-discover` always failed and said nothing about why.
  */
 async function resolveEndpoint(options, runtime = {}) {
@@ -1361,11 +1381,15 @@ async function resolveEndpoint(options, runtime = {}) {
 }
 
 export async function runProbe(options, runtime = {}) {
-  const { found, attempts } = await resolveEndpoint(options, runtime);
+  const { found, attempts } = await resolveEndpoint(options, { ...runtime, requireTools: true });
   if (!found) {
-    fail(`No Unity MCP endpoint responded. Attempts:\n${describeAttempts(attempts)}`);
+    fail(
+      `No Unity MCP endpoint advertised Unity_RunCommand. Attempts:\n${describeAttempts(attempts)}`
+    );
   }
-  console.log(`Unity MCP is reachable at ${found.url} (protocol ${found.protocolVersion}).`);
+  console.log(
+    `Unity MCP at ${found.url} advertises Unity_RunCommand (protocol ${found.protocolVersion}).`
+  );
   return found;
 }
 
@@ -1390,7 +1414,7 @@ export async function runConfigure(options, runtime = {}) {
   };
   if (!found) {
     console.warn(
-      `No Unity MCP endpoint responded; configuring ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
+      `No Unity MCP endpoint completed initialization; configuring ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
     );
   }
   const { url, written } = configure(options, target);
@@ -1421,7 +1445,7 @@ function usage() {
   return [
     "Usage: node scripts/mcp/unity-mcp.mjs <probe|configure|bridge> [options]",
     "",
-    "  probe      Discover a live Unity MCP endpoint and complete an initialize handshake.",
+    "  probe      Discover an endpoint that advertises Unity_RunCommand.",
     "  configure  Discover, then write .mcp.json, .cursor/mcp.json, .vscode/mcp.json, .codex/config.toml.",
     "  bridge     Serve the Unity relay over authenticated streamable HTTP (run next to Unity).",
     "",
@@ -1434,7 +1458,7 @@ function usage() {
     "  --project PATH              Unity project directory (bridge only)",
     "  --relay PATH                Unity relay executable override",
     "  --token TOKEN               32-256 character bearer token (generated into .env.local if omitted)",
-    "  --timeout MS                Per-endpoint handshake timeout (default: 5000)",
+    "  --timeout MS                Per-endpoint MCP lifecycle deadline (default: 5000)",
     "  --connect-timeout MS        Per-endpoint TCP connect timeout (default: 750)",
     "  --session-timeout MS        Idle session timeout (default: 60000)",
     "  --request-timeout MS        Active-request hard limit (default: 300000)",

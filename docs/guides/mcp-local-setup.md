@@ -35,8 +35,12 @@ npm run unity:mcp:configure
 npm run unity:mcp:probe
 ```
 
-`configure` discovers a live endpoint and writes every MCP client config in one transaction. `probe`
-confirms the endpoint completes an MCP `initialize` handshake.
+`configure` selects the first endpoint that completes MCP initialization, then writes every MCP
+client config in one transaction. If no candidate completes initialization, it writes the explicitly
+configured or default endpoint. `probe` follows `tools/list` pagination and requires a candidate to
+advertise `Unity_RunCommand`. Both commands pin MCP `2025-11-25`. A successful probe does not execute
+the tool or validate Unity's later heartbeat. A `not-ready` result means the required tool was not
+advertised; wait for the editor to finish refreshing, then run the probe again.
 
 Neither command needs a host or port supplied. Discovery tries `host.docker.internal`, `127.0.0.1`,
 the `/etc/resolv.conf` nameserver (the Windows host under WSL2), and the default-route gateway,
@@ -73,7 +77,8 @@ activity may still trigger the Unity defect.
 
 Reopen Unity on the latest available patch and follow the Unity issue for fixed-version status. Run
 `npm run unity:mcp:probe` separately after the editor restarts; its `unreachable`, `unauthorized`,
-`http-error`, or `malformed` result identifies an actual bridge connection failure.
+`transport-error`, `http-error`, `jsonrpc-error`, `malformed`, or `not-ready` result separates TCP,
+MCP transport, server-reported, protocol, and tool-advertisement failures.
 
 ## Notes
 
@@ -82,6 +87,9 @@ Reopen Unity on the latest available patch and follow the Unity issue for fixed-
 - A probe that reports `unauthorized` means a bridge is running but the token does not match, which
   is a different fix from `unreachable`. `configure` refuses to write anything in that case, because
   a fresh generated token would be guaranteed wrong; copy the host's token or pass `--token` first.
+- `--timeout` is one deadline for the MCP lifecycle, including every `tools/list` page. Session
+  cleanup uses a separate bounded request. HTTP 405 is allowed; other cleanup failures are warnings.
+  A session-bearing HTTP 404 restarts initialization once without resetting the lifecycle deadline.
 - `configure` owns the whole `unity-mcp` entry in each file, including the entire
   `[mcp_servers.unity-mcp]` table in `.codex/config.toml`. Keys added inside that table are dropped
   on the next run.
