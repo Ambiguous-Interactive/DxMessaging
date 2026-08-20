@@ -9,7 +9,7 @@ streamable HTTP and container clients point at that endpoint.
 | Command                       | Runs on | Purpose                                                   |
 | ----------------------------- | ------- | --------------------------------------------------------- |
 | `npm run unity:mcp:bridge`    | Host    | Spawn the relay and serve it over HTTP                    |
-| `npm run unity:mcp:probe`     | Agent   | Discover a live endpoint and complete an MCP handshake    |
+| `npm run unity:mcp:probe`     | Agent   | Find an endpoint that advertises `Unity_RunCommand`       |
 | `npm run unity:mcp:configure` | Agent   | Discover, then write every MCP client config in this repo |
 
 ## Start the bridge on the Windows host
@@ -59,8 +59,12 @@ npm run unity:mcp:configure
 npm run unity:mcp:probe
 ```
 
-Both commands probe before acting. Discovery walks every combination of candidate host and port
-until one completes an MCP `initialize` handshake:
+Discovery completes MCP initialization against each reachable candidate. `configure` selects the
+first initialized endpoint without inspecting its tools; if none completes initialization, it keeps
+the explicitly configured or default endpoint. `probe` instead fails unless a candidate advertises
+`Unity_RunCommand`. Both commands pin MCP `2025-11-25`.
+
+Discovery walks every combination of candidate host and port:
 
 - **Hosts** - the explicitly configured host if there is one; otherwise `host.docker.internal`,
   `127.0.0.1`, the `nameserver` entries in `/etc/resolv.conf` (the Windows host under WSL2), and the
@@ -71,16 +75,31 @@ An explicit `--host` or `--port` replaces the fallback list on that axis rather 
 to it, so discovery can never override a deliberate setting: `--host X` probes only `X` (against the
 fallback ports), and `--host X --port Y` yields exactly one candidate. Pass `--no-discover` to probe only
 the configured host and port without walking the fallbacks. It narrows the candidate list; it does
-not skip the handshake, so `probe --no-discover` still tells you whether that endpoint answers.
+not skip the protocol check.
 
 Failed attempts are reported with a classification, because the fixes differ:
 
-| Status         | Meaning                                                        |
-| -------------- | -------------------------------------------------------------- |
-| `unreachable`  | Nothing accepted a TCP connection                              |
-| `unauthorized` | A bridge is running but rejected the bearer token              |
-| `http-error`   | Something answered that is not an MCP streamable-HTTP endpoint |
-| `malformed`    | The endpoint answered but not with a valid `initialize` result |
+| Status            | Meaning                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `unreachable`     | Nothing accepted a TCP connection                               |
+| `transport-error` | An MCP request timed out or ended without an HTTP response      |
+| `unauthorized`    | A bridge is running but rejected the bearer token               |
+| `http-error`      | An MCP operation returned a non-success HTTP status             |
+| `jsonrpc-error`   | The server returned a valid JSON-RPC error                      |
+| `malformed`       | MCP returned an invalid result, status, version, or page cursor |
+| `not-ready`       | The endpoint did not advertise `Unity_RunCommand`               |
+
+`not-ready` detects the empty tool-registry window that can follow an editor refresh. A successful
+probe confirms only that `Unity_RunCommand` was advertised; it does not execute that tool or prove
+that Unity's discovery heartbeat remains fresh. The SDK transport validates response media types
+and result schemas, streams SSE events including pings and event IDs, rejects cursor cycles and
+more than 100 pages, and applies `--timeout` as one deadline across the full lifecycle. A
+session-bearing HTTP 404 restarts initialization once within that same deadline.
+
+When a server creates a session, the probe sends `DELETE` after every result and releases the
+response. HTTP 405 is an allowed refusal. Other cleanup failures produce a warning without changing
+the endpoint result, including when discovery later succeeds elsewhere; the server's idle-session
+timeout remains the cleanup fallback.
 
 `unauthorized` is special-cased by `configure`: a bridge IS running at that endpoint and only the
 token is wrong, so `configure` writes nothing, generates no token, and fails naming the endpoint it

@@ -36,7 +36,7 @@ the central lock immediately before the licensed Unity section:
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@e6fa595a336e95d800c1139bdebf6d749ee6f186 # post-v1.10.0
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@c054699118065984d49b97cce685da090d57ab37 # post-v1.10.0
   with:
     lock-name: wallstop-organization-builds
     runner-id: ${{ runner.name }}
@@ -286,8 +286,9 @@ Protect the default branch and release tags:
 1. Require status checks. A required check must report on every pull request
    shape, or auto-merge hangs waiting for an absent check. Use only checks that
    the [Required Status Checks runbook](../runbooks/required-checks.md) lists as
-   applied or remediated, and verify new required checks on real PRs before
-   adding them to the ruleset.
+   applied or remediated. The live aggregate set is `CI Success`,
+   `Unity CI Success`, and `Devcontainer CI Success`; verify new required checks
+   on real PRs before adding them to the ruleset.
 1. Require signed tags or limit tag creation to release maintainers if the
    organization supports it.
 1. Protect `v*` tags from deletion or force updates.

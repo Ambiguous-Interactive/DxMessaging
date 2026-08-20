@@ -26,12 +26,14 @@ non-matching pull requests and cannot be required as written.
 ## Current state
 
 Auto-merge is enabled. The aggregate CI gate is **applied and live
-(2026-07-30)**: repository ruleset `Required CI - Unity Tests (default branch)`
-(id `17663217`, active, `~DEFAULT_BRANCH`) requires exactly `CI Success` and
-`Unity CI Success`. PR #316 verified both aggregates before merge, and the
-`CI Success` aggregate also reported on the default branch after merge. The 14
-individual static contexts remain dependencies of `CI Success`, but the
-ruleset does not require their literal names.
+(2026-08-20)**: repository ruleset `Required CI - Unity Tests (default branch)`
+(id `17663217`, active, `~DEFAULT_BRANCH`) requires exactly `CI Success`,
+`Unity CI Success`, and `Devcontainer CI Success`. PR #316 verified the first
+two aggregates before their 2026-07-30 switch. PR #382 verified the devcontainer
+aggregate with both architecture jobs relevant and successful; PR #385 verified
+the unrelated-change path with both architecture jobs skipped and the aggregate
+successful. The 14 individual static contexts remain dependencies of
+`CI Success`, but the ruleset does not require their literal names.
 
 The `bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode
 `always`) so the perf-doc and generated-doc auto-commits can still push to
@@ -44,6 +46,7 @@ The target ruleset requires exactly these stable aggregate contexts:
 ```text
 CI Success
 Unity CI Success
+Devcontainer CI Success
 ```
 
 Do not add individual static job names or Unity matrix names to the ruleset
@@ -124,6 +127,26 @@ skipped check with the literal name
 `Unity ${{ matrix.unity-version }} all modes`, so requiring the
 expanded names leaves auto-merge waiting for absent checks.
 
+### Devcontainer CI Success
+
+[`devcontainer-test.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/devcontainer-test.yml)
+always starts for pull requests. Its `changes` job determines whether
+devcontainer files changed. The x64 and native ARM64 smoke jobs run when they
+are relevant and otherwise report `skipped`; the final `Devcontainer CI Success`
+job uses `if: ${{ always() }}` and fails closed unless change detection succeeded
+with an explicit result. PR #382 proved the relevant path with both smoke jobs
+successful. PR #385 proved the unrelated path with both smoke jobs skipped and
+the aggregate successful.
+
+Require only the stable aggregate:
+
+```text
+Devcontainer CI Success
+```
+
+Do not require either architecture job directly. The aggregate is the literal
+branch-protection API and remains present for both change shapes.
+
 ## Retired Individual Static Contexts
 
 Before the aggregate switch, ruleset `17663217` required these 14 static
@@ -146,10 +169,6 @@ Script tests (windows-latest)
 Validate Documentation Build
 Lint docs links
 ```
-
-`devcontainer-test.yml` reports the always-present `Devcontainer CI Success`
-aggregate across the x64 and native ARM64 smoke jobs. Require that aggregate
-only if devcontainer changes must gate merges.
 
 ## Must NOT be required
 
@@ -287,7 +306,8 @@ gh api repos/Ambiguous-Interactive/DxMessaging/rulesets/17663217 \
       | if .type == "required_status_checks" then
           .parameters.required_status_checks = [
             {"context": "CI Success"},
-            {"context": "Unity CI Success"}
+            {"context": "Unity CI Success"},
+            {"context": "Devcontainer CI Success"}
           ]
         else
           .
@@ -347,9 +367,6 @@ Validate Documentation Build
 Lint docs links
 ```
 
-If devcontainer image changes should gate merges, also add
-`Devcontainer CI Success` after verifying its run-or-skip behavior on real PRs.
-
 ```bash
 # PUT the existing ruleset with the augmented contexts (keep target/conditions/
 # bypass_actors; extend required_status_checks). Two jobs were renamed to get a
@@ -358,14 +375,17 @@ If devcontainer image changes should gate merges, also add
 gh api repos/OWNER/REPO/rulesets/<id> -X PUT --input augmented-ruleset.json
 ```
 
-## Aggregate ruleset switch (DONE 2026-07-30)
+## Aggregate ruleset switches (DONE 2026-08-20)
 
 PR #316 verified `CI Success` and `Unity CI Success` on a real workflow and
-documentation change. Ruleset `17663217` now contains only:
+documentation change before the 2026-07-30 switch. PRs #382 and #385 verified
+the relevant and unrelated paths for `Devcontainer CI Success` before its
+2026-08-20 addition. Ruleset `17663217` now contains only:
 
 ```text
 CI Success
 Unity CI Success
+Devcontainer CI Success
 ```
 
 The switch preserved the existing `conditions`, `bypass_actors`, enforcement
@@ -404,24 +424,26 @@ When the required set or a workflow changes, keep them in sync:
    `scripts/__tests__/ci-aggregate-workflow.test.js`.
 1. Renaming a static job's `name:`: keep `CI Success` unchanged, and update docs
    that list the human-readable job name.
-1. Renaming `CI Success` or `Unity CI Success`: update the ruleset in the same
-   change after the new name has reported on real PRs.
+1. Renaming `CI Success`, `Unity CI Success`, or `Devcontainer CI Success`:
+   update the ruleset in the same change after the new name has reported on real
+   PRs.
 1. Bumping `.github/unity-versions.json`: do not edit the ruleset while it
    requires `Unity CI Success`; verify the aggregate still reports on a real PR
    or dispatch run after the version change merges.
 1. Drift check: compare the ruleset's `required_status_checks` contexts against
-   `CI Success` and `Unity CI Success`. `gh api .../rulesets/<id>` lists the
-   configured contexts; aggregate job `name:` fields are the source of truth.
+   `CI Success`, `Unity CI Success`, and `Devcontainer CI Success`.
+   `gh api .../rulesets/<id>` lists the configured contexts; aggregate job
+   `name:` fields are the source of truth.
 
 ## Verification
 
 After applying the ruleset:
 
-1. Open a throwaway doc-only pull request and a code-only pull request.
-1. Confirm every required check reports (runs or skips) on both, so neither
-   hangs waiting for an absent check.
-1. Confirm auto-merge completes only once all required checks are green.
-1. Delete the throwaway pull requests.
+1. Observe the next unrelated pull request and the next pull request that touches the gate's
+   relevant inputs. For the devcontainer gate, use `.devcontainer/**` or `.github/**`.
+1. Confirm every required check reports (runs or skips) on both, so neither hangs waiting for an
+   absent check.
+1. Confirm auto-merge waits for every required check, then completes only after all are green.
 
 ## See Also
 

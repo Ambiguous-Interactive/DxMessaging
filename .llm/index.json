@@ -486,7 +486,7 @@
         "category": "unity",
         "tags": "unity, testing, mcp, devcontainer, test-runner"
       },
-      "lineCount": 103,
+      "lineCount": 116,
       "references": [
         ".llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md"
       ]

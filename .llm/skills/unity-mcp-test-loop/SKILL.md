@@ -29,14 +29,27 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 | Command                       | Runs on      | Purpose                                                  |
 | ----------------------------- | ------------ | -------------------------------------------------------- |
 | `npm run unity:mcp:bridge`    | Windows host | Spawn the relay and serve it over authenticated HTTP     |
-| `npm run unity:mcp:probe`     | Devcontainer | Discover a live endpoint and complete an MCP handshake   |
+| `npm run unity:mcp:probe`     | Devcontainer | Find an endpoint advertising `Unity_RunCommand`          |
 | `npm run unity:mcp:configure` | Devcontainer | Discover, then write every MCP client config in the repo |
 
 - Start the bridge on the host with `npm run unity:mcp:bridge -- --project 'D:\Path\To\HostUnityProject'`. `--project` is required for this command only and names a HOST filesystem path. The relay is discovered under `~/.unity/relay/`; override with `--relay <path>` or `UNITY_MCP_RELAY_PATH`.
 - The bridge requires a bearer token and generates one into `.env.local` at the repository root if none is set. Both sides must present the same `UNITY_MCP_BEARER_TOKEN`; copy it across or pass `--token` when host and container do not share `.env.local`. Add a Windows firewall rule for the port if the container cannot reach it.
-- From the container run `npm run unity:mcp:configure` then `npm run unity:mcp:probe`. Both probe before acting.
-- Discovery walks hosts in order - any explicit host, `host.docker.internal`, `127.0.0.1`, `nameserver` entries in `/etc/resolv.conf` (the Windows host under WSL2), then default-route gateways in `/proc/net/route` - and ports `9020` then `9003`. An explicit `--host` or `--port` is always tried first and is never overridden. `--no-discover` narrows probing to the configured host and port instead of walking the fallbacks; it still performs the handshake.
-- Failure statuses classify the fix: `unreachable` (nothing accepted TCP), `unauthorized` (bridge running, token rejected), `http-error` (not a streamable-HTTP MCP endpoint), `malformed` (no valid `initialize` result).
+- From the container run `npm run unity:mcp:configure` then `npm run unity:mcp:probe`. Discovery pins
+  MCP `2025-11-25`. Configure selects the first initialized endpoint without inspecting tools, or
+  writes the configured/default endpoint if none initializes. Probe follows `tools/list` pages and
+  requires `Unity_RunCommand`; it does not execute the tool or prove the heartbeat remains fresh.
+- Discovery walks hosts in order - `host.docker.internal`, `127.0.0.1`, `nameserver` entries in
+  `/etc/resolv.conf`, then default-route gateways - and ports `9020` then `9003`. An explicit
+  `--host` or `--port` replaces the fallbacks on that axis. `--no-discover` uses only the configured
+  host and port but still performs the protocol check.
+- Failure statuses classify the fix: `unreachable` (nothing accepted TCP), `transport-error` (a
+  request timed out or ended before an HTTP response), `unauthorized` (token rejected), `http-error`
+  (an operation returned non-success HTTP), `jsonrpc-error` (valid server error), `malformed`
+  (invalid media type, result, status, version, or cursor), and `not-ready` (`Unity_RunCommand` was
+  not advertised). The SDK transport streams SSE, validates schemas, and uses one lifecycle deadline;
+  a session-bearing HTTP 404 restarts initialization once without resetting that deadline.
+- A session-bearing probe always attempts bounded `DELETE` cleanup and releases its response. HTTP
+  405 is allowed; other cleanup failures warn without changing the readiness result.
 - `configure` writes `.mcp.json` (`mcpServers`), `.cursor/mcp.json` (`mcpServers`), `.vscode/mcp.json` (`servers`), and `.codex/config.toml` (`mcp_servers`) in one transaction with rollback. All four are machine-local and gitignored; only the `unity-mcp` entry is rewritten and other servers are preserved.
 - Local overrides go in `.env.local` or the matching flag: `UNITY_MCP_BRIDGE_HOST`, `UNITY_MCP_BRIDGE_PORT`, `UNITY_MCP_BRIDGE_PATH`, `UNITY_MCP_BEARER_TOKEN`, `UNITY_PROJECT_PATH`. `node scripts/mcp/unity-mcp.mjs --help` lists every flag.
 

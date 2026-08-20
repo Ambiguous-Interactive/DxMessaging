@@ -135,6 +135,78 @@ namespace DxMessaging.Tests.Runtime.Core
             handler.active = false;
         }
 
+        [Test]
+        public void SoleHandlerRemoveRegisterThenReentrantEmitPreservesSnapshots(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            GameObject host = new(
+                nameof(SoleHandlerRemoveRegisterThenReentrantEmitPreservesSnapshots) + scenario.Kind
+            );
+            _spawned.Add(host);
+            MessageHandler handler = new(host) { active = true };
+            MessageBus bus = new();
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.Enable();
+            using LeakWatcher watcher = new(
+                bus: bus,
+                throwOnLeak: true,
+                label: scenario.DisplayName
+            );
+            InstanceId hostId = host;
+            List<string> trace = new(2);
+            int depth = 0;
+            MessageRegistrationHandle soleHandle = default;
+            soleHandle = ScenarioCallbacks.RegisterCountingHandler(
+                scenario,
+                token,
+                hostId,
+                () =>
+                {
+                    trace.Add($"d{depth}:A");
+                    if (depth != 0)
+                    {
+                        return;
+                    }
+
+                    token.RemoveRegistration(soleHandle);
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        token,
+                        hostId,
+                        () => trace.Add($"d{depth}:B"),
+                        priority: 0
+                    );
+                    ++depth;
+                    try
+                    {
+                        ScenarioCallbacks.EmitForKind(scenario, bus, hostId);
+                    }
+                    finally
+                    {
+                        --depth;
+                    }
+                },
+                priority: 0
+            );
+
+            Assert.DoesNotThrow(
+                () => ScenarioCallbacks.EmitForKind(scenario, bus, hostId),
+                "[{0}] recycling the sole handler's empty priority leaf during dispatch must not throw.",
+                scenario.Kind
+            );
+            CollectionAssert.AreEqual(
+                new[] { "d0:A", "d1:B" },
+                trace,
+                "[{0}] the outer frozen snapshot must finish on the removed handler while the nested "
+                    + "snapshot dispatches only the replacement from the recycled leaf.",
+                scenario.Kind
+            );
+            token.UnregisterAll();
+            handler.active = false;
+        }
+
         /// <summary>
         /// A priority-0 handler registers a NEW same-type handler on the same
         /// bus and then re-emits the same type reentrant-style the same message type (guarded to a
