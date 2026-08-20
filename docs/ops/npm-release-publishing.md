@@ -105,8 +105,8 @@ The release workflow creates:
   `.unitypackage` pair, verified present by a final post-publish step
 - npm package version published with provenance
 - the `asset-store-submission` workflow artifact (the `.unitypackage`, the
-  `.tgz`, checksums, store media, `STORE-LISTING.md`,
-  `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`, and
+  `.tgz`, checksums, store media, `CLASSIC-UPLOAD-CHECKLIST.md`,
+  `UPM-UPLOAD-CHECKLIST.md`, and
   `MANIFEST.json`) staged for the manual Unity Asset Store upload before npm
   publish; the release-time procedure is the
   [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md)

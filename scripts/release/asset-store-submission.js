@@ -110,7 +110,7 @@ ${payload}
 
 1. Verify every \`.sha256\` file in this artifact.
 1. Use the staged files from this artifact; do not re-export from a working tree.
-1. Review STORE-LISTING.md and the media directory before submitting.
+1. Review the listing draft in the Unity Publisher Portal and the media directory before submitting.
 
 ## Upload
 
@@ -174,9 +174,6 @@ function stageAssetStoreSubmission(options = {}) {
     fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8"),
     pkg.version
   );
-  const listing = path.join(repoRoot, "STORE-LISTING.md");
-  assertFile(listing, "STORE-LISTING.md");
-
   const mediaRoot = path.join(repoRoot, "docs", "images");
   const missingMedia = STORE_MEDIA.filter((name) => !fs.existsSync(path.join(mediaRoot, name)));
   if (missingMedia.length > 0) {
@@ -188,7 +185,6 @@ function stageAssetStoreSubmission(options = {}) {
   for (const source of [packageFile, packageChecksum, unitypackageFile, unitypackageChecksum]) {
     copyFile(source, path.join(outDir, path.basename(source)));
   }
-  copyFile(listing, path.join(outDir, "STORE-LISTING.md"));
   for (const name of STORE_MEDIA) {
     copyFile(path.join(mediaRoot, name), path.join(outDir, "media", name));
   }

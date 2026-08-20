@@ -66,7 +66,6 @@ artifact containing:
 - the `.unitypackage` exported by `scripts/unity/export-unitypackage.ps1`
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
-- `STORE-LISTING.md`
 - tracked store media under `media/`
 - generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`, and
   `MANIFEST.json`

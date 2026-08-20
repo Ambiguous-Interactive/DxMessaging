@@ -895,7 +895,7 @@ jobs:
       - name: Assemble the Asset Store submission staging artifact
         # There is NO sanctioned CLI/API for Unity Asset Store uploads
         # (re-verified 2026-06-22): this tested generator STAGES the
-        # submission inputs, listing copy, store media, manifest, and manual
+        # submission inputs, store media, manifest, and manual
         # checklists. It runs before npm publish so missing store collateral
         # fails before the irreversible registry action.
         run: |

@@ -467,19 +467,103 @@ def on_post_build(config):
                 f"{example_name} hero example does not color its message type name"
             )
 
-        if example_name == "broadcast":
+        if example_name == "untargeted":
             for marker in (
-                "DamageFeed",
-                "EnemyHealth",
-                "Token belongs to this listener",
-                "not the object taking damage",
-                "RegisterBroadcastWithoutSource",
-                "EmitGameObjectBroadcast(gameObject)",
+                "PauseController",
+                "PauseOverlay",
+                "MusicDirector",
+                "EmitUntargeted()",
             ):
                 if marker not in segment_text:
                     failures.append(
-                        "broadcast hero example does not clearly separate "
-                        f"listener token ownership from emission: missing {marker}"
+                        "untargeted hero example does not show independent pause-state "
+                        f"reactions: missing {marker}"
+                    )
+            if segment_text.count("RegisterUntargeted<GamePaused>") < 2:
+                failures.append(
+                    "untargeted hero example has fewer than two GamePaused listeners"
+                )
+            for owner_marker, next_owner_marker, handler in (
+                (
+                    "PauseOverlay owns this UI registration",
+                    "MusicDirector owns a separate audio registration",
+                    "OnPauseOverlayChanged",
+                ),
+                (
+                    "MusicDirector owns a separate audio registration",
+                    None,
+                    "OnMusicPauseChanged",
+                ),
+            ):
+                owner_start = segment_text.find(owner_marker)
+                owner_end = (
+                    segment_text.find(next_owner_marker, owner_start + len(owner_marker))
+                    if next_owner_marker is not None and owner_start >= 0
+                    else len(segment_text)
+                )
+                owner_segment = (
+                    segment_text[owner_start:owner_end]
+                    if owner_start >= 0 and owner_end >= 0
+                    else ""
+                )
+                registration_pattern = re.compile(
+                    r"RegisterUntargeted<GamePaused>\s*\(\s*"
+                    rf"{handler}\s*\)",
+                )
+                if registration_pattern.search(owner_segment) is None:
+                    failures.append(
+                        "untargeted hero example does not bind GamePaused to "
+                        f"the {handler} handler under its owning system"
+                    )
+
+        if example_name == "broadcast":
+            for marker in (
+                "CollisionReporter",
+                "ImpactSound",
+                "BreakableObject",
+                "EmitGameObjectBroadcast(gameObject)",
+                "on the same GameObject",
+            ):
+                if marker not in segment_text:
+                    failures.append(
+                        "broadcast hero example does not show independent source-bound "
+                        f"reactions: missing {marker}"
+                    )
+            if segment_text.count("RegisterGameObjectBroadcast<CollisionOccurred>") < 2:
+                failures.append(
+                    "broadcast hero example has fewer than two source-bound CollisionOccurred listeners"
+                )
+            for owner_marker, next_owner_marker, handler in (
+                (
+                    "ImpactSound on the same GameObject owns this registration",
+                    "BreakableObject on the same GameObject owns a separate registration",
+                    "OnImpactSound",
+                ),
+                (
+                    "BreakableObject on the same GameObject owns a separate registration",
+                    None,
+                    "OnBreakableCollision",
+                ),
+            ):
+                owner_start = segment_text.find(owner_marker)
+                owner_end = (
+                    segment_text.find(next_owner_marker, owner_start + len(owner_marker))
+                    if next_owner_marker is not None and owner_start >= 0
+                    else len(segment_text)
+                )
+                owner_segment = (
+                    segment_text[owner_start:owner_end]
+                    if owner_start >= 0 and owner_end >= 0
+                    else ""
+                )
+                registration_pattern = re.compile(
+                    r"RegisterGameObjectBroadcast<CollisionOccurred>\s*\("
+                    rf"\s*gameObject\s*,\s*{handler}\s*\)",
+                )
+                if registration_pattern.search(owner_segment) is None:
+                    failures.append(
+                        "broadcast hero example does not bind CollisionOccurred to "
+                        f"the {handler} handler under its owning system"
                     )
 
     if "dxm-wordmark" not in html:
