@@ -795,6 +795,7 @@ namespace DxMessaging.Core.MessageBus
             // bus-side map remains a separate candidate.
             public readonly List<MessageHandler> insertionOrder = new();
             public long version;
+            public int highWaterDistinctHandlers;
 
             /// <summary>
             /// Clears all handler references and resets the mutation version.
@@ -809,6 +810,38 @@ namespace DxMessaging.Core.MessageBus
                 version = 0;
             }
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private HandlerCache RentHandlerCache()
+        {
+            HandlerCache cache = _recycledEmptyHandlerCache;
+            if (cache == null)
+            {
+                return new HandlerCache();
+            }
+
+            _recycledEmptyHandlerCache = null;
+            return cache;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void RecycleHandlerCache(HandlerCache cache)
+        {
+            cache.Clear();
+            if (
+                _recycledEmptyHandlerCache == null
+                && _handlerCacheRetentionLimit > 0
+                && cache.highWaterDistinctHandlers <= _handlerCacheRetentionLimit
+            )
+            {
+                _recycledEmptyHandlerCache = cache;
+            }
+        }
+
+        internal object RecycledHandlerCacheForTesting => _recycledEmptyHandlerCache;
+
+        internal int RecycledHandlerCacheHighWaterForTesting =>
+            _recycledEmptyHandlerCache?.highWaterDistinctHandlers ?? 0;
 
         public int RegisteredTargeted
         {
@@ -1635,6 +1668,18 @@ namespace DxMessaging.Core.MessageBus
             DxPools.Configure(settings);
             ContextHandlerByTargetDicts.UseLru = settings.BufferUseLruEviction;
             ContextHandlerByTargetDicts.MaxRetained = settings.BufferMaxDistinctEntries;
+            _handlerCacheRetentionLimit = Math.Max(0, settings.BufferMaxDistinctEntries);
+            if (
+                _recycledEmptyHandlerCache != null
+                && (
+                    _handlerCacheRetentionLimit == 0
+                    || _recycledEmptyHandlerCache.highWaterDistinctHandlers
+                        > _handlerCacheRetentionLimit
+                )
+            )
+            {
+                _recycledEmptyHandlerCache = null;
+            }
             if (!settings.IsFallbackInstance)
             {
                 IMessageBus.GlobalMessageBufferSize = Math.Max(0, settings.MessageBufferSize);
@@ -1813,6 +1858,9 @@ namespace DxMessaging.Core.MessageBus
         private double _evictionTickIntervalSeconds = DefaultEvictionTickIntervalSeconds;
         private bool _idleEvictionEnabled = true;
         private bool _trimApiEnabled = true;
+        private int _handlerCacheRetentionLimit =
+            DxMessagingRuntimeSettings.DefaultBufferMaxDistinctEntries;
+        private HandlerCache _recycledEmptyHandlerCache;
         private double _lastSweepSeconds;
         private readonly List<int> _dirtyTypes = new();
         private readonly Dictionary<int, List<InstanceId>> _dirtyTargets = new();
@@ -2110,6 +2158,11 @@ namespace DxMessaging.Core.MessageBus
             if (force && _dispatchDepth == 0 && _postRouteCompactionRoutes != null)
             {
                 _postRouteCompactionRoutes = null;
+                pooledCollectionsEvicted++;
+            }
+            if (force && _recycledEmptyHandlerCache != null)
+            {
+                _recycledEmptyHandlerCache = null;
                 pooledCollectionsEvicted++;
             }
             _lastSweepSeconds = _clock.NowSeconds;
@@ -3193,6 +3246,7 @@ namespace DxMessaging.Core.MessageBus
             _dirtyHandlerSet.Clear();
             _dirtyHandlerTicks.Clear();
             _globalSlotSweepCandidate = false;
+            _recycledEmptyHandlerCache = null;
             _lastSweepSeconds = _clock.NowSeconds;
 
 #if UNITY_2021_3_OR_NEWER
@@ -5635,7 +5689,7 @@ namespace DxMessaging.Core.MessageBus
             if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache))
             {
                 handlers.version++;
-                cache = new HandlerCache();
+                cache = RentHandlerCache();
                 handlers.handlers[priority] = cache;
                 // insert priority in sorted order
                 List<int> order = handlers.order;
@@ -5658,6 +5712,10 @@ namespace DxMessaging.Core.MessageBus
                 // record its position. Refcount increments (count > 0) must
                 // NOT move it.
                 cache.insertionOrder.Add(messageHandler);
+                cache.highWaterDistinctHandlers = Math.Max(
+                    cache.highWaterDistinctHandlers,
+                    cache.insertionOrder.Count
+                );
             }
             StageDispatchSnapshot<T>(this, capturedHandlers, slotKey);
             Type type = typeof(T);
@@ -5764,6 +5822,7 @@ namespace DxMessaging.Core.MessageBus
                         {
                             order.RemoveAt(removeIdx);
                         }
+                        RecycleHandlerCache(cache);
                     }
 
                     if (capturedHandlers.handlers.Count == 0)
@@ -5848,7 +5907,7 @@ namespace DxMessaging.Core.MessageBus
             if (!handlers.handlers.TryGetValue(priority, out HandlerCache cache))
             {
                 handlers.version++;
-                cache = new HandlerCache();
+                cache = RentHandlerCache();
                 handlers.handlers[priority] = cache;
                 // insert priority in sorted order
                 List<int> order = handlers.order;
@@ -5871,6 +5930,10 @@ namespace DxMessaging.Core.MessageBus
                 // record its position. Refcount increments (count > 0) must
                 // NOT move it.
                 cache.insertionOrder.Add(messageHandler);
+                cache.highWaterDistinctHandlers = Math.Max(
+                    cache.highWaterDistinctHandlers,
+                    cache.insertionOrder.Count
+                );
             }
 
             Type type = typeof(T);
@@ -5973,6 +6036,7 @@ namespace DxMessaging.Core.MessageBus
                         {
                             order.RemoveAt(removeIdx);
                         }
+                        RecycleHandlerCache(cache);
                     }
 
                     if (capturedHandlers.handlers.Count == 0)

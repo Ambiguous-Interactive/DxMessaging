@@ -446,6 +446,224 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         }
 
         [Test]
+        public void EmptyPriorityLeafIsReusedAcrossEveryHandlerRoute(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
+            )]
+                MessageScenario scenario
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
+                bus,
+                label: scenario.DisplayName
+            );
+            using IDisposable cleanup = ForceTrimCleanup(bus);
+            MessageHandler handler = CreateActiveHandler(bus);
+
+            Action firstDeregister = RegisterDirect(
+                scenario,
+                handler,
+                bus,
+                DefaultContext,
+                () => { }
+            );
+            firstDeregister();
+            object firstSpare = bus.RecycledHandlerCacheForTesting;
+            Assert.IsNotNull(
+                firstSpare,
+                "[{0}] removing the sole priority handler must retain one detached empty leaf.",
+                scenario.DisplayName
+            );
+
+            Action secondDeregister = RegisterDirect(
+                scenario,
+                handler,
+                bus,
+                DefaultContext,
+                () => { }
+            );
+            Assert.IsNull(
+                bus.RecycledHandlerCacheForTesting,
+                "[{0}] the retained leaf must be rented while the replacement route is live.",
+                scenario.DisplayName
+            );
+            secondDeregister();
+
+            Assert.AreSame(
+                firstSpare,
+                bus.RecycledHandlerCacheForTesting,
+                "[{0}] scalar/context and handle/post routes must return the same leaf identity.",
+                scenario.DisplayName
+            );
+            handler.active = false;
+        }
+
+        [Test]
+        public void EmptyPriorityLeafSpareHasCapacityOneAndResetDrainsIt()
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, label: nameof(MessageBus));
+            using IDisposable cleanup = ForceTrimCleanup(bus);
+            MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0010), bus)
+            {
+                active = true,
+            };
+            MessageHandler secondHandler = new MessageHandler(new InstanceId(0x5A17_0011), bus)
+            {
+                active = true,
+            };
+            MessageBusRegistration first = bus.RegisterUntargeted<UntargetedOne>(
+                firstHandler,
+                priority: 0
+            );
+            MessageBusRegistration second = bus.RegisterUntargeted<UntargetedOne>(
+                secondHandler,
+                priority: 1
+            );
+
+            bus.Deregister<UntargetedOne>(in first);
+            object retained = bus.RecycledHandlerCacheForTesting;
+            bus.Deregister<UntargetedOne>(in second);
+
+            Assert.AreSame(
+                retained,
+                bus.RecycledHandlerCacheForTesting,
+                "Returning a second empty leaf must not replace or grow the one-entry spare."
+            );
+            bus.ResetState();
+            Assert.IsNull(
+                bus.RecycledHandlerCacheForTesting,
+                "ResetState must release the detached empty priority leaf."
+            );
+            firstHandler.active = false;
+            secondHandler.active = false;
+        }
+
+        [Test]
+        public void EmptyPriorityLeafHonorsZeroAndHighWaterCaps()
+        {
+            DxMessagingRuntimeSettings settings =
+                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
+            IDisposable overrideToken = null;
+            try
+            {
+                settings._bufferMaxDistinctEntries = 2;
+                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
+                using IDisposable cleanup = ForceTrimCleanup(bus);
+                MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0020), bus)
+                {
+                    active = true,
+                };
+                MessageHandler secondHandler = new MessageHandler(new InstanceId(0x5A17_0021), bus)
+                {
+                    active = true,
+                };
+                MessageBusRegistration first = bus.RegisterUntargeted<UntargetedOne>(
+                    firstHandler,
+                    priority: 0
+                );
+                MessageBusRegistration second = bus.RegisterUntargeted<UntargetedOne>(
+                    secondHandler,
+                    priority: 0
+                );
+                bus.Deregister<UntargetedOne>(in first);
+                bus.Deregister<UntargetedOne>(in second);
+
+                Assert.AreEqual(
+                    2,
+                    bus.RecycledHandlerCacheHighWaterForTesting,
+                    "A leaf at the configured distinct-handler cap must remain eligible."
+                );
+
+                settings._bufferMaxDistinctEntries = 1;
+                DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
+                Assert.IsNull(
+                    bus.RecycledHandlerCacheForTesting,
+                    "Lowering the cap below a retained leaf's high-water must drain it immediately."
+                );
+
+                first = bus.RegisterUntargeted<UntargetedOne>(firstHandler, priority: 0);
+                second = bus.RegisterUntargeted<UntargetedOne>(secondHandler, priority: 0);
+                bus.Deregister<UntargetedOne>(in first);
+                bus.Deregister<UntargetedOne>(in second);
+                Assert.IsNull(
+                    bus.RecycledHandlerCacheForTesting,
+                    "An active leaf whose high-water exceeds the lowered cap must drop on return."
+                );
+
+                MessageBusRegistration small = bus.RegisterUntargeted<UntargetedOne>(
+                    firstHandler,
+                    priority: 0
+                );
+                bus.Deregister<UntargetedOne>(in small);
+                Assert.AreEqual(
+                    1,
+                    bus.RecycledHandlerCacheHighWaterForTesting,
+                    "A replacement leaf within the cap must be eligible for reuse."
+                );
+
+                settings._bufferMaxDistinctEntries = 0;
+                DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
+                Assert.IsNull(
+                    bus.RecycledHandlerCacheForTesting,
+                    "Hot reload to cap zero must drain the retained leaf immediately."
+                );
+                MessageBusRegistration zeroCap = bus.RegisterUntargeted<UntargetedOne>(
+                    firstHandler,
+                    priority: 0
+                );
+                bus.Deregister<UntargetedOne>(in zeroCap);
+                Assert.IsNull(
+                    bus.RecycledHandlerCacheForTesting,
+                    "Cap zero must keep subsequent empty priority leaves out of retention."
+                );
+                firstHandler.active = false;
+                secondHandler.active = false;
+                GC.KeepAlive(bus);
+            }
+            finally
+            {
+                overrideToken?.Dispose();
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
+        public void ForcedTrimCountsPriorityLeafOnceAndThenIsIdempotent()
+        {
+            _ = DxPools.TrimAll(force: true);
+            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
+            MessageHandler handler = CreateActiveHandler(bus);
+            MessageBusRegistration registration = bus.RegisterUntargeted<UntargetedOne>(
+                handler,
+                priority: 0
+            );
+            bus.Deregister<UntargetedOne>(in registration);
+
+            IMessageBus.TrimResult first = bus.Trim(force: true);
+            IMessageBus.TrimResult second = bus.Trim(force: true);
+
+            Assert.AreEqual(
+                1,
+                first.PooledCollectionsEvicted,
+                "Forced trim must count the one detached priority leaf exactly once."
+            );
+            Assert.AreEqual(
+                0,
+                second.PooledCollectionsEvicted,
+                "Repeated forced trim must not count an already-drained priority leaf."
+            );
+            Assert.IsNull(
+                bus.RecycledHandlerCacheForTesting,
+                "Forced trim must release the detached priority leaf."
+            );
+            handler.active = false;
+        }
+
+        [Test]
         public void RuntimeSettingsHotReloadUpdatesTrimAndIdleGates()
         {
             DxMessagingRuntimeSettings settings =
@@ -519,6 +737,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DefaultContext
                 );
                 token.RemoveRegistration(handle);
+                object retainedHandlerCache = bus.RecycledHandlerCacheForTesting;
+                Assert.IsNotNull(
+                    retainedHandlerCache,
+                    "Removing the sole handler must create the retained empty priority leaf."
+                );
                 List<object> pooled = DxPools.ObjectLists.Rent();
                 DxPools.ObjectLists.Return(pooled);
                 int cachedBefore = DxPools.DescribeAll().ObjectLists.Cached;
@@ -528,6 +751,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.AreEqual(default(IMessageBus.TrimResult), result);
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
                 Assert.AreEqual(cachedBefore, DxPools.DescribeAll().ObjectLists.Cached);
+                Assert.AreSame(
+                    retainedHandlerCache,
+                    bus.RecycledHandlerCacheForTesting,
+                    "Disabled Trim must preserve the retained empty priority leaf identity."
+                );
             }
             finally
             {

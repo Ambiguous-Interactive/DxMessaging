@@ -79,7 +79,8 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
-            // Owner two registers a live handler at the SAME (type, priority) -- a brand-new bucket.
+            // Owner two registers a live handler at the SAME (type, priority). The empty leaf may
+            // be recycled, but the stale registration still belongs to owner one.
             int ownerTwoInvocations = 0;
             Action<ProbeMessage> ownerTwoHandler = _ => ownerTwoInvocations++;
             _ = ownerTwo.RegisterUntargetedMessageHandler<ProbeMessage>(
@@ -120,7 +121,7 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
-            // A second bus-level registration so we hold the NEW bucket's handle for reflection.
+            // A second bus-level registration so we hold the live bucket's handle for reflection.
             MessageBusRegistration ownerTwoRegistration = bus.RegisterUntargeted<ProbeMessage>(
                 ownerTwo,
                 priority: 0

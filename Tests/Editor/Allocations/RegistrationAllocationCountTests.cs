@@ -103,6 +103,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         private const int WarmupRegistrations = 512;
         private const int SettleRegistrations = 64;
         private const int MeasuredRegistrations = 16;
+        private const int MeasuredDirectBusChurnCycles = 256;
 
         // Attempts for AllocationProbe.MeasureMin: a single allocation window in a warm,
         // long-lived editor domain intermittently spikes above the true cost, so we take
@@ -408,6 +409,46 @@ namespace DxMessaging.Tests.Editor.Allocations
                     + "RegistrationStorageStructuralGuardTests."
                     + "InternalRegisterPassesMetadataByValueNotFactory (per-PR EditMode leg)."
             );
+        }
+
+        [Test]
+        [Category("Allocation")]
+        public void WarmedDirectBusRegisterRemoveChurnIsAllocationFree()
+        {
+            MessageBus bus = NewBus();
+            MessageHandler handler = new MessageHandler(Owner, bus) { active = true };
+            MessageBusRegistration warm = bus.RegisterUntargeted<SimpleUntargetedMessage>(
+                handler,
+                priority: 0
+            );
+            bus.Deregister<SimpleUntargetedMessage>(in warm);
+
+            long allocationCount = AllocationProbe.MeasureMin(
+                MinAttempts,
+                prepare: null,
+                operation: () =>
+                {
+                    for (int i = 0; i < MeasuredDirectBusChurnCycles; ++i)
+                    {
+                        MessageBusRegistration registration =
+                            bus.RegisterUntargeted<SimpleUntargetedMessage>(handler, priority: 0);
+                        bus.Deregister<SimpleUntargetedMessage>(in registration);
+                    }
+                }
+            );
+
+            if (allocationCount == AllocationProbe.Unmeasured)
+            {
+                Assert.Ignore("GC.Alloc allocation probe is non-functional on this backend.");
+            }
+
+            Assert.AreEqual(
+                0,
+                allocationCount,
+                $"{MeasuredDirectBusChurnCycles} warmed direct-bus register/remove cycles must "
+                    + "reuse the detached priority leaf without managed allocation calls."
+            );
+            handler.active = false;
         }
 
         [Test]

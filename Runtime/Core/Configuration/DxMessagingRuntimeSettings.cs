@@ -28,7 +28,7 @@ namespace DxMessaging.Core.Configuration
         /// <summary>Resource name (no extension) used by <c>Resources.Load</c>.</summary>
         public const string ResourceName = "DxMessagingRuntimeSettings";
 
-        /// <summary>Default soft cap on per-pool retained entries.</summary>
+        /// <summary>Default soft cap on retained entries in shared pools and the per-bus priority-leaf spare.</summary>
         public const int DefaultBufferMaxDistinctEntries = 512;
 
         /// <summary>Default idle threshold in seconds before an empty slot is eligible for eviction.</summary>
@@ -46,7 +46,7 @@ namespace DxMessaging.Core.Configuration
 
         [SerializeField]
         [Tooltip(
-            "Soft cap on the number of distinct entries each shared collection pool will retain. Excess entries are evicted (LRU or LIFO depending on BufferUseLruEviction)."
+            "Soft cap on distinct entries retained by shared collection pools and the per-bus empty priority-leaf spare. Zero disables retention; LRU selection does not affect the one-entry spare."
         )]
         [Min(0)]
         internal int _bufferMaxDistinctEntries = DefaultBufferMaxDistinctEntries;

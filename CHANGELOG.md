@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show a pause announcement coordinating independent UI and audio systems and a source-bound
   collision driving independent sound and breakable-object reactions on the homepage
   ([#426](https://github.com/Ambiguous-Interactive/DxMessaging/issues/426)).
+- Reduce repeated message-handler subscribe/unsubscribe churn by six managed allocation calls per
+  cycle ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
 
 ## [3.3.0]
 
