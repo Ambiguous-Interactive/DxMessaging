@@ -42,7 +42,6 @@ function makeFixture(t) {
     path.join(root, "CHANGELOG.md"),
     ["# Changelog", "", "## [1.2.3]", "", "### Added", "", "- Release note.", ""].join("\n")
   );
-  writeFile(path.join(root, "STORE-LISTING.md"), "# Fixture Store Listing\n\nDraft copy.\n");
   for (const name of "dxmessaging-store-icon-320.png dxmessaging-store-card-420x280.png dxmessaging-og-1200x630.png".split(
     " "
   )) {
@@ -97,7 +96,7 @@ test("parseArgs requires all source files and parses optional tag/output", () =>
   assert.throws(() => parseArgs(["--out", "out"]), /Missing required arguments/);
 });
 
-test("stageAssetStoreSubmission copies assets, listing, checklists, and manifest", (t) => {
+test("stageAssetStoreSubmission copies assets, checklists, and manifest", (t) => {
   const fixture = makeFixture(t);
   const outDir = path.join(fixture.root, ".artifacts", "asset-store-submission");
 
@@ -107,7 +106,6 @@ test("stageAssetStoreSubmission copies assets, listing, checklists, and manifest
   assert.deepEqual(fs.readdirSync(outDir).sort(), [
     "CLASSIC-UPLOAD-CHECKLIST.md",
     "MANIFEST.json",
-    "STORE-LISTING.md",
     "UPM-UPLOAD-CHECKLIST.md",
     "fixture-1.2.3.tgz",
     "fixture-1.2.3.tgz.sha256",
@@ -124,6 +122,7 @@ test("stageAssetStoreSubmission copies assets, listing, checklists, and manifest
   assert.match(classic, /Fixture Messaging/);
   assert.match(classic, /fixture-1\.2\.3\.unitypackage/);
   assert.match(classic, /Release note\./);
+  assert.match(classic, /Review the listing draft in the Unity Publisher Portal/);
   const upm = fs.readFileSync(path.join(outDir, "UPM-UPLOAD-CHECKLIST.md"), "utf8");
   assert.match(upm, /fixture-1\.2\.3\.tgz/);
   assert.match(upm, /Unity 2021\.3/);

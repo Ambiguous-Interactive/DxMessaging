@@ -4,14 +4,17 @@ using DxMessaging.Unity;
 
 [DxUntargetedMessage]
 [DxAutoConstructor]
-public readonly partial struct WaveStarted
+public readonly partial struct GamePaused
 {
-    public readonly int Index;
+    public readonly bool IsPaused;
 }
 
-// Register once; token cleanup follows the owner.
-Token.RegisterUntargeted<WaveStarted>(OnWaveStarted);
+// PauseController announces the fact after owning the state change.
+GamePaused gamePaused = new GamePaused(isPaused);
+gamePaused.EmitUntargeted();
 
-// Send from any system.
-WaveStarted waveStarted = new WaveStarted(3);
-waveStarted.EmitUntargeted();
+// PauseOverlay owns this UI registration.
+Token.RegisterUntargeted<GamePaused>(OnPauseOverlayChanged);
+
+// MusicDirector owns a separate audio registration.
+Token.RegisterUntargeted<GamePaused>(OnMusicPauseChanged);

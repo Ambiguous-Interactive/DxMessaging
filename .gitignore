@@ -390,6 +390,10 @@ GH-PAGES-PLAN.md.meta
 
 progress/**
 
+# Asset Store copy is maintained in the private publisher portal.
+/STORE-LISTING.md
+/STORE-LISTING.md.meta
+
 __pycache__.meta
 .venv/
 site.meta

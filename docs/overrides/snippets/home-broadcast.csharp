@@ -1,37 +1,20 @@
-using DxMessaging.Core;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Extensions;
 using DxMessaging.Unity;
-using UnityEngine;
 
 [DxBroadcastMessage]
 [DxAutoConstructor]
-public readonly partial struct TookDamage
+public readonly partial struct CollisionOccurred
 {
-    public readonly int Amount;
+    public readonly float Speed;
 }
 
-public sealed class DamageFeed : MessageAwareComponent
-{
-    protected override void RegisterMessageHandlers()
-    {
-        base.RegisterMessageHandlers();
+// CollisionReporter emits from the GameObject that collided.
+CollisionOccurred collisionOccurred = new CollisionOccurred(speed);
+collisionOccurred.EmitGameObjectBroadcast(gameObject);
 
-        // Token belongs to this listener, not the object taking damage.
-        _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
-    }
+// ImpactSound on the same GameObject owns this registration.
+Token.RegisterGameObjectBroadcast<CollisionOccurred>(gameObject, OnImpactSound);
 
-    private void OnAnyDamage(InstanceId source, TookDamage message)
-    {
-        // React to damage from any source.
-    }
-}
-
-public sealed class EnemyHealth : MonoBehaviour
-{
-    public void ApplyHit(int amount)
-    {
-        TookDamage tookDamage = new TookDamage(amount);
-        tookDamage.EmitGameObjectBroadcast(gameObject);
-    }
-}
+// BreakableObject on the same GameObject owns a separate registration.
+Token.RegisterGameObjectBroadcast<CollisionOccurred>(gameObject, OnBreakableCollision);

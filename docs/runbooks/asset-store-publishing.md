@@ -67,13 +67,15 @@ exact inputs for the Asset Store upload:
   sources replaced by the shipped `Runtime/Analyzers/` RoslynAnalyzer DLLs);
 - the npm `.tgz` (the exact UPM payload, for reference and diffing);
 - `.sha256` checksums for both;
-- `STORE-LISTING.md` copied from the tracked listing draft;
 - the tracked store media under `media/`;
 - generated `CLASSIC-UPLOAD-CHECKLIST.md` and
   `UPM-UPLOAD-CHECKLIST.md` files carrying package metadata and the matching
   changelog section;
 - `MANIFEST.json` with filenames, sizes, and SHA-256 hashes for the staged
   files.
+
+The listing draft stays in the Unity Publisher Portal. It is not tracked in the
+repository or copied into the submission artifact.
 
 The `.unitypackage` is also attached to the GitHub Release, so a maintainer can
 grab it from either place. The pipeline stops at staging; it never contacts the

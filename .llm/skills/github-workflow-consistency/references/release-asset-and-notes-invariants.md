@@ -73,12 +73,13 @@ blocks the IRREVERSIBLE npm publish too, so neither npm nor the Release ever
 advertises a version whose `.unitypackage` is missing. The Stage step treats a
 missing/empty file as a HARD error. Before npm publish, the
 `asset-store-submission.js` generator also stages the Asset Store artifact from
-the checked release files, tracked store media, `STORE-LISTING.md`, and the
-matching changelog section; missing or stale store collateral fails before the
-registry action. A final step asserts the published release carries all four
-assets (`.tgz` + `.sha256`, `.unitypackage` + `.sha256`). Recovery is to fix the
-export or store collateral and re-run; the npm publish step is re-runnable (it
-skips a version already on the registry).
+the checked release files, tracked store media, and the matching changelog
+section. The listing draft remains private in the Unity Publisher Portal and is
+not copied into the artifact. Missing or stale store collateral fails before
+the registry action. A final step asserts the published release carries all
+four assets (`.tgz` + `.sha256`, `.unitypackage` + `.sha256`). Recovery is to
+fix the export or store collateral and re-run; the npm publish step is
+re-runnable (it skips a version already on the registry).
 
 ## Guards (red-green)
 
@@ -90,9 +91,9 @@ skips a version already on the registry).
   every entry of `unity-builtin-modules.json` -- it reproduces the v3.1.0 compile
   failure at the staging level, no licensed editor required.
 - `scripts/__tests__/asset-store-submission.test.js` pins the staged Asset Store
-  artifact: release files, checksums, `STORE-LISTING.md`, store media, generated
-  classic/UPM checklists, and `MANIFEST.json`, with stale checksum and missing
-  media failures.
+  artifact: release files, checksums, store media, generated classic/UPM
+  checklists, the private Publisher Portal listing reminder, and `MANIFEST.json`,
+  with stale checksum and missing media failures.
 - The `unitypackage` job + the post-publish asset check are the integration
   backstop on a real release.
 
