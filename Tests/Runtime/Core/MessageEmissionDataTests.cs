@@ -10,13 +10,15 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class MessageEmissionDataTests
     {
         [Test]
-        public void StackTraceOmitsDxMessagingFrames()
+        public void StackTraceOmitsDxMessagingFramesWhenCaptureEnabled()
         {
+            using DiagnosticsScope scope = new(diagnosticsStackTraces: true);
+
             MessageEmissionData data = CaptureMessageEmission();
 
             Assert.IsFalse(
                 string.IsNullOrWhiteSpace(data.stackTrace),
-                "Stack trace should capture emission site."
+                "Stack trace should capture emission site when capture is enabled."
             );
 
             string[] lines = data.stackTrace.Split(
@@ -36,7 +38,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             bool containsTestMethod = lines.Any(line =>
-                line.Contains(nameof(StackTraceOmitsDxMessagingFrames), StringComparison.Ordinal)
+                line.Contains(
+                    nameof(StackTraceOmitsDxMessagingFramesWhenCaptureEnabled),
+                    StringComparison.Ordinal
+                )
             );
             if (!containsTestMethod)
             {
@@ -44,12 +49,34 @@ namespace DxMessaging.Tests.Runtime.Core
                     $"Stack trace should include calling test method for debugging context.{Environment.NewLine}{data.stackTrace}"
                 );
             }
+
+            bool containsBlankLine = lines.Any(string.IsNullOrWhiteSpace);
+            Assert.IsFalse(containsBlankLine, "Trimmed stack trace should not retain blank lines.");
         }
 
         [Test]
-        public void ContextIsCapturedWhenProvided()
+        public void StackTraceIsEmptyWhenCaptureDisabled()
         {
+            using DiagnosticsScope scope = new(diagnosticsStackTraces: false);
+
+            MessageEmissionData data = CaptureMessageEmission();
+
+            Assert.AreEqual(
+                string.Empty,
+                data.stackTrace,
+                "Emission-site capture must stay off unless explicitly enabled; it costs hundreds "
+                    + "of microseconds and tens of allocations per record."
+            );
+        }
+
+        [Test]
+        public void RecordedPayloadIsPreservedRegardlessOfCapture(
+            [Values(true, false)] bool captureStackTraces
+        )
+        {
+            using DiagnosticsScope scope = new(diagnosticsStackTraces: captureStackTraces);
             InstanceId expectedContext = new(12345);
+
             MessageEmissionData data = new(new TestUntargetedMessage(), expectedContext);
 
             Assert.That(
@@ -58,6 +85,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Context should be captured when supplied."
             );
             Assert.That(data.context.Value, Is.EqualTo(expectedContext));
+            Assert.That(data.message, Is.TypeOf<TestUntargetedMessage>());
         }
 
         private static MessageEmissionData CaptureMessageEmission()

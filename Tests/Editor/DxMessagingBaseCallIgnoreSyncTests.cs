@@ -110,12 +110,14 @@ namespace DxMessaging.Tests.Editor
         private readonly List<DxMessagingSettings> _createdSettings = new();
         private readonly List<string> _warnings = new();
         private DiagnosticsTarget _previousDiagnosticsTargets;
+        private bool _previousDiagnosticsStackTraces;
         private int _previousMessageBufferSize;
 
         [SetUp]
         public void SetUp()
         {
             _previousDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
+            _previousDiagnosticsStackTraces = IMessageBus.GlobalDiagnosticsStackTraces;
             _previousMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
             _scheduled.Clear();
             _warnings.Clear();
@@ -124,6 +126,7 @@ namespace DxMessaging.Tests.Editor
             DxMessagingEditorInitializer.StaticStateResetter = () =>
             {
                 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
+                IMessageBus.GlobalDiagnosticsStackTraces = false;
                 IMessageBus.GlobalMessageBufferSize = IMessageBus.DefaultMessageBufferSize;
             };
             DxMessagingEditorInitializer.AssetDatabaseMutationScheduler = work =>
@@ -151,6 +154,7 @@ namespace DxMessaging.Tests.Editor
             {
                 DxMessagingEditorInitializer.ResetTestSeams();
                 IMessageBus.GlobalDiagnosticsTargets = _previousDiagnosticsTargets;
+                IMessageBus.GlobalDiagnosticsStackTraces = _previousDiagnosticsStackTraces;
                 IMessageBus.GlobalMessageBufferSize = _previousMessageBufferSize;
             }
         }
@@ -161,12 +165,14 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettings settings = NewSettings();
             settings._diagnosticsTargets = DiagnosticsTarget.Off;
             settings._legacyEnableDiagnosticsInEditor = true;
+            settings._diagnosticsStackTraces = true;
             settings._messageBufferSize = 37;
             DxMessagingEditorInitializer.PassiveSettingsLoader = () => settings;
 
             DxMessagingEditorInitializer.ApplyEditorSettings();
 
             Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Editor));
+            Assert.That(IMessageBus.GlobalDiagnosticsStackTraces, Is.True);
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(37));
             Assert.That(
                 settings._legacyEnableDiagnosticsInEditor,
@@ -192,6 +198,7 @@ namespace DxMessaging.Tests.Editor
                 return NewSettings();
             };
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
+            IMessageBus.GlobalDiagnosticsStackTraces = true;
             IMessageBus.GlobalMessageBufferSize = 3;
 
             DxMessagingEditorInitializer.ApplyEditorSettings();
@@ -203,6 +210,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(_scheduled.Count, Is.EqualTo(1));
             Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Off));
+            Assert.That(IMessageBus.GlobalDiagnosticsStackTraces, Is.False);
             Assert.That(
                 IMessageBus.GlobalMessageBufferSize,
                 Is.EqualTo(IMessageBus.DefaultMessageBufferSize)

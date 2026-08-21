@@ -24,10 +24,13 @@ namespace DxMessaging.Editor.Settings
 
         private const string DiagnosticsSectionTitle = "Diagnostics";
         private const string DiagnosticsSectionDescription =
-            "Controls how much message history the editor keeps when diagnostics are enabled.";
+            "Controls what the editor records when diagnostics are enabled, and how much message history it keeps.";
         private const string DiagnosticsTargetsLabel = "Diagnostics Targets";
         private const string DiagnosticsTargetsTooltip =
             "Select where global diagnostics should be enabled by default.";
+        private const string DiagnosticsStackTracesLabel = "Capture Emission Stack Traces";
+        private const string DiagnosticsStackTracesTooltip =
+            "Record the call site of every emission. Costs hundreds of microseconds and tens of allocations per diagnostic record; leave off unless you are tracing where a message came from.";
         private const string MessageBufferSizeLabel = "Message Buffer Size";
         private const string MessageBufferSizeTooltip =
             "Number of emissions kept per bus/token when diagnostics mode is active.";
@@ -93,6 +96,13 @@ namespace DxMessaging.Editor.Settings
             {
                 DrawSectionHeader(DiagnosticsSectionTitle, DiagnosticsSectionDescription);
                 DrawDiagnosticsTargetsField(_messagingSettings);
+                DrawSettingsToggle(
+                    _messagingSettings,
+                    nameof(DxMessagingSettings._diagnosticsStackTraces),
+                    DiagnosticsStackTracesLabel,
+                    DiagnosticsStackTracesTooltip,
+                    settings => settings.DiagnosticsStackTraces
+                );
                 DrawPropertyField(
                     _messagingSettings,
                     nameof(DxMessagingSettings._messageBufferSize),
@@ -182,6 +192,12 @@ namespace DxMessaging.Editor.Settings
                         nameof(DxMessagingSettings._diagnosticsTargets),
                         DiagnosticsTargetsLabel,
                         DiagnosticsTargetsTooltip
+                    ),
+                    CreatePropertyField(
+                        serializedSettings,
+                        nameof(DxMessagingSettings._diagnosticsStackTraces),
+                        DiagnosticsStackTracesLabel,
+                        DiagnosticsStackTracesTooltip
                     ),
                     CreatePropertyField(
                         serializedSettings,
@@ -430,6 +446,7 @@ namespace DxMessaging.Editor.Settings
                         "MessageBus",
                         "Targets",
                         DiagnosticsTargetsLabel,
+                        DiagnosticsStackTracesLabel,
                         MessageBufferSizeLabel,
                         EditorSafetySectionTitle,
                         SuppressDomainReloadWarningLabel,

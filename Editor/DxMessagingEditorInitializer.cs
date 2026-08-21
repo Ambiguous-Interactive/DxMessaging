@@ -130,6 +130,7 @@ namespace DxMessaging.Editor
                 return;
             }
             IMessageBus.GlobalDiagnosticsTargets = settings.DiagnosticsTargets;
+            IMessageBus.GlobalDiagnosticsStackTraces = settings.DiagnosticsStackTraces;
             IMessageBus.GlobalMessageBufferSize = settings.MessageBufferSize;
         }
 

@@ -105,15 +105,23 @@ namespace DxMessaging.Tests.Editor
         private const string TraceIdLaneDetailsLabelName =
             "dxmessaging-flow-graph-trace-id-lane-details";
 
+        private bool _stackTracesBeforeTest;
+
         [SetUp]
         public void SetUp()
         {
             _selectionBeforeTest = Selection.activeObject;
+            // Emission-site capture is opt-in (issue #433) because it costs a full managed stack
+            // walk per diagnostic record. This fixture asserts on the emission sites the Flow Graph
+            // renders, so it turns capture on for its own duration.
+            _stackTracesBeforeTest = IMessageBus.GlobalDiagnosticsStackTraces;
+            IMessageBus.GlobalDiagnosticsStackTraces = true;
         }
 
         [TearDown]
         public void TearDown()
         {
+            IMessageBus.GlobalDiagnosticsStackTraces = _stackTracesBeforeTest;
             // The viewport-selection test keeps a shown host window open until teardown.
             // Unity resets LogAssert tolerance between the test body and teardown, so
             // re-enable the shared headless-only suppression before closing that window.

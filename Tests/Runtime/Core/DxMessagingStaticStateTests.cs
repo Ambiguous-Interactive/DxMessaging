@@ -25,6 +25,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessagingDebug.LogFunction = (logLevel, message) => { };
 
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
+            IMessageBus.GlobalDiagnosticsStackTraces = true;
             IMessageBus.GlobalMessageBufferSize = 128;
             IMessageBus.GlobalSequentialIndex = 7;
 
@@ -43,6 +44,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.IsFalse(MessagingDebug.enabled);
             Assert.IsNull(MessagingDebug.LogFunction);
             Assert.AreEqual(DiagnosticsTarget.Off, IMessageBus.GlobalDiagnosticsTargets);
+            Assert.IsFalse(IMessageBus.GlobalDiagnosticsStackTraces);
             Assert.AreEqual(100, IMessageBus.GlobalMessageBufferSize);
             Assert.AreEqual(-1, IMessageBus.GlobalSequentialIndex);
 
