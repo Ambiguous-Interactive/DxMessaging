@@ -144,10 +144,17 @@ namespace DxMessaging.Tests.Editor
             IMessageBus.GlobalDiagnosticsStackTraces = captureEnabled;
             VisualElement section = new();
 
+            // The list a node that HAS emitted actually carries while capture is off: one
+            // placeholder per emission, never an empty list. Passing Array.Empty here would have
+            // let the notice pass a test it could not pass in the window (Bugbot, PR #434).
             DxMessagingFlowGraphWindow.AddSourceDetailValues(
                 section,
                 "Emitted by",
-                Array.Empty<string>()
+                new[]
+                {
+                    DxMessagingEditorSourceLinks.UnknownCallSite,
+                    DxMessagingEditorSourceLinks.UnknownCallSite,
+                }
             );
 
             List<Label> labels = section.Query<Label>().ToList();
@@ -179,6 +186,45 @@ namespace DxMessaging.Tests.Editor
                 );
                 Assert.That(enable, Is.Not.Null, "The explanation must travel with the switch.");
             }
+        }
+
+        [Test]
+        public void FlowGraphKeepsRealCallSitesAndDropsPlaceholdersWithoutBlamingTheSetting()
+        {
+            IMessageBus.GlobalDiagnosticsStackTraces = false;
+            VisualElement section = new();
+
+            DxMessagingFlowGraphWindow.AddSourceDetailValues(
+                section,
+                "Emitted by",
+                new[]
+                {
+                    DxMessagingEditorSourceLinks.UnknownCallSite,
+                    "Sample:Emit () (at Assets/Sample.cs:12)",
+                }
+            );
+
+            List<Label> labels = section.Query<Label>().ToList();
+            Assert.That(
+                labels.Exists(label => label.text.Contains("Sample", StringComparison.Ordinal)),
+                Is.True,
+                "A real call site must survive alongside placeholders."
+            );
+            Assert.That(
+                labels.Exists(label =>
+                    label.text.Contains(
+                        DxMessagingEditorSourceLinks.UnknownCallSite,
+                        StringComparison.Ordinal
+                    )
+                ),
+                Is.False,
+                "A placeholder row says nothing; rendering it only buries the real site."
+            );
+            Assert.That(
+                section.Q<Button>(DxMessagingEmissionCaptureNotice.EnableButtonName),
+                Is.Null,
+                "Some sites WERE recorded, so the capture-off notice would be misleading here."
+            );
         }
 
         [Test]

@@ -8032,6 +8032,21 @@ namespace DxMessaging.Editor.Windows
             IReadOnlyList<string> values
         )
         {
+            // CreateEmissionSite returns the UnknownCallSite placeholder for a record with no
+            // captured trace, so with capture off a node that HAS emitted still carries a full
+            // list -- of placeholders. Rendering those would say nothing and would hide the
+            // capture notice behind rows that look like data, so they are dropped first and a
+            // list left with nothing real is the same fact as an empty one.
+            List<string> resolved = new(values.Count);
+            for (int index = 0; index < values.Count; index++)
+            {
+                if (!DxMessagingEditorSourceLinks.IsUnknownCallSite(values[index]))
+                {
+                    resolved.Add(values[index]);
+                }
+            }
+
+            values = resolved;
             if (values.Count == 0)
             {
                 // "none captured" reads as "we looked and there was nothing", which is wrong when
