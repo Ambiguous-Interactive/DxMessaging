@@ -96,12 +96,11 @@ namespace DxMessaging.Editor.Settings
             {
                 DrawSectionHeader(DiagnosticsSectionTitle, DiagnosticsSectionDescription);
                 DrawDiagnosticsTargetsField(_messagingSettings);
-                DrawSettingsToggle(
+                DrawPropertyField(
                     _messagingSettings,
                     nameof(DxMessagingSettings._diagnosticsStackTraces),
                     DiagnosticsStackTracesLabel,
-                    DiagnosticsStackTracesTooltip,
-                    settings => settings.DiagnosticsStackTraces
+                    DiagnosticsStackTracesTooltip
                 );
                 DrawPropertyField(
                     _messagingSettings,
@@ -121,17 +120,17 @@ namespace DxMessaging.Editor.Settings
                 DrawSectionHeader(InspectorChecksSectionTitle, InspectorChecksSectionDescription);
                 DrawSettingsToggle(
                     _messagingSettings,
-                    nameof(DxMessagingSettings._baseCallCheckEnabled),
                     BaseCallCheckEnabledLabel,
                     BaseCallCheckEnabledTooltip,
-                    settings => settings.BaseCallCheckEnabled
+                    settings => settings.BaseCallCheckEnabled,
+                    (settings, value) => settings.BaseCallCheckEnabled = value
                 );
                 DrawSettingsToggle(
                     _messagingSettings,
-                    nameof(DxMessagingSettings._useConsoleBridge),
                     UseConsoleBridgeLabel,
                     UseConsoleBridgeTooltip,
-                    settings => settings.UseConsoleBridge
+                    settings => settings.UseConsoleBridge,
+                    (settings, value) => settings.UseConsoleBridge = value
                 );
                 DrawPropertyField(
                     _messagingSettings,
@@ -230,14 +229,16 @@ namespace DxMessaging.Editor.Settings
                         nameof(DxMessagingSettings._baseCallCheckEnabled),
                         BaseCallCheckEnabledLabel,
                         BaseCallCheckEnabledTooltip,
-                        settings => settings.BaseCallCheckEnabled
+                        settings => settings.BaseCallCheckEnabled,
+                        (settings, value) => settings.BaseCallCheckEnabled = value
                     ),
                     CreateSettingsToggle(
                         serializedSettings,
                         nameof(DxMessagingSettings._useConsoleBridge),
                         UseConsoleBridgeLabel,
                         UseConsoleBridgeTooltip,
-                        settings => settings.UseConsoleBridge
+                        settings => settings.UseConsoleBridge,
+                        (settings, value) => settings.UseConsoleBridge = value
                     ),
                     CreatePropertyField(
                         serializedSettings,
@@ -313,7 +314,8 @@ namespace DxMessaging.Editor.Settings
             string fieldName,
             string label,
             string tooltip,
-            Func<DxMessagingSettings, bool> getValue
+            Func<DxMessagingSettings, bool> getValue,
+            Action<DxMessagingSettings, bool> setValue
         )
         {
             if (serializedSettings.targetObject is not DxMessagingSettings settings)
@@ -329,7 +331,7 @@ namespace DxMessaging.Editor.Settings
             toggle.style.marginTop = 4;
             toggle.SetValueWithoutNotify(getValue(settings));
             toggle.RegisterValueChangedCallback(evt =>
-                ApplySettingsToggleValue(serializedSettings, fieldName, evt.newValue)
+                ApplySettingsToggleValue(serializedSettings, setValue, evt.newValue)
             );
             return toggle;
         }
@@ -373,10 +375,10 @@ namespace DxMessaging.Editor.Settings
 
         private static void DrawSettingsToggle(
             SerializedObject serializedSettings,
-            string fieldName,
             string label,
             string tooltip,
-            Func<DxMessagingSettings, bool> getValue
+            Func<DxMessagingSettings, bool> getValue,
+            Action<DxMessagingSettings, bool> setValue
         )
         {
             if (serializedSettings.targetObject is not DxMessagingSettings settings)
@@ -395,13 +397,19 @@ namespace DxMessaging.Editor.Settings
             if (updatedValue != currentValue)
             {
                 serializedSettings.ApplyModifiedProperties();
-                ApplySettingsToggleValue(serializedSettings, fieldName, updatedValue);
+                ApplySettingsToggleValue(serializedSettings, setValue, updatedValue);
             }
         }
 
+        /// <summary>
+        /// Applies a toggle change through the settings property that owns its side effects
+        /// (console-bridge rescans, base-call harvest scheduling), then marks the asset dirty.
+        /// The caller supplies the setter, so a new toggle cannot be added without one; an earlier
+        /// field-name switch here silently went stale and threw for any field it did not list.
+        /// </summary>
         internal static void ApplySettingsToggleValue(
             SerializedObject serializedSettings,
-            string fieldName,
+            Action<DxMessagingSettings, bool> setValue,
             bool value
         )
         {
@@ -413,18 +421,12 @@ namespace DxMessaging.Editor.Settings
                 );
             }
 
-            switch (fieldName)
+            if (setValue == null)
             {
-                case nameof(DxMessagingSettings._baseCallCheckEnabled):
-                    settings.BaseCallCheckEnabled = value;
-                    break;
-                case nameof(DxMessagingSettings._useConsoleBridge):
-                    settings.UseConsoleBridge = value;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(fieldName), fieldName, null);
+                throw new ArgumentNullException(nameof(setValue));
             }
 
+            setValue(settings, value);
             EditorUtility.SetDirty(settings);
             serializedSettings.Update();
         }

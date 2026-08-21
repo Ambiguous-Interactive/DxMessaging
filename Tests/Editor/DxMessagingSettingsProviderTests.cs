@@ -111,12 +111,12 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingSettingsProvider.ApplySettingsToggleValue(
                 serializedSettings,
-                nameof(DxMessagingSettings._baseCallCheckEnabled),
+                (target, value) => target.BaseCallCheckEnabled = value,
                 false
             );
             DxMessagingSettingsProvider.ApplySettingsToggleValue(
                 serializedSettings,
-                nameof(DxMessagingSettings._useConsoleBridge),
+                (target, value) => target.UseConsoleBridge = value,
                 true
             );
 
