@@ -217,10 +217,27 @@ namespace DxMessaging.Editor.Windows
                 .ToArray();
         }
 
+        /// <summary>
+        /// Placeholder <see cref="CreateEmissionSite"/> returns when a record carries no usable
+        /// call site. Named because callers must be able to recognize it: a list of these means
+        /// "nothing was recorded", not "here are some call sites".
+        /// </summary>
+        internal const string UnknownCallSite = "<unknown call site>";
+
         internal static string CreateEmissionSite(string stackTrace)
         {
             IReadOnlyList<string> frames = ReadCallSiteFrames(stackTrace);
-            return frames.Count == 0 ? "<unknown call site>" : frames[0];
+            return frames.Count == 0 ? UnknownCallSite : frames[0];
+        }
+
+        /// <summary>
+        /// Whether <paramref name="value"/> is the "no call site was recorded" placeholder rather
+        /// than a real frame.
+        /// </summary>
+        internal static bool IsUnknownCallSite(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                || string.Equals(value.Trim(), UnknownCallSite, StringComparison.Ordinal);
         }
 
         internal static string CreateCompactCallSiteLabel(string value)

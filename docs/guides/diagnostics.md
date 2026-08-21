@@ -42,6 +42,7 @@ DxMessaging provides multiple levels of diagnostics control:
 
 - `IMessageBus.GlobalDiagnosticsTargets` -- Sets the default diagnostics mode for newly created buses and tokens. Uses the `DiagnosticsTarget` flags enum.
 - `IMessageBus.GlobalMessageBufferSize` -- Sets the default ring buffer size for emission history (default: 100).
+- `IMessageBus.GlobalDiagnosticsStackTraces` -- Records the call site of every emission. Off by default; see [Emission-Site Capture](#emission-site-capture) before turning it on.
 
 ### Per-Bus and Per-Token
 
@@ -106,7 +107,8 @@ type and the context. Snapshot ends the row with the dispatch id; live ends it
 with the time the row was observed and the `N` count of emissions merged into it.
 Selecting a row fills the detail pane below the log; the stack trace lives there
 behind a disclosure that starts closed, so a long call stack never buries the log
-itself.
+itself. When emission-site capture is off the disclosure starts open instead, says
+so, and offers the switch -- see [Emission-Site Capture](#emission-site-capture).
 
 The detail pane links out to what a row stands for:
 
@@ -473,6 +475,7 @@ The `RegistrationMethod` enum captures how the handler was wired up:
 When diagnostics are enabled, buses and tokens record message emissions in a ring buffer:
 
 - Buffer size is controlled by `IMessageBus.GlobalMessageBufferSize` (default: 100).
+- Emission-site stack traces are captured only when `IMessageBus.GlobalDiagnosticsStackTraces` is on; see [Emission-Site Capture](#emission-site-capture).
 - Setting buffer size to 0 disables history retention (emissions are silently discarded).
 - Inspect recent emissions per token via built-in diagnostics or build custom tools using post-processors.
 - Bus-side `MessageBus` records carry a non-zero `traceId` while dispatching.
@@ -513,7 +516,7 @@ using DxMessaging.Core.MessageBus;
 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 ```
 
-This is the recommended default for most projects. You get full visibility during development without any performance cost in production builds.
+This is the recommended default for most projects. You get full visibility during development without any performance cost in production builds. Leave emission-site capture off unless you are actively tracing a call site; see [Emission-Site Capture](#emission-site-capture).
 
 ### Runtime Diagnostics for QA Builds
 
@@ -569,6 +572,45 @@ Diagnostics add overhead. Consider these factors when enabling them:
 - Registration logging adds overhead to every `Register` and `Deregister` call.
 - Emission recording adds overhead to every message broadcast.
 - Post-processor chains for diagnostics run after each message dispatch.
+
+### Emission-Site Capture
+
+`MessageEmissionData.stackTrace` holds the call site an emission came from, and it is what the
+Message Monitor and Flow Graph **Open** buttons resolve into source links. Capturing it means
+walking and formatting the managed stack on every diagnostic record, which is expensive enough to
+dominate a frame:
+
+| Measurement (Unity 6000.4.6f1, Editor PlayMode Mono x64 Release) | Value                |
+| ---------------------------------------------------------------- | -------------------- |
+| Cost of one captured record                                      | ~236 microseconds    |
+| Allocation calls per captured record                             | ~67                  |
+| Records written per single-subscriber emission                   | 2 (bus plus token)   |
+| `Comparison_DxMessaging_GlobalToOne` with capture on             | ~1,100 emissions/sec |
+| Same row with a plain C# event, same session                     | ~340,000,000/sec     |
+
+Capture cost scales with stack depth, so deeper gameplay call stacks pay more. Because of that,
+capture is off by default.
+
+The editor tells you when that is why a call site is missing, and offers the switch on the spot:
+the Message Monitor's **Stack trace** disclosure reads `Stack trace (capture off)`, opens itself,
+explains the trade-off, and carries an **Enable stack traces** button; the Flow Graph's emission-site
+rows read `none captured (capture off)` and carry the same button. Clicking it takes effect for the
+next emission and is saved to the project settings asset. Rows already recorded stay empty, because
+their call site was never captured.
+
+You can also set it from code or from the settings page:
+
+```csharp
+using DxMessaging.Core.MessageBus;
+
+// Only while tracing where a message came from.
+IMessageBus.GlobalDiagnosticsStackTraces = true;
+```
+
+In the editor, the same switch is **Project Settings > Wallstop Studios > DxMessaging > Capture
+Emission Stack Traces**, which is also where you turn it back off. With it off, every other part of
+diagnostics still works: emission history, call counts, trace ids, registration logs, the Message
+Monitor log, and the Flow Graph. Only the per-row stack trace and its source links are empty.
 
 ### Recommendations
 

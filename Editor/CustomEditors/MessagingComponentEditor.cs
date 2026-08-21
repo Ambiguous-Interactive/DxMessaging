@@ -7,6 +7,7 @@ namespace DxMessaging.Editor.CustomEditors
     using Core.Diagnostics;
     using Core.MessageBus;
     using Core.Messages;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Testing;
     using DxMessaging.Unity;
     using UnityEditor;
@@ -295,7 +296,9 @@ namespace DxMessaging.Editor.CustomEditors
                                 GUIContent labelContent = new("Message Type");
                                 GUIContent valueContent = new(
                                     globalEmissionData.message.MessageType.Name,
-                                    globalEmissionData.stackTrace
+                                    DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(
+                                        globalEmissionData.stackTrace
+                                    )
                                 );
 
                                 EditorGUILayout.LabelField(labelContent, valueContent, style);
@@ -404,7 +407,9 @@ namespace DxMessaging.Editor.CustomEditors
                                 GUIContent labelContent = new("Message Type");
                                 GUIContent valueContent = new(
                                     globalEmissionData.message.MessageType.Name,
-                                    globalEmissionData.stackTrace
+                                    DxMessagingEmissionCaptureNotice.DescribeCallSiteTooltip(
+                                        globalEmissionData.stackTrace
+                                    )
                                 );
 
                                 EditorGUILayout.LabelField(labelContent, valueContent);

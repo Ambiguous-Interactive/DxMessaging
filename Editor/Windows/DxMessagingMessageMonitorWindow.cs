@@ -2458,16 +2458,30 @@ namespace DxMessaging.Editor.Windows
                 entry.StackTrace
             );
             bool captured = frames.Count > 0;
-            // A trace that was captured but holds nothing except Unity's capture frames is a
-            // different fact from one that was never captured, and saying "not captured" about
-            // it would be false.
+            // Three distinct facts, and calling any of them by another's name would be a lie:
+            // a trace holding only Unity's capture frames WAS captured; an empty trace while
+            // capture is off is the opt-in setting, not a missing call site; an empty trace while
+            // capture is ON is a record written before it was turned on (or built by hand).
             bool captureFramesOnly = !captured && !string.IsNullOrWhiteSpace(entry.StackTrace);
-            string emptyText = captureFramesOnly
-                ? "Stack trace (no caller frames)"
-                : "Stack trace (not captured)";
-            string emptyBody = captureFramesOnly
-                ? "Stack trace: captured, but every frame was Unity's own stack capture."
-                : "Stack trace: not captured";
+            bool captureDisabled =
+                !captured && !captureFramesOnly && !DxMessagingEmissionCaptureNotice.CaptureEnabled;
+            string emptyText;
+            string emptyBody;
+            if (captureFramesOnly)
+            {
+                emptyText = "Stack trace (no caller frames)";
+                emptyBody = "Stack trace: captured, but every frame was Unity's own stack capture.";
+            }
+            else if (captureDisabled)
+            {
+                emptyText = $"Stack trace ({DxMessagingEmissionCaptureNotice.DisabledSummary})";
+                emptyBody = DxMessagingEmissionCaptureNotice.DisabledExplanation;
+            }
+            else
+            {
+                emptyText = "Stack trace (not captured)";
+                emptyBody = "Stack trace: not captured";
+            }
             Foldout stackFoldout = new()
             {
                 name = foldoutName,
@@ -2482,10 +2496,26 @@ namespace DxMessaging.Editor.Windows
 
             if (!captured)
             {
-                Label empty = new(emptyBody) { name = labelName };
-                empty.style.whiteSpace = WhiteSpace.Normal;
-                stackFrames.Add(empty);
+                if (captureDisabled)
+                {
+                    // The switch travels with the explanation: an empty pane that only says
+                    // "off" still leaves the user hunting through project settings.
+                    stackFrames.Add(
+                        DxMessagingEmissionCaptureNotice.CreateDisabledNotice(labelName)
+                    );
+                }
+                else
+                {
+                    Label empty = new(emptyBody) { name = labelName };
+                    empty.style.whiteSpace = WhiteSpace.Normal;
+                    stackFrames.Add(empty);
+                }
+
                 stackFoldout.Add(stackFrames);
+                // Opened by default ONLY in the capture-off state: the header alone cannot carry
+                // the reason plus the fix, and a collapsed foldout is exactly how the setting
+                // stayed invisible. A real trace stays collapsed so it cannot bury the log.
+                stackFoldout.value = captureDisabled;
                 return stackFoldout;
             }
 

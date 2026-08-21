@@ -191,6 +191,83 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        [Test]
+        public void EmissionSiteCaptureIsOptInOnBothBusAndTokenRecords(
+            [Values(true, false)] bool captureStackTraces
+        )
+        {
+            using (
+                new DiagnosticsScope(
+                    DiagnosticsTarget.All,
+                    diagnosticsStackTraces: captureStackTraces
+                )
+            )
+            {
+                GameObject host = new(nameof(EmissionSiteCaptureIsOptInOnBothBusAndTokenRecords));
+                _spawned.Add(host);
+                MessageHandler handler = new(host) { active = true };
+                MessageBus customBus = new() { DiagnosticsMode = true };
+
+                MessageRegistrationToken token = MessageRegistrationToken.Create(
+                    handler,
+                    customBus
+                );
+                token.DiagnosticMode = true;
+                token.Enable();
+
+                int count = 0;
+                MessageRegistrationHandle handle =
+                    token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
+
+                SimpleUntargetedMessage message = new();
+                message.EmitUntargeted(customBus);
+                Assert.AreEqual(1, count);
+
+                CyclicBuffer<MessageEmissionData> busBuffer = GetEmissionBuffer(customBus);
+                CyclicBuffer<MessageEmissionData> tokenBuffer = GetEmissionBuffer(token);
+                Assert.AreEqual(
+                    1,
+                    busBuffer.Count,
+                    "The bus must record the emission whether or not the site is captured."
+                );
+                Assert.AreEqual(
+                    1,
+                    tokenBuffer.Count,
+                    "The token must record the delivery whether or not the site is captured."
+                );
+
+                foreach (
+                    (string source, CyclicBuffer<MessageEmissionData> buffer) in new[]
+                    {
+                        ("bus", busBuffer),
+                        ("token", tokenBuffer),
+                    }
+                )
+                {
+                    string capturedTrace = buffer[0].stackTrace;
+                    if (captureStackTraces)
+                    {
+                        Assert.IsFalse(
+                            string.IsNullOrWhiteSpace(capturedTrace),
+                            $"The {source} record must carry an emission site when capture is enabled."
+                        );
+                    }
+                    else
+                    {
+                        Assert.AreEqual(
+                            string.Empty,
+                            capturedTrace,
+                            $"The {source} record must not pay for an emission site when capture is disabled."
+                        );
+                    }
+                }
+
+                token.RemoveRegistration(handle);
+                token.Disable();
+                handler.active = false;
+            }
+        }
+
         private static Dictionary<MessageRegistrationHandle, int> GetCallCounts(
             MessageRegistrationToken token
         )

@@ -6,8 +6,9 @@ namespace DxMessaging.Tests.Runtime
 
     /// <summary>
     /// Save-restore guard for the global diagnostics statics
-    /// (<see cref="IMessageBus.GlobalDiagnosticsTargets"/> and
-    /// <see cref="IMessageBus.GlobalMessageBufferSize"/>). Captures both values on
+    /// (<see cref="IMessageBus.GlobalDiagnosticsTargets"/>,
+    /// <see cref="IMessageBus.GlobalDiagnosticsStackTraces"/>, and
+    /// <see cref="IMessageBus.GlobalMessageBufferSize"/>). Captures every value on
     /// construction, optionally applies overrides, and restores the captured values on
     /// <see cref="Dispose"/>. Replaces the hand-rolled try/finally and SetUp/TearDown
     /// save-restore blocks that were duplicated across diagnostics-sensitive fixtures.
@@ -15,6 +16,7 @@ namespace DxMessaging.Tests.Runtime
     public sealed class DiagnosticsScope : IDisposable
     {
         private readonly DiagnosticsTarget _savedDiagnosticsTargets;
+        private readonly bool _savedDiagnosticsStackTraces;
         private readonly int _savedMessageBufferSize;
         private bool _disposed;
 
@@ -24,14 +26,21 @@ namespace DxMessaging.Tests.Runtime
         /// </summary>
         public DiagnosticsScope(
             DiagnosticsTarget? diagnosticsTargets = null,
-            int? messageBufferSize = null
+            int? messageBufferSize = null,
+            bool? diagnosticsStackTraces = null
         )
         {
             _savedDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
+            _savedDiagnosticsStackTraces = IMessageBus.GlobalDiagnosticsStackTraces;
             _savedMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
             if (diagnosticsTargets.HasValue)
             {
                 IMessageBus.GlobalDiagnosticsTargets = diagnosticsTargets.Value;
+            }
+
+            if (diagnosticsStackTraces.HasValue)
+            {
+                IMessageBus.GlobalDiagnosticsStackTraces = diagnosticsStackTraces.Value;
             }
 
             if (messageBufferSize.HasValue)
@@ -52,6 +61,7 @@ namespace DxMessaging.Tests.Runtime
 
             _disposed = true;
             IMessageBus.GlobalDiagnosticsTargets = _savedDiagnosticsTargets;
+            IMessageBus.GlobalDiagnosticsStackTraces = _savedDiagnosticsStackTraces;
             IMessageBus.GlobalMessageBufferSize = _savedMessageBufferSize;
         }
     }

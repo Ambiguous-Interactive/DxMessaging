@@ -28,6 +28,9 @@ namespace DxMessaging.Editor.Settings
         internal bool _legacyEnableDiagnosticsInEditor;
 
         [SerializeField]
+        internal bool _diagnosticsStackTraces;
+
+        [SerializeField]
         internal int _messageBufferSize = IMessageBus.DefaultMessageBufferSize;
 
         [SerializeField]
@@ -53,6 +56,18 @@ namespace DxMessaging.Editor.Settings
                 _diagnosticsTargets = value;
                 _legacyEnableDiagnosticsInEditor = false;
             }
+        }
+
+        /// <summary>
+        /// Sets <see cref="IMessageBus.GlobalDiagnosticsStackTraces"/> for Editor sessions. Off by
+        /// default: capturing an emission-site stack trace costs hundreds of microseconds and tens
+        /// of allocations per diagnostic record, and every emission writes at least two records.
+        /// Turn it on only while chasing down where a message came from.
+        /// </summary>
+        public bool DiagnosticsStackTraces
+        {
+            get => _diagnosticsStackTraces;
+            set => _diagnosticsStackTraces = value;
         }
 
         /// <summary>
@@ -225,6 +240,7 @@ namespace DxMessaging.Editor.Settings
             {
                 settings = CreateInstance<DxMessagingSettings>();
                 settings._diagnosticsTargets = DiagnosticsTarget.Off;
+                settings._diagnosticsStackTraces = false;
                 settings._messageBufferSize = IMessageBus.DefaultMessageBufferSize;
                 settings._suppressDomainReloadWarning = true;
                 settings._baseCallCheckEnabled = true;

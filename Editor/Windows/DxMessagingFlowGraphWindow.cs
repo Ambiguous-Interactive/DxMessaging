@@ -177,6 +177,14 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-flow-graph-details-hierarchy-trail";
         internal const string DetailsHierarchySegmentClassName =
             "dxmessaging-flow-graph-details-hierarchy-segment";
+
+        /// <summary>
+        /// Name of the explanation label shown when emission-site capture is off, so tests and
+        /// callers can find it alongside the shared enable button.
+        /// </summary>
+        internal const string CaptureDisabledExplanationName =
+            "dxmessaging-flow-graph-capture-disabled";
+
         internal const string DetailsSourceRowClassName =
             "dxmessaging-flow-graph-details-source-row";
         internal const string DetailsRelationshipClassName =
@@ -8016,14 +8024,49 @@ namespace DxMessaging.Editor.Windows
             return row;
         }
 
-        private static void AddSourceDetailValues(
+        // internal for the capture-off notice tests: building a full snapshot and selecting a node
+        // to reach this empty state would test the graph, not the notice.
+        internal static void AddSourceDetailValues(
             VisualElement section,
             string firstLabel,
             IReadOnlyList<string> values
         )
         {
+            // CreateEmissionSite returns the UnknownCallSite placeholder for a record with no
+            // captured trace, so with capture off a node that HAS emitted still carries a full
+            // list -- of placeholders. Rendering those would say nothing and would hide the
+            // capture notice behind rows that look like data, so they are dropped first and a
+            // list left with nothing real is the same fact as an empty one.
+            List<string> resolved = new(values.Count);
+            for (int index = 0; index < values.Count; index++)
+            {
+                if (!DxMessagingEditorSourceLinks.IsUnknownCallSite(values[index]))
+                {
+                    resolved.Add(values[index]);
+                }
+            }
+
+            values = resolved;
             if (values.Count == 0)
             {
+                // "none captured" reads as "we looked and there was nothing", which is wrong when
+                // emission-site capture is simply off. Name the setting and carry its switch.
+                if (!DxMessagingEmissionCaptureNotice.CaptureEnabled)
+                {
+                    section.Add(
+                        CreateDetailsKeyValue(
+                            firstLabel,
+                            $"none captured ({DxMessagingEmissionCaptureNotice.DisabledSummary})"
+                        )
+                    );
+                    section.Add(
+                        DxMessagingEmissionCaptureNotice.CreateDisabledNotice(
+                            CaptureDisabledExplanationName
+                        )
+                    );
+                    return;
+                }
+
                 section.Add(CreateDetailsKeyValue(firstLabel, "none captured"));
                 return;
             }

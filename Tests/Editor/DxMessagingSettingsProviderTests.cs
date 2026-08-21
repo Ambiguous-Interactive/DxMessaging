@@ -54,6 +54,7 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(sections.TrueForAll(HasCompleteBorder), Is.True);
             AssertBoundField(root, nameof(DxMessagingSettings._diagnosticsTargets));
+            AssertBoundField(root, nameof(DxMessagingSettings._diagnosticsStackTraces));
             AssertBoundField(root, nameof(DxMessagingSettings._messageBufferSize));
             AssertBoundField(root, nameof(DxMessagingSettings._suppressDomainReloadWarning));
             AssertToggle(root, nameof(DxMessagingSettings._baseCallCheckEnabled), true);
@@ -70,11 +71,22 @@ namespace DxMessaging.Tests.Editor
             root.Add(new Label("Stale child"));
 
             DxMessagingSettingsProvider.BuildSettingsUi(root, serializedSettings);
+            int fieldsAfterFirstBuild = root.Query<PropertyField>().ToList().Count;
             DxMessagingSettingsProvider.BuildSettingsUi(root, serializedSettings);
 
             List<PropertyField> fields = root.Query<PropertyField>().ToList();
             List<Label> labels = root.Query<Label>().ToList();
-            Assert.That(fields.Count, Is.EqualTo(4));
+            Assert.That(
+                fieldsAfterFirstBuild,
+                Is.GreaterThan(0),
+                "The settings UI must bind at least one field, otherwise the rebuild comparison "
+                    + "below passes vacuously."
+            );
+            Assert.That(
+                fields.Count,
+                Is.EqualTo(fieldsAfterFirstBuild),
+                "Rebuilding must replace the previous fields rather than append a second copy."
+            );
             Assert.That(labels.Exists(label => label.text == "Stale child"), Is.False);
         }
 
@@ -99,12 +111,12 @@ namespace DxMessaging.Tests.Editor
 
             DxMessagingSettingsProvider.ApplySettingsToggleValue(
                 serializedSettings,
-                nameof(DxMessagingSettings._baseCallCheckEnabled),
+                (target, value) => target.BaseCallCheckEnabled = value,
                 false
             );
             DxMessagingSettingsProvider.ApplySettingsToggleValue(
                 serializedSettings,
-                nameof(DxMessagingSettings._useConsoleBridge),
+                (target, value) => target.UseConsoleBridge = value,
                 true
             );
 

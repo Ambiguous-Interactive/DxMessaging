@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#426](https://github.com/Ambiguous-Interactive/DxMessaging/issues/426)).
 - Reduce repeated message-handler subscribe/unsubscribe churn by six managed allocation calls per
   cycle ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
+- **BREAKING (diagnostics output):** Diagnostic emission records no longer capture the emission-site
+  stack trace unless you opt in through `IMessageBus.GlobalDiagnosticsStackTraces` or the
+  **Capture Emission Stack Traces** project setting. Capturing a trace cost about 236 microseconds
+  and 67 managed allocations per record, and every emission writes at least two records (one on the
+  bus, one per token delivery), so turning diagnostics on dropped editor dispatch from tens of
+  millions of emissions per second to about 1,100 and allocated roughly 143 KB per emission. Message
+  Monitor and Flow Graph now say when a call site is missing because capture is off and offer an
+  **Enable stack traces** button that applies immediately and is saved to project settings
+  ([#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)).
 
 ## [3.3.0]
 

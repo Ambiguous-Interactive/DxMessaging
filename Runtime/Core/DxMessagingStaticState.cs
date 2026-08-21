@@ -45,6 +45,7 @@ namespace DxMessaging.Core
                 MessagingDebug.LogFunction = Baseline.MessagingDebugLogFunction;
 
                 IMessageBus.GlobalDiagnosticsTargets = Baseline.GlobalDiagnosticsTargets;
+                IMessageBus.GlobalDiagnosticsStackTraces = Baseline.GlobalDiagnosticsStackTraces;
                 IMessageBus.GlobalMessageBufferSize = Baseline.GlobalMessageBufferSize;
                 IMessageBus.GlobalSequentialIndex = Baseline.GlobalSequentialIndex;
                 DxMessagingRuntimeSettingsProvider.ResetForTests();
@@ -79,6 +80,7 @@ namespace DxMessaging.Core
             bool messagingDebugEnabled = MessagingDebug.enabled;
             Action<LogLevel, string> messagingDebugLogFunction = MessagingDebug.LogFunction;
             DiagnosticsTarget globalDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
+            bool globalDiagnosticsStackTraces = IMessageBus.GlobalDiagnosticsStackTraces;
             int globalMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
             int globalSequentialIndex = IMessageBus.GlobalSequentialIndex;
             int syntheticOwnerCounter = MessageRegistrationBuilder.GetSyntheticOwnerCounter();
@@ -87,6 +89,7 @@ namespace DxMessaging.Core
                 messagingDebugEnabled,
                 messagingDebugLogFunction,
                 globalDiagnosticsTargets,
+                globalDiagnosticsStackTraces,
                 globalMessageBufferSize,
                 globalSequentialIndex,
                 syntheticOwnerCounter
@@ -99,6 +102,7 @@ namespace DxMessaging.Core
                 bool messagingDebugEnabled,
                 Action<LogLevel, string> messagingDebugLogFunction,
                 DiagnosticsTarget globalDiagnosticsTargets,
+                bool globalDiagnosticsStackTraces,
                 int globalMessageBufferSize,
                 int globalSequentialIndex,
                 int syntheticOwnerCounter
@@ -107,6 +111,7 @@ namespace DxMessaging.Core
                 MessagingDebugEnabled = messagingDebugEnabled;
                 MessagingDebugLogFunction = messagingDebugLogFunction;
                 GlobalDiagnosticsTargets = globalDiagnosticsTargets;
+                GlobalDiagnosticsStackTraces = globalDiagnosticsStackTraces;
                 GlobalMessageBufferSize = globalMessageBufferSize;
                 GlobalSequentialIndex = globalSequentialIndex;
                 SyntheticOwnerCounter = syntheticOwnerCounter;
@@ -117,6 +122,8 @@ namespace DxMessaging.Core
             internal Action<LogLevel, string> MessagingDebugLogFunction { get; }
 
             internal DiagnosticsTarget GlobalDiagnosticsTargets { get; }
+
+            internal bool GlobalDiagnosticsStackTraces { get; }
 
             internal int GlobalMessageBufferSize { get; }
 
