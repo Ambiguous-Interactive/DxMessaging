@@ -351,12 +351,6 @@
     margin-bottom: 2.4rem;
   }
 
-  /* Three long labels do not fit one row on a phone, and a squeezed three-column grid truncates
-     them; stack instead. */
-  .dxm-first-message .dxm-sample-labels {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .dxm-sample-note {
     border-top: 1px solid var(--md-default-fg-color--lightest);
     color: var(--md-default-fg-color--light);
@@ -366,6 +360,8 @@
     padding: 0.9rem 1.1rem 1.1rem;
   }
 
+  /* Three descriptive labels do not fit one row on a phone, and a squeezed three-column grid
+     truncates them; stack instead. */
   @media screen and (max-width: 44.9em) {
     .dxm-first-message .dxm-sample-labels {
       grid-template-columns: minmax(0, 1fr);

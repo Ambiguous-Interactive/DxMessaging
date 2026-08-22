@@ -2,5 +2,5 @@
   <polygon points="88,48 68,82.64 28,82.64 8,48 28,13.36 68,13.36" fill="none" stroke="#0d1117" stroke-width="4.5"></polygon>
   <circle cx="30" cy="48" r="6" fill="#0d1117"></circle>
   <path d="M46,34 a20,20 0 0 1 0,28" fill="none" stroke="#0d1117" stroke-width="4" stroke-linecap="round"></path>
-  <path d="M58,26 a32,32 0 0 1 0,44" fill="none" stroke="#0d1117" stroke-width="4" stroke-linecap="round" opacity="0.55"></path>
+  <path d="M58,26 a32,32 0 0 1 0,44" fill="none" stroke="#0d1117" stroke-width="4" stroke-linecap="round"></path>
 </svg>
