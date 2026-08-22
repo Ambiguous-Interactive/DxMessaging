@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Improve untargeted dispatch throughput when no interceptors, global handlers, or post-processors
   are registered ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
-- Show a pause announcement coordinating independent UI and audio systems and a source-bound
-  collision driving independent sound and breakable-object reactions on the homepage
+- Show untargeted and broadcast examples on the landing page instead of the targeted one alone.
+  The hero and a new **First Message** selector each offer all three shapes: a pause announcement
+  coordinating independent systems, a hazard damaging one object it holds no reference to, and a
+  source-bound collision driving independent sound and breakable-object reactions
   ([#426](https://github.com/Ambiguous-Interactive/DxMessaging/issues/426)).
 - Reduce repeated message-handler subscribe/unsubscribe churn by six managed allocation calls per
   cycle ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
@@ -25,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Monitor and Flow Graph now say when a call site is missing because capture is off and offer an
   **Enable stack traces** button that applies immediately and is saved to project settings
   ([#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)).
+- Replace the brand mark's three-spoke hub with the emitter artwork supplied on the issue, across
+  the mark, its light and single-color variants, the icon tile, the README banner, and the raster
+  assets derived from them
+  ([#436](https://github.com/Ambiguous-Interactive/DxMessaging/issues/436)).
+
+### Fixed
+
+- Stop the Message Monitor from drawing its toolbar over the log header, and its column headings
+  over each other, at narrow window widths. Neither Monitor row wraps now - the live toolbar is two
+  declared rows, what the log is doing and what it is filtered to - because a wrapping row's height
+  is not resolved from the lines it wraps onto on Unity 2021.3, so those lines rendered outside the
+  row. Every heading clips to its own column with an ellipsis, the way the row cell beneath it
+  already did, and the route-kind chips give space back instead of pushing the search field past
+  the edge ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
 
 ## [3.3.0]
 

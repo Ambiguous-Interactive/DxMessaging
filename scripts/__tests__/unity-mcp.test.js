@@ -117,7 +117,15 @@ function initializeResponse(
 }
 const OK_PAYLOAD = `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"${PROTOCOL_VERSION}","capabilities":{"tools":{}},"serverInfo":{"name":"unity","version":"1"}}}`;
 const TOOLS_PAYLOAD =
-  '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"Unity_RunCommand","inputSchema":{"type":"object"}}]}}';
+  '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"Unity_ManageEditor","inputSchema":{"type":"object"}},{"name":"Unity_RunCommand","inputSchema":{"type":"object"}}]}}';
+const EDITOR_STATE_TEXT =
+  '{"success":true,"data":{"IsPlaying":false,"IsCompiling":false,"IsUpdating":false}}';
+const editorCallPayload = (text, isError) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id: 3,
+    result: { content: [{ type: "text", text }], isError: Boolean(isError) }
+  });
 // prettier-ignore
 function readyProbeFetch(options = {}) {
   const contentType = options.contentType ?? "application/json";
@@ -171,6 +179,12 @@ function readyProbeFetch(options = {}) {
     if (request.method === "notifications/initialized") {
       if (options.initializedError) throw options.initializedError;
       return initializeResponse("", { status: options.initializedStatus ?? 202 });
+    }
+    if (request.method === "tools/call") {
+      const called = options.call ?? editorCallPayload(EDITOR_STATE_TEXT);
+      const answer = JSON.parse(called);
+      answer.id = request.id;
+      return initializeResponse(encode(JSON.stringify(answer)), { contentType });
     }
     const tools = typeof options.tools === "function" ? options.tools(request) : options.tools;
     const payload = JSON.parse(tools ?? TOOLS_PAYLOAD);
@@ -447,7 +461,7 @@ test("probeEndpoint verifies editor tools over JSON and server-sent events", asy
       true
     );
     assert.equal(result.ok, true, result.detail);
-    assert.equal(result.toolCount, 1);
+    assert.equal(result.toolCount, 2);
     assert.deepEqual(
       requests.filter((request) => request.method !== "GET").map((request) =>
         request.method === "DELETE" ? "DELETE" : JSON.parse(request.body).method
@@ -609,6 +623,68 @@ test("probeEndpoint retries one session-bearing HTTP 404 within its lifecycle", 
   assert.match(failed.detail, /tools\/list.*404/);
   assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "initialize").length, 2);
 });
+// The relay keeps advertising its whole registry while the editor's discovery record goes stale,
+// so tools/list alone reports green through a window where nothing editor-backed works (#418).
+// prettier-ignore
+for (const [label, options, expected, detail] of [
+  ["a live editor answers", {}, "ok", undefined],
+  [
+    "the editor's discovery record has gone stale",
+    { call: editorCallPayload('{"success":false,"error":"Unity not detected (no fresh discovery files found)"}', true) },
+    "not-ready",
+    /Unity_ManageEditor: .*Unity not detected/
+  ],
+  [
+    "the call answers without editor state",
+    { call: editorCallPayload("{}") },
+    "not-ready",
+    /Unity_ManageEditor: \{\}/
+  ],
+  [
+    "the call answers with no content at all",
+    { call: '{"jsonrpc":"2.0","id":3,"result":{"content":[]}}' },
+    "not-ready",
+    /returned no editor state/
+  ]
+]) {
+  test(`probeEndpoint editor readiness reports ${label}`, async (t) => {
+    const requests = [];
+    const result = await probeEndpoint(
+      { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+      probeOptions(),
+      readyProbeFetch({ ...options, requests }),
+      "editor"
+    );
+    assert.equal(result.status, expected, result.detail);
+    if (detail) assert.match(result.detail, detail);
+    assert.equal(
+      requests.filter((r) => JSON.parse(r.body ?? "{}").method === "tools/call").length,
+      1,
+      "editor readiness asks the editor exactly once"
+    );
+  });
+}
+// prettier-ignore
+test("probeEndpoint only calls a tool when editor readiness is asked for", async (t) => {
+  const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
+  const requests = [];
+  const toolsLevel = await probeEndpoint(candidate, probeOptions(), readyProbeFetch({ requests }), "tools");
+  assert.equal(toolsLevel.ok, true);
+  assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "tools/call").length, 0);
+
+  // A relay with no editor tool cannot be asked the second question, so it keeps the tools-level
+  // verdict instead of failing a probe that is as ready as that relay can be.
+  requests.length = 0;
+  const noEditorTool = await probeEndpoint(
+    candidate,
+    probeOptions(),
+    readyProbeFetch({ requests, tools: TOOLS_PAYLOAD.replace(/\{"name":"Unity_ManageEditor"[^}]*\}\},/, "") }),
+    "editor"
+  );
+  assert.equal(noEditorTool.ok, true, noEditorTool.detail);
+  assert.equal(noEditorTool.editorToolAdvertised, false);
+  assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "tools/call").length, 0);
+});
 test("discoverEndpoint walks candidates in order and stops at the first success", async (t) => {
   const livePort = await listeningPort(t);
   const deadPort = await closedPort();
@@ -633,7 +709,7 @@ test("discoverEndpoint reports cleanup warnings before a later candidate succeed
   const firstFetch = readyProbeFetch({ tools: TOOLS_PAYLOAD.replace(/\[.*\]/, "[]"), deleteStatus: 500 });
   const secondFetch = readyProbeFetch();
   const { found } = await discoverEndpoint(probeOptions(), {
-    requireTools: true,
+    readiness: "tools",
     candidates: [first, second].map((port) => ({ host: "127.0.0.1", port, endpointPath: "/mcp" })),
     fetchImpl: (target, init) => String(target).includes(`:${first}/`) ? firstFetch(target, init) : secondFetch(target, init)
   });
@@ -1332,7 +1408,7 @@ function commandOptions(repoRoot, overrides = {}) {
     ...overrides
   };
 }
-test("runProbe reports the endpoint advertising Unity_RunCommand", async (t) => {
+test("runProbe reports what it actually proved about the endpoint", async (t) => {
   const port = await listeningPort(t);
   const logged = captureConsole(t, "log");
   const found = await runProbe(commandOptions(temporaryDirectory()), {
@@ -1340,7 +1416,20 @@ test("runProbe reports the endpoint advertising Unity_RunCommand", async (t) => 
     fetchImpl: readyProbeFetch()
   });
   assert.equal(found.port, port);
-  assert.match(logged.join("\n"), /advertises Unity_RunCommand/);
+  assert.match(logged.join("\n"), /ready for editor-backed calls/);
+
+  // A stale editor is the failure #418 is about: the relay still advertises everything, so the
+  // probe has to fail here rather than report the registry and call it ready.
+  await assert.rejects(
+    () =>
+      runProbe(commandOptions(temporaryDirectory()), {
+        candidates: [{ host: "127.0.0.1", port, endpointPath: "/mcp" }],
+        fetchImpl: readyProbeFetch({
+          call: editorCallPayload('{"success":false,"error":"Unity not detected"}', true)
+        })
+      }),
+    /No Unity MCP endpoint is ready for editor-backed calls[\s\S]*Unity not detected/
+  );
 });
 test("--no-discover probes the configured endpoint rather than skipping readiness", async (t) => {
   const runtime = { fetchImpl: readyProbeFetch() };

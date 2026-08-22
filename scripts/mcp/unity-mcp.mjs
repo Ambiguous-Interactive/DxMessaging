@@ -433,8 +433,21 @@ export function tcpReachable(host, port, timeout) {
   });
 }
 
-/** Complete the pinned MCP lifecycle and optionally inspect the editor tool registry. */
-export async function probeEndpoint(candidate, options, fetchImpl = fetch, requireTools = false) {
+/**
+ * The tool that proves a live editor is behind the relay, and the read-only action to ask it for.
+ * The relay keeps advertising its whole registry after the editor's discovery record goes stale,
+ * so `tools/list` alone reports green while every editor-backed call answers "Unity not detected"
+ * (#418). This one is a pure read: no scene, asset, or play-state change, and no modal.
+ */
+const EDITOR_READY_TOOL = "Unity_ManageEditor";
+const EDITOR_READY_ARGUMENTS = { Action: "GetState" };
+
+/**
+ * Complete the pinned MCP lifecycle and optionally inspect the editor tool registry.
+ * `readiness` is `false` (lifecycle only), `"tools"` (Unity_RunCommand is advertised), or
+ * `"editor"` (a live editor answered as well).
+ */
+export async function probeEndpoint(candidate, options, fetchImpl = fetch, readiness = false) {
   const url = endpointUrl(candidate);
   const classify = (status, detail) => ({ ...candidate, url, ok: false, status, detail });
   const succeed = (extra) => ({ ...candidate, url, ok: true, status: "ok", ...extra });
@@ -537,7 +550,7 @@ export async function probeEndpoint(candidate, options, fetchImpl = fetch, requi
         error.probeStatus = "malformed";
         throw error;
       }
-      if (!requireTools) {
+      if (!readiness) {
         result = succeed({ sessionId, protocolVersion });
       } else if (!client.getServerCapabilities()?.tools) {
         result = classify("not-ready", "server did not advertise MCP tools");
@@ -545,13 +558,15 @@ export async function probeEndpoint(candidate, options, fetchImpl = fetch, requi
         const cursors = new Set();
         let cursor;
         let toolCount = 0;
+        let editorToolAdvertised = false;
         operation = "tools/list";
         for (let page = 0; page < 100; page += 1) {
           const params = cursor === undefined ? {} : { cursor };
           const listed = await awaited(client.listTools(params, { signal: lifecycleSignal }));
           toolCount += listed.tools.length;
+          editorToolAdvertised ||= listed.tools.some((t) => t.name === EDITOR_READY_TOOL);
           if (listed.tools.some((tool) => tool.name === "Unity_RunCommand")) {
-            result = succeed({ sessionId, protocolVersion, toolCount });
+            result = succeed({ sessionId, protocolVersion, toolCount, editorToolAdvertised });
             break;
           }
           if (listed.nextCursor === undefined) {
@@ -566,6 +581,28 @@ export async function probeEndpoint(candidate, options, fetchImpl = fetch, requi
           cursor = listed.nextCursor;
         }
         result ??= classify("malformed", "tools/list exceeded 100 pages");
+        // A relay whose registry has no editor tool cannot be asked whether an editor is behind
+        // it, so that stays a tools-level verdict rather than a false red.
+        if (result.ok && readiness === "editor" && result.editorToolAdvertised) {
+          operation = "tools/call";
+          const call = await awaited(
+            client.callTool(
+              { name: EDITOR_READY_TOOL, arguments: EDITOR_READY_ARGUMENTS },
+              undefined,
+              { signal: lifecycleSignal }
+            )
+          );
+          const reply = (call.content ?? [])
+            .map((part) => part.text ?? "")
+            .join(" ")
+            .trim();
+          if (call.isError || !/"IsCompiling"/.test(reply)) {
+            result = classify(
+              "not-ready",
+              `${EDITOR_READY_TOOL}: ${reply.slice(0, 160) || "returned no editor state"}`
+            );
+          }
+        }
       }
     } catch (error) {
       const expired = error instanceof StreamableHTTPError && error.code === 404;
@@ -588,7 +625,7 @@ export async function discoverEndpoint(options, runtime = {}) {
   const attempts = [];
   for (const candidate of candidates) {
     log(options, "debug", `Probing ${endpointUrl(candidate)}`);
-    const result = await probeEndpoint(candidate, options, fetchImpl, runtime.requireTools);
+    const result = await probeEndpoint(candidate, options, fetchImpl, runtime.readiness);
     log(options, "debug", `  ${result.status}: ${result.detail ?? "ok"}`);
     if (result.cleanupWarning) console.warn(`${result.url}: ${result.cleanupWarning}`);
     attempts.push(result);
@@ -1381,15 +1418,19 @@ async function resolveEndpoint(options, runtime = {}) {
 }
 
 export async function runProbe(options, runtime = {}) {
-  const { found, attempts } = await resolveEndpoint(options, { ...runtime, requireTools: true });
+  const { found, attempts } = await resolveEndpoint(options, { ...runtime, readiness: "editor" });
   if (!found) {
     fail(
-      `No Unity MCP endpoint advertised Unity_RunCommand. Attempts:\n${describeAttempts(attempts)}`
+      `No Unity MCP endpoint is ready for editor-backed calls. Attempts:\n${describeAttempts(attempts)}`
     );
   }
-  console.log(
-    `Unity MCP at ${found.url} advertises Unity_RunCommand (protocol ${found.protocolVersion}).`
-  );
+  // Say which of the two things was actually proven. A bridge that advertises Unity_RunCommand
+  // without an editor tool cannot be asked the second question, and claiming otherwise is the
+  // false green #418 is about.
+  const proven = found.editorToolAdvertised
+    ? `is ready for editor-backed calls (${EDITOR_READY_TOOL} answered)`
+    : `advertises Unity_RunCommand, but has no ${EDITOR_READY_TOOL} to prove an editor is behind it`;
+  console.log(`Unity MCP at ${found.url} ${proven} (protocol ${found.protocolVersion}).`);
   return found;
 }
 

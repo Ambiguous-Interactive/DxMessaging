@@ -1093,7 +1093,11 @@ namespace DxMessaging.Editor.Windows
             VisualElement row = new() { name = RouteKindFilterRowName };
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            row.style.flexWrap = Wrap.Wrap;
+            // No wrapping. Unity 2021.3 does not resolve a wrapping row's height from the lines it
+            // wraps onto, so a second line lands outside this row and on top of the log below it -
+            // the same defect #435 reported in live mode. Every control here gives space back
+            // instead: the chips shrink to their floor and clip, and the hint already ends in
+            // an ellipsis when it runs out of room.
             row.style.paddingLeft = 8;
             row.style.paddingRight = 8;
             row.style.paddingBottom = 6;

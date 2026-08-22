@@ -1,0 +1,52 @@
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Unity;
+using UnityEngine;
+
+[DxUntargetedMessage]
+[DxAutoConstructor]
+public readonly partial struct GamePaused
+{
+    public readonly bool IsPaused;
+}
+
+public sealed class PauseController : MonoBehaviour
+{
+    private bool _paused;
+
+    public void TogglePause()
+    {
+        _paused = !_paused;
+
+        GamePaused gamePaused = new GamePaused(_paused);
+        gamePaused.EmitUntargeted();
+    }
+}
+
+public sealed class TimeScaleDriver : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+        _ = Token.RegisterUntargeted<GamePaused>(OnGamePaused);
+    }
+
+    private void OnGamePaused(ref GamePaused message)
+    {
+        Time.timeScale = message.IsPaused ? 0f : 1f;
+    }
+}
+
+public sealed class AudioPauseDriver : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+        _ = Token.RegisterUntargeted<GamePaused>(OnGamePaused);
+    }
+
+    private void OnGamePaused(ref GamePaused message)
+    {
+        AudioListener.pause = message.IsPaused;
+    }
+}

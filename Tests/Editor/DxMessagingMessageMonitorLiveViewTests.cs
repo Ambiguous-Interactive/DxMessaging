@@ -24,6 +24,16 @@ namespace DxMessaging.Tests.Editor
     {
         private readonly List<EditorWindow> _createdWindows = new();
 
+        /// <summary>Matches <c>DxMessagingMessageMonitorWindow</c>'s own <c>minSize</c>.</summary>
+        private const float MonitorMinimumWidth = 420f;
+        private const float MonitorMinimumHeight = 320f;
+
+        /// <summary>The `.dx-col-msg` / `.dx-row__msg` floor declared by the theme stylesheet.</summary>
+        private const float MessageColumnFloor = 96f;
+
+        /// <summary>Layout resolves in floats; a sub-pixel edge is not an overlap.</summary>
+        private const float LayoutTolerance = 0.5f;
+
         [TearDown]
         public void TearDown()
         {
@@ -728,18 +738,24 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
-        [Test]
-        public void TheToolbarSeparatesItsControlGroups()
+        /// <summary>
+        /// Four groups - what the log is doing, what the window does next, what is shown, what is
+        /// searched - across two rows. The row boundary divides the pairs, so one rule inside each
+        /// row divides the two groups that share it.
+        /// </summary>
+        [TestCase(DxMessagingMessageMonitorLiveView.ToolbarName)]
+        [TestCase(DxMessagingMessageMonitorLiveView.FilterRowName)]
+        public void EachToolbarRowSeparatesTheTwoControlGroupsThatShareIt(string rowName)
         {
             VisualElement root = CreateView(Recorder(Entry(1, "A")));
 
             Assert.AreEqual(
-                3,
-                root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.ToolbarName)
+                1,
+                root.Q<VisualElement>(rowName)
                     .Query<VisualElement>(className: DxMessagingEditorTheme.SeparatorClassName)
                     .ToList()
                     .Count,
-                "Recording, taxonomy, search and mode are four groups, so three rules divide them."
+                $"`{rowName}` carries two control groups, so one rule divides them."
             );
         }
 
@@ -1348,6 +1364,184 @@ namespace DxMessaging.Tests.Editor
                     .rootVisualElement.Q<Button>(DxMessagingMessageMonitorWindow.LiveButtonName)
                     .enabledSelf
             );
+        }
+
+        /// <summary>
+        /// Issue #435 reported the toolbar drawn on top of the log header. The toolbar was one row
+        /// with <c>flex-wrap: wrap</c>, and at the Monitor's minimum width its chips, search field
+        /// and buttons fall onto extra lines. Unity 2021.3 does not resolve a wrapping row's height
+        /// from the lines it wraps onto, so those lines rendered outside the row's own box - which
+        /// is why the fix is two declared rows rather than a row that grows.
+        /// </summary>
+        [Test]
+        public void TheLiveToolbarRowsStayInsideTheirOwnBoxAtTheWindowsMinimumWidth()
+        {
+            VisualElement root = CreateViewInWindowSizedTo(
+                MonitorMinimumWidth,
+                MonitorMinimumHeight,
+                Recorder(Entry(1, "PlayerSpawned"))
+            );
+
+            VisualElement header = root.Q<VisualElement>(
+                DxMessagingMessageMonitorLiveView.ListHeaderName
+            );
+            Assert.IsNotNull(header, "The live view must render its log header.");
+
+            VisualElement lastRow = null;
+            foreach (
+                string rowName in new[]
+                {
+                    DxMessagingMessageMonitorLiveView.ToolbarName,
+                    DxMessagingMessageMonitorLiveView.FilterRowName,
+                }
+            )
+            {
+                VisualElement row = root.Q<VisualElement>(rowName);
+                Assert.IsNotNull(row, $"The live view must render its `{rowName}` row.");
+                Assert.Greater(row.childCount, 0, $"`{rowName}` must render its controls.");
+
+                // Re-adding `flex-wrap` is what this catches, and it catches it where it matters:
+                // a wrapped row's height is unresolved on Unity 2021.3, so the second line lands
+                // outside the row and this assertion fails on that leg.
+                foreach (VisualElement control in row.Children())
+                {
+                    Assert.LessOrEqual(
+                        control.worldBound.yMax,
+                        row.worldBound.yMax + LayoutTolerance,
+                        $"Control '{DescribeControl(control)}' renders past the bottom of "
+                            + $"`{rowName}`, so it paints over whatever the window draws beneath it."
+                    );
+                }
+
+                lastRow = row;
+            }
+
+            Assert.LessOrEqual(
+                lastRow.worldBound.yMax,
+                header.worldBound.yMin + LayoutTolerance,
+                "The toolbar rows must end before the log header begins."
+            );
+        }
+
+        /// <summary>
+        /// The other half of #435: MESSAGE and CONTEXT printed over each other once their columns
+        /// shrank, because only the row cells clipped their text. A heading has to clip and
+        /// ellipsize exactly like the cell beneath it, and the message column - the one carrying
+        /// what was emitted - must keep a readable width at the Monitor's minimum size.
+        /// </summary>
+        [Test]
+        public void EveryLogHeaderColumnClipsItsHeadingLikeTheRowCellBeneathIt()
+        {
+            VisualElement root = CreateViewInWindowSizedTo(
+                MonitorMinimumWidth,
+                MonitorMinimumHeight,
+                Recorder(Entry(1, "AVeryLongFullyQualifiedPlayerSpawnedMessageTypeName"))
+            );
+
+            (string Column, string Cell)[] pairs =
+            {
+                (
+                    DxMessagingEditorTheme.ColumnTimeClassName,
+                    DxMessagingEditorTheme.RowTimeClassName
+                ),
+                (
+                    DxMessagingEditorTheme.ColumnTypeClassName,
+                    DxMessagingEditorTheme.RowTypeClassName
+                ),
+                (
+                    DxMessagingEditorTheme.ColumnMessageClassName,
+                    DxMessagingEditorTheme.RowMessageClassName
+                ),
+                (
+                    DxMessagingEditorTheme.ColumnRouteClassName,
+                    DxMessagingEditorTheme.RowRouteClassName
+                ),
+                (
+                    DxMessagingEditorTheme.ColumnCountClassName,
+                    DxMessagingEditorTheme.RowCountClassName
+                ),
+            };
+
+            foreach ((string columnClass, string cellClass) in pairs)
+            {
+                VisualElement column = root.Q<VisualElement>(className: columnClass);
+                Assert.IsNotNull(column, $"The log header must render a `{columnClass}` heading.");
+                // `IResolvedStyle` exposes no `overflow`, so the clip itself is asserted on the
+                // stylesheet by `DxMessagingEditorThemeTests`; what is observable here is the
+                // ellipsis and the single line that clip is there to produce.
+                Assert.AreEqual(
+                    TextOverflow.Ellipsis,
+                    column.resolvedStyle.textOverflow,
+                    $"Heading `{columnClass}` must ellipsize when its column is too narrow."
+                );
+                Assert.AreEqual(
+                    WhiteSpace.NoWrap,
+                    column.resolvedStyle.whiteSpace,
+                    $"Heading `{columnClass}` must stay on the header's single line."
+                );
+
+                VisualElement cell = root.Q<VisualElement>(className: cellClass);
+                Assert.IsNotNull(cell, $"A rendered row must carry a `{cellClass}` cell.");
+                Assert.AreEqual(
+                    cell.resolvedStyle.width > 0f,
+                    column.resolvedStyle.width > 0f,
+                    $"Heading `{columnClass}` and cell `{cellClass}` must agree on whether the "
+                        + "column is shown at all."
+                );
+            }
+
+            VisualElement messageColumn = root.Q<VisualElement>(
+                className: DxMessagingEditorTheme.ColumnMessageClassName
+            );
+            Assert.GreaterOrEqual(
+                messageColumn.resolvedStyle.width,
+                MessageColumnFloor - LayoutTolerance,
+                "The message column collapsed to nothing at the Monitor's minimum width, which is "
+                    + "the one column a reader opens the Monitor to read."
+            );
+        }
+
+        private static string DescribeControl(VisualElement control)
+        {
+            return string.IsNullOrEmpty(control.name) ? control.GetType().Name : control.name;
+        }
+
+        /// <summary>
+        /// Builds the live view inside a host window sized like the Monitor, so layout tests read
+        /// the widths a reader actually gets rather than whatever a default host window happens
+        /// to be.
+        /// </summary>
+        private VisualElement CreateViewInWindowSizedTo(
+            float width,
+            float height,
+            MessageMonitorLiveRecorder recorder
+        )
+        {
+            VisualElement view = DxMessagingMessageMonitorLiveView.Create(
+                recorder,
+                default,
+                diagnosticsEnabled: true,
+                callbacks: null
+            );
+            EditorWindow window = EditorWindowTestUtility.CreateWindow();
+            _createdWindows.Add(window);
+            window.position = new Rect(0f, 0f, width, height);
+            EditorWindowTestUtility.ShowWindow(window);
+            window.rootVisualElement.Add(view);
+
+            // The first pass realizes the virtualized rows and changes the list's content basis;
+            // the second measures the settled layout the reader sees.
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                window.rootVisualElement.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+            EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                window.rootVisualElement.panel,
+                "ValidateLayout",
+                System.Array.Empty<object>()
+            );
+            return view;
         }
 
         private EditorWindow CreateTrackedEditorWindow()

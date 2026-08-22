@@ -14,6 +14,17 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class DxMessagingEditorThemeTests
     {
+        /// <summary>
+        /// The three declarations that together clip one line of text to its own box. All three are
+        /// required: `text-overflow` does nothing without `overflow` and `white-space`.
+        /// </summary>
+        private static readonly string[] ClipDeclarations =
+        {
+            "overflow: hidden;",
+            "text-overflow: ellipsis;",
+            "white-space: nowrap;",
+        };
+
         [Test]
         public void ThemeAssetsLoadFromPackagePaths()
         {
@@ -289,6 +300,113 @@ namespace DxMessaging.Tests.Editor
                     + "back and overflow the panel: "
                     + string.Join(", ", growOnly)
             );
+        }
+
+        /// <summary>
+        /// The toolbar rule pinned `height`, so a row whose content exceeded one line's worth drew
+        /// outside its own box, on top of whatever the window rendered beneath - the overlay #435
+        /// reported. `min-height` carries the designed size without capping it. The live Monitor's
+        /// row no longer wraps at all (Unity 2021.3 does not resolve a wrapped row's height), but a
+        /// pinned `height` would still clip any row that outgrows it.
+        /// </summary>
+        [Test]
+        public void TheSharedToolbarRuleSizesFromItsContentInsteadOfPinningOneLine()
+        {
+            string uss = StripBlockComments(
+                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
+            );
+            string body = FindRuleBody(uss, "." + DxMessagingEditorTheme.ToolbarClassName);
+
+            Assert.That(
+                body,
+                Does.Contain("min-height:"),
+                "The toolbar keeps its designed size through `min-height`, not `height`."
+            );
+            Assert.That(
+                Regex.IsMatch(body, @"(?:^|;)\s*height\s*:"),
+                Is.False,
+                "A pinned `height` on a wrapping toolbar draws its wrapped lines outside the box "
+                    + "and over the content beneath it (#435)."
+            );
+            Assert.That(
+                body,
+                Does.Contain("flex-shrink: 0;"),
+                "A grown toolbar must not be squeezed back onto its neighbours by the log below."
+            );
+        }
+
+        /// <summary>
+        /// Issue #435's second half: MESSAGE and CONTEXT printed over each other once their columns
+        /// shrank, because only the row cells clipped their text. A heading has to clip exactly like
+        /// the cell beneath it. <c>IResolvedStyle</c> exposes no <c>overflow</c>, so the clip is
+        /// asserted here on the sheet; the ellipsis it produces is asserted on the built tree by
+        /// <c>DxMessagingMessageMonitorLiveViewTests</c>.
+        /// </summary>
+        [Test]
+        public void EveryLogColumnHeadingClipsItsTextLikeTheRowCellBeneathIt()
+        {
+            string uss = StripBlockComments(
+                System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)
+            );
+            string headingSelector = string.Join(
+                ", ",
+                "." + DxMessagingEditorTheme.ColumnTimeClassName,
+                "." + DxMessagingEditorTheme.ColumnTypeClassName,
+                "." + DxMessagingEditorTheme.ColumnMessageClassName,
+                "." + DxMessagingEditorTheme.ColumnRouteClassName,
+                "." + DxMessagingEditorTheme.ColumnCountClassName
+            );
+            string headingBody = FindRuleBody(uss, headingSelector);
+
+            foreach (string declaration in ClipDeclarations)
+            {
+                Assert.That(
+                    headingBody,
+                    Does.Contain(declaration),
+                    $"Log headings must declare `{declaration}` or a shrunken heading prints over "
+                        + "the one next to it (#435)."
+                );
+            }
+
+            foreach (
+                string cellClass in new[]
+                {
+                    DxMessagingEditorTheme.RowMessageClassName,
+                    DxMessagingEditorTheme.RowRouteClassName,
+                }
+            )
+            {
+                string cellBody = FindRuleBody(uss, "." + cellClass);
+                foreach (string declaration in ClipDeclarations)
+                {
+                    Assert.That(
+                        cellBody,
+                        Does.Contain(declaration),
+                        $"Row cell `{cellClass}` must keep the `{declaration}` its heading mirrors."
+                    );
+                }
+            }
+
+            // The flexible column is the one carrying the message. With the default content basis
+            // a long message name gave the row a wider column than the word MESSAGE gave the
+            // header, so the two drifted out of alignment; the floor keeps it readable at the
+            // Monitor's 420px minimum width.
+            foreach (
+                string flexibleSelector in new[]
+                {
+                    "." + DxMessagingEditorTheme.ColumnMessageClassName,
+                    "." + DxMessagingEditorTheme.RowMessageClassName,
+                }
+            )
+            {
+                string body = FindRuleBody(uss, flexibleSelector);
+                Assert.That(
+                    body,
+                    Does.Contain("flex-basis: 0;").And.Contain("min-width:"),
+                    $"`{flexibleSelector}` must size from grow and shrink alone, with a floor, so "
+                        + "the heading and the cell beneath it stay in one column."
+                );
+            }
         }
 
         [Test]

@@ -21,6 +21,8 @@ namespace DxMessaging.Editor
         internal const string DarkSkinClassName = "dx-dark";
         internal const string WindowClassName = "dx-window";
         internal const string ToolbarClassName = "dx-toolbar";
+        internal const string ToolbarActionsClassName = "dx-toolbar--actions";
+        internal const string ToolbarFiltersClassName = "dx-toolbar--filters";
         internal const string ToolButtonClassName = "dx-tool-btn";
         internal const string SearchClassName = "dx-search";
         internal const string CardClassName = "dx-card";

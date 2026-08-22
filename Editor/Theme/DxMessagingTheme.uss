@@ -20,15 +20,40 @@
 }
 
 /* ---------- toolbar ---------- */
+/* No toolbar in this package wraps. The live Monitor's did, and a wrapping row's height is not
+   resolved from the lines it wraps onto on Unity 2021.3, so its wrapped controls drew outside the
+   box and on top of the list header below -- the overlay #435 circled. That row is now two
+   declared rows. `min-height` rather than `height` keeps a row honest if its content ever exceeds
+   one line's worth, and `flex-shrink: 0` stops the log below from squeezing a row onto its
+   neighbours. */
 .dx-toolbar {
     flex-direction: row;
     align-items: center;
-    height: 40px;
+    min-height: 40px;
+    flex-shrink: 0;
     padding-left: 8px;
     padding-right: 8px;
+    padding-top: 4px;
+    padding-bottom: 4px;
     background-color: var(--dx-tool-toolbar);
     border-bottom-width: 1px;
     border-bottom-color: var(--dx-tool-border-soft);
+}
+/* Vertical breathing room around toolbar controls. A row is unchanged in height: its tallest
+   control is 26px, which with these margins still fits inside `min-height`. */
+.dx-toolbar > * {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+/* The live Monitor's two rows read as one toolbar block: only the last one carries the rule that
+   separates the toolbar from the log. */
+.dx-toolbar--actions {
+    border-bottom-width: 0;
+    padding-bottom: 0;
+}
+.dx-toolbar--filters {
+    min-height: 34px;
+    padding-top: 0;
 }
 .dx-sep {
     width: 1px;
@@ -109,6 +134,11 @@
 .dx-chip--wide {
     width: auto;
     height: 20px;
+    min-width: 44px;
+    /* UI Toolkit defaults flex-shrink to 0. Without this the three named chips hold their full
+       width and push the search field past the edge of a narrow window instead of tightening. */
+    flex-shrink: 1;
+    overflow: hidden;
     padding-left: 8px;
     padding-right: 8px;
 }
@@ -165,10 +195,22 @@
     font-size: 9px;
     -unity-font-style: bold;
 }
+/* A header column must clip and ellipsize exactly like the row cell under it. Without this the
+   shrunken MESSAGE and CONTEXT headings drew over each other at a narrow width (#435), because
+   only the row rules below carried the clip. */
+.dx-col-time,
+.dx-col-type,
+.dx-col-msg,
+.dx-col-route,
+.dx-col-count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dx-col-time { width: 78px; }
-.dx-col-type { width: 110px; flex-shrink: 1; }
-.dx-col-msg { flex-grow: 1; flex-shrink: 1; }
-.dx-col-route { width: 210px; flex-shrink: 1; }
+.dx-col-type { width: 110px; min-width: 64px; flex-shrink: 1; }
+/* `flex-basis: 0` on both the header cell and the row cell is what keeps them aligned: with the
+   default content basis, a long message name gave the row a wider flexible column than the word
+   MESSAGE gave the header. The floor keeps the one column that carries the message from being
+   shrunk to nothing at the window's 420px minimum width. */
+.dx-col-msg { flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 96px; }
+.dx-col-route { width: 210px; min-width: 88px; flex-shrink: 1; }
 .dx-col-count { width: 36px; -unity-text-align: middle-center; }
 
 .dx-row {
@@ -181,9 +223,9 @@
 }
 .dx-row--alt { background-color: var(--dx-tool-row-b); }
 .dx-row__time { cursor: link; width: 78px; color: var(--dx-text-muted); font-size: 10px; }
-.dx-row__type { cursor: link; width: 110px; flex-shrink: 1; flex-direction: row; align-items: center; overflow: hidden; }
-.dx-row__msg { cursor: link; flex-grow: 1; flex-shrink: 1; color: var(--dx-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dx-row__route { cursor: link; width: 210px; flex-shrink: 1; color: var(--dx-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-row__type { cursor: link; width: 110px; min-width: 64px; flex-shrink: 1; flex-direction: row; align-items: center; overflow: hidden; }
+.dx-row__msg { cursor: link; flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 96px; color: var(--dx-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-row__route { cursor: link; width: 210px; min-width: 88px; flex-shrink: 1; color: var(--dx-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dx-row__count { cursor: link; width: 36px; -unity-text-align: middle-center; color: var(--dx-text-muted); font-size: 10px; }
 
 .unity-collection-view__item--selected .dx-row,

@@ -1,0 +1,58 @@
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Unity;
+using UnityEngine;
+
+[DxBroadcastMessage]
+[DxAutoConstructor]
+public readonly partial struct CollisionOccurred
+{
+    public readonly float Speed;
+}
+
+public sealed class CollisionReporter : MonoBehaviour
+{
+    private void OnCollisionEnter(Collision collision)
+    {
+        CollisionOccurred collisionOccurred = new CollisionOccurred(
+            collision.relativeVelocity.magnitude
+        );
+        collisionOccurred.EmitGameObjectBroadcast(gameObject);
+    }
+}
+
+public sealed class ImpactSound : MessageAwareComponent
+{
+    public AudioSource Source;
+
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+        _ = Token.RegisterGameObjectBroadcast<CollisionOccurred>(gameObject, OnCollisionOccurred);
+    }
+
+    private void OnCollisionOccurred(ref CollisionOccurred message)
+    {
+        Source.volume = Mathf.Clamp01(message.Speed / 10f);
+        Source.Play();
+    }
+}
+
+public sealed class BreakableObject : MessageAwareComponent
+{
+    public float BreakSpeed = 6f;
+
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+        _ = Token.RegisterGameObjectBroadcast<CollisionOccurred>(gameObject, OnCollisionOccurred);
+    }
+
+    private void OnCollisionOccurred(ref CollisionOccurred message)
+    {
+        if (BreakSpeed <= message.Speed)
+        {
+            gameObject.SetActive(false);
+        }
+    }
+}

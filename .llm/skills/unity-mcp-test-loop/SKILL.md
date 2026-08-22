@@ -29,15 +29,18 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 | Command                       | Runs on      | Purpose                                                  |
 | ----------------------------- | ------------ | -------------------------------------------------------- |
 | `npm run unity:mcp:bridge`    | Windows host | Spawn the relay and serve it over authenticated HTTP     |
-| `npm run unity:mcp:probe`     | Devcontainer | Find an endpoint advertising `Unity_RunCommand`          |
+| `npm run unity:mcp:probe`     | Devcontainer | Find an endpoint a live editor is answering behind       |
 | `npm run unity:mcp:configure` | Devcontainer | Discover, then write every MCP client config in the repo |
 
 - Start the bridge on the host with `npm run unity:mcp:bridge -- --project 'D:\Path\To\HostUnityProject'`. `--project` is required for this command only and names a HOST filesystem path. The relay is discovered under `~/.unity/relay/`; override with `--relay <path>` or `UNITY_MCP_RELAY_PATH`.
 - The bridge requires a bearer token and generates one into `.env.local` at the repository root if none is set. Both sides must present the same `UNITY_MCP_BEARER_TOKEN`; copy it across or pass `--token` when host and container do not share `.env.local`. Add a Windows firewall rule for the port if the container cannot reach it.
 - From the container run `npm run unity:mcp:configure` then `npm run unity:mcp:probe`. Discovery pins
   MCP `2025-11-25`. Configure selects the first initialized endpoint without inspecting tools, or
-  writes the configured/default endpoint if none initializes. Probe follows `tools/list` pages and
-  requires `Unity_RunCommand`; it does not execute the tool or prove the heartbeat remains fresh.
+  writes the configured/default endpoint if none initializes. Probe follows `tools/list` pages,
+  requires `Unity_RunCommand`, and then asks `Unity_ManageEditor` for editor state, because the
+  relay keeps advertising its whole registry after the editor's discovery record goes stale and a
+  registry read alone reports green through a window where nothing editor-backed works (#418). A
+  relay that advertises no editor tool keeps the tools-level verdict and the probe says so.
 - Discovery walks hosts in order - `host.docker.internal`, `127.0.0.1`, `nameserver` entries in
   `/etc/resolv.conf`, then default-route gateways - and ports `9020` then `9003`. An explicit
   `--host` or `--port` replaces the fallbacks on that axis. `--no-discover` uses only the configured
