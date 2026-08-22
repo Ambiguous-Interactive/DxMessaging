@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Editor
 {
     using System;
     using System.Collections.Generic;
+    using System.Text;
     using DxMessaging.Editor;
     using NUnit.Framework;
     using UnityEditor;
@@ -24,6 +25,18 @@ namespace DxMessaging.Tests.Editor
         /// Sub-pixel slack for layout comparisons: Yoga rounds to the panel's pixel grid.
         /// </summary>
         internal const float LayoutTolerance = 0.5f;
+
+        /// <summary>
+        /// Unity's largest representable length. An element reporting it was laid out with no
+        /// bound rather than measured.
+        /// </summary>
+        private const float UnboundedLayoutSize = 8388608f;
+
+        /// <summary>
+        /// How many layout passes <see cref="SettleLayout"/> will run before giving up on the
+        /// tree settling. Real windows settle in two or three.
+        /// </summary>
+        private const int MaxLayoutPasses = 8;
 
         internal static DxMessagingTestHostWindow CreateWindow()
         {
@@ -222,11 +235,14 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
-        /// Runs the panel's layout to a settled state, so a test reads the geometry a reader sees.
-        /// The first pass realizes content and can change what elements measure; the second
-        /// measures the result, including any height a
-        /// <see cref="DxMessagingEditorTheme.ApplyContentSizedWrap"/> container asked for during
-        /// the first pass.
+        /// Runs the panel's layout until it stops changing, so a test reads the geometry a reader
+        /// settles on rather than an intermediate frame.
+        ///
+        /// One pass is never enough. Realizing content changes what elements measure, text height
+        /// is only final once its width is, and a
+        /// <see cref="DxMessagingEditorTheme.ApplyContentSizedWrap"/> container asks for its height
+        /// during a pass and receives it in the next one. Unity settles this over frames; a test
+        /// has to ask for the frames.
         /// </summary>
         internal static void SettleLayout(EditorWindow window)
         {
@@ -235,14 +251,43 @@ namespace DxMessaging.Tests.Editor
                 return;
             }
 
-            for (int pass = 0; pass < 2; pass++)
+            string previous = null;
+            for (int pass = 0; pass < MaxLayoutPasses; pass++)
             {
                 EditorSurfaceCapture.InvokeInheritedPanelMethod(
                     window.rootVisualElement.panel,
                     "ValidateLayout",
                     Array.Empty<object>()
                 );
+
+                string current = DescribeLayout(window.rootVisualElement);
+                if (current == previous)
+                {
+                    return;
+                }
+
+                previous = current;
             }
+        }
+
+        private static string DescribeLayout(VisualElement root)
+        {
+            StringBuilder description = new();
+            foreach (VisualElement element in root.Query<VisualElement>().ToList())
+            {
+                Rect layout = element.layout;
+                description
+                    .Append(layout.x)
+                    .Append(',')
+                    .Append(layout.y)
+                    .Append(',')
+                    .Append(layout.width)
+                    .Append(',')
+                    .Append(layout.height)
+                    .Append(';');
+            }
+
+            return description.ToString();
         }
 
         /// <summary>
@@ -265,6 +310,17 @@ namespace DxMessaging.Tests.Editor
             foreach (VisualElement element in root.Query<VisualElement>().ToList())
             {
                 if (element.resolvedStyle.flexWrap != Wrap.Wrap || element.childCount == 0)
+                {
+                    continue;
+                }
+
+                // An element laid out with no bound reports Unity's largest length rather than a
+                // measurement. A box eight million pixels tall is not painting over anything a
+                // reader can see, and asserting on it compares two sentinels.
+                if (
+                    float.IsNaN(element.resolvedStyle.height)
+                    || element.resolvedStyle.height >= UnboundedLayoutSize
+                )
                 {
                     continue;
                 }

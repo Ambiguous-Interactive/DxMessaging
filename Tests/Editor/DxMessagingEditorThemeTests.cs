@@ -37,6 +37,11 @@ namespace DxMessaging.Tests.Editor
         private const int SingleLineChildCount = 2;
 
         /// <summary>
+        /// Unity's largest representable length, which an element laid out with no bound reports.
+        /// </summary>
+        private const float UnboundedLayoutSize = 8388608f;
+
+        /// <summary>
         /// One line of children, which is exactly what Unity 2021.3 leaves a wrapping container at.
         /// </summary>
         private const float PinnedHeight = ProbeChildHeight;
@@ -756,9 +761,11 @@ namespace DxMessaging.Tests.Editor
                 ),
                 "The probe must already fit, otherwise this asserts the wrong case."
             );
+            // Unity reports an unset inline style as `Null` on 6000.4 and as `Undefined` on
+            // 2021.3 and 2022.3. Both mean the same thing: no inline value was written.
             Assert.That(
                 probe.style.minHeight.keyword,
-                Is.EqualTo(StyleKeyword.Null),
+                Is.EqualTo(StyleKeyword.Null).Or.EqualTo(StyleKeyword.Undefined),
                 "A container that already fits its lines must keep the height its stylesheet "
                     + "gives it, so the helper must not write an inline min-height."
             );
@@ -810,6 +817,65 @@ namespace DxMessaging.Tests.Editor
                     probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
                 ),
                 "The re-measured container must still contain its children."
+            );
+        }
+
+        /// <summary>
+        /// Unity reports a geometry change to an element only when that element's own box changes,
+        /// and never reports a child's change to the parent. So a container already held at a
+        /// height hears nothing when its content grows in place, which is how a Flow Graph details
+        /// header ended up ten pixels short on Unity 6000.3 with the fix applied.
+        /// </summary>
+        [Test]
+        public void AWrappingContainerGrowsAgainWhenAChildGrowsInPlace()
+        {
+            EditorWindow window = CreateWrapProbeWindow();
+
+            VisualElement probe = AddWrapProbe(window, PinnedHeight, contentSized: true);
+            EditorWindowTestUtility.SettleLayout(window);
+            float firstHeight = probe.resolvedStyle.height;
+
+            probe[probe.childCount - 1].style.height = ProbeChildHeight * 3f;
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                probe.resolvedStyle.height,
+                Is.GreaterThan(firstHeight + EditorWindowTestUtility.LayoutTolerance),
+                "The container must grow again when a child grows, not stay at the height its "
+                    + "first content needed."
+            );
+            Assert.That(
+                DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
+                Is.LessThanOrEqualTo(
+                    probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
+                ),
+                "The grown child must end up inside the container."
+            );
+        }
+
+        /// <summary>
+        /// A child laid out with no bound reports Unity's largest length instead of a measurement.
+        /// Treating it as a height asks for a box eight million pixels tall, which is what the
+        /// Unity 2021.3, 2022.3 and 6000.3 legs reported before this guard existed.
+        /// </summary>
+        [Test]
+        public void AnUnboundedChildIsNotMistakenForAHeightToApply()
+        {
+            EditorWindow window = CreateWrapProbeWindow();
+
+            VisualElement probe = AddWrapProbe(window, pinnedHeight: 0f, contentSized: true);
+            probe[0].style.height = UnboundedLayoutSize;
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
+                Is.EqualTo(0f),
+                "An unbounded child is not a measurement, so there is nothing to report."
+            );
+            Assert.That(
+                probe.style.minHeight.keyword,
+                Is.EqualTo(StyleKeyword.Null).Or.EqualTo(StyleKeyword.Undefined),
+                "The helper must not write an eight-million-pixel min-height."
             );
         }
 

@@ -2,6 +2,7 @@
 namespace DxMessaging.Editor
 {
     using System;
+    using System.Collections.Generic;
     using UnityEditor;
     using UnityEngine;
     using UnityEngine.UIElements;
@@ -420,7 +421,7 @@ namespace DxMessaging.Editor
         /// Unity 2021.3 does not grow a wrapping container to fit the extra lines. The container
         /// keeps its single-line height and the wrapped lines draw outside it, on top of whatever
         /// the window draws beneath. Newer editors size the container correctly, so the defect is
-        /// invisible on 6000.x. Issue #435 hit it in the Message Monitor toolbar and issue #440
+        /// invisible on 6000.4. Issue #435 hit it in the Message Monitor toolbar and issue #440
         /// lists the Flow Graph containers with the same shape.
         ///
         /// Measuring the children and applying the result as `min-height` supplies the height
@@ -428,6 +429,12 @@ namespace DxMessaging.Editor
         /// actually too short, so an editor that already sizes the container writes no inline
         /// style at all. `align-content: flex-start` packs the lines at the top, so a container
         /// that just grew cannot stretch its own lines and ask to grow again.
+        ///
+        /// The children are watched as well as the container. Unity reports a geometry change to
+        /// an element only when that element's own box changes, and it does not report a child's
+        /// change to the parent in either propagation phase. A container already held at a height
+        /// therefore never hears that its text finished measuring and needs more room, which is
+        /// how a details header ended up ten pixels short on Unity 6000.3.
         /// </summary>
         internal static void ApplyContentSizedWrap(VisualElement container)
         {
@@ -452,7 +459,10 @@ namespace DxMessaging.Editor
         /// <summary>
         /// The height a wrapping container needs for every line its children occupy, measured in
         /// the container's own coordinate space so a panned or zoomed ancestor cannot skew it.
-        /// Returns 0 when nothing is measurable yet.
+        ///
+        /// Returns 0 when nothing is measurable yet, which includes a child laid out with an
+        /// unbounded size. Unity reports that as `Length`'s maximum, 8388608, and treating it as a
+        /// real height would ask for a box eight million pixels tall.
         /// </summary>
         internal static float MeasureWrappedContentHeight(VisualElement container)
         {
@@ -483,6 +493,11 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
+                if (childLayout.yMax >= UnboundedLayoutSize)
+                {
+                    return 0f;
+                }
+
                 contentBottom = Mathf.Max(
                     contentBottom,
                     childLayout.yMax + child.resolvedStyle.marginBottom
@@ -500,20 +515,24 @@ namespace DxMessaging.Editor
         }
 
         /// <summary>
+        /// Unity's largest representable length (`Length`'s own maximum). A layout that reaches it
+        /// was measured with no bound rather than measured, so it is not a height to apply.
+        /// </summary>
+        private const float UnboundedLayoutSize = 8388608f;
+
+        /// <summary>
         /// Holds the height one container was given, so a container that already fits is never
         /// written to and a container that was grown is only written again when it needs more.
         ///
-        /// The height is only ever raised while the container is in a panel. Unity reports a
-        /// geometry change to the container when the container's own box changes, and a container
-        /// held at a height by this class does not change its box when its content shrinks, so
-        /// there is no second measurement to lower it from. Leaving the panel releases the height
-        /// instead, which is what a reused or rebuilt container needs.
+        /// The height is only ever raised while the container is in a panel. Leaving the panel
+        /// releases it, which is what a reused or rebuilt container needs.
         /// </summary>
         private sealed class WrapHeightFit
         {
             private const float Tolerance = 0.5f;
 
             private readonly VisualElement _container;
+            private readonly HashSet<VisualElement> _watchedChildren = new();
 
             private bool _applied;
             private float _appliedHeight;
@@ -525,8 +544,10 @@ namespace DxMessaging.Editor
 
             internal void Fit()
             {
+                WatchChildren();
+
                 float required = MeasureWrappedContentHeight(_container);
-                if (required <= 0f)
+                if (required <= 0f || required >= UnboundedLayoutSize)
                 {
                     return;
                 }
@@ -544,6 +565,7 @@ namespace DxMessaging.Editor
 
             internal void Release()
             {
+                _watchedChildren.Clear();
                 if (!_applied)
                 {
                     return;
@@ -552,6 +574,26 @@ namespace DxMessaging.Editor
                 _applied = false;
                 _appliedHeight = 0f;
                 _container.style.minHeight = StyleKeyword.Null;
+            }
+
+            /// <summary>
+            /// A child that resizes in place changes what the container needs, and Unity does not
+            /// report a child's geometry change to its parent. Each child is watched directly.
+            /// </summary>
+            private void WatchChildren()
+            {
+                foreach (VisualElement child in _container.Children())
+                {
+                    if (!_watchedChildren.Add(child))
+                    {
+                        continue;
+                    }
+
+                    child.RegisterCallback<GeometryChangedEvent, WrapHeightFit>(
+                        static (_, state) => state.Fit(),
+                        this
+                    );
+                }
             }
         }
 
