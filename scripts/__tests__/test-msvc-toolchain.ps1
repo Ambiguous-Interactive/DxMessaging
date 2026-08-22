@@ -129,12 +129,11 @@ try {
         -ExpectedOk $true -ExpectedReason 'ok'
 
     # A present compiler that will not start is its own verdict, distinct from
-    # absent, and it is ADVISORY: this gate runs before the organization build
-    # lock, so it reports rather than blocks until a Windows host demonstrates the
-    # probe is clean on a healthy toolchain.
+    # absent, and it BLOCKS. It was advisory until 18 licensed legs on both
+    # Windows hosts showed the probe clean on healthy toolchains (#336, step 1).
     Assert-Verdict -Name 'a present compiler that will not start is compiler-unusable' `
         -InstallRoot $root -ExecutablePaths @($missing) -LaunchablePaths @() `
-        -ExpectedOk $false -ExpectedReason 'compiler-unusable' -ExpectedAdvisory $true
+        -ExpectedOk $false -ExpectedReason 'compiler-unusable' -ExpectedAdvisory $false
 
     # An absent compiler stays `compiler-missing` even with a launch probe wired
     # in, so #333's verdict and its blocking failure are unchanged.

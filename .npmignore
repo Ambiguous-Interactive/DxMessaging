@@ -82,6 +82,8 @@ CLAUDE.md.meta
 # =============================================================================
 # Documentation Build (source docs included, build tooling excluded)
 # =============================================================================
+requirements-docs.in
+requirements-docs.in.meta
 requirements-docs.txt
 requirements-docs.txt.meta
 mkdocs.yml
