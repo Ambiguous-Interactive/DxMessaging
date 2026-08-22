@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="DxMessaging - Decoupled, simple systems.">
+  <rect x="0" y="0" width="1200" height="630" fill="#0d1117"></rect>
+  <!-- Mark from dxmessaging-mark.svg at 105px (96 * 1.09375). scripts/render-brand-cards.py refuses to render if these elements drift. -->
+  <g transform="translate(548,158) scale(1.09375)">
+    <polygon points="88,48 68,82.64 28,82.64 8,48 28,13.36 68,13.36" fill="none" stroke="#f4a836" stroke-width="4.5"></polygon>
+    <circle cx="30" cy="48" r="6" fill="#ffd48e"></circle>
+    <path d="M46,34 a20,20 0 0 1 0,28" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round"></path>
+    <path d="M58,26 a32,32 0 0 1 0,44" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round" opacity="0.55"></path>
+  </g>
+  <text x="487" y="347" text-anchor="end" font-family="Space Grotesk" font-weight="700" font-size="59" letter-spacing="-1" fill="#e9eef4">Dx</text>
+  <text x="487" y="347" text-anchor="start" font-family="Space Grotesk" font-weight="700" font-size="59" letter-spacing="-1" fill="#f4a836">Messaging</text>
+  <text x="600" y="417" text-anchor="middle" font-family="IBM Plex Sans" font-size="25" letter-spacing="0.35" fill="#9aa3af">Decoupled, simple systems.</text>
+  <text x="600" y="468" text-anchor="middle" font-family="JetBrains Mono" font-size="19" letter-spacing="0.9" fill="#5f6670">WALLSTOP STUDIOS &#183; AMBIGUOUS INTERACTIVE</text>
+</svg>

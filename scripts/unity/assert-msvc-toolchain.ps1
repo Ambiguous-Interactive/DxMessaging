@@ -146,14 +146,16 @@ function Test-MsvcToolchain {
     if ($null -ne $unusable) {
         return [pscustomobject]@{
             Ok       = $false
-            # ADVISORY, not blocking. This gate runs before the organization build
-            # lock, so a false failure would block every IL2CPP leg on the runner.
-            # No Windows host has yet demonstrated that the launch probe exits
-            # cleanly on a HEALTHY toolchain invoked by full path outside vcvars
-            # (#336, step 1), so until it does, a failed launch is reported and the
-            # leg continues. Flip this to $false in the same change that records
-            # that demonstration.
-            Advisory = $true
+            # BLOCKING. This gate runs before the organization build lock, so a
+            # false failure would block every IL2CPP leg on the runner, and that
+            # is why the verdict shipped advisory first. The healthy case is now
+            # demonstrated (#336, step 1): 18 licensed legs on 2026-08-22 ran the
+            # launch probe by full path outside vcvars and every one reported the
+            # compiler usable, across both Windows hosts and both Visual Studio
+            # install roots in use (`BuildTools` on DAD-MACHINE, `Community` on
+            # ELI-MACHINE). A compiler that cannot start fails the player build
+            # anyway, only later and after taking a licence seat and the lock.
+            Advisory = $false
             Reason   = 'compiler-unusable'
             Path     = $unusable.Path
             Message  = ("MSVC toolset $($unusable.Name) is present on runner '$RunnerName' but " +
@@ -161,8 +163,7 @@ function Test-MsvcToolchain {
                 "start is normally a missing sibling DLL, a truncated file, or security " +
                 "tooling blocking it, and IL2CPP will fail the player build after taking a " +
                 "Unity licence seat and the build lock. A runner administrator must repair the " +
-                "'Desktop development with C++' workload. This is reported, not enforced: see " +
-                "issue #336.")
+                "'Desktop development with C++' workload.")
         }
     }
 
@@ -296,13 +297,13 @@ else {
 # see and which today reports the host healthy and fails the leg twenty minutes
 # later, after taking a licence seat and the build lock.
 #
-# The launch verdict is ADVISORY. This gate runs before the organization build
-# lock, so a launch probe that is wrong about a HEALTHY host would block every
-# IL2CPP leg on that runner. That risk is real: `cl.exe` resolves sibling DLLs
-# from its own directory and the toolchain normally runs under `vcvars`, and no
-# Windows host has yet demonstrated the healthy case (#336, step 1). Reporting it
-# costs nothing and names the cause up front; enforcing it needs that
-# demonstration first.
+# The launch verdict BLOCKS. It shipped advisory first, because this gate runs
+# before the organization build lock and a probe that is wrong about a HEALTHY
+# host would block every IL2CPP leg on that runner: `cl.exe` resolves sibling
+# DLLs from its own directory and the toolchain normally runs under `vcvars`.
+# The healthy case is now measured (#336, step 1). Over 18 licensed legs on
+# 2026-08-22, the probe reported the compiler usable every time, on both Windows
+# hosts and both Visual Studio install roots in use.
 $result = Test-MsvcToolchain -InstallRoot $installRoot -RunnerName $runner -ProbeExecutable {
     param($path)
     Test-Path -LiteralPath $path -PathType Leaf
