@@ -438,6 +438,9 @@ function ConvertTo-SingleLineDiagnostic {
 # value is used for the opening and closing fence lines. The matching fence in
 # .github/actions/verify-unity-results/action.yml uses the same scheme.
 $script:WorkflowCommandStopToken = $null
+# StrictMode Latest throws on reading an uninitialized variable, so the
+# once-per-job summary header flag is declared here rather than at first use.
+$script:WroteWallClockSummaryHeader = $false
 
 # Generate a fresh, unpredictable stop-commands fence token. A GUID 'N' form is
 # 32 hex chars with no separators, so it can never collide with caller text and
@@ -498,6 +501,78 @@ function Get-NUnitNodeFullName {
 # cap). Attribute reads use XmlElement.GetAttribute (returns '' when absent,
 # never throws) so a results.xml lacking a fullname/name attribute does NOT
 # degrade the whole enumeration to a generic warning under Set-StrictMode.
+function Write-SuiteWallClockSummary {
+    <#
+    .SYNOPSIS
+        Lift the suite's own wall-clock line out of the Unity log and into the job summary.
+
+    .DESCRIPTION
+        Issue #410: a change added 78 seconds to the EditMode step on every editor
+        leg and stayed green for two days, because nothing in CI looks at how long
+        a step takes. `SuiteWallClockBudgetTest` already measures the suite and
+        already warns past its soft budget, but only into the Unity log, which
+        nobody reads on a green run.
+
+        Printing the number it already has costs one regex per leg and needs no
+        new script and no new workflow, which is what issue #410 asks for. It does
+        not compare against history: that is the option the issue calls most at
+        odds with the repository's tooling philosophy, and it is not taken here.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+        return
+    }
+
+    try {
+        # The producing side formats with the invariant culture, so the decimal
+        # separator here is always '.'.
+        $pattern = 'DxMessaging suite wall clock:\s*([0-9.]+)s\s*\(soft budget\s*([0-9.]+)s,\s*hard budget\s*([0-9.]+)s'
+        $match = @(
+            Select-String -LiteralPath $LogPath -Pattern $pattern -ErrorAction SilentlyContinue |
+                Select-Object -Last 1
+        )
+        if ($match.Count -lt 1) {
+            return
+        }
+
+        $groups = $match[0].Matches[0].Groups
+        $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+        $elapsed = 0.0
+        $soft = 0.0
+        if (-not [double]::TryParse($groups[1].Value, 'Float', $invariant, [ref]$elapsed)) { return }
+        if (-not [double]::TryParse($groups[2].Value, 'Float', $invariant, [ref]$soft)) { return }
+
+        $summaryPath = $env:GITHUB_STEP_SUMMARY
+        if ($summaryPath) {
+            if (-not $script:WroteWallClockSummaryHeader) {
+                Add-Content -LiteralPath $summaryPath -Value @(
+                    '### Suite wall clock',
+                    '',
+                    '| Leg | Elapsed | Soft budget | Hard budget |',
+                    '| --- | ---: | ---: | ---: |'
+                )
+                $script:WroteWallClockSummaryHeader = $true
+            }
+            Add-Content -LiteralPath $summaryPath -Value ("| $Label | $($groups[1].Value)s | " +
+                "$($groups[2].Value)s | $($groups[3].Value)s |")
+        }
+
+        if ($elapsed -gt $soft) {
+            Write-Host ("::warning::${Label} suite wall clock $($groups[1].Value)s is over its " +
+                "$($groups[2].Value)s soft budget (hard budget $($groups[3].Value)s). A step that " +
+                "grew without breaching its ceiling is what issue #410 was raised for.")
+        }
+    } catch {
+        # Best-effort reporting must never mask a real result.
+        Write-Host "::warning::Could not read the suite wall clock for ${Label}: $($_.Exception.Message)"
+    }
+}
+
 function Write-UnityFailedTestAnnotations {
     [CmdletBinding()]
     param(
@@ -3304,6 +3379,7 @@ function Test-NUnitResults {
     $skipped = [int]$run.skipped
 
     Write-Host "Results: total=$total passed=$passed failed=$failed skipped=$skipped"
+    Write-SuiteWallClockSummary -LogPath $LogPath -Label $Label
     if ($total -lt 1) {
         Write-CiError "0 tests ran for $Label -- check assembly selection and package testables.$exitNote"
         throw "0 tests ran for $Label."

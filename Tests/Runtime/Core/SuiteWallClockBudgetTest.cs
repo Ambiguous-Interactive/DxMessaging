@@ -165,9 +165,17 @@ namespace DxMessaging.Tests.Runtime
             // included because the hard budget is selected per version (the
             // 2021.x runner gets a wider ceiling); seeing both together makes
             // a near-budget run easy to triage.
+            // Invariant culture on purpose: CI lifts this line into the job summary
+            // (issue #410), so the decimal separator must not follow the runner's
+            // locale. `scripts/unity/run-ci-tests.ps1` parses exactly this shape.
+            System.Globalization.CultureInfo invariant = System
+                .Globalization
+                .CultureInfo
+                .InvariantCulture;
             UnityEngine.Debug.Log(
-                $"DxMessaging suite wall clock: {elapsed.TotalSeconds:0.00}s "
-                    + $"(soft budget {SoftBudget.TotalSeconds:0.0}s, hard budget {HardBudget.TotalSeconds:0.0}s "
+                $"DxMessaging suite wall clock: {elapsed.TotalSeconds.ToString("0.00", invariant)}s "
+                    + $"(soft budget {SoftBudget.TotalSeconds.ToString("0.0", invariant)}s, "
+                    + $"hard budget {HardBudget.TotalSeconds.ToString("0.0", invariant)}s "
                     + $"for Unity {UnityEngine.Application.unityVersion})."
             );
 
