@@ -82,6 +82,12 @@ Mono. All three are SIL Open Font License 1.1. The script prints the exact
 download commands and stops before writing anything when a face is missing,
 because cairo substitutes a default face instead of failing.
 
+The script also checks that every SVG drawing the mark inline still matches
+`dxmessaging-mark.svg`, and refuses to render when one has drifted. There is no
+portable way to reference an external SVG that both a browser and cairo honour,
+so the geometry is duplicated in `dxmessaging-icon-tile.svg` and in both cards.
+The duplication is checked rather than hidden.
+
 The other brand PNGs are direct renders of a single SVG and are not produced by
 this script: `icon-256.png` and `dxmessaging-store-icon-320.png` come from
 `dxmessaging-icon-tile.svg`, and the favicons come from `dxmessaging-mark.svg`.

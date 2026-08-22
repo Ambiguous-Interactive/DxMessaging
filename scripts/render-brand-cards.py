@@ -31,6 +31,17 @@ CARDS = [
 
 REQUIRED_FONTS = ["Space Grotesk", "IBM Plex Sans", "JetBrains Mono"]
 
+# Every SVG that draws the mark inline, so a mark change cannot reach one copy
+# and miss another. There is no portable way to reference an external SVG that
+# both a browser and cairo honour, so the geometry is duplicated on purpose and
+# the duplication is checked instead of hidden.
+MARK_SOURCE = "docs/images/dxmessaging-mark.svg"
+MARK_COPIES = [
+    "docs/images/dxmessaging-icon-tile.svg",
+    "docs/images/dxmessaging-og-1200x630.svg",
+    "docs/images/dxmessaging-store-card-420x280.svg",
+]
+
 FONT_HELP = """Install the missing faces where fontconfig can see them, for example:
 
     mkdir -p ~/.local/share/fonts && cd ~/.local/share/fonts
@@ -55,11 +66,35 @@ def installed_families():
     return families
 
 
+def drawing_elements(path):
+    """The lines between the opening and closing svg tags, stripped of indent."""
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    inner = text.split(">", 1)[1].rsplit("</svg>", 1)[0]
+    return [line.strip() for line in inner.splitlines() if line.strip()]
+
+
+def check_mark_copies():
+    mark = drawing_elements(MARK_SOURCE)
+    stale = []
+    for copy in MARK_COPIES:
+        elements = drawing_elements(copy)
+        if any(line not in elements for line in mark):
+            stale.append(copy)
+    if stale:
+        sys.exit(
+            f"These files draw the mark but no longer match {MARK_SOURCE}:\n"
+            + "\n".join(f"    {path}" for path in stale)
+            + f"\n\nCopy the drawing elements from {MARK_SOURCE} into each one, then re-run."
+        )
+
+
 def main():
     try:
         import cairosvg
     except ImportError as error:
         sys.exit(f"cairosvg is not importable ({error}). Install requirements-docs.txt into a virtual environment.")
+
+    check_mark_copies()
 
     available = installed_families()
     missing = [family for family in REQUIRED_FONTS if family not in available]
