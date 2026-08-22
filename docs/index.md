@@ -36,54 +36,6 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 See the [Install Guide](getting-started/install.md) for scoped registry, Git URL, and local tarball options.
 
-## First Message
-
-```csharp
-using DxMessaging.Core.Attributes;
-using DxMessaging.Core.Extensions;
-using DxMessaging.Unity;
-using UnityEngine;
-
-[DxTargetedMessage]
-[DxAutoConstructor]
-public readonly partial struct DamageRequested
-{
-    public readonly int Amount;
-}
-
-public sealed class DamageReceiver : MessageAwareComponent
-{
-    public int Health { get; private set; } = 100;
-
-    protected override void RegisterMessageHandlers()
-    {
-        base.RegisterMessageHandlers();
-        _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
-    }
-
-    private void OnDamageRequested(ref DamageRequested message)
-    {
-        Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
-    }
-}
-
-public sealed class Hazard : MonoBehaviour
-{
-    public int Damage = 25;
-
-    private void OnTriggerEnter(Collider other)
-    {
-        DamageRequested request = new DamageRequested(Damage);
-        request.EmitGameObjectTargeted(other.gameObject);
-    }
-}
-```
-
-On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
-**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
-GameObject. The hazard targets that exact object without knowing whether it is a player, enemy,
-crate, or future gameplay type. Neither component holds a reference to the other.
-
 ## Why Teams Use It
 
 <div class="dx-home-feature-grid">

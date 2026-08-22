@@ -189,22 +189,23 @@
     overflow: hidden;
   }
 
-  /* Progressive enhancement: tint the window toward the selected route. */
-  .dxm-window:has(#dxm-sample-untargeted:checked) {
+  /* Progressive enhancement: tint the window toward the selected route. Keyed on the route
+     classes, not the radio ids, so every selector on the page shares one set of rules. */
+  .dxm-window:has(.dxm-sample-radio--untargeted:checked) {
     border-color: rgba(var(--dxm-route-untargeted-rgb), 0.35);
     box-shadow:
       var(--dxm-window-shadow),
       0 0 48px -24px rgba(var(--dxm-route-untargeted-rgb), 0.35);
   }
 
-  .dxm-window:has(#dxm-sample-targeted:checked) {
+  .dxm-window:has(.dxm-sample-radio--targeted:checked) {
     border-color: rgba(var(--dxm-route-targeted-rgb), 0.35);
     box-shadow:
       var(--dxm-window-shadow),
       0 0 48px -24px rgba(var(--dxm-route-targeted-rgb), 0.35);
   }
 
-  .dxm-window:has(#dxm-sample-broadcast:checked) {
+  .dxm-window:has(.dxm-sample-radio--broadcast:checked) {
     border-color: rgba(var(--dxm-route-broadcast-rgb), 0.35);
     box-shadow:
       var(--dxm-window-shadow),
@@ -212,9 +213,9 @@
   }
 
   /* Ink on paper: keep the route border tint in light mode but drop the haze. */
-  [data-md-color-scheme="default"] .dxm-window:has(#dxm-sample-untargeted:checked),
-  [data-md-color-scheme="default"] .dxm-window:has(#dxm-sample-targeted:checked),
-  [data-md-color-scheme="default"] .dxm-window:has(#dxm-sample-broadcast:checked) {
+  [data-md-color-scheme="default"] .dxm-window:has(.dxm-sample-radio--untargeted:checked),
+  [data-md-color-scheme="default"] .dxm-window:has(.dxm-sample-radio--targeted:checked),
+  [data-md-color-scheme="default"] .dxm-window:has(.dxm-sample-radio--broadcast:checked) {
     box-shadow: var(--dxm-window-shadow);
   }
 
@@ -296,27 +297,27 @@
   }
 
   /* The radios are visually hidden, so surface keyboard focus on their labels. */
-  #dxm-sample-untargeted:focus-visible ~ .dxm-sample-labels label[for="dxm-sample-untargeted"],
-  #dxm-sample-targeted:focus-visible ~ .dxm-sample-labels label[for="dxm-sample-targeted"],
-  #dxm-sample-broadcast:focus-visible ~ .dxm-sample-labels label[for="dxm-sample-broadcast"] {
+  .dxm-sample-radio--untargeted:focus-visible ~ .dxm-sample-labels .dxm-sample-label--untargeted,
+  .dxm-sample-radio--targeted:focus-visible ~ .dxm-sample-labels .dxm-sample-label--targeted,
+  .dxm-sample-radio--broadcast:focus-visible ~ .dxm-sample-labels .dxm-sample-label--broadcast {
     outline: 2px solid var(--dxm-amber-soft);
     outline-offset: 2px;
   }
 
   /* Active tab takes its route color. */
-  #dxm-sample-untargeted:checked ~ .dxm-sample-labels label[for="dxm-sample-untargeted"] {
+  .dxm-sample-radio--untargeted:checked ~ .dxm-sample-labels .dxm-sample-label--untargeted {
     background: rgba(var(--dxm-route-untargeted-rgb), 0.14);
     border-color: rgba(var(--dxm-route-untargeted-rgb), 0.45);
     color: var(--dxm-route-untargeted);
   }
 
-  #dxm-sample-targeted:checked ~ .dxm-sample-labels label[for="dxm-sample-targeted"] {
+  .dxm-sample-radio--targeted:checked ~ .dxm-sample-labels .dxm-sample-label--targeted {
     background: rgba(var(--dxm-route-targeted-rgb), 0.14);
     border-color: rgba(var(--dxm-route-targeted-rgb), 0.45);
     color: var(--dxm-route-targeted);
   }
 
-  #dxm-sample-broadcast:checked ~ .dxm-sample-labels label[for="dxm-sample-broadcast"] {
+  .dxm-sample-radio--broadcast:checked ~ .dxm-sample-labels .dxm-sample-label--broadcast {
     background: rgba(var(--dxm-route-broadcast-rgb), 0.14);
     border-color: rgba(var(--dxm-route-broadcast-rgb), 0.45);
     color: var(--dxm-route-broadcast);
@@ -324,7 +325,51 @@
 
   .dxm-sample-panels {
     display: grid;
+  }
+
+  /* The hero panels share one grid cell, so the tallest sample would otherwise resize the window
+     on every switch. The First Message samples are longer and carry their own floor. */
+  .dxm-hero-glow .dxm-sample-panels {
     min-height: 21.5rem;
+  }
+
+  .dxm-first-message .dxm-sample-panels {
+    min-height: 34rem;
+  }
+
+  .dxm-first-message-heading {
+    margin-bottom: 0.35rem;
+  }
+
+  .dxm-first-message-lede {
+    color: var(--md-default-fg-color--light);
+    margin-top: 0;
+    max-width: 46rem;
+  }
+
+  .dxm-first-message {
+    margin-bottom: 2.4rem;
+  }
+
+  /* Three long labels do not fit one row on a phone, and a squeezed three-column grid truncates
+     them; stack instead. */
+  .dxm-first-message .dxm-sample-labels {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dxm-sample-note {
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+    color: var(--md-default-fg-color--light);
+    font-size: 0.7rem;
+    line-height: 1.7;
+    margin: 0;
+    padding: 0.9rem 1.1rem 1.1rem;
+  }
+
+  @media screen and (max-width: 44.9em) {
+    .dxm-first-message .dxm-sample-labels {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   .dxm-sample-panel {
@@ -334,9 +379,9 @@
     visibility: hidden;
   }
 
-  #dxm-sample-untargeted:checked ~ .dxm-sample-panels .dxm-sample-panel--untargeted,
-  #dxm-sample-targeted:checked ~ .dxm-sample-panels .dxm-sample-panel--targeted,
-  #dxm-sample-broadcast:checked ~ .dxm-sample-panels .dxm-sample-panel--broadcast {
+  .dxm-sample-radio--untargeted:checked ~ .dxm-sample-panels .dxm-sample-panel--untargeted,
+  .dxm-sample-radio--targeted:checked ~ .dxm-sample-panels .dxm-sample-panel--targeted,
+  .dxm-sample-radio--broadcast:checked ~ .dxm-sample-panels .dxm-sample-panel--broadcast {
     opacity: 1;
     pointer-events: auto;
     visibility: visible;
@@ -580,32 +625,32 @@
       </div>
       <div class="dxm-sample-tabs" role="radiogroup" aria-label="Hero code examples">
         <input
-          class="dxm-sample-radio"
+          class="dxm-sample-radio dxm-sample-radio--untargeted"
           type="radio"
           name="dxm-hero-sample"
           id="dxm-sample-untargeted"
         />
         <input
-          class="dxm-sample-radio"
+          class="dxm-sample-radio dxm-sample-radio--targeted"
           type="radio"
           name="dxm-hero-sample"
           id="dxm-sample-targeted"
           checked
         />
         <input
-          class="dxm-sample-radio"
+          class="dxm-sample-radio dxm-sample-radio--broadcast"
           type="radio"
           name="dxm-hero-sample"
           id="dxm-sample-broadcast"
         />
         <div class="dxm-sample-labels">
-          <label class="dxm-sample-label" for="dxm-sample-untargeted"
+          <label class="dxm-sample-label dxm-sample-label--untargeted" for="dxm-sample-untargeted"
             ><i style="background: var(--dxm-route-untargeted)"></i>Untargeted</label
           >
-          <label class="dxm-sample-label" for="dxm-sample-targeted"
+          <label class="dxm-sample-label dxm-sample-label--targeted" for="dxm-sample-targeted"
             ><i style="background: var(--dxm-route-targeted)"></i>Targeted</label
           >
-          <label class="dxm-sample-label" for="dxm-sample-broadcast"
+          <label class="dxm-sample-label dxm-sample-label--broadcast" for="dxm-sample-broadcast"
             ><i style="background: var(--dxm-route-broadcast)"></i>Broadcast</label
           >
         </div>
@@ -718,6 +763,85 @@
     <code class="dxm-card-chip"
       ><span style="color: var(--dxm-route-broadcast)">[DxBroadcastMessage]</span></code
     >
+  </div>
+</div>
+
+<h2 class="dxm-first-message-heading" id="first-message">First Message</h2>
+<p class="dxm-first-message-lede">
+  The same three steps in each shape: declare the contract, register a handler, emit. Pick the one
+  that matches what you are wiring up.
+</p>
+<div class="dxm-first-message">
+  <div class="dxm-window">
+    <div class="dxm-window-bar">
+      <span class="dot" style="background: #ec4661"></span>
+      <span class="dot" style="background: #f4a836"></span>
+      <span class="dot" style="background: #3d8a55"></span>
+      <span class="name">FirstMessage.cs</span>
+    </div>
+    <div class="dxm-sample-tabs" role="radiogroup" aria-label="First message examples">
+      <input
+        class="dxm-sample-radio dxm-sample-radio--untargeted"
+        type="radio"
+        name="dxm-first-message"
+        id="dxm-first-untargeted"
+        checked
+      />
+      <input
+        class="dxm-sample-radio dxm-sample-radio--targeted"
+        type="radio"
+        name="dxm-first-message"
+        id="dxm-first-targeted"
+      />
+      <input
+        class="dxm-sample-radio dxm-sample-radio--broadcast"
+        type="radio"
+        name="dxm-first-message"
+        id="dxm-first-broadcast"
+      />
+      <div class="dxm-sample-labels">
+        <label class="dxm-sample-label dxm-sample-label--untargeted" for="dxm-first-untargeted"
+          ><i style="background: var(--dxm-route-untargeted)"></i>Untargeted &middot; pause the
+          game</label
+        >
+        <label class="dxm-sample-label dxm-sample-label--targeted" for="dxm-first-targeted"
+          ><i style="background: var(--dxm-route-targeted)"></i>Targeted &middot; damage one
+          object</label
+        >
+        <label class="dxm-sample-label dxm-sample-label--broadcast" for="dxm-first-broadcast"
+          ><i style="background: var(--dxm-route-broadcast)"></i>Broadcast &middot; react to a
+          collision</label
+        >
+      </div>
+      <div class="dxm-sample-panels">
+        <div class="dxm-sample-panel dxm-sample-panel--untargeted">
+          {{ highlight_csharp_file("first-message-untargeted.csharp") }}
+          <p class="dxm-sample-note">
+            One announcement, two unrelated systems. The overlay and the music both react, and
+            <code>PauseController</code> holds a reference to neither. Adding a third listener is
+            one more registration.
+          </p>
+        </div>
+        <div class="dxm-sample-panel dxm-sample-panel--targeted">
+          {{ highlight_csharp_file("first-message-targeted.csharp") }}
+          <p class="dxm-sample-note">
+            On the hazard, enable <b>Is Trigger</b> on its collider and add a kinematic
+            <code>Rigidbody</code> with <b>Use Gravity</b> disabled. Put
+            <code>DamageReceiver</code> and the entering collider on the same target GameObject. The
+            hazard damages that exact object without knowing whether it is a player, an enemy, a
+            crate, or a type that does not exist yet.
+          </p>
+        </div>
+        <div class="dxm-sample-panel dxm-sample-panel--broadcast">
+          {{ highlight_csharp_file("first-message-broadcast.csharp") }}
+          <p class="dxm-sample-note">
+            The fact carries its source, so listeners on the same GameObject hear their own object's
+            collisions and nothing else. Sound and breakage are separate components that never learn
+            about each other.
+          </p>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

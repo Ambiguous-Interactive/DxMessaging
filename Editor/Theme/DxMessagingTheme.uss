@@ -179,7 +179,7 @@
     font-size: 9px;
     -unity-font-style: bold;
 }
-/* A header column clips and ellipsizes exactly like the row cell under it. Without this the
+/* A header column must clip and ellipsize exactly like the row cell under it. Without this the
    shrunken MESSAGE and CONTEXT headings drew over each other at a narrow width (#435), because
    only the row rules below carried the clip. */
 .dx-col-time,

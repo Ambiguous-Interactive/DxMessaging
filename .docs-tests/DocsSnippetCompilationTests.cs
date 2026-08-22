@@ -39,10 +39,23 @@ internal sealed class DocsSnippetCompilationTests
         "CS1061", // The synthetic stubs do not contain the referenced package extension/member.
     };
 
+    /// <summary>
+    /// Prettier wraps a long line by putting a closing bracket on its own line, so the shipped
+    /// overrides contain a newline between `code` and its closing angle bracket. Matching only the
+    /// tight form found nothing at all in `home.html` and, once one tight form did appear, paired
+    /// it with an opening tag far above and captured the markup between them as a snippet.
+    /// </summary>
     private static readonly System.Text.RegularExpressions.Regex HtmlCodeElementRegex = new(
-        @"<code(?<attrs>[^>]*)>(?<body>.*?)</code>",
+        @"<code(?<attrs>[^>]*)>(?<body>.*?)</code\s*>",
         System.Text.RegularExpressions.RegexOptions.Compiled
             | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    /// <summary>Inline presentation markup nested inside a code element.</summary>
+    private static readonly System.Text.RegularExpressions.Regex HtmlTagRegex = new(
+        @"<[^>]+>",
+        System.Text.RegularExpressions.RegexOptions.Compiled
             | System.Text.RegularExpressions.RegexOptions.Singleline
     );
 
@@ -471,22 +484,22 @@ internal sealed class DocsSnippetCompilationTests
             );
     }
 
-    [Test]
-    public void HomepageQuickStartRequiresNoManualSceneReferenceWiring()
+    /// <summary>
+    /// The homepage First Message selector offers one sample per message kind (#426), and the
+    /// no-manual-wiring promise has to hold for whichever one a reader lands on - not just the
+    /// targeted example that used to be the only one.
+    /// </summary>
+    [TestCase("first-message-untargeted.csharp", "[DxUntargetedMessage]")]
+    [TestCase("first-message-targeted.csharp", "[DxTargetedMessage]")]
+    [TestCase("first-message-broadcast.csharp", "[DxBroadcastMessage]")]
+    public void HomepageFirstMessageSamplesRequireNoManualSceneReferenceWiring(
+        string sampleName,
+        string expectedAttribute
+    )
     {
-        string docsRoot = ResolveDocsRoot();
-        string homepagePath = Path.Combine(docsRoot, "index.md");
-        string snippet = ExtractFirstCodeBlock(homepagePath, "csharp");
+        string snippet = ReadHomepageFirstMessageSample(sampleName);
 
-        Assert.That(snippet, Does.Contain("[DxTargetedMessage]"));
-        Assert.That(snippet, Does.Not.Contain("[DxUntargetedMessage]"));
-        Assert.That(snippet, Does.Match(@"RegisterGameObjectTargeted<[^>]+>\(gameObject"));
-        Assert.That(
-            snippet,
-            Does.Match(
-                @"(?s)OnTriggerEnter\(Collider\s+(?<target>\w+)\).*?EmitGameObjectTargeted\(\k<target>\.gameObject\)"
-            )
-        );
+        Assert.That(snippet, Does.Contain(expectedAttribute));
         Assert.That(
             HomepageSceneReferenceRegex.IsMatch(snippet),
             Is.False,
@@ -500,6 +513,95 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(snippet, Does.Not.Contain("GetComponentInParent"));
         Assert.That(snippet, Does.Not.Contain("Button"));
         Assert.That(snippet, Does.Not.Contain("onClick"));
+    }
+
+    /// <summary>
+    /// Each sample must actually demonstrate the kind its tab is labelled with: registering and
+    /// emitting through that kind's API, and no other kind's attribute.
+    /// </summary>
+    [TestCase(
+        "first-message-untargeted.csharp",
+        @"Token\.RegisterUntargeted<[^>]+>\(",
+        @"\.EmitUntargeted\(\)"
+    )]
+    [TestCase(
+        "first-message-targeted.csharp",
+        @"Token\.RegisterGameObjectTargeted<[^>]+>\(gameObject",
+        @"(?s)OnTriggerEnter\(Collider\s+(?<target>\w+)\).*?EmitGameObjectTargeted\(\k<target>\.gameObject\)"
+    )]
+    [TestCase(
+        "first-message-broadcast.csharp",
+        @"Token\.RegisterGameObjectBroadcast<[^>]+>\(gameObject",
+        @"\.EmitGameObjectBroadcast\(gameObject\)"
+    )]
+    public void HomepageFirstMessageSamplesDemonstrateTheKindTheyAreLabelledWith(
+        string sampleName,
+        string registrationPattern,
+        string emissionPattern
+    )
+    {
+        string snippet = ReadHomepageFirstMessageSample(sampleName);
+
+        Assert.That(snippet, Does.Match(registrationPattern));
+        Assert.That(snippet, Does.Match(emissionPattern));
+
+        string[] allAttributes =
+        {
+            "[DxUntargetedMessage]",
+            "[DxTargetedMessage]",
+            "[DxBroadcastMessage]",
+        };
+        string ownAttribute = allAttributes.Single(attribute =>
+            snippet.Contains(attribute, StringComparison.Ordinal)
+        );
+        foreach (string attribute in allAttributes.Where(a => a != ownAttribute))
+        {
+            Assert.That(
+                snippet,
+                Does.Not.Contain(attribute),
+                $"`{sampleName}` mixes {attribute} into the {ownAttribute} sample."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Every sample the First Message selector offers must exist and be rendered by the homepage
+    /// template. A sample file nobody renders, or a tab pointing at a file that is not there, both
+    /// fail here rather than silently shipping an empty panel.
+    /// </summary>
+    [Test]
+    public void TheHomepageRendersEveryFirstMessageSample()
+    {
+        string docsRoot = ResolveDocsRoot();
+        string homepage = File.ReadAllText(Path.Combine(docsRoot, "overrides", "home.html"));
+
+        foreach (
+            string sampleName in new[]
+            {
+                "first-message-untargeted.csharp",
+                "first-message-targeted.csharp",
+                "first-message-broadcast.csharp",
+            }
+        )
+        {
+            Assert.That(
+                File.Exists(Path.Combine(docsRoot, "overrides", "snippets", sampleName)),
+                Is.True,
+                $"The homepage template renders `{sampleName}`, so the sample must exist."
+            );
+            Assert.That(
+                homepage,
+                Does.Contain($"highlight_csharp_file(\"{sampleName}\")"),
+                $"`{sampleName}` is not rendered by the homepage template."
+            );
+        }
+    }
+
+    private static string ReadHomepageFirstMessageSample(string sampleName)
+    {
+        string path = Path.Combine(ResolveDocsRoot(), "overrides", "snippets", sampleName);
+        Assert.That(File.Exists(path), Is.True, $"Missing homepage sample `{path}`.");
+        return File.ReadAllText(path);
     }
 
     [TestCase("[SerializeField] private Collider _target;", true)]
@@ -866,12 +968,19 @@ internal sealed class DocsSnippetCompilationTests
         )
             return false;
         // Skip snippets that look like type-name placeholders.
-        if (
-            snippet.IndexOf(' ', StringComparison.Ordinal) < 0
-            && snippet.IndexOf('.', StringComparison.Ordinal) < 0
-        )
+        if (IsBareTypeNamePlaceholder(snippet))
             return false;
         return true;
+    }
+
+    /// <summary>
+    /// A single unqualified token - a type name, or an attribute in brackets - names something
+    /// rather than stating anything, so there is nothing to compile.
+    /// </summary>
+    private static bool IsBareTypeNamePlaceholder(string snippet)
+    {
+        return snippet.IndexOf(' ', StringComparison.Ordinal) < 0
+            && snippet.IndexOf('.', StringComparison.Ordinal) < 0;
     }
 
     // ---- 3.4.3: XML doc <code> block compilation -------------------------
@@ -1305,8 +1414,13 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         foreach (System.Text.RegularExpressions.Match match in HtmlCodeElementRegex.Matches(html))
         {
             string attrs = match.Groups["attrs"].Value;
-            string body = DecodeHtmlEntities(match.Groups["body"].Value).Trim();
-            if (!LooksLikeCSharpSnippet(htmlPath, attrs, body))
+            // A code element carries presentation markup - the homepage colors its attribute chips
+            // with a span. Strip it before deciding whether the text is C#.
+            string body = DecodeHtmlEntities(
+                    HtmlTagRegex.Replace(match.Groups["body"].Value, string.Empty)
+                )
+                .Trim();
+            if (IsBareTypeNamePlaceholder(body) || !LooksLikeCSharpSnippet(htmlPath, attrs, body))
             {
                 continue;
             }

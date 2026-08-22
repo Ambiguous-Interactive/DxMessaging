@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Improve untargeted dispatch throughput when no interceptors, global handlers, or post-processors
   are registered ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
-- Show a pause announcement coordinating independent UI and audio systems and a source-bound
-  collision driving independent sound and breakable-object reactions on the homepage
+- Show untargeted and broadcast examples on the landing page instead of the targeted one alone.
+  The hero and a new **First Message** selector each offer all three shapes: a pause announcement
+  coordinating independent systems, a hazard damaging one object it holds no reference to, and a
+  source-bound collision driving independent sound and breakable-object reactions
   ([#426](https://github.com/Ambiguous-Interactive/DxMessaging/issues/426)).
 - Reduce repeated message-handler subscribe/unsubscribe churn by six managed allocation calls per
   cycle ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
@@ -30,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stop the Message Monitor's live toolbar from drawing over the log header, and stop the column
   headings from printing over each other, at narrow window widths. The toolbar now grows to hold
-  the rows it wraps onto, and every heading clips and ellipsizes like the row cell beneath it
+  the rows it wraps onto, and every heading clips to its own column with an ellipsis, the way the
+  row cell beneath it already did
   ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
 
 ## [3.3.0]
