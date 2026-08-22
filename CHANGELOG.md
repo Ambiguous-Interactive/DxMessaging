@@ -35,10 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Stop the Message Monitor's live toolbar from drawing over the log header, and stop the column
-  headings from printing over each other, at narrow window widths. The toolbar now grows to hold
-  the rows it wraps onto, and every heading clips to its own column with an ellipsis, the way the
-  row cell beneath it already did
-  ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
+  headings from printing over each other, at narrow window widths. The toolbar is now two declared
+  rows - what the log is doing, and what it is filtered to - instead of one row that wrapped, and
+  every heading clips to its own column with an ellipsis, the way the row cell beneath it already
+  did ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
 
 ## [3.3.0]
 

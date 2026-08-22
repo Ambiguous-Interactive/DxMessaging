@@ -738,18 +738,24 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
-        [Test]
-        public void TheToolbarSeparatesItsControlGroups()
+        /// <summary>
+        /// Four groups - what the log is doing, what the window does next, what is shown, what is
+        /// searched - across two rows. The row boundary divides the pairs, so one rule inside each
+        /// row divides the two groups that share it.
+        /// </summary>
+        [TestCase(DxMessagingMessageMonitorLiveView.ToolbarName)]
+        [TestCase(DxMessagingMessageMonitorLiveView.FilterRowName)]
+        public void EachToolbarRowSeparatesTheTwoControlGroupsThatShareIt(string rowName)
         {
             VisualElement root = CreateView(Recorder(Entry(1, "A")));
 
             Assert.AreEqual(
-                3,
-                root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.ToolbarName)
+                1,
+                root.Q<VisualElement>(rowName)
                     .Query<VisualElement>(className: DxMessagingEditorTheme.SeparatorClassName)
                     .ToList()
                     .Count,
-                "Recording, taxonomy, search and mode are four groups, so three rules divide them."
+                $"`{rowName}` carries two control groups, so one rule divides them."
             );
         }
 
@@ -1361,13 +1367,14 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
-        /// The live toolbar wraps, so at the Monitor's minimum width its chips, search field and
-        /// buttons fall onto extra lines. Issue #435 reported those lines drawn on top of the log
-        /// header underneath: the shared toolbar rule pinned a one-line height, so the wrapped
-        /// content rendered outside its own box. The toolbar has to grow to hold what it wraps.
+        /// Issue #435 reported the toolbar drawn on top of the log header. The toolbar was one row
+        /// with <c>flex-wrap: wrap</c>, and at the Monitor's minimum width its chips, search field
+        /// and buttons fall onto extra lines. Unity 2021.3 does not resolve a wrapping row's height
+        /// from the lines it wraps onto, so those lines rendered outside the row's own box - which
+        /// is why the fix is two declared rows rather than a row that grows.
         /// </summary>
         [Test]
-        public void TheWrappedLiveToolbarGrowsInsteadOfPaintingOverTheLogHeader()
+        public void TheLiveToolbarRowsStayInsideTheirOwnBoxAtTheWindowsMinimumWidth()
         {
             VisualElement root = CreateViewInWindowSizedTo(
                 MonitorMinimumWidth,
@@ -1375,30 +1382,44 @@ namespace DxMessaging.Tests.Editor
                 Recorder(Entry(1, "PlayerSpawned"))
             );
 
-            VisualElement toolbar = root.Q<VisualElement>(
-                DxMessagingMessageMonitorLiveView.ToolbarName
-            );
             VisualElement header = root.Q<VisualElement>(
                 DxMessagingMessageMonitorLiveView.ListHeaderName
             );
-            Assert.IsNotNull(toolbar, "The live view must render its toolbar.");
             Assert.IsNotNull(header, "The live view must render its log header.");
-            Assert.Greater(toolbar.childCount, 0, "The toolbar must render its controls.");
 
-            foreach (VisualElement control in toolbar.Children())
+            VisualElement lastRow = null;
+            foreach (
+                string rowName in new[]
+                {
+                    DxMessagingMessageMonitorLiveView.ToolbarName,
+                    DxMessagingMessageMonitorLiveView.FilterRowName,
+                }
+            )
             {
-                Assert.LessOrEqual(
-                    control.worldBound.yMax,
-                    toolbar.worldBound.yMax + LayoutTolerance,
-                    $"Toolbar control '{DescribeControl(control)}' renders past the bottom of the "
-                        + "toolbar, so it paints over whatever the window draws beneath it."
-                );
+                VisualElement row = root.Q<VisualElement>(rowName);
+                Assert.IsNotNull(row, $"The live view must render its `{rowName}` row.");
+                Assert.Greater(row.childCount, 0, $"`{rowName}` must render its controls.");
+
+                // Re-adding `flex-wrap` is what this catches, and it catches it where it matters:
+                // a wrapped row's height is unresolved on Unity 2021.3, so the second line lands
+                // outside the row and this assertion fails on that leg.
+                foreach (VisualElement control in row.Children())
+                {
+                    Assert.LessOrEqual(
+                        control.worldBound.yMax,
+                        row.worldBound.yMax + LayoutTolerance,
+                        $"Control '{DescribeControl(control)}' renders past the bottom of "
+                            + $"`{rowName}`, so it paints over whatever the window draws beneath it."
+                    );
+                }
+
+                lastRow = row;
             }
 
             Assert.LessOrEqual(
-                toolbar.worldBound.yMax,
+                lastRow.worldBound.yMax,
                 header.worldBound.yMin + LayoutTolerance,
-                "The toolbar must end before the log header begins."
+                "The toolbar rows must end before the log header begins."
             );
         }
 

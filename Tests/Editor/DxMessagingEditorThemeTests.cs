@@ -303,15 +303,14 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
-        /// A wrapping row is as tall as the lines it wraps onto, so a rule that also pins `height`
-        /// leaves those lines drawn outside their own box, on top of whatever the window renders
-        /// beneath. That is the overlay #435 reported: the live Monitor toolbar wraps its chips and
-        /// search field, and the shared rule held the box at one line's worth of height. The
-        /// toolbar rule has to be content-sized, with `min-height` carrying the designed size for
-        /// the toolbars that do not wrap.
+        /// The toolbar rule pinned `height`, so a row whose content exceeded one line's worth drew
+        /// outside its own box, on top of whatever the window rendered beneath - the overlay #435
+        /// reported. `min-height` carries the designed size without capping it. The live Monitor's
+        /// row no longer wraps at all (Unity 2021.3 does not resolve a wrapped row's height), but a
+        /// pinned `height` would still clip any row that outgrows it.
         /// </summary>
         [Test]
-        public void TheSharedToolbarRuleGrowsWithWrappedContentInsteadOfPinningOneLine()
+        public void TheSharedToolbarRuleSizesFromItsContentInsteadOfPinningOneLine()
         {
             string uss = StripBlockComments(
                 System.IO.File.ReadAllText(DxMessagingEditorTheme.ThemeUssPath)

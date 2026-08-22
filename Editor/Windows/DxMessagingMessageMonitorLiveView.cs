@@ -160,6 +160,7 @@ namespace DxMessaging.Editor.Windows
     {
         internal const string RootName = "dxmessaging-monitor-live";
         internal const string ToolbarName = "dxmessaging-monitor-live-toolbar";
+        internal const string FilterRowName = "dxmessaging-monitor-live-filters";
         internal const string BodyName = "dxmessaging-monitor-live-body";
         internal const string RecordToggleName = "dxmessaging-monitor-live-record";
         internal const string ClearButtonName = "dxmessaging-monitor-live-clear";
@@ -340,7 +341,7 @@ namespace DxMessaging.Editor.Windows
             VisualElement root = new() { name = RootName };
             DxMessagingEditorTheme.ApplyWindow(root);
             root.style.flexGrow = 1;
-            root.Add(CreateToolbar(recorder, viewState, callbacks));
+            AddToolbarRows(root, recorder, viewState, callbacks);
 
             VisualElement body = new() { name = BodyName };
             body.style.flexGrow = 1;
@@ -649,7 +650,20 @@ namespace DxMessaging.Editor.Windows
             return element;
         }
 
-        private static VisualElement CreateToolbar(
+        /// <summary>
+        /// Builds the two toolbar rows: what the log is doing on the first, what it is filtered to
+        /// on the second.
+        /// </summary>
+        /// <remarks>
+        /// These were one row with <c>flex-wrap: wrap</c>. A wrapping row's height is not resolved
+        /// from the lines it wraps onto on Unity 2021.3, so the wrapped controls rendered outside
+        /// the toolbar's box and painted over the log header underneath (#435). Two declared rows
+        /// lay out identically on every supported version and need no wrapping at all. The split
+        /// also matches snapshot mode, which has kept its route-kind filters on their own row since
+        /// #344.
+        /// </remarks>
+        private static void AddToolbarRows(
+            VisualElement root,
             MessageMonitorLiveRecorder recorder,
             MessageMonitorLiveViewState viewState,
             MessageMonitorLiveViewCallbacks callbacks
@@ -657,9 +671,15 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement toolbar = new() { name = ToolbarName };
             toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
+            toolbar.AddToClassList(DxMessagingEditorTheme.ToolbarActionsClassName);
             toolbar.style.flexDirection = FlexDirection.Row;
             toolbar.style.alignItems = Align.Center;
-            toolbar.style.flexWrap = Wrap.Wrap;
+
+            VisualElement filters = new() { name = FilterRowName };
+            filters.AddToClassList(DxMessagingEditorTheme.ToolbarClassName);
+            filters.AddToClassList(DxMessagingEditorTheme.ToolbarFiltersClassName);
+            filters.style.flexDirection = FlexDirection.Row;
+            filters.style.alignItems = Align.Center;
 
             // The badge is the mode switch here too. Snapshot mode offered its switch beside the
             // filter row while live mode kept a Snapshot button at the far end of a wrapping
@@ -707,11 +727,6 @@ namespace DxMessaging.Editor.Windows
             );
             toolbar.Add(record);
 
-            // The toolbar runs four unrelated groups together -- what is being recorded, what is
-            // shown, what is searched, and what the window does next. The design system's rule
-            // separates them so the row reads as groups rather than one run of controls.
-            toolbar.Add(CreateSeparator());
-
             // The chips name their route kind rather than abbreviating it to a letter: issue #344
             // reported the toolbar toggles as unlabelled, and a named chip is also the only legend
             // the row colors have.
@@ -755,12 +770,15 @@ namespace DxMessaging.Editor.Windows
             broadcast.RegisterValueChangedCallback(_ => RaiseStateChanged());
             filter.RegisterValueChangedCallback(_ => RaiseStateChanged());
 
-            toolbar.Add(untargeted);
-            toolbar.Add(targeted);
-            toolbar.Add(broadcast);
-            toolbar.Add(CreateSeparator());
-            toolbar.Add(filter);
-            toolbar.Add(CreateSeparator());
+            filters.Add(untargeted);
+            filters.Add(targeted);
+            filters.Add(broadcast);
+
+            // The two rows run four unrelated groups -- what is being recorded, what the window
+            // does next, what is shown, and what is searched. The design system's rule separates
+            // the pairs that share a row so each reads as groups rather than one run of controls.
+            filters.Add(CreateSeparator());
+            filters.Add(filter);
 
             // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
             // same as the rest of this package's editor UI: it is the event a real click produces
@@ -773,9 +791,11 @@ namespace DxMessaging.Editor.Windows
             };
             clear.RegisterCallback<ClickEvent>(_ => callbacks.OnClear?.Invoke());
             clear.AddToClassList(DxMessagingEditorTheme.ButtonGhostClassName);
+            toolbar.Add(CreateSeparator());
             toolbar.Add(clear);
 
-            return toolbar;
+            root.Add(toolbar);
+            root.Add(filters);
         }
 
         private static Toggle CreateChip(string name, string routeKind, bool value)
