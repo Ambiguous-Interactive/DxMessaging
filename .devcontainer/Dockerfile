@@ -365,7 +365,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     set -eux; \
     apt-get update; \
-    apt-get install -y python3 python3-pip python3-venv; \
+    apt-get install -y python3 python3-pip python3-venv libcairo2 fontconfig; \
     apt-get autoremove -y; \
     python3 --version; \
     pip3 --version
@@ -395,6 +395,14 @@ RUN pip3 install --no-cache-dir yamllint --break-system-packages && yamllint --v
 # https://pre-commit.com
 # ------------------------------------------------------------------------------
 RUN pip3 install --no-cache-dir pre-commit --break-system-packages && pre-commit --version
+
+# ------------------------------------------------------------------------------
+# Install uv
+# Used to compile requirements-docs.txt from requirements-docs.in. The docs jobs
+# install the compiled file with plain pip, so uv is a local authoring tool only.
+# https://docs.astral.sh/uv/
+# ------------------------------------------------------------------------------
+RUN pip3 install --no-cache-dir uv --break-system-packages && uv --version
 
 # ------------------------------------------------------------------------------
 # Configure Git Defaults for Unity-style Repositories
