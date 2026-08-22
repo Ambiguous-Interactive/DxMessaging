@@ -330,7 +330,7 @@
         "category": "scripting",
         "tags": "cross-platform, case-sensitivity, testing, powershell, javascript, ci-cd, linux, windows, macos"
       },
-      "lineCount": 124,
+      "lineCount": 128,
       "references": [
         ".llm/skills/shell-and-powershell/references/cross-platform-compatibility.md",
         ".llm/skills/shell-and-powershell/references/powershell-best-practices-part-1.md",
