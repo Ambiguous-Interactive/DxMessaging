@@ -25,11 +25,14 @@
   <g transform="translate(34 42)" filter="url(#dxBannerSoftShadow)">
     <polygon points="44,0 82,22 82,66 44,88 6,66 6,22" fill="#0d1117" stroke="#222b36" stroke-width="1.5" stroke-linejoin="round"/>
     <polygon points="44,7 76,25 76,63 44,81 12,63 12,25" fill="none" stroke="url(#dxBannerAmber)" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M44 44 L44 18 M44 44 L70 60 M44 44 L18 60" stroke="#ffd48e" stroke-width="2.8" stroke-linecap="round"/>
-    <circle cx="44" cy="15" r="4.3" fill="#ffd48e"/>
-    <circle cx="74" cy="62" r="4.3" fill="#ffd48e"/>
-    <circle cx="14" cy="62" r="4.3" fill="#ffd48e"/>
-    <circle cx="44" cy="44" r="7" fill="#ffd48e"/>
+    <!-- The mark's emitter, in the mark's own 96-unit coordinates. The banner hexagon is
+         pointy-top and narrower than the mark's, so the group is scaled about its center by the
+         width ratio (32/40) and re-centered; every proportion the mark was drawn with survives. -->
+    <g transform="translate(44 44) scale(0.8) translate(-48 -48)">
+      <circle cx="30" cy="48" r="6" fill="#ffd48e"/>
+      <path d="M46,34 a20,20 0 0 1 0,28" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round"/>
+      <path d="M58,26 a32,32 0 0 1 0,44" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+    </g>
   </g>
 
   <g transform="translate(132 40)">
