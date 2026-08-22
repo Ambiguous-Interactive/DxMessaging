@@ -413,6 +413,141 @@ namespace DxMessaging.Editor
             return clamped;
         }
 
+        /// <summary>
+        /// Turns wrapping on for a container and keeps that container at least as tall as the
+        /// lines its children wrap onto.
+        ///
+        /// Unity 2021.3 does not grow a wrapping container to fit the extra lines. The container
+        /// keeps its single-line height and the wrapped lines draw outside it, on top of whatever
+        /// the window draws beneath. Newer editors size the container correctly, so the defect is
+        /// invisible on 6000.x. Issue #435 hit it in the Message Monitor toolbar and issue #440
+        /// lists the Flow Graph containers with the same shape.
+        ///
+        /// Measuring the children and applying the result as `min-height` supplies the height
+        /// Unity 2021.3 does not derive. The measurement is only applied when the container is
+        /// actually too short, so an editor that already sizes the container writes no inline
+        /// style at all. `align-content: flex-start` packs the lines at the top, so a container
+        /// that just grew cannot stretch its own lines and ask to grow again.
+        /// </summary>
+        internal static void ApplyContentSizedWrap(VisualElement container)
+        {
+            if (container == null)
+            {
+                return;
+            }
+
+            container.style.flexWrap = Wrap.Wrap;
+            container.style.alignContent = Align.FlexStart;
+            WrapHeightFit fit = new(container);
+            container.RegisterCallback<GeometryChangedEvent, WrapHeightFit>(
+                static (_, state) => state.Fit(),
+                fit
+            );
+            container.RegisterCallback<DetachFromPanelEvent, WrapHeightFit>(
+                static (_, state) => state.Release(),
+                fit
+            );
+        }
+
+        /// <summary>
+        /// The height a wrapping container needs for every line its children occupy, measured in
+        /// the container's own coordinate space so a panned or zoomed ancestor cannot skew it.
+        /// Returns 0 when nothing is measurable yet.
+        /// </summary>
+        internal static float MeasureWrappedContentHeight(VisualElement container)
+        {
+            if (container == null)
+            {
+                return 0f;
+            }
+
+            float contentBottom = 0f;
+            bool measured = false;
+            foreach (VisualElement child in container.Children())
+            {
+                if (child.resolvedStyle.display == DisplayStyle.None)
+                {
+                    continue;
+                }
+
+                Rect childLayout = child.layout;
+                if (float.IsNaN(childLayout.yMax))
+                {
+                    continue;
+                }
+
+                contentBottom = Mathf.Max(
+                    contentBottom,
+                    childLayout.yMax + child.resolvedStyle.marginBottom
+                );
+                measured = true;
+            }
+
+            if (!measured)
+            {
+                return 0f;
+            }
+
+            IResolvedStyle containerStyle = container.resolvedStyle;
+            return contentBottom + containerStyle.paddingBottom + containerStyle.borderBottomWidth;
+        }
+
+        /// <summary>
+        /// Holds the height one container was given, so a container that already fits is never
+        /// written to and a container that was grown is only written again when it needs more.
+        ///
+        /// The height is only ever raised while the container is in a panel. Unity reports a
+        /// geometry change to the container when the container's own box changes, and a container
+        /// held at a height by this class does not change its box when its content shrinks, so
+        /// there is no second measurement to lower it from. Leaving the panel releases the height
+        /// instead, which is what a reused or rebuilt container needs.
+        /// </summary>
+        private sealed class WrapHeightFit
+        {
+            private const float Tolerance = 0.5f;
+
+            private readonly VisualElement _container;
+
+            private bool _applied;
+            private float _appliedHeight;
+
+            internal WrapHeightFit(VisualElement container)
+            {
+                _container = container;
+            }
+
+            internal void Fit()
+            {
+                float required = MeasureWrappedContentHeight(_container);
+                if (required <= 0f)
+                {
+                    return;
+                }
+
+                float current = _applied ? _appliedHeight : _container.resolvedStyle.height;
+                if (required <= current + Tolerance)
+                {
+                    return;
+                }
+
+                _applied = true;
+                _appliedHeight = required;
+                _container.style.minHeight = required;
+            }
+
+            internal void Release()
+            {
+                if (!_applied)
+                {
+                    return;
+                }
+
+                _applied = false;
+                _appliedHeight = 0f;
+                _container.style.minHeight = StyleKeyword.Null;
+            }
+        }
+
         private static StyleSheet LoadStyleSheet(string path)
         {
             return AssetDatabase.LoadAssetAtPath<StyleSheet>(path);

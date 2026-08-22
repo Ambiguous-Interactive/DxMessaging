@@ -105,6 +105,17 @@ namespace DxMessaging.Tests.Editor
         private const string TraceIdLaneDetailsLabelName =
             "dxmessaging-flow-graph-trace-id-lane-details";
 
+        /// <summary>
+        /// The smallest the Flow Graph window can be made, from its own `minSize`. Containers wrap
+        /// here first, so this is where issue #440 shows up.
+        /// </summary>
+        private const float FlowGraphMinimumWidth = 520f;
+        private const float FlowGraphMinimumHeight = 360f;
+
+        private const string EdgeSelection = "route";
+        private const string ComponentSelection = "component";
+        private const string MessageSelection = "message";
+
         private bool _stackTracesBeforeTest;
 
         [SetUp]
@@ -11468,6 +11479,126 @@ namespace DxMessaging.Tests.Editor
                     .OrderBy(edge => edge.Context, StringComparer.Ordinal)
                     .ThenBy(edge => edge.ContextId)
                     .ToArray(),
+                Array.Empty<string>()
+            );
+        }
+
+        /// <summary>
+        /// Issue #440: ten Flow Graph containers wrap. Unity 2021.3 does not grow a wrapping
+        /// container to fit the lines its children wrap onto, so those lines draw outside the
+        /// container and over the block beneath it. What makes them wrap is long type names and a
+        /// deep hierarchy trail - short in a fixture, long in a real project - so this renders
+        /// both, at the smallest window a reader can make.
+        /// </summary>
+        [TestCase(EdgeSelection)]
+        [TestCase(ComponentSelection)]
+        [TestCase(MessageSelection)]
+        public void EveryWrappingContainerStaysInsideItsOwnBoxAtTheWindowsMinimumSize(
+            string selection
+        )
+        {
+            FlowGraphSnapshot snapshot = CreateLongContentSnapshot();
+            string selectedItemKey = selection switch
+            {
+                EdgeSelection => DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(
+                    snapshot.Edges[0]
+                ),
+                ComponentSelection => DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                    snapshot.ComponentNodes[0]
+                ),
+                MessageSelection => DxMessagingFlowGraphWindow.CreateMessageSelectionKey(
+                    snapshot.MessageNodes[0]
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(selection), selection, null),
+            };
+
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, FlowGraphMinimumWidth, FlowGraphMinimumHeight);
+            EditorWindowTestUtility.ShowWindow(window);
+
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                window.rootVisualElement,
+                snapshot,
+                new FlowGraphViewState(selectedItemKey: selectedItemKey)
+            );
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                window.rootVisualElement.Q<VisualElement>(
+                    DxMessagingFlowGraphWindow.DetailsPaneName
+                ),
+                Is.Not.Null,
+                "The details pane carries most of the wrapping containers, so it has to render."
+            );
+            EditorWindowTestUtility.AssertWrappingContainersContainTheirChildren(
+                window.rootVisualElement,
+                $"The Flow Graph at its minimum window size with a {selection} selected"
+            );
+        }
+
+        /// <summary>
+        /// A snapshot whose names are as long as a real project's: a deep hierarchy trail, a
+        /// namespaced message type, and traces, so the hierarchy trail, metric grid, route flow
+        /// and widest-trace rows all have enough content to wrap.
+        /// </summary>
+        private static FlowGraphSnapshot CreateLongContentSnapshot()
+        {
+            const string componentId = "component:damage-resolution";
+            const string hierarchyPath =
+                "Root/Systems/Gameplay/Combat/Encounters/EliteWaveDirector/DamageResolutionListener";
+            const string messageTypeName =
+                "Gameplay.Combat.Damage.DamageResolutionRequestedBroadcastMessage";
+
+            return new FlowGraphSnapshot(
+                new[]
+                {
+                    new FlowGraphComponentNode(
+                        componentId,
+                        hierarchyPath,
+                        "PlayerCombatDamageResolutionMessagingComponent",
+                        activeInHierarchy: true,
+                        listenerCount: 3,
+                        registrationCount: 4,
+                        callCount: 128,
+                        localMessageCount: 6
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphMessageNode(
+                        messageTypeName,
+                        registrationCount: 4,
+                        callCount: 128,
+                        recentGlobalEmissionCount: 64,
+                        recentLocalMessageCount: 6,
+                        recentTracedDeliveryCount: 12
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphEdge(
+                        messageTypeName,
+                        componentId,
+                        hierarchyPath,
+                        "Broadcast",
+                        registrationCount: 4,
+                        callCount: 128,
+                        recentTracedDeliveryCount: 12,
+                        context: hierarchyPath
+                    ),
+                },
+                new[]
+                {
+                    new FlowGraphTracePath(
+                        messageTypeName,
+                        hierarchyPath,
+                        componentId,
+                        hierarchyPath,
+                        "Broadcast",
+                        recentTracedDeliveryCount: 12,
+                        traceIds: new long[] { 8801, 8802, 8803, 8804 }
+                    ),
+                },
                 Array.Empty<string>()
             );
         }

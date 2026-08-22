@@ -26,6 +26,9 @@ namespace DxMessaging.Tests.Editor
             "Packages/com.wallstop-studios.dxmessaging/Tests/Editor/Fixtures/EditModeSceneSafety.unity";
         private readonly List<Object> _createdObjects = new();
         private readonly List<string> _createdAssetPaths = new();
+        private const float MonitorMinimumWidth = 420f;
+        private const float MonitorMinimumHeight = 320f;
+
         private readonly List<EditorWindow> _createdWindows = new();
         private const string MessageTypeLanesName = "dxmessaging-monitor-message-type-lanes";
         private const string MessageTypeLaneScrollViewName =
@@ -3723,6 +3726,101 @@ namespace DxMessaging.Tests.Editor
             Assert.That(snapshot.Entries[0].MessageTypeName, Is.EqualTo(nameof(NewerMessage)));
             Assert.That(snapshot.Entries[0].ContextText, Does.Contain("42"));
             Assert.That(snapshot.Entries[1].MessageTypeName, Is.EqualTo(nameof(OlderMessage)));
+        }
+
+        /// <summary>
+        /// Wrapping the scroll view's own content container clipped the token list to the
+        /// viewport and left the scroller with nothing to scroll, so every token past the first
+        /// few lines was unreachable. The tokens wrap in a row this window owns, which the scroll
+        /// view can then scroll (GitHub #440).
+        /// </summary>
+        [Test]
+        public void ActiveFilterTokensStayReachableWhenTheyWrapPastTheScrollViewHeight()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[] { CreateEntry(new OlderMessage(), null) }
+            );
+            string longFilter = string.Join(
+                " ",
+                Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}")
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, MonitorMinimumWidth, MonitorMinimumHeight);
+            EditorWindowTestUtility.ShowWindow(window);
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                window.rootVisualElement,
+                snapshot,
+                new MessageMonitorViewState(longFilter)
+            );
+            EditorWindowTestUtility.SettleLayout(window);
+
+            ScrollView tokenScroll = window
+                .rootVisualElement.Q<VisualElement>(ActiveFilterSummaryName)
+                .Q<ScrollView>(ActiveFilterTokenScrollViewName);
+            VisualElement tokenRow = tokenScroll.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.ActiveFilterTokenWrapRowName
+            );
+
+            Assert.That(tokenRow, Is.Not.Null, "The tokens must wrap in a row the window owns.");
+            Assert.That(
+                tokenRow.resolvedStyle.height,
+                Is.GreaterThan(tokenScroll.contentViewport.resolvedStyle.height),
+                "The probe must overflow the viewport, otherwise there is nothing to scroll to."
+            );
+            Assert.That(
+                tokenScroll.verticalScroller.highValue,
+                Is.GreaterThan(0f),
+                "Every token past the first visible line must be reachable by scrolling."
+            );
+        }
+
+        /// <summary>
+        /// Issue #440: the Monitor's lane rows and active-filter tokens are wrapping containers
+        /// too. Unity 2021.3 does not grow a wrapping container to fit the lines its children wrap
+        /// onto, so those lines fall outside their scroll view's content and cannot be scrolled to.
+        /// A long filter and several message kinds are what fills both at the minimum window size.
+        /// </summary>
+        [Test]
+        public void EveryWrappingContainerStaysInsideItsOwnBoxAtTheWindowsMinimumSize()
+        {
+            MessageMonitorSnapshot snapshot = new(
+                diagnosticsEnabled: true,
+                capacity: 8,
+                entries: new[]
+                {
+                    CreateEntry(new OlderMessage(), null),
+                    CreateEntry(new NewerMessage(), new InstanceId(123)),
+                }
+            );
+            string longFilter = string.Join(
+                " ",
+                Enumerable.Range(0, 24).Select(index => $"type:Message{index:00}")
+            );
+            EditorWindow window = CreateTrackedEditorWindow();
+            window.position = new Rect(0f, 0f, MonitorMinimumWidth, MonitorMinimumHeight);
+            EditorWindowTestUtility.ShowWindow(window);
+
+            DxMessagingMessageMonitorWindow.BuildMonitorUi(
+                window.rootVisualElement,
+                snapshot,
+                new MessageMonitorViewState(longFilter)
+            );
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                window
+                    .rootVisualElement.Q<VisualElement>(ActiveFilterSummaryName)
+                    .Q<ScrollView>(ActiveFilterTokenScrollViewName),
+                Is.Not.Null,
+                "The active-filter token scroll view is one of the wrapping containers this covers."
+            );
+            EditorWindowTestUtility.AssertWrappingContainersContainTheirChildren(
+                window.rootVisualElement,
+                "The Message Monitor at its minimum window size"
+            );
         }
 
         private static MessageMonitorEntry CreateEntry(IMessage message, InstanceId? context)

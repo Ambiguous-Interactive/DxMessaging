@@ -30,8 +30,11 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-monitor-active-filter-label";
         internal const string ActiveFilterTokenScrollViewName =
             "dxmessaging-monitor-active-filter-token-scroll";
+        internal const string ActiveFilterTokenWrapRowName =
+            "dxmessaging-monitor-active-filter-token-row";
         internal const string ActiveFilterTokenClassName =
             "dxmessaging-monitor-active-filter-token";
+        internal const string LanePillWrapRowName = "dxmessaging-monitor-lane-pill-row";
         internal const string ActiveFilterClearButtonName =
             "dxmessaging-monitor-active-filter-clear";
         internal const string RefreshButtonName = "dxmessaging-monitor-refresh";
@@ -1369,6 +1372,24 @@ namespace DxMessaging.Editor.Windows
             return breakdown;
         }
 
+        /// <summary>
+        /// A wrapping row for content inside a <see cref="ScrollView"/>.
+        ///
+        /// The row belongs to this window rather than being the scroll view's own content
+        /// container. Unity sizes that container to the viewport, so a wrapping content container
+        /// keeps only the first screenful of lines: the rest are clipped and the scroller reports
+        /// nothing to scroll to. An owned row is sized by its own lines, which the scroll view
+        /// then scrolls (GitHub #440).
+        /// </summary>
+        private static VisualElement CreateScrollableWrapRow(string name)
+        {
+            VisualElement row = new() { name = name };
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.flexShrink = 0;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(row);
+            return row;
+        }
+
         private static VisualElement CreateLanePanel(
             string panelName,
             string summaryLabelName,
@@ -1406,13 +1427,13 @@ namespace DxMessaging.Editor.Windows
             laneRows.style.flexShrink = 1;
             laneRows.style.minHeight = 0;
             laneRows.style.marginTop = 4;
-            laneRows.contentContainer.style.flexDirection = FlexDirection.Row;
-            laneRows.contentContainer.style.flexWrap = Wrap.Wrap;
+            VisualElement laneRowsContent = CreateScrollableWrapRow(LanePillWrapRowName);
+            laneRows.Add(laneRowsContent);
             lanesRoot.Add(laneRows);
 
             foreach (VisualElement pill in pills)
             {
-                laneRows.Add(pill);
+                laneRowsContent.Add(pill);
             }
 
             return lanesRoot;
@@ -1897,8 +1918,8 @@ namespace DxMessaging.Editor.Windows
             tokenScroll.style.flexGrow = 1;
             tokenScroll.style.flexShrink = 1;
             tokenScroll.style.maxHeight = 72;
-            tokenScroll.contentContainer.style.flexDirection = FlexDirection.Row;
-            tokenScroll.contentContainer.style.flexWrap = Wrap.Wrap;
+            VisualElement tokenRow = CreateScrollableWrapRow(ActiveFilterTokenWrapRowName);
+            tokenScroll.Add(tokenRow);
             summary.Add(tokenScroll);
 
             foreach (string token in displayTokens)
@@ -1917,7 +1938,7 @@ namespace DxMessaging.Editor.Windows
                     DxMessagingEditorPalette.Border
                 );
                 tokenLabel.style.whiteSpace = WhiteSpace.Normal;
-                tokenScroll.Add(tokenLabel);
+                tokenRow.Add(tokenLabel);
             }
         }
 

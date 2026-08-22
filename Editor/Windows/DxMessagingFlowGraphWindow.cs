@@ -2463,7 +2463,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement legend = new() { name = GraphLegendName };
             legend.style.flexDirection = FlexDirection.Row;
-            legend.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(legend);
             legend.style.alignItems = Align.Center;
             legend.style.marginBottom = 6;
 
@@ -6243,7 +6243,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement header = new();
             header.AddToClassList(DxMessagingEditorTheme.DetailHeadClassName);
-            header.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(header);
             VisualElement heading = new();
             heading.style.flexGrow = 1;
             heading.style.flexShrink = 1;
@@ -6757,7 +6757,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement summary = new();
             summary.style.flexDirection = FlexDirection.Row;
-            summary.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(summary);
             summary.style.alignItems = Align.Center;
             VisualElement receiver = CreateRelationshipIdentity("RECEIVER", string.Empty);
             receiver.style.flexGrow = 1;
@@ -7109,7 +7109,7 @@ namespace DxMessaging.Editor.Windows
             row.Add(keyLabel);
             VisualElement values = new();
             values.style.flexDirection = FlexDirection.Row;
-            values.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(values);
             values.style.flexGrow = 1;
             Label traceIdentity = new(
                 widestTrace.PathCount <= 0 ? "none" : $"Trace #{widestTrace.TraceId}"
@@ -7249,7 +7249,7 @@ namespace DxMessaging.Editor.Windows
             VisualElement section = CreateDetailsSection("ROUTE");
             VisualElement flow = new();
             flow.style.flexDirection = FlexDirection.Row;
-            flow.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(flow);
             flow.style.alignItems = Align.Center;
             string kind = DxMessagingEditorPalette.NormalizeRouteKind(edge.RegistrationTypeName);
             string context = CreateReadableRouteContext(edge);
@@ -7337,7 +7337,7 @@ namespace DxMessaging.Editor.Windows
             VisualElement section = CreateDetailsSection(title);
             VisualElement grid = new();
             grid.style.flexDirection = FlexDirection.Row;
-            grid.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(grid);
             foreach (GraphNodeMetric metric in metrics)
             {
                 VisualElement tile = new();
@@ -7498,7 +7498,7 @@ namespace DxMessaging.Editor.Windows
             };
             trail.AddToClassList(DetailsHierarchyTrailClassName);
             trail.style.flexDirection = FlexDirection.Row;
-            trail.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(trail);
             trail.style.alignItems = Align.Center;
             trail.style.flexGrow = 1;
             trail.style.flexShrink = 1;
@@ -7689,7 +7689,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement header = new();
             header.style.flexDirection = FlexDirection.Row;
-            header.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(header);
             header.style.alignItems = Align.Center;
             Label relationshipLabel = new(label);
             relationshipLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
@@ -7703,7 +7703,7 @@ namespace DxMessaging.Editor.Windows
 
             VisualElement flow = new();
             flow.style.flexDirection = FlexDirection.Row;
-            flow.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(flow);
             flow.style.alignItems = Align.Center;
             flow.style.marginTop = 6;
             flow.Add(
@@ -7786,7 +7786,7 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement activity = new();
             activity.style.flexDirection = FlexDirection.Row;
-            activity.style.flexWrap = Wrap.Wrap;
+            DxMessagingEditorTheme.ApplyContentSizedWrap(activity);
             activity.style.marginTop = 5;
             Label activityCount = new($"{deliveryCount} {activityLabel}");
             activityCount.AddToClassList(DxMessagingEditorTheme.DetailFrameClassName);

@@ -25,6 +25,31 @@ namespace DxMessaging.Tests.Editor
             "white-space: nowrap;",
         };
 
+        private const float ProbeWindowWidth = 240f;
+        private const float ProbeWindowHeight = 240f;
+        private const float ProbeChildWidth = 100f;
+        private const float ProbeChildHeight = 20f;
+        private const int ProbeChildCount = 4;
+
+        /// <summary>
+        /// How many probe children fit on one line at <see cref="ProbeWindowWidth"/>.
+        /// </summary>
+        private const int SingleLineChildCount = 2;
+
+        /// <summary>
+        /// One line of children, which is exactly what Unity 2021.3 leaves a wrapping container at.
+        /// </summary>
+        private const float PinnedHeight = ProbeChildHeight;
+
+        private readonly List<EditorWindow> _createdWindows = new();
+
+        [TearDown]
+        public void TearDown()
+        {
+            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
+            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+        }
+
         [Test]
         public void ThemeAssetsLoadFromPackagePaths()
         {
@@ -668,6 +693,228 @@ namespace DxMessaging.Tests.Editor
             AssertColor(element.style.borderRightColor.value, DxMessagingEditorPalette.AmberSoft);
             AssertColor(element.style.borderBottomColor.value, DxMessagingEditorPalette.AmberSoft);
             AssertColor(element.style.borderLeftColor.value, DxMessagingEditorPalette.AmberSoft);
+        }
+
+        /// <summary>
+        /// Issue #440: on Unity 2021.3 a wrapping container keeps its single-line height, so the
+        /// lines its children wrap onto draw outside it and over whatever the window paints
+        /// beneath. Pinning the height reproduces that refusal to grow on every editor, which is
+        /// what makes this red-green here as well as on the 2021.3 leg.
+        /// </summary>
+        [Test]
+        public void AWrappingContainerTooShortForItsLinesGrowsUntilEveryChildIsInsideIt()
+        {
+            EditorWindow window = CreateWrapProbeWindow();
+
+            VisualElement control = AddWrapProbe(window, PinnedHeight, contentSized: false);
+            VisualElement fixedProbe = AddWrapProbe(window, PinnedHeight, contentSized: true);
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                DxMessagingEditorTheme.MeasureWrappedContentHeight(control),
+                Is.GreaterThan(
+                    control.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
+                ),
+                "The control probe must reproduce the defect, otherwise the fixed probe below "
+                    + "proves nothing: a wrapping container that will not grow leaves its "
+                    + "wrapped lines outside its own box."
+            );
+
+            Assert.That(
+                DxMessagingEditorTheme.MeasureWrappedContentHeight(fixedProbe),
+                Is.LessThanOrEqualTo(
+                    fixedProbe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
+                ),
+                "A container built through ApplyContentSizedWrap must end up tall enough for "
+                    + "every line its children wrap onto."
+            );
+        }
+
+        /// <summary>
+        /// An editor that already sizes a wrapping container must be left alone: no inline
+        /// `min-height` is written, so the helper cannot lower a height the stylesheet declared.
+        /// </summary>
+        [Test]
+        public void AWrappingContainerThatAlreadyFitsIsLeftWithoutAnInlineHeight()
+        {
+            EditorWindow window = CreateWrapProbeWindow();
+
+            // Two children fit on one line, so no editor has to derive a wrapped height and this
+            // reads the same on Unity 2021.3 as it does on 6000.x.
+            VisualElement probe = AddWrapProbe(
+                window,
+                pinnedHeight: 0f,
+                contentSized: true,
+                childCount: SingleLineChildCount
+            );
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
+                Is.LessThanOrEqualTo(
+                    probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
+                ),
+                "The probe must already fit, otherwise this asserts the wrong case."
+            );
+            Assert.That(
+                probe.style.minHeight.keyword,
+                Is.EqualTo(StyleKeyword.Null),
+                "A container that already fits its lines must keep the height its stylesheet "
+                    + "gives it, so the helper must not write an inline min-height."
+            );
+        }
+
+        /// <summary>
+        /// A container that leaves the panel is about to be rebuilt or reused, so it must forget
+        /// the height its last content needed. Otherwise a details pane that once held a deep
+        /// hierarchy trail keeps that gap for every selection after it.
+        /// </summary>
+        [Test]
+        public void AGrownWrappingContainerForgetsItsHeightWhenItLeavesThePanel()
+        {
+            EditorWindow window = CreateWrapProbeWindow();
+
+            VisualElement probe = AddWrapProbe(window, PinnedHeight, contentSized: true);
+            EditorWindowTestUtility.SettleLayout(window);
+            Assert.That(
+                probe.resolvedStyle.height,
+                Is.GreaterThan(PinnedHeight + EditorWindowTestUtility.LayoutTolerance),
+                "The probe must have grown first, otherwise there is no height to forget."
+            );
+
+            probe.RemoveFromHierarchy();
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                probe.style.minHeight.keyword,
+                Is.EqualTo(StyleKeyword.Null),
+                "Leaving the panel must release the height, so the container measures its next "
+                    + "content from its own stylesheet height."
+            );
+
+            while (probe.childCount > SingleLineChildCount)
+            {
+                probe.RemoveAt(probe.childCount - 1);
+            }
+            window.rootVisualElement.Add(probe);
+            EditorWindowTestUtility.SettleLayout(window);
+
+            Assert.That(
+                probe.resolvedStyle.height,
+                Is.EqualTo(PinnedHeight).Within(EditorWindowTestUtility.LayoutTolerance),
+                "Two children need one line, so the re-added container must be one line tall."
+            );
+            Assert.That(
+                DxMessagingEditorTheme.MeasureWrappedContentHeight(probe),
+                Is.LessThanOrEqualTo(
+                    probe.resolvedStyle.height + EditorWindowTestUtility.LayoutTolerance
+                ),
+                "The re-measured container must still contain its children."
+            );
+        }
+
+        /// <summary>
+        /// Drift guard for the whole class of defect in issue #440: turning wrapping on by hand
+        /// re-creates it, because nothing then supplies the height Unity 2021.3 does not derive.
+        /// Every shipped editor source must go through the helper instead.
+        /// </summary>
+        [Test]
+        public void EveryEditorWrapContainerGoesThroughTheContentSizedWrapHelper()
+        {
+            const string bannedDeclaration = "style.flex" + "Wrap";
+            string editorRoot = DxMessagingEditorTheme.PackageRoot + "/Editor";
+            string allowedRelativePath = "Editor/DxMessagingEditorTheme.cs";
+
+            string[] sourcePaths = System.IO.Directory.GetFiles(
+                editorRoot,
+                "*.cs",
+                System.IO.SearchOption.AllDirectories
+            );
+            Assert.That(
+                sourcePaths,
+                Is.Not.Empty,
+                $"Expected editor sources under '{editorRoot}'."
+            );
+
+            List<string> offenders = new();
+            foreach (string sourcePath in sourcePaths)
+            {
+                string normalized = sourcePath.Replace('\\', '/');
+                if (normalized.EndsWith(allowedRelativePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string[] lines = System.IO.File.ReadAllLines(sourcePath);
+                for (int index = 0; index < lines.Length; index++)
+                {
+                    if (lines[index].Contains(bannedDeclaration))
+                    {
+                        offenders.Add($"{normalized}:{index + 1}");
+                    }
+                }
+            }
+
+            Assert.That(
+                offenders,
+                Is.Empty,
+                "These editor sources turn wrapping on directly instead of calling "
+                    + "DxMessagingEditorTheme.ApplyContentSizedWrap, so on Unity 2021.3 their "
+                    + "wrapped lines draw outside the container (GitHub #440):\n"
+                    + string.Join("\n", offenders)
+            );
+        }
+
+        private EditorWindow CreateWrapProbeWindow()
+        {
+            EditorWindow window = EditorWindowTestUtility.CreateWindow();
+            _createdWindows.Add(window);
+            window.position = new Rect(0f, 0f, ProbeWindowWidth, ProbeWindowHeight);
+            EditorWindowTestUtility.ShowWindow(window);
+            return window;
+        }
+
+        /// <summary>
+        /// A row of equal children too wide to fit on one line. A non-zero
+        /// <paramref name="pinnedHeight"/> holds the container at one line's worth of height,
+        /// which is what Unity 2021.3 does to a wrapping container on its own.
+        /// </summary>
+        private static VisualElement AddWrapProbe(
+            EditorWindow window,
+            float pinnedHeight,
+            bool contentSized,
+            int childCount = ProbeChildCount
+        )
+        {
+            VisualElement probe = new();
+            probe.style.flexDirection = FlexDirection.Row;
+            probe.style.width = ProbeWindowWidth;
+            probe.style.flexShrink = 0f;
+            if (contentSized)
+            {
+                DxMessagingEditorTheme.ApplyContentSizedWrap(probe);
+            }
+            else
+            {
+                probe.style.flexWrap = Wrap.Wrap;
+            }
+
+            if (pinnedHeight > 0f)
+            {
+                probe.style.height = pinnedHeight;
+            }
+
+            for (int index = 0; index < childCount; index++)
+            {
+                VisualElement child = new();
+                child.style.width = ProbeChildWidth;
+                child.style.height = ProbeChildHeight;
+                child.style.flexShrink = 0f;
+                probe.Add(child);
+            }
+
+            window.rootVisualElement.Add(probe);
+            return probe;
         }
 
         private static void AssertIconLoads(string fileName, int expectedSize)

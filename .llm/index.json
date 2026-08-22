@@ -1,5 +1,5 @@
 {
-  "skillCount": 31,
+  "skillCount": 32,
   "skills": [
     {
       "name": "allocation-and-leak-coverage",
@@ -291,6 +291,19 @@
         ".llm/skills/package-publishing/references/npm-package-configuration-part-1.md",
         ".llm/skills/package-publishing/references/npm-package-configuration.md",
         ".llm/skills/package-publishing/references/unity-analyzer-shipping.md"
+      ]
+    },
+    {
+      "name": "pull-request-writing",
+      "path": ".llm/skills/pull-request-writing/SKILL.md",
+      "description": "How to title and describe a DxMessaging pull request: short Simplified Technical English, one idea per sentence, and a body that answers why the problem mattered, what the change does, and how we know it is correct. Bans jargon, filler, status narration, and session diaries. Use when opening or editing a pull request, writing its title, rewriting a description a reviewer found hard to read, or deciding what evidence belongs in the body.",
+      "metadata": {
+        "category": "process",
+        "tags": "pull-request, writing, simplified-technical-english, ste, review, communication"
+      },
+      "lineCount": 96,
+      "references": [
+        ".llm/skills/pull-request-writing/references/pull-request-examples.md"
       ]
     },
     {
