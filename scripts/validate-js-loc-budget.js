@@ -109,7 +109,18 @@ const path = require("path");
 //     field going stale against CHANGELOG.md, including the regression that
 //     keeps that gate from fighting `format:check` over package.json's
 //     formatting: 18040.
-const TOTAL_BUDGET = 18040;
+// 080 Stop `unity:mcp:probe` reporting green through a window where nothing
+//     editor-backed works (#418). The relay keeps advertising its whole tool
+//     registry after the editor's discovery record goes stale, so a probe that
+//     only reads `tools/list` said the loop was ready while every editor-backed
+//     call answered "Unity not detected" -- the one failure this probe exists
+//     to catch, and the only one it could not see. The probe now asks the
+//     editor for its state and reports what it actually proved; a relay with no
+//     editor tool keeps the tools-level verdict rather than turning into a
+//     false red. +29 source and +59 test lines, the tests covering a live
+//     editor, a stale discovery record, a reply carrying no editor state, an
+//     empty reply, and both no-call paths: 18181.
+const TOTAL_BUDGET = 18181;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

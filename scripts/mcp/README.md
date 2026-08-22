@@ -9,7 +9,7 @@ streamable HTTP and container clients point at that endpoint.
 | Command                       | Runs on | Purpose                                                   |
 | ----------------------------- | ------- | --------------------------------------------------------- |
 | `npm run unity:mcp:bridge`    | Host    | Spawn the relay and serve it over HTTP                    |
-| `npm run unity:mcp:probe`     | Agent   | Find an endpoint that advertises `Unity_RunCommand`       |
+| `npm run unity:mcp:probe`     | Agent   | Find an endpoint a live editor is answering behind        |
 | `npm run unity:mcp:configure` | Agent   | Discover, then write every MCP client config in this repo |
 
 ## Start the bridge on the Windows host

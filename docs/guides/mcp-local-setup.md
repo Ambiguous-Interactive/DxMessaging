@@ -78,7 +78,10 @@ activity may still trigger the Unity defect.
 Reopen Unity on the latest available patch and follow the Unity issue for fixed-version status. Run
 `npm run unity:mcp:probe` separately after the editor restarts; its `unreachable`, `unauthorized`,
 `transport-error`, `http-error`, `jsonrpc-error`, `malformed`, or `not-ready` result separates TCP,
-MCP transport, server-reported, protocol, and tool-advertisement failures.
+MCP transport, server-reported, protocol, tool-advertisement, and editor-readiness failures. The
+probe finishes by asking `Unity_ManageEditor` for editor state: the bridge stays healthy while the
+editor's discovery record goes stale, and a `not-ready` naming that tool means the transport is fine
+and the editor is not answering.
 
 ## Notes
 
