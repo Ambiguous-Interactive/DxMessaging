@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="DxMessaging - Decoupled, simple systems.">
   <rect x="0" y="0" width="1200" height="630" fill="#0d1117"></rect>
+  <!-- Mark from dxmessaging-mark.svg at 105px (96 * 1.09375). scripts/render-brand-cards.py refuses to render if these elements drift. -->
   <g transform="translate(548,158) scale(1.09375)">
     <polygon points="88,48 68,82.64 28,82.64 8,48 28,13.36 68,13.36" fill="none" stroke="#f4a836" stroke-width="4.5"></polygon>
     <circle cx="30" cy="48" r="6" fill="#ffd48e"></circle>

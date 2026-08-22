@@ -56,9 +56,10 @@ All three are SIL Open Font License 1.1."""
 def installed_families():
     if shutil.which("fc-list") is None:
         sys.exit("fc-list not found. Install fontconfig, then re-run.")
-    listing = subprocess.run(
-        ["fc-list", ":", "family"], capture_output=True, text=True, check=True
-    ).stdout
+    probe = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True)
+    if probe.returncode != 0:
+        sys.exit(f"fc-list failed ({probe.returncode}): {probe.stderr.strip()}")
+    listing = probe.stdout
     families = set()
     for line in listing.splitlines():
         for name in line.split(","):
@@ -67,9 +68,14 @@ def installed_families():
 
 
 def drawing_elements(path):
-    """The lines between the opening and closing svg tags, stripped of indent."""
+    """The lines between the opening and closing svg tags, stripped of indent.
+
+    Anchored on `<svg`, not on the first `>` in the file, so an XML declaration
+    ahead of the root element does not end up inside the comparison.
+    """
     text = (REPO_ROOT / path).read_text(encoding="utf-8")
-    inner = text.split(">", 1)[1].rsplit("</svg>", 1)[0]
+    opening = text.index(">", text.index("<svg"))
+    inner = text[opening + 1 :].rsplit("</svg>", 1)[0]
     return [line.strip() for line in inner.splitlines() if line.strip()]
 
 
