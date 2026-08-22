@@ -47,25 +47,30 @@ function runSummary({ logText, label = "editmode" }) {
     fs.writeFileSync(
       scriptPath,
       [
+        "param([string]$Label)",
         "Set-StrictMode -Version Latest",
         "$ErrorActionPreference = 'Stop'",
-        "$script:WroteWallClockSummaryHeader = $false",
         extractFunction(source, "Write-SuiteWallClockSummary"),
-        `Write-SuiteWallClockSummary -LogPath '${logPath}' -Label '${label}'`,
-        `Write-SuiteWallClockSummary -LogPath '${logPath}' -Label '${label}-second'`
+        `Write-SuiteWallClockSummary -LogPath '${logPath}' -Label $Label`
       ].join("\n"),
       "utf8"
     );
 
-    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", scriptPath], {
-      encoding: "utf8",
-      env: { ...process.env, GITHUB_STEP_SUMMARY: summaryPath }
-    });
+    // The workflow runs this script once per test mode, so each leg is its own
+    // process. Driving it the same way is what proves the header is written once
+    // per job rather than once per leg.
+    const legs = [label, `${label}-second`];
+    const runs = legs.map((leg) =>
+      spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", scriptPath, "-Label", leg], {
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryPath }
+      })
+    );
     const summary = fs.existsSync(summaryPath) ? fs.readFileSync(summaryPath, "utf8") : "";
     return {
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-      status: result.status,
+      stdout: runs.map((r) => r.stdout ?? "").join(""),
+      stderr: runs.map((r) => r.stderr ?? "").join(""),
+      status: runs.find((r) => r.status !== 0)?.status ?? 0,
       summary
     };
   } finally {
@@ -127,7 +132,6 @@ test("a missing log file reports nothing instead of failing the leg", { skip: !H
       [
         "Set-StrictMode -Version Latest",
         "$ErrorActionPreference = 'Stop'",
-        "$script:WroteWallClockSummaryHeader = $false",
         extractFunction(source, "Write-SuiteWallClockSummary"),
         `Write-SuiteWallClockSummary -LogPath '${path.join(root, "absent.log")}' -Label 'playmode'`
       ].join("\n"),

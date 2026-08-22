@@ -470,6 +470,13 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
+                // An absolutely positioned child is out of flow, so it creates no wrapped line
+                // and must not drag the container's height with it.
+                if (child.resolvedStyle.position == Position.Absolute)
+                {
+                    continue;
+                }
+
                 Rect childLayout = child.layout;
                 if (float.IsNaN(childLayout.yMax))
                 {

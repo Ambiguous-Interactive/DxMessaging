@@ -438,9 +438,6 @@ function ConvertTo-SingleLineDiagnostic {
 # value is used for the opening and closing fence lines. The matching fence in
 # .github/actions/verify-unity-results/action.yml uses the same scheme.
 $script:WorkflowCommandStopToken = $null
-# StrictMode Latest throws on reading an uninitialized variable, so the
-# once-per-job summary header flag is declared here rather than at first use.
-$script:WroteWallClockSummaryHeader = $false
 
 # Generate a fresh, unpredictable stop-commands fence token. A GUID 'N' form is
 # 32 hex chars with no separators, so it can never collide with caller text and
@@ -549,14 +546,21 @@ function Write-SuiteWallClockSummary {
 
         $summaryPath = $env:GITHUB_STEP_SUMMARY
         if ($summaryPath) {
-            if (-not $script:WroteWallClockSummaryHeader) {
+            # The header is looked up in the FILE, not held in a variable: the
+            # workflow runs this script once per test mode, so each leg is its own
+            # pwsh process and an in-process flag would print the header three
+            # times per job.
+            $header = '### Suite wall clock'
+            $alreadyOpen = (Test-Path -LiteralPath $summaryPath -PathType Leaf) -and
+                @(Select-String -LiteralPath $summaryPath -Pattern ([regex]::Escape($header)) `
+                    -SimpleMatch:$false -ErrorAction SilentlyContinue).Count -gt 0
+            if (-not $alreadyOpen) {
                 Add-Content -LiteralPath $summaryPath -Value @(
-                    '### Suite wall clock',
+                    $header,
                     '',
                     '| Leg | Elapsed | Soft budget | Hard budget |',
                     '| --- | ---: | ---: | ---: |'
                 )
-                $script:WroteWallClockSummaryHeader = $true
             }
             Add-Content -LiteralPath $summaryPath -Value ("| $Label | $($groups[1].Value)s | " +
                 "$($groups[2].Value)s | $($groups[3].Value)s |")

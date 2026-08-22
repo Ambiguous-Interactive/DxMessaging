@@ -308,18 +308,19 @@ $result = Test-MsvcToolchain -InstallRoot $installRoot -RunnerName $runner -Prob
     Test-Path -LiteralPath $path -PathType Leaf
 } -ProbeLaunch {
     param($path)
-    $threw = $false
-    $code = $null
+    # EVERYTHING is inside the try, including reading the outcome. This verdict is
+    # advisory, so an unexpected throw here must become "did not start" and a
+    # warning, never a terminating error that fails the leg this gate exists to
+    # protect.
     try {
         # By full path, with no input files, output discarded: the question is
         # whether the image loads, not what it says.
         $null = & $path '/?' 2>&1
-        $code = $LASTEXITCODE
+        return (Test-CompilerLaunchOutcome -ExitCode $LASTEXITCODE -Threw $false)
     }
     catch {
-        $threw = $true
+        return (Test-CompilerLaunchOutcome -ExitCode $null -Threw $true)
     }
-    Test-CompilerLaunchOutcome -ExitCode $code -Threw $threw
 }
 
 if ($result.Ok) {

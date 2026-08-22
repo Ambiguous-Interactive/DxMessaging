@@ -130,8 +130,11 @@ const path = require("path");
 //     table header, a log with no line, a missing log, and the shared line
 //     shape between the C# producer and the PowerShell consumer. No new script
 //     and no new workflow, which is the option issue #410 asks for, plus the
-//     11 lines this entry itself adds: 18360.
-const TOTAL_BUDGET = 18360;
+//     11 lines this entry itself adds. Review then moved the once-per-job header
+//     check into the summary FILE, because the workflow runs the harness once
+//     per test mode, so an in-process flag printed the header three times per
+//     job; the test now spawns one process per leg: 18367.
+const TOTAL_BUDGET = 18367;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

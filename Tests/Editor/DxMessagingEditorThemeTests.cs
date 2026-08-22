@@ -814,9 +814,9 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
-        /// Drift guard for the whole class of defect in issue #440: turning wrapping on by hand
-        /// re-creates it, because nothing then supplies the height Unity 2021.3 does not derive.
-        /// Every shipped editor source must go through the helper instead.
+        /// Drift guard for the whole class of defect in issue #440: turning wrapping on by hand,
+        /// in a source file or in a stylesheet, re-creates it, because nothing then supplies the
+        /// height Unity 2021.3 does not derive. Everything shipped must go through the helper.
         /// </summary>
         [Test]
         public void EveryEditorWrapContainerGoesThroughTheContentSizedWrapHelper()
@@ -855,10 +855,30 @@ namespace DxMessaging.Tests.Editor
                 }
             }
 
+            // A stylesheet can turn wrapping on just as well as a source file can, and
+            // nothing would then supply the height either.
+            foreach (
+                string ussPath in new[]
+                {
+                    DxMessagingEditorTheme.TokensUssPath,
+                    DxMessagingEditorTheme.ThemeUssPath,
+                }
+            )
+            {
+                string[] ussLines = System.IO.File.ReadAllLines(ussPath);
+                for (int index = 0; index < ussLines.Length; index++)
+                {
+                    if (ussLines[index].Contains("flex-" + "wrap:"))
+                    {
+                        offenders.Add($"{ussPath}:{index + 1}");
+                    }
+                }
+            }
+
             Assert.That(
                 offenders,
                 Is.Empty,
-                "These editor sources turn wrapping on directly instead of calling "
+                "These editor sources or stylesheets turn wrapping on directly instead of calling "
                     + "DxMessagingEditorTheme.ApplyContentSizedWrap, so on Unity 2021.3 their "
                     + "wrapped lines draw outside the container (GitHub #440):\n"
                     + string.Join("\n", offenders)
