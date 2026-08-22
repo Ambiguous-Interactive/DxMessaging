@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Enable stack traces** button that applies immediately and is saved to project settings
   ([#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)).
 
+### Fixed
+
+- Stop the Message Monitor's live toolbar from drawing over the log header, and stop the column
+  headings from printing over each other, at narrow window widths. The toolbar now grows to hold
+  the rows it wraps onto, and every heading clips and ellipsizes like the row cell beneath it
+  ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
+
 ## [3.3.0]
 
 ### Added
