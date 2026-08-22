@@ -48,9 +48,10 @@ change leaves something open that a reader must know about.
 
 ### Length
 
-- Aim for 200 words. Stop at 400.
-- One pull request that closes several issues gets one `Why / What changed / How we know` block
-  per issue, each still short. It does not get a longer preamble.
+- Aim for 200 words per block. Stop at 400.
+- A pull request closing several issues has one `Why / What changed / How we know` block per
+  issue, so it is longer overall. The ceiling is per block, not per page. It still does not get a
+  preamble.
 - Move deep evidence to the issue or to a `progress/` record and link it. The body carries the
   verdict, not the working.
 

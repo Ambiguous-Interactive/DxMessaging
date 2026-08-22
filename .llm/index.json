@@ -301,7 +301,7 @@
         "category": "process",
         "tags": "pull-request, writing, simplified-technical-english, ste, review, communication"
       },
-      "lineCount": 96,
+      "lineCount": 97,
       "references": [
         ".llm/skills/pull-request-writing/references/pull-request-examples.md"
       ]
