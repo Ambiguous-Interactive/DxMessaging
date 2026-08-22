@@ -34,7 +34,6 @@ namespace DxMessaging.Editor.Windows
             "dxmessaging-monitor-active-filter-token-row";
         internal const string ActiveFilterTokenClassName =
             "dxmessaging-monitor-active-filter-token";
-        internal const string LanePillWrapRowName = "dxmessaging-monitor-lane-pill-row";
         internal const string ActiveFilterClearButtonName =
             "dxmessaging-monitor-active-filter-clear";
         internal const string RefreshButtonName = "dxmessaging-monitor-refresh";
@@ -1427,7 +1426,10 @@ namespace DxMessaging.Editor.Windows
             laneRows.style.flexShrink = 1;
             laneRows.style.minHeight = 0;
             laneRows.style.marginTop = 4;
-            VisualElement laneRowsContent = CreateScrollableWrapRow(LanePillWrapRowName);
+            // Derived from the scroll view's own name: this panel is built twice, once for
+            // message-type lanes and once for context lanes, so a shared constant would put the
+            // same element name in the tree twice.
+            VisualElement laneRowsContent = CreateScrollableWrapRow(scrollViewName + "-row");
             laneRows.Add(laneRowsContent);
             lanesRoot.Add(laneRows);
 
