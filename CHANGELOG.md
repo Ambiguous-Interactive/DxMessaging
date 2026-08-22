@@ -34,11 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Stop the Message Monitor's live toolbar from drawing over the log header, and stop the column
-  headings from printing over each other, at narrow window widths. The toolbar is now two declared
-  rows - what the log is doing, and what it is filtered to - instead of one row that wrapped, and
-  every heading clips to its own column with an ellipsis, the way the row cell beneath it already
-  did ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
+- Stop the Message Monitor from drawing its toolbar over the log header, and its column headings
+  over each other, at narrow window widths. Neither Monitor row wraps now - the live toolbar is two
+  declared rows, what the log is doing and what it is filtered to - because a wrapping row's height
+  is not resolved from the lines it wraps onto on Unity 2021.3, so those lines rendered outside the
+  row. Every heading clips to its own column with an ellipsis, the way the row cell beneath it
+  already did, and the route-kind chips give space back instead of pushing the search field past
+  the edge ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
 
 ## [3.3.0]
 
