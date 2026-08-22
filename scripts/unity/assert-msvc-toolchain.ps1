@@ -208,7 +208,7 @@ function Test-CompilerLaunchOutcome {
     if ($Threw) { return $false }
     if ($null -eq $ExitCode) { return $false }
 
-    # `0xC0000000L`, with the L. PowerShell parses an unsuffixed hex literal as a
+    # `0xC0000000L`, with the L. PowerShell parses a hex literal with no type suffix as a
     # SIGNED int, so a bare `0xC0000000` is -1073741824 and `0 -ge -1073741824`
     # would call every healthy exit code a loader failure.
     $code = [int64]$ExitCode

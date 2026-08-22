@@ -99,7 +99,7 @@ application for this OS platform`, or a case-mismatch file-not-found.
   `os.tmpdir()` on `C:`), so `rel.startsWith("..")` mislabels an outside path as inside. Use
   `isPathInsideDirectory` / `isPathOutsideDirectory` / `isOutsideRelative` from
   `scripts/lib/path-classifier.js`; if you truly cannot, pair with `path.isAbsolute(rel)`.
-- PowerShell parses an unsuffixed hex literal as a SIGNED integer, so `0xC0000000` is
+- PowerShell parses a hex literal with no type suffix as a SIGNED integer, so `0xC0000000` is
   `-1073741824`, not `3221225472`. Comparing a Windows exit code against a bare NTSTATUS
   literal therefore matches everything. Suffix it (`0xC0000000L`) or write the decimal. See
   `Test-CompilerLaunchOutcome` in `scripts/unity/assert-msvc-toolchain.ps1`.
