@@ -80,15 +80,17 @@ function Test-MsvcToolchain {
     param(
         [AllowEmptyString()][string]$InstallRoot,
         [scriptblock]$ProbeExecutable,
+        [scriptblock]$ProbeLaunch,
         [string]$RunnerName = 'unknown'
     )
 
     if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
         return [pscustomobject]@{
-            Ok      = $false
-            Reason  = 'no-visual-studio'
-            Path    = ''
-            Message = ("No Visual Studio installation with the C++ toolset was found on runner " +
+            Ok       = $false
+            Advisory = $false
+            Reason   = 'no-visual-studio'
+            Path     = ''
+            Message  = ("No Visual Studio installation with the C++ toolset was found on runner " +
                 "'$RunnerName'. IL2CPP cannot compile a player without it. A runner administrator " +
                 "must install the 'Desktop development with C++' workload.")
         }
@@ -111,33 +113,66 @@ function Test-MsvcToolchain {
 
     if ($versions.Count -eq 0) {
         return [pscustomobject]@{
-            Ok      = $false
-            Reason  = 'no-toolset'
-            Path    = $toolsRoot
-            Message = ("Visual Studio is installed on runner '$RunnerName' but carries no MSVC " +
+            Ok       = $false
+            Advisory = $false
+            Reason   = 'no-toolset'
+            Path     = $toolsRoot
+            Message  = ("Visual Studio is installed on runner '$RunnerName' but carries no MSVC " +
                 "toolset under '$toolsRoot'. IL2CPP cannot compile a player. A runner " +
                 "administrator must add the 'Desktop development with C++' workload.")
         }
     }
 
+    # A compiler that is present but cannot start is tracked separately from one
+    # that is absent, because the operator fix differs and because a newer broken
+    # toolset must not hide an older working one.
+    $unusable = $null
     foreach ($version in $versions) {
         $compiler = Join-Path $version.FullName 'bin\Hostx64\x64\cl.exe'
-        if (& $ProbeExecutable $compiler) {
-            return [pscustomobject]@{
-                Ok      = $true
-                Reason  = 'ok'
-                Path    = $compiler
-                Message = "MSVC toolset $($version.Name) is usable: $compiler"
-            }
+        if (-not (& $ProbeExecutable $compiler)) { continue }
+        if ($ProbeLaunch -and -not (& $ProbeLaunch $compiler)) {
+            if ($null -eq $unusable) { $unusable = [pscustomobject]@{ Name = $version.Name; Path = $compiler } }
+            continue
+        }
+        return [pscustomobject]@{
+            Ok       = $true
+            Advisory = $false
+            Reason   = 'ok'
+            Path     = $compiler
+            Message  = "MSVC toolset $($version.Name) is usable: $compiler"
+        }
+    }
+
+    if ($null -ne $unusable) {
+        return [pscustomobject]@{
+            Ok       = $false
+            # ADVISORY, not blocking. This gate runs before the organization build
+            # lock, so a false failure would block every IL2CPP leg on the runner.
+            # No Windows host has yet demonstrated that the launch probe exits
+            # cleanly on a HEALTHY toolchain invoked by full path outside vcvars
+            # (#336, step 1), so until it does, a failed launch is reported and the
+            # leg continues. Flip this to $false in the same change that records
+            # that demonstration.
+            Advisory = $true
+            Reason   = 'compiler-unusable'
+            Path     = $unusable.Path
+            Message  = ("MSVC toolset $($unusable.Name) is present on runner '$RunnerName' but " +
+                "its compiler did not start at '$($unusable.Path)'. A compiler that cannot " +
+                "start is normally a missing sibling DLL, a truncated file, or security " +
+                "tooling blocking it, and IL2CPP will fail the player build after taking a " +
+                "Unity licence seat and the build lock. A runner administrator must repair the " +
+                "'Desktop development with C++' workload. This is reported, not enforced: see " +
+                "issue #336.")
         }
     }
 
     $newest = $versions[0]
     return [pscustomobject]@{
-        Ok      = $false
-        Reason  = 'compiler-missing'
-        Path    = (Join-Path $newest.FullName 'bin\Hostx64\x64\cl.exe')
-        Message = ("MSVC toolset $($newest.Name) is present on runner '$RunnerName' but its " +
+        Ok       = $false
+        Advisory = $false
+        Reason   = 'compiler-missing'
+        Path     = (Join-Path $newest.FullName 'bin\Hostx64\x64\cl.exe')
+        Message  = ("MSVC toolset $($newest.Name) is present on runner '$RunnerName' but its " +
             "compiler is not executable at " +
             "'$(Join-Path $newest.FullName 'bin\Hostx64\x64\cl.exe')'. This is a broken or " +
             "half-completed Visual Studio update, not a missing install -- Unity will still " +
@@ -145,6 +180,40 @@ function Test-MsvcToolchain {
             "with `"cl.exe is not recognized`" after a full build. A runner administrator " +
             "must repair the 'Desktop development with C++' workload.")
     }
+}
+
+function Test-CompilerLaunchOutcome {
+    <#
+    .SYNOPSIS
+        Decide whether a compiler process actually started, from how it ended.
+
+    .DESCRIPTION
+        Pure, so every branch runs on Linux. The signal is that the process
+        STARTED, not that it liked its arguments: `cl.exe` invoked with no input
+        files still exits non-zero on a healthy toolchain, so requiring exit 0
+        would call a working compiler broken.
+
+        Windows reports a loader failure -- a missing sibling DLL, a truncated
+        image, an execution block -- as an NTSTATUS in the exit code rather than
+        as a compiler diagnostic. `0xC0000135` is STATUS_DLL_NOT_FOUND and
+        `0xC000007B` is STATUS_INVALID_IMAGE_FORMAT. PowerShell surfaces those as
+        negative signed integers, so both forms are checked.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()][object]$ExitCode,
+        [bool]$Threw
+    )
+
+    if ($Threw) { return $false }
+    if ($null -eq $ExitCode) { return $false }
+
+    # `0xC0000000L`, with the L. PowerShell parses a hex literal with no type suffix as a
+    # SIGNED int, so a bare `0xC0000000` is -1073741824 and `0 -ge -1073741824`
+    # would call every healthy exit code a loader failure.
+    $code = [int64]$ExitCode
+    if ($code -lt 0 -or $code -ge 0xC0000000L) { return $false }
+    return $true
 }
 
 # Dot-sourced by the tests, which supply their own inputs.
@@ -221,23 +290,37 @@ else {
         "with C++' workload.")
 }
 
-# Presence, deliberately -- NOT a launch probe. Running `cl.exe /?` would also
-# catch a present-but-corrupt compiler, which this cannot. It was considered and
-# rejected for now: `cl.exe` resolves several sibling DLLs (`mspdb*`, `msvcp*`)
-# and the toolchain normally runs under `vcvars`, so a bare launch has real ways
-# to fail on a HEALTHY host -- and this gate runs before the organization build
-# lock, so a false failure blocks every IL2CPP leg on that runner. That is the
-# same shape as the `vswhere` bug above, where a discovery failure was reported
-# as a missing toolchain.
+# Presence AND a launch probe. Presence is what #333 needed and is the blocking
+# check. The launch probe catches a `cl.exe` that is there but cannot start -- a
+# failed update, a missing sibling DLL, security tooling -- which presence cannot
+# see and which today reports the host healthy and fails the leg twenty minutes
+# later, after taking a licence seat and the build lock.
 #
-# The asymmetry decides it: a missing `cl.exe` is what #333 actually was, and
-# presence catches it. A corrupt-but-present compiler is rarer and still fails
-# the build, just later. Adding a launch probe needs a Windows host where both
-# the healthy and the corrupt case can be demonstrated, which is #336, not a
-# change made blind. (GitHub Copilot raised this.)
+# The launch verdict is ADVISORY. This gate runs before the organization build
+# lock, so a launch probe that is wrong about a HEALTHY host would block every
+# IL2CPP leg on that runner. That risk is real: `cl.exe` resolves sibling DLLs
+# from its own directory and the toolchain normally runs under `vcvars`, and no
+# Windows host has yet demonstrated the healthy case (#336, step 1). Reporting it
+# costs nothing and names the cause up front; enforcing it needs that
+# demonstration first.
 $result = Test-MsvcToolchain -InstallRoot $installRoot -RunnerName $runner -ProbeExecutable {
     param($path)
     Test-Path -LiteralPath $path -PathType Leaf
+} -ProbeLaunch {
+    param($path)
+    # EVERYTHING is inside the try, including reading the outcome. This verdict is
+    # advisory, so an unexpected throw here must become "did not start" and a
+    # warning, never a terminating error that fails the leg this gate exists to
+    # protect.
+    try {
+        # By full path, with no input files, output discarded: the question is
+        # whether the image loads, not what it says.
+        $null = & $path '/?' 2>&1
+        return (Test-CompilerLaunchOutcome -ExitCode $LASTEXITCODE -Threw $false)
+    }
+    catch {
+        return (Test-CompilerLaunchOutcome -ExitCode $null -Threw $true)
+    }
 }
 
 if ($result.Ok) {
@@ -245,8 +328,8 @@ if ($result.Ok) {
     exit 0
 }
 
-if ($DetectOnly) {
-    Write-Output "::warning::$($result.Message)"
+if ($DetectOnly -or $result.Advisory) {
+    Write-Output "::warning title=MSVC C++ toolchain ($($result.Reason))::$($result.Message)"
     exit 0
 }
 

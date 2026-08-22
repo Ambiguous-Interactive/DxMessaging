@@ -1,5 +1,5 @@
 {
-  "skillCount": 31,
+  "skillCount": 32,
   "skills": [
     {
       "name": "allocation-and-leak-coverage",
@@ -294,6 +294,19 @@
       ]
     },
     {
+      "name": "pull-request-writing",
+      "path": ".llm/skills/pull-request-writing/SKILL.md",
+      "description": "How to title and describe a DxMessaging pull request: short Simplified Technical English, one idea per sentence, and a body that answers why the problem mattered, what the change does, and how we know it is correct. Bans jargon, filler, status narration, and session diaries. Use when opening or editing a pull request, writing its title, rewriting a description a reviewer found hard to read, or deciding what evidence belongs in the body.",
+      "metadata": {
+        "category": "process",
+        "tags": "pull-request, writing, simplified-technical-english, ste, review, communication"
+      },
+      "lineCount": 97,
+      "references": [
+        ".llm/skills/pull-request-writing/references/pull-request-examples.md"
+      ]
+    },
+    {
       "name": "serializable-dictionary",
       "path": ".llm/skills/serializable-dictionary/SKILL.md",
       "description": "Back a runtime Dictionary with parallel SerializeField lists through ISerializationCallbackReceiver so key/value config is editable in the Unity Inspector and persists in scenes, prefabs, and ScriptableObjects. Use when a SerializeField Dictionary silently stays empty, when parallel key/value lists are drifting out of sync, or when a designer needs to edit a lookup table in the Inspector.",
@@ -317,7 +330,7 @@
         "category": "scripting",
         "tags": "cross-platform, case-sensitivity, testing, powershell, javascript, ci-cd, linux, windows, macos"
       },
-      "lineCount": 124,
+      "lineCount": 128,
       "references": [
         ".llm/skills/shell-and-powershell/references/cross-platform-compatibility.md",
         ".llm/skills/shell-and-powershell/references/powershell-best-practices-part-1.md",

@@ -3,9 +3,13 @@ namespace DxMessaging.Tests.Editor
 {
     using System;
     using System.Collections.Generic;
+    using System.Text;
+    using DxMessaging.Editor;
+    using NUnit.Framework;
     using UnityEditor;
     using UnityEngine;
     using UnityEngine.TestTools;
+    using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
 
     internal sealed class DxMessagingTestHostWindow : EditorWindow
@@ -16,6 +20,23 @@ namespace DxMessaging.Tests.Editor
     internal static class EditorWindowTestUtility
     {
         private static readonly List<EditorWindow> CreatedWindows = new();
+
+        /// <summary>
+        /// Sub-pixel slack for layout comparisons: Yoga rounds to the panel's pixel grid.
+        /// </summary>
+        internal const float LayoutTolerance = 0.5f;
+
+        /// <summary>
+        /// Unity's largest representable length. An element reporting it was laid out with no
+        /// bound rather than measured.
+        /// </summary>
+        private const float UnboundedLayoutSize = 8388608f;
+
+        /// <summary>
+        /// How many layout passes <see cref="SettleLayout"/> will run before giving up on the
+        /// tree settling. Real windows settle in two or three.
+        /// </summary>
+        private const int MaxLayoutPasses = 8;
 
         internal static DxMessagingTestHostWindow CreateWindow()
         {
@@ -211,6 +232,134 @@ namespace DxMessaging.Tests.Editor
             {
                 LogAssert.ignoreFailingMessages = previous;
             }
+        }
+
+        /// <summary>
+        /// Runs the panel's layout until it stops changing, so a test reads the geometry a reader
+        /// settles on rather than an intermediate frame.
+        ///
+        /// One pass is never enough. Realizing content changes what elements measure, text height
+        /// is only final once its width is, and a
+        /// <see cref="DxMessagingEditorTheme.ApplyContentSizedWrap"/> container asks for its height
+        /// during a pass and receives it in the next one. Unity settles this over frames; a test
+        /// has to ask for the frames.
+        /// </summary>
+        internal static void SettleLayout(EditorWindow window)
+        {
+            if (window == null)
+            {
+                return;
+            }
+
+            string previous = null;
+            for (int pass = 0; pass < MaxLayoutPasses; pass++)
+            {
+                EditorSurfaceCapture.InvokeInheritedPanelMethod(
+                    window.rootVisualElement.panel,
+                    "ValidateLayout",
+                    Array.Empty<object>()
+                );
+
+                string current = DescribeLayout(window.rootVisualElement);
+                if (current == previous)
+                {
+                    return;
+                }
+
+                previous = current;
+            }
+        }
+
+        private static string DescribeLayout(VisualElement root)
+        {
+            StringBuilder description = new();
+            foreach (VisualElement element in root.Query<VisualElement>().ToList())
+            {
+                Rect layout = element.layout;
+                description
+                    .Append(layout.x)
+                    .Append(',')
+                    .Append(layout.y)
+                    .Append(',')
+                    .Append(layout.width)
+                    .Append(',')
+                    .Append(layout.height)
+                    .Append(';');
+            }
+
+            return description.ToString();
+        }
+
+        /// <summary>
+        /// Asserts every wrapping container under <paramref name="root"/> is tall enough for the
+        /// lines its children wrap onto.
+        ///
+        /// Unity 2021.3 does not grow a wrapping container to fit those lines (issues #435 and
+        /// #440), so the extra lines draw outside the container, on top of whatever the window
+        /// paints beneath. This assertion is what reports that on the 2021.3 leg; on newer editors
+        /// it holds without the fix, because they size the container correctly.
+        /// </summary>
+        internal static void AssertWrappingContainersContainTheirChildren(
+            VisualElement root,
+            string context
+        )
+        {
+            Assert.That(root, Is.Not.Null, $"{context} must render a root element.");
+
+            List<VisualElement> wrapping = new();
+            foreach (VisualElement element in root.Query<VisualElement>().ToList())
+            {
+                if (element.resolvedStyle.flexWrap != Wrap.Wrap || element.childCount == 0)
+                {
+                    continue;
+                }
+
+                // An element laid out with no bound reports Unity's largest length rather than a
+                // measurement. A box eight million pixels tall is not painting over anything a
+                // reader can see, and asserting on it compares two sentinels.
+                if (
+                    float.IsNaN(element.resolvedStyle.height)
+                    || element.resolvedStyle.height >= UnboundedLayoutSize
+                )
+                {
+                    continue;
+                }
+
+                wrapping.Add(element);
+            }
+
+            Assert.That(
+                wrapping,
+                Is.Not.Empty,
+                $"{context} renders no wrapping container, so this assertion would pass "
+                    + "without checking anything. Point it at a surface that wraps."
+            );
+
+            foreach (VisualElement element in wrapping)
+            {
+                Assert.That(
+                    DxMessagingEditorTheme.MeasureWrappedContentHeight(element),
+                    Is.LessThanOrEqualTo(element.resolvedStyle.height + LayoutTolerance),
+                    $"{context}: wrapping container '{DescribeElement(element)}' is shorter than "
+                        + "the lines its children wrap onto, so those lines draw outside it and "
+                        + "over whatever the window paints beneath."
+                );
+            }
+        }
+
+        private static string DescribeElement(VisualElement element)
+        {
+            if (!string.IsNullOrEmpty(element.name))
+            {
+                return element.name;
+            }
+
+            foreach (string className in element.GetClasses())
+            {
+                return "." + className;
+            }
+
+            return element.GetType().Name;
         }
 
         private static System.Type FindUnityEditorType(string fullName)

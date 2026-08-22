@@ -31,12 +31,28 @@ function Assert-Verdict {
         [string]$Name,
         [string]$InstallRoot,
         [string[]]$ExecutablePaths = @(),
+        [string[]]$LaunchablePaths,
         [string]$ExpectedReason,
-        [bool]$ExpectedOk
+        [bool]$ExpectedOk,
+        [bool]$ExpectedAdvisory = $false
     )
     $script:Count++
     $probe = { param($path) $ExecutablePaths -contains $path }.GetNewClosure()
-    $result = Test-MsvcToolchain -InstallRoot $InstallRoot -ProbeExecutable $probe -RunnerName 'TEST-RUNNER'
+    $arguments = @{
+        InstallRoot     = $InstallRoot
+        ProbeExecutable = $probe
+        RunnerName      = 'TEST-RUNNER'
+    }
+    if ($PSBoundParameters.ContainsKey('LaunchablePaths')) {
+        $arguments['ProbeLaunch'] = { param($path) $LaunchablePaths -contains $path }.GetNewClosure()
+    }
+    $result = Test-MsvcToolchain @arguments
+    if ($result.Advisory -ne $ExpectedAdvisory) {
+        Write-Output ("FAIL  $Name`n" +
+            "      expected Advisory=$ExpectedAdvisory, got $($result.Advisory)")
+        $script:Failures++
+        return
+    }
     if ($result.Ok -ne $ExpectedOk -or $result.Reason -ne $ExpectedReason) {
         Write-Output ("FAIL  $Name`n" +
             "      expected Ok=$ExpectedOk Reason=$ExpectedReason`n" +
@@ -103,6 +119,69 @@ try {
         $script:Failures++
     }
     elseif ($VerboseOutput) { Write-Output 'ok    newest toolset is chosen by version, not by name' }
+
+    # LAUNCH PROBE (#336). Presence alone reports a `cl.exe` that cannot start as
+    # healthy, and the leg then dies after taking a licence seat and the build
+    # lock. The probe is injected exactly like the presence probe, so both the
+    # healthy and the corrupt case run here rather than needing a Windows host.
+    Assert-Verdict -Name 'a compiler that starts passes the launch probe' `
+        -InstallRoot $root -ExecutablePaths @($missing) -LaunchablePaths @($missing) `
+        -ExpectedOk $true -ExpectedReason 'ok'
+
+    # A present compiler that will not start is its own verdict, distinct from
+    # absent, and it is ADVISORY: this gate runs before the organization build
+    # lock, so it reports rather than blocks until a Windows host demonstrates the
+    # probe is clean on a healthy toolchain.
+    Assert-Verdict -Name 'a present compiler that will not start is compiler-unusable' `
+        -InstallRoot $root -ExecutablePaths @($missing) -LaunchablePaths @() `
+        -ExpectedOk $false -ExpectedReason 'compiler-unusable' -ExpectedAdvisory $true
+
+    # An absent compiler stays `compiler-missing` even with a launch probe wired
+    # in, so #333's verdict and its blocking failure are unchanged.
+    Assert-Verdict -Name 'an absent compiler is still compiler-missing with a launch probe' `
+        -InstallRoot $root -ExecutablePaths @() -LaunchablePaths @() `
+        -ExpectedOk $false -ExpectedReason 'compiler-missing'
+
+    # A newer broken toolset must not hide an older working one, the same way a
+    # newer absent one already does not.
+    Assert-Verdict -Name 'falls back past a newer toolset that will not start' `
+        -InstallRoot $root -ExecutablePaths @($missing, $older) -LaunchablePaths @($older) `
+        -ExpectedOk $true -ExpectedReason 'ok'
+
+    # The three failure messages must stay distinguishable: the operator fix for
+    # each one differs.
+    $script:Count++
+    $unusable = Test-MsvcToolchain -InstallRoot $root -RunnerName 'TEST-RUNNER' `
+        -ProbeExecutable { param($p) $true } -ProbeLaunch { param($p) $false }
+    if ($unusable.Message -notmatch 'did not start' -or $unusable.Message -notmatch 'TEST-RUNNER') {
+        Write-Output ("FAIL  the compiler-unusable message names the symptom and the runner`n" +
+            "      got $($unusable.Message)")
+        $script:Failures++
+    }
+    elseif ($VerboseOutput) { Write-Output 'ok    the compiler-unusable message names the symptom and the runner' }
+
+    # HOW A LAUNCH OUTCOME IS READ. `cl.exe` with no input files exits non-zero on
+    # a healthy toolchain, so requiring exit 0 would call a working compiler
+    # broken. Windows reports a loader failure as an NTSTATUS instead.
+    $launchCases = @(
+        @{ Name = 'exit 0 started';                       ExitCode = 0;            Threw = $false; Expected = $true }
+        @{ Name = 'exit 2 (no input files) still started'; ExitCode = 2;           Threw = $false; Expected = $true }
+        @{ Name = 'STATUS_DLL_NOT_FOUND did not start';    ExitCode = -1073741515; Threw = $false; Expected = $false }
+        @{ Name = 'STATUS_INVALID_IMAGE_FORMAT did not start'; ExitCode = -1073741701; Threw = $false; Expected = $false }
+        @{ Name = 'unsigned NTSTATUS did not start';       ExitCode = 3221225781;  Threw = $false; Expected = $false }
+        @{ Name = 'a throw did not start';                 ExitCode = 0;           Threw = $true;  Expected = $false }
+        @{ Name = 'no exit code at all did not start';     ExitCode = $null;       Threw = $false; Expected = $false }
+    )
+    foreach ($case in $launchCases) {
+        $script:Count++
+        $actual = Test-CompilerLaunchOutcome -ExitCode $case.ExitCode -Threw $case.Threw
+        if ($actual -ne $case.Expected) {
+            Write-Output ("FAIL  launch outcome: $($case.Name)`n" +
+                "      expected $($case.Expected), got $actual")
+            $script:Failures++
+        }
+        elseif ($VerboseOutput) { Write-Output "ok    launch outcome: $($case.Name)" }
+    }
 
     # A non-version directory must not crash the comparison.
     $null = New-Toolset -Version 'not-a-version'

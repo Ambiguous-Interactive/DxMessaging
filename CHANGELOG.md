@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already did, and the route-kind chips give space back instead of pushing the search field past
   the edge ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
 
+- Keep wrapping rows in the Flow Graph and Message Monitor inside their own box. On Unity 2021.3 a
+  wrapping row keeps the height of one line, so a long type name or a deep hierarchy path pushed
+  the extra lines on top of the block beneath. Every wrapping container in the editor now measures
+  its lines and takes that height. Monitor lane pills and active-filter tokens also wrap in a row
+  the window owns rather than in the scroll view's own content container, which Unity sized to the
+  viewport and clipped, so tokens past the first lines can now be scrolled to
+  ([#440](https://github.com/Ambiguous-Interactive/DxMessaging/issues/440)).
+
 ## [3.3.0]
 
 ### Added

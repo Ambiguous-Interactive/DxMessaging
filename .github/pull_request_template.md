@@ -1,12 +1,24 @@
-## Description
+<!--
+Keep this short. Write in plain, simple English: short sentences, common words,
+one idea per sentence. Aim for 200 words, stop at 400.
+Agents: follow .llm/skills/pull-request-writing/SKILL.md.
+-->
 
-<!-- Provide a clear and concise description of your changes -->
+## Why
+
+<!-- What went wrong for a user, or what they could not do. One short paragraph. -->
+
+## What changed
+
+<!-- What the code does now. A short list if there is more than one part. -->
+
+## How we know
+
+<!-- The test, the measurement, or the run that proves it. -->
 
 ## Related Issue
 
-<!-- Link to the issue this PR addresses -->
-
-Fixes #
+Closes #
 
 ## Type of Change
 

@@ -120,7 +120,21 @@ const path = require("path");
 //     false red. +29 source and +59 test lines, the tests covering a live
 //     editor, a stale discovery record, a reply carrying no editor state, an
 //     empty reply, and both no-call paths: 18181.
-const TOTAL_BUDGET = 18181;
+// 081 Make the suite wall clock visible in the job summary (#410). A change
+//     added 78 seconds to the EditMode step on every editor leg and stayed
+//     green for two days, because nothing in CI reads how long a step takes.
+//     `SuiteWallClockBudgetTest` already measures the suite and already warns
+//     past its soft budget, into a log nobody opens on a green run. The CI
+//     harness now lifts that one line into the job summary and warns when it is
+//     over. +168 test lines covering under and over budget, the once-per-job
+//     table header, a log with no line, a missing log, and the shared line
+//     shape between the C# producer and the PowerShell consumer. No new script
+//     and no new workflow, which is the option issue #410 asks for, plus the
+//     11 lines this entry itself adds. Review then moved the once-per-job header
+//     check into the summary FILE, because the workflow runs the harness once
+//     per test mode, so an in-process flag printed the header three times per
+//     job; the test now spawns one process per leg: 18367.
+const TOTAL_BUDGET = 18367;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
