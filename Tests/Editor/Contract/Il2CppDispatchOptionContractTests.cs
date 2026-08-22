@@ -22,6 +22,7 @@ namespace DxMessaging.Tests.Editor.Contract
         private static readonly string[] FullyElidedMethods =
         {
             "DispatchFlatSnapshot",
+            "DispatchCachedUntargetedEntries",
             "DispatchContextFlatSnapshot",
             "HasAnyDispatchEntries",
             "BroadcastGlobalUntargeted",

@@ -349,7 +349,7 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void EmitTimeSweepReclaimsIdleDirtySlotsWhenCadenceHasElapsed()
+        public void EmitTimeSweepReclaimsIdleDirtySlotsAndDropsBorrowedRoute()
         {
             ManualClock clock = new ManualClock();
             MessageBus bus = MessageBus.CreateForInternalUse(
@@ -369,6 +369,37 @@ namespace DxMessaging.Tests.Editor.Contract
                     priority: 17,
                     messageBus: bus
                 );
+                ProbeMessage probe = new ProbeMessage();
+                bus.UntargetedBroadcast(ref probe);
+
+                FieldInfo plansField = typeof(MessageBus).GetField(
+                    "_untargetedDispatchPlans",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                );
+                Assert.IsNotNull(plansField, "MessageBus must retain its untargeted plan cache.");
+                object plan = null;
+                foreach (
+                    object candidate in (System.Collections.IEnumerable)plansField.GetValue(bus)
+                )
+                {
+                    plan = candidate;
+                    break;
+                }
+                Assert.IsNotNull(plan, "The first untargeted emit must create a dispatch plan.");
+                FieldInfo entriesField = plan.GetType()
+                    .GetField(
+                        "handleEntries",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    );
+                Assert.IsNotNull(
+                    entriesField,
+                    "The untargeted plan must expose its borrowed entry-array field."
+                );
+                Assert.IsNotNull(
+                    entriesField.GetValue(plan),
+                    "The first untargeted emit must publish the borrowed route."
+                );
+
                 deregistration();
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
 
@@ -378,6 +409,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(0, bus.OccupiedTypeSlots);
                 Assert.AreEqual(0, ReadCollectionCount(bus, "_dirtyTypes"));
                 Assert.AreEqual(0, ReadCollectionCount(bus, "_dirtyHandlers"));
+                Assert.IsNull(
+                    entriesField.GetValue(plan),
+                    "The automatic emit-time sweep must drop the stale borrowed route."
+                );
             }
             finally
             {
