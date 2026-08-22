@@ -80,6 +80,111 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                trimApiEnabled: true
+            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
+                bus,
+                label: nameof(UntargetedPlanSweepDropsBorrowedEntryArray)
+            );
+            using IDisposable cleanup = ForceTrimCleanup(bus);
+            MessageHandler handler = CreateActiveHandler(bus);
+            Action deregister = null;
+            try
+            {
+                Action<UntargetedOne> callback = _ => { };
+                deregister = handler.RegisterUntargetedMessageHandler(
+                    callback,
+                    callback,
+                    priority: 0,
+                    messageBus: bus
+                );
+                UntargetedOne message = new UntargetedOne();
+                bus.UntargetedBroadcast(ref message);
+
+                const BindingFlags declaredInstanceFields =
+                    BindingFlags.Instance
+                    | BindingFlags.Public
+                    | BindingFlags.NonPublic
+                    | BindingFlags.DeclaredOnly;
+                FieldInfo plansField = typeof(MessageBus).GetField(
+                    "_untargetedDispatchPlans",
+                    declaredInstanceFields
+                );
+                Assert.That(
+                    plansField,
+                    Is.Not.Null,
+                    "MessageBus must retain the untargeted plan cache field registered for sweep."
+                );
+                object plan = null;
+                foreach (
+                    object candidate in (System.Collections.IEnumerable)plansField.GetValue(bus)
+                )
+                {
+                    Assert.That(
+                        plan,
+                        Is.Null,
+                        "The scenario must create exactly one untargeted dispatch plan."
+                    );
+                    plan = candidate;
+                }
+
+                Assert.That(plan, Is.Not.Null, "The first emit must create a dispatch plan.");
+                Type planType = plan.GetType();
+                FieldInfo entriesField = planType.GetField("handleEntries", declaredInstanceFields);
+                FieldInfo countField = planType.GetField(
+                    "handleEntryCount",
+                    declaredInstanceFields
+                );
+                Assert.That(
+                    entriesField,
+                    Is.Not.Null,
+                    "The untargeted plan must expose its borrowed entry-array field to this contract."
+                );
+                Assert.That(
+                    countField,
+                    Is.Not.Null,
+                    "The untargeted plan must expose its borrowed entry-count field to this contract."
+                );
+                Assert.That(
+                    entriesField.GetValue(plan),
+                    Is.Not.Null,
+                    "The first untargeted fast emit must publish the settled borrowed route."
+                );
+                Assert.That(
+                    (int)countField.GetValue(plan),
+                    Is.GreaterThan(0),
+                    "The borrowed route must describe the invocable handler entry."
+                );
+
+                deregister();
+                deregister = null;
+                _ = bus.Trim(force);
+
+                Assert.That(
+                    entriesField.GetValue(plan),
+                    Is.Null,
+                    "Sweeping stale untargeted plans must drop the borrowed entry array."
+                );
+                Assert.That(
+                    countField.GetValue(plan),
+                    Is.EqualTo(0),
+                    "Sweeping stale untargeted plans must reset the cached entry count."
+                );
+            }
+            finally
+            {
+                deregister?.Invoke();
+                handler.active = false;
+            }
+        }
+
         [Test]
         public void TrimEvictsEmptyTargetSlots(
             [ValueSource(

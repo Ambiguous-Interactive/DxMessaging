@@ -97,6 +97,9 @@ flowchart TB
 - Struct messages passed by `ref` to avoid copying and GC.
 - Minimal allocations in hot paths; logging and diagnostics use ring buffers.
 - Pre-allocated internal collections for common operations.
+- Untargeted dispatch without interceptors, global accept-all handlers, or post-processors reuses
+  resolved handler entries across steady-state emissions; registration changes and sweeps refresh
+  the route.
 - Handlers are sorted by priority once during registration. Emitting a message iterates through all active handlers in that order.
 
 ## Message Type System

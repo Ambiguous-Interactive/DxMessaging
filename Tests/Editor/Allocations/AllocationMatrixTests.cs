@@ -221,6 +221,74 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        /// <summary>
+        /// The untargeted no-feature route is cached on the bus-wide dispatch
+        /// plan only after its active snapshot settles. Unrelated registration
+        /// churn invalidates that plan without dirtying the measured sink, so
+        /// every measured operation below is the first emit that must reacquire
+        /// and republish the borrowed entry array.
+        /// </summary>
+        [Test]
+        [Category("Allocation")]
+        public void UntargetedEmitIsZeroAllocAfterUnrelatedPlanInvalidation()
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    Action emit = BuildEmitClosure(scenario, bus);
+                    int invocationCount = 0;
+                    MessageHandler.FastHandler<SimpleUntargetedMessage> measuredHandler = (
+                        ref SimpleUntargetedMessage _
+                    ) => invocationCount++;
+                    _ = ScenarioHarness.RegisterUntargeted(scenario, token, measuredHandler);
+                    MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
+                        ref ComplexUntargetedMessage _
+                    ) => { };
+
+                    void InvalidatePlan()
+                    {
+                        MessageRegistrationHandle churnHandle =
+                            token.RegisterUntargeted<ComplexUntargetedMessage>(churnHandler);
+                        token.RemoveRegistration(churnHandle);
+                    }
+
+                    for (int i = 0; i < 8; ++i)
+                    {
+                        InvalidatePlan();
+                        emit();
+                    }
+
+                    int invocationCountBeforeMeasurement = invocationCount;
+                    long delta = AllocationProbe.MeasureMin(
+                        AllocationMeasurementAttempts,
+                        prepare: InvalidatePlan,
+                        operation: emit
+                    );
+                    Assert.AreEqual(
+                        AllocationMeasurementAttempts,
+                        invocationCount - invocationCountBeforeMeasurement,
+                        "Every measured first emit after unrelated invalidation must still "
+                            + "deliver exactly once to the registered untargeted handler."
+                    );
+                    if (delta == AllocationProbe.Unmeasured)
+                    {
+                        Assert.Ignore(
+                            "The GC.Alloc allocation probe is non-functional on this backend."
+                        );
+                    }
+
+                    Assert.AreEqual(
+                        0,
+                        delta,
+                        "The first untargeted no-feature emit after an unrelated plan "
+                            + "invalidation must reacquire and cache its route without allocating."
+                    );
+                }
+            );
+        }
+
         [Test]
         [Category("Allocation")]
         public void GlobalMessageBusOverrideScopeIsZeroAllocAfterWarmup()

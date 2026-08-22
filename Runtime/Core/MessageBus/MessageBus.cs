@@ -150,8 +150,8 @@ namespace DxMessaging.Core.MessageBus
             ),
             new SweepableTypeCache(
                 nameof(_untargetedDispatchPlans),
-                typeof(MessageCache<DispatchPlan>),
-                static (bus, force) => bus.SweepStaleDispatchPlans(bus._untargetedDispatchPlans)
+                typeof(MessageCache<UntargetedDispatchPlan>),
+                static (bus, force) => bus.SweepStaleUntargetedDispatchPlans()
             ),
             new SweepableTypeCache(
                 nameof(_targetedDispatchPlans),
@@ -527,7 +527,7 @@ namespace DxMessaging.Core.MessageBus
         /// <see cref="MessagingDebug.enabled"/> are deliberately NOT cached
         /// here - both are live-settable and read per emission.
         /// </summary>
-        private sealed class DispatchPlan
+        private class DispatchPlan
         {
             public long version = long.MinValue;
             public bool fastPath;
@@ -564,6 +564,26 @@ namespace DxMessaging.Core.MessageBus
                 contextHandle = null;
                 contextPost = null;
                 interceptorCache = null;
+            }
+        }
+
+        /// <summary>
+        /// Untargeted plan extension that borrows the resolved entry array from
+        /// the active handle snapshot after its first post-refresh acquisition.
+        /// The snapshot remains the array owner; this plan only removes the
+        /// steady-state state/snapshot/holder pointer chase. Targeted and
+        /// broadcast plans stay at the smaller common shape because their
+        /// context-keyed routes cannot share one entry array per message type.
+        /// </summary>
+        private sealed class UntargetedDispatchPlan : DispatchPlan
+        {
+            public object handleEntries;
+            public int handleEntryCount;
+
+            public void ClearCachedRoute()
+            {
+                handleEntries = null;
+                handleEntryCount = 0;
             }
         }
 
@@ -1140,7 +1160,7 @@ namespace DxMessaging.Core.MessageBus
         // single bus-wide version stamp (see DispatchPlan /
         // InvalidateDispatchPlans). Registered in SweepableTypeCacheRegistry
         // so sweeps drop their cached sink references.
-        private readonly MessageCache<DispatchPlan> _untargetedDispatchPlans = new();
+        private readonly MessageCache<UntargetedDispatchPlan> _untargetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _targetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _broadcastDispatchPlans = new();
 
@@ -2096,6 +2116,25 @@ namespace DxMessaging.Core.MessageBus
                 if (plan.version != _dispatchPlanVersion)
                 {
                     plan.ClearCachedSinks();
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Untargeted plan sweep companion that also drops the borrowed flat
+        /// entry arrays. A sweep invalidates plans before this row runs, so no
+        /// stale route remains reachable after its owning snapshot is evicted.
+        /// </summary>
+        private int SweepStaleUntargetedDispatchPlans()
+        {
+            foreach (UntargetedDispatchPlan plan in _untargetedDispatchPlans)
+            {
+                if (plan.version != _dispatchPlanVersion)
+                {
+                    plan.ClearCachedSinks();
+                    plan.ClearCachedRoute();
                 }
             }
 
@@ -3906,7 +3945,7 @@ namespace DxMessaging.Core.MessageBus
             // afterwards guarantees the plan's cached references are live
             // until the first user code of this emission runs.
             TrySweepIdle();
-            if (!_untargetedDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
+            if (!_untargetedDispatchPlans.TryGetValue<TMessage>(out UntargetedDispatchPlan plan))
             {
                 plan = _untargetedDispatchPlans.GetOrAdd<TMessage>();
                 // Root the IL2CPP AOT untyped-dispatch bridge for TMessage on the
@@ -3953,14 +3992,53 @@ namespace DxMessaging.Core.MessageBus
                 HandlerCache<int, HandlerCache> fastHandlers = plan.scalarHandle;
                 if (fastHandlers != null && 0 < fastHandlers.handlers.Count)
                 {
-                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        fastHandlers,
-                        UntargetedHandleSlot,
-                        emissionId,
-                        default
-                    );
-                    fastFound = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
+                    object handleEntries = plan.handleEntries;
+                    int handleEntryCount = plan.handleEntryCount;
+                    if (handleEntries == null)
+                    {
+                        DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                            this,
+                            fastHandlers,
+                            UntargetedHandleSlot,
+                            emissionId,
+                            default
+                        );
+                        FlatDispatchArray flatBase = fastSnapshot.flat;
+                        if (flatBase != null)
+                        {
+                            DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
+                            FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(
+                                flatBase
+                            );
+                            handleEntries = flat.entries;
+                            handleEntryCount = flat.count;
+
+                            // Publish the settled route BEFORE user code runs. A handler can
+                            // mutate registrations and re-emit this type; publishing after the
+                            // callback would let the outer emission overwrite the nested
+                            // emission's fresh route with a displaced array under a current
+                            // plan version.
+                            plan.handleEntryCount = handleEntryCount;
+                            plan.handleEntries = handleEntries;
+                        }
+                    }
+                    else
+                    {
+                        // Equivalent steady-state stores from
+                        // AcquireDispatchSnapshotFast. The cached route is valid only while
+                        // the plan stamp matches, and every relevant mutation invalidates it.
+                        fastHandlers.lastTouchTicks = _tickCounter;
+                        fastHandlers.dispatchState.snapshotEmissionId = emissionId;
+                    }
+
+                    if (handleEntries != null)
+                    {
+                        fastFound = DispatchCachedUntargetedEntries(
+                            handleEntries,
+                            handleEntryCount,
+                            ref typedMessage
+                        );
+                    }
                 }
 
                 if (!fastFound && MessagingDebug.enabled)
@@ -4070,9 +4148,13 @@ namespace DxMessaging.Core.MessageBus
         /// churn, interceptor/global/post mutation, sweep, reset, settings
         /// reload); steady-state emissions skip straight past it.
         /// </summary>
-        private void RefreshUntargetedDispatchPlan<TMessage>(DispatchPlan plan)
+        private void RefreshUntargetedDispatchPlan<TMessage>(UntargetedDispatchPlan plan)
             where TMessage : IUntargetedMessage
         {
+            // A relevant mutation can have staged a pending snapshot that the
+            // first post-refresh acquire still has to promote. Clear the route
+            // here, then repopulate it only AFTER that acquisition settles.
+            plan.ClearCachedRoute();
             _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault]
                 .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handle);
             _ = _scalarSinks[BusSinkIndex.UntargetedPostProcessDefault]
@@ -7208,6 +7290,69 @@ namespace DxMessaging.Core.MessageBus
             }
 
             return HasAnyDispatchEntries(snapshot);
+        }
+
+        /// <summary>
+        /// Untargeted no-feature steady-state loop over the entry array borrowed
+        /// by <see cref="UntargetedDispatchPlan"/> from its active snapshot.
+        /// The caller's live non-empty sink gate preserves the legacy
+        /// found-handler result even when the flattened array contains zero
+        /// invocable entries. Per-entry activity and reset-generation reads
+        /// remain live for the same mutation and reentrancy semantics as
+        /// <see cref="DispatchFlatSnapshot{TMessage}"/>.
+        /// </summary>
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool DispatchCachedUntargetedEntries<TMessage>(
+            object entriesObject,
+            int count,
+            ref TMessage message
+        )
+            where TMessage : IUntargetedMessage
+        {
+            DebugAssertCachedUntargetedRoute<TMessage>(entriesObject, count);
+            FlatDispatchEntry<TMessage>[] entries = DxUnsafe.As<FlatDispatchEntry<TMessage>[]>(
+                entriesObject
+            );
+            long resetGeneration = _resetGeneration;
+            for (int i = 0; i < count; ++i)
+            {
+                ref FlatDispatchEntry<TMessage> entry = ref entries[i];
+                if (entry.handler.active)
+                {
+                    entry.invoker(ref message);
+                    if (_resetGeneration != resetGeneration)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
+        private static void DebugAssertCachedUntargetedRoute<TMessage>(
+            object entriesObject,
+            int count
+        )
+            where TMessage : IUntargetedMessage
+        {
+            if (
+                entriesObject is FlatDispatchEntry<TMessage>[] entries
+                && 0 <= count
+                && count <= entries.Length
+            )
+            {
+                return;
+            }
+
+            System.Diagnostics.Debug.Assert(
+                false,
+                "Cached untargeted route must contain the expected closed entry-array type "
+                    + "with a count inside its physical bounds."
+            );
         }
 
         /// <summary>

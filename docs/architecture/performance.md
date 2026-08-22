@@ -14,6 +14,11 @@ see the
 See also: [Performance optimizations](./design-and-architecture.md#performance-optimizations)
 for design details.
 
+Untargeted emissions with no interceptors, global accept-all handlers, or post-processors reuse
+their resolved handler route across steady-state emissions. Registration changes and sweeps refresh
+the route. Dispatch keeps live handler-state and reset checks while preserving the zero-allocation
+steady-state contract.
+
 ## How to read these tables
 
 - **Scopes.** Each dispatch table is labeled by execution scope and backend.
