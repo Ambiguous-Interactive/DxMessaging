@@ -134,7 +134,7 @@ const path = require("path");
 //     check into the summary FILE, because the workflow runs the harness once
 //     per test mode, so an in-process flag printed the header three times per
 //     job; the test now spawns one process per leg: 18367.
-// 080 dependabot build-lock ignore contract. Dependabot bumps of the
+// 082 dependabot build-lock ignore contract. Dependabot bumps of the
 //     first-party lock actions broke the copyable-example doc contract on
 //     arrival (PR #447 failed eight checks; the 2026-08-18 bump needed a
 //     silent manual docs realignment), so dependabot.yml now ignores those

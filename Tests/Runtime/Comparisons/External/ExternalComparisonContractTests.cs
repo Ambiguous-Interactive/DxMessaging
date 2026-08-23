@@ -62,6 +62,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         [Test]
         [TestCase("MessagePipe", ComparisonScenario.FilteredDispatch)]
         [TestCase("MessagePipe", ComparisonScenario.PostProcessingDispatch)]
+        [TestCase("MessagePipe", ComparisonScenario.InterceptedPostProcessingDispatch)]
         [TestCase("UniRx", ComparisonScenario.FilteredDispatch)]
         [TestCase("ZenjectSignalBus", ComparisonScenario.KeyedToOneOfMany)]
         public void BridgeSupportsItsIdiomaticComparisonScenario(

@@ -73,6 +73,7 @@ const COMPARISON_SCENARIO_ORDER = [
   "PriorityOrdered",
   "Filtered",
   "PostProcess",
+  "FilteredPostProcess",
   "SubUnsub",
   "StructNoBox"
 ];
@@ -87,6 +88,7 @@ const COMPARISON_SCENARIO_LABELS = {
   PriorityOrdered: "Priority-ordered dispatch",
   Filtered: "Filtered/intercepted dispatch",
   PostProcess: "Post-processing dispatch",
+  FilteredPostProcess: "Intercepted + post-processed dispatch",
   SubUnsub: "Subscribe/unsubscribe churn",
   StructNoBox: "Struct message (no boxing)"
 };

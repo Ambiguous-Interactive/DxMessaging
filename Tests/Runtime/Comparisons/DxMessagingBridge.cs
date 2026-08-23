@@ -144,6 +144,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     );
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     return;
+                case ComparisonScenario.InterceptedPostProcessingDispatch:
+                    _ = _token.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
+                        AllowUntargeted
+                    );
+                    _ = _token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
+                        PostProcess
+                    );
+                    _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
+                    return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     // No persistent registration; EmitOnce performs one register/unregister
                     // cycle using the cached handler below.

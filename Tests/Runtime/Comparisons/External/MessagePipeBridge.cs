@@ -67,6 +67,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 case ComparisonScenario.KeyedToOneOfMany:
                 case ComparisonScenario.FilteredDispatch:
                 case ComparisonScenario.PostProcessingDispatch:
+                case ComparisonScenario.InterceptedPostProcessingDispatch:
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                 case ComparisonScenario.StructMessageNoBoxing:
                     return true;
@@ -146,6 +147,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     BuildProvider(builder);
                     ResolveKeylessBroker();
                     _subscriptions.Add(_subscriber.Subscribe(Handle, new PostProcessingFilter()));
+                    return;
+                case ComparisonScenario.InterceptedPostProcessingDispatch:
+                    builder.AddMessageBroker<int>();
+                    BuildProvider(builder);
+                    ResolveKeylessBroker();
+                    _subscriptions.Add(
+                        _subscriber.Subscribe(Handle, Allow, new PostProcessingFilter())
+                    );
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
                     builder.AddMessageBroker<int>();
