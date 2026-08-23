@@ -156,14 +156,10 @@ To upgrade from v2.x:
 
 **Why it's wrong**: This describes internal process/tooling, not user-facing product impact.
 
-**Correct**:
-
-```markdown
-### Changed
-
-- Improved AI-assistant onboarding for users by adding `llms.txt` and README guidance
-  so package docs and APIs are discovered with accurate context
-```
+**Correct**: No entry. `llms.txt`, README guidance, and agent routing help people and agents
+reading the repository. They are not library behavior, and a reworded entry does not make them
+eligible. The same holds for documentation-site layout and brand artwork: the changelog records
+what a package consumer experiences in Unity.
 
 ### Bad: Missing Breaking Change Warnings
 

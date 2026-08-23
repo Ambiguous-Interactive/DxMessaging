@@ -32,8 +32,11 @@ published GitHub Release body from, so its section headings must stay well-forme
 - Never add an entry for: internal refactoring with no API change, test additions, AI agent
   guidance, skill files, or other developer-facing process documentation. Package consumers
   never see them.
-- Documentation and dependency updates earn an entry only when they change what a consumer
-  sees or has to do.
+- The changelog records library behavior: what a package consumer experiences in Unity. Runtime
+  and editor code, public API, samples, and shipped settings qualify. Documentation-site content
+  or layout, README text, brand artwork (marks, banners, cards, favicons), CI, and repository
+  tooling never earn entries, even when the changed files ship inside the package.
+- Dependency updates earn an entry only when they change what a consumer has to do.
 
 ### Entry length
 

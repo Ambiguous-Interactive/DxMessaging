@@ -11,13 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Improve untargeted dispatch throughput when no interceptors, global handlers, or post-processors
   are registered ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
-- Show untargeted and broadcast examples on the landing page instead of the targeted one alone.
-  The hero and a new **First Message** selector each offer all three shapes: a pause announcement
-  coordinating independent systems, a hazard damaging one object it holds no reference to, and a
-  source-bound collision driving independent sound and breakable-object reactions. Each example
-  window sizes to its tallest sample instead of a fixed floor
-  ([#426](https://github.com/Ambiguous-Interactive/DxMessaging/issues/426),
-  [#451](https://github.com/Ambiguous-Interactive/DxMessaging/issues/451)).
 - Reduce repeated message-handler subscribe/unsubscribe churn by six managed allocation calls per
   cycle ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
 - **BREAKING (diagnostics output):** Diagnostic emission records no longer capture the emission-site
@@ -29,12 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Monitor and Flow Graph now say when a call site is missing because capture is off and offer an
   **Enable stack traces** button that applies immediately and is saved to project settings
   ([#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)).
-- Replace the brand mark's three-spoke hub with the emitter artwork supplied on the issue, across
-  the mark, its light and single-color variants, the icon tile, the README banner, and the raster
-  assets derived from them
-  ([#436](https://github.com/Ambiguous-Interactive/DxMessaging/issues/436)).
-- Draw the README banner's badge hexagon flat-on-top, matching the orientation of the brand mark
-  ([#452](https://github.com/Ambiguous-Interactive/DxMessaging/issues/452)).
 
 ### Fixed
 

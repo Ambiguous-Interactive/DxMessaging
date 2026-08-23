@@ -66,16 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Update the changelog for **every user-facing change**:
 
-| Change Type                          | Update Changelog? | Category                   |
-| ------------------------------------ | ----------------- | -------------------------- |
-| New public API                       | Yes               | Added                      |
-| Bug fix                              | Yes               | Fixed                      |
-| Performance improvement              | Yes               | Changed                    |
-| Internal refactoring (no API change) | No                | N/A                        |
-| Test additions                       | No                | N/A                        |
-| Documentation fixes                  | Maybe             | Changed (if significant)   |
-| Dependency updates                   | Maybe             | Changed (if affects users) |
-| Breaking changes                     | Yes               | Changed/Removed            |
+| Change Type                           | Update Changelog? | Category                   |
+| ------------------------------------- | ----------------- | -------------------------- |
+| New public API                        | Yes               | Added                      |
+| Bug fix                               | Yes               | Fixed                      |
+| Performance improvement               | Yes               | Changed                    |
+| Internal refactoring (no API change)  | No                | N/A                        |
+| Test additions                        | No                | N/A                        |
+| Documentation site, README, brand art | No                | N/A                        |
+| Dependency updates                    | Maybe             | Changed (if affects users) |
+| Breaking changes                      | Yes               | Changed/Removed            |
 
 ### Semantic Versioning Guidelines
 
@@ -113,7 +113,7 @@ MAJOR.MINOR.PATCH
 
 Changelog entries describe changes that **users experience**, not internal tooling, AI agent guidance, or developer-facing documentation. Skills, context files, and internal process documentation are invisible to package consumers and do not belong in the changelog.
 
-**What to document instead**: Changes to user-facing documentation (API docs, tutorials, README) may warrant changelog entries if they significantly improve the user experience.
+**What to document instead**: Nothing for this class of change. The changelog records library behavior: what a package consumer experiences in Unity. Documentation-site content or layout, README text, brand artwork (marks, banners, cards, favicons), CI, and repository tooling never earn entries, even when the changed files ship inside the package. Announce them through the docs site or repository channels instead.
 
 ### Anti-Pattern 2: Overly Broad Scope
 
