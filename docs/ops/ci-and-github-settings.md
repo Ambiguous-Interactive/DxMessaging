@@ -52,6 +52,10 @@ Grant `actions: read` to every job that acquires the lock. The action uses the
 workflow token to distinguish a live holder from an expired reservation before
 the reaper can reclaim it.
 
+The pinned commit above is part of the example. Dependabot is configured to
+ignore the build-lock actions, so bump their pins manually in one commit across
+`.github/workflows` and this page.
+
 The matching release step uses the same immutable lock commit with `if:
 always()`. This lets checkout, cache, Node setup, and assembly discovery split
 across eligible runners while the organization lock enforces the two-seat
