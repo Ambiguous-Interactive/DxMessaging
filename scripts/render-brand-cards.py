@@ -35,7 +35,10 @@ REQUIRED_FONTS = ["Space Grotesk", "IBM Plex Sans", "JetBrains Mono"]
 # Every SVG that draws the mark inline, so a mark change cannot reach one copy
 # and miss another. There is no portable way to reference an external SVG that
 # both a browser and cairo honour, so the geometry is duplicated on purpose and
-# the duplication is checked instead of hidden.
+# the duplication is checked instead of hidden. The README banner also copies
+# the mark's ring and emitter, but transformed (translated, and the ring is
+# rescaled for its plate), so the verbatim check below cannot cover it; update
+# docs/images/DxMessaging-banner.svg by hand when the mark's geometry changes.
 MARK_SOURCE = "docs/images/dxmessaging-mark.svg"
 MARK_COPIES = [
     "docs/images/dxmessaging-icon-tile.svg",
