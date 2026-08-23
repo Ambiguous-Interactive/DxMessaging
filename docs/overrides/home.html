@@ -323,18 +323,11 @@
     color: var(--dxm-route-broadcast);
   }
 
+  /* Every panel of a tab group shares one grid cell, and a hidden panel keeps its box, so the
+     row is always as tall as the tallest sample and switching tabs cannot resize the window.
+     A min-height floor here would only add empty space below the visible sample. */
   .dxm-sample-panels {
     display: grid;
-  }
-
-  /* The hero panels share one grid cell, so the tallest sample would otherwise resize the window
-     on every switch. The First Message samples are longer and carry their own floor. */
-  .dxm-hero-glow .dxm-sample-panels {
-    min-height: 21.5rem;
-  }
-
-  .dxm-first-message .dxm-sample-panels {
-    min-height: 34rem;
   }
 
   .dxm-first-message-heading {

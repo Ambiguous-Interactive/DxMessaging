@@ -212,7 +212,10 @@ fallback. A failed `gh auth status` is not a blocker while either earlier path w
 
 - Update relevant docs after user-visible behavior changes.
 - Keep examples accurate and aligned with real usage.
-- Update `CHANGELOG.md` only for user-facing DxMessaging changes, not developer-only tooling/process updates.
+- Update `CHANGELOG.md` only for library behavior a package consumer experiences in Unity
+  (runtime, editor, public API, samples, shipped settings). Documentation-site content or layout,
+  README text, brand artwork, CI, and repository tooling never earn entries, even when the files
+  ship in the package. See the changelog-management skill.
 - For `## [Unreleased]` entries, mutate existing bullets as behavior evolves; do not stack separate `Added` then `Fixed` bullets for the same unreleased change.
 - For edited Markdown files, run `npx prettier --write` and `npx markdownlint-cli2` before finishing.
 - Ordered lists must follow MD029 `one` style (`1.` for each item).

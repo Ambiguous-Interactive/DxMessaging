@@ -22,13 +22,14 @@
   <path d="M0 38 C154 66 274 28 414 52 C558 78 650 62 800 34" fill="none" stroke="#f4a836" stroke-width="1.2" opacity="0.2"/>
   <path d="M0 58 C168 88 296 48 432 72 C568 96 658 82 800 54" fill="none" stroke="#ffd48e" stroke-width="1.2" opacity="0.12"/>
 
-  <g transform="translate(34 42)" filter="url(#dxBannerSoftShadow)">
-    <polygon points="44,0 82,22 82,66 44,88 6,66 6,22" fill="#0d1117" stroke="#222b36" stroke-width="1.5" stroke-linejoin="round"/>
-    <polygon points="44,7 76,25 76,63 44,81 12,63 12,25" fill="none" stroke="url(#dxBannerAmber)" stroke-width="3" stroke-linejoin="round"/>
-    <!-- The mark's emitter, in the mark's own 96-unit coordinates. The banner hexagon is
-         pointy-top and narrower than the mark's, so the group is scaled about its center by the
-         width ratio (32/40) and re-centered; every proportion the mark was drawn with survives. -->
-    <g transform="translate(44 44) scale(0.8) translate(-48 -48)">
+  <g transform="translate(31 42)" filter="url(#dxBannerSoftShadow)">
+    <polygon points="90,44 67,83.84 21,83.84 -2,44 21,4.16 67,4.16" fill="#0d1117" stroke="#222b36" stroke-width="1.5" stroke-linejoin="round"/>
+    <polygon points="84,44 64,78.64 24,78.64 4,44 24,9.36 64,9.36" fill="none" stroke="url(#dxBannerAmber)" stroke-width="3" stroke-linejoin="round"/>
+    <!-- The mark's emitter, in the mark's own 96-unit coordinates, shifted so its center sits on
+         the badge center. The amber ring is the mark's own flat-top hexagon (80x69.28 at R=40)
+         translated the same way, and the dark plate is that hexagon scaled about the center to
+         R=46, so the badge keeps the mark's proportions and its flat-on-top orientation. -->
+    <g transform="translate(-4 -4)">
       <circle cx="30" cy="48" r="6" fill="#ffd48e"/>
       <path d="M46,34 a20,20 0 0 1 0,28" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round"/>
       <path d="M58,26 a32,32 0 0 1 0,44" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
