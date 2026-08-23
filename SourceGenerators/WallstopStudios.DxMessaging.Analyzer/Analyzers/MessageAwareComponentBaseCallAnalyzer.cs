@@ -346,9 +346,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             // override / new / missing-modifier branches are mutually exclusive at the C# language
             // level (a method cannot have both `override` and `new`, and `wouldFireMissingModifier`
             // requires neither). Like DXMSG009, DXMSG007 fires only when the method actually hides
-            // an inherited member; `new` on a name no ancestor declares is compiler warning
-            // CS0109 territory and stays silent here too.
-            bool wouldFireNewModifier = hasNewModifier && hidesInheritedMember;
+            // an inherited virtual; `new` on a name no ancestor declares is compiler warning
+            // CS0109 territory and stays silent here too. A static method can never join the
+            // override chain, so `static new` gets neither diagnostic -- DXMSG007's remedy
+            // ("replace with 'override'") would be impossible to follow.
+            bool wouldFireNewModifier =
+                hasNewModifier && !hasStaticModifier && hidesInheritedMember;
             bool wouldFireMissingBase =
                 hasOverrideModifier && !ContainsBaseInvocation(methodDecl, methodName);
 
@@ -564,14 +567,17 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         }
 
         /// <summary>
-        /// True when <paramref name="methodSymbol"/> actually hides an inherited member: some
-        /// ancestor between the containing type and <c>object</c> declares an ordinary method
-        /// with the same name, generic arity, and parameter list (return type is not part of a
-        /// hiding signature). C# emits CS0114 exactly for this shape, so gating the hide-based
-        /// diagnostics (DXMSG007 / DXMSG009) on it keeps them truthful about the base class:
-        /// guarded names that no ancestor declares yet -- <c>OnApplicationFocus</c> and
-        /// <c>OnApplicationPause</c> today -- produce neither diagnostic, and coverage resumes
-        /// automatically if a future release adds those hooks to
+        /// True when <paramref name="methodSymbol"/> actually hides an inherited virtual or
+        /// abstract member: some ancestor between the containing type and <c>object</c> declares
+        /// an ordinary method with the same name, generic arity, and parameter list (return type
+        /// is not part of a hiding signature), and that member is virtual or abstract. C# emits
+        /// CS0114 exactly for this shape -- hiding a non-virtual base method is CS0108 instead,
+        /// which the compiler already reports -- so gating the hide-based diagnostics (DXMSG007 /
+        /// DXMSG009) on it keeps their messages truthful about the base class. This also mirrors
+        /// the editor IL scanner's base-virtual walk, so the compile-time diagnostic and the
+        /// inspector overlay agree. Guarded names that no ancestor declares yet --
+        /// <c>OnApplicationFocus</c> and <c>OnApplicationPause</c> today -- produce neither
+        /// diagnostic, and coverage resumes automatically if a future release adds those hooks to
         /// <see cref="MessageAwareComponent"/>.
         /// </summary>
         private static bool HidesInheritedMember(
@@ -587,6 +593,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     if (
                         candidate is IMethodSymbol baseMethod
                         && baseMethod.MethodKind == MethodKind.Ordinary
+                        && (baseMethod.IsVirtual || baseMethod.IsAbstract)
                         && baseMethod.TypeParameters.Length == methodSymbol.TypeParameters.Length
                         && ParametersMatch(baseMethod.Parameters, methodSymbol.Parameters)
                     )
@@ -649,6 +656,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
         private static void ReportOnce(SyntaxNodeAnalysisContext context, Diagnostic diagnostic)
         {
+            // Key by source file plus line span: every call site reports at a method-identifier
+            // location inside a user tree, so identical keys always mean the same declaration
+            // reported more than once.
             Location? location = diagnostic.Location;
             string filePath = location?.SourceTree?.FilePath ?? string.Empty;
             LinePositionSpan span = location?.GetLineSpan().Span ?? default;

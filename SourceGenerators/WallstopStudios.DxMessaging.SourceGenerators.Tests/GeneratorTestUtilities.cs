@@ -158,11 +158,34 @@ internal static class GeneratorTestUtilities
     }
 
     /// <summary>
+    /// Combined variant for fixtures that need BOTH extra stub sources (a base-class shape
+    /// different from <see cref="SharedStubs"/>) AND expected compiler warnings (for example
+    /// CS0108 from hiding a non-virtual member). Without the allowlist, the harness rejects any
+    /// compiler warning the fixture intentionally produces.
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSourcesAllowingWarnings(
+        string userSource,
+        string[] allowedWarningIds,
+        params string[] extraStubSources
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            allowedWarningIds,
+            Array.Empty<(string path, string contents)>(),
+            extraStubSources
+        );
+    }
+
+    /// <summary>
     /// Registers the analyzer type TWICE against the same compilation, mirroring what happens in
-    /// a Unity project where this analyzer DLL is loaded twice (for example a stale in-project
-    /// copy alongside the RoslynAnalyzer-labeled package payload): every registration reports its
-    /// own copy of each diagnostic. The analyzer's per-compilation dedup must collapse these to
-    /// one report per location.
+    /// a Unity project where this analyzer DLL is registered twice with one assembly identity
+    /// (for example a stale in-project copy at a different path that the compiler host unifies
+    /// by identity): every registration reports its own copy of each diagnostic, and the shared
+    /// static table collapses them to one report per location. Registrations whose copies carry
+    /// DIFFERENT assembly identities load as distinct types with separate statics and are out of
+    /// scope for this guarantee; the durable fix there remains deleting the stale copy.
     /// </summary>
     internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerRegisteredTwice(string userSource)
     {

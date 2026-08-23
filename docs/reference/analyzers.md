@@ -193,7 +193,7 @@ See [Suppression precedence](#suppression-precedence) for the full ordering.
 
 - **Severity:** Warning
 - **Source:** `MessageAwareComponentBaseCallAnalyzer`
-- **Triggered when:** A subclass uses the `new` modifier (instead of `override`) on one of the five guarded method names, AND some ancestor actually declares a member with a matching signature. `new` on a name no ancestor declares hides nothing (compiler warning CS0109 territory) and stays silent.
+- **Triggered when:** A subclass uses the `new` modifier (instead of `override`) on a guarded lifecycle method name, AND some ancestor actually declares a virtual or abstract member with a matching signature. `new` on a name no ancestor declares hides nothing (compiler warning CS0109 territory) and stays silent, as does `static new` -- a static method cannot join the override chain, so the "replace with 'override'" remedy would be impossible to follow.
 - **Message:** `'{0}' hides MessageAwareComponent.{1} with 'new'; replace with 'override' and call base.{1}() so the messaging system continues to function.`
 
 ### Why this is worse than DXMSG006
@@ -252,7 +252,7 @@ dotnet_diagnostic.DXMSG008.severity = none
 
 - **Severity:** Warning
 - **Source:** `MessageAwareComponentBaseCallAnalyzer`
-- **Triggered when:** A subclass of `MessageAwareComponent` declares a method whose name matches one of the five guarded lifecycle methods (`Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, `RegisterMessageHandlers`), with neither `override` nor `new`, AND the signature is parameter-less, returns `void`, is non-static, and is non-generic, AND some ancestor actually declares a member with a matching signature. Only a real inherited member produces compiler warning [CS0114](https://learn.microsoft.com/en-us/dotnet/csharp/misc/cs0114); the diagnostic never claims a hiding that does not exist.
+- **Triggered when:** A subclass of `MessageAwareComponent` declares a method whose name matches a guarded lifecycle method (`Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, `RegisterMessageHandlers`, and the prospective hooks below), with neither `override` nor `new`, AND the signature is parameter-less, returns `void`, is non-static, and is non-generic, AND some ancestor actually declares a virtual or abstract member with a matching signature. Only that shape produces compiler warning [CS0114](https://learn.microsoft.com/en-us/dotnet/csharp/misc/cs0114); hiding a non-virtual base method is CS0108 instead, which the compiler already reports, and the diagnostic never claims an anchor that does not exist.
 - **Message:** `'{0}' declares {1} without 'override' or 'new'; this implicitly hides MessageAwareComponent.{1} (CS0114) and the messaging system will not function. Add 'override' and call base.{1}(), or add 'new' if the hiding is intentional.`
 
 ### Why this exists
@@ -296,7 +296,7 @@ DXMSG009 fires only when the method shape matches a Unity lifecycle method:
 - Returns `void`.
 - Non-static.
 - Non-generic.
-- An ancestor declares a member with a matching signature, so the declaration really is an implicit hide.
+- An ancestor declares a virtual or abstract member with a matching signature, so the declaration really is the implicit hide CS0114 warns about.
 
 So unrelated overloads like `void OnEnable(int discriminator) {}`, unrelated static helpers, and generic same-name methods (`void Awake<T>()`, which C# does not treat as hiding because the type-parameter arity differs from the base) all stay silent -- they aren't actually hiding the base.
 
@@ -304,7 +304,7 @@ The same rule keeps guarded names that `MessageAwareComponent` does not declare 
 
 ### One diagnostic per declaration
 
-Each guarded-method diagnostic is reported at most once per (diagnostic id, source span) per compilation, even if this analyzer DLL ends up registered twice against the same assembly. That shape does happen: a stale copy of `WallstopStudios.DxMessaging.Analyzer.dll` left inside the consumer project loads alongside the package's RoslynAnalyzer-labeled payload, and each loaded registration reports its own copy of every warning -- one declaration surfacing as two identical entries. The analyzer keeps a per-compilation report table shared across registrations of the same assembly identity and collapses duplicates to the first report. The durable fix on the project side is still to delete the stale DLL; `SetupCscRsp` warns when it finds one.
+Each guarded-method diagnostic is reported at most once per (diagnostic id, source span) per compilation, even if this analyzer DLL ends up registered twice against the same assembly. That shape does happen: a stale copy of `WallstopStudios.DxMessaging.Analyzer.dll` left inside the consumer project loads alongside the package's RoslynAnalyzer-labeled payload, and each loaded registration reports its own copy of every warning -- one declaration surfacing as two identical entries. The analyzer keeps a per-compilation report table shared across registrations that resolve to one assembly identity and collapses duplicates to the first report; copies with different assembly identities load as separate types with separate state, so deleting the stale DLL remains the durable fix there. `SetupCscRsp` removes the one legacy in-project copy location this package ever created automatically and warns if that folder cannot be cleaned; stale copies anywhere else in the project get no automatic cleanup.
 
 ### Coexistence with other diagnostics
 

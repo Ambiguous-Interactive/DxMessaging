@@ -17,6 +17,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class MessageAwareComponentBaseCallAnalyzerTests
 {
     private static readonly string[] Cs0114Warning = { "CS0114" };
+    private static readonly string[] Cs0108AndCs0114Warnings = { "CS0108", "CS0114" };
     private static readonly string[] Cs0109Warning = { "CS0109" };
 
     // S2. Reference the analyzer's source-of-truth constant directly via InternalsVisibleTo;
@@ -1895,6 +1896,69 @@ namespace Sample
 
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
         AssertNoSiblings(diagnostics, "DXMSG006");
+    }
+
+    [Test]
+    public void HidingThroughNonVirtualIntermediateStillReportsCs0114Hide()
+    {
+        // A middle class redeclaring OnDestroy WITHOUT virtual gets its own DXMSG009 (it hides
+        // MessageAwareComponent's virtual). The leaf hiding that member draws BOTH compiler
+        // warnings -- CS0108 against the closest redeclaration and CS0114 against the virtual
+        // root -- and C# hiding applies to every matching member in the chain, so the leaf also
+        // gets DXMSG009 and the message's compiler anchor stays truthful.
+        string stubs = """
+namespace DxMessaging.Unity.Intermediate
+{
+    public class NonVirtualMiddle : DxMessaging.Unity.MessageAwareComponent
+    {
+        public void OnDestroy() { }
+    }
+}
+""";
+        string source = """
+namespace Sample
+{
+    public class Player : DxMessaging.Unity.Intermediate.NonVirtualMiddle
+    {
+        private void OnDestroy() { }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerWithExtraSourcesAllowingWarnings(
+                source,
+                Cs0108AndCs0114Warnings,
+                stubs
+            );
+
+        Assert.That(diagnostics.Count(d => d.Id == "DXMSG009"), Is.EqualTo(2));
+    }
+
+    [Test]
+    public void StaticNewOnGuardedNameStaysSilent()
+    {
+        // `static new` cannot join the override chain, so DXMSG007's remedy ("replace with
+        // 'override'") would be impossible to follow. Unity ignores static lifecycle methods;
+        // the compiler emits no hiding warning either (a static member does not hide an
+        // instance member), so the analyzer stays fully silent.
+        string source = """
+namespace Sample
+{
+    public class BrokenThing : DxMessaging.Unity.MessageAwareComponent
+    {
+        private static new void OnEnable() { }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                System.Array.Empty<string>()
+            );
+
+        Assert.That(diagnostics, Is.Empty);
     }
 
     [Test]

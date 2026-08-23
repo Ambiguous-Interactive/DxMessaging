@@ -29,9 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OnApplicationFocus(bool)` or `OnApplicationPause(bool)`. `MessageAwareComponent` declares neither
   hook, so such a method overrides and hides nothing; the diagnostic claimed a CS0114 hiding that
   does not exist, and no spelling of the method silenced it (adding `new` traded the warning for
-  CS0109). Hide-based diagnostics now fire only when an inherited member with a matching signature
-  actually exists, so coverage resumes automatically if the base class adds the hooks in a future
-  release ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
+  CS0109). Hide-based diagnostics now fire only when an ancestor actually declares a virtual member
+  with a matching signature -- exactly the shape CS0114 warns about -- so coverage resumes
+  automatically if the base class adds the hooks in a future release
+  ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
 - Report each base-call analyzer diagnostic once per declaration. When the analyzer DLL loads twice
   into one compilation -- typically a stale in-project copy alongside the package's analyzer --
   every registration reported its own copy of each warning, so one declaration surfaced as two
