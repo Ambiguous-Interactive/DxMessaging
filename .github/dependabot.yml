@@ -89,16 +89,19 @@ updates:
       - "dependencies"
     versioning-strategy: increase
 
-  # pip: documentation toolchain. requirements-docs.txt is a compiled lock, so a
-  # dependency change must arrive as a reviewed pull request, not as a silent
-  # re-resolve on the day a docs job happens to run.
+  # pip: the compiled Python locks. Both pairs in this directory
+  # (requirements-docs for the site build, requirements-brand for the card
+  # render) are compiled with uv, so a dependency change must arrive as a
+  # reviewed pull request, not as a silent re-resolve on the day a job
+  # happens to run. Dependabot's python fetcher discovers every requirements
+  # file here and maps each .txt to its same-named .in.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 2
     groups:
-      docs-python-all:
+      python-locks-all:
         patterns:
           - "*"
     labels:

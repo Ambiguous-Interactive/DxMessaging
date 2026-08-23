@@ -10,10 +10,11 @@ Usage:
 
     python3 scripts/render-brand-cards.py
 
-Requirements: cairosvg (already in requirements-docs.txt), the system cairo
-library, and the three brand faces installed for fontconfig. The script stops
-before writing anything if a face is missing, because cairo silently
-substitutes a default face and the render would look almost right.
+Requirements: cairosvg (install requirements-brand.txt into a virtual
+environment), the system cairo library, and the three brand faces installed
+for fontconfig. The script stops before writing anything if a face is missing,
+because cairo silently substitutes a default face and the render would look
+almost right.
 """
 
 import shutil
@@ -98,7 +99,7 @@ def main():
     try:
         import cairosvg
     except ImportError as error:
-        sys.exit(f"cairosvg is not importable ({error}). Install requirements-docs.txt into a virtual environment.")
+        sys.exit(f"cairosvg is not importable ({error}). Install requirements-brand.txt into a virtual environment.")
 
     check_mark_copies()
 

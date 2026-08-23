@@ -620,7 +620,7 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
     const pattern = /documentation_only_pattern='([^']+)'/.exec(head);
     const allowed = new RegExp(pattern?.[1] ?? "a^");
     // prettier-ignore
-    for (const path of ["docs/index.md", ".docs-tests/DocsSnippetCompilationTests.cs", ".docs-tests/global.json", ".llm/context.md", "Samples~/Mini Combat/README.md", "GOAL.md", "requirements-docs.in", "requirements-docs.in.meta", "requirements-docs.txt"])
+    for (const path of ["docs/index.md", ".docs-tests/DocsSnippetCompilationTests.cs", ".docs-tests/global.json", ".llm/context.md", "Samples~/Mini Combat/README.md", "GOAL.md", "requirements-docs.in", "requirements-docs.in.meta", "requirements-docs.txt", "requirements-docs.txt.meta", "requirements-brand.in", "requirements-brand.in.meta", "requirements-brand.txt", "requirements-brand.txt.meta"])
       assert.match(path, allowed, `${file}: ${path}`);
     // prettier-ignore
     for (const path of [`.github/workflows/${file}`, "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "README.md"])

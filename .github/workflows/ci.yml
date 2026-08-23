@@ -849,18 +849,6 @@ jobs:
           cache: "pip"
           cache-dependency-path: "requirements-docs.txt"
 
-      - name: Install system dependencies
-        if: ${{ needs.changes.outputs.docs != 'false' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libcairo2-dev \
-            libfreetype6-dev \
-            libffi-dev \
-            libjpeg-dev \
-            libpng-dev \
-            libz-dev
-
       - name: Install Python dependencies
         if: ${{ needs.changes.outputs.docs != 'false' }}
         run: |
