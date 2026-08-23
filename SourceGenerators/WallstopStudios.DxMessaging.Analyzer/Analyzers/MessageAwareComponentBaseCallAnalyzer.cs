@@ -164,10 +164,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); default string-message handlers will not be registered (override RegisterForStringMessages to suppress this warning)."
             ),
             // OnApplicationFocus / OnApplicationPause are guarded prospectively. MessageAwareComponent
-            // does not currently declare these methods, so the analyzer never actually fires DXMSG006
-            // for them today; the entries exist so that adding a virtual body to the base class in a
-            // future release immediately produces actionable per-method consequence text without an
-            // analyzer revision. The meta-test forces these dictionaries to mirror GuardedMethodNames.
+            // does not currently declare these methods, so the analyzer never fires DXMSG006 for
+            // them today, and DXMSG007 / DXMSG009 stay silent too because HidesInheritedMember
+            // finds no virtual ancestor member to hide; the entries exist so that adding a virtual
+            // body to the base class in a future release immediately produces actionable
+            // per-method consequence text without an analyzer revision. The meta-test forces
+            // these dictionaries to mirror GuardedMethodNames.
             new KeyValuePair<string, string>(
                 "OnApplicationFocus",
                 "'{0}' overrides MessageAwareComponent.OnApplicationFocus but does not call base.OnApplicationFocus(); the messaging system may not function correctly on this component when focus changes."

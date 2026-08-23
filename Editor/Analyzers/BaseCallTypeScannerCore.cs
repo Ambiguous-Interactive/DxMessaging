@@ -115,8 +115,10 @@ namespace DxMessaging.Editor.Analyzers
                 "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); default string-message handlers will not be registered (override RegisterForStringMessages to suppress this warning)."
             },
             // Prospective entries. MessageAwareComponent does not currently declare these
-            // methods; entries exist so future changes immediately surface actionable
-            // consequence text. Keep aligned with the analyzer's dictionary.
+            // methods, so nothing can override or hide them yet and no scanner row ever names
+            // them (ClassifyMethod requires a real base virtual); entries exist so future
+            // changes immediately surface actionable consequence text. Keep aligned with the
+            // analyzer's dictionary.
             {
                 "OnApplicationFocus",
                 "'{0}' overrides MessageAwareComponent.OnApplicationFocus but does not call base.OnApplicationFocus(); the messaging system may not function correctly on this component when focus changes."
