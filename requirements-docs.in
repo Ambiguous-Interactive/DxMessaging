@@ -25,10 +25,6 @@ mkdocs-git-revision-date-localized-plugin>=1.2.4
 # Code highlighting
 pygments>=2.17.0
 
-# Image processing for social cards (optional)
-pillow>=10.2.0
-cairosvg>=2.7.1
-
 # Markdown extensions (included with mkdocs-material, listed for completeness)
 pymdown-extensions>=10.7.0
 

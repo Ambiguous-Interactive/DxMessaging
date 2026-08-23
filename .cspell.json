@@ -23,6 +23,7 @@
     "package-lock.json",
     "**/packages-lock.json",
     "requirements-docs.txt",
+    "requirements-brand.txt",
     "Library/**",
     "**/Library/**",
     "Temp/**",

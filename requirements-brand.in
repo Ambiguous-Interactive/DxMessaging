@@ -1,0 +1,16 @@
+# Direct dependencies for scripts/render-brand-cards.py, which renders the
+# brand cards from their SVG sources. Edit this file, then regenerate the
+# fully pinned requirements-brand.txt:
+#
+#   uv pip compile --universal --python-version 3.11 requirements-brand.in \
+#     -o requirements-brand.txt
+#
+# This pair is separate from requirements-docs.in so the documentation build
+# installs no package it does not import. The brand render needs cairosvg and
+# the system cairo library; nothing else in this repository imports either.
+# There is deliberately no --check gate on the pair. Recompiling resolves to
+# whatever is newest that day, so a drift check would go red the moment an
+# upstream project published a release - the exact failure a compiled lock
+# removes. Dependabot proposes bumps instead, as a reviewed diff.
+
+cairosvg>=2.7.1

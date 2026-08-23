@@ -398,8 +398,9 @@ RUN pip3 install --no-cache-dir pre-commit --break-system-packages && pre-commit
 
 # ------------------------------------------------------------------------------
 # Install uv
-# Used to compile requirements-docs.txt from requirements-docs.in. The docs jobs
-# install the compiled file with plain pip, so uv is a local authoring tool only.
+# Used to compile the requirements-docs and requirements-brand locks from
+# their .in inputs. The docs jobs install the compiled docs lock with plain
+# pip, so uv is a local authoring tool only.
 # https://docs.astral.sh/uv/
 # ------------------------------------------------------------------------------
 RUN pip3 install --no-cache-dir uv --break-system-packages && uv --version

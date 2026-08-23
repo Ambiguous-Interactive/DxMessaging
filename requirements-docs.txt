@@ -6,14 +6,8 @@ babel==2.18.0
     #   mkdocs-material
 backrefs==8.0
     # via mkdocs-material
-cairocffi==1.7.1
-    # via cairosvg
-cairosvg==2.9.0
-    # via -r requirements-docs.in
 certifi==2026.7.22
     # via requests
-cffi==2.1.1
-    # via cairocffi
 charset-normalizer==3.5.1
     # via requests
 click==8.4.2
@@ -25,10 +19,6 @@ colorama==0.4.6
     #   mkdocs-material
 csscompressor==0.9.5
     # via mkdocs-minify-plugin
-cssselect2==0.9.0
-    # via cairosvg
-defusedxml==0.7.1
-    # via cairosvg
 ghp-import==2.1.0
     # via mkdocs
 gitdb==4.0.12
@@ -86,14 +76,8 @@ paginate==0.5.7
     # via mkdocs-material
 pathspec==1.1.1
     # via mkdocs
-pillow==12.3.0
-    # via
-    #   -r requirements-docs.in
-    #   cairosvg
 platformdirs==4.11.3
     # via mkdocs-get-deps
-pycparser==3.0 ; implementation_name != 'PyPy'
-    # via cffi
 pygments==2.21.0
     # via
     #   -r requirements-docs.in
@@ -123,10 +107,6 @@ six==1.17.0
     # via python-dateutil
 smmap==5.0.3
     # via gitdb
-tinycss2==1.5.1
-    # via
-    #   cairosvg
-    #   cssselect2
 tzdata==2026.3 ; sys_platform == 'win32'
     # via mkdocs-git-revision-date-localized-plugin
 urllib3==2.7.0
@@ -135,7 +115,3 @@ verspec==0.1.0
     # via mike
 watchdog==6.0.0
     # via mkdocs
-webencodings==0.6.1
-    # via
-    #   cssselect2
-    #   tinycss2
