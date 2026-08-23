@@ -72,11 +72,12 @@ Edit the SVG, then render both PNGs:
 
 ```bash
 python3 -m venv .artifacts/docs-venv
-.artifacts/docs-venv/bin/python -m pip install -r requirements-docs.txt
+.artifacts/docs-venv/bin/python -m pip install -r requirements-brand.txt
 .artifacts/docs-venv/bin/python scripts/render-brand-cards.py
 ```
 
-The render needs the system cairo library (`libcairo2`) and the three brand
+The render needs `requirements-brand.txt` (the compiled lock holding
+`cairosvg`), the system cairo library (`libcairo2`), and the three brand
 faces installed for fontconfig: Space Grotesk, IBM Plex Sans, and JetBrains
 Mono. All three are SIL Open Font License 1.1. The script prints the exact
 download commands and stops before writing anything when a face is missing,
