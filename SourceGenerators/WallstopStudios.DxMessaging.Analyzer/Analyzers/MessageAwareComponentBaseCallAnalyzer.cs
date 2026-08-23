@@ -1,13 +1,16 @@
 namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 {
     using System;
+    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Collections.Immutable;
     using System.Linq;
+    using System.Runtime.CompilerServices;
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
     using Microsoft.CodeAnalysis.Diagnostics;
+    using Microsoft.CodeAnalysis.Text;
 
     /// <summary>
     /// Flags subclasses of <c>DxMessaging.Unity.MessageAwareComponent</c> that override one of the
@@ -108,7 +111,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         /// variant is also surfaced. <see cref="MessageAwareComponent"/> does NOT currently
         /// declare these methods; they are guarded prospectively so that adding a virtual
         /// body in a future release immediately gets DXMSG006 / DXMSG010 coverage on
-        /// existing subclasses without a separate analyzer revision.
+        /// existing subclasses without a separate analyzer revision. Because the base class
+        /// does not declare them yet, hide-based diagnostics (DXMSG007 / DXMSG009) only fire
+        /// for these names once an ancestor actually declares a matching member -- declaring
+        /// <c>OnApplicationPause(bool)</c> on a subclass today hides nothing and must stay
+        /// silent (see <see cref="HidesInheritedMember"/>).
         /// </summary>
         internal static readonly ImmutableHashSet<string> GuardedMethodsWithBoolSignature =
             ImmutableHashSet.Create("OnApplicationFocus", "OnApplicationPause");
@@ -311,11 +318,19 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                         && methodSymbol.Parameters[0].Type.SpecialType == SpecialType.System_Boolean
                     )
                 );
+            bool hidesInheritedMember = HidesInheritedMember(containingType, methodSymbol);
             bool wouldFireMissingModifier =
                 !hasNewModifier
                 && !hasOverrideModifier
                 && !hasStaticModifier
-                && signatureMatchesLifecycleShape;
+                && signatureMatchesLifecycleShape
+                // Only an actual hide produces CS0114. Guarded names the base class does not
+                // declare yet (OnApplicationFocus / OnApplicationPause today) must stay silent;
+                // firing here would claim a hiding that does not exist, and there is no clean
+                // spelling of the method (adding `new` trades DXMSG009 for CS0109). When a future
+                // release adds these hooks to MessageAwareComponent, this gate starts passing on
+                // its own -- no analyzer revision needed.
+                && hidesInheritedMember;
 
             // Bail when this method does not match any of our diagnostic shapes. This protects
             // unrelated methods on subclasses (e.g., a private helper named `Awake` that takes a
@@ -330,8 +345,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             // DXMSG008 on clean overrides; pure noise per the adversarial review (B5). The
             // override / new / missing-modifier branches are mutually exclusive at the C# language
             // level (a method cannot have both `override` and `new`, and `wouldFireMissingModifier`
-            // requires neither).
-            bool wouldFireNewModifier = hasNewModifier;
+            // requires neither). Like DXMSG009, DXMSG007 fires only when the method actually hides
+            // an inherited member; `new` on a name no ancestor declares is compiler warning
+            // CS0109 territory and stays silent here too.
+            bool wouldFireNewModifier = hasNewModifier && hidesInheritedMember;
             bool wouldFireMissingBase =
                 hasOverrideModifier && !ContainsBaseInvocation(methodDecl, methodName);
 
@@ -361,7 +378,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     || wouldFireBrokenChain
                 )
                 {
-                    context.ReportDiagnostic(
+                    ReportOnce(
+                        context,
                         Diagnostic.Create(
                             OptedOutDescriptor,
                             methodDecl.Identifier.GetLocation(),
@@ -392,7 +410,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     || wouldFireBrokenChain
                 )
                 {
-                    context.ReportDiagnostic(
+                    ReportOnce(
+                        context,
                         Diagnostic.Create(
                             OptedOutDescriptor,
                             methodDecl.Identifier.GetLocation(),
@@ -409,7 +428,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 // Implicit hiding; C# would emit CS0114 alongside this. We surface a project-
                 // specific diagnostic so the inspector overlay (which scopes to DXMSG006/007/009)
                 // also shows the warning above the user's component.
-                context.ReportDiagnostic(
+                ReportOnce(
+                    context,
                     Diagnostic.Create(
                         MissingModifierDescriptor,
                         methodDecl.Identifier.GetLocation(),
@@ -422,9 +442,18 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
 
             if (hasNewModifier)
             {
+                if (!wouldFireNewModifier)
+                {
+                    // 'new' that hides nothing: no inherited member matches, which the compiler
+                    // already flags as CS0109. Reporting DXMSG007 here would send the user
+                    // chasing an override of a method that does not exist.
+                    return;
+                }
+
                 // 'new' on a guarded name is a known footgun: the user is hiding the lifecycle
                 // method instead of participating in the override chain. Stop after reporting.
-                context.ReportDiagnostic(
+                ReportOnce(
+                    context,
                     Diagnostic.Create(
                         NewModifierDescriptor,
                         methodDecl.Identifier.GetLocation(),
@@ -446,7 +475,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 // even though THIS override looks correct in isolation.
                 if (wouldFireBrokenChain && brokenChainAncestor is not null)
                 {
-                    context.ReportDiagnostic(
+                    ReportOnce(
+                        context,
                         Diagnostic.Create(
                             BrokenChainDescriptor,
                             methodDecl.Identifier.GetLocation(),
@@ -507,7 +537,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     additionalLocations: null,
                     customTags: null
                 );
-                context.ReportDiagnostic(loweredDiagnostic);
+                ReportOnce(context, loweredDiagnostic);
                 return;
             }
 
@@ -530,7 +560,110 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 additionalLocations: null,
                 customTags: null
             );
-            context.ReportDiagnostic(perMethodDiagnostic);
+            ReportOnce(context, perMethodDiagnostic);
+        }
+
+        /// <summary>
+        /// True when <paramref name="methodSymbol"/> actually hides an inherited member: some
+        /// ancestor between the containing type and <c>object</c> declares an ordinary method
+        /// with the same name, generic arity, and parameter list (return type is not part of a
+        /// hiding signature). C# emits CS0114 exactly for this shape, so gating the hide-based
+        /// diagnostics (DXMSG007 / DXMSG009) on it keeps them truthful about the base class:
+        /// guarded names that no ancestor declares yet -- <c>OnApplicationFocus</c> and
+        /// <c>OnApplicationPause</c> today -- produce neither diagnostic, and coverage resumes
+        /// automatically if a future release adds those hooks to
+        /// <see cref="MessageAwareComponent"/>.
+        /// </summary>
+        private static bool HidesInheritedMember(
+            INamedTypeSymbol containingType,
+            IMethodSymbol methodSymbol
+        )
+        {
+            INamedTypeSymbol? baseType = containingType.BaseType;
+            while (baseType is not null)
+            {
+                foreach (ISymbol candidate in baseType.GetMembers(methodSymbol.Name))
+                {
+                    if (
+                        candidate is IMethodSymbol baseMethod
+                        && baseMethod.MethodKind == MethodKind.Ordinary
+                        && baseMethod.TypeParameters.Length == methodSymbol.TypeParameters.Length
+                        && ParametersMatch(baseMethod.Parameters, methodSymbol.Parameters)
+                    )
+                    {
+                        return true;
+                    }
+                }
+
+                baseType = baseType.BaseType;
+            }
+
+            return false;
+        }
+
+        private static bool ParametersMatch(
+            ImmutableArray<IParameterSymbol> left,
+            ImmutableArray<IParameterSymbol> right
+        )
+        {
+            if (left.Length != right.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < left.Length; i++)
+            {
+                if (left[i].RefKind != right[i].RefKind)
+                {
+                    return false;
+                }
+
+                if (!SymbolEqualityComparer.Default.Equals(left[i].Type, right[i].Type))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// One diagnostic per (id, source span) per compilation, no matter how many times the
+        /// analyzer type is registered against that compilation. A Unity project can end up with
+        /// this analyzer DLL loaded twice -- for example a stale in-project copy alongside the
+        /// RoslynAnalyzer-labeled package payload -- and each registration then reports its own
+        /// copy of every diagnostic at the same span, so one declaration surfaces as two
+        /// warnings. The compiler host loads an assembly once per identity, which makes this
+        /// per-compilation table shared state across duplicate registrations: the first report
+        /// wins and later identical ones collapse.
+        /// </summary>
+        // RS1008 wants per-compilation data out of analyzer fields because a strong reference
+        // would pin the compilation alive. A ConditionalWeakTable keyed by the compilation is
+        // the leak-safe form of that pattern: entries die with their key, so nothing is pinned.
+#pragma warning disable RS1008
+        private static readonly ConditionalWeakTable<
+            Compilation,
+            ConcurrentDictionary<string, byte>
+        > ReportedDiagnosticKeys = new();
+#pragma warning restore RS1008
+
+        private static void ReportOnce(SyntaxNodeAnalysisContext context, Diagnostic diagnostic)
+        {
+            Location? location = diagnostic.Location;
+            string filePath = location?.SourceTree?.FilePath ?? string.Empty;
+            LinePositionSpan span = location?.GetLineSpan().Span ?? default;
+            string key =
+                $"{diagnostic.Id}|{filePath}|{span.Start.Line}:{span.Start.Character}-{span.End.Line}:{span.End.Character}";
+            ConcurrentDictionary<string, byte> seenForCompilation = ReportedDiagnosticKeys.GetValue(
+                context.Compilation,
+                static _ => new()
+            );
+            if (!seenForCompilation.TryAdd(key, 0))
+            {
+                return;
+            }
+
+            context.ReportDiagnostic(diagnostic);
         }
 
         private static bool StrictlyInheritsFromMessageAwareComponent(INamedTypeSymbol type)

@@ -44,7 +44,11 @@ namespace DxMessaging.Editor.Analyzers
         /// matched ordinally. Most are zero-parameter, void-returning instance methods;
         /// <c>OnApplicationFocus</c> and <c>OnApplicationPause</c> are guarded prospectively
         /// for their canonical Unity <c>(bool)</c> signature even though the base class does
-        /// not currently declare them. See
+        /// not currently declare them. Both the compile-time analyzer and this scanner only
+        /// report a method when an ancestor actually declares a matching member to override or
+        /// hide (<c>ClassifyMethod</c> checks <c>MethodInfo.GetBaseDefinition()</c> and the
+        /// base-virtual walk), so these prospective names stay silent until the base class adds
+        /// the hooks. See
         /// <c>MessageAwareComponentBaseCallAnalyzer.GuardedMethodNames</c> /
         /// <c>GuardedMethodsWithBoolSignature</c>; the two sets MUST stay in sync (a meta-test
         /// in the dotnet-test project asserts set-equality).

@@ -17,6 +17,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class MessageAwareComponentBaseCallAnalyzerTests
 {
     private static readonly string[] Cs0114Warning = { "CS0114" };
+    private static readonly string[] Cs0109Warning = { "CS0109" };
 
     // S2. Reference the analyzer's source-of-truth constant directly via InternalsVisibleTo;
     // no more duplicated literal in the tests. Drift risk eliminated.
@@ -1752,6 +1753,171 @@ namespace Sample
             );
 
         Assert.That(diagnostics, Is.Empty);
+    }
+
+    // -- Issue #453: guarded names the base class does not declare ------------------------------
+
+    [TestCase("OnApplicationPause", "paused")]
+    [TestCase("OnApplicationFocus", "focused")]
+    public void DeclaringProspectiveHookWithoutBaseDeclarationStaysSilent(
+        string methodName,
+        string parameterName
+    )
+    {
+        // MessageAwareComponent declares neither hook today, so a subclass declaration hides
+        // nothing: no CS0114 exists and DXMSG009 must not claim one. Firing here would leave the
+        // user with no clean spelling -- adding `new` trades the warning for CS0109.
+        string source = $$"""
+namespace Sample
+{
+    public class Player : DxMessaging.Unity.MessageAwareComponent
+    {
+        private void {{methodName}}(bool {{parameterName}}) { _ = {{parameterName}}; }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [TestCase("OnApplicationPause")]
+    [TestCase("OnApplicationFocus")]
+    public void ZeroArgVariantOfProspectiveHookWithoutBaseDeclarationStaysSilent(string methodName)
+    {
+        string source = $$"""
+namespace Sample
+{
+    public class Player : DxMessaging.Unity.MessageAwareComponent
+    {
+        private void {{methodName}}() { }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [TestCase("OnApplicationPause", "paused")]
+    [TestCase("OnApplicationFocus", "focused")]
+    public void NewModifierOnUndeclaredProspectiveHookStaysSilent(
+        string methodName,
+        string parameterName
+    )
+    {
+        // `new` on a name no ancestor declares is compiler warning CS0109 territory. DXMSG007
+        // must stay silent so the user is never sent chasing an override of a method that does
+        // not exist on MessageAwareComponent.
+        string source = $$"""
+namespace Sample
+{
+    public class Player : DxMessaging.Unity.MessageAwareComponent
+    {
+        protected new void {{methodName}}(bool {{parameterName}}) { _ = {{parameterName}}; }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerAllowingCompilerWarnings(
+                source,
+                Cs0109Warning
+            );
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void HideDiagnosticsResumeWhenAnAncestorDeclaresTheHook()
+    {
+        // The gate is actual hiding, not just the name list: once an ancestor (here an
+        // intermediate base, mirroring a future MessageAwareComponent that adds the hook)
+        // declares OnApplicationPause(bool), the implicit hide produces CS0114 again and
+        // DXMSG009 must fire without any analyzer revision.
+        string stubs = """
+namespace DxMessaging.Unity.Intermediate
+{
+    public class PauseBase : DxMessaging.Unity.MessageAwareComponent
+    {
+        protected virtual void OnApplicationPause(bool paused) { _ = paused; }
+    }
+}
+""";
+        string source = """
+namespace Sample
+{
+    public class Player : DxMessaging.Unity.Intermediate.PauseBase
+    {
+        private void OnApplicationPause(bool paused) { _ = paused; }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerWithExtraSources(source, stubs);
+
+        AssertSingle(diagnostics, "DXMSG009", DiagnosticSeverity.Warning);
+        AssertNoSiblings(diagnostics, "DXMSG009");
+        Diagnostic dxmsg009 = diagnostics.Single(d => d.Id == "DXMSG009");
+        Assert.That(dxmsg009.GetMessage(CultureInfo.InvariantCulture), Does.Contain("CS0114"));
+    }
+
+    [Test]
+    public void OverrideOfAncestorDeclaredHookStillReportsMissingBaseCall()
+    {
+        string stubs = """
+namespace DxMessaging.Unity.Intermediate
+{
+    public class PauseBase : DxMessaging.Unity.MessageAwareComponent
+    {
+        protected virtual void OnApplicationPause(bool paused) { _ = paused; }
+    }
+}
+""";
+        string source = """
+namespace Sample
+{
+    public class Player : DxMessaging.Unity.Intermediate.PauseBase
+    {
+        protected override void OnApplicationPause(bool paused)
+        {
+            _ = paused;
+        }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerWithExtraSources(source, stubs);
+
+        AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
+        AssertNoSiblings(diagnostics, "DXMSG006");
+    }
+
+    [Test]
+    public void DuplicateAnalyzerRegistrationReportsEachDiagnosticOnce()
+    {
+        // A Unity project can load this analyzer DLL twice (stale in-project copy plus the
+        // RoslynAnalyzer-labeled payload); each registration then reports its own copy of every
+        // diagnostic at the same span. The per-compilation dedup collapses them to one report.
+        string source = """
+namespace Sample
+{
+    public class BrokenThing : DxMessaging.Unity.MessageAwareComponent
+    {
+        private void OnEnable() { }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerRegisteredTwice(source);
+
+        Assert.That(diagnostics.Count(d => d.Id == "DXMSG009"), Is.EqualTo(1));
+        Assert.That(diagnostics.Count, Is.EqualTo(1));
     }
 
     [Test]

@@ -22,10 +22,11 @@ The contract:
 - Two additional methods are guarded prospectively for their canonical Unity
   one-arg-bool signature: `OnApplicationFocus(bool)` and
   `OnApplicationPause(bool)`. `MessageAwareComponent` does not currently declare
-  these, so the analyzer never actually fires DXMSG006 for them today; the
-  guard exists so that adding a virtual body to the base class in a future
-  release immediately gets DXMSG006 / DXMSG010 coverage on existing subclasses
-  without an analyzer revision.
+  these. Hide-based diagnostics (DXMSG007/DXMSG009) fire only when an ancestor
+  actually declares a matching member, so a subclass declaring either hook
+  today produces no diagnostic; the guard exists so that adding a virtual body
+  to the base class in a future release immediately gets DXMSG006 / DXMSG010
+  coverage on existing subclasses without an analyzer revision.
 - Scanner/reflection parity requirement: every guarded-method lookup path in
   `BaseCallTypeScannerCore` must apply the same signature rules (declared
   method resolution, base-virtual detection for hiding checks, override-chain
