@@ -6,6 +6,7 @@
     "PriorityOrdered",
     "Filtered",
     "PostProcess",
+    "FilteredPostProcess",
     "SubUnsub",
     "StructNoBox"
   ],
@@ -15,6 +16,7 @@
     "KeyedToOne",
     "Filtered",
     "PostProcess",
+    "FilteredPostProcess",
     "SubUnsub",
     "StructNoBox"
   ],

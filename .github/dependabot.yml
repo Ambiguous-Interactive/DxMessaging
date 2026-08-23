@@ -13,6 +13,13 @@ updates:
           - "*"
     labels:
       - "dependencies"
+    ignore:
+      # The build-lock actions are first-party infrastructure whose immutable
+      # commit pins are copied into the docs/ops examples. Dependabot cannot
+      # edit those pages, so an automated bump would fail the copyable-example
+      # contract in scripts/__tests__/ci-aggregate-workflow.test.js. Bump these
+      # actions manually in one commit across .github/workflows and docs/ops.
+      - dependency-name: "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/*"
 
   # NuGet: SourceGenerator project - Roslyn packages pinned for Unity compiler compatibility
   - package-ecosystem: "nuget"

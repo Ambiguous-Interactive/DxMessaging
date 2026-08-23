@@ -25,8 +25,8 @@ try {
     $expectedSorted = @($expected | Sort-Object)
     $actualSorted = @($actual | Sort-Object)
 
-    if ($expectedSorted.Count -ne 46) {
-        throw "The pinned comparison capability manifest must contain exactly 46 rows; found $($expectedSorted.Count)."
+    if ($expectedSorted.Count -ne 48) {
+        throw "The pinned comparison capability manifest must contain exactly 48 rows; found $($expectedSorted.Count)."
     }
     if ($actualSorted.Count -eq 0) {
         throw 'The comparison baseline contains no published comparison rows.'

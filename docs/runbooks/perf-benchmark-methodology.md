@@ -353,21 +353,22 @@ sub-millisecond single shot without changing the reported per-bus cardinality.
 
 ### Comparison scenarios (cross-library)
 
-The eight apples-to-apples comparison scenarios are defined in
+The nine apples-to-apples comparison scenarios are defined in
 [`ComparisonScenario.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonScenario.cs).
 Each library implements only the scenarios it idiomatically supports; an
 unsupported scenario renders `N/A` in the matrix and is **never faked**:
 
-| #   | Scenario key      | What it measures                      |
-| --- | ----------------- | ------------------------------------- |
-| S1  | `GlobalToOne`     | Global dispatch to one subscriber.    |
-| S2  | `GlobalToMany`    | Global dispatch to 16 subscribers.    |
-| S3  | `KeyedToOne`      | Keyed/targeted dispatch to 1 of many. |
-| S4  | `PriorityOrdered` | Priority-ordered dispatch.            |
-| S5  | `Filtered`        | Filtered/intercepted dispatch.        |
-| S6  | `PostProcess`     | Post-processing dispatch.             |
-| S7  | `SubUnsub`        | Subscribe/unsubscribe churn.          |
-| S8  | `StructNoBox`     | Struct message dispatch (no boxing).  |
+| #   | Scenario key          | What it measures                         |
+| --- | --------------------- | ---------------------------------------- |
+| S1  | `GlobalToOne`         | Global dispatch to one subscriber.       |
+| S2  | `GlobalToMany`        | Global dispatch to 16 subscribers.       |
+| S3  | `KeyedToOne`          | Keyed/targeted dispatch to 1 of many.    |
+| S4  | `PriorityOrdered`     | Priority-ordered dispatch.               |
+| S5  | `Filtered`            | Filtered/intercepted dispatch.           |
+| S6  | `PostProcess`         | Post-processing dispatch.                |
+| S7  | `FilteredPostProcess` | Intercepted and post-processed dispatch. |
+| S8  | `SubUnsub`            | Subscribe/unsubscribe churn.             |
+| S9  | `StructNoBox`         | Struct message dispatch (no boxing).     |
 
 ### Comparison vs dispatch: deliberately different topologies
 
@@ -386,16 +387,17 @@ that suite fails the build if the DxMessaging fan-out, the dispatch scenario key
 the scenario roster drift from this table, so this documentation and the code cannot
 silently desync.
 
-| Comparison cell   | DxMessaging shape                    | Nearest dispatch cell                         | True twin? | Why they differ                                                                                                                                       |
-| ----------------- | ------------------------------------ | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GlobalToOne`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | **Yes**    | Identical shape; the DxMessaging numbers must agree within noise.                                                                                     |
-| `StructNoBox`     | 1 token, 1 untargeted handler        | `UntargetedFlood_OneHandler`                  | No         | Same storage shape, but the comparison uses the canonical `ComparisonStructPayload` while the dispatch row uses `SimpleUntargetedMessage`.            |
-| `GlobalToMany`    | 16 tokens, 16 untargeted handlers    | (none)                                        | No         | No dispatch scenario fans untargeted dispatch out to 16 handlers (the dispatch family caps untargeted fan-out at four).                               |
-| `KeyedToOne`      | 16 targets registered, dispatch to 1 | `TargetedFlood_OneListener`                   | No         | Measures lookup selectivity (16 registered, 1 fires); the dispatch cell registers a single target.                                                    |
-| `PriorityOrdered` | 1 token, 4 priorities                | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
-| `Filtered`        | 1 interceptor + 1 handler            | `InterceptorHeavy_FourInterceptors`           | No         | Comparison runs one interceptor; the dispatch cell runs four.                                                                                         |
-| `PostProcess`     | 1 post-processor + 1 handler         | `PostProcessingHeavy_FourPostProcessors`      | No         | Comparison runs one post-processor; the dispatch cell runs four.                                                                                      |
-| `SubUnsub`        | register/unregister churn cycle      | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe throughput scenario.                                                                                 |
+| Comparison cell       | DxMessaging shape                            | Nearest dispatch cell                         | True twin? | Why they differ                                                                                                                                       |
+| --------------------- | -------------------------------------------- | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GlobalToOne`         | 1 token, 1 untargeted handler                | `UntargetedFlood_OneHandler`                  | **Yes**    | Identical shape; the DxMessaging numbers must agree within noise.                                                                                     |
+| `StructNoBox`         | 1 token, 1 untargeted handler                | `UntargetedFlood_OneHandler`                  | No         | Same storage shape, but the comparison uses the canonical `ComparisonStructPayload` while the dispatch row uses `SimpleUntargetedMessage`.            |
+| `GlobalToMany`        | 16 tokens, 16 untargeted handlers            | (none)                                        | No         | No dispatch scenario fans untargeted dispatch out to 16 handlers (the dispatch family caps untargeted fan-out at four).                               |
+| `KeyedToOne`          | 16 targets registered, dispatch to 1         | `TargetedFlood_OneListener`                   | No         | Measures lookup selectivity (16 registered, 1 fires); the dispatch cell registers a single target.                                                    |
+| `PriorityOrdered`     | 1 token, 4 priorities                        | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
+| `Filtered`            | 1 interceptor + 1 handler                    | `InterceptorHeavy_FourInterceptors`           | No         | Comparison runs one interceptor; the dispatch cell runs four.                                                                                         |
+| `PostProcess`         | 1 post-processor + 1 handler                 | `PostProcessingHeavy_FourPostProcessors`      | No         | Comparison runs one post-processor; the dispatch cell runs four.                                                                                      |
+| `FilteredPostProcess` | 1 interceptor + 1 post-processor + 1 handler | (none)                                        | No         | No dispatch scenario combines hook kinds. Compare this cell inside the matrix against `GlobalToOne`, `Filtered`, and `PostProcess` from the same run. |
+| `SubUnsub`            | register/unregister churn cycle              | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe throughput scenario.                                                                                 |
 
 **Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player;
 the internal benchmark player, including the 131072-cycle and teardown rows,

@@ -105,6 +105,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     "Comparison runs one post-processor plus one handler; the dispatch twin "
                         + "runs four post-processors plus one handler."
                 ),
+                [ComparisonScenario.InterceptedPostProcessingDispatch] = new TopologyMapping(
+                    1,
+                    null,
+                    isTrueTopologyTwin: false,
+                    "One interceptor plus one post-processor plus one handler; no dispatch "
+                        + "scenario combines hook kinds, so this row only supports within-matrix "
+                        + "comparison against GlobalToOne, Filtered, and PostProcess."
+                ),
                 [ComparisonScenario.SubscribeUnsubscribeChurn] = new TopologyMapping(
                     1,
                     null,

@@ -116,6 +116,10 @@ organization lock.
   Grant `actions: read` to each acquiring job so the action can confirm that a
   holder's workflow is still live before expiring its reservation.
 
+  The pinned commit above is part of the example. Dependabot is configured to
+  ignore the build-lock actions, so bump their pins manually in one commit
+  across `.github/workflows` and this page.
+
   The matching release step uses the same immutable lock commit with `if:
 always()`. Never use `wallstop-organization-builds` as a native GitHub
   `concurrency.group`; the native primitive is repository-scoped and would

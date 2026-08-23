@@ -134,7 +134,14 @@ const path = require("path");
 //     check into the summary FILE, because the workflow runs the harness once
 //     per test mode, so an in-process flag printed the header three times per
 //     job; the test now spawns one process per leg: 18367.
-const TOTAL_BUDGET = 18367;
+// 082 dependabot build-lock ignore contract. Dependabot bumps of the
+//     first-party lock actions broke the copyable-example doc contract on
+//     arrival (PR #447 failed eight checks; the 2026-08-18 bump needed a
+//     silent manual docs realignment), so dependabot.yml now ignores those
+//     actions and a new ci-aggregate-workflow test enforces the ignore list,
+//     converting every future bump into one manual commit across workflows
+//     and docs, plus the 7 lines this entry itself adds: 18398.
+const TOTAL_BUDGET = 18398;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

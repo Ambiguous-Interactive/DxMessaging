@@ -12,9 +12,10 @@ const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 
-// Build-lock pins are bumped by Dependabot, so they are derived here rather than
-// written as literals. What must hold is that each action group stays immutably
-// pinned and identical at every call site.
+// Build-lock pins are excluded from Dependabot (the github-actions ignore block
+// in .github/dependabot.yml), so humans bump them together with the docs examples
+// that copy the same immutable commits. Each group stays immutably pinned and
+// identical at every call site.
 // prettier-ignore
 function resolveLockActionPin(actionNames) {
   const shas = new Map(); const comments = new Set(); const label = actionNames.join(", ");
@@ -447,6 +448,27 @@ test("copyable build-lock documentation follows the runner and App credential co
       source,
       /`BUILD_LOCK_APP_PRIVATE_KEY`/,
       `${relativePath} must list the App key secret`
+    );
+  }
+});
+
+test("dependabot never splits a build-lock bump from the copyable docs examples", () => {
+  const updates = YAML.parse(
+    fs.readFileSync(path.join(REPO_ROOT, ".github", "dependabot.yml"), "utf8")
+  ).updates;
+  const ignore = (updates.find((u) => u["package-ecosystem"] === "github-actions") || {}).ignore;
+  assert.ok(Array.isArray(ignore), "dependabot.yml github-actions block must carry an ignore list");
+  const patterns = ignore.map((entry) => entry["dependency-name"] || "");
+  // prettier-ignore
+  const actions = ["acquire-build-lock", "check-unity-runner-availability", "release-build-lock", "require-current-pr-head", "return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"];
+  for (const name of actions) {
+    const dependency = `${LOCK_ACTION_PREFIX}${name}`;
+    const matched = patterns.some((pattern) =>
+      new RegExp(`^${escapeRegExp(pattern).replaceAll("\\*", ".*")}$`).test(dependency)
+    );
+    assert.ok(
+      matched,
+      `dependabot.yml must ignore ${dependency}; its pin is copied into docs/ops and automation cannot edit both files in one commit`
     );
   }
 });
