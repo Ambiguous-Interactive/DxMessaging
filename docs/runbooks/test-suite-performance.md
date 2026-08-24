@@ -138,31 +138,23 @@ SECOND, persistent run).
   `Run Unity Test Runner`, `Run Unity PlayMode tests`, and `Run Unity standalone
 tests` step durations when the full workflow gets slower.
 
-## Status and follow-ups
+## Current status
 
 Disabling enter-play-mode reload exposed (and we fixed) one latent reload
 dependency: `MessageTypeIdStabilityTests` assumed a fresh message-type-id registry
 each run, but that registry is intentionally process-stable (the design that makes
 "Domain Reload disabled" safe). The test now asserts the persistent invariant.
 
-Open follow-ups (tracked in the remaining-work plan):
+The EditMode de-I/O pass moved repeated reflection and asset setup out of individual tests. The
+no-yield-`[UnityTest]` migration converted every synchronous coroutine test to `[Test]`; the empty
+`pendingMigration` allowlist now makes the drift guard cover the whole `Tests/` tree.
 
-- EditMode is the slower mode locally; de-I/O the EditMode hotspots (cache the
-  reflection walks in `[OneTimeSetUp]`, prefer in-memory `ScriptableObject` over
-  `AssetDatabase.CreateAsset`).
-- The no-yield-`[UnityTest]` -> `[Test]` migration is COMPLETE: 45 all-synchronous
-  PlayMode fixtures were converted whole-file (310 methods), then the 8 fixtures that
-  interleave genuine-coroutine and synchronous tests had their 43 no-yield
-  `[UnityTest]` methods converted per-method. The drift-guard
-  (`TestAttributeContractTests.NoYieldUnityTestsMustBePlainTest`) ships green with an
-  empty `pendingMigration` allowlist, so the rule now covers the entire `Tests/` tree.
-  The per-method drain held PlayMode at 916/0/0 parity.
-- Standalone IL2CPP build: Release C++ is intentionally retained after the
-  Debug/Release measurement above. Runner-local Library reuse is isolated by
-  scope, version, and mode (see
-  [Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock)).
-  Within-leg / cross-runner sharding stays open, gated on the org build lock + Unity
-  license concurrency.
+Standalone keeps Release C++ after the Debug/Release measurement above. Runner-local Library reuse
+is isolated by scope, version, and mode (see
+[Standalone IL2CPP build wall-clock](#standalone-il2cpp-build-wall-clock)). Measurements for #337
+found no safe grouping or cross-runner parallelism win under the organization build lock and Unity
+license limit. Within-leg sharding remains open. Revisit scheduling only with new
+runner-contention or within-leg evidence.
 
 ## See Also
 
