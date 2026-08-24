@@ -4069,25 +4069,13 @@ namespace DxMessaging.Core.MessageBus
             if (untargetedPostHandlers != null && untargetedPostHandlers.handlers.Count > 0)
             {
                 Touch(untargetedPostHandlers, touchTick);
-                // SYNC: Inlined copy of the AcquireDispatchSnapshotFast steady-state branch.
-                DebugAssertAcquireFastPrecondition(untargetedPostHandlers);
-                DispatchState postState = untargetedPostHandlers.dispatchState;
-                if (postState != null && !postState.hasPending && postState.active.IsInitialized)
-                {
-                    untargetedPostHandlers.lastTouchTicks = _tickCounter;
-                    postState.snapshotEmissionId = emissionId;
-                    untargetedPostSnapshot = postState.active;
-                }
-                else
-                {
-                    untargetedPostSnapshot = AcquireDispatchSnapshot<TMessage>(
-                        this,
-                        untargetedPostHandlers,
-                        UntargetedPostSlot,
-                        emissionId,
-                        default
-                    );
-                }
+                untargetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                    this,
+                    untargetedPostHandlers,
+                    UntargetedPostSlot,
+                    emissionId,
+                    default
+                );
             }
 
             InterceptorCache<object> untargetedInterceptors = plan.interceptorCache;
@@ -5659,26 +5647,13 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            // SYNC: Inlined copy of the AcquireDispatchSnapshotFast steady-state branch.
-            DebugAssertAcquireFastPrecondition(sortedHandlers);
-            DispatchState handleState = sortedHandlers.dispatchState;
-            DispatchSnapshot snapshot;
-            if (handleState != null && !handleState.hasPending && handleState.active.IsInitialized)
-            {
-                sortedHandlers.lastTouchTicks = _tickCounter;
-                handleState.snapshotEmissionId = emissionId;
-                snapshot = handleState.active;
-            }
-            else
-            {
-                snapshot = AcquireDispatchSnapshot<TMessage>(
-                    this,
-                    sortedHandlers,
-                    UntargetedHandleSlot,
-                    emissionId,
-                    default
-                );
-            }
+            DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
+                this,
+                sortedHandlers,
+                UntargetedHandleSlot,
+                emissionId,
+                default
+            );
 
             // Flat dispatch; see DispatchFlatSnapshot for the frozen-array
             // semantics, the reset-generation guard, and the
@@ -6750,8 +6725,6 @@ namespace DxMessaging.Core.MessageBus
         )
             where TMessage : IMessage
         {
-            // SYNC: Keep this branch aligned with the inlined copies in
-            // UntargetedBroadcast and DispatchUntargetedHandlePhase.
             DebugAssertAcquireFastPrecondition(handlers);
             DispatchState state = handlers.dispatchState;
             if (state != null && !state.hasPending && state.active.IsInitialized)
