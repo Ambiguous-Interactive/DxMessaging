@@ -13,6 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 
 function Set-GeneratedCppIndex {
     param([Parameter(Mandatory = $true)] [string[]]$Paths)
@@ -307,7 +308,8 @@ function Add-NativeLayoutInventory {
         [Parameter(Mandatory = $true)] [string]$ProjectRoot,
         [Parameter(Mandatory = $true)] [string]$ArtifactsRoot,
         [Parameter(Mandatory = $true)] [string[]]$Symbols,
-        [Parameter(Mandatory = $true)] [object[]]$Methods
+        [Parameter(Mandatory = $true)] [object[]]$Methods,
+        [string[]]$DumpbinPaths
     )
 
     $playerDir = Join-Path $ProjectRoot 'Build\DxmTestPlayer'
@@ -372,7 +374,15 @@ function Add-NativeLayoutInventory {
         $objectFiles |
             Where-Object {
                 $objectName = $_.Name
-                @($sourceBaseNames | Where-Object { $objectName.Contains($_) }).Count -gt 0
+                @(
+                    $sourceBaseNames |
+                        Where-Object {
+                            $objectName.IndexOf(
+                                $_,
+                                [System.StringComparison]::OrdinalIgnoreCase
+                            ) -ge 0
+                        }
+                ).Count -gt 0
             } |
             Sort-Object -Property FullName
     )
@@ -383,20 +393,62 @@ function Add-NativeLayoutInventory {
         $inventory.Add("object=$($objectFile.FullName) bytes=$($objectFile.Length)")
     }
 
-    $visualStudioRoots = @(
-        $env:ProgramFiles,
-        ${env:ProgramFiles(x86)}
-    ) | Where-Object { ![string]::IsNullOrWhiteSpace($_) }
-    $dumpbins = [System.Collections.Generic.List[object]]::new()
-    foreach ($visualStudioRoot in $visualStudioRoots) {
-        $dumpbinPattern = Join-Path $visualStudioRoot (
-            'Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe'
+    $resolvedDumpbins = @()
+    if ($null -ne $DumpbinPaths -and $DumpbinPaths.Count -gt 0) {
+        $resolvedDumpbins = @(
+            $DumpbinPaths |
+                ForEach-Object { Get-Item -LiteralPath $_ }
         )
-        foreach ($dumpbin in @(Get-ChildItem -Path $dumpbinPattern -File -ErrorAction SilentlyContinue)) {
-            $dumpbins.Add($dumpbin)
-        }
     }
-    $resolvedDumpbins = @($dumpbins | Sort-Object -Property FullName -Descending -Unique)
+    else {
+        $vsWherePath = Join-Path ${env:ProgramFiles(x86)} (
+            'Microsoft Visual Studio\Installer\vswhere.exe'
+        )
+        if (!(Test-Path -LiteralPath $vsWherePath -PathType Leaf)) {
+            throw "vswhere.exe was not found at $vsWherePath."
+        }
+        $vsWhereOutput = @(
+            & $vsWherePath -latest -products '*' -requiresAny `
+                -requires 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' `
+                -requires 'Microsoft.VisualStudio.Workload.VCTools' `
+                -property 'installationPath' 2>$null
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw "vswhere exited $LASTEXITCODE while locating dumpbin.exe."
+        }
+        $installRoots = @(
+            $vsWhereOutput |
+                ForEach-Object { "$($_)".Trim() } |
+                Where-Object {
+                    ![string]::IsNullOrWhiteSpace($_) -and
+                    [System.IO.Path]::IsPathRooted($_)
+                }
+        )
+        if ($installRoots.Count -ne 1) {
+            throw "Expected vswhere to return one Visual Studio root; found $($installRoots.Count)."
+        }
+        $toolsetRoot = Join-Path $installRoots[0] 'VC\Tools\MSVC'
+        $toolsets = @(
+            Get-ChildItem -LiteralPath $toolsetRoot -Directory -ErrorAction SilentlyContinue |
+                Sort-Object -Property @{ Expression = {
+                    $parsed = $null
+                    if ([version]::TryParse($_.Name, [ref]$parsed)) {
+                        $parsed
+                    }
+                    else {
+                        [version]'0.0'
+                    }
+                } }, Name -Descending
+        )
+        $resolvedDumpbins = @(
+            $toolsets |
+                ForEach-Object {
+                    Get-Item `
+                        -LiteralPath (Join-Path $_.FullName 'bin\Hostx64\x64\dumpbin.exe') `
+                        -ErrorAction SilentlyContinue
+                }
+        )
+    }
     $inventory.Add('')
     $inventory.Add("dumpbinCount=$($resolvedDumpbins.Count)")
     foreach ($dumpbin in $resolvedDumpbins) {
@@ -406,10 +458,41 @@ function Add-NativeLayoutInventory {
         throw 'No x64 dumpbin.exe was found under the installed Visual Studio toolsets.'
     }
 
-    $headers = @(& $resolvedDumpbins[0].FullName /headers $gameAssemblies[0].FullName 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "dumpbin /headers exited $LASTEXITCODE for $($gameAssemblies[0].FullName)."
+    $headers = @()
+    $selectedDumpbin = $null
+    foreach ($dumpbin in $resolvedDumpbins) {
+        try {
+            $candidateHeaders = @(& $dumpbin.FullName /headers $gameAssemblies[0].FullName 2>&1)
+        }
+        catch {
+            $inventory.Add(
+                "dumpbinFailure=$($dumpbin.FullName) exception=$($_.Exception.GetType().Name)"
+            )
+            continue
+        }
+        $commandSucceeded = $?
+        $exitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+        $candidateExitCode =
+            if ($null -ne $exitCodeVariable) {
+                $exitCodeVariable.Value
+            }
+            elseif ($commandSucceeded) {
+                0
+            }
+            else {
+                1
+            }
+        if ($commandSucceeded -and $candidateExitCode -eq 0) {
+            $selectedDumpbin = $dumpbin
+            $headers = $candidateHeaders
+            break
+        }
+        $inventory.Add("dumpbinFailure=$($dumpbin.FullName) exitCode=$candidateExitCode")
     }
+    if ($null -eq $selectedDumpbin) {
+        throw "No discovered dumpbin.exe could read $($gameAssemblies[0].FullName)."
+    }
+    $inventory.Add("selectedDumpbin=$($selectedDumpbin.FullName)")
     $inventory.Add('')
     $inventory.Add('gameAssemblyHeaders:')
     foreach ($line in $headers) {
@@ -649,6 +732,55 @@ if ($SelfTestOnly) {
                 throw "Dispatch codegen integration evidence omitted '$expectedEvidence'."
             }
         }
+
+        $playerDir = Join-Path $integrationTestRoot 'Build\DxmTestPlayer'
+        $backupDir = Join-Path $playerDir 'DxmTestPlayer_BackUpThisFolder_ButDontShipItWithYourGame'
+        New-Item -ItemType Directory -Path $backupDir | Out-Null
+        'fake native image' | Set-Content -LiteralPath (Join-Path $playerDir 'GameAssembly.dll')
+        @(
+            '0000000000001000 16 OtherSymbol',
+            '0000000000002000 32 InventoryProbeSymbol'
+        ) | Set-Content -LiteralPath (Join-Path $backupDir 'SymbolMap')
+        'fake pdb' | Set-Content -LiteralPath (Join-Path $backupDir 'GameAssembly.pdb')
+        'fake object' | Set-Content -LiteralPath (Join-Path $integrationCppRoot 'gEnErAtEd.cpp.obj')
+        $fakeDumpbin = Join-Path $integrationTestRoot 'fake-dumpbin.ps1'
+        $failedDumpbin = Join-Path $integrationTestRoot 'failed-dumpbin.ps1'
+        $throwingDumpbin = Join-Path $integrationTestRoot 'throwing-dumpbin.ps1'
+        'exit 7' | Set-Content -LiteralPath $failedDumpbin -Encoding utf8
+        'throw "synthetic dumpbin launch failure"' |
+            Set-Content -LiteralPath $throwingDumpbin -Encoding utf8
+        @(
+            'param([string]$Option, [string]$Image)',
+            'if ($Option -ne "/headers" -or !(Test-Path -LiteralPath $Image)) { exit 1 }',
+            'Write-Output "PE header proof"',
+            'exit 0'
+        ) | Set-Content -LiteralPath $fakeDumpbin -Encoding utf8
+        Add-NativeLayoutInventory `
+            -ProjectRoot $integrationTestRoot `
+            -ArtifactsRoot $integrationArtifacts `
+            -Symbols @('InventoryProbeSymbol') `
+            -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+            -DumpbinPaths @($failedDumpbin, $throwingDumpbin, $fakeDumpbin)
+        $nativeInventory = Get-Content `
+            -LiteralPath (Join-Path $integrationArtifacts 'native-layout-inventory.txt') `
+            -Raw
+        foreach (
+            $expectedInventoryEvidence in @(
+                'symbolMapMatchCount=1',
+                'InventoryProbeSymbol',
+                'pdbFileCount=1',
+                'matchingObjectFileCount=1',
+                'exitCode=7',
+                'dumpbinFailure=',
+                'selectedDumpbin=',
+                'PE header proof'
+            )
+        ) {
+            if (!$nativeInventory.Contains($expectedInventoryEvidence)) {
+                throw "Native layout inventory omitted '$expectedInventoryEvidence'."
+            }
+        }
+        Write-Host 'Native layout inventory self-test passed.'
         Write-Host 'Dispatch codegen integration self-test passed.'
     }
     finally {

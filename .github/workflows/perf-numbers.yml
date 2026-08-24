@@ -1024,15 +1024,20 @@ jobs:
               -Encoding utf8
           Write-Host "Captured $($capturedMethods.Count) exact typed-deregistration C++ method bodies."
 
-      - name: Capture dispatch-route codegen
+      - name: Capture dispatch-route codegen and native layout
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'comparisons' && steps.run_tests.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
         run: |
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-comparisons'
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-comparisons'
           ./scripts/unity/capture-dispatch-codegen.ps1 `
             -ProjectPath $projectPath `
-            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-comparisons'
+            -ArtifactsPath $artifactsPath
+          $nativeInventory = Join-Path $artifactsPath 'native-layout-inventory.txt'
+          if (!(Test-Path -LiteralPath $nativeInventory -PathType Leaf)) {
+            throw "Native layout inventory was not written to $nativeInventory."
+          }
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}
