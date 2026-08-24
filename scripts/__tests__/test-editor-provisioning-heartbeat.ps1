@@ -488,10 +488,16 @@ while ($true) {
     $orphanPidPath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-orphan-$([Guid]::NewGuid().ToString('N')).pid"
     $orphanPidLiteral = $orphanPidPath.Replace("'", "''")
     $orphanPidStagingLiteral = "$orphanPidPath.tmp".Replace("'", "''")
+    # Split the stall window around nested pwsh startup and PID publication. Without these
+    # markers, cold startup can consume the window and let the wrapper kill the parent tree before
+    # the probe reaches the quick-exit state that this case is meant to exercise. Eight seconds is
+    # the same cold-start margin used by the wrapper stall-path probe above.
     $orphanParent = @"
+Write-Output 'starting'
 `$child = Start-Process -FilePath '$pwshPath' -ArgumentList @('-NoLogo', '-NoProfile', '-EncodedCommand', '$descendantCode') -PassThru
 [IO.File]::WriteAllText('$orphanPidStagingLiteral', [string]`$child.Id)
 [IO.File]::Move('$orphanPidStagingLiteral', '$orphanPidLiteral')
+Write-Output 'published'
 "@
     $orphanAttempts = 0
     $orphanResult = $null
@@ -505,7 +511,7 @@ while ($true) {
             Invoke-UnityCliCaptureWithTimeout `
                 -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $orphanParent)) `
                 -TimeoutSeconds 10 `
-                -StallSeconds 1
+                -StallSeconds 8
         }
     } catch {
         $orphanSafetyErrorEscaped = ($_.Exception.Message -match 'safe process-tree termination could not be confirmed')
