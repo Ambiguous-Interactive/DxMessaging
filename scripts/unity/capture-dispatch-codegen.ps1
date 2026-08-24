@@ -326,34 +326,67 @@ function Add-NativeLayoutInventory {
     if ($gameAssemblies.Count -ne 1) {
         throw "Expected one GameAssembly.dll under $playerDir; found $($gameAssemblies.Count)."
     }
-    if ($symbolMaps.Count -ne 1) {
-        throw "Expected one SymbolMap under $playerDir; found $($symbolMaps.Count)."
+    # Investigation (2026-08-24): Unity 6000.5 Windows Standalone emits
+    # GameAssembly.pdb without a SymbolMap. Both layouts are valid; the PDB remains mandatory below.
+    if ($symbolMaps.Count -gt 1) {
+        throw "Expected at most one SymbolMap under $playerDir; found $($symbolMaps.Count)."
     }
 
     $inventory = [System.Collections.Generic.List[string]]::new()
     $inventory.Add("gameAssembly=$($gameAssemblies[0].FullName)")
     $inventory.Add("gameAssemblyBytes=$($gameAssemblies[0].Length)")
-    $inventory.Add("symbolMap=$($symbolMaps[0].FullName)")
-    $inventory.Add("symbolMapBytes=$($symbolMaps[0].Length)")
+    $inventory.Add("symbolMapCount=$($symbolMaps.Count)")
+    if ($symbolMaps.Count -eq 1) {
+        $inventory.Add("symbolMap=$($symbolMaps[0].FullName)")
+        $inventory.Add("symbolMapBytes=$($symbolMaps[0].Length)")
+    }
+    else {
+        $inventory.Add('symbolMap=absent')
+    }
 
     $pdbFiles = @(
         Get-ChildItem -LiteralPath $playerDir -File -Recurse -Filter '*.pdb' |
             Sort-Object -Property FullName
     )
+    $gameAssemblyPdbs = @(
+        $pdbFiles |
+            Where-Object {
+                [string]::Equals(
+                    $_.Name,
+                    'GameAssembly.pdb',
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            }
+    )
+    if ($gameAssemblyPdbs.Count -ne 1) {
+        throw "Expected one GameAssembly.pdb under $playerDir; found $($gameAssemblyPdbs.Count)."
+    }
+    if ($gameAssemblyPdbs[0].Length -le 0) {
+        throw "Expected a non-empty GameAssembly.pdb at $($gameAssemblyPdbs[0].FullName)."
+    }
     $inventory.Add("pdbFileCount=$($pdbFiles.Count)")
+    $inventory.Add("gameAssemblyPdb=$($gameAssemblyPdbs[0].FullName)")
+    $inventory.Add("gameAssemblyPdbBytes=$($gameAssemblyPdbs[0].Length)")
     foreach ($pdbFile in $pdbFiles) {
         $inventory.Add("pdb=$($pdbFile.FullName) bytes=$($pdbFile.Length)")
     }
 
     $inventory.Add('')
     $inventory.Add('symbolMapHead:')
-    foreach ($line in @(Get-Content -LiteralPath $symbolMaps[0].FullName -TotalCount 12)) {
-        $inventory.Add($line)
+    if ($symbolMaps.Count -eq 1) {
+        foreach ($line in @(Get-Content -LiteralPath $symbolMaps[0].FullName -TotalCount 12)) {
+            $inventory.Add($line)
+        }
+    }
+    else {
+        $inventory.Add('(absent; use GameAssembly.pdb for native symbols)')
     }
     $inventory.Add('')
     $inventory.Add('symbolMapMatches:')
     $symbolMatches = @(
-        Select-String -LiteralPath $symbolMaps[0].FullName -SimpleMatch -Pattern $Symbols
+        if ($symbolMaps.Count -eq 1) {
+            Select-String -LiteralPath $symbolMaps[0].FullName -SimpleMatch -Pattern $Symbols
+        }
     )
     $inventory.Add("symbolMapMatchCount=$($symbolMatches.Count)")
     foreach ($match in $symbolMatches) {
@@ -737,11 +770,13 @@ if ($SelfTestOnly) {
         $backupDir = Join-Path $playerDir 'DxmTestPlayer_BackUpThisFolder_ButDontShipItWithYourGame'
         New-Item -ItemType Directory -Path $backupDir | Out-Null
         'fake native image' | Set-Content -LiteralPath (Join-Path $playerDir 'GameAssembly.dll')
+        $primarySymbolMapPath = Join-Path $backupDir 'SymbolMap'
         @(
             '0000000000001000 16 OtherSymbol',
             '0000000000002000 32 InventoryProbeSymbol'
-        ) | Set-Content -LiteralPath (Join-Path $backupDir 'SymbolMap')
-        'fake pdb' | Set-Content -LiteralPath (Join-Path $backupDir 'GameAssembly.pdb')
+        ) | Set-Content -LiteralPath $primarySymbolMapPath
+        $gameAssemblyPdbPath = Join-Path $backupDir 'GameAssembly.pdb'
+        'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
         'fake object' | Set-Content -LiteralPath (Join-Path $integrationCppRoot 'gEnErAtEd.cpp.obj')
         $fakeDumpbin = Join-Path $integrationTestRoot 'fake-dumpbin.ps1'
         $failedDumpbin = Join-Path $integrationTestRoot 'failed-dumpbin.ps1'
@@ -766,9 +801,11 @@ if ($SelfTestOnly) {
             -Raw
         foreach (
             $expectedInventoryEvidence in @(
+                'symbolMapCount=1',
                 'symbolMapMatchCount=1',
                 'InventoryProbeSymbol',
                 'pdbFileCount=1',
+                'gameAssemblyPdb=',
                 'matchingObjectFileCount=1',
                 'exitCode=7',
                 'dumpbinFailure=',
@@ -780,6 +817,108 @@ if ($SelfTestOnly) {
                 throw "Native layout inventory omitted '$expectedInventoryEvidence'."
             }
         }
+        Remove-Item -LiteralPath $primarySymbolMapPath
+        Add-NativeLayoutInventory `
+            -ProjectRoot $integrationTestRoot `
+            -ArtifactsRoot $integrationArtifacts `
+            -Symbols @('InventoryProbeSymbol') `
+            -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+            -DumpbinPaths @($fakeDumpbin)
+        $nativeInventoryWithoutSymbolMap = Get-Content `
+            -LiteralPath (Join-Path $integrationArtifacts 'native-layout-inventory.txt') `
+            -Raw
+        foreach (
+            $expectedNoSymbolMapEvidence in @(
+                'symbolMapCount=0',
+                'symbolMap=absent',
+                'symbolMapMatchCount=0',
+                'gameAssemblyPdb=',
+                'PE header proof'
+            )
+        ) {
+            if (!$nativeInventoryWithoutSymbolMap.Contains($expectedNoSymbolMapEvidence)) {
+                throw "Native layout inventory without SymbolMap omitted '$expectedNoSymbolMapEvidence'."
+            }
+        }
+
+        function Assert-NativeInventoryFailure {
+            param(
+                [Parameter(Mandatory = $true)] [scriptblock]$Operation,
+                [Parameter(Mandatory = $true)] [string]$ExpectedMessage
+            )
+
+            $failureMessage = $null
+            try {
+                & $Operation
+            }
+            catch {
+                $failureMessage = $_.Exception.Message
+            }
+            if ([string]::IsNullOrWhiteSpace($failureMessage)) {
+                throw "Native layout inventory unexpectedly accepted '$ExpectedMessage'."
+            }
+            if (!$failureMessage.Contains($ExpectedMessage)) {
+                throw (
+                    "Native layout inventory failure '$failureMessage' did not contain " +
+                    "'$ExpectedMessage'."
+                )
+            }
+        }
+
+        [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@())
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'Expected a non-empty GameAssembly.pdb' `
+            -Operation {
+                Add-NativeLayoutInventory `
+                    -ProjectRoot $integrationTestRoot `
+                    -ArtifactsRoot $integrationArtifacts `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+                    -DumpbinPaths @($fakeDumpbin)
+            }
+        'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
+
+        Remove-Item -LiteralPath $gameAssemblyPdbPath
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'Expected one GameAssembly.pdb under' `
+            -Operation {
+                Add-NativeLayoutInventory `
+                    -ProjectRoot $integrationTestRoot `
+                    -ArtifactsRoot $integrationArtifacts `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+                    -DumpbinPaths @($fakeDumpbin)
+            }
+        'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
+
+        $alternateEvidenceDir = Join-Path $playerDir 'AlternateEvidence'
+        New-Item -ItemType Directory -Path $alternateEvidenceDir | Out-Null
+        $alternatePdbPath = Join-Path $alternateEvidenceDir 'GameAssembly.pdb'
+        'second fake pdb' | Set-Content -LiteralPath $alternatePdbPath
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'Expected one GameAssembly.pdb under' `
+            -Operation {
+                Add-NativeLayoutInventory `
+                    -ProjectRoot $integrationTestRoot `
+                    -ArtifactsRoot $integrationArtifacts `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+                    -DumpbinPaths @($fakeDumpbin)
+            }
+        Remove-Item -LiteralPath $alternatePdbPath
+
+        'first map' | Set-Content -LiteralPath $primarySymbolMapPath
+        'second map' | Set-Content -LiteralPath (Join-Path $alternateEvidenceDir 'SymbolMap')
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'Expected at most one SymbolMap under' `
+            -Operation {
+                Add-NativeLayoutInventory `
+                    -ProjectRoot $integrationTestRoot `
+                    -ArtifactsRoot $integrationArtifacts `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+                    -DumpbinPaths @($fakeDumpbin)
+            }
         Write-Host 'Native layout inventory self-test passed.'
         Write-Host 'Dispatch codegen integration self-test passed.'
     }
