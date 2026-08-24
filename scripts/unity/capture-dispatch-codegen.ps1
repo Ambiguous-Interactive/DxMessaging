@@ -303,6 +303,20 @@ function Add-GeneratedMethodEvidence {
     }
 }
 
+function Invoke-NativeCommandOutput {
+    param(
+        [Parameter(Mandatory = $true)] [string]$FilePath,
+        [Parameter(Mandatory = $true)] [string[]]$Arguments,
+        [Parameter(Mandatory = $true)] [ref]$ExitCode
+    )
+
+    & $FilePath @Arguments 2>&1
+    # Capture this before returning control to any downstream pipeline cmdlet.
+    # $LASTEXITCODE is the native program's status; `$?` at the caller describes
+    # the complete PowerShell pipeline instead.
+    $ExitCode.Value = $LASTEXITCODE
+}
+
 function Add-NativeLayoutInventory {
     param(
         [Parameter(Mandatory = $true)] [string]$ProjectRoot,
@@ -630,7 +644,11 @@ function Add-NativeLayoutInventory {
     $capturedNativeSymbolMatches = [System.Collections.Generic.List[object]]::new()
     $disassemblyLineCount = 0
     $nativeSymbolLineMatchCount = 0
-    & $selectedDumpbin.FullName /disasm:nobytes $gameAssemblies[0].FullName 2>&1 |
+    $disassemblyExitCode = $null
+    Invoke-NativeCommandOutput `
+        -FilePath $selectedDumpbin.FullName `
+        -Arguments @('/disasm:nobytes', $gameAssemblies[0].FullName) `
+        -ExitCode ([ref]$disassemblyExitCode) |
         ForEach-Object {
             $disassemblyLineCount++
             $_
@@ -651,21 +669,10 @@ function Add-NativeLayoutInventory {
                 $capturedNativeSymbolMatches.Add($_)
             }
         }
-    $disassemblySucceeded = $?
-    $disassemblyExitCodeVariable = Get-Variable `
-        -Name LASTEXITCODE `
-        -ErrorAction SilentlyContinue
-    $disassemblyExitCode =
-        if ($null -ne $disassemblyExitCodeVariable) {
-            $disassemblyExitCodeVariable.Value
-        }
-        elseif ($disassemblySucceeded) {
-            0
-        }
-        else {
-            1
-        }
-    if (!$disassemblySucceeded -or $disassemblyExitCode -ne 0) {
+    if ($null -eq $disassemblyExitCode) {
+        throw "dumpbin /disasm:nobytes did not report an exit code for $($gameAssemblies[0].FullName)."
+    }
+    if ($disassemblyExitCode -ne 0) {
         throw "dumpbin /disasm:nobytes exited $disassemblyExitCode for $($gameAssemblies[0].FullName)."
     }
     if ($disassemblyLineCount -eq 0) {
@@ -832,6 +839,37 @@ finally {
 }
 
 if ($SelfTestOnly) {
+    $nativeProbeCommand = 'Write-Output "NativePipelineProbeSymbol"; exit 9'
+    $nativeProbeEncodedCommand = [System.Convert]::ToBase64String(
+        [System.Text.Encoding]::Unicode.GetBytes($nativeProbeCommand)
+    )
+    $nativeProbeExecutable = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $nativeSuccessCommand = [System.Convert]::ToBase64String(
+        [System.Text.Encoding]::Unicode.GetBytes('exit 0')
+    )
+    & $nativeProbeExecutable -NoLogo -NoProfile -EncodedCommand $nativeSuccessCommand
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Native exit-code self-test could not establish the stale-success precondition.'
+    }
+    $nativeProbeExitCode = $null
+    $nativeProbeMatches = @(
+        Invoke-NativeCommandOutput `
+            -FilePath $nativeProbeExecutable `
+            -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', $nativeProbeEncodedCommand) `
+            -ExitCode ([ref]$nativeProbeExitCode) |
+            Select-String `
+                -SimpleMatch `
+                -CaseSensitive `
+                -Pattern 'NativePipelineProbeSymbol'
+    )
+    if ($nativeProbeExitCode -ne 9 -or $nativeProbeMatches.Count -ne 1) {
+        throw (
+            'Native exit-code self-test failed: expected exit 9 and one streamed match, ' +
+            "found exit $nativeProbeExitCode and $($nativeProbeMatches.Count) matches."
+        )
+    }
+    Write-Host 'Native exit-code capture self-test passed.'
+
     $integrationTestRoot = Join-Path (
         [System.IO.Path]::GetTempPath()
     ) ("dxm-dispatch-codegen-integration-{0}" -f [guid]::NewGuid().ToString('N'))
