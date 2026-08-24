@@ -1038,6 +1038,14 @@ jobs:
           if (!(Test-Path -LiteralPath $nativeInventory -PathType Leaf)) {
             throw "Native layout inventory was not written to $nativeInventory."
           }
+          $nativeLineMap = Join-Path $artifactsPath 'native-line-map.txt'
+          if (!(Test-Path -LiteralPath $nativeLineMap -PathType Leaf)) {
+            throw "Native source-line map was not written to $nativeLineMap."
+          }
+          $nativeLineMapEvidence = Get-Content -LiteralPath $nativeLineMap -Raw
+          if (!$nativeLineMapEvidence.Contains('requiredTargetsResolved=True')) {
+            throw "Native source-line map did not resolve every required target."
+          }
           $nativeDisassembly = Join-Path $artifactsPath 'native-disassembly.txt'
           if (!(Test-Path -LiteralPath $nativeDisassembly -PathType Leaf)) {
             throw "Native disassembly was not written to $nativeDisassembly."

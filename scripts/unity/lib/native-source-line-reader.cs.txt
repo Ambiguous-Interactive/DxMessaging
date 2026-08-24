@@ -1,0 +1,296 @@
+// cspell:ignore dbghelp IMAGEHLP LINEW nobytes syms undname
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+
+public sealed class DxMessagingNativeSourceTarget
+{
+    public string Id { get; set; }
+    public string Path { get; set; }
+    public uint RequestedLine { get; set; }
+    public uint RangeStartLine { get; set; }
+    public uint RangeEndLine { get; set; }
+}
+
+public sealed class DxMessagingNativeSourceLine
+{
+    public string Target { get; set; }
+    public string SourcePath { get; set; }
+    public string Relation { get; set; }
+    public uint RequestedLine { get; set; }
+    public uint SelectedLine { get; set; }
+    public ulong Address { get; set; }
+    public ulong RelativeVirtualAddress { get; set; }
+}
+
+public sealed class DxMessagingNativeSourceLineResult
+{
+    public string DbgHelpPath { get; set; }
+    public string DbgHelpVersion { get; set; }
+    public ulong ModuleBase { get; set; }
+    public DxMessagingNativeSourceLine[] Lines { get; set; }
+}
+
+public static class DxMessagingNativeSourceLineReader
+{
+    private const uint SymOptUndname = 0x00000002;
+    private const uint SymOptLoadLines = 0x00000010;
+    private const uint SymOptExactSymbols = 0x00000400;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ImageHlpLineW64
+    {
+        public uint SizeOfStruct;
+        public IntPtr Key;
+        public uint LineNumber;
+        public IntPtr FileName;
+        public ulong Address;
+    }
+
+    [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SymInitializeW(
+        IntPtr process,
+        string userSearchPath,
+        [MarshalAs(UnmanagedType.Bool)] bool invadeProcess);
+
+    [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern ulong SymLoadModuleExW(
+        IntPtr process,
+        IntPtr file,
+        string imageName,
+        string moduleName,
+        ulong baseOfDll,
+        uint dllSize,
+        IntPtr data,
+        uint flags);
+
+    [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SymGetLineFromNameW64(
+        IntPtr process,
+        string moduleName,
+        string fileName,
+        uint lineNumber,
+        out int displacement,
+        ref ImageHlpLineW64 line);
+
+    [DllImport("dbghelp.dll")]
+    private static extern uint SymSetOptions(uint options);
+
+    [DllImport("dbghelp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SymCleanup(IntPtr process);
+
+    public static void ValidateInteropLayout()
+    {
+        if (IntPtr.Size != 8)
+        {
+            throw new InvalidOperationException("The native source-line reader requires x64.");
+        }
+        AssertOffset("SizeOfStruct", 0);
+        AssertOffset("Key", 8);
+        AssertOffset("LineNumber", 16);
+        AssertOffset("FileName", 24);
+        AssertOffset("Address", 32);
+        if (Marshal.SizeOf(typeof(ImageHlpLineW64)) != 40)
+        {
+            throw new InvalidOperationException("IMAGEHLP_LINEW64 size is not 40 bytes on x64.");
+        }
+    }
+
+    public static DxMessagingNativeSourceLineResult Read(
+        string imagePath,
+        string pdbPath,
+        DxMessagingNativeSourceTarget[] targets)
+    {
+        ValidateInteropLayout();
+        IntPtr process = Process.GetCurrentProcess().Handle;
+        string symbolSearchPath = Path.GetDirectoryName(pdbPath);
+        SymSetOptions(SymOptUndname | SymOptLoadLines | SymOptExactSymbols);
+        if (!SymInitializeW(process, symbolSearchPath, false))
+        {
+            throw NativeFailure("SymInitializeW");
+        }
+
+        bool readSucceeded = false;
+        try
+        {
+            ulong moduleBase = SymLoadModuleExW(
+                process,
+                IntPtr.Zero,
+                imagePath,
+                null,
+                0,
+                0,
+                IntPtr.Zero,
+                0);
+            if (moduleBase == 0)
+            {
+                throw NativeFailure("SymLoadModuleExW");
+            }
+
+            List<DxMessagingNativeSourceLine> lines = new List<DxMessagingNativeSourceLine>();
+            foreach (DxMessagingNativeSourceTarget target in targets)
+            {
+                DxMessagingNativeSourceLine exact = TryReadLine(process, moduleBase, target, target.RequestedLine);
+                if (exact != null && exact.SelectedLine == target.RequestedLine)
+                {
+                    exact.Relation = "exact";
+                    lines.Add(exact);
+                    continue;
+                }
+
+                DxMessagingNativeSourceLine preceding = null;
+                DxMessagingNativeSourceLine following = null;
+                if (exact != null)
+                {
+                    if (exact.SelectedLine < target.RequestedLine)
+                    {
+                        preceding = exact;
+                    }
+                    else if (exact.SelectedLine > target.RequestedLine)
+                    {
+                        following = exact;
+                    }
+                }
+                uint maximumDistance = Math.Max(
+                    target.RequestedLine - target.RangeStartLine,
+                    target.RangeEndLine - target.RequestedLine);
+                for (uint distance = 1; distance <= maximumDistance; distance++)
+                {
+                    if (preceding == null && target.RequestedLine >= target.RangeStartLine + distance)
+                    {
+                        DxMessagingNativeSourceLine candidate = TryReadLine(
+                            process,
+                            moduleBase,
+                            target,
+                            target.RequestedLine - distance);
+                        if (candidate != null && candidate.SelectedLine < target.RequestedLine)
+                        {
+                            preceding = candidate;
+                        }
+                    }
+                    if (following == null && target.RequestedLine + distance <= target.RangeEndLine)
+                    {
+                        DxMessagingNativeSourceLine candidate = TryReadLine(
+                            process,
+                            moduleBase,
+                            target,
+                            target.RequestedLine + distance);
+                        if (candidate != null && candidate.SelectedLine > target.RequestedLine)
+                        {
+                            following = candidate;
+                        }
+                    }
+                    if (preceding != null && following != null)
+                    {
+                        break;
+                    }
+                }
+                if (preceding != null)
+                {
+                    preceding.Relation = "preceding";
+                    lines.Add(preceding);
+                }
+                if (following != null)
+                {
+                    following.Relation = "following";
+                    lines.Add(following);
+                }
+            }
+
+            ProcessModule dbgHelp = Process.GetCurrentProcess().Modules
+                .Cast<ProcessModule>()
+                .FirstOrDefault(module => String.Equals(
+                    module.ModuleName,
+                    "dbghelp.dll",
+                    StringComparison.OrdinalIgnoreCase));
+            DxMessagingNativeSourceLineResult result = new DxMessagingNativeSourceLineResult
+            {
+                DbgHelpPath = dbgHelp == null ? "unknown" : dbgHelp.FileName,
+                DbgHelpVersion = dbgHelp == null ? "unknown" : dbgHelp.FileVersionInfo.FileVersion,
+                ModuleBase = moduleBase,
+                Lines = lines.ToArray()
+            };
+            readSucceeded = true;
+            return result;
+        }
+        finally
+        {
+            if (!SymCleanup(process) && readSucceeded)
+            {
+                throw NativeFailure("SymCleanup");
+            }
+        }
+    }
+
+    private static DxMessagingNativeSourceLine TryReadLine(
+        IntPtr process,
+        ulong moduleBase,
+        DxMessagingNativeSourceTarget target,
+        uint requestedLine)
+    {
+        ImageHlpLineW64 line = new ImageHlpLineW64();
+        line.SizeOfStruct = (uint)Marshal.SizeOf(typeof(ImageHlpLineW64));
+        int displacement;
+        if (!SymGetLineFromNameW64(
+                process,
+                null,
+                target.Path,
+                requestedLine,
+                out displacement,
+                ref line))
+        {
+            return null;
+        }
+        string sourcePath = Marshal.PtrToStringUni(line.FileName);
+        if (!String.Equals(
+                NormalizePath(sourcePath),
+                NormalizePath(target.Path),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        if (
+            line.LineNumber < target.RangeStartLine ||
+            line.LineNumber > target.RangeEndLine ||
+            line.Address < moduleBase)
+        {
+            return null;
+        }
+        return new DxMessagingNativeSourceLine
+        {
+            Target = target.Id,
+            SourcePath = sourcePath,
+            RequestedLine = target.RequestedLine,
+            SelectedLine = line.LineNumber,
+            Address = line.Address,
+            RelativeVirtualAddress = line.Address - moduleBase
+        };
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return String.IsNullOrWhiteSpace(path) ? String.Empty : path.Replace('/', '\\');
+    }
+
+    private static void AssertOffset(string field, int expected)
+    {
+        int actual = Marshal.OffsetOf(typeof(ImageHlpLineW64), field).ToInt32();
+        if (actual != expected)
+        {
+            throw new InvalidOperationException(
+                "IMAGEHLP_LINEW64." + field + " offset " + actual + " did not equal " + expected + ".");
+        }
+    }
+
+    private static Exception NativeFailure(string operation)
+    {
+        return new InvalidOperationException(
+            operation + " failed with Windows error " + Marshal.GetLastWin32Error() + ".");
+    }
+}

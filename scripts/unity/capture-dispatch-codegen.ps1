@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# cspell:ignore disasm gshared nobytes pdbpath
+# cspell:ignore dbghelp disasm gshared nobytes pdbpath
 [CmdletBinding()]
 param(
     [string]$ProjectPath,
@@ -317,14 +317,355 @@ function Invoke-NativeCommandOutput {
     $ExitCode.Value = $LASTEXITCODE
 }
 
+function Initialize-NativeSourceLineReader {
+    if ($null -eq ('DxMessagingNativeSourceLineReader' -as [type])) {
+        $readerSourcePath = Join-Path $PSScriptRoot 'lib/native-source-line-reader.cs.txt'
+        if (!(Test-Path -LiteralPath $readerSourcePath -PathType Leaf)) {
+            throw "Native source-line reader source was not found at $readerSourcePath."
+        }
+        $readerSource = Get-Content -LiteralPath $readerSourcePath -Raw
+        Add-Type -TypeDefinition $readerSource
+    }
+    [DxMessagingNativeSourceLineReader]::ValidateInteropLayout()
+}
+
+function Get-NativeSourceLineMap {
+    param(
+        [Parameter(Mandatory = $true)] [string]$ImagePath,
+        [Parameter(Mandatory = $true)] [string]$PdbPath,
+        [Parameter(Mandatory = $true)] [object[]]$Methods,
+        [Parameter(Mandatory = $true)] [string[]]$Symbols,
+        [Parameter(Mandatory = $true)] [object]$RequiredMethod,
+        [scriptblock]$LineReader
+    )
+
+    $uniqueSymbols = [System.Collections.Generic.List[string]]::new()
+    $seenSymbols = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($symbol in $Symbols) {
+        if ($seenSymbols.Add($symbol)) {
+            $uniqueSymbols.Add($symbol)
+        }
+    }
+
+    $requiredMethods = @(
+        $Methods |
+            Where-Object {
+                [string]::Equals(
+                    "$($_.Label)",
+                    "$($RequiredMethod.Label)",
+                    [System.StringComparison]::Ordinal
+                )
+            }
+    )
+    if ($requiredMethods.Count -ne 1) {
+        throw (
+            "Expected one captured required native method '$($RequiredMethod.Label)'; " +
+            "found $($requiredMethods.Count)."
+        )
+    }
+
+    $targets = [System.Collections.Generic.List[object]]::new()
+    foreach ($method in $requiredMethods) {
+        $definitionLocations =
+            if ($null -ne $method.PSObject.Properties['DefinitionLocations']) {
+                @($method.DefinitionLocations)
+            }
+            else {
+                @(
+                    [pscustomobject]@{
+                        Path       = $method.Path
+                        LineNumber = $method.LineNumber
+                    }
+                )
+            }
+        foreach ($definitionLocation in $definitionLocations) {
+            $rangeStartLine = [uint32]$definitionLocation.LineNumber
+            $rangeEndLine = [uint32](
+                $definitionLocation.LineNumber + $method.Lines.Count - 1
+            )
+            $targetPrefix = '{0}@{1}:{2}' -f
+                $method.Label,
+                $definitionLocation.Path,
+                $definitionLocation.LineNumber
+            for ($lineIndex = 1; $lineIndex -lt $method.Lines.Count; $lineIndex++) {
+                $sourceLine = $method.Lines[$lineIndex]
+                foreach ($symbol in $uniqueSymbols) {
+                    if (
+                        [regex]::IsMatch(
+                            $sourceLine,
+                            '(?<![A-Za-z0-9_]){0}(?![A-Za-z0-9_])' -f
+                                [regex]::Escape($symbol)
+                        )
+                    ) {
+                        $requestedLine = [uint32]($rangeStartLine + $lineIndex)
+                        $targets.Add(
+                            [pscustomobject]@{
+                                Id             = ('{0}:call:{1}:line{2}' -f
+                                    $targetPrefix,
+                                    $symbol,
+                                    $requestedLine)
+                                LogicalId      = ('{0}:call:{1}:offset{2}' -f
+                                    $method.Label,
+                                    $symbol,
+                                    $lineIndex)
+                                Path           = $definitionLocation.Path
+                                RequestedLine  = $requestedLine
+                                RangeStartLine = $rangeStartLine
+                                RangeEndLine   = $rangeEndLine
+                                Kind           = 'call'
+                                Symbol         = $symbol
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if ($targets.Count -eq 0) {
+        throw 'No generated source targets were declared for native mapping.'
+    }
+    $requiredLogicalTargetIds = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($target in $targets) {
+        [void]$requiredLogicalTargetIds.Add($target.LogicalId)
+    }
+    if ($requiredLogicalTargetIds.Count -eq 0) {
+        throw (
+            "Required native method '$($RequiredMethod.Label)' had no captured call targets."
+        )
+    }
+
+    if ($null -eq $LineReader) {
+        if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+            throw 'Native PDB source-line mapping requires Windows DbgHelp.'
+        }
+        Initialize-NativeSourceLineReader
+        $nativeTargets =
+            [System.Collections.Generic.List[DxMessagingNativeSourceTarget]]::new()
+        foreach ($target in $targets) {
+            $nativeTargets.Add(
+                [DxMessagingNativeSourceTarget]@{
+                    Id             = $target.Id
+                    Path           = $target.Path
+                    RequestedLine  = $target.RequestedLine
+                    RangeStartLine = $target.RangeStartLine
+                    RangeEndLine   = $target.RangeEndLine
+                }
+            )
+        }
+        $readResult = [DxMessagingNativeSourceLineReader]::Read(
+            $ImagePath,
+            $PdbPath,
+            @($nativeTargets)
+        )
+    }
+    else {
+        $readResult = & $LineReader $ImagePath $PdbPath @($targets)
+    }
+
+    $lineRecords = @($readResult.Lines)
+    if ($lineRecords.Count -gt (2 * $targets.Count)) {
+        throw (
+            "Native source-line reader returned $($lineRecords.Count) records for " +
+            "$($targets.Count) targets; the maximum is two records per target."
+        )
+    }
+    $targetIds = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($target in $targets) {
+        [void]$targetIds.Add($target.Id)
+    }
+    foreach ($lineRecord in $lineRecords) {
+        if (!$targetIds.Contains($lineRecord.Target)) {
+            throw "Native source-line reader returned unknown target '$($lineRecord.Target)'."
+        }
+    }
+
+    $evidence = [System.Collections.Generic.List[string]]::new()
+    $selectedAddresses = [System.Collections.Generic.List[object]]::new()
+    $resolvedRequiredLogicalTargetIds = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($target in $targets) {
+        $rawTargetLines = @($lineRecords | Where-Object { $_.Target -eq $target.Id })
+        if ($rawTargetLines.Count -gt 2) {
+            throw "Native source target '$($target.Id)' returned more than two records."
+        }
+        foreach ($targetLine in $rawTargetLines) {
+            $relationIsValid =
+                switch ($targetLine.Relation) {
+                    'exact' {
+                        $targetLine.SelectedLine -eq $target.RequestedLine
+                        break
+                    }
+                    'preceding' {
+                        $targetLine.SelectedLine -lt $target.RequestedLine
+                        break
+                    }
+                    'following' {
+                        $targetLine.SelectedLine -gt $target.RequestedLine
+                        break
+                    }
+                    default { $false }
+                }
+            if (
+                $targetLine.RequestedLine -ne $target.RequestedLine -or
+                $targetLine.SelectedLine -lt $target.RangeStartLine -or
+                $targetLine.SelectedLine -gt $target.RangeEndLine -or
+                !$relationIsValid
+            ) {
+                throw "Native source target '$($target.Id)' returned an invalid line relation."
+            }
+            $address = [uint64]$targetLine.Address
+            $moduleBase = [uint64]$readResult.ModuleBase
+            if (
+                $address -lt $moduleBase -or
+                [uint64]$targetLine.RelativeVirtualAddress -ne ($address - $moduleBase)
+            ) {
+                throw "Native source target '$($target.Id)' returned an invalid native address."
+            }
+        }
+        $targetLines = @(
+            $rawTargetLines |
+                Sort-Object -Property Relation, SelectedLine, Address -Unique
+        )
+        $exactLines = @($targetLines | Where-Object { $_.Relation -eq 'exact' })
+        $precedingLines = @($targetLines | Where-Object { $_.Relation -eq 'preceding' })
+        $followingLines = @($targetLines | Where-Object { $_.Relation -eq 'following' })
+        $recognizedLineCount =
+            $exactLines.Count + $precedingLines.Count + $followingLines.Count
+        if ($recognizedLineCount -ne $targetLines.Count) {
+            throw "Native source target '$($target.Id)' returned an unknown relation."
+        }
+
+        $status = 'unmapped'
+        if (
+            $exactLines.Count -eq 1 -and
+            $precedingLines.Count -eq 0 -and
+            $followingLines.Count -eq 0
+        ) {
+            $status = 'exact'
+        }
+        elseif (
+            $exactLines.Count -eq 0 -and
+            $precedingLines.Count -eq 1 -and
+            $followingLines.Count -eq 1
+        ) {
+            $status = 'bracket'
+        }
+        elseif ($targetLines.Count -gt 0) {
+            $status = 'partial'
+        }
+
+        if ($status -eq 'exact' -or $status -eq 'bracket') {
+            [void]$resolvedRequiredLogicalTargetIds.Add($target.LogicalId)
+        }
+
+        if ($targetLines.Count -eq 0) {
+            $evidence.Add(
+                "target=$($target.Id) kind=$($target.Kind) symbol=$($target.Symbol) " +
+                "status=$status requestedLine=$($target.RequestedLine) " +
+                'mappedAddressCount=0'
+            )
+            continue
+        }
+        foreach ($line in $targetLines) {
+            $lineDelta = [int64]$line.SelectedLine - [int64]$target.RequestedLine
+            $selectedAddresses.Add(
+                [pscustomobject]@{
+                    Target                 = $target.Id
+                    Kind                   = $target.Kind
+                    Symbol                 = $target.Symbol
+                    Status                 = $status
+                    Relation               = $line.Relation
+                    RequestedLine          = $target.RequestedLine
+                    SelectedLine           = $line.SelectedLine
+                    LineDelta              = $lineDelta
+                    Address                = [uint64]$line.Address
+                    RelativeVirtualAddress = [uint64]$line.RelativeVirtualAddress
+                }
+            )
+            $evidence.Add(
+                (('target={0} kind={1} symbol={2} status={3} relation={4} ' +
+                    'requestedLine={5} selectedLine={6} lineDelta={7} ' +
+                    'address=0x{8:X16} rva=0x{9:X8}') -f
+                    $target.Id,
+                    $target.Kind,
+                    $target.Symbol,
+                    $status,
+                    $line.Relation,
+                    $target.RequestedLine,
+                    $line.SelectedLine,
+                    $lineDelta,
+                    [uint64]$line.Address,
+                    [uint64]$line.RelativeVirtualAddress)
+            )
+        }
+    }
+
+    $uniqueAddressCount = @(
+        $selectedAddresses | Select-Object -ExpandProperty Address -Unique
+    ).Count
+    $missingRequiredLogicalTargets = @(
+        $requiredLogicalTargetIds |
+            Where-Object { !$resolvedRequiredLogicalTargetIds.Contains($_) }
+    )
+    if ($missingRequiredLogicalTargets.Count -gt 0) {
+        throw (
+            'Required native source targets were unresolved in every definition occurrence: ' +
+            ($missingRequiredLogicalTargets -join ', ')
+        )
+    }
+    $requiredTargetsResolved =
+        $resolvedRequiredLogicalTargetIds.Count -eq $requiredLogicalTargetIds.Count
+    $summary = [System.Collections.Generic.List[string]]::new()
+    $summary.Add("gameAssembly=$ImagePath")
+    $summary.Add("matchedGameAssemblyPdb=$([System.IO.Path]::GetFullPath($PdbPath))")
+    $summary.Add("dbgHelpPath=$($readResult.DbgHelpPath)")
+    $summary.Add("dbgHelpVersion=$($readResult.DbgHelpVersion)")
+    $summary.Add(('moduleBase=0x{0:X16}' -f [uint64]$readResult.ModuleBase))
+    $summary.Add("targetCount=$($targets.Count)")
+    $summary.Add("requiredTargetCount=$($requiredLogicalTargetIds.Count)")
+    $summary.Add("resolvedRequiredTargetCount=$($resolvedRequiredLogicalTargetIds.Count)")
+    $summary.Add("requiredTargetsResolved=$requiredTargetsResolved")
+    $summary.Add("mappedLineRecordCount=$($lineRecords.Count)")
+    $summary.Add("selectedAddressRecordCount=$($selectedAddresses.Count)")
+    $summary.Add("uniqueAddressCount=$uniqueAddressCount")
+    $summary.Add('')
+    foreach ($line in $evidence) {
+        $summary.Add($line)
+    }
+
+    return [pscustomobject]@{
+        Evidence                    = @($summary)
+        AddressRecords              = @($selectedAddresses)
+        SourceLineCount             = $lineRecords.Count
+        TargetCount                 = $targets.Count
+        RequiredTargetCount         = $requiredLogicalTargetIds.Count
+        ResolvedRequiredTargetCount = $resolvedRequiredLogicalTargetIds.Count
+        UniqueAddressCount          = $uniqueAddressCount
+    }
+}
+
 function Add-NativeLayoutInventory {
     param(
         [Parameter(Mandatory = $true)] [string]$ProjectRoot,
         [Parameter(Mandatory = $true)] [string]$ArtifactsRoot,
         [Parameter(Mandatory = $true)] [string[]]$Symbols,
         [Parameter(Mandatory = $true)] [object[]]$Methods,
-        [string[]]$DumpbinPaths
+        [object]$RequiredMethod,
+        [string[]]$DumpbinPaths,
+        [scriptblock]$NativeLineReader
     )
+
+    if ($null -eq $RequiredMethod) {
+        $RequiredMethod = @($Methods)[0]
+    }
 
     $playerDir = Join-Path $ProjectRoot 'Build\DxmTestPlayer'
     if (!(Test-Path -LiteralPath $playerDir -PathType Container)) {
@@ -610,96 +951,141 @@ function Add-NativeLayoutInventory {
         $inventory.Add("$line")
     }
 
+    $nativeLineMap = Get-NativeSourceLineMap `
+        -ImagePath $gameAssemblies[0].FullName `
+        -PdbPath $matchedPdbFullName `
+        -Methods $Methods `
+        -Symbols $Symbols `
+        -RequiredMethod $RequiredMethod `
+        -LineReader $NativeLineReader
+    $nativeLineMapPath = Join-Path $ArtifactsRoot 'native-line-map.txt'
+    $nativeLineMap.Evidence | Set-Content -LiteralPath $nativeLineMapPath -Encoding utf8
+    $inventory.Add('')
+    $inventory.Add('nativeSourceLineMap:')
+    $inventory.Add("mappedLineRecordCount=$($nativeLineMap.SourceLineCount)")
+    $inventory.Add("nativeTargetCount=$($nativeLineMap.TargetCount)")
+    $inventory.Add("requiredNativeTargetCount=$($nativeLineMap.RequiredTargetCount)")
+    $inventory.Add("selectedAddressRecordCount=$($nativeLineMap.AddressRecords.Count)")
+    $inventory.Add("uniqueNativeAddressCount=$($nativeLineMap.UniqueAddressCount)")
+    $inventory.Add("nativeLineMap=$nativeLineMapPath")
+    Write-Host (
+        "Mapped $($nativeLineMap.SourceLineCount) generated source-line records " +
+        "to $nativeLineMapPath."
+    )
+
     $outputPath = Join-Path $ArtifactsRoot 'native-layout-inventory.txt'
     $inventory | Set-Content -LiteralPath $outputPath -Encoding utf8
     Write-Host "Captured native layout inventory to $outputPath."
 
-    $uniqueNativeSymbols = [System.Collections.Generic.List[string]]::new()
-    $seenNativeSymbols = [System.Collections.Generic.HashSet[string]]::new(
-        [System.StringComparer]::Ordinal
-    )
-    foreach ($symbol in $Symbols) {
-        if ($seenNativeSymbols.Add($symbol)) {
-            $uniqueNativeSymbols.Add($symbol)
+    $addressTargetsByHex = [System.Collections.Generic.Dictionary[
+        string,
+        System.Collections.Generic.List[string]
+    ]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($addressGroup in @($nativeLineMap.AddressRecords | Group-Object -Property Address)) {
+        $address = [uint64]$addressGroup.Name
+        $addressHex = '{0:X16}' -f $address
+        $targets = [System.Collections.Generic.List[string]]::new()
+        foreach ($addressRecord in $addressGroup.Group) {
+            if (!$targets.Contains($addressRecord.Target)) {
+                $targets.Add($addressRecord.Target)
+            }
         }
+        $addressTargetsByHex.Add($addressHex, $targets)
     }
-    if ($uniqueNativeSymbols.Count -eq 0) {
-        throw 'No generated symbols were provided for native disassembly.'
+    if ($addressTargetsByHex.Count -eq 0) {
+        throw 'Native source-line mapping selected no addresses for disassembly.'
     }
-    $nativeSymbolPatterns = [System.Collections.Generic.List[string]]::new()
-    $symbolByPattern = [System.Collections.Generic.Dictionary[string, string]]::new(
-        [System.StringComparer]::Ordinal
-    )
-    $nativeSymbolMatchCounts = [System.Collections.Generic.Dictionary[string, int]]::new(
-        [System.StringComparer]::Ordinal
-    )
-    foreach ($symbol in $uniqueNativeSymbols) {
-        $pattern = '(?<![A-Za-z0-9_]){0}(?![A-Za-z0-9_])' -f [regex]::Escape($symbol)
-        $nativeSymbolPatterns.Add($pattern)
-        $symbolByPattern.Add($pattern, $symbol)
-        $nativeSymbolMatchCounts.Add($symbol, 0)
+    $maximumAddressMatchRecords = $addressTargetsByHex.Count
+    $capturedNativeAddressMatches = [System.Collections.Generic.List[object]]::new()
+    $disassemblyLineCount = 0
+    $nativeAddressLineMatchCount = 0
+    foreach ($addressHex in @($addressTargetsByHex.Keys | Sort-Object)) {
+        $address = [uint64]::Parse(
+            $addressHex,
+            [System.Globalization.NumberStyles]::HexNumber
+        )
+        $rangeStart = $address
+        $rangeEnd = $address + 0x400
+        $rangeArgument = '/range:0x{0:X16},0x{1:X16}' -f $rangeStart, $rangeEnd
+        $rangeExitCode = $null
+        $nativeCommand = @{
+            FilePath  = $selectedDumpbin.FullName
+            Arguments = @(
+                '/disasm:nobytes',
+                $rangeArgument,
+                $gameAssemblies[0].FullName
+            )
+            ExitCode  = [ref]$rangeExitCode
+        }
+        $rangeOutput = @(Invoke-NativeCommandOutput @nativeCommand)
+        if ($null -eq $rangeExitCode) {
+            throw (
+                "dumpbin /disasm:nobytes $rangeArgument did not report an exit code for " +
+                "$($gameAssemblies[0].FullName)."
+            )
+        }
+        if ($rangeExitCode -ne 0) {
+            throw (
+                "dumpbin /disasm:nobytes exited $rangeExitCode for " +
+                "$($gameAssemblies[0].FullName) in $rangeArgument."
+            )
+        }
+        if ($rangeOutput.Count -eq 0) {
+            throw (
+                "dumpbin wrote no native disassembly for $($gameAssemblies[0].FullName) " +
+                "in $rangeArgument."
+            )
+        }
+        $disassemblyLineCount += $rangeOutput.Count
+        $addressPattern =
+            '^[ \t]*(?i:{0}):' -f [regex]::Escape($addressHex)
+        $addressMatches = @(
+            $rangeOutput |
+                Select-String -Pattern $addressPattern -CaseSensitive -Context 2, 80
+        )
+        if ($addressMatches.Count -ne 1) {
+            throw (
+                "Native source address 0x$addressHex matched $($addressMatches.Count) " +
+                "disassembly lines; expected exactly one in $rangeArgument."
+            )
+        }
+        $nativeAddressLineMatchCount++
+        $capturedNativeAddressMatches.Add(
+            [pscustomobject]@{
+                Match = $addressMatches[0]
+                Label = $addressTargetsByHex[$addressHex] -join ','
+                Range = $rangeArgument
+            }
+        )
     }
 
-    $maximumMatchRecords = 100
-    $capturedNativeSymbolMatches = [System.Collections.Generic.List[object]]::new()
-    $disassemblyLineCount = 0
-    $nativeSymbolLineMatchCount = 0
-    $disassemblyExitCode = $null
-    Invoke-NativeCommandOutput `
-        -FilePath $selectedDumpbin.FullName `
-        -Arguments @('/disasm:nobytes', $gameAssemblies[0].FullName) `
-        -ExitCode ([ref]$disassemblyExitCode) |
-        ForEach-Object {
-            $disassemblyLineCount++
-            $_
-        } |
-        Select-String `
-            -Pattern @($nativeSymbolPatterns) `
-            -CaseSensitive `
-            -Context 2, 80 |
-        ForEach-Object {
-            $nativeSymbolLineMatchCount++
-            $matchPattern = "$($_.Pattern)"
-            if (!$symbolByPattern.ContainsKey($matchPattern)) {
-                throw "Native match returned unknown pattern '$matchPattern'."
-            }
-            $matchedSymbol = $symbolByPattern[$matchPattern]
-            $nativeSymbolMatchCounts[$matchedSymbol]++
-            if ($capturedNativeSymbolMatches.Count -lt $maximumMatchRecords) {
-                $capturedNativeSymbolMatches.Add($_)
-            }
-        }
-    if ($null -eq $disassemblyExitCode) {
-        throw "dumpbin /disasm:nobytes did not report an exit code for $($gameAssemblies[0].FullName)."
-    }
-    if ($disassemblyExitCode -ne 0) {
-        throw "dumpbin /disasm:nobytes exited $disassemblyExitCode for $($gameAssemblies[0].FullName)."
-    }
-    if ($disassemblyLineCount -eq 0) {
-        throw "dumpbin wrote no native disassembly for $($gameAssemblies[0].FullName)."
-    }
 
     $nativeEvidence = [System.Collections.Generic.List[string]]::new()
     $nativeEvidence.Add("gameAssembly=$($gameAssemblies[0].FullName)")
     $nativeEvidence.Add("matchedGameAssemblyPdb=$matchedPdbFullName")
     $nativeEvidence.Add("selectedDumpbin=$($selectedDumpbin.FullName)")
     $nativeEvidence.Add("disassemblyLineCount=$disassemblyLineCount")
-    $nativeEvidence.Add("nativeSymbolLineMatchCount=$nativeSymbolLineMatchCount")
-    $nativeEvidence.Add("capturedMatchRecordCount=$($capturedNativeSymbolMatches.Count)")
-    $nativeEvidence.Add("maximumMatchRecords=$maximumMatchRecords")
+    $nativeEvidence.Add("rangeInvocationCount=$($addressTargetsByHex.Count)")
+    $nativeEvidence.Add('rangeBytesAfterAddress=1024')
+    $nativeEvidence.Add("nativeAddressLineMatchCount=$nativeAddressLineMatchCount")
+    $nativeEvidence.Add("capturedMatchRecordCount=$($capturedNativeAddressMatches.Count)")
     $nativeEvidence.Add(
-        "matchRecordsTruncated=$($nativeSymbolLineMatchCount -gt $maximumMatchRecords)"
+        "capturedAddressMatchRecordCount=$($capturedNativeAddressMatches.Count)"
     )
-    foreach ($symbol in $uniqueNativeSymbols) {
+    $nativeEvidence.Add("maximumAddressMatchRecords=$maximumAddressMatchRecords")
+    foreach ($addressHex in @($addressTargetsByHex.Keys | Sort-Object)) {
         $nativeEvidence.Add(
-            "symbol=$symbol lineMatchCount=$($nativeSymbolMatchCounts[$symbol])"
+            "address=0x$addressHex " +
+            "addressTargets=$($addressTargetsByHex[$addressHex] -join ',') " +
+            'lineMatchCount=1'
         )
     }
-    foreach ($match in $capturedNativeSymbolMatches) {
-        $matchedSymbol = $symbolByPattern["$($match.Pattern)"]
+    foreach ($capturedMatch in $capturedNativeAddressMatches) {
+        $match = $capturedMatch.Match
         $nativeEvidence.Add('')
         $nativeEvidence.Add(
-            "matchSymbol=$matchedSymbol line=$($match.LineNumber) path=$($match.Path)"
+            "matchKind=address matchLabel=$($capturedMatch.Label) " +
+            "range=$($capturedMatch.Range) line=$($match.LineNumber) path=$($match.Path)"
         )
         foreach ($contextLine in @($match.Context.PreContext)) {
             $nativeEvidence.Add("  $contextLine")
@@ -712,7 +1098,7 @@ function Add-NativeLayoutInventory {
     $nativeDisassemblyPath = Join-Path $ArtifactsRoot 'native-disassembly.txt'
     $nativeEvidence | Set-Content -LiteralPath $nativeDisassemblyPath -Encoding utf8
     Write-Host (
-        "Captured $nativeSymbolLineMatchCount native symbol-line matches " +
+        "Captured $nativeAddressLineMatchCount source-address matches " +
         "to $nativeDisassemblyPath."
     )
 }
@@ -839,6 +1225,9 @@ finally {
 }
 
 if ($SelfTestOnly) {
+    Initialize-NativeSourceLineReader
+    Write-Host 'Native source-line reader compile and ABI layout self-test passed.'
+
     $nativeProbeCommand = 'Write-Output "NativePipelineProbeSymbol"; exit 9'
     $nativeProbeEncodedCommand = [System.Convert]::ToBase64String(
         [System.Text.Encoding]::Unicode.GetBytes($nativeProbeCommand)
@@ -989,6 +1378,82 @@ if ($SelfTestOnly) {
         $gameAssemblyPdbPath = Join-Path $backupDir 'GameAssembly.pdb'
         'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
         'fake object' | Set-Content -LiteralPath (Join-Path $integrationCppRoot 'gEnErAtEd.cpp.obj')
+        $nativeProbeMethod = [pscustomobject]@{
+            Label               = 'Native source-line probe'
+            Path                = $integrationCppPath
+            LineNumber          = 1
+            DefinitionLocations = @(
+                [pscustomobject]@{
+                    Path       = $integrationCppPath
+                    LineNumber = 1
+                },
+                [pscustomobject]@{
+                    Path       = (Join-Path $integrationCppRoot 'Duplicate.cpp')
+                    LineNumber = 1
+                }
+            )
+            Lines               = @(
+                'inline void NativeSourceLineProbe ()',
+                '{',
+                'InventoryProbeSymbol();',
+                '}'
+            )
+        }
+        $fakeNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $lines = [System.Collections.Generic.List[object]]::new()
+            $nextAddress = [uint64]0x180001000
+            $targetIndex = 0
+            foreach ($target in @($Targets)) {
+                if ($targetIndex -eq 0) {
+                    $lines.Add(
+                        [pscustomobject]@{
+                            Target                  = $target.Id
+                            SourcePath              = $target.Path
+                            Relation                = 'exact'
+                            RequestedLine           = $target.RequestedLine
+                            SelectedLine            = $target.RequestedLine
+                            Address                 = $nextAddress
+                            RelativeVirtualAddress  = $nextAddress - [uint64]0x180000000
+                        }
+                    )
+                }
+                else {
+                    foreach ($relation in @('preceding', 'following')) {
+                        $selectedLine =
+                            if ($relation -eq 'preceding') {
+                                [uint32]($target.RequestedLine - 1)
+                            }
+                            else {
+                                [uint32]($target.RequestedLine + 1)
+                            }
+                        $lines.Add(
+                            [pscustomobject]@{
+                                Target                  = $target.Id
+                                SourcePath              = $target.Path
+                                Relation                = $relation
+                                RequestedLine           = $target.RequestedLine
+                                SelectedLine            = $selectedLine
+                                Address                 = $nextAddress
+                                RelativeVirtualAddress  = (
+                                    $nextAddress - [uint64]0x180000000
+                                )
+                            }
+                        )
+                        $nextAddress += 0x10
+                    }
+                }
+                $targetIndex++
+            }
+            [pscustomobject]@{
+                DbgHelpPath    = 'synthetic-dbghelp.dll'
+                DbgHelpVersion = '1.2.3.4'
+                ModuleBase     = [uint64]0x180000000
+                Lines          = @($lines)
+            }
+        }
+
         $fakeDumpbin = Join-Path $integrationTestRoot 'fake-dumpbin.ps1'
         $failedDumpbin = Join-Path $integrationTestRoot 'failed-dumpbin.ps1'
         $throwingDumpbin = Join-Path $integrationTestRoot 'throwing-dumpbin.ps1'
@@ -1020,25 +1485,36 @@ if ($SelfTestOnly) {
             '    exit 0',
             '}',
             'if ($option -eq "/disasm:nobytes") {',
+            '    if ($CommandArguments.Count -ne 3) { exit 10 }',
+            '    $rangeMatch = [regex]::Match($CommandArguments[1], "^/range:0x(?<min>[0-9A-F]{16}),0x(?<max>[0-9A-F]{16})$")',
+            '    if (!$rangeMatch.Success) { exit 10 }',
+            '    $rangeStart = [Convert]::ToUInt64($rangeMatch.Groups["min"].Value, 16)',
+            '    $rangeEnd = [Convert]::ToUInt64($rangeMatch.Groups["max"].Value, 16)',
+            '    if ($rangeEnd -ne $rangeStart + 0x400) { exit 10 }',
             '    if ($behavior -eq "failed-disassembly-dumpbin") { exit 9 }',
             '    if ($behavior -eq "empty-disassembly-dumpbin") {',
             '        exit 0',
             '    }',
-            '    if ($behavior -eq "truncated-disassembly-dumpbin") {',
-            '        foreach ($index in 1..101) { Write-Output "InventoryProbeSymbol: $index" }',
+            '    if ($behavior -eq "missing-address-dumpbin") {',
+            '        Write-Output "InventoryProbeSymbol:"',
+            '        $address = [uint64]0x180001000',
+            '        if ($address -ge $rangeStart -and $address -le $rangeEnd) {',
+            '            Write-Output ("{0:X16}:" -f $address)',
+            '        }',
             '        exit 0',
             '    }',
-            '    Write-Output @(',
-            '        "Synthetic disassembly",',
-            '        "before",',
-            '        "inventoryProbeSymbol:",',
-            '        "InventoryProbeSymbol:",',
-            '        "  mov eax, 1",',
-            '        "  ret",',
-            '        "InventoryProbeSymbol_gshared:",',
-            '        "  mov eax, 2",',
-            '        "  ret"',
-            '    )',
+            '    function Write-SyntheticAddress {',
+            '        param([uint64]$Address, [string]$Instruction)',
+            '        if ($Address -ge $rangeStart -and $Address -le $rangeEnd) {',
+            '            Write-Output ("{0:X16}:" -f $Address)',
+            '            Write-Output "  $Instruction"',
+            '        }',
+            '    }',
+            '    Write-Output "Synthetic disassembly"',
+            '    Write-Output "InventoryProbeSymbol:"',
+            '    Write-SyntheticAddress ([uint64]0x180001000) "mov eax, 3"',
+            '    Write-SyntheticAddress ([uint64]0x180001010) "mov eax, 4"',
+            '    Write-SyntheticAddress ([uint64]0x180001020) "call synthetic_helper"',
             '    exit 0',
             '}',
             'exit 0'
@@ -1046,9 +1522,10 @@ if ($SelfTestOnly) {
         Add-NativeLayoutInventory `
             -ProjectRoot $integrationTestRoot `
             -ArtifactsRoot $integrationArtifacts `
-            -Symbols @('InventoryProbeSymbol', 'InventoryProbeSymbol_gshared') `
-            -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-            -DumpbinPaths @($failedDumpbin, $throwingDumpbin, $fakeDumpbin)
+            -Symbols @('InventoryProbeSymbol', 'InventoryProbeSymbol') `
+            -Methods @($nativeProbeMethod) `
+            -DumpbinPaths @($failedDumpbin, $throwingDumpbin, $fakeDumpbin) `
+            -NativeLineReader $fakeNativeLineReader
         $nativeInventory = Get-Content `
             -LiteralPath (Join-Path $integrationArtifacts 'native-layout-inventory.txt') `
             -Raw
@@ -1064,7 +1541,13 @@ if ($SelfTestOnly) {
                 'dumpbinFailure=',
                 'selectedDumpbin=',
                 'PE header proof',
-                'gameAssemblyPdbPath:'
+                'gameAssemblyPdbPath:',
+                'nativeSourceLineMap:',
+                'mappedLineRecordCount=3',
+                'nativeTargetCount=2',
+                'requiredNativeTargetCount=1',
+                'selectedAddressRecordCount=3',
+                'uniqueNativeAddressCount=2'
             )
         ) {
             if (!$nativeInventory.Contains($expectedInventoryEvidence)) {
@@ -1076,8 +1559,9 @@ if ($SelfTestOnly) {
             -ProjectRoot $integrationTestRoot `
             -ArtifactsRoot $integrationArtifacts `
             -Symbols @('InventoryProbeSymbol', 'InventoryProbeSymbol_gshared') `
-            -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-            -DumpbinPaths @($fakeDumpbin)
+            -Methods @($nativeProbeMethod) `
+            -DumpbinPaths @($fakeDumpbin) `
+            -NativeLineReader $fakeNativeLineReader
         $nativeInventoryWithoutSymbolMap = Get-Content `
             -LiteralPath (Join-Path $integrationArtifacts 'native-layout-inventory.txt') `
             -Raw
@@ -1100,18 +1584,57 @@ if ($SelfTestOnly) {
             -Raw
         foreach (
             $expectedDisassemblyEvidence in @(
-                'nativeSymbolLineMatchCount=2',
+                'nativeAddressLineMatchCount=2',
+                'rangeInvocationCount=2',
+                'rangeBytesAfterAddress=1024',
                 'capturedMatchRecordCount=2',
-                'matchRecordsTruncated=False',
-                'symbol=InventoryProbeSymbol lineMatchCount=1',
-                'symbol=InventoryProbeSymbol_gshared lineMatchCount=1',
-                '> InventoryProbeSymbol:',
-                '> InventoryProbeSymbol_gshared:',
-                'mov eax, 1'
+                'capturedAddressMatchRecordCount=2',
+                'maximumAddressMatchRecords=2',
+                'address=0x0000000180001000',
+                'address=0x0000000180001010',
+                '> 0000000180001000:',
+                '> 0000000180001010:',
+                'range=/range:0x0000000180001000,0x0000000180001400',
+                'mov eax, 3'
             )
         ) {
             if (!$nativeDisassembly.Contains($expectedDisassemblyEvidence)) {
                 throw "Native disassembly omitted '$expectedDisassemblyEvidence'."
+            }
+        }
+        $sharedAddressEvidence = @(
+            $nativeDisassembly -split '\r?\n' |
+                Where-Object {
+                    $_ -match '^address=0x0000000180001000 ' -and
+                    $_ -match 'Generated\.cpp' -and
+                    $_ -match 'Duplicate\.cpp'
+                }
+        )
+        if ($sharedAddressEvidence.Count -ne 1) {
+            throw 'Native disassembly did not deduplicate a VA shared by two source targets.'
+        }
+        $nativeLineMapEvidence = Get-Content `
+            -LiteralPath (Join-Path $integrationArtifacts 'native-line-map.txt') `
+            -Raw
+        foreach (
+            $expectedLineMapEvidence in @(
+                'dbgHelpPath=synthetic-dbghelp.dll',
+                'dbgHelpVersion=1.2.3.4',
+                'moduleBase=0x0000000180000000',
+                'targetCount=2',
+                'requiredTargetCount=1',
+                'resolvedRequiredTargetCount=1',
+                'requiredTargetsResolved=True',
+                'mappedLineRecordCount=3',
+                'selectedAddressRecordCount=3',
+                'uniqueAddressCount=2',
+                'status=exact relation=exact requestedLine=3 selectedLine=3 lineDelta=0',
+                'status=bracket relation=preceding requestedLine=3 selectedLine=2 lineDelta=-1',
+                'status=bracket relation=following requestedLine=3 selectedLine=4 lineDelta=1'
+            )
+        ) {
+            if (!$nativeLineMapEvidence.Contains($expectedLineMapEvidence)) {
+                throw "Native source-line map omitted '$expectedLineMapEvidence'."
             }
         }
 
@@ -1139,6 +1662,127 @@ if ($SelfTestOnly) {
             }
         }
 
+        $singleDefinitionNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $result = & $fakeNativeLineReader $ImagePath $PdbPath $Targets
+            $result.Lines = @(
+                $result.Lines |
+                    Where-Object { $_.SourcePath -eq $integrationCppPath }
+            )
+            $result
+        }
+        $singleDefinitionMap = Get-NativeSourceLineMap `
+            -ImagePath (Join-Path $playerDir 'GameAssembly.dll') `
+            -PdbPath $gameAssemblyPdbPath `
+            -Methods @($nativeProbeMethod) `
+            -Symbols @('InventoryProbeSymbol') `
+            -RequiredMethod $nativeProbeMethod `
+            -LineReader $singleDefinitionNativeLineReader
+        if (
+            $singleDefinitionMap.ResolvedRequiredTargetCount -ne 1 -or
+            @(
+                $singleDefinitionMap.Evidence |
+                    Where-Object { $_ -match 'Duplicate\.cpp.*status=unmapped' }
+            ).Count -ne 1
+        ) {
+            throw 'Native source-line map did not account for a discarded duplicate definition.'
+        }
+
+        $emptyNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $result = & $fakeNativeLineReader $ImagePath $PdbPath $Targets
+            $result.Lines = @()
+            $result
+        }
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'Required native source targets were unresolved' `
+            -Operation {
+                Get-NativeSourceLineMap `
+                    -ImagePath (Join-Path $playerDir 'GameAssembly.dll') `
+                    -PdbPath $gameAssemblyPdbPath `
+                    -Methods @($nativeProbeMethod) `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -RequiredMethod $nativeProbeMethod `
+                    -LineReader $emptyNativeLineReader
+        }
+        $partialNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $result = & $fakeNativeLineReader $ImagePath $PdbPath $Targets
+            $result.Lines = @(
+                $result.Lines | Where-Object { $_.Relation -eq 'preceding' }
+            )
+            $result
+        }
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'Required native source targets were unresolved' `
+            -Operation {
+                Get-NativeSourceLineMap `
+                    -ImagePath (Join-Path $playerDir 'GameAssembly.dll') `
+                    -PdbPath $gameAssemblyPdbPath `
+                    -Methods @($nativeProbeMethod) `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -RequiredMethod $nativeProbeMethod `
+                    -LineReader $partialNativeLineReader
+        }
+        $mislabeledNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $result = & $fakeNativeLineReader $ImagePath $PdbPath $Targets
+            $result.Lines[0].Relation = 'preceding'
+            $result
+        }
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'returned an invalid line relation' `
+            -Operation {
+                Get-NativeSourceLineMap `
+                    -ImagePath (Join-Path $playerDir 'GameAssembly.dll') `
+                    -PdbPath $gameAssemblyPdbPath `
+                    -Methods @($nativeProbeMethod) `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -RequiredMethod $nativeProbeMethod `
+                    -LineReader $mislabeledNativeLineReader
+        }
+        $outOfRangeNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $result = & $fakeNativeLineReader $ImagePath $PdbPath $Targets
+            $result.Lines[0].Relation = 'following'
+            $result.Lines[0].SelectedLine = [uint32]5
+            $result
+        }
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'returned an invalid line relation' `
+            -Operation {
+                Get-NativeSourceLineMap `
+                    -ImagePath (Join-Path $playerDir 'GameAssembly.dll') `
+                    -PdbPath $gameAssemblyPdbPath `
+                    -Methods @($nativeProbeMethod) `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -RequiredMethod $nativeProbeMethod `
+                    -LineReader $outOfRangeNativeLineReader
+        }
+        $unboundedNativeLineReader = {
+            param($ImagePath, $PdbPath, $Targets)
+
+            $result = & $fakeNativeLineReader $ImagePath $PdbPath $Targets
+            $result.Lines = @($result.Lines) + @($result.Lines)
+            $result
+        }
+        Assert-NativeInventoryFailure `
+            -ExpectedMessage 'maximum is two records per target' `
+            -Operation {
+                Get-NativeSourceLineMap `
+                    -ImagePath (Join-Path $playerDir 'GameAssembly.dll') `
+                    -PdbPath $gameAssemblyPdbPath `
+                    -Methods @($nativeProbeMethod) `
+                    -Symbols @('InventoryProbeSymbol') `
+                    -RequiredMethod $nativeProbeMethod `
+                    -LineReader $unboundedNativeLineReader
+        }
+
         foreach (
             $nativeCommandFailure in @(
                 [pscustomobject]@{
@@ -1160,6 +1804,10 @@ if ($SelfTestOnly) {
                 [pscustomobject]@{
                     Name            = 'empty-disassembly-dumpbin.ps1'
                     ExpectedMessage = 'dumpbin wrote no native disassembly'
+                },
+                [pscustomobject]@{
+                    Name            = 'missing-address-dumpbin.ps1'
+                    ExpectedMessage = 'matched 0 disassembly lines; expected exactly one'
                 }
             )
         ) {
@@ -1172,34 +1820,10 @@ if ($SelfTestOnly) {
                         -ProjectRoot $integrationTestRoot `
                         -ArtifactsRoot $integrationArtifacts `
                         -Symbols @('InventoryProbeSymbol') `
-                        -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-                        -DumpbinPaths @($failureDumpbin)
+                        -Methods @($nativeProbeMethod) `
+                        -DumpbinPaths @($failureDumpbin) `
+                        -NativeLineReader $fakeNativeLineReader
                 }
-        }
-
-        $truncatedDisassemblyDumpbin = Join-Path `
-            $integrationTestRoot `
-            'truncated-disassembly-dumpbin.ps1'
-        Copy-Item -LiteralPath $fakeDumpbin -Destination $truncatedDisassemblyDumpbin
-        Add-NativeLayoutInventory `
-            -ProjectRoot $integrationTestRoot `
-            -ArtifactsRoot $integrationArtifacts `
-            -Symbols @('InventoryProbeSymbol') `
-            -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-            -DumpbinPaths @($truncatedDisassemblyDumpbin)
-        $truncatedNativeDisassembly = Get-Content `
-            -LiteralPath (Join-Path $integrationArtifacts 'native-disassembly.txt') `
-            -Raw
-        foreach (
-            $expectedTruncationEvidence in @(
-                'nativeSymbolLineMatchCount=101',
-                'capturedMatchRecordCount=100',
-                'matchRecordsTruncated=True'
-            )
-        ) {
-            if (!$truncatedNativeDisassembly.Contains($expectedTruncationEvidence)) {
-                throw "Truncated native disassembly omitted '$expectedTruncationEvidence'."
-            }
         }
 
         [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@())
@@ -1210,8 +1834,9 @@ if ($SelfTestOnly) {
                     -ProjectRoot $integrationTestRoot `
                     -ArtifactsRoot $integrationArtifacts `
                     -Symbols @('InventoryProbeSymbol') `
-                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-                    -DumpbinPaths @($fakeDumpbin)
+                    -Methods @($nativeProbeMethod) `
+                    -DumpbinPaths @($fakeDumpbin) `
+                    -NativeLineReader $fakeNativeLineReader
             }
         'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
 
@@ -1223,8 +1848,9 @@ if ($SelfTestOnly) {
                     -ProjectRoot $integrationTestRoot `
                     -ArtifactsRoot $integrationArtifacts `
                     -Symbols @('InventoryProbeSymbol') `
-                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-                    -DumpbinPaths @($fakeDumpbin)
+                    -Methods @($nativeProbeMethod) `
+                    -DumpbinPaths @($fakeDumpbin) `
+                    -NativeLineReader $fakeNativeLineReader
             }
         'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
 
@@ -1239,8 +1865,9 @@ if ($SelfTestOnly) {
                     -ProjectRoot $integrationTestRoot `
                     -ArtifactsRoot $integrationArtifacts `
                     -Symbols @('InventoryProbeSymbol') `
-                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-                    -DumpbinPaths @($fakeDumpbin)
+                    -Methods @($nativeProbeMethod) `
+                    -DumpbinPaths @($fakeDumpbin) `
+                    -NativeLineReader $fakeNativeLineReader
             }
         Remove-Item -LiteralPath $alternatePdbPath
 
@@ -1253,8 +1880,9 @@ if ($SelfTestOnly) {
                     -ProjectRoot $integrationTestRoot `
                     -ArtifactsRoot $integrationArtifacts `
                     -Symbols @('InventoryProbeSymbol') `
-                    -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
-                    -DumpbinPaths @($fakeDumpbin)
+                    -Methods @($nativeProbeMethod) `
+                    -DumpbinPaths @($fakeDumpbin) `
+                    -NativeLineReader $fakeNativeLineReader
             }
         Write-Host 'Native layout inventory self-test passed.'
         Write-Host 'Dispatch codegen integration self-test passed.'
@@ -1444,5 +2072,6 @@ if (!$SkipNativeInventory) {
         -ProjectRoot $resolvedProjectPath `
         -ArtifactsRoot $resolvedArtifactsPath `
         -Symbols @($nativeSymbols) `
-        -Methods @($untargetedRouteMethods)
+        -Methods @($untargetedRouteMethods) `
+        -RequiredMethod $untargetedBroadcast.Implementation
 }
