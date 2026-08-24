@@ -6,7 +6,9 @@ param(
 
     [string]$ArtifactsPath,
 
-    [switch]$SelfTestOnly
+    [switch]$SelfTestOnly,
+
+    [switch]$SkipNativeInventory
 )
 
 Set-StrictMode -Version Latest
@@ -300,6 +302,125 @@ function Add-GeneratedMethodEvidence {
     }
 }
 
+function Add-NativeLayoutInventory {
+    param(
+        [Parameter(Mandatory = $true)] [string]$ProjectRoot,
+        [Parameter(Mandatory = $true)] [string]$ArtifactsRoot,
+        [Parameter(Mandatory = $true)] [string[]]$Symbols,
+        [Parameter(Mandatory = $true)] [object[]]$Methods
+    )
+
+    $playerDir = Join-Path $ProjectRoot 'Build\DxmTestPlayer'
+    if (!(Test-Path -LiteralPath $playerDir -PathType Container)) {
+        throw "Validated standalone player directory was not found at $playerDir."
+    }
+
+    $gameAssemblies = @(
+        Get-ChildItem -LiteralPath $playerDir -File -Recurse -Filter 'GameAssembly.dll'
+    )
+    $symbolMaps = @(
+        Get-ChildItem -LiteralPath $playerDir -File -Recurse -Filter 'SymbolMap'
+    )
+    if ($gameAssemblies.Count -ne 1) {
+        throw "Expected one GameAssembly.dll under $playerDir; found $($gameAssemblies.Count)."
+    }
+    if ($symbolMaps.Count -ne 1) {
+        throw "Expected one SymbolMap under $playerDir; found $($symbolMaps.Count)."
+    }
+
+    $inventory = [System.Collections.Generic.List[string]]::new()
+    $inventory.Add("gameAssembly=$($gameAssemblies[0].FullName)")
+    $inventory.Add("gameAssemblyBytes=$($gameAssemblies[0].Length)")
+    $inventory.Add("symbolMap=$($symbolMaps[0].FullName)")
+    $inventory.Add("symbolMapBytes=$($symbolMaps[0].Length)")
+
+    $pdbFiles = @(
+        Get-ChildItem -LiteralPath $playerDir -File -Recurse -Filter '*.pdb' |
+            Sort-Object -Property FullName
+    )
+    $inventory.Add("pdbFileCount=$($pdbFiles.Count)")
+    foreach ($pdbFile in $pdbFiles) {
+        $inventory.Add("pdb=$($pdbFile.FullName) bytes=$($pdbFile.Length)")
+    }
+
+    $inventory.Add('')
+    $inventory.Add('symbolMapHead:')
+    foreach ($line in @(Get-Content -LiteralPath $symbolMaps[0].FullName -TotalCount 12)) {
+        $inventory.Add($line)
+    }
+    $inventory.Add('')
+    $inventory.Add('symbolMapMatches:')
+    $symbolMatches = @(
+        Select-String -LiteralPath $symbolMaps[0].FullName -SimpleMatch -Pattern $Symbols
+    )
+    $inventory.Add("symbolMapMatchCount=$($symbolMatches.Count)")
+    foreach ($match in $symbolMatches) {
+        $inventory.Add("$($match.LineNumber):$($match.Line)")
+    }
+
+    $beeArtifacts = Join-Path $ProjectRoot 'Library\Bee\artifacts'
+    $sourceBaseNames = @(
+        $Methods |
+            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Path) } |
+            Sort-Object -Unique
+    )
+    $objectFiles = @(
+        Get-ChildItem -LiteralPath $beeArtifacts -File -Recurse -Filter '*.obj' `
+            -ErrorAction SilentlyContinue
+    )
+    $matchingObjectFiles = @(
+        $objectFiles |
+            Where-Object {
+                $objectName = $_.Name
+                @($sourceBaseNames | Where-Object { $objectName.Contains($_) }).Count -gt 0
+            } |
+            Sort-Object -Property FullName
+    )
+    $inventory.Add('')
+    $inventory.Add("objectFileCount=$($objectFiles.Count)")
+    $inventory.Add("matchingObjectFileCount=$($matchingObjectFiles.Count)")
+    foreach ($objectFile in $matchingObjectFiles) {
+        $inventory.Add("object=$($objectFile.FullName) bytes=$($objectFile.Length)")
+    }
+
+    $visualStudioRoots = @(
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)}
+    ) | Where-Object { ![string]::IsNullOrWhiteSpace($_) }
+    $dumpbins = [System.Collections.Generic.List[object]]::new()
+    foreach ($visualStudioRoot in $visualStudioRoots) {
+        $dumpbinPattern = Join-Path $visualStudioRoot (
+            'Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe'
+        )
+        foreach ($dumpbin in @(Get-ChildItem -Path $dumpbinPattern -File -ErrorAction SilentlyContinue)) {
+            $dumpbins.Add($dumpbin)
+        }
+    }
+    $resolvedDumpbins = @($dumpbins | Sort-Object -Property FullName -Descending -Unique)
+    $inventory.Add('')
+    $inventory.Add("dumpbinCount=$($resolvedDumpbins.Count)")
+    foreach ($dumpbin in $resolvedDumpbins) {
+        $inventory.Add("dumpbin=$($dumpbin.FullName)")
+    }
+    if ($resolvedDumpbins.Count -eq 0) {
+        throw 'No x64 dumpbin.exe was found under the installed Visual Studio toolsets.'
+    }
+
+    $headers = @(& $resolvedDumpbins[0].FullName /headers $gameAssemblies[0].FullName 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "dumpbin /headers exited $LASTEXITCODE for $($gameAssemblies[0].FullName)."
+    }
+    $inventory.Add('')
+    $inventory.Add('gameAssemblyHeaders:')
+    foreach ($line in $headers) {
+        $inventory.Add("$line")
+    }
+
+    $outputPath = Join-Path $ArtifactsRoot 'native-layout-inventory.txt'
+    $inventory | Set-Content -LiteralPath $outputPath -Encoding utf8
+    Write-Host "Captured native layout inventory to $outputPath."
+}
+
 $targetedPostCallPattern =
     '(?<![A-Za-z0-9_])MessageBus_RunTargetedPostPhases_Tis[A-Za-z0-9_]+_m[0-9A-F]+(?:_gshared)?(?:_inline)?(?![A-Za-z0-9_])'
 $untargetedHelperSpecs = @(
@@ -496,7 +617,8 @@ if ($SelfTestOnly) {
 
         & $PSCommandPath `
             -ProjectPath $integrationTestRoot `
-            -ArtifactsPath $integrationArtifacts
+            -ArtifactsPath $integrationArtifacts `
+            -SkipNativeInventory
         if (!$?) {
             throw 'Dispatch codegen integration self-test child invocation failed.'
         }
@@ -701,3 +823,18 @@ Write-Host (
     "Captured $($untargetedRouteMethods.Count) exact untargeted hook-route C++ method bodies " +
     "to $untargetedOutputPath."
 )
+
+$nativeSymbols = [System.Collections.Generic.List[string]]::new()
+$nativeSymbols.Add($untargetedBroadcastSymbol)
+$nativeSymbols.Add($untargetedBroadcast.SharedCallSymbol)
+foreach ($helper in $untargetedHelperEvidence) {
+    $nativeSymbols.Add($helper.CallSymbol)
+    $nativeSymbols.Add($helper.SharedCallSymbol)
+}
+if (!$SkipNativeInventory) {
+    Add-NativeLayoutInventory `
+        -ProjectRoot $resolvedProjectPath `
+        -ArtifactsRoot $resolvedArtifactsPath `
+        -Symbols @($nativeSymbols) `
+        -Methods @($untargetedRouteMethods)
+}
