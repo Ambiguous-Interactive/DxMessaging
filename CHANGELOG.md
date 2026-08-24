@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop the base-call analyzer from reporting `DXMSG009` or `DXMSG007` for components that declare
+  `OnApplicationFocus(bool)` or `OnApplicationPause(bool)`. `MessageAwareComponent` declares neither
+  hook, so such a method overrides and hides nothing; the diagnostic claimed a CS0114 hiding that
+  does not exist, and no spelling of the method silenced it (adding `new` traded the warning for
+  CS0109). Hide-based diagnostics now fire only when an ancestor actually declares a virtual member
+  with a matching signature -- exactly the shape CS0114 warns about -- so coverage resumes
+  automatically if the base class adds the hooks in a future release
+  ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
+- Report each base-call analyzer diagnostic once per declaration. When the analyzer DLL loads twice
+  into one compilation -- typically a stale in-project copy alongside the package's analyzer --
+  every registration reported its own copy of each warning, so one declaration surfaced as two
+  identical entries at the same location
+  ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
+
 - Stop the Message Monitor from drawing its toolbar over the log header, and its column headings
   over each other, at narrow window widths. Neither Monitor row wraps now - the live toolbar is two
   declared rows, what the log is doing and what it is filtered to - because a wrapping row's height

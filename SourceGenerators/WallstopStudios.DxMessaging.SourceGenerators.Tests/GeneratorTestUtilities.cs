@@ -137,6 +137,82 @@ internal static class GeneratorTestUtilities
         );
     }
 
+    /// <summary>
+    /// Variant that appends extra stub sources to the compilation before the user source. Tests
+    /// use this to declare base-class shapes that differ from <see cref="SharedStubs"/> -- for
+    /// example a MessageAwareComponent that DOES declare OnApplicationPause -- without changing
+    /// the shared fixture every other test compiles against.
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSources(
+        string userSource,
+        params string[] extraStubSources
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            Array.Empty<string>(),
+            Array.Empty<(string path, string contents)>(),
+            extraStubSources
+        );
+    }
+
+    /// <summary>
+    /// Combined variant for fixtures that need BOTH extra stub sources (a base-class shape
+    /// different from <see cref="SharedStubs"/>) AND expected compiler warnings (for example
+    /// CS0108 from hiding a non-virtual member). Without the allowlist, the harness rejects any
+    /// compiler warning the fixture intentionally produces.
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithExtraSourcesAllowingWarnings(
+        string userSource,
+        string[] allowedWarningIds,
+        params string[] extraStubSources
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            allowedWarningIds,
+            Array.Empty<(string path, string contents)>(),
+            extraStubSources
+        );
+    }
+
+    /// <summary>
+    /// Registers the analyzer type TWICE against the same compilation, mirroring what happens in
+    /// a Unity project where this analyzer DLL is registered twice with one assembly identity
+    /// (for example a stale in-project copy at a different path that the compiler host unifies
+    /// by identity): every registration reports its own copy of each diagnostic, and the shared
+    /// static table collapses them to one report per location. Registrations whose copies carry
+    /// DIFFERENT assembly identities load as distinct types with separate statics and are out of
+    /// scope for this guarantee; the durable fix there remains deleting the stale copy.
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerRegisteredTwice(string userSource)
+    {
+        SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
+        SyntaxTree userTree = CSharpSyntaxTree.ParseText(userSource, ParseOptions);
+
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            assemblyName: "AnalyzerDupRegistrationTests",
+            syntaxTrees: new[] { stubs, userTree },
+            references: CoreReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+
+        CompilationWithAnalyzers compilationWithAnalyzers = compilation.WithAnalyzers(
+            ImmutableArray.Create<DiagnosticAnalyzer>(
+                new MessageAwareComponentBaseCallAnalyzer(),
+                new MessageAwareComponentBaseCallAnalyzer()
+            ),
+            new AnalyzerOptions(ImmutableArray<AdditionalText>.Empty)
+        );
+
+        return compilationWithAnalyzers
+            .GetAnalyzerDiagnosticsAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+    }
+
     internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerAllowingCompilerWarnings(
         string userSource,
         string[] allowedWarningIds,
@@ -174,7 +250,8 @@ internal static class GeneratorTestUtilities
         string userSource,
         CSharpCompilationOptions? compilationOptions,
         string[] allowedWarningIds,
-        (string path, string contents)[] additionalFiles
+        (string path, string contents)[] additionalFiles,
+        params string[] extraStubSources
     )
     {
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
@@ -183,9 +260,21 @@ internal static class GeneratorTestUtilities
         CSharpCompilationOptions effectiveOptions =
             compilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
 
+        List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2) { stubs, userTree };
+        if (extraStubSources is { Length: > 0 })
+        {
+            for (int i = 0; i < extraStubSources.Length; i++)
+            {
+                syntaxTrees.Insert(
+                    1,
+                    CSharpSyntaxTree.ParseText(extraStubSources[i], ParseOptions)
+                );
+            }
+        }
+
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "AnalyzerTests",
-            syntaxTrees: new[] { stubs, userTree },
+            syntaxTrees: syntaxTrees,
             references: CoreReferences,
             options: effectiveOptions
         );

@@ -29,7 +29,9 @@ devcontainer cache mount contract.
   silently disables the framework work: no token created, handlers not re-enabled or disabled,
   token leaked on destroy, default string handlers unregistered.
 - `OnApplicationFocus(bool)` and `OnApplicationPause(bool)` are guarded prospectively for their
-  canonical one-arg-bool signature; the base class does not declare them today.
+  canonical one-arg-bool signature; the base class does not declare them today, and hide-based
+  diagnostics (DXMSG007/DXMSG009) fire only when an ancestor actually declares a virtual member
+  with a matching signature, so declaring either hook on a subclass stays silent.
 - `OnApplicationQuit` is virtual but intentionally empty and lives on
   `AllowListIntentionallyUnguarded`.
 - Five enforcement layers: the Roslyn analyzer
