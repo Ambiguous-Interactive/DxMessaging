@@ -125,7 +125,7 @@ test("stageAssetStoreSubmission copies assets, checklists, and manifest", (t) =>
   assert.match(classic, /Review the listing draft in the Unity Publisher Portal/);
   const upm = fs.readFileSync(path.join(outDir, "UPM-UPLOAD-CHECKLIST.md"), "utf8");
   assert.match(upm, /fixture-1\.2\.3\.tgz/);
-  assert.match(upm, /Unity 2021\.3/);
+  assert.match(upm, /Unity 2021\.3[\s\S]*editor version listed.*Active admittance/);
 
   const manifest = JSON.parse(fs.readFileSync(path.join(outDir, "MANIFEST.json"), "utf8"));
   assert.equal(manifest.schemaVersion, 1);

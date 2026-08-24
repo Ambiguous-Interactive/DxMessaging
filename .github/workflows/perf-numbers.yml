@@ -627,7 +627,7 @@ jobs:
           }
           $cppPaths = @($cppFiles | ForEach-Object { $_.FullName })
           # cspell:ignore gshared rgctx
-          # SYNC: scripts/unity/capture-targeted-post-codegen.ps1 duplicates this
+          # SYNC: scripts/unity/capture-dispatch-codegen.ps1 duplicates this
           # generated-method parser; keep brace and uniqueness handling aligned.
           function Get-GeneratedMethodDefinition {
             param(
@@ -1024,15 +1024,15 @@ jobs:
               -Encoding utf8
           Write-Host "Captured $($capturedMethods.Count) exact typed-deregistration C++ method bodies."
 
-      - name: Capture targeted post-route codegen
-        if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
+      - name: Capture dispatch-route codegen
+        if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'comparisons' && steps.run_tests.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
         run: |
-          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-internal'
-          ./scripts/unity/capture-targeted-post-codegen.ps1 `
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-comparisons'
+          ./scripts/unity/capture-dispatch-codegen.ps1 `
             -ProjectPath $projectPath `
-            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-internal'
+            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-comparisons'
 
       - name: Dump Unity log tail on failure or cancellation
         if: ${{ failure() || cancelled() }}

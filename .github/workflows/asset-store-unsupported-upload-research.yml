@@ -44,7 +44,8 @@ jobs:
 
           Research topics that stay outside release.yml:
           - BatchSubmitter-style Editor API automation.
-          - Hybrid Packages / Asset Store UPM early-access flows.
+          - Whether com.unity.upm-publishing-tools exposes a documented public Editor API and service authentication model.
+          - Prerequisites for an owner-run, sanctioned two-version publication that can test whether the Asset Store registry preserves _upm.changelog.
           - Official Unity changes that might introduce a supported non-interactive API.
 
           Before any CI upload wiring exists, Unity must document a supported
