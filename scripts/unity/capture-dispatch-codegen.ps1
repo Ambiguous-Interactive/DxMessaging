@@ -348,7 +348,7 @@ function Add-NativeLayoutInventory {
         Get-ChildItem -LiteralPath $playerDir -File -Recurse -Filter '*.pdb' |
             Sort-Object -Property FullName
     )
-    $gameAssemblyPdbs = @(
+    $gameAssemblyPdbFiles = @(
         $pdbFiles |
             Where-Object {
                 [string]::Equals(
@@ -358,15 +358,15 @@ function Add-NativeLayoutInventory {
                 )
             }
     )
-    if ($gameAssemblyPdbs.Count -ne 1) {
-        throw "Expected one GameAssembly.pdb under $playerDir; found $($gameAssemblyPdbs.Count)."
+    if ($gameAssemblyPdbFiles.Count -ne 1) {
+        throw "Expected one GameAssembly.pdb under $playerDir; found $($gameAssemblyPdbFiles.Count)."
     }
-    if ($gameAssemblyPdbs[0].Length -le 0) {
-        throw "Expected a non-empty GameAssembly.pdb at $($gameAssemblyPdbs[0].FullName)."
+    if ($gameAssemblyPdbFiles[0].Length -le 0) {
+        throw "Expected a non-empty GameAssembly.pdb at $($gameAssemblyPdbFiles[0].FullName)."
     }
     $inventory.Add("pdbFileCount=$($pdbFiles.Count)")
-    $inventory.Add("gameAssemblyPdb=$($gameAssemblyPdbs[0].FullName)")
-    $inventory.Add("gameAssemblyPdbBytes=$($gameAssemblyPdbs[0].Length)")
+    $inventory.Add("gameAssemblyPdb=$($gameAssemblyPdbFiles[0].FullName)")
+    $inventory.Add("gameAssemblyPdbBytes=$($gameAssemblyPdbFiles[0].Length)")
     foreach ($pdbFile in $pdbFiles) {
         $inventory.Add("pdb=$($pdbFile.FullName) bytes=$($pdbFile.Length)")
     }
