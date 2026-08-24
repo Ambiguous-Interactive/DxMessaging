@@ -98,7 +98,7 @@ function buildChecklist({ mode, pkg, tag, packageName, unitypackageName, changel
     : `UPM reference payload: ${packageName}`;
   const pathStep = isClassic
     ? "Upload through the in-Editor Asset Store Publishing Tools window."
-    : "Use Unity's official UPM publishing workflow only if the publisher account has UPM early access.";
+    : "Use an editor version listed as compatible with the installed official UPM tool only after enrollment reaches Active admittance.";
   return `${heading}
 
 Package: ${pkg.displayName || pkg.name} (${pkg.name})

@@ -6,7 +6,8 @@ the publisher account is already onboarded; for account setup, package-content
 rules, and the UPM-vs-classic submission choice, see
 [Unity Asset Store UPM](../ops/unity-asset-store-upm.md).
 
-The Asset Store upload is **manual by design**: there is no sanctioned
+The Asset Store upload is **manual by design**: Unity now provides official
+Editor tools for both classic and UPM submissions, but neither tool documents a
 non-interactive upload path (see the determination below). The release pipeline
 removes every manual step it can -- it stages the exact upload payload and a
 generated checklist as a workflow artifact -- so the human step is reduced to
@@ -14,19 +15,30 @@ generated checklist as a workflow artifact -- so the human step is reduced to
 the source of truth for that step; keep account IDs, screenshots, and review
 correspondence out of it.
 
-## Automation determination (re-verified 2026-06-22)
+## Automation determination (re-verified 2026-08-24)
 
 There is **no sanctioned (official, documented, supported) CLI, API, or headless
 mode** for uploading a package to the Unity Asset Store. The upload must be
 driven interactively through the Unity Editor by a signed-in publisher. Evidence:
 
-1. **Official Asset Store Publishing Tools** (`com.unity.asset-store-tools`,
-   latest **v12.0.0**, released 2025-01-13): the package's stated purpose is to
-   "prepare, validate, and package your assets for submission through
-   publisher.unity.com." Its entire documented workflow is the Editor GUI
-   (`Tools > Asset Store > Uploader`), which requires an interactive Unity ID
-   login and an `Export and Upload` button click. There is no `-batchmode`,
-   `-executeMethod`, command-line, API-token, or CI entry point.
+1. **Official Asset Store Publishing Tools** (`com.unity.asset-store-tools`):
+   its documented workflow is the Editor GUI (`Tools > Asset Store > Uploader`),
+   which requires an interactive Unity ID login and an upload button click.
+   There is no documented `-batchmode`, `-executeMethod`, command-line,
+   API-token, or CI entry point.
+1. **Official Asset Store UPM Publishing Tools**
+   (`com.unity.upm-publishing-tools` v0.3.1, released 2026-06-08): Unity's
+   [UPM publishing page](https://assetstore.unity.com/publishing/upm-publishing)
+   says UPM publishing is available for all tools, extensions, and SDKs. The
+   [tool listing](https://assetstore.unity.com/packages/tools/asset-store-upm-publishing-tools-5368745)
+   still describes selected early access. Treat `Active` admittance as a
+   Publisher Portal preflight until Unity resolves that conflict. Unity's
+   [enrollment instructions](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply)
+   say the account must reach `Active` admittance before the UPM Publisher
+   Portal appears. The official material describes an Editor tool for
+   validation, upload, and publication; it does not document a headless API or
+   service credential. Unity 2022.3 is the oldest editor version listed for the
+   v0.3.1 tool.
 1. **Unity Manual** ("Validate and upload assets to your package"): documents
    only the in-Editor Uploader window and interactive Unity ID login. It makes
    no mention of CI/CD, automation, headless mode, or programmatic upload.
@@ -48,9 +60,11 @@ manual, backed by the staged artifact below. This is revisited each release; see
 Unsupported upload experiments are quarantined in the manual-only
 `Asset Store Unsupported Upload Research` workflow. It has no tag trigger,
 requires the protected `asset-store-experimental` environment, and is limited to
-documenting risks around BatchSubmitter-style Editor API automation, Hybrid
-Packages / UPM early-access flows, and any future official Unity API. It must
-not upload, store publisher credentials, or harvest Unity ID browser sessions.
+documenting risks around BatchSubmitter-style Editor API automation, whether the
+official UPM tool exposes a documented public Editor API and service
+authentication model, Asset Store registry metadata, and any future official
+Unity API. It must not upload, store publisher credentials, or harvest Unity ID
+browser sessions.
 
 ## What the release pipeline stages for you
 
@@ -90,8 +104,8 @@ Run this once the release workflow for the tag is green.
    Artifacts), or download the `.unitypackage` from the matching GitHub Release
    assets. Open `CLASSIC-UPLOAD-CHECKLIST.md` from the artifact and keep it
    beside you -- it is generated for this exact version. Use
-   `UPM-UPLOAD-CHECKLIST.md` only if the publisher account has Unity's UPM
-   Asset Store early access.
+   `UPM-UPLOAD-CHECKLIST.md` only after the account reaches `Active` UPM
+   admittance and the UPM Publisher Portal appears.
 1. **Verify integrity.** Confirm the `.unitypackage` SHA-256 matches its
    `.sha256` sidecar before uploading (use `Get-FileHash` on Windows,
    `shasum -a 256` elsewhere). This catches a truncated download before it
@@ -178,7 +192,7 @@ with the manual steps kept as the fallback.
 ## See also
 
 - [Unity Asset Store UPM](../ops/unity-asset-store-upm.md) -- publisher account
-  onboarding, package-content rules, and the UPM early-access submission flow.
+  onboarding, package-content rules, and the conditional UPM submission flow.
 - [Release Operations](../ops/release-operations.md) -- the full tagged-release
   pipeline this runbook plugs into.
 - [npm Release Publishing](../ops/npm-release-publishing.md) -- the npm/OpenUPM

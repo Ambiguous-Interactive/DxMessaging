@@ -139,8 +139,8 @@ Release assets are the npm `.tgz` plus `.sha256` and the `.unitypackage` plus
 failed export blocks the entire release (including the irreversible npm publish)
 rather than shipping an incomplete release. Recovery is to fix the export and
 re-run; the npm publish is idempotent (it skips a version already on the
-registry). The Unity Asset Store upload is manual; no sanctioned CLI exists for
-it.
+registry). The Unity Asset Store upload is manual; the official classic and UPM
+publishing tools do not document a sanctioned headless entry point.
 
 ## Public References
 

@@ -9,9 +9,11 @@ Unity Asset Store UPM publishing is separate from npm and OpenUPM. npm
 provenance and GitHub artifact attestations do not replace Unity-controlled
 package signing or Asset Store review.
 
-Unity's public materials describe UPM publishing on the Asset Store as an
-early-access workflow. Treat UPM Asset Store publishing as conditional until the
-Ambiguous publisher account is approved for that workflow.
+Unity's current UPM publishing page says the workflow is available for all
+tools, extensions, and SDKs, while the official publishing-tool listing still
+describes selected early access. Treat UPM Asset Store publishing as conditional
+until the Ambiguous publisher account reaches `Active` UPM admittance and the
+UPM Publisher Portal appears.
 
 ## Publisher Account Setup
 
@@ -20,7 +22,7 @@ Verify in the Unity publisher account:
 1. Publisher profile is active.
 1. Organization verification requirements are complete.
 1. Any required identity, domain, tax, or business verification is complete.
-1. The account has access to UPM publishing tools if using UPM submission.
+1. UPM enrollment has `Active` admittance and the UPM Publisher Portal appears.
 1. Maintainers who submit packages have the needed role.
 
 Do not commit publisher account IDs, screenshots, tax details, DUNS numbers, or
@@ -115,12 +117,14 @@ generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
 import visibly.
 
 There is no sanctioned CLI or API for Unity Asset Store uploads (re-verified
-2026-06-22: the official `com.unity.asset-store-tools` v12.0.0 is GUI-only with
-no `-batchmode`/`-executeMethod`/API entry point, and the community batch
-uploaders drive undocumented internal Editor APIs that are unsupported and can
-break without warning). The pipeline therefore stops at staging; the upload
-below is manual. The release-time procedure -- and the full automation
-determination with its re-evaluation trigger -- lives in the
+2026-08-24). Unity now ships the official `com.unity.upm-publishing-tools`
+package alongside the classic publishing tool, but the official material for
+both describes interactive Editor workflows and does not document a headless
+entry point or service credential. Community batch uploaders still drive
+undocumented internal Editor APIs that can break without warning. The pipeline
+therefore stops at staging; the upload below is manual. The release-time
+procedure -- and the full automation determination with its re-evaluation
+trigger -- lives in the
 [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md).
 
 ## Submission Path
@@ -129,19 +133,20 @@ The per-release classic `.unitypackage` upload procedure -- download the staged
 `asset-store-submission` artifact, drive the in-Editor uploader, fill the
 metadata, and submit for review -- lives in the
 [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md). This
-page stays focused on the account-onboarding context and the UPM early-access
+page stays focused on the account-onboarding context and the conditional UPM
 variant below.
 
-If Ambiguous has UPM Asset Store early access, the UPM submission flow can
-replace the `.unitypackage` upload:
+If Ambiguous has `Active` UPM admittance, the UPM submission flow can replace
+the `.unitypackage` upload:
 
-1. Install Unity's UPM publishing tooling from Unity's official channel.
+1. Open an editor version listed as compatible with the installed UPM publishing
+   tool, then install the tool from Unity's official channel.
 1. Validate the package with Unity's tooling.
 1. Upload the UPM package through the UPM publishing workflow.
 1. Complete Asset Store metadata, screenshots, compatibility, and review fields.
 1. Submit for review.
 
-If Ambiguous does not have UPM Asset Store early access:
+If Ambiguous does not have `Active` UPM admittance:
 
 1. Do not claim Asset Store UPM availability in package docs.
 1. Continue publishing through npm and OpenUPM.
