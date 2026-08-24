@@ -1026,7 +1026,7 @@ jobs:
 
       - name: Capture dispatch-route codegen and native layout
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'comparisons' && steps.run_tests.outcome == 'success' }}
-        timeout-minutes: 5
+        timeout-minutes: 15
         shell: pwsh
         run: |
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-comparisons'
@@ -1037,6 +1037,10 @@ jobs:
           $nativeInventory = Join-Path $artifactsPath 'native-layout-inventory.txt'
           if (!(Test-Path -LiteralPath $nativeInventory -PathType Leaf)) {
             throw "Native layout inventory was not written to $nativeInventory."
+          }
+          $nativeDisassembly = Join-Path $artifactsPath 'native-disassembly.txt'
+          if (!(Test-Path -LiteralPath $nativeDisassembly -PathType Leaf)) {
+            throw "Native disassembly was not written to $nativeDisassembly."
           }
 
       - name: Dump Unity log tail on failure or cancellation

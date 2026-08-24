@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# cspell:ignore gshared
+# cspell:ignore disasm gshared nobytes pdbpath
 [CmdletBinding()]
 param(
     [string]$ProjectPath,
@@ -532,9 +532,182 @@ function Add-NativeLayoutInventory {
         $inventory.Add("$line")
     }
 
+    $pdbPathOutput = @(
+        & $selectedDumpbin.FullName /pdbpath:verbose $gameAssemblies[0].FullName 2>&1
+    )
+    $pdbPathSucceeded = $?
+    $pdbPathExitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+    $pdbPathExitCode =
+        if ($null -ne $pdbPathExitCodeVariable) {
+            $pdbPathExitCodeVariable.Value
+        }
+        elseif ($pdbPathSucceeded) {
+            0
+        }
+        else {
+            1
+        }
+    if (!$pdbPathSucceeded -or $pdbPathExitCode -ne 0) {
+        throw "dumpbin /pdbpath:verbose exited $pdbPathExitCode for $($gameAssemblies[0].FullName)."
+    }
+    $matchedPdbPaths = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $pdbPathOutput) {
+        $pdbMatch = [regex]::Match(
+            "$line",
+            'PDB file found at [''"](?<path>.+?\.pdb)[''"]',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+        if (
+            $pdbMatch.Success -and
+            [string]::Equals(
+                [System.IO.Path]::GetFileName($pdbMatch.Groups['path'].Value),
+                'GameAssembly.pdb',
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        ) {
+            $matchedPdbPaths.Add($pdbMatch.Groups['path'].Value)
+        }
+    }
+    if ($matchedPdbPaths.Count -ne 1) {
+        throw 'dumpbin /pdbpath:verbose did not report a matching GameAssembly.pdb.'
+    }
+    $matchedPdb = Get-Item -LiteralPath $matchedPdbPaths[0] -ErrorAction SilentlyContinue
+    if ($null -eq $matchedPdb -or $matchedPdb.Length -le 0) {
+        throw "dumpbin reported a missing or empty matching PDB at $($matchedPdbPaths[0])."
+    }
+    $projectRootWithSeparator = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    ) + [System.IO.Path]::DirectorySeparatorChar
+    $matchedPdbFullName = [System.IO.Path]::GetFullPath($matchedPdb.FullName)
+    if (
+        !$matchedPdbFullName.StartsWith(
+            $projectRootWithSeparator,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        throw "dumpbin loaded a matching PDB outside the project root: $matchedPdbFullName."
+    }
+    $inventory.Add('')
+    $inventory.Add('gameAssemblyPdbPath:')
+    $inventory.Add("matchedGameAssemblyPdb=$matchedPdbFullName")
+    $inventory.Add("matchedGameAssemblyPdbBytes=$($matchedPdb.Length)")
+    foreach ($line in $pdbPathOutput) {
+        $inventory.Add("$line")
+    }
+
     $outputPath = Join-Path $ArtifactsRoot 'native-layout-inventory.txt'
     $inventory | Set-Content -LiteralPath $outputPath -Encoding utf8
     Write-Host "Captured native layout inventory to $outputPath."
+
+    $uniqueNativeSymbols = [System.Collections.Generic.List[string]]::new()
+    $seenNativeSymbols = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($symbol in $Symbols) {
+        if ($seenNativeSymbols.Add($symbol)) {
+            $uniqueNativeSymbols.Add($symbol)
+        }
+    }
+    if ($uniqueNativeSymbols.Count -eq 0) {
+        throw 'No generated symbols were provided for native disassembly.'
+    }
+    $nativeSymbolPatterns = [System.Collections.Generic.List[string]]::new()
+    $symbolByPattern = [System.Collections.Generic.Dictionary[string, string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    $nativeSymbolMatchCounts = [System.Collections.Generic.Dictionary[string, int]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($symbol in $uniqueNativeSymbols) {
+        $pattern = '(?<![A-Za-z0-9_]){0}(?![A-Za-z0-9_])' -f [regex]::Escape($symbol)
+        $nativeSymbolPatterns.Add($pattern)
+        $symbolByPattern.Add($pattern, $symbol)
+        $nativeSymbolMatchCounts.Add($symbol, 0)
+    }
+
+    $maximumMatchRecords = 100
+    $capturedNativeSymbolMatches = [System.Collections.Generic.List[object]]::new()
+    $disassemblyLineCount = 0
+    $nativeSymbolLineMatchCount = 0
+    & $selectedDumpbin.FullName /disasm:nobytes $gameAssemblies[0].FullName 2>&1 |
+        ForEach-Object {
+            $disassemblyLineCount++
+            $_
+        } |
+        Select-String `
+            -Pattern @($nativeSymbolPatterns) `
+            -CaseSensitive `
+            -Context 2, 80 |
+        ForEach-Object {
+            $nativeSymbolLineMatchCount++
+            $matchPattern = "$($_.Pattern)"
+            if (!$symbolByPattern.ContainsKey($matchPattern)) {
+                throw "Native match returned unknown pattern '$matchPattern'."
+            }
+            $matchedSymbol = $symbolByPattern[$matchPattern]
+            $nativeSymbolMatchCounts[$matchedSymbol]++
+            if ($capturedNativeSymbolMatches.Count -lt $maximumMatchRecords) {
+                $capturedNativeSymbolMatches.Add($_)
+            }
+        }
+    $disassemblySucceeded = $?
+    $disassemblyExitCodeVariable = Get-Variable `
+        -Name LASTEXITCODE `
+        -ErrorAction SilentlyContinue
+    $disassemblyExitCode =
+        if ($null -ne $disassemblyExitCodeVariable) {
+            $disassemblyExitCodeVariable.Value
+        }
+        elseif ($disassemblySucceeded) {
+            0
+        }
+        else {
+            1
+        }
+    if (!$disassemblySucceeded -or $disassemblyExitCode -ne 0) {
+        throw "dumpbin /disasm:nobytes exited $disassemblyExitCode for $($gameAssemblies[0].FullName)."
+    }
+    if ($disassemblyLineCount -eq 0) {
+        throw "dumpbin wrote no native disassembly for $($gameAssemblies[0].FullName)."
+    }
+
+    $nativeEvidence = [System.Collections.Generic.List[string]]::new()
+    $nativeEvidence.Add("gameAssembly=$($gameAssemblies[0].FullName)")
+    $nativeEvidence.Add("matchedGameAssemblyPdb=$matchedPdbFullName")
+    $nativeEvidence.Add("selectedDumpbin=$($selectedDumpbin.FullName)")
+    $nativeEvidence.Add("disassemblyLineCount=$disassemblyLineCount")
+    $nativeEvidence.Add("nativeSymbolLineMatchCount=$nativeSymbolLineMatchCount")
+    $nativeEvidence.Add("capturedMatchRecordCount=$($capturedNativeSymbolMatches.Count)")
+    $nativeEvidence.Add("maximumMatchRecords=$maximumMatchRecords")
+    $nativeEvidence.Add(
+        "matchRecordsTruncated=$($nativeSymbolLineMatchCount -gt $maximumMatchRecords)"
+    )
+    foreach ($symbol in $uniqueNativeSymbols) {
+        $nativeEvidence.Add(
+            "symbol=$symbol lineMatchCount=$($nativeSymbolMatchCounts[$symbol])"
+        )
+    }
+    foreach ($match in $capturedNativeSymbolMatches) {
+        $matchedSymbol = $symbolByPattern["$($match.Pattern)"]
+        $nativeEvidence.Add('')
+        $nativeEvidence.Add(
+            "matchSymbol=$matchedSymbol line=$($match.LineNumber) path=$($match.Path)"
+        )
+        foreach ($contextLine in @($match.Context.PreContext)) {
+            $nativeEvidence.Add("  $contextLine")
+        }
+        $nativeEvidence.Add("> $($match.Line)")
+        foreach ($contextLine in @($match.Context.PostContext)) {
+            $nativeEvidence.Add("  $contextLine")
+        }
+    }
+    $nativeDisassemblyPath = Join-Path $ArtifactsRoot 'native-disassembly.txt'
+    $nativeEvidence | Set-Content -LiteralPath $nativeDisassemblyPath -Encoding utf8
+    Write-Host (
+        "Captured $nativeSymbolLineMatchCount native symbol-line matches " +
+        "to $nativeDisassemblyPath."
+    )
 }
 
 $targetedPostCallPattern =
@@ -785,15 +958,57 @@ if ($SelfTestOnly) {
         'throw "synthetic dumpbin launch failure"' |
             Set-Content -LiteralPath $throwingDumpbin -Encoding utf8
         @(
-            'param([string]$Option, [string]$Image)',
-            'if ($Option -ne "/headers" -or !(Test-Path -LiteralPath $Image)) { exit 1 }',
-            'Write-Output "PE header proof"',
+            'param([Parameter(ValueFromRemainingArguments = $true)] [string[]]$CommandArguments)',
+            '$image = $CommandArguments[-1]',
+            'if (!(Test-Path -LiteralPath $image)) { exit 1 }',
+            '$option = $CommandArguments[0]',
+            '$behavior = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)',
+            'if ($option -eq "/headers") { Write-Output "PE header proof"; exit 0 }',
+            'if ($option -eq "/pdbpath:verbose") {',
+            '    if ($behavior -eq "failed-pdb-dumpbin") { exit 8 }',
+            '    if ($behavior -eq "prefix-collision-pdb-dumpbin") {',
+            '        $prefixPdb = Join-Path (Split-Path -Parent $image) "NotGameAssembly.pdb"',
+            '        Set-Content -LiteralPath $prefixPdb -Value "fake prefix pdb"',
+            '        Write-Output "PDB file found at ''$prefixPdb''"',
+            '        exit 0',
+            '    }',
+            '    if ($behavior -eq "no-matching-pdb-dumpbin") {',
+            '        Write-Output "PDB file ''C:\synthetic\GameAssembly.pdb'' checked. (File not found)"',
+            '        exit 0',
+            '    }',
+            '    $pdb = @(Get-ChildItem -LiteralPath (Split-Path -Parent $image) -File -Recurse -Filter "GameAssembly.pdb")',
+            '    if ($pdb.Count -ne 1) { exit 1 }',
+            '    Write-Output "PDB file found at ''$($pdb[0].FullName)''"',
+            '    exit 0',
+            '}',
+            'if ($option -eq "/disasm:nobytes") {',
+            '    if ($behavior -eq "failed-disassembly-dumpbin") { exit 9 }',
+            '    if ($behavior -eq "empty-disassembly-dumpbin") {',
+            '        exit 0',
+            '    }',
+            '    if ($behavior -eq "truncated-disassembly-dumpbin") {',
+            '        foreach ($index in 1..101) { Write-Output "InventoryProbeSymbol: $index" }',
+            '        exit 0',
+            '    }',
+            '    Write-Output @(',
+            '        "Synthetic disassembly",',
+            '        "before",',
+            '        "inventoryProbeSymbol:",',
+            '        "InventoryProbeSymbol:",',
+            '        "  mov eax, 1",',
+            '        "  ret",',
+            '        "InventoryProbeSymbol_gshared:",',
+            '        "  mov eax, 2",',
+            '        "  ret"',
+            '    )',
+            '    exit 0',
+            '}',
             'exit 0'
         ) | Set-Content -LiteralPath $fakeDumpbin -Encoding utf8
         Add-NativeLayoutInventory `
             -ProjectRoot $integrationTestRoot `
             -ArtifactsRoot $integrationArtifacts `
-            -Symbols @('InventoryProbeSymbol') `
+            -Symbols @('InventoryProbeSymbol', 'InventoryProbeSymbol_gshared') `
             -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
             -DumpbinPaths @($failedDumpbin, $throwingDumpbin, $fakeDumpbin)
         $nativeInventory = Get-Content `
@@ -810,7 +1025,8 @@ if ($SelfTestOnly) {
                 'exitCode=7',
                 'dumpbinFailure=',
                 'selectedDumpbin=',
-                'PE header proof'
+                'PE header proof',
+                'gameAssemblyPdbPath:'
             )
         ) {
             if (!$nativeInventory.Contains($expectedInventoryEvidence)) {
@@ -821,7 +1037,7 @@ if ($SelfTestOnly) {
         Add-NativeLayoutInventory `
             -ProjectRoot $integrationTestRoot `
             -ArtifactsRoot $integrationArtifacts `
-            -Symbols @('InventoryProbeSymbol') `
+            -Symbols @('InventoryProbeSymbol', 'InventoryProbeSymbol_gshared') `
             -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
             -DumpbinPaths @($fakeDumpbin)
         $nativeInventoryWithoutSymbolMap = Get-Content `
@@ -833,11 +1049,31 @@ if ($SelfTestOnly) {
                 'symbolMap=absent',
                 'symbolMapMatchCount=0',
                 'gameAssemblyPdb=',
-                'PE header proof'
+                'PE header proof',
+                'gameAssemblyPdbPath:'
             )
         ) {
             if (!$nativeInventoryWithoutSymbolMap.Contains($expectedNoSymbolMapEvidence)) {
                 throw "Native layout inventory without SymbolMap omitted '$expectedNoSymbolMapEvidence'."
+            }
+        }
+        $nativeDisassembly = Get-Content `
+            -LiteralPath (Join-Path $integrationArtifacts 'native-disassembly.txt') `
+            -Raw
+        foreach (
+            $expectedDisassemblyEvidence in @(
+                'nativeSymbolLineMatchCount=2',
+                'capturedMatchRecordCount=2',
+                'matchRecordsTruncated=False',
+                'symbol=InventoryProbeSymbol lineMatchCount=1',
+                'symbol=InventoryProbeSymbol_gshared lineMatchCount=1',
+                '> InventoryProbeSymbol:',
+                '> InventoryProbeSymbol_gshared:',
+                'mov eax, 1'
+            )
+        ) {
+            if (!$nativeDisassembly.Contains($expectedDisassemblyEvidence)) {
+                throw "Native disassembly omitted '$expectedDisassemblyEvidence'."
             }
         }
 
@@ -862,6 +1098,69 @@ if ($SelfTestOnly) {
                     "Native layout inventory failure '$failureMessage' did not contain " +
                     "'$ExpectedMessage'."
                 )
+            }
+        }
+
+        foreach (
+            $nativeCommandFailure in @(
+                [pscustomobject]@{
+                    Name            = 'no-matching-pdb-dumpbin.ps1'
+                    ExpectedMessage = 'did not report a matching GameAssembly.pdb'
+                },
+                [pscustomobject]@{
+                    Name            = 'prefix-collision-pdb-dumpbin.ps1'
+                    ExpectedMessage = 'did not report a matching GameAssembly.pdb'
+                },
+                [pscustomobject]@{
+                    Name            = 'failed-pdb-dumpbin.ps1'
+                    ExpectedMessage = 'dumpbin /pdbpath:verbose exited 8'
+                },
+                [pscustomobject]@{
+                    Name            = 'failed-disassembly-dumpbin.ps1'
+                    ExpectedMessage = 'dumpbin /disasm:nobytes exited 9'
+                },
+                [pscustomobject]@{
+                    Name            = 'empty-disassembly-dumpbin.ps1'
+                    ExpectedMessage = 'dumpbin wrote no native disassembly'
+                }
+            )
+        ) {
+            $failureDumpbin = Join-Path $integrationTestRoot $nativeCommandFailure.Name
+            Copy-Item -LiteralPath $fakeDumpbin -Destination $failureDumpbin
+            Assert-NativeInventoryFailure `
+                -ExpectedMessage $nativeCommandFailure.ExpectedMessage `
+                -Operation {
+                    Add-NativeLayoutInventory `
+                        -ProjectRoot $integrationTestRoot `
+                        -ArtifactsRoot $integrationArtifacts `
+                        -Symbols @('InventoryProbeSymbol') `
+                        -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+                        -DumpbinPaths @($failureDumpbin)
+                }
+        }
+
+        $truncatedDisassemblyDumpbin = Join-Path `
+            $integrationTestRoot `
+            'truncated-disassembly-dumpbin.ps1'
+        Copy-Item -LiteralPath $fakeDumpbin -Destination $truncatedDisassemblyDumpbin
+        Add-NativeLayoutInventory `
+            -ProjectRoot $integrationTestRoot `
+            -ArtifactsRoot $integrationArtifacts `
+            -Symbols @('InventoryProbeSymbol') `
+            -Methods @([pscustomobject]@{ Path = $integrationCppPath }) `
+            -DumpbinPaths @($truncatedDisassemblyDumpbin)
+        $truncatedNativeDisassembly = Get-Content `
+            -LiteralPath (Join-Path $integrationArtifacts 'native-disassembly.txt') `
+            -Raw
+        foreach (
+            $expectedTruncationEvidence in @(
+                'nativeSymbolLineMatchCount=101',
+                'capturedMatchRecordCount=100',
+                'matchRecordsTruncated=True'
+            )
+        ) {
+            if (!$truncatedNativeDisassembly.Contains($expectedTruncationEvidence)) {
+                throw "Truncated native disassembly omitted '$expectedTruncationEvidence'."
             }
         }
 
