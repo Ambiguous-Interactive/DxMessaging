@@ -217,7 +217,6 @@ function formatRowBytes(row) {
   return formatBytesAllocated(row.gcAllocatedBytes);
 }
 
-// Optional runner diagnostics fall back to neutral text when missing or malformed.
 function readMachineSpecs(machineSpecsPath) {
   if (!machineSpecsPath) {
     return NEUTRAL_RUNNER_DESCRIPTION;
@@ -656,20 +655,16 @@ function stripNumbers(text) {
   return text.replace(/-?\d[\d,]*(?:\.\d+)?/g, "#");
 }
 
-// Compare only table rows, cell-by-cell, with numeric tolerance and stable order.
 function tableRowCells(line) {
   const trimmed = line.trim();
   if (!trimmed.startsWith("|")) {
     return null;
   }
-  return (
-    trimmed
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      // Bold markers are presentation; numbers still tolerance-compare.
-      .map((cell) => cell.trim().replace(/^\*\*(.*)\*\*$/, "$1"))
-  );
+  return trimmed
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim().replace(/^\*\*(.*)\*\*$/, "$1"));
 }
 
 function isSeparatorCells(cells) {
@@ -687,8 +682,6 @@ function rowsEquivalent(existingCells, candidateCells, tolerance) {
   if (existingCells.length !== candidateCells.length) {
     return false;
   }
-  // Separator rows differ only in dash count once Prettier aligns the table;
-  // treat any two well-formed separator rows of equal arity as equal.
   if (isSeparatorCells(existingCells) && isSeparatorCells(candidateCells)) {
     return true;
   }
@@ -713,6 +706,10 @@ function rowsEquivalent(existingCells, candidateCells, tolerance) {
 }
 
 function blocksEquivalent(existingBlock, candidateBlock, tolerance) {
+  const runnerLine = (block) => block.split(/\r?\n/).find((line) => line.startsWith("Runner:"));
+  if (runnerLine(existingBlock) !== runnerLine(candidateBlock)) {
+    return false;
+  }
   const existingRows = tableRows(existingBlock);
   const candidateRows = tableRows(candidateBlock);
   if (existingRows.length === 0 || existingRows.length !== candidateRows.length) {

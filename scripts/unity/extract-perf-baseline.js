@@ -212,7 +212,7 @@ function findScenarioIndex(line) {
   // Dispatch keys plus strict comparison-row scenario ids; the earliest CSV
   // scenario field wins so a leading Unity log prefix (e.g. timestamp) is
   // stripped off a CSV row without treating arbitrary log text as a row start.
-  for (const scenario of SCENARIOS) {
+  for (const scenario of [...SCENARIOS, ...COMPARISON_SCENARIO_IDS]) {
     let searchFrom = 0;
     while (searchFrom < line.length) {
       const index = line.indexOf(scenario, searchFrom);
@@ -220,26 +220,11 @@ function findScenarioIndex(line) {
         break;
       }
 
-      if (line[index + scenario.length] === "," && (bestIndex < 0 || index < bestIndex)) {
-        bestIndex = index;
-        if (bestIndex === 0) {
-          return bestIndex;
-        }
-      }
-
-      searchFrom = index + 1;
-    }
-  }
-
-  for (const scenario of COMPARISON_SCENARIO_IDS) {
-    let searchFrom = 0;
-    while (searchFrom < line.length) {
-      const index = line.indexOf(scenario, searchFrom);
-      if (index < 0) {
-        break;
-      }
-
-      if (line[index + scenario.length] === "," && (bestIndex < 0 || index < bestIndex)) {
+      if (
+        (index === 0 || !/[A-Za-z0-9_]/.test(line[index - 1])) &&
+        line[index + scenario.length] === "," &&
+        (bestIndex < 0 || index < bestIndex)
+      ) {
         bestIndex = index;
         if (bestIndex === 0) {
           return bestIndex;

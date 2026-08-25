@@ -422,6 +422,31 @@ player. A dedicated fixture prepares DxMessaging and MessagePipe together for
 each scenario that both libraries support. MessagePipe is the unchanged control
 for host-wide movement when a DxMessaging candidate is compared with its control.
 
+Before both published players run, the workflow queries
+[Windows CPU-set metadata](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-system_cpu_set_information)
+and selects every logical processor in the highest numerical `EfficiencyClass`.
+Windows defines higher values as faster and less power-efficient. The pinned
+32-thread i9-13900KF profile must resolve to 16 logical processors on eight cores
+in one processor group. This excludes the unlike core class while leaving enough
+processors for Unity's background threads. The process stays at Normal priority,
+so affinity is the only new scheduling variable in this experiment.
+
+The workflow fails before taking the Unity lock if the model, logical count, or
+resolved topology changes. It retains the complete selection in
+`performance-cpu-profile.json`. The launcher refreshes and verifies the actual
+process affinity and priority after start, then writes them to
+`standalone-process.json`. The comparison gate requires both artifacts and copies
+the execution profile into the paired JSON and Markdown summaries. A setting
+failure stops the run. The generated performance page also identifies this
+execution profile because the affinity change affects internal and comparison
+absolute rates.
+
+The committed `perf-baseline-profile.json` sidecar identifies the execution
+profile that produced `perf-baseline.csv`. Pull-request reporting requires its
+profile ID, affinity mask, and priority to match the current artifact exactly.
+If the post-merge refresh is skipped or waits in a fallback pull request, later
+runs omit the historical delta instead of comparing different scheduling regimes.
+
 After preparing both bridges, the harness settles the heap once outside all timed
 work, then warms both bridges. `BenchmarkProtocol.MeasurePaired` runs four cycles.
 Each cycle repeats batch-level `ABBA/BAAB` super-cycles until both libraries have
@@ -450,8 +475,9 @@ No cycle is discarded and no median is taken. A spread above the predeclared 3%
 materiality band emits a warning and remains in the NUnit output. It does not
 fail correctness or turn an unstable measurement into a regression. Each side
 still has an exact fan-out assertion over warm-up plus every measured operation.
-The paired rows use the `PairedComparison_` prefix, so they remain diagnostic and
-cannot replace the canonical `Comparison_` rows in the published matrix.
+The paired fixture emits only `DXM_PAIRED_COMPARISON` evidence markers, not
+structured or CSV performance rows, so it cannot replace or duplicate canonical
+`Comparison_` rows in the published matrix.
 `SubUnsub` stays on the canonical continuous window: its allocation and collection
 work can spill into the other workload's next batch, which breaks paired isolation.
 The paired fixture lives in the lexically last comparison assembly. The CI gate

@@ -10,6 +10,7 @@ on:
     paths-ignore:
       - "docs/architecture/performance.md"
       - "docs/architecture/perf-baseline.csv"
+      - "docs/architecture/perf-baseline-profile.json"
   workflow_dispatch:
 
 concurrency:

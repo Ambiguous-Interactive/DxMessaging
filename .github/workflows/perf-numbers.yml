@@ -16,8 +16,8 @@ name: Performance Numbers
 # (after the PR merges) -- or on a manual
 # workflow_dispatch from the default
 # branch, the supported recovery path after a failed publish -- the same
-# benchmarks run and, if the numbers moved, CI lands the refreshed doc AND the
-# regenerated master baseline CSV on the default branch in two tiers:
+# benchmarks run and, if the numbers moved, CI lands the refreshed doc, master
+# baseline CSV, and baseline execution profile on the default branch in two tiers:
 #   1. DIRECT PUSH with a GitHub App installation token (the built-in
 #      GITHUB_TOKEN cannot push to a protected branch; github-actions[bot] is a
 #      system account and is not a selectable bypass actor).
@@ -29,9 +29,9 @@ name: Performance Numbers
 # If the branch advances before this long benchmark run reaches the push step,
 # the job warns and skips the stale artifacts. App-token pushes DO re-trigger
 # workflows, so recursion is broken the simple way: the push trigger ignores
-# docs/architecture/performance.md and docs/architecture/perf-baseline.csv below,
+# the three generated performance paths below,
 # so the auto-commit cannot re-run the benchmark. Fallback PRs change only the
-# two ignored generated paths, so they cannot run licensed benchmarks either. The committed
+# three ignored generated paths, so they cannot run licensed benchmarks either. The committed
 # numbers are therefore owned by CI, not by committed state, manual runs, or
 # PR-body text.
 #
@@ -47,22 +47,24 @@ on:
   push:
     branches:
       - master
-    # Loop break: the commit-perf-doc job pushes a doc + baseline commit with a
+    # Loop break: the commit-perf-doc job pushes generated performance evidence with a
     # GitHub App token, which (unlike the built-in GITHUB_TOKEN) DOES re-trigger
-    # workflows. Ignoring BOTH the perf doc AND the regenerated baseline CSV here
+    # workflows. Ignoring all three generated performance paths here
     # means that auto-commit cannot re-run the benchmark. A normal code merge still
     # touches non-ignored paths and runs.
     paths-ignore:
       - docs/architecture/performance.md
       - docs/architecture/perf-baseline.csv
+      - docs/architecture/perf-baseline-profile.json
   pull_request:
     branches:
       - master
-    # The generated fallback PR changes only these two files. Ignoring them keeps
+    # The generated fallback PR changes only these three files. Ignoring them keeps
     # that delivery path from consuming a second licensed benchmark run.
     paths-ignore:
       - docs/architecture/performance.md
       - docs/architecture/perf-baseline.csv
+      - docs/architecture/perf-baseline-profile.json
   workflow_dispatch:
 
 # Serialize merge-path runs on the same ref so two post-merge push jobs from
@@ -381,6 +383,37 @@ jobs:
             -OutputJson (Join-Path $artifactsPath 'machine-specs.json') `
             -OutputSummary (Join-Path $artifactsPath 'machine-specs.txt')
 
+      # Derive the affinity mask from Windows CPU-set EfficiencyClass evidence,
+      # then retain the complete topology. Higher numerical classes are faster.
+      # The model/count checks keep the published machine fixed; the topology
+      # checks prove which logical processors belong to its fastest core class.
+      - name: Resolve the pinned performance CPU profile
+        id: cpu_profile
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
+          $profilePath = Join-Path $artifactsPath 'performance-cpu-profile.json'
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profilePath
+          $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+          if (
+            $profile.schemaVersion -ne 1 -or
+            $profile.executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1' -or
+            $profile.cpuModel -notmatch 'i9-13900KF' -or
+            $profile.processorGroup -ne 0 -or
+            $profile.logicalProcessorCount -ne 32 -or
+            @($profile.efficiencyClasses).Count -ne 2 -or
+            $profile.selectedLogicalProcessorCount -ne 16 -or
+            $profile.selectedCoreCount -ne 8 -or
+            $profile.priorityClass -cne 'Normal' -or
+            $profile.affinityMask -cnotmatch '^0x[0-9A-F]+$'
+          ) {
+            throw "The resolved CPU profile does not match the pinned 32-thread i9-13900KF topology: $($profile | ConvertTo-Json -Compress -Depth 8)."
+          }
+          "affinity-mask=$($profile.affinityMask)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+          "priority-class=$($profile.priorityClass)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+          Write-Host "::notice::Validated performance CPU profile $($profile.executionProfileId): affinity=$($profile.affinityMask), priority=$($profile.priorityClass)."
+
       # IL2CPP compiles generated C++ with `cl.exe`.
       # `assert-unity-host-prereqs` covers the VC++ RUNTIME (so the Editor
       # launches) but not the BUILD TOOLS (so IL2CPP can compile), and that gap
@@ -505,6 +538,8 @@ jobs:
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DX_PERF_COMMIT: ${{ env.MEASURED_SHA }}
           DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison' }}
+          DXM_PERF_AFFINITY_MASK: ${{ steps.cpu_profile.outputs.affinity-mask }}
+          DXM_PERF_PRIORITY_CLASS: ${{ steps.cpu_profile.outputs.priority-class }}
         run: |
           # HASHTABLE splat (not an array): array splatting passes elements
           # POSITIONALLY, so '-IncludeComparisons' would bind to $RepoRoot. A
@@ -517,10 +552,19 @@ jobs:
           # player process. Its paired DxMessaging/MessagePipe fixture measures
           # counterbalanced batches inside that process so common host movement is
           # present on both sides of the reported ratio.
+          $affinityText = $env:DXM_PERF_AFFINITY_MASK
+          if ($affinityText -cnotmatch '^0x[0-9A-F]+$') {
+            throw "Invalid derived performance affinity mask '$affinityText'."
+          }
           $extra = @{
               IncludeComparisons = '${{ matrix.benchmark-suite }}' -eq 'comparisons'
               ReleaseCodeOptimization = $true
               ReleasePlayerBuild = $true
+              StandalonePlayerProcessorAffinityMask = [Convert]::ToInt64(
+                  $affinityText.Substring(2),
+                  16
+              )
+              StandalonePlayerPriorityClass = $env:DXM_PERF_PRIORITY_CLASS
               StandaloneScriptingBackend = 'IL2CPP'
           }
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
@@ -535,6 +579,36 @@ jobs:
             -CachePath $cachePath `
             -LicenseReturnOwner Central `
             @extra
+
+      - name: Require pinned standalone process settings
+        if: ${{ matrix.test-mode == 'standalone' && steps.run_tests.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $evidencePath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}/standalone-process.json'
+          $profilePath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}/performance-cpu-profile.json'
+          if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
+            throw "Standalone process evidence was not found at $evidencePath."
+          }
+          if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) {
+            throw "Performance CPU profile was not found at $profilePath."
+          }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+          if (
+            $evidence.schemaVersion -ne 1 -or
+            $evidence.requestedProcessorAffinityMask -cne $profile.affinityMask -or
+            $evidence.actualProcessorAffinityMask -cne $profile.affinityMask -or
+            -not [string]::IsNullOrWhiteSpace([string]$evidence.processorAffinityError) -or
+            $evidence.requestedPriorityClass -cne $profile.priorityClass -or
+            $evidence.actualPriorityClass -cne $profile.priorityClass -or
+            -not [string]::IsNullOrWhiteSpace([string]$evidence.processorPriorityError) -or
+            $evidence.processSettingsVerified -ne $true -or
+            -not [string]::IsNullOrWhiteSpace([string]$evidence.processSettingsError)
+          ) {
+            throw "Standalone process settings did not match the derived CPU profile: $($evidence | ConvertTo-Json -Compress)."
+          }
+          Write-Host "::notice::Verified standalone player affinity $($profile.affinityMask) and $($profile.priorityClass) priority from retained artifacts."
 
       - name: Capture exact standalone player size
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
@@ -1102,6 +1176,8 @@ jobs:
           ./scripts/unity/require-comparison-rows.ps1 `
             -BaselinePath $currentBaseline `
             -EvidencePaths $evidenceInputs `
+            -ProcessEvidencePath (Join-Path $artifactsPath 'standalone-process.json') `
+            -CpuProfilePath (Join-Path $artifactsPath 'performance-cpu-profile.json') `
             -SummaryJsonPath (Join-Path $artifactsPath 'paired-comparison-summary.json') `
             -SummaryMarkdownPath (Join-Path $artifactsPath 'paired-comparison-summary.md')
           Get-Content `
@@ -1247,6 +1323,7 @@ jobs:
     env:
       LATEST_VERSION: 6000.5.2f1
       PERF_BASELINE: docs/architecture/perf-baseline.csv
+      PERF_BASELINE_PROFILE: docs/architecture/perf-baseline-profile.json
       PERF_DELTA: .artifacts/perf-pr-delta.md
       MEASURED_SHA: ${{ github.event.pull_request.head.sha }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -1308,7 +1385,7 @@ jobs:
             --jq '.[] | [.filename, .previous_filename] | .[] | select(. != null)')"
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
           methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
-          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests)'
+          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests|resolve-performance-cpu-profile)'
           methodology_pattern+='|scripts/unity/post-route-perf-scenarios\.json$'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
@@ -1322,15 +1399,38 @@ jobs:
           incompatible="$(printf '%s\n' "${changed_files}" | grep -E \
             "${methodology_pattern}" \
             || true)"
+          reasons=.artifacts/perf-comparison-status.md
+          : > "${reasons}"
           if [ -n "${incompatible}" ]; then
-            echo 'comparable=false' >> "${GITHUB_OUTPUT}"
             {
               echo 'Benchmark or harness paths changed, so historical deltas are non-comparable:'
               printf '%s\n' "${incompatible}" | sed 's/^/- `/' | sed 's/$/`/'
-            } > .artifacts/perf-comparison-status.md
+            } >> "${reasons}"
+          fi
+          current_profile="$(find .artifacts/perf-download \
+            -type f -path '*comparisons*' -name 'performance-cpu-profile.json' \
+            -print 2>/dev/null | sort | head -n1)"
+          profile_matches=false
+          if [ -f "${PERF_BASELINE_PROFILE}" ] && [ -n "${current_profile}" ]; then
+            baseline_profile_identity="$(jq -cS \
+              '{executionProfileId,affinityMask,priorityClass}' \
+              "${PERF_BASELINE_PROFILE}")"
+            current_profile_identity="$(jq -cS \
+              '{executionProfileId,affinityMask,priorityClass}' \
+              "${current_profile}")"
+            if [ "${baseline_profile_identity}" = "${current_profile_identity}" ]; then
+              profile_matches=true
+            fi
+          fi
+          if [ "${profile_matches}" != true ]; then
+            if [ -s "${reasons}" ]; then echo >> "${reasons}"; fi
+            echo 'Historical deltas are also omitted because the baseline execution profile does not match the current player profile.' >> "${reasons}"
+          fi
+          if [ -s "${reasons}" ]; then
+            echo 'comparable=false' >> "${GITHUB_OUTPUT}"
           else
             echo 'comparable=true' >> "${GITHUB_OUTPUT}"
-            echo 'Benchmark methodology is unchanged; the historical Standalone comparison is diagnostic regression smoke.' > .artifacts/perf-comparison-status.md
+            echo 'Benchmark methodology and execution profile are unchanged; the historical Standalone comparison is diagnostic regression smoke.' > "${reasons}"
           fi
 
       - name: Render current PR performance evidence
@@ -1560,10 +1660,10 @@ jobs:
     #      then NEVER lost: worst case the PR waits for a human merge (which can
     #      require an admin if a required check never reports on doc-only
     #      diffs -- see the runbook's fallback prerequisites). The pull_request
-    #      trigger ignores the generated doc and baseline paths, so the fallback
+    #      trigger ignores the generated performance paths, so the fallback
     #      PR cannot run licensed benchmarks.
     # Recursion is broken by the push trigger's paths-ignore on the perf doc +
-    # baseline, not by token identity, so the doc + baseline auto-commit cannot
+    # evidence, not by token identity, so the performance auto-commit cannot
     # re-run the benchmark -- no loop guard needed. Gated on a clean benchmark
     # AND the App credentials being present (otherwise this job degrades to a
     # logged no-op); stale benchmark artifacts also warn and skip if another
@@ -1600,6 +1700,7 @@ jobs:
       # after the first master push. Added to the push trigger's paths-ignore so
       # this auto-commit cannot re-trigger the benchmark workflow.
       PERF_BASELINE: docs/architecture/perf-baseline.csv
+      PERF_BASELINE_PROFILE: docs/architecture/perf-baseline-profile.json
     steps:
       - name: Generate auto-commit GitHub App token
         id: app-token
@@ -1688,6 +1789,23 @@ jobs:
           if [ -n "${machine_specs_json}" ]; then
             machine_specs_args=(--machine-specs "${machine_specs_json}")
           fi
+          execution_profile_json="$(find .artifacts/perf-download \
+            -type f -name 'performance-cpu-profile.json' -print 2>/dev/null | sort | head -n1)"
+          if [ -z "${machine_specs_json}" ] || [ -z "${execution_profile_json}" ]; then
+            echo '::error::Machine specifications or the performance CPU profile are missing from the benchmark artifacts.'
+            exit 1
+          fi
+          profile_description="$(jq -r '
+            "execution profile " + .executionProfileId
+            + "; " + .selectionPolicy + " " + (.selectedEfficiencyClass | tostring)
+            + "; affinity " + .affinityMask
+            + "; priority " + .priorityClass
+          ' "${execution_profile_json}")"
+          combined_specs_json="${RUNNER_TEMP}/machine-specs-with-execution-profile.json"
+          jq --arg profile "${profile_description}" \
+            '.cpu = ((.cpu // "unknown") + "; " + $profile)' \
+            "${machine_specs_json}" > "${combined_specs_json}"
+          machine_specs_args=(--machine-specs "${combined_specs_json}")
           node scripts/unity/render-perf-doc.js \
             "${inputs[@]}" \
             --doc "${PERF_DOC}" \
@@ -1703,6 +1821,9 @@ jobs:
             --output "${PERF_BASELINE}" \
             --replace \
             --scope Standalone
+          jq '{schemaVersion,executionProfileId,affinityMask,priorityClass}' \
+            "${execution_profile_json}" > "${PERF_BASELINE_PROFILE}"
+          npx prettier --write "${PERF_BASELINE_PROFILE}"
           node -e \
             "require('./scripts/unity/perf-scenarios.js').COMPARISON_SUPPORTED_SCENARIO_IDS.forEach((id) => console.log(id))" \
             | sort > .artifacts/perf-expected-comparison-rows.txt
@@ -1714,9 +1835,8 @@ jobs:
             echo '::error::Published comparison rows do not match the pinned capability manifest.'
             exit 1
           fi
-          # The doc OR the baseline moving counts as a change to commit. Check both
-          # tracked paths so a baseline-only refresh is still committed.
-          if git diff --quiet -- "${PERF_DOC}" "${PERF_BASELINE}"; then
+          # Any generated performance evidence moving counts as a change to commit.
+          if git diff --quiet -- "${PERF_DOC}" "${PERF_BASELINE}" "${PERF_BASELINE_PROFILE}"; then
             echo "changed=false" >> "${GITHUB_OUTPUT}"
           else
             echo "changed=true" >> "${GITHUB_OUTPUT}"
@@ -1733,6 +1853,7 @@ jobs:
         # -- the renderer's headings must sit correctly under the doc's h2 parent).
         run: |
           npx prettier --check "${PERF_DOC}"
+          npx prettier --check "${PERF_BASELINE_PROFILE}"
           npx markdownlint-cli2 "${PERF_DOC}"
 
       - name: Commit and push refreshed perf doc
@@ -1758,11 +1879,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -- "${PERF_DOC}"
-          # Stage the regenerated baseline in the SAME commit so the gate + delta
-          # baselines become real on master. paths-ignore covers both files, so
+          # Stage the regenerated baseline and profile in the SAME commit so the
+          # gate and delta baselines become real on master. paths-ignore covers
+          # all generated paths, so
           # this commit cannot re-trigger the benchmark workflow.
           git add -- "${PERF_BASELINE}"
-          if git diff --cached --quiet -- "${PERF_DOC}" "${PERF_BASELINE}"; then
+          git add -- "${PERF_BASELINE_PROFILE}"
+          if git diff --cached --quiet -- "${PERF_DOC}" "${PERF_BASELINE}" "${PERF_BASELINE_PROFILE}"; then
             echo "No staged perf doc/baseline changes remain; nothing to commit."
             exit 0
           fi
@@ -1823,7 +1946,7 @@ jobs:
           # TIER 2: fallback pull request. Push the SAME commit to a unique
           # ci/perf-auto-update-* branch, open a PR with the App token, and enable
           # squash auto-merge. The pull_request trigger ignores its generated
-          # doc+baseline-only diff, so this PR cannot run the benchmark. Superseded
+          # generated-performance-only diff, so this PR cannot run the benchmark. Superseded
           # fallback PRs are closed AFTER the replacement exists, so a failure
           # here never destroys the only pending copy of valid (if stale) numbers.
           fallback_branch="${FALLBACK_BRANCH_PREFIX}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -1833,7 +1956,8 @@ jobs:
           pr_body_file="${RUNNER_TEMP}/perf-pr-body.md"
           {
             echo "Automated fallback: the Performance Numbers workflow could not push the"
-            echo "refreshed \`${PERF_DOC}\` + \`${PERF_BASELINE}\` directly to"
+            echo "refreshed \`${PERF_DOC}\`, \`${PERF_BASELINE}\`, and"
+            echo "\`${PERF_BASELINE_PROFILE}\` directly to"
             echo "\`${GITHUB_REF_NAME}\` (branch protection rejected the App push), so the"
             echo "same commit is delivered as a pull request instead."
             echo

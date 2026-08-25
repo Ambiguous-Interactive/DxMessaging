@@ -39,6 +39,12 @@ param(
     [ValidateRange(1, 10)]
     [int]$StandalonePlayerRunCount = 1,
 
+    [ValidateRange(0, [long]::MaxValue)]
+    [long]$StandalonePlayerProcessorAffinityMask = 0,
+
+    [ValidateSet('Normal', 'AboveNormal', 'High')]
+    [string]$StandalonePlayerPriorityClass = 'Normal',
+
     [ValidateSet('Local', 'Central')]
     [string]$LicenseReturnOwner = 'Local',
 
@@ -2731,7 +2737,9 @@ function Invoke-ProcessWithTreeKillTimeout {
         [string[]]$Arguments,
         [int]$TimeoutSeconds = 1800,
         [Parameter(Mandatory = $true)][string]$LogPath,
-        [Parameter(Mandatory = $true)][string]$Label
+        [Parameter(Mandatory = $true)][string]$Label,
+        [ValidateRange(0, [long]::MaxValue)][long]$ProcessorAffinityMask = 0,
+        [ValidateSet('Normal', 'AboveNormal', 'High')][string]$PriorityClass = 'Normal'
     )
 
     $logDir = Split-Path -Parent $LogPath
@@ -2742,6 +2750,11 @@ function Invoke-ProcessWithTreeKillTimeout {
     # Sentinel exit code for a wall-clock timeout kill. 124 mirrors GNU coreutils
     # `timeout`; it is non-zero so the caller's "exit != 0 -> fail" path applies.
     $timeoutExitCode = 124
+    $PriorityClass = [System.Enum]::Parse(
+        [System.Diagnostics.ProcessPriorityClass],
+        $PriorityClass,
+        $true
+    ).ToString()
 
     Write-Host "::group::$Label"
     Write-Host "`"$FilePath`" $($Arguments -join ' ')"
@@ -2766,8 +2779,12 @@ function Invoke-ProcessWithTreeKillTimeout {
     $timedOut = $false
     $reaped = $false
     $processId = $null
-    $processorAffinityMask = $null
+    $observedProcessorAffinityMask = $null
     $processorAffinityError = $null
+    $observedProcessorPriorityClass = $null
+    $processorPriorityError = $null
+    $processSettingsVerified = $false
+    $processSettingsError = $null
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $FilePath
@@ -2782,11 +2799,46 @@ function Invoke-ProcessWithTreeKillTimeout {
 
         [void]$proc.Start()
         $processId = $proc.Id
+        if ($ProcessorAffinityMask -gt 0) {
+            $availableAffinityMask = $proc.ProcessorAffinity.ToInt64()
+            if (($availableAffinityMask -band $ProcessorAffinityMask) -ne $ProcessorAffinityMask) {
+                throw (
+                    "Requested processor affinity 0x{0:X} is not a subset of available mask 0x{1:X}." -f
+                    $ProcessorAffinityMask,
+                    $availableAffinityMask
+                )
+            }
+            $proc.ProcessorAffinity = [IntPtr]::new($ProcessorAffinityMask)
+        }
+        $requestedPriorityClass = [System.Enum]::Parse(
+            [System.Diagnostics.ProcessPriorityClass],
+            $PriorityClass,
+            $true
+        )
+        $proc.PriorityClass = $requestedPriorityClass
+        $proc.Refresh()
         try {
-            $processorAffinityMask = '0x{0:X}' -f $proc.ProcessorAffinity.ToInt64()
+            $observedProcessorAffinityMask = '0x{0:X}' -f $proc.ProcessorAffinity.ToInt64()
         } catch {
             $processorAffinityError = $_.Exception.Message
         }
+        try {
+            $observedProcessorPriorityClass = $proc.PriorityClass.ToString()
+        } catch {
+            $processorPriorityError = $_.Exception.Message
+        }
+        if ($ProcessorAffinityMask -gt 0) {
+            if ($observedProcessorAffinityMask -cne ('0x{0:X}' -f $ProcessorAffinityMask)) {
+                throw "Process affinity verification failed: requested 0x$('{0:X}' -f $ProcessorAffinityMask), observed '$observedProcessorAffinityMask'."
+            }
+        }
+        if ($observedProcessorPriorityClass -cne $PriorityClass) {
+            throw "Process priority verification failed: requested '$PriorityClass', observed '$observedProcessorPriorityClass'."
+        }
+        $processSettingsVerified = $true
+        Write-Host (
+            "::notice::$Label process settings: pid=$processId, affinity=$observedProcessorAffinityMask, priority=$observedProcessorPriorityClass"
+        )
 
         $outReader = $proc.StandardOutput
         $errReader = $proc.StandardError
@@ -2872,6 +2924,9 @@ function Invoke-ProcessWithTreeKillTimeout {
         }
     } catch {
         $message = "Process watchdog '$Label' threw: $($_.Exception.Message)"
+        if (-not $processSettingsVerified) {
+            $processSettingsError = $_.Exception.Message
+        }
         Write-Host "::warning::$message"
         $buffer.Add($message)
         $exit = -1
@@ -2897,8 +2952,12 @@ function Invoke-ProcessWithTreeKillTimeout {
         ExitCode = $exit
         TimedOut = [bool]$timedOut
         ProcessId = $processId
-        ProcessorAffinityMask = $processorAffinityMask
+        ProcessorAffinityMask = $observedProcessorAffinityMask
         ProcessorAffinityError = $processorAffinityError
+        ProcessorPriorityClass = $observedProcessorPriorityClass
+        ProcessorPriorityError = $processorPriorityError
+        ProcessSettingsVerified = [bool]$processSettingsVerified
+        ProcessSettingsError = $processSettingsError
     }
 }
 
@@ -2922,6 +2981,9 @@ function Invoke-StandaloneTestPlayer {
         [Parameter(Mandatory = $true)][string]$LogPath,
         [int]$TimeoutSeconds = 1800,
         [string]$HostConditionEvidencePath,
+        [string]$ProcessEvidencePath,
+        [ValidateRange(0, [long]::MaxValue)][long]$ProcessorAffinityMask = 0,
+        [ValidateSet('Normal', 'AboveNormal', 'High')][string]$PriorityClass = 'Normal',
         [int]$RunIndex = 1,
         [int]$RunCount = 1
     )
@@ -2932,6 +2994,11 @@ function Invoke-StandaloneTestPlayer {
         '-logFile', '-',
         '-dxmTestResults', $ResultsPath
     )
+    $PriorityClass = [System.Enum]::Parse(
+        [System.Diagnostics.ProcessPriorityClass],
+        $PriorityClass,
+        $true
+    ).ToString()
 
     $before = $null
     if (-not [string]::IsNullOrWhiteSpace($HostConditionEvidencePath)) {
@@ -2943,7 +3010,36 @@ function Invoke-StandaloneTestPlayer {
         -Arguments $playerArgs `
         -TimeoutSeconds $TimeoutSeconds `
         -LogPath $LogPath `
-        -Label 'Run standalone test player'
+        -Label 'Run standalone test player' `
+        -ProcessorAffinityMask $ProcessorAffinityMask `
+        -PriorityClass $PriorityClass
+
+    if (-not [string]::IsNullOrWhiteSpace($ProcessEvidencePath)) {
+        $requestedAffinityMask = if ($ProcessorAffinityMask -gt 0) {
+            '0x{0:X}' -f $ProcessorAffinityMask
+        } else {
+            'unrestricted'
+        }
+        $processEvidence = [ordered]@{
+            schemaVersion = 1
+            processId = $result.ProcessId
+            requestedProcessorAffinityMask = $requestedAffinityMask
+            actualProcessorAffinityMask = $result.ProcessorAffinityMask
+            processorAffinityError = $result.ProcessorAffinityError
+            requestedPriorityClass = $PriorityClass
+            actualPriorityClass = $result.ProcessorPriorityClass
+            processorPriorityError = $result.ProcessorPriorityError
+            processSettingsVerified = $result.ProcessSettingsVerified
+            processSettingsError = $result.ProcessSettingsError
+            exitCode = $result.ExitCode
+            timedOut = $result.TimedOut
+        }
+        Write-JsonArtifact -Path $ProcessEvidencePath -Value $processEvidence
+    }
+
+    if (-not $result.ProcessSettingsVerified) {
+        throw "Standalone player process settings were not applied: $($result.ProcessSettingsError)"
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($HostConditionEvidencePath)) {
         $after = Get-StandaloneHostConditionSnapshot -Phase 'after'
@@ -2979,6 +3075,10 @@ function Invoke-StandaloneTestPlayer {
         ProcessId = $result.ProcessId
         ProcessorAffinityMask = $result.ProcessorAffinityMask
         ProcessorAffinityError = $result.ProcessorAffinityError
+        ProcessorPriorityClass = $result.ProcessorPriorityClass
+        ProcessorPriorityError = $result.ProcessorPriorityError
+        ProcessSettingsVerified = $result.ProcessSettingsVerified
+        ProcessSettingsError = $result.ProcessSettingsError
     }
 }
 
@@ -3978,10 +4078,20 @@ try {
             } else {
                 ''
             }
+            $processEvidencePath = if ($playerRunIndex -eq 1) {
+                Join-Path $ArtifactsPath 'standalone-process.json'
+            } else {
+                Join-Path $currentRunDirectory "repeat-$runNumber-process.json"
+            }
 
             # Delete STALE per-run outputs first. A timeout can then honor only the
             # file written by THIS launch, never a prior local run's leftover.
-            foreach ($staleOutputPath in @($currentResultsPath, $currentPlayerLogPath, $hostConditionEvidencePath)) {
+            foreach ($staleOutputPath in @(
+                $currentResultsPath,
+                $currentPlayerLogPath,
+                $hostConditionEvidencePath,
+                $processEvidencePath
+            )) {
                 if (
                     -not [string]::IsNullOrWhiteSpace($staleOutputPath) -and
                     (Test-Path -LiteralPath $staleOutputPath -PathType Leaf)
@@ -3996,6 +4106,9 @@ try {
                 -LogPath $currentPlayerLogPath `
                 -TimeoutSeconds $playerTimeoutSeconds `
                 -HostConditionEvidencePath $hostConditionEvidencePath `
+                -ProcessEvidencePath $processEvidencePath `
+                -ProcessorAffinityMask $StandalonePlayerProcessorAffinityMask `
+                -PriorityClass $StandalonePlayerPriorityClass `
                 -RunIndex $playerRunIndex `
                 -RunCount $StandalonePlayerRunCount
 

@@ -16,8 +16,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// </summary>
     public static class PairedComparisonHarness
     {
-        private const string ScenarioPrefix = "PairedComparison";
-
         public static PairedBenchmarkMeasurement Run(
             Func<IMessagingTechBridge> firstFactory,
             Func<IMessagingTechBridge> secondFactory,
@@ -157,25 +155,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         {
             string scenarioKey = ComparisonScenarios.Key(scenario);
             DispatchBenchmarkResult firstResult = DispatchBenchmarkResult.ForEmitScenario(
-                $"{ScenarioPrefix}_{first.TechKey}_{scenarioKey}",
+                "PairedEvidenceProvenance",
                 runIndex: -1,
                 measurement.First.OperationsPerSecond,
                 AllocationProbe.Unmeasured,
                 AllocationProbe.Unmeasured,
                 measurement.First.ElapsedSeconds * 1000d
             );
-            DispatchBenchmarkResult secondResult = DispatchBenchmarkResult.ForEmitScenario(
-                $"{ScenarioPrefix}_{second.TechKey}_{scenarioKey}",
-                runIndex: -1,
-                measurement.Second.OperationsPerSecond,
-                AllocationProbe.Unmeasured,
-                AllocationProbe.Unmeasured,
-                measurement.Second.ElapsedSeconds * 1000d
-            );
-            Debug.Log(firstResult.ToStructuredLog());
-            Debug.Log(secondResult.ToStructuredLog());
-            TestContext.Out.WriteLine(firstResult.ToCsvRow());
-            TestContext.Out.WriteLine(secondResult.ToCsvRow());
 
             string evidence = BuildEvidenceJson(
                 first,

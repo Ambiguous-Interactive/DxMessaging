@@ -8,6 +8,8 @@ $baselinePath = Join-Path $tempDirectory 'comparison-rows.csv'
 $evidencePath = Join-Path $tempDirectory 'results.xml'
 $secondEvidencePath = Join-Path $tempDirectory 'unity.log'
 $playerLogPath = Join-Path $tempDirectory 'player.log'
+$processEvidencePath = Join-Path $tempDirectory 'standalone-process.json'
+$cpuProfilePath = Join-Path $tempDirectory 'performance-cpu-profile.json'
 $summaryJsonPath = Join-Path $tempDirectory 'paired-comparison-summary.json'
 $summaryMarkdownPath = Join-Path $tempDirectory 'paired-comparison-summary.md'
 $csvHeader = 'scenario,platform,commit,runIndex,emitsPerSec,gcAllocations,wallClockMs,gcAllocatedBytes'
@@ -83,12 +85,74 @@ function Write-Evidence {
     }
 }
 
+function Write-ExecutionEvidence {
+    $cpuSets = @(for ($logicalIndex = 0; $logicalIndex -lt 32; $logicalIndex++) {
+        [ordered]@{
+            id = $logicalIndex + 100
+            group = 0
+            logicalProcessorIndex = $logicalIndex
+            coreIndex = if ($logicalIndex -lt 16) {
+                [math]::Floor($logicalIndex / 2)
+            } else {
+                $logicalIndex - 8
+            }
+            efficiencyClass = if ($logicalIndex -lt 16) { 8 } else { 0 }
+            allocated = $false
+            allocatedToTargetProcess = $false
+        }
+    })
+    $profile = [ordered]@{
+        schemaVersion = 1
+        executionProfileId = 'highest-efficiency-class-affinity-normal-v1'
+        source = 'GetSystemCpuSetInformation'
+        selectionPolicy = 'maximum EfficiencyClass'
+        cpuModel = '13th Gen Intel(R) Core(TM) i9-13900KF'
+        processorGroup = 0
+        logicalProcessorCount = 32
+        efficiencyClasses = @(
+            [ordered]@{ value = 0; logicalProcessorCount = 16 },
+            [ordered]@{ value = 8; logicalProcessorCount = 16 }
+        )
+        selectedEfficiencyClass = 8
+        selectedLogicalProcessorCount = 16
+        selectedCoreCount = 8
+        selectedLogicalProcessorIndices = @(0..15)
+        affinityMask = '0xFFFF'
+        priorityClass = 'Normal'
+        cpuSets = $cpuSets
+    }
+    $process = [ordered]@{
+        schemaVersion = 1
+        processId = 1234
+        requestedProcessorAffinityMask = '0xFFFF'
+        actualProcessorAffinityMask = '0xFFFF'
+        processorAffinityError = $null
+        requestedPriorityClass = 'Normal'
+        actualPriorityClass = 'Normal'
+        processorPriorityError = $null
+        processSettingsVerified = $true
+        processSettingsError = $null
+        exitCode = 0
+        timedOut = $false
+    }
+    [System.IO.File]::WriteAllText(
+        $cpuProfilePath,
+        ($profile | ConvertTo-Json -Depth 8) + "`n"
+    )
+    [System.IO.File]::WriteAllText(
+        $processEvidencePath,
+        ($process | ConvertTo-Json -Depth 8) + "`n"
+    )
+}
+
 function Invoke-Gate {
     param([string[]]$EvidenceInputs = @($evidencePath, $playerLogPath))
 
     & $scriptPath `
         -BaselinePath $baselinePath `
         -EvidencePaths $EvidenceInputs `
+        -ProcessEvidencePath $processEvidencePath `
+        -CpuProfilePath $cpuProfilePath `
         -SummaryJsonPath $summaryJsonPath `
         -SummaryMarkdownPath $summaryMarkdownPath
 }
@@ -119,6 +183,14 @@ try {
     [System.IO.Directory]::CreateDirectory($tempDirectory) | Out-Null
     $pairedFixturePath = Join-Path $repoRoot 'Tests/Runtime/Comparisons/Paired/PairedDxMessagingMessagePipeTests.cs'
     $pairedFixture = Get-Content -LiteralPath $pairedFixturePath -Raw
+    $pairedHarnessPath = Join-Path $repoRoot 'Tests/Runtime/Comparisons/PairedComparisonHarness.cs'
+    $pairedHarness = Get-Content -LiteralPath $pairedHarnessPath -Raw
+    if (
+        $pairedHarness.Contains('.ToStructuredLog()') -or
+        $pairedHarness.Contains('.ToCsvRow()')
+    ) {
+        throw 'The paired fixture must emit evidence markers without extractable performance rows.'
+    }
     $pairedAsmdefPath = Join-Path $repoRoot 'Tests/Runtime/Comparisons/Paired/WallstopStudios.DxMessaging.Tests.ZZ.Runtime.Comparisons.Paired.asmdef'
     $pairedAsmdef = Get-Content -LiteralPath $pairedAsmdefPath -Raw | ConvertFrom-Json
     if ($pairedAsmdef.name -ne 'WallstopStudios.DxMessaging.Tests.ZZ.Runtime.Comparisons.Paired') {
@@ -135,16 +207,21 @@ try {
 
     Write-Baseline -Scenarios $expected
     Write-Evidence -Records $validRecords
+    Write-ExecutionEvidence
     Invoke-Gate
     $summary = Get-Content -LiteralPath $summaryJsonPath -Raw | ConvertFrom-Json
     $summaryMarkdown = Get-Content -LiteralPath $summaryMarkdownPath -Raw
     if (
-        $summary.schemaVersion -ne 1 -or
+        $summary.schemaVersion -ne 2 -or
         $summary.protocol -ne 'interleaved-abba-baab-v1' -or
+        $summary.executionProfile.id -cne 'highest-efficiency-class-affinity-normal-v1' -or
+        $summary.executionProfile.affinityMask -cne '0xFFFF' -or
+        $summary.executionProfile.priorityClass -cne 'Normal' -or
         @($summary.rows).Count -ne 7 -or
         $summary.allRowsWithinMaterialityBand -ne $false -or
         @($summary.rows | Where-Object { $_.withinMaterialityBand -ne $false }).Count -ne 0 -or
-        -not $summaryMarkdown.Contains('| no |')
+        -not $summaryMarkdown.Contains('| no |') -or
+        -not $summaryMarkdown.Contains('highest-efficiency-class-affinity-normal-v1')
     ) {
         throw 'The paired comparison gate did not write the expected summary artifacts.'
     }
@@ -168,6 +245,75 @@ try {
     ) {
         throw 'Stable paired records did not render a passing user-facing verdict.'
     }
+
+    $invalidProcessEvidence = Get-Content -LiteralPath $processEvidencePath -Raw | ConvertFrom-Json
+    $invalidProcessEvidence.actualProcessorAffinityMask = '0xFFFFFFFF'
+    [System.IO.File]::WriteAllText(
+        $processEvidencePath,
+        ($invalidProcessEvidence | ConvertTo-Json -Depth 8) + "`n"
+    )
+    try {
+        Invoke-Gate
+        throw 'The comparison gate accepted mismatched process affinity evidence.'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'process evidence does not match') {
+            throw
+        }
+    }
+    Write-ExecutionEvidence
+
+    $invalidCpuProfile = Get-Content -LiteralPath $cpuProfilePath -Raw | ConvertFrom-Json
+    $invalidCpuProfile.selectedLogicalProcessorIndices = @(1..16)
+    [System.IO.File]::WriteAllText(
+        $cpuProfilePath,
+        ($invalidCpuProfile | ConvertTo-Json -Depth 8) + "`n"
+    )
+    try {
+        Invoke-Gate
+        throw 'The comparison gate accepted a CPU profile that disagreed with its topology.'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'selection does not match') {
+            throw
+        }
+    }
+    Write-ExecutionEvidence
+
+    $wrongTypeCpuProfile = Get-Content -LiteralPath $cpuProfilePath -Raw | ConvertFrom-Json
+    $wrongTypeCpuProfile.logicalProcessorCount = '32'
+    [System.IO.File]::WriteAllText(
+        $cpuProfilePath,
+        ($wrongTypeCpuProfile | ConvertTo-Json -Depth 8) + "`n"
+    )
+    try {
+        Invoke-Gate
+        throw 'The comparison gate accepted a quoted CPU-profile count.'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'must be numeric') {
+            throw
+        }
+    }
+    Write-ExecutionEvidence
+
+    $wrongTypeProcessEvidence = Get-Content -LiteralPath $processEvidencePath -Raw |
+        ConvertFrom-Json
+    $wrongTypeProcessEvidence.processSettingsVerified = 'True'
+    [System.IO.File]::WriteAllText(
+        $processEvidencePath,
+        ($wrongTypeProcessEvidence | ConvertTo-Json -Depth 8) + "`n"
+    )
+    try {
+        Invoke-Gate
+        throw 'The comparison gate accepted a string process-settings verdict.'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'must be a Boolean') {
+            throw
+        }
+    }
+    Write-ExecutionEvidence
 
     $pairedLine = Get-Content -LiteralPath $evidencePath -TotalCount 1
     [System.IO.File]::WriteAllText(

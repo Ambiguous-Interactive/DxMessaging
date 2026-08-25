@@ -16,12 +16,8 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
 
 ## When to use
 
-- Writing or editing anything under `Tests/Runtime/Benchmarks`,
-  `Tests/Editor/Benchmarks`, `Tests/Editor/Allocations`, or
-  `Tests/Runtime/Comparisons`.
-- Adding a comparison bridge against MessagePipe, UniRx, UniTask, Zenject, or
-  Unity Atoms.
-- Reading a throughput table, an `n/a` allocation cell, or a per-PR delta comment.
+- Writing or editing benchmark, allocation, or comparison tests.
+- Adding a comparison bridge against another messaging library.
 - Proposing a runtime performance change that needs an accept/reject verdict.
 - Debugging a "0 tests ran" CI failure on a perf-looking asmdef.
 
@@ -83,8 +79,13 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
 
 ### The paired-control contract
 
-- Keep canonical `Comparison_` rows on `Measure`; paired rows are diagnostic and use the
-  `PairedComparison_` prefix so they cannot replace the published matrix.
+- Keep canonical `Comparison_` rows on `Measure`. Paired diagnostics emit only
+  `DXM_PAIRED_COMPARISON` evidence markers, never structured or CSV performance rows,
+  so the baseline extractor cannot duplicate or replace the published matrix.
+- Run each published suite in one player process. Derive the pinned host's fastest partition from
+  Windows CPU-set `EfficiencyClass`; keep Normal priority; verify and retain topology and process
+  settings. Fail closed on topology or setting drift. Historical deltas require an exact committed
+  sidecar match on profile ID, affinity mask, and priority; otherwise omit them.
 - After preparing both paired workloads, settle the heap once outside timed work, then warm both.
   Run four cycles; each repeats 10000-operation batches in ABBA/BAAB order until both workloads
   reach 625 ms active time. This keeps the control milliseconds away and balances ordinal position.

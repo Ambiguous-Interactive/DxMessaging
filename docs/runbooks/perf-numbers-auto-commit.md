@@ -15,7 +15,7 @@ request merges, the `push` event runs the benchmarks
 again and the `commit-perf-doc` job re-renders the table (a manual
 `workflow_dispatch` from the default branch does the same and is the supported
 recovery path after a failed publish). If the numbers moved, the job lands the
-refreshed doc + baseline in two tiers:
+refreshed doc, baseline, and baseline execution profile in two tiers:
 
 1. **Direct push** to the default branch with the App token (the fast path;
    requires the bypass in Step 3).
@@ -49,7 +49,8 @@ requests: Read and write**, and any branch or tag rulesets that target
 App-token pushes **do** re-trigger workflows (only the built-in `GITHUB_TOKEN`
 suppresses that). Recursion is therefore broken at the trigger: the `push`
 trigger ignores both `docs/architecture/performance.md` and
-`docs/architecture/perf-baseline.csv`, so the generated auto-commit cannot
+`docs/architecture/perf-baseline.csv`, and
+`docs/architecture/perf-baseline-profile.json`, so the generated auto-commit cannot
 re-run the benchmark.
 
 If the App credentials are absent, the `commit-perf-doc` job is skipped with a
@@ -147,12 +148,13 @@ The tier-2 fallback needs two repository conditions to fully self-heal:
    but waits for a manual merge; the job emits a warning with the PR URL.
 1. **Required checks must run on doc-only PRs.** Auto-merge completes only once
    every required status check reports. The fallback PR touches only
-   `docs/architecture/performance.md` and `docs/architecture/perf-baseline.csv`;
+   `docs/architecture/performance.md`, `docs/architecture/perf-baseline.csv`, and
+   `docs/architecture/perf-baseline-profile.json`;
    if a required check's workflow path-filters those files out entirely, GitHub
    waits forever for an "Expected" check and the PR needs a human merge (or an
    admin can mark required checks as path-aware). The licensed Unity matrix
    (`unity-tests.yml`) handles this with a `ci-owned-docs-only` short-circuit:
-   on a PR whose entire diff is those two files it SKIPS the matrix jobs, and
+   on a PR whose entire diff is those three files it SKIPS the matrix jobs, and
    skipped jobs report success to branch protection, so the fallback PR stays
    cheap and auto-mergeable. Audit the remaining required-check list against
    doc-only changes once when provisioning.

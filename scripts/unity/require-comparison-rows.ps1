@@ -7,6 +7,12 @@ param(
     [string[]]$EvidencePaths,
 
     [Parameter(Mandatory = $true)]
+    [string]$ProcessEvidencePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$CpuProfilePath,
+
+    [Parameter(Mandatory = $true)]
     [string]$SummaryJsonPath,
 
     [Parameter(Mandatory = $true)]
@@ -80,8 +86,175 @@ function Get-ExactInt64 {
     return [long]$numeric
 }
 
+function Get-ExactString {
+    param(
+        [object]$Value,
+        [string]$Field
+    )
+
+    if ($Value -isnot [string]) {
+        throw "Evidence field '$Field' must be a string."
+    }
+    return [string]$Value
+}
+
+function Get-ExactBoolean {
+    param(
+        [object]$Value,
+        [string]$Field
+    )
+
+    if ($Value -isnot [bool]) {
+        throw "Evidence field '$Field' must be a Boolean."
+    }
+    return [bool]$Value
+}
+
+function Get-OptionalErrorString {
+    param(
+        [object]$Value,
+        [string]$Field
+    )
+
+    if ($null -eq $Value) {
+        return ''
+    }
+    return Get-ExactString -Value $Value -Field $Field
+}
+
 Push-Location $repoRoot
 try {
+    foreach ($requiredEvidencePath in @($ProcessEvidencePath, $CpuProfilePath)) {
+        if (-not (Test-Path -LiteralPath $requiredEvidencePath -PathType Leaf)) {
+            throw "Required comparison execution evidence does not exist: $requiredEvidencePath"
+        }
+    }
+    $processEvidence = Get-Content -LiteralPath $ProcessEvidencePath -Raw | ConvertFrom-Json
+    $cpuProfile = Get-Content -LiteralPath $CpuProfilePath -Raw | ConvertFrom-Json
+    $expectedExecutionProfileId = 'highest-efficiency-class-affinity-normal-v1'
+    $profileSchemaVersion = Get-ExactInt64 -Value $cpuProfile.schemaVersion -Field 'cpuProfile.schemaVersion'
+    $executionProfileId = Get-ExactString -Value $cpuProfile.executionProfileId -Field 'cpuProfile.executionProfileId'
+    $profileSource = Get-ExactString -Value $cpuProfile.source -Field 'cpuProfile.source'
+    $selectionPolicy = Get-ExactString -Value $cpuProfile.selectionPolicy -Field 'cpuProfile.selectionPolicy'
+    $cpuModel = Get-ExactString -Value $cpuProfile.cpuModel -Field 'cpuProfile.cpuModel'
+    $processorGroup = Get-ExactInt64 -Value $cpuProfile.processorGroup -Field 'cpuProfile.processorGroup'
+    $logicalProcessorCount = Get-ExactInt64 -Value $cpuProfile.logicalProcessorCount -Field 'cpuProfile.logicalProcessorCount'
+    $selectedLogicalProcessorCount = Get-ExactInt64 -Value $cpuProfile.selectedLogicalProcessorCount -Field 'cpuProfile.selectedLogicalProcessorCount'
+    $declaredSelectedCoreCount = Get-ExactInt64 -Value $cpuProfile.selectedCoreCount -Field 'cpuProfile.selectedCoreCount'
+    $profileAffinityMask = Get-ExactString -Value $cpuProfile.affinityMask -Field 'cpuProfile.affinityMask'
+    $profilePriorityClass = Get-ExactString -Value $cpuProfile.priorityClass -Field 'cpuProfile.priorityClass'
+    $declaredEfficiencyClasses = @($cpuProfile.efficiencyClasses)
+    for ($classIndex = 0; $classIndex -lt $declaredEfficiencyClasses.Count; $classIndex++) {
+        [void](Get-ExactInt64 -Value $declaredEfficiencyClasses[$classIndex].value -Field "cpuProfile.efficiencyClasses[$classIndex].value")
+        [void](Get-ExactInt64 -Value $declaredEfficiencyClasses[$classIndex].logicalProcessorCount -Field "cpuProfile.efficiencyClasses[$classIndex].logicalProcessorCount")
+    }
+    if (
+        $profileSchemaVersion -ne 1 -or
+        $executionProfileId -cne $expectedExecutionProfileId -or
+        $profileSource -cne 'GetSystemCpuSetInformation' -or
+        $selectionPolicy -cne 'maximum EfficiencyClass' -or
+        $cpuModel -notmatch 'i9-13900KF' -or
+        $processorGroup -ne 0 -or
+        $logicalProcessorCount -ne 32 -or
+        $declaredEfficiencyClasses.Count -ne 2 -or
+        $selectedLogicalProcessorCount -ne 16 -or
+        $declaredSelectedCoreCount -ne 8 -or
+        @($cpuProfile.selectedLogicalProcessorIndices).Count -ne 16 -or
+        $profileAffinityMask -cnotmatch '^0x[0-9A-F]+$' -or
+        $profilePriorityClass -cne 'Normal'
+    ) {
+        throw 'The comparison CPU profile does not match the pinned highest-efficiency-class execution contract.'
+    }
+    $profileCpuSets = @($cpuProfile.cpuSets)
+    $typedCpuSets = [System.Collections.Generic.List[object]]::new()
+    for ($cpuSetIndex = 0; $cpuSetIndex -lt $profileCpuSets.Count; $cpuSetIndex++) {
+        $cpuSet = $profileCpuSets[$cpuSetIndex]
+        $typedCpuSets.Add([ordered]@{
+            group = Get-ExactInt64 -Value $cpuSet.group -Field "cpuProfile.cpuSets[$cpuSetIndex].group"
+            logicalProcessorIndex = Get-ExactInt64 -Value $cpuSet.logicalProcessorIndex -Field "cpuProfile.cpuSets[$cpuSetIndex].logicalProcessorIndex"
+            coreIndex = Get-ExactInt64 -Value $cpuSet.coreIndex -Field "cpuProfile.cpuSets[$cpuSetIndex].coreIndex"
+            efficiencyClass = Get-ExactInt64 -Value $cpuSet.efficiencyClass -Field "cpuProfile.cpuSets[$cpuSetIndex].efficiencyClass"
+            allocated = Get-ExactBoolean -Value $cpuSet.allocated -Field "cpuProfile.cpuSets[$cpuSetIndex].allocated"
+            allocatedToTargetProcess = Get-ExactBoolean -Value $cpuSet.allocatedToTargetProcess -Field "cpuProfile.cpuSets[$cpuSetIndex].allocatedToTargetProcess"
+        })
+    }
+    $profileCpuSets = @($typedCpuSets.ToArray())
+    $profileGroups = @(
+        $profileCpuSets | ForEach-Object { $_.group } | Sort-Object -Unique
+    )
+    $maximumEfficiencyClass = [int](
+        ($profileCpuSets | ForEach-Object { $_.efficiencyClass } | Measure-Object -Maximum).Maximum
+    )
+    $selectedCpuSets = @($profileCpuSets | Where-Object {
+        $_.efficiencyClass -eq $maximumEfficiencyClass
+    })
+    $selectedIndices = @(
+        $selectedCpuSets |
+            ForEach-Object { $_.logicalProcessorIndex } |
+            Sort-Object
+    )
+    $declaredIndices = @(
+        $cpuProfile.selectedLogicalProcessorIndices |
+            ForEach-Object {
+                Get-ExactInt64 -Value $_ -Field 'cpuProfile.selectedLogicalProcessorIndices'
+            } |
+            Sort-Object
+    )
+    [uint64]$recomputedAffinityMask = 0
+    foreach ($logicalProcessorIndex in $selectedIndices) {
+        if ($logicalProcessorIndex -lt 0 -or $logicalProcessorIndex -gt 62) {
+            throw 'The comparison CPU profile contains an unsupported logical processor index.'
+        }
+        $recomputedAffinityMask = $recomputedAffinityMask -bor (
+            [uint64]1 -shl $logicalProcessorIndex
+        )
+    }
+    $recomputedAffinityText = '0x{0:X}' -f $recomputedAffinityMask
+    $indexDifference = @(
+        Compare-Object -ReferenceObject $declaredIndices -DifferenceObject $selectedIndices
+    )
+    $selectedCoreCount = @(
+        $selectedCpuSets | ForEach-Object { $_.coreIndex } | Sort-Object -Unique
+    ).Count
+    if (
+        $profileCpuSets.Count -ne 32 -or
+        $profileGroups.Count -ne 1 -or
+        $profileGroups[0] -ne 0 -or
+        (Get-ExactInt64 -Value $cpuProfile.selectedEfficiencyClass -Field 'cpuProfile.selectedEfficiencyClass') -ne $maximumEfficiencyClass -or
+        $selectedIndices.Count -ne 16 -or
+        $indexDifference.Count -ne 0 -or
+        $selectedCoreCount -ne 8 -or
+        $profileAffinityMask -cne $recomputedAffinityText
+    ) {
+        throw 'The comparison CPU profile selection does not match its retained CPU-set topology.'
+    }
+    $processSchemaVersion = Get-ExactInt64 -Value $processEvidence.schemaVersion -Field 'process.schemaVersion'
+    $processId = Get-ExactInt64 -Value $processEvidence.processId -Field 'process.processId'
+    $requestedAffinityMask = Get-ExactString -Value $processEvidence.requestedProcessorAffinityMask -Field 'process.requestedProcessorAffinityMask'
+    $actualAffinityMask = Get-ExactString -Value $processEvidence.actualProcessorAffinityMask -Field 'process.actualProcessorAffinityMask'
+    $affinityError = Get-OptionalErrorString -Value $processEvidence.processorAffinityError -Field 'process.processorAffinityError'
+    $requestedPriorityClass = Get-ExactString -Value $processEvidence.requestedPriorityClass -Field 'process.requestedPriorityClass'
+    $actualPriorityClass = Get-ExactString -Value $processEvidence.actualPriorityClass -Field 'process.actualPriorityClass'
+    $priorityError = Get-OptionalErrorString -Value $processEvidence.processorPriorityError -Field 'process.processorPriorityError'
+    $settingsVerified = Get-ExactBoolean -Value $processEvidence.processSettingsVerified -Field 'process.processSettingsVerified'
+    $settingsError = Get-OptionalErrorString -Value $processEvidence.processSettingsError -Field 'process.processSettingsError'
+    [void](Get-ExactInt64 -Value $processEvidence.exitCode -Field 'process.exitCode')
+    [void](Get-ExactBoolean -Value $processEvidence.timedOut -Field 'process.timedOut')
+    if (
+        $processSchemaVersion -ne 1 -or
+        $processId -le 0 -or
+        $requestedAffinityMask -cne $profileAffinityMask -or
+        $actualAffinityMask -cne $profileAffinityMask -or
+        -not [string]::IsNullOrWhiteSpace($affinityError) -or
+        $requestedPriorityClass -cne $profilePriorityClass -or
+        $actualPriorityClass -cne $profilePriorityClass -or
+        -not [string]::IsNullOrWhiteSpace($priorityError) -or
+        -not $settingsVerified -or
+        -not [string]::IsNullOrWhiteSpace($settingsError)
+    ) {
+        throw 'The comparison player process evidence does not match its CPU profile.'
+    }
+
     $expected = @(& node -e "require('./scripts/unity/perf-scenarios.js').COMPARISON_SUPPORTED_SCENARIO_IDS.forEach((id) => console.log(id))")
     if ($LASTEXITCODE -ne 0) {
         throw 'Comparison capability manifest evaluation failed.'
@@ -324,9 +497,19 @@ try {
     }
 
     $summary = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         platform = $publishedPlatform
         commit = $publishedCommit
+        executionProfile = [ordered]@{
+            id = $cpuProfile.executionProfileId
+            cpuModel = $cpuProfile.cpuModel
+            source = $cpuProfile.source
+            selectionPolicy = $cpuProfile.selectionPolicy
+            selectedEfficiencyClass = $cpuProfile.selectedEfficiencyClass
+            selectedLogicalProcessorIndices = @($cpuProfile.selectedLogicalProcessorIndices)
+            affinityMask = $cpuProfile.affinityMask
+            priorityClass = $cpuProfile.priorityClass
+        }
         protocol = $pairedProtocol
         cycles = $pairedCycles
         minimumCycleActiveMilliseconds = $pairedMinimumCycleActiveMilliseconds
@@ -351,6 +534,7 @@ try {
     $markdown.Add('### In-process paired comparison')
     $markdown.Add('')
     $markdown.Add("Protocol: ``$($summary.protocol)``; commit: ``$publishedCommit``; platform: $publishedPlatform.")
+    $markdown.Add("Execution profile: ``$($summary.executionProfile.id)``; affinity: ``$($summary.executionProfile.affinityMask)``; priority: ``$($summary.executionProfile.priorityClass)``.")
     $markdown.Add('')
     $markdown.Add("| Scenario | DxMessaging / MessagePipe | Raw cycle spread | Within $pairedMaterialityBandPercent% band |")
     $markdown.Add('| --- | ---: | ---: | :---: |')

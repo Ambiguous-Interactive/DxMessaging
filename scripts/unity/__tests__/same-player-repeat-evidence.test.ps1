@@ -13,6 +13,7 @@ $runnerPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'run-ci-tests.ps1'
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 $workflowPath = Join-Path $repoRoot '.github/workflows/perf-numbers.yml'
 $stabilityScriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'require-same-player-stability.ps1'
+$cpuProfileScriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'resolve-performance-cpu-profile.ps1'
 $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -232,6 +233,82 @@ try {
     $parsed = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
     Assert-That 'JSON evidence round-trips' ($parsed.phase -eq 'test')
 
+    $topologyFixturePath = Join-Path $fixtureRoot 'cpu-set-topology.json'
+    $cpuProfilePath = Join-Path $fixtureRoot 'performance-cpu-profile.json'
+    $cpuSets = @(for ($logicalIndex = 0; $logicalIndex -lt 32; $logicalIndex++) {
+        [ordered]@{
+            id = $logicalIndex + 100
+            group = 0
+            logicalProcessorIndex = $logicalIndex
+            coreIndex = if ($logicalIndex % 4 -lt 2) {
+                [math]::Floor($logicalIndex / 4)
+            } else {
+                8 + [math]::Floor($logicalIndex / 2)
+            }
+            lastLevelCacheIndex = 0
+            numaNodeIndex = 0
+            efficiencyClass = if ($logicalIndex % 4 -lt 2) { 8 } else { 0 }
+            parked = $false
+            allocated = $false
+            allocatedToTargetProcess = $false
+        }
+    })
+    Write-TestJson -Path $topologyFixturePath -Value $cpuSets
+    & $cpuProfileScriptPath `
+        -OutputJson $cpuProfilePath `
+        -TopologyFixturePath $topologyFixturePath `
+        -CpuModelFixture '13th Gen Intel(R) Core(TM) i9-13900KF'
+    $cpuProfile = Get-Content -LiteralPath $cpuProfilePath -Raw | ConvertFrom-Json
+    Assert-That 'the CPU profile derives the highest-efficiency partition from topology' (
+        $cpuProfile.executionProfileId -ceq 'highest-efficiency-class-affinity-normal-v1' -and
+        $cpuProfile.affinityMask -ceq '0x33333333' -and
+        $cpuProfile.priorityClass -ceq 'Normal' -and
+        $cpuProfile.logicalProcessorCount -eq 32 -and
+        $cpuProfile.selectedLogicalProcessorCount -eq 16 -and
+        $cpuProfile.selectedCoreCount -eq 8 -and
+        @($cpuProfile.efficiencyClasses).Count -eq 2
+    )
+    $invalidCpuSets = @($cpuSets | ForEach-Object {
+        $copy = [ordered]@{}
+        foreach ($property in $_.GetEnumerator()) {
+            $copy[$property.Key] = $property.Value
+        }
+        $copy
+    })
+    $invalidCpuSets[0].group = 1
+    $invalidTopologyPath = Join-Path $fixtureRoot 'invalid-cpu-set-topology.json'
+    Write-TestJson -Path $invalidTopologyPath -Value $invalidCpuSets
+    $invalidTopologyFailed = $false
+    try {
+        & $cpuProfileScriptPath `
+            -OutputJson (Join-Path $fixtureRoot 'invalid-performance-cpu-profile.json') `
+            -TopologyFixturePath $invalidTopologyPath `
+            -CpuModelFixture '13th Gen Intel(R) Core(TM) i9-13900KF'
+    } catch {
+        $invalidTopologyFailed = $_.Exception.Message.Contains(
+            'requires one processor group 0'
+        )
+    }
+    Assert-That 'a mixed processor-group topology fails profile resolution closed' (
+        $invalidTopologyFailed
+    )
+    if ($IsWindows) {
+        $nativeCpuProfilePath = Join-Path $fixtureRoot 'native-performance-cpu-profile.json'
+        & $cpuProfileScriptPath -OutputJson $nativeCpuProfilePath
+        $nativeCpuProfile = Get-Content -LiteralPath $nativeCpuProfilePath -Raw |
+            ConvertFrom-Json
+        $nativeLogicalIndices = @(
+            $nativeCpuProfile.cpuSets | ForEach-Object { $_.logicalProcessorIndex }
+        )
+        Assert-That 'the native Windows CPU-set parser returns unique usable records' (
+            $nativeCpuProfile.source -ceq 'GetSystemCpuSetInformation' -and
+            @($nativeCpuProfile.cpuSets).Count -gt 0 -and
+            @($nativeLogicalIndices | Sort-Object -Unique).Count -eq
+            @($nativeCpuProfile.cpuSets).Count -and
+            $nativeCpuProfile.affinityMask -cmatch '^0x[0-9A-F]+$'
+        )
+    }
+
     $processLog = Join-Path $fixtureRoot 'process.log'
     $pwshPath = (Get-Process -Id $PID).Path
     $processArguments = @{
@@ -240,6 +317,12 @@ try {
         TimeoutSeconds = 30
         LogPath = $processLog
         Label = 'same-player process evidence test'
+    }
+    $expectedAffinityMask = $null
+    if (-not $IsMacOS) {
+        $parentAffinityMask = (Get-Process -Id $PID).ProcessorAffinity.ToInt64()
+        $expectedAffinityMask = $parentAffinityMask -band (-$parentAffinityMask)
+        $processArguments.ProcessorAffinityMask = $expectedAffinityMask
     }
     $processResult = Invoke-ProcessWithTreeKillTimeout @processArguments
     Assert-That 'the process helper returns success and a process id' (
@@ -259,9 +342,40 @@ try {
             -not $hasProcessorAffinity -and $hasProcessorAffinityError
         )
     } else {
-        Assert-That 'the process helper captures actual child affinity' (
-            $hasProcessorAffinity -and -not $hasProcessorAffinityError
+        Assert-That 'the process helper applies and verifies the requested child affinity' (
+            $hasProcessorAffinity -and
+            -not $hasProcessorAffinityError -and
+            $processResult.ProcessorAffinityMask -ceq ('0x{0:X}' -f $expectedAffinityMask) -and
+            $processResult.ProcessSettingsVerified -eq $true -and
+            [string]::IsNullOrWhiteSpace([string]$processResult.ProcessSettingsError)
         )
+
+        $unavailableAffinityMask = $null
+        for ($bitIndex = 0; $bitIndex -lt 62; $bitIndex++) {
+            $candidateMask = [long]1 -shl $bitIndex
+            if (($parentAffinityMask -band $candidateMask) -eq 0) {
+                $unavailableAffinityMask = $candidateMask
+                break
+            }
+        }
+        if ($null -ne $unavailableAffinityMask) {
+            $invalidProcessArguments = @{
+                FilePath = $pwshPath
+                Arguments = @('-NoLogo', '-NoProfile', '-Command', 'Wait-Event -Timeout 5 | Out-Null; exit 0')
+                TimeoutSeconds = 30
+                LogPath = (Join-Path $fixtureRoot 'invalid-process-settings.log')
+                Label = 'invalid process settings test'
+                ProcessorAffinityMask = $unavailableAffinityMask
+            }
+            $invalidProcessResult = Invoke-ProcessWithTreeKillTimeout @invalidProcessArguments
+            Assert-That 'an unavailable affinity mask fails process settings closed' (
+                $invalidProcessResult.ExitCode -eq -1 -and
+                $invalidProcessResult.ProcessSettingsVerified -eq $false -and
+                -not [string]::IsNullOrWhiteSpace(
+                    [string]$invalidProcessResult.ProcessSettingsError
+                )
+            )
+        }
     }
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
@@ -282,6 +396,12 @@ try {
         $runnerText.Contains('Get-StandalonePlayerManifest') -and
         $runnerText.Contains('playerDirectoryManifestMatches')
     )
+    Assert-That 'every standalone run records verified affinity and priority evidence' (
+        $runnerText.Contains("Join-Path `$ArtifactsPath 'standalone-process.json'") -and
+        $runnerText.Contains('actualProcessorAffinityMask = $result.ProcessorAffinityMask') -and
+        $runnerText.Contains('actualPriorityClass = $result.ProcessorPriorityClass') -and
+        $runnerText.Contains('if (-not $result.ProcessSettingsVerified)')
+    )
 
     $workflowText = Get-Content -LiteralPath $workflowPath -Raw
     Assert-That 'the comparison workflow uses the runner default of one player launch' (
@@ -289,6 +409,15 @@ try {
     )
     Assert-That 'the retired multi-launch gate is not part of the comparison workflow' (
         -not $workflowText.Contains('./scripts/unity/require-same-player-stability.ps1')
+    )
+    Assert-That 'the perf workflow derives and verifies one known host partition' (
+        $workflowText.Contains('./scripts/unity/resolve-performance-cpu-profile.ps1') -and
+        $workflowText.Contains('StandalonePlayerProcessorAffinityMask = [Convert]::ToInt64(') -and
+        $workflowText.Contains('StandalonePlayerPriorityClass = $env:DXM_PERF_PRIORITY_CLASS') -and
+        $workflowText.Contains("executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1'") -and
+        $workflowText.Contains('$profile.selectedLogicalProcessorCount -ne 16') -and
+        $workflowText.Contains('$evidence.actualProcessorAffinityMask -cne $profile.affinityMask') -and
+        $workflowText.Contains('$evidence.actualPriorityClass -cne $profile.priorityClass')
     )
 
     $scenarioModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'perf-scenarios.js'
