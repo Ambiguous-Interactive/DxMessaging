@@ -284,11 +284,11 @@ try {
     )
 
     $workflowText = Get-Content -LiteralPath $workflowPath -Raw
-    Assert-That 'only the comparison player receives three launches' (
-        $workflowText -match "StandalonePlayerRunCount = if .*benchmark-suite.*comparisons.* 3 .* 1"
+    Assert-That 'the comparison workflow uses the runner default of one player launch' (
+        -not $workflowText.Contains('StandalonePlayerRunCount')
     )
-    Assert-That 'the workflow invokes the tested same-player evidence gate' (
-        $workflowText.Contains('./scripts/unity/require-same-player-stability.ps1')
+    Assert-That 'the retired multi-launch gate is not part of the comparison workflow' (
+        -not $workflowText.Contains('./scripts/unity/require-same-player-stability.ps1')
     )
 
     $scenarioModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'perf-scenarios.js'

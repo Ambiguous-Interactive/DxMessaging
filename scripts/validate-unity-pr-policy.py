@@ -3323,8 +3323,19 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
-            r"require-comparison-rows\.ps1 -BaselinePath \$currentBaseline",
-            "exact supported comparison row gate",
+            r"\$evidenceInputs = @\(Get-ChildItem[\s\S]*?"
+            r"'unity\.log', 'player\.log', 'results\.xml'",
+            "chronological comparison player-log evidence",
+        ),
+        (
+            benchmark,
+            r"require-comparison-rows\.ps1[\s\S]*?"
+            r"-BaselinePath \$currentBaseline[\s\S]*?"
+            r"-EvidencePaths \$evidenceInputs[\s\S]*?"
+            r"-SummaryJsonPath \(Join-Path \$artifactsPath 'paired-comparison-summary\.json'\)[\s\S]*?"
+            r"-SummaryMarkdownPath \(Join-Path \$artifactsPath 'paired-comparison-summary\.md'\)[\s\S]*?"
+            r"GITHUB_STEP_SUMMARY",
+            "exact supported comparison row and paired evidence gate",
         ),
         (
             source,

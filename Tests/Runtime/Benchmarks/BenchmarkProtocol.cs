@@ -2,16 +2,18 @@
 namespace DxMessaging.Tests.Runtime.Benchmarks
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics;
 
     /// <summary>
     /// Single source of truth for benchmark measurement methodology shared by every
     /// DxMessaging benchmark suite (dispatch throughput, editor benchmarks, library
-    /// comparisons). Warm up, then measure ONE continuous window of
+    /// comparisons). Canonical rows warm up, then measure ONE continuous window of
     /// <see cref="MeasurementSeconds"/> seconds for throughput, then count managed
     /// allocations over a SEPARATE fixed-size batch via <see cref="AllocationProbe"/>.
     /// Throughput is total operations divided by the measured elapsed time, never a
-    /// median of resampled sub-windows.
+    /// median of resampled sub-windows. <see cref="MeasurePaired(Action, Func{int}, Action, Func{int})"/>
+    /// owns the diagnostic counterbalanced-control exception.
     ///
     /// <para>
     /// Allocation is measured in its own batch (not folded into the timed window) for
@@ -33,6 +35,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public const int MeasurementSeconds = 5;
         public const int WarmupEmits = 10_000;
         public const int BatchSize = 10_000;
+
+        // SYNC: scripts/unity/require-comparison-rows.ps1 validates these published
+        // protocol constants, materiality band, and evidence schema fail-closed.
+        public const string PairedProtocolId = "interleaved-abba-baab-v1";
+        public const int PairedMeasurementCycles = 4;
+        public const int PairedMinimumCycleActiveMilliseconds = 625;
+        public const double PairedMaterialityBandPercent = 3d;
 
         public static readonly TimeSpan MeasurementWindow = TimeSpan.FromSeconds(
             MeasurementSeconds
@@ -96,6 +105,176 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 allocationSample.Bytes,
                 allocationProbeOperations
             );
+        }
+
+        /// <summary>
+        /// Measures two warmed workloads inside one process using interleaved batches. Each cycle
+        /// repeats an ABBA/BAAB eight-batch super-cycle until both workloads reach the minimum
+        /// active time. Both workloads therefore occupy every position while the unchanged control
+        /// stays milliseconds away from the workload it normalizes.
+        /// </summary>
+        public static PairedBenchmarkMeasurement MeasurePaired(
+            Action firstWarmup,
+            Func<int> firstBatch,
+            Action secondWarmup,
+            Func<int> secondBatch
+        )
+        {
+            return MeasurePaired(
+                firstWarmup,
+                firstBatch,
+                secondWarmup,
+                secondBatch,
+                PairedMeasurementCycles,
+                TimeSpan.FromMilliseconds(PairedMinimumCycleActiveMilliseconds)
+            );
+        }
+
+        /// <summary>
+        /// Configurable paired measurement entry point. The short-duration overload exists for
+        /// contract tests; published comparison evidence uses the fixed defaults above.
+        /// </summary>
+        public static PairedBenchmarkMeasurement MeasurePaired(
+            Action firstWarmup,
+            Func<int> firstBatch,
+            Action secondWarmup,
+            Func<int> secondBatch,
+            int cycles,
+            TimeSpan minimumCycleActiveDuration
+        )
+        {
+            if (firstBatch == null)
+            {
+                throw new ArgumentNullException(nameof(firstBatch));
+            }
+
+            if (secondBatch == null)
+            {
+                throw new ArgumentNullException(nameof(secondBatch));
+            }
+
+            if (cycles <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(cycles),
+                    cycles,
+                    "Paired measurement cycle count must be positive."
+                );
+            }
+
+            if (minimumCycleActiveDuration <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(minimumCycleActiveDuration),
+                    minimumCycleActiveDuration,
+                    "Paired measurement minimum cycle active duration must be positive."
+                );
+            }
+
+            double requestedCycleTicks =
+                Stopwatch.Frequency * minimumCycleActiveDuration.TotalSeconds;
+            if (
+                double.IsNaN(requestedCycleTicks)
+                || double.IsInfinity(requestedCycleTicks)
+                || requestedCycleTicks >= long.MaxValue
+            )
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(minimumCycleActiveDuration),
+                    minimumCycleActiveDuration,
+                    "Paired measurement minimum cycle active duration exceeds the stopwatch range."
+                );
+            }
+
+            long minimumCycleTicks = Math.Max(1L, (long)requestedCycleTicks);
+            firstWarmup?.Invoke();
+            secondWarmup?.Invoke();
+
+            long firstTotalOperations = 0;
+            long firstTotalTicks = 0;
+            long secondTotalOperations = 0;
+            long secondTotalTicks = 0;
+            PairedCycleMeasurement[] cycleMeasurements = new PairedCycleMeasurement[cycles];
+
+            for (int cycle = 0; cycle < cycles; cycle++)
+            {
+                long firstCycleOperations = 0;
+                long firstCycleTicks = 0;
+                long secondCycleOperations = 0;
+                long secondCycleTicks = 0;
+                do
+                {
+                    for (int position = 0; position < 8; position++)
+                    {
+                        bool firstWorkload =
+                            position == 0 || position == 3 || position == 5 || position == 6;
+                        PairedBatchMeasurement batchMeasurement = MeasurePairedBatch(
+                            firstWorkload ? firstBatch : secondBatch
+                        );
+                        if (firstWorkload)
+                        {
+                            firstCycleOperations += batchMeasurement.Operations;
+                            firstCycleTicks += batchMeasurement.ElapsedTicks;
+                        }
+                        else
+                        {
+                            secondCycleOperations += batchMeasurement.Operations;
+                            secondCycleTicks += batchMeasurement.ElapsedTicks;
+                        }
+                    }
+                } while (
+                    firstCycleTicks < minimumCycleTicks || secondCycleTicks < minimumCycleTicks
+                );
+
+                firstTotalOperations += firstCycleOperations;
+                firstTotalTicks += firstCycleTicks;
+                secondTotalOperations += secondCycleOperations;
+                secondTotalTicks += secondCycleTicks;
+                cycleMeasurements[cycle] = PairedCycleMeasurement.FromTicks(
+                    firstCycleOperations,
+                    firstCycleTicks,
+                    secondCycleOperations,
+                    secondCycleTicks
+                );
+            }
+
+            PairedWorkloadMeasurement first = PairedWorkloadMeasurement.FromTicks(
+                firstTotalOperations,
+                firstTotalTicks
+            );
+            PairedWorkloadMeasurement second = PairedWorkloadMeasurement.FromTicks(
+                secondTotalOperations,
+                secondTotalTicks
+            );
+            return new PairedBenchmarkMeasurement(first, second, cycleMeasurements);
+        }
+
+        private static PairedBatchMeasurement MeasurePairedBatch(Func<int> emitBatch)
+        {
+            long startTimestamp = Stopwatch.GetTimestamp();
+            int operations = emitBatch();
+            long endTimestamp = Stopwatch.GetTimestamp();
+            if (operations <= 0)
+            {
+                throw new InvalidOperationException(
+                    $"Paired benchmark batches must report a positive operation count; observed {operations}."
+                );
+            }
+
+            return new PairedBatchMeasurement(operations, endTimestamp - startTimestamp);
+        }
+
+        private readonly struct PairedBatchMeasurement
+        {
+            public PairedBatchMeasurement(long operations, long elapsedTicks)
+            {
+                Operations = operations;
+                ElapsedTicks = elapsedTicks;
+            }
+
+            public long Operations { get; }
+
+            public long ElapsedTicks { get; }
         }
 
         /// <summary>
@@ -420,6 +599,150 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// total.
         /// </summary>
         public long TotalEmittedOperations => TotalOperations + AllocationProbeOperations;
+    }
+
+    /// <summary>Aggregated active time and work for one side of a paired measurement.</summary>
+    public readonly struct PairedWorkloadMeasurement
+    {
+        private PairedWorkloadMeasurement(
+            long totalOperations,
+            double elapsedSeconds,
+            double operationsPerSecond
+        )
+        {
+            TotalOperations = totalOperations;
+            ElapsedSeconds = elapsedSeconds;
+            OperationsPerSecond = operationsPerSecond;
+        }
+
+        public long TotalOperations { get; }
+
+        public double ElapsedSeconds { get; }
+
+        public double OperationsPerSecond { get; }
+
+        internal static PairedWorkloadMeasurement FromTicks(long totalOperations, long elapsedTicks)
+        {
+            double elapsedSeconds = elapsedTicks / (double)Stopwatch.Frequency;
+            return new PairedWorkloadMeasurement(
+                totalOperations,
+                elapsedSeconds,
+                totalOperations / Math.Max(elapsedSeconds, double.Epsilon)
+            );
+        }
+    }
+
+    /// <summary>Retained work, active time, and rate ratio for one paired cycle.</summary>
+    public readonly struct PairedCycleMeasurement
+    {
+        private PairedCycleMeasurement(
+            PairedWorkloadMeasurement first,
+            PairedWorkloadMeasurement second
+        )
+        {
+            First = first;
+            Second = second;
+            FirstToSecondRatio = first.OperationsPerSecond / second.OperationsPerSecond;
+        }
+
+        public PairedWorkloadMeasurement First { get; }
+
+        public PairedWorkloadMeasurement Second { get; }
+
+        public double FirstToSecondRatio { get; }
+
+        internal static PairedCycleMeasurement FromTicks(
+            long firstOperations,
+            long firstTicks,
+            long secondOperations,
+            long secondTicks
+        )
+        {
+            return new PairedCycleMeasurement(
+                PairedWorkloadMeasurement.FromTicks(firstOperations, firstTicks),
+                PairedWorkloadMeasurement.FromTicks(secondOperations, secondTicks)
+            );
+        }
+    }
+
+    /// <summary>
+    /// Result of one counterbalanced in-process comparison. The headline geometrically combines
+    /// every paired cycle ratio. Cycle ratios are retained to report raw within-run stability; no
+    /// sample is removed and no median is taken.
+    /// </summary>
+    public readonly struct PairedBenchmarkMeasurement
+    {
+        internal PairedBenchmarkMeasurement(
+            PairedWorkloadMeasurement first,
+            PairedWorkloadMeasurement second,
+            PairedCycleMeasurement[] cycles
+        )
+        {
+            if (cycles == null)
+            {
+                throw new ArgumentNullException(nameof(cycles));
+            }
+
+            if (cycles.Length == 0)
+            {
+                throw new ArgumentException(
+                    "Paired measurement must retain at least one cycle.",
+                    nameof(cycles)
+                );
+            }
+
+            First = first;
+            Second = second;
+            PairedCycleMeasurement[] retainedCycles = (PairedCycleMeasurement[])cycles.Clone();
+            Cycles = Array.AsReadOnly(retainedCycles);
+            double[] cycleRatios = new double[retainedCycles.Length];
+            for (int index = 0; index < retainedCycles.Length; index++)
+            {
+                cycleRatios[index] = retainedCycles[index].FirstToSecondRatio;
+            }
+            CycleRatios = Array.AsReadOnly(cycleRatios);
+
+            double minimum = cycleRatios[0];
+            double maximum = cycleRatios[0];
+            double logRatioSum = 0d;
+            for (int index = 0; index < cycleRatios.Length; index++)
+            {
+                if (
+                    cycleRatios[index] <= 0d
+                    || double.IsNaN(cycleRatios[index])
+                    || double.IsInfinity(cycleRatios[index])
+                )
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(cycleRatios),
+                        cycleRatios[index],
+                        $"Paired cycle ratio at index {index} must be positive and finite."
+                    );
+                }
+
+                minimum = Math.Min(minimum, cycleRatios[index]);
+                maximum = Math.Max(maximum, cycleRatios[index]);
+                logRatioSum += Math.Log(cycleRatios[index]);
+            }
+
+            FirstToSecondRatio = Math.Exp(logRatioSum / cycleRatios.Length);
+            AggregateRateRatio = first.OperationsPerSecond / second.OperationsPerSecond;
+            CycleRatioSpreadPercent = ((maximum / minimum) - 1d) * 100d;
+        }
+
+        public PairedWorkloadMeasurement First { get; }
+
+        public PairedWorkloadMeasurement Second { get; }
+
+        public double FirstToSecondRatio { get; }
+
+        public double AggregateRateRatio { get; }
+
+        public double CycleRatioSpreadPercent { get; }
+
+        public IReadOnlyList<PairedCycleMeasurement> Cycles { get; }
+
+        public IReadOnlyList<double> CycleRatios { get; }
     }
 
     /// <summary>

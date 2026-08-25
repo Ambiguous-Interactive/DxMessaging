@@ -513,16 +513,15 @@ jobs:
           # Unity Test Framework injects it by default; Release is the runner's
           # contract and -ReleasePlayerBuild is a kept-for-clarity no-op), so the
           # published numbers come from a true Release IL2CPP player
-          # (Release C++ config, isDebugBuild=false). The comparison leg builds
-          # once and launches that exact player three times. Only run 1 keeps the
-          # canonical results.xml/player.log names used by publication; runs 2-3
-          # are diagnostic evidence for #414's host-stability gate.
+          # (Release C++ config, isDebugBuild=false). The comparison leg uses one
+          # player process. Its paired DxMessaging/MessagePipe fixture measures
+          # counterbalanced batches inside that process so common host movement is
+          # present on both sides of the reported ratio.
           $extra = @{
               IncludeComparisons = '${{ matrix.benchmark-suite }}' -eq 'comparisons'
               ReleaseCodeOptimization = $true
               ReleasePlayerBuild = $true
               StandaloneScriptingBackend = 'IL2CPP'
-              StandalonePlayerRunCount = if ('${{ matrix.benchmark-suite }}' -eq 'comparisons') { 3 } else { 1 }
           }
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
@@ -536,14 +535,6 @@ jobs:
             -CachePath $cachePath `
             -LicenseReturnOwner Central `
             @extra
-
-      - name: Require same-player comparison evidence
-        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_tests.outcome == 'success' }}
-        timeout-minutes: 5
-        shell: pwsh
-        run: |
-          ./scripts/unity/require-same-player-stability.ps1 `
-            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-comparisons'
 
       - name: Capture exact standalone player size
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
@@ -1091,20 +1082,31 @@ jobs:
         shell: pwsh
         run: |
           $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
-          $inputs = @(Get-ChildItem -LiteralPath $artifactsPath -File -Recurse |
+          $extractInputs = @(Get-ChildItem -LiteralPath $artifactsPath -File -Recurse |
               Where-Object { $_.Name -in @('unity.log', 'results.xml') } |
-              ForEach-Object { @('--input', $_.FullName) })
-          if ($inputs.Count -eq 0) {
+              ForEach-Object { $_.FullName })
+          if ($extractInputs.Count -eq 0) {
             throw "No comparison result inputs were found under $artifactsPath."
           }
+          $evidenceInputs = @(Get-ChildItem -LiteralPath $artifactsPath -File -Recurse |
+              Where-Object { $_.Name -in @('unity.log', 'player.log', 'results.xml') } |
+              ForEach-Object { $_.FullName })
           $currentBaseline = Join-Path $artifactsPath 'comparison-rows.csv'
-          & node scripts/unity/extract-perf-baseline.js @inputs `
+          $extractArguments = @($extractInputs | ForEach-Object { @('--input', $_) })
+          & node scripts/unity/extract-perf-baseline.js @extractArguments `
             --scope Standalone `
             --output $currentBaseline
           if ($LASTEXITCODE -ne 0) {
             throw 'Comparison baseline extraction failed.'
           }
-          ./scripts/unity/require-comparison-rows.ps1 -BaselinePath $currentBaseline
+          ./scripts/unity/require-comparison-rows.ps1 `
+            -BaselinePath $currentBaseline `
+            -EvidencePaths $evidenceInputs `
+            -SummaryJsonPath (Join-Path $artifactsPath 'paired-comparison-summary.json') `
+            -SummaryMarkdownPath (Join-Path $artifactsPath 'paired-comparison-summary.md')
+          Get-Content `
+            -LiteralPath (Join-Path $artifactsPath 'paired-comparison-summary.md') `
+            -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload perf benchmark artifacts
         if: always()
