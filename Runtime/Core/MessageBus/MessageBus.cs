@@ -5533,6 +5533,7 @@ namespace DxMessaging.Core.MessageBus
         /// </remarks>
         // IL2CPP check elision on the frozen array walk: entries are non-null
         // by plan construction and the loop bound is the plan's own count.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private bool RunUntargetedInterceptors<T>(ref T message, InterceptorCache<object> cache)
