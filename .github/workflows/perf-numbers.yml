@@ -513,12 +513,16 @@ jobs:
           # Unity Test Framework injects it by default; Release is the runner's
           # contract and -ReleasePlayerBuild is a kept-for-clarity no-op), so the
           # published numbers come from a true Release IL2CPP player
-          # (Release C++ config, isDebugBuild=false).
+          # (Release C++ config, isDebugBuild=false). The comparison leg builds
+          # once and launches that exact player three times. Only run 1 keeps the
+          # canonical results.xml/player.log names used by publication; runs 2-3
+          # are diagnostic evidence for #414's host-stability gate.
           $extra = @{
               IncludeComparisons = '${{ matrix.benchmark-suite }}' -eq 'comparisons'
               ReleaseCodeOptimization = $true
               ReleasePlayerBuild = $true
               StandaloneScriptingBackend = 'IL2CPP'
+              StandalonePlayerRunCount = if ('${{ matrix.benchmark-suite }}' -eq 'comparisons') { 3 } else { 1 }
           }
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
@@ -532,6 +536,14 @@ jobs:
             -CachePath $cachePath `
             -LicenseReturnOwner Central `
             @extra
+
+      - name: Require same-player comparison evidence
+        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_tests.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          ./scripts/unity/require-same-player-stability.ps1 `
+            -ArtifactsPath '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-comparisons'
 
       - name: Capture exact standalone player size
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}

@@ -412,6 +412,45 @@ before its `ProgressMarker` assertion reconciles the full measurement. This catc
 current-row deduplication and fan-out mismatches. Teardown contracts separately verify
 synchronous cleanup where the pinned API exposes observable Unity objects or assets.
 
+### Same-player host-stability evidence
+
+The published comparison job builds one Standalone IL2CPP Release player, then
+launches that exact player three times. Run 1 keeps the canonical `results.xml`
+and `player.log` names consumed by publication. Runs 2 and 3 use noncanonical
+filenames under `same-player-repeats/`, so recursive publication input discovery
+cannot include them. Every launch still runs each scenario's one warmed five-second
+window, and every NUnit result file must pass independently.
+
+The runner records an ordinal-sorted path, byte length, and SHA-256 manifest for
+every file under the built player directory before run 1 and after run 3. CI
+fails if a file changes, appears, or disappears. No files are excluded from this
+check. Each launch also records the player process id and its actual
+processor-affinity mask. Host probes run immediately before process start and
+after process exit, outside every benchmark window. They record active
+per-logical-processor frequency and load when Windows exposes those counters,
+package clock and load as a fallback, and total host CPU load. The thermal probe
+records raw ACPI thermal-zone identities and values when firmware exposes them.
+An ACPI zone is not assumed to be the CPU package sensor; an unavailable probe is
+recorded as unavailable rather than invented as a temperature.
+
+`scripts/unity/require-same-player-stability.ps1` validates the evidence and
+writes `same-player-stability.json` plus `same-player-stability.md`. For each of
+the nine DxMessaging comparison scenarios, it calculates:
+
+```text
+spread_percent = (maximum_emits_per_second / minimum_emits_per_second - 1) * 100
+```
+
+The predeclared materiality band is 3%. The report uses all three observations:
+it does not take a median or discard an outlier. Missing or changed manifest
+data, a timed-out player, affinity, host conditions, results, or expected rows
+fails the comparison job. The gate also requires its schema versions, managed
+artifact paths, snapshot order, and one measured commit and exact Standalone
+IL2CPP x64 Release platform across all 27 DxMessaging rows. A spread above 3% is
+retained as an instability verdict and emits a workflow warning instead of
+failing the test run. Such a verdict keeps the runtime-candidate gate closed; it
+does not turn an unstable host into a performance regression.
+
 Cases run scenario-major within each roster assembly. This keeps same-scenario cells
 closer together inside the zero-dependency, external-package, and Unity Atoms rosters,
 but assembly boundaries still separate the complete matrix. A single pass cannot

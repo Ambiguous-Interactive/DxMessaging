@@ -36,6 +36,9 @@ param(
 
     [switch]$ReleasePlayerBuild,
 
+    [ValidateRange(1, 10)]
+    [int]$StandalonePlayerRunCount = 1,
+
     [ValidateSet('Local', 'Central')]
     [string]$LicenseReturnOwner = 'Local',
 
@@ -2472,6 +2475,174 @@ function Get-StandaloneBuildTimeoutSeconds {
     return $Default
 }
 
+function Get-StandaloneHostConditionSnapshot {
+    # Capture host conditions OUTSIDE the benchmark player so the probes never
+    # execute inside a scenario's warmed five-second window. Every probe is
+    # best-effort: missing thermal firmware or a rejected CIM query is evidence,
+    # not a reason to discard an otherwise valid player run.
+    param([Parameter(Mandatory = $true)][string]$Phase)
+
+    $errors = New-Object System.Collections.Generic.List[string]
+    $logicalProcessors = New-Object System.Collections.Generic.List[object]
+    try {
+        $processorInformation = @(
+            Get-CimInstance `
+                -ClassName Win32_PerfFormattedData_Counters_ProcessorInformation `
+                -ErrorAction Stop
+        )
+        foreach ($logicalProcessor in $processorInformation) {
+            if ([string]$logicalProcessor.Name -notlike '*_Total') {
+                $logicalProcessors.Add([ordered]@{
+                        name = [string]$logicalProcessor.Name
+                        frequencyMhz = $logicalProcessor.ProcessorFrequency
+                        percentProcessorPerformance = $logicalProcessor.PercentProcessorPerformance
+                        loadPercent = $logicalProcessor.PercentProcessorTime
+                    })
+            }
+        }
+    } catch {
+        $errors.Add("Win32_PerfFormattedData_Counters_ProcessorInformation: $($_.Exception.Message)")
+    }
+
+    $processors = New-Object System.Collections.Generic.List[object]
+    try {
+        $processorInstances = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
+        for ($index = 0; $index -lt $processorInstances.Count; $index++) {
+            $processor = $processorInstances[$index]
+            $processors.Add([ordered]@{
+                    index = $index
+                    currentClockMhz = $processor.CurrentClockSpeed
+                    maxClockMhz = $processor.MaxClockSpeed
+                    loadPercent = $processor.LoadPercentage
+                    logicalProcessors = $processor.NumberOfLogicalProcessors
+                })
+        }
+    } catch {
+        $errors.Add("Win32_Processor: $($_.Exception.Message)")
+    }
+
+    $totalCpuLoadPercent = $null
+    try {
+        $cpuTotals = @(
+            Get-CimInstance `
+                -ClassName Win32_PerfFormattedData_PerfOS_Processor `
+                -Filter "Name='_Total'" `
+                -ErrorAction Stop
+        )
+        if ($cpuTotals.Count -gt 0) {
+            $totalCpuLoadPercent = $cpuTotals[0].PercentProcessorTime
+        }
+    } catch {
+        $errors.Add("Win32_PerfFormattedData_PerfOS_Processor: $($_.Exception.Message)")
+    }
+
+    $thermalRecords = New-Object System.Collections.Generic.List[object]
+    try {
+        $thermalZones = @(
+            Get-CimInstance `
+                -Namespace 'root/wmi' `
+                -ClassName MSAcpi_ThermalZoneTemperature `
+                -ErrorAction Stop
+        )
+        foreach ($thermalZone in $thermalZones) {
+            if ($null -ne $thermalZone.CurrentTemperature) {
+                $rawTemperature = [double]$thermalZone.CurrentTemperature
+                $temperature = ($rawTemperature / 10.0) - 273.15
+                $thermalRecords.Add([ordered]@{
+                        instanceName = [string]$thermalZone.InstanceName
+                        rawTenthsKelvin = $rawTemperature
+                        celsius = [math]::Round($temperature, 2)
+                    })
+            }
+        }
+    } catch {
+        $errors.Add("MSAcpi_ThermalZoneTemperature: $($_.Exception.Message)")
+    }
+
+    $harnessAffinity = $null
+    try {
+        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+        $harnessAffinity = '0x{0:X}' -f $currentProcess.ProcessorAffinity.ToInt64()
+        $currentProcess.Dispose()
+    } catch {
+        $errors.Add("harness processor affinity: $($_.Exception.Message)")
+    }
+
+    return [ordered]@{
+        phase = $Phase
+        timestampUtc = [DateTime]::UtcNow.ToString('O')
+        processorCount = [Environment]::ProcessorCount
+        harnessProcessorAffinityMask = $harnessAffinity
+        logicalProcessors = @($logicalProcessors.ToArray())
+        processors = @($processors.ToArray())
+        totalCpuLoadPercent = $totalCpuLoadPercent
+        acpiThermalZones = [ordered]@{
+            available = $thermalRecords.Count -gt 0
+            zones = @($thermalRecords.ToArray())
+        }
+        probeErrors = @($errors.ToArray())
+    }
+}
+
+function Get-StandalonePlayerManifest {
+    # Hash every file present under the built player directory. Capturing the
+    # complete manifest before the first launch and after the last detects any
+    # changed, added, or removed player file without claiming which subset alone
+    # defines the launched IL2CPP program.
+    param([Parameter(Mandatory = $true)][string]$ExecutablePath)
+
+    if (-not (Test-Path -LiteralPath $ExecutablePath -PathType Leaf)) {
+        throw "Standalone player executable was not found at $ExecutablePath."
+    }
+    $playerDirectory = Split-Path -Parent $ExecutablePath
+    $files = @(Get-ChildItem -LiteralPath $playerDirectory -File -Recurse -Force)
+    if ($files.Count -eq 0) {
+        throw "Standalone player directory contains no files at $playerDirectory."
+    }
+
+    $filesByRelativePath = [System.Collections.Generic.Dictionary[string, System.IO.FileInfo]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($file in $files) {
+        $relativePath = $file.FullName.Substring($playerDirectory.Length).TrimStart(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        ).Replace('\', '/')
+        $filesByRelativePath.Add($relativePath, $file)
+    }
+    $relativePaths = [string[]]@($filesByRelativePath.Keys)
+    [Array]::Sort($relativePaths, [System.StringComparer]::Ordinal)
+    $entries = New-Object System.Collections.Generic.List[object]
+    foreach ($relativePath in $relativePaths) {
+        $file = $filesByRelativePath[$relativePath]
+        $entries.Add([ordered]@{
+                path = $relativePath
+                length = [long]$file.Length
+                sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+            })
+    }
+    return [ordered]@{
+        schemaVersion = 1
+        fileCount = $entries.Count
+        files = @($entries.ToArray())
+    }
+}
+
+function Write-JsonArtifact {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Value
+    )
+
+    $directory = Split-Path -Parent $Path
+    if ($directory -and -not (Test-Path -LiteralPath $directory -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    }
+    $json = $Value | ConvertTo-Json -Depth 10
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $json + "`n", $utf8NoBom)
+}
+
 function ConvertTo-ProcessArgumentLine {
     # MIRROR of scripts/unity/ensure-editor.ps1 ConvertTo-ProcessArgumentLine
     # (run-ci-tests.ps1 does not import that script, so the helper is copied here
@@ -2594,6 +2765,9 @@ function Invoke-ProcessWithTreeKillTimeout {
     $exit = -1
     $timedOut = $false
     $reaped = $false
+    $processId = $null
+    $processorAffinityMask = $null
+    $processorAffinityError = $null
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $FilePath
@@ -2607,6 +2781,12 @@ function Invoke-ProcessWithTreeKillTimeout {
         $proc.StartInfo = $psi
 
         [void]$proc.Start()
+        $processId = $proc.Id
+        try {
+            $processorAffinityMask = '0x{0:X}' -f $proc.ProcessorAffinity.ToInt64()
+        } catch {
+            $processorAffinityError = $_.Exception.Message
+        }
 
         $outReader = $proc.StandardOutput
         $errReader = $proc.StandardError
@@ -2716,6 +2896,9 @@ function Invoke-ProcessWithTreeKillTimeout {
     return @{
         ExitCode = $exit
         TimedOut = [bool]$timedOut
+        ProcessId = $processId
+        ProcessorAffinityMask = $processorAffinityMask
+        ProcessorAffinityError = $processorAffinityError
     }
 }
 
@@ -2737,7 +2920,10 @@ function Invoke-StandaloneTestPlayer {
         [Parameter(Mandatory = $true)][string]$EditorBuiltExePath,
         [Parameter(Mandatory = $true)][string]$ResultsPath,
         [Parameter(Mandatory = $true)][string]$LogPath,
-        [int]$TimeoutSeconds = 1800
+        [int]$TimeoutSeconds = 1800,
+        [string]$HostConditionEvidencePath,
+        [int]$RunIndex = 1,
+        [int]$RunCount = 1
     )
 
     $playerArgs = @(
@@ -2747,12 +2933,34 @@ function Invoke-StandaloneTestPlayer {
         '-dxmTestResults', $ResultsPath
     )
 
+    $before = $null
+    if (-not [string]::IsNullOrWhiteSpace($HostConditionEvidencePath)) {
+        $before = Get-StandaloneHostConditionSnapshot -Phase 'before'
+    }
+
     $result = Invoke-ProcessWithTreeKillTimeout `
         -FilePath $EditorBuiltExePath `
         -Arguments $playerArgs `
         -TimeoutSeconds $TimeoutSeconds `
         -LogPath $LogPath `
         -Label 'Run standalone test player'
+
+    if (-not [string]::IsNullOrWhiteSpace($HostConditionEvidencePath)) {
+        $after = Get-StandaloneHostConditionSnapshot -Phase 'after'
+        $evidence = [ordered]@{
+            schemaVersion = 1
+            runIndex = $RunIndex
+            runCount = $RunCount
+            playerProcessId = $result.ProcessId
+            playerProcessorAffinityMask = $result.ProcessorAffinityMask
+            playerProcessorAffinityError = $result.ProcessorAffinityError
+            exitCode = $result.ExitCode
+            timedOut = $result.TimedOut
+            before = $before
+            after = $after
+        }
+        Write-JsonArtifact -Path $HostConditionEvidencePath -Value $evidence
+    }
 
     # Exit 2 means the player received no -dxmTestResults arg (a harness-contract
     # violation -- the harness always passes it), so no file can exist: fail fast.
@@ -2765,7 +2973,13 @@ function Invoke-StandaloneTestPlayer {
     # in -batchmode -nographics IL2CPP; the watchdog then tree-kills it (TimedOut) even
     # though the results are valid. The caller validates the FILE (the source of truth)
     # and decides, so a deferred-quit run is not turned into a spurious failure.
-    return @{ ExitCode = $result.ExitCode; TimedOut = $result.TimedOut }
+    return @{
+        ExitCode = $result.ExitCode
+        TimedOut = $result.TimedOut
+        ProcessId = $result.ProcessId
+        ProcessorAffinityMask = $result.ProcessorAffinityMask
+        ProcessorAffinityError = $result.ProcessorAffinityError
+    }
 }
 
 function Invoke-UnityEditor {
@@ -3442,6 +3656,7 @@ Write-Host "LibraryState: $LibraryState"
 Write-Host "ArtifactsPath: $ArtifactsPath"
 Write-Host "IncludeComparisons: $IncludeComparisons"
 Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
+Write-Host "StandalonePlayerRunCount: $StandalonePlayerRunCount"
 Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
@@ -3729,46 +3944,128 @@ try {
             }
         }
 
-        # Delete any STALE results file before the player runs, so the
-        # timeout-honors-file branch below can only honor results THIS player run
-        # wrote -- never a prior run's leftover. (Defensive for local re-runs against
-        # the same -ArtifactsPath; CI checkout already cleans the gitignored
-        # .artifacts tree per job.)
-        if (Test-Path -LiteralPath $resultsPath -PathType Leaf) {
-            Remove-Item -LiteralPath $resultsPath -Force
+        # (2b) RUN the built exe directly (no PlayerConnection), under the watchdog.
+        # Run 1 keeps the canonical filenames consumed by publication. Optional
+        # same-player repeats use deliberately noncanonical names under a diagnostic
+        # subdirectory, so recursive results.xml/player.log discovery cannot mix
+        # those observations into the published first run.
+        $playerTimeoutSeconds = Get-StandaloneTestPlayerTimeoutSeconds
+        $captureSamePlayerEvidence = $StandalonePlayerRunCount -gt 1
+        $samePlayerEvidenceRoot = Join-Path $ArtifactsPath 'same-player-repeats'
+        $playerManifestBefore = $null
+        $playerRunRecords = New-Object System.Collections.Generic.List[object]
+        if ($captureSamePlayerEvidence) {
+            if (Test-Path -LiteralPath $samePlayerEvidenceRoot -PathType Container) {
+                Remove-Item -LiteralPath $samePlayerEvidenceRoot -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force -Path $samePlayerEvidenceRoot | Out-Null
+            $playerManifestBefore = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
         }
 
-        # (2b) RUN the built exe directly (no PlayerConnection), under the watchdog.
-        $playerTimeoutSeconds = Get-StandaloneTestPlayerTimeoutSeconds
-        $playerResult = Invoke-StandaloneTestPlayer `
-            -EditorBuiltExePath $standaloneExe `
-            -ResultsPath $resultsPath `
-            -LogPath $playerLogPath `
-            -TimeoutSeconds $playerTimeoutSeconds
-
-        # A watchdog timeout is fatal ONLY when the player wrote no results. If the
-        # results file exists, honor it as the source of truth (Application.Quit can be
-        # deferred in -batchmode -nographics IL2CPP after RunFinished already wrote the
-        # file) and fall through to Test-NUnitResults; otherwise fail with the timeout.
-        $playerExitForValidation = $playerResult.ExitCode
-        if ($playerResult.TimedOut) {
-            if (Test-Path -LiteralPath $resultsPath -PathType Leaf) {
-                Write-Host "::warning::Standalone test player exceeded the ${playerTimeoutSeconds}s watchdog and was tree-killed, but it had already written $resultsPath; honoring that results file as the source of truth (Application.Quit was likely deferred in -batchmode IL2CPP). Raise DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS if this recurs."
-                # The inline timeout warning above is the single, correctly-phrased
-                # notice for this case; pass exit 0 to the validator so it does NOT
-                # re-warn and MISLABEL the watchdog timeout (sentinel 124) as a
-                # native shutdown crash.
-                $playerExitForValidation = 0
+        for ($playerRunIndex = 1; $playerRunIndex -le $StandalonePlayerRunCount; $playerRunIndex++) {
+            $runNumber = '{0:D2}' -f $playerRunIndex
+            if ($playerRunIndex -eq 1) {
+                $currentResultsPath = $resultsPath
+                $currentPlayerLogPath = $playerLogPath
             } else {
-                throw "Standalone test player timed out after $playerTimeoutSeconds second(s) and was tree-killed before writing any results to $resultsPath. Raise the limit via DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS (0 disables the timeout). See the player log at $playerLogPath."
+                $currentRunDirectory = Join-Path $samePlayerEvidenceRoot "run-$runNumber"
+                New-Item -ItemType Directory -Force -Path $currentRunDirectory | Out-Null
+                $currentResultsPath = Join-Path $currentRunDirectory "repeat-$runNumber-results.xml"
+                $currentPlayerLogPath = Join-Path $currentRunDirectory "repeat-$runNumber-player.log"
+            }
+            $hostConditionEvidencePath = if ($captureSamePlayerEvidence) {
+                Join-Path $samePlayerEvidenceRoot "run-$runNumber-host-conditions.json"
+            } else {
+                ''
+            }
+
+            # Delete STALE per-run outputs first. A timeout can then honor only the
+            # file written by THIS launch, never a prior local run's leftover.
+            foreach ($staleOutputPath in @($currentResultsPath, $currentPlayerLogPath, $hostConditionEvidencePath)) {
+                if (
+                    -not [string]::IsNullOrWhiteSpace($staleOutputPath) -and
+                    (Test-Path -LiteralPath $staleOutputPath -PathType Leaf)
+                ) {
+                    Remove-Item -LiteralPath $staleOutputPath -Force
+                }
+            }
+
+            $playerResult = Invoke-StandaloneTestPlayer `
+                -EditorBuiltExePath $standaloneExe `
+                -ResultsPath $currentResultsPath `
+                -LogPath $currentPlayerLogPath `
+                -TimeoutSeconds $playerTimeoutSeconds `
+                -HostConditionEvidencePath $hostConditionEvidencePath `
+                -RunIndex $playerRunIndex `
+                -RunCount $StandalonePlayerRunCount
+
+            # A watchdog timeout is fatal ONLY when the player wrote no results. If
+            # results exist, validate them and treat deferred Application.Quit as a
+            # post-work shutdown condition rather than a benchmark failure.
+            $playerExitForValidation = $playerResult.ExitCode
+            if ($playerResult.TimedOut) {
+                if (Test-Path -LiteralPath $currentResultsPath -PathType Leaf) {
+                    Write-Host "::warning::Standalone test player run $playerRunIndex/$StandalonePlayerRunCount exceeded the ${playerTimeoutSeconds}s watchdog and was tree-killed, but it had already written $currentResultsPath; honoring that results file as the source of truth (Application.Quit was likely deferred in -batchmode IL2CPP). Raise DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS if this recurs."
+                    # Pass exit 0 so the validator does not mislabel watchdog sentinel
+                    # 124 as a native shutdown crash.
+                    $playerExitForValidation = 0
+                } else {
+                    throw "Standalone test player run $playerRunIndex/$StandalonePlayerRunCount timed out after $playerTimeoutSeconds second(s) and was tree-killed before writing results to $currentResultsPath. Raise the limit via DXM_STANDALONE_PLAYER_TIMEOUT_SECONDS (0 disables the timeout). See the player log at $currentPlayerLogPath."
+                }
+            }
+
+            # (2c) VALIDATE every repeat independently. A later failed repeat cannot
+            # hide behind the canonical first run's passing results.xml.
+            Test-NUnitResults `
+                -Path $currentResultsPath `
+                -Label "Unity $UnityVersion standalone run $playerRunIndex/$StandalonePlayerRunCount" `
+                -LogPath $currentPlayerLogPath `
+                -Project $ProjectPath `
+                -UnityExitCode $playerExitForValidation
+
+            if ($captureSamePlayerEvidence) {
+                $relativeResultsPath = $currentResultsPath.Substring($ArtifactsPath.Length).TrimStart(
+                    [System.IO.Path]::DirectorySeparatorChar,
+                    [System.IO.Path]::AltDirectorySeparatorChar
+                ).Replace('\', '/')
+                $relativePlayerLogPath = $currentPlayerLogPath.Substring($ArtifactsPath.Length).TrimStart(
+                    [System.IO.Path]::DirectorySeparatorChar,
+                    [System.IO.Path]::AltDirectorySeparatorChar
+                ).Replace('\', '/')
+                $playerRunRecords.Add([ordered]@{
+                        runIndex = $playerRunIndex
+                        resultsPath = $relativeResultsPath
+                        playerLogPath = $relativePlayerLogPath
+                        hostConditionsFile = [System.IO.Path]::GetFileName($hostConditionEvidencePath)
+                        processId = $playerResult.ProcessId
+                        processorAffinityMask = $playerResult.ProcessorAffinityMask
+                        timedOut = $playerResult.TimedOut
+                    })
             }
         }
 
-        # (2c) VALIDATE the FILE (the source of truth). The player log carries the
-        # diagnostics for a missing/empty file (its stdout no longer flows through
-        # unity.log). The player exit code is advisory only: a valid passing file
-        # with a non-zero player exit gets a benign-crash ::warning::, not a failure.
-        Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion standalone" -LogPath $playerLogPath -Project $ProjectPath -UnityExitCode $playerExitForValidation
+        if ($captureSamePlayerEvidence) {
+            $playerManifestAfter = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            $manifestBeforeJson = $playerManifestBefore | ConvertTo-Json -Depth 10 -Compress
+            $manifestAfterJson = $playerManifestAfter | ConvertTo-Json -Depth 10 -Compress
+            $playerDirectoryManifestMatches = $manifestBeforeJson -ceq $manifestAfterJson
+            $samePlayerEvidence = [ordered]@{
+                schemaVersion = 1
+                runCount = $StandalonePlayerRunCount
+                canonicalPublishedRunIndex = 1
+                playerDirectoryManifestMatches = $playerDirectoryManifestMatches
+                playerDirectoryManifestBefore = $playerManifestBefore
+                playerDirectoryManifestAfter = $playerManifestAfter
+                runs = @($playerRunRecords.ToArray())
+            }
+            Write-JsonArtifact `
+                -Path (Join-Path $samePlayerEvidenceRoot 'same-player-evidence.json') `
+                -Value $samePlayerEvidence
+            if (-not $playerDirectoryManifestMatches) {
+                throw 'Standalone player directory manifest changed between same-player repeats.'
+            }
+            Write-CiNotice "Standalone same-player evidence captured $StandalonePlayerRunCount validated launches with an unchanged player directory manifest."
+        }
     } else {
         # MUST NOT include '-quit' alongside '-runTests': per the Unity Editor manual
         # (https://docs.unity3d.com/Manual/EditorCommandLineArguments.html), if the
