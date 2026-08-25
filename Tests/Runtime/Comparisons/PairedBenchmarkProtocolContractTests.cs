@@ -189,7 +189,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                         cycles: 1,
                         minimumCycleActiveDuration: TimeSpan.MaxValue
                     ),
-                "An unrepresentable duration must fail instead of collapsing to a one-tick cycle."
+                "A duration beyond the stopwatch range must fail instead of collapsing to one tick."
             );
         }
 
