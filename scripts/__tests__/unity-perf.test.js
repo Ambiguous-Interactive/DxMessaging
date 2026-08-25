@@ -212,19 +212,18 @@ test("scenario filters keep only dispatch and DxMessaging comparison rows", () =
   }
 });
 
-test("comparison row gate fails closed when the extracted baseline has no comparison rows", () => {
-  const testScript = path.join(
-    REPO_ROOT,
-    "scripts",
-    "unity",
-    "__tests__",
-    "require-comparison-rows.test.ps1"
-  );
-  const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
-    encoding: "utf8"
-  });
-  assert.ifError(result.error);
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+test("PowerShell performance harness regression tests pass", () => {
+  for (const script of [
+    "require-comparison-rows.test.ps1",
+    "same-player-repeat-evidence.test.ps1"
+  ]) {
+    const testScript = path.join(REPO_ROOT, "scripts", "unity", "__tests__", script);
+    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
+      encoding: "utf8"
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, `${script}\n${result.stdout}\n${result.stderr}`);
+  }
 });
 
 test("extractRows parses CSV and structured log lines, dedupes, skips noise", () => {
