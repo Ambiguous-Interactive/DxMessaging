@@ -134,8 +134,11 @@ function Resolve-PerformanceCpuProfile {
         throw 'The process-affinity profile supports logical processor indices 0 through 62.'
     }
 
+    $efficiencyClassValues = @(
+        $records | ForEach-Object { [int]$_.efficiencyClass }
+    )
     $highestEfficiencyClass = [int](
-        ($records | Measure-Object -Property efficiencyClass -Maximum).Maximum
+        ($efficiencyClassValues | Measure-Object -Maximum).Maximum
     )
     $selected = @($records | Where-Object {
         [int]$_.efficiencyClass -eq $highestEfficiencyClass
@@ -155,8 +158,8 @@ function Resolve-PerformanceCpuProfile {
         throw 'The selected high-performance CPU sets did not produce a valid Int64 affinity mask.'
     }
 
-    $efficiencyClasses = @($records |
-        Group-Object -Property efficiencyClass |
+    $efficiencyClasses = @($efficiencyClassValues |
+        Group-Object |
         Sort-Object { [int]$_.Name } |
         ForEach-Object {
             [ordered]@{ value = [int]$_.Name; logicalProcessorCount = $_.Count }
