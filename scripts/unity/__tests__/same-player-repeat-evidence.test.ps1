@@ -245,9 +245,24 @@ try {
     Assert-That 'the process helper returns success and a process id' (
         $processResult.ExitCode -eq 0 -and $processResult.ProcessId -gt 0
     )
-    Assert-That 'the process helper captures actual child affinity' (
-        -not [string]::IsNullOrWhiteSpace([string]$processResult.ProcessorAffinityMask)
+    $hasProcessorAffinity = -not [string]::IsNullOrWhiteSpace(
+        [string]$processResult.ProcessorAffinityMask
     )
+    $hasProcessorAffinityError = -not [string]::IsNullOrWhiteSpace(
+        [string]$processResult.ProcessorAffinityError
+    )
+    if ($IsMacOS) {
+        # Investigation 2026-08-25: macOS does not implement Process.ProcessorAffinity.
+        # Require its explicit probe error here; the Windows-only evidence gate below still
+        # rejects a missing affinity value, and Windows/Linux test hosts require the real value.
+        Assert-That 'the macOS process helper captures its platform affinity probe error' (
+            -not $hasProcessorAffinity -and $hasProcessorAffinityError
+        )
+    } else {
+        Assert-That 'the process helper captures actual child affinity' (
+            $hasProcessorAffinity -and -not $hasProcessorAffinityError
+        )
+    }
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
     $buildIndex = $runnerText.IndexOf('$buildResult = Invoke-ProcessWithTreeKillTimeout')
