@@ -19,6 +19,9 @@ their resolved handler route across steady-state emissions. Registration changes
 the route. Dispatch keeps live handler-state and reset checks while preserving the zero-allocation
 steady-state contract.
 
+Filtered routes inline their steady-state interceptor-cache access. Registration changes still
+rebuild the cached snapshot on the next emission, outside the common clean-cache branch.
+
 ## How to read these tables
 
 - **Scopes.** Each dispatch table is labeled by execution scope and backend.
