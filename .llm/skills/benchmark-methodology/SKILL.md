@@ -1,6 +1,6 @@
 ---
 name: benchmark-methodology
-description: "How DxMessaging measures throughput and allocation - one warmed 5-second window through BenchmarkProtocol.Measure, a separate untimed GC.Alloc probe batch, Standalone as the only published scope, and perf asmdef isolation. Use when writing or editing a benchmark, adding a comparison bridge or perf asmdef, interpreting emits/sec or n/a allocation cells, or proposing a performance change that needs an A/B verdict."
+description: "How DxMessaging measures throughput and allocation - warmed 5-second canonical windows, counterbalanced in-process comparison controls, separate untimed GC.Alloc probes, Standalone publication, and perf asmdef isolation. Use when writing or editing a benchmark, adding a comparison bridge or perf asmdef, interpreting emits/sec or paired ratios, or proposing a performance change that needs an A/B verdict."
 metadata:
   category: "performance"
   tags: "performance, benchmarks, methodology, throughput, measurement, gc"
@@ -8,18 +8,16 @@ metadata:
 
 # Benchmark Methodology: Total Over One Window
 
-Warm up, then measure ONE continuous window and report total operations divided
-by measured elapsed seconds. Allocations are COUNTED by a `GC.Alloc` recorder
-over a separate untimed batch. Never median-of-runs, never a single untimed pass.
+Canonical rows warm up, then measure ONE continuous window and report total
+operations divided by measured elapsed seconds. Paired stability evidence uses
+counterbalanced batches inside one process and retains every raw cycle ratio.
+Allocations are COUNTED by a `GC.Alloc` recorder over a separate untimed batch.
+Never median-of-runs, never discard an outlier, never use a single untimed pass.
 
 ## When to use
 
-- Writing or editing anything under `Tests/Runtime/Benchmarks`,
-  `Tests/Editor/Benchmarks`, `Tests/Editor/Allocations`, or
-  `Tests/Runtime/Comparisons`.
-- Adding a comparison bridge against MessagePipe, UniRx, UniTask, Zenject, or
-  Unity Atoms.
-- Reading a throughput table, an `n/a` allocation cell, or a per-PR delta comment.
+- Writing or editing benchmark, allocation, or comparison tests.
+- Adding a comparison bridge against another messaging library.
 - Proposing a runtime performance change that needs an accept/reject verdict.
 - Debugging a "0 tests ran" CI failure on a perf-looking asmdef.
 
@@ -43,12 +41,8 @@ over a separate untimed batch. Never median-of-runs, never a single untimed pass
   recorder's overhead would distort the throughput clock. The recorder is owned
   by a `using`-scoped `AllocationProbe.Window`, so it is always disabled on scope
   exit even when the body throws.
-- Reconcile side-effect counters against `TotalEmittedOperations`
-  (`= TotalOperations + AllocationProbeOperations`), never `TotalOperations`.
-  Using the timed total under-counts by exactly one `BatchSize` per
-  `InvocationsPerOperation` - a real regression that failed 44 comparison cases.
-  Keep the fan-out assertion EXACT; fix the accounting instead of relaxing it.
-  `TotalOperations` is reserved for the throughput numerator.
+- Reconcile side-effect counters against `TotalEmittedOperations` (timed plus probe
+  operations), never `TotalOperations`. Keep fan-out assertions exact.
 - Call `AllocationProbe.SettleHeapForMeasurement()` when a window needs a settled
   heap. Do not inline `GC.Collect()` / `GC.WaitForPendingFinalizers()` in tests.
 - Cold, JIT-inclusive scenarios use `BenchmarkProtocol.MeasureColdLatency`: K
@@ -70,22 +64,46 @@ over a separate untimed batch. Never median-of-runs, never a single untimed pass
   profiler is stripped from the non-development Standalone IL2CPP Release leg, so
   both metrics read `Unmeasured` there. The published workflow omits allocation
   columns and does not run a second Mono leg solely to recover them.
-- A surface where EVERY row is `Unmeasured` is dropped, not filled with `n/a`:
-  the per-scope table omits the column, the comparison matrix for an unmeasured
-  metric is omitted, and the delta cell drops the segment. `n/a` survives only as
-  a genuine per-row gap.
-- Rejected measurement methods, with dates, so nobody retries them:
+- A surface where EVERY row is `Unmeasured` is dropped. `n/a` survives only as a
+  genuine per-row gap.
+- Rejected measurement methods:
   `GC.GetAllocatedBytesForCurrentThread()` returns `0` for every allocation under
-  Unity's Boehm GC; a `GC.GetTotalMemory` delta is dominated by warm-editor noise
-  and corrupted by mid-window collections; the per-sample `.Value` of the
-  `GC.Alloc` recorder is garbage; `GC.TryStartNoGCRegion` throws
-  `NotImplementedException` on Unity Mono.
+  Boehm; heap deltas are noisy and collection-sensitive; per-sample `GC.Alloc`
+  `.Value` is invalid; and Unity Mono does not implement no-GC regions.
 - Use `AllocationProbe.MeasureWithBytes` when one body should yield both
   numbers; it returns an `AllocationSample` carrying `Allocations` and `Bytes`.
   `MeasureMin` is count-keyed:
   it never takes bytes from a different-count attempt. Use
   `MeasureMinWithDiagnostics<T>` and return an allocation-free diagnostic value
   per attempt rather than accumulating diagnostics in outer variables.
+
+### The paired-control contract
+
+- Keep canonical `Comparison_` rows on `Measure`. Paired diagnostics emit only
+  `DXM_PAIRED_COMPARISON` evidence markers, never structured or CSV performance rows,
+  so the baseline extractor cannot duplicate or replace the published matrix.
+- Run each published suite in one player process. Derive the pinned host's fastest partition from
+  Windows CPU-set `EfficiencyClass`; keep Normal priority; verify and retain topology and process
+  settings. Fail closed on topology or setting drift. Historical deltas require an exact committed
+  sidecar match on profile ID, affinity mask, and priority; otherwise omit them.
+- After preparing both paired workloads, settle the heap once outside timed work, then warm both.
+  Run four cycles; each repeats 10000-operation batches in ABBA/BAAB order until both workloads
+  reach 625 ms active time. This keeps the control milliseconds away and balances ordinal position.
+- Treat the ratio as common-mode only when host movement affects both bridges approximately
+  multiplicatively. Workload-specific GC/cache effects or frequency sensitivity stay in spread.
+- Divide each cycle's aggregate workload rates, geometrically combine all four cycle ratios for
+  the headline, and report their max/min spread. Do not take a
+  median, remove an outlier, or turn a spread warning into a performance regression.
+- Pair DxMessaging with an unchanged in-process control such as the same MessagePipe scenario.
+  Candidate/control/candidate verdicts compare the paired ratio so host-wide movement shared by
+  both workloads does not masquerade as route-specific movement.
+- Reduce candidate/control/candidate paired headlines as `sqrt(C1 * C2) / R - 1`. Retain every
+  summary and raw cycle. Reject the verdict unless both outer same-code ratios and every run's raw
+  cycle spread stay within the 3% band; require a strictly greater than 3% effect for a candidate.
+- Keep exact fan-out assertions over warm-up plus every paired measured operation. Allocation
+  evidence remains on the canonical rows; do not enable a profiler recorder inside paired batches.
+  Do not pair an allocation-heavy workload whose collections can spill into the other side's batch;
+  keep it on the canonical continuous window.
 
 ### Scope
 
@@ -100,37 +118,22 @@ over a separate untimed batch. Never median-of-runs, never a single untimed pass
 
 ### Perf isolation
 
-- Asmdefs under `Tests/` whose `name` contains `Benchmarks` or `Allocations` are
-  classified `perf`; `Comparisons` is a separate `comparison` class, because
-  those suites need external packages. Both are excluded from the default run by
-  `scripts/unity/lib/asmdef-discovery.js`.
-- Opt in with `{ includePerf: true }` / `--include-perf` or
-  `{ includeComparisons: true }` / `-IncludeComparisons`. Workflows resolve their
-  assembly list through `.github/actions/compute-unity-assemblies`, which calls
-  `defaultIncludeAssemblies` - never a hand-edited `customParameters` list.
+- Asmdefs named with `Benchmarks` or `Allocations` classify as `perf`; `Comparisons`
+  classifies separately because it needs external packages. Default runs exclude both.
+- Opt in with `includePerf` / `--include-perf` or `includeComparisons` /
+  `-IncludeComparisons`; resolve assemblies through `compute-unity-assemblies`.
 - A perf asmdef in the `core` bucket almost always means its `name` field is
   missing the magic substring. Verify with
   `node scripts/unity/lib/asmdef-discovery.js`.
-- `unity-tests.yml` excludes perf; `unity-benchmarks.yml` includes it.
-  `perf-numbers.yml` runs isolated internal and comparison matrix entries on every
-  eligible PR and push; only the comparison entry sets `include-comparisons: true`.
-  External comparison package versions come only from
-  `.github/comparison-packages.json`.
+- `perf-numbers.yml` isolates internal and comparison entries. External package versions
+  come only from `.github/comparison-packages.json`.
 
 ### Verdict discipline
 
-- Do not repeat a rejected candidate without new evidence or a materially
-  different representation. Rejected so far: the 0-4 flat-dispatch `switch`
-  (regressed dispatch 8-11%), `[ThreadStatic]` snapshot-holder stacks (failed the
-  no-retained-memory-increase gate), the 256+ open-addressed `InstanceId` map
-  (2.83% median gain, below the 3% claim threshold, plus correctness failures),
-  inline bus context maps at physical capacity 2/4/8 (failed spill storage), and
-  recombined typed plus interceptor teardown (+14% registration bytes).
-- Accepted: the physical-two `HandlerActionCache` entry map (fresh Mono
-  construction 2.129M to 3.541M caches/sec, +66.3%) and reading the non-global
-  dispatch count from the already-cast flat holder.
-- Claims need fresh A/B/A bracketed control and candidate runs and must clear the
-  3% threshold; run-to-run editor noise is +/-1-3%.
+- Do not repeat a rejected candidate without new evidence or a materially different
+  representation. The campaign decision reference records accepted and rejected work.
+- Claims need a fresh A/B/A bracket, an interpretable paired result, and an effect
+  strictly greater than 3%.
 - Do not read `MessageBusConstruction_1000` or cold teardown rows as dispatch
   regressions - they are wall-time first-touch rows and move independently.
 - Do not attribute a result to branch, cache, or memory stalls: no CPU-sampling

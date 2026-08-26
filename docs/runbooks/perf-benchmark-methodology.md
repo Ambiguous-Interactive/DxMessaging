@@ -68,6 +68,9 @@ of measuring several short sub-windows and comparing their median has been
 replaced by this single long window. The shared protocol is the single source of
 truth for every benchmark suite (dispatch throughput, comparisons) and lives in
 [`Tests/Runtime/Benchmarks/BenchmarkProtocol.cs`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Benchmarks/BenchmarkProtocol.cs).
+The diagnostic in-process paired fixture is the explicit exception: it uses
+counterbalanced batches to normalize DxMessaging against an unchanged MessagePipe
+control while canonical published rows keep the continuous-window method.
 
 Registration scenarios report wall-clock milliseconds instead of emits per
 second, because they measure one-time setup cost rather than steady-state
@@ -412,50 +415,97 @@ before its `ProgressMarker` assertion reconciles the full measurement. This catc
 current-row deduplication and fan-out mismatches. Teardown contracts separately verify
 synchronous cleanup where the pinned API exposes observable Unity objects or assets.
 
-### Same-player host-stability evidence
+### In-process paired stability evidence
 
-The published comparison job builds one Standalone IL2CPP Release player, then
-launches that exact player three times. Run 1 keeps the canonical `results.xml`
-and `player.log` names consumed by publication. Runs 2 and 3 use noncanonical
-filenames under `same-player-repeats/`, so recursive publication input discovery
-cannot include them. Every launch still runs each scenario's one warmed five-second
-window, and every NUnit result file must pass independently.
+The published comparison job builds and launches one Standalone IL2CPP Release
+player. A dedicated fixture prepares DxMessaging and MessagePipe together for
+each scenario that both libraries support. MessagePipe is the unchanged control
+for host-wide movement when a DxMessaging candidate is compared with its control.
 
-The runner records an ordinal-sorted path, byte length, and SHA-256 manifest for
-every file under the built player directory before run 1 and after run 3. CI
-fails if a file changes, appears, or disappears. No files are excluded from this
-check. Each launch also records the player process id and its actual
-processor-affinity mask. Host probes run immediately before process start and
-after process exit, outside every benchmark window. They record active
-per-logical-processor frequency and load when Windows exposes those counters,
-package clock and load as a fallback, and total host CPU load. The thermal probe
-records raw ACPI thermal-zone identities and values when firmware exposes them.
-An ACPI zone is not assumed to be the CPU package sensor; an unavailable probe is
-recorded as unavailable rather than invented as a temperature.
+Before both published players run, the workflow queries
+[Windows CPU-set metadata](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-system_cpu_set_information)
+and selects every logical processor in the highest numerical `EfficiencyClass`.
+Windows defines higher values as faster and less power-efficient. The pinned
+32-thread i9-13900KF profile must resolve to 16 logical processors on eight cores
+in one processor group. This excludes the unlike core class while leaving enough
+processors for Unity's background threads. The process stays at Normal priority,
+so affinity is the only new scheduling variable in this experiment.
 
-`scripts/unity/require-same-player-stability.ps1` validates the evidence and
-writes `same-player-stability.json` plus `same-player-stability.md`. For each of
-the nine DxMessaging comparison scenarios, it calculates:
+The workflow fails before taking the Unity lock if the model, logical count, or
+resolved topology changes. It retains the complete selection in
+`performance-cpu-profile.json`. The launcher refreshes and verifies the actual
+process affinity and priority after start, then writes them to
+`standalone-process.json`. The comparison gate requires both artifacts and copies
+the execution profile into the paired JSON and Markdown summaries. A setting
+failure stops the run. The generated performance page also identifies this
+execution profile because the affinity change affects internal and comparison
+absolute rates.
+
+The committed `perf-baseline-profile.json` sidecar identifies the execution
+profile that produced `perf-baseline.csv`. Pull-request reporting requires its
+profile ID, affinity mask, and priority to match the current artifact exactly.
+If the post-merge refresh is skipped or waits in a fallback pull request, later
+runs omit the historical delta instead of comparing different scheduling regimes.
+
+After preparing both bridges, the harness settles the heap once outside all timed
+work, then warms both bridges. `BenchmarkProtocol.MeasurePaired` runs four cycles.
+Each cycle repeats batch-level `ABBA/BAAB` super-cycles until both libraries have
+at least 625 ms of measured active time. A batch contains 10000 operations. Both
+libraries appear four times in each eight-batch super-cycle, and the unchanged
+control stays milliseconds from the workload it normalizes. Each library receives
+at least 2.5 seconds of measured active time per scenario without another player
+launch; a slower library naturally receives more time while the faster side reaches
+the same minimum.
+
+The exact sequence is `ABBABAAB`: across its `ABBA` and `BAAB` halves, each
+library occupies ordinal positions 1 through 4 once. The estimator removes only
+movement that is common and approximately multiplicative for both bridges.
+Workload-specific GC/cache effects or different frequency sensitivity are not
+common-mode; they must remain visible in the raw-cycle or outer-run spread.
+
+Each cycle ratio divides the two aggregate rates from that cycle. The headline is
+the geometric combination of all four retained cycle ratios. The evidence also
+keeps the simpler ratio of total rates as a diagnostic and reports:
 
 ```text
-spread_percent = (maximum_emits_per_second / minimum_emits_per_second - 1) * 100
+spread_percent = (maximum_cycle_ratio / minimum_cycle_ratio - 1) * 100
 ```
 
-The predeclared materiality band is 3%. The report uses all three observations:
-it does not take a median or discard an outlier. Missing or changed manifest
-data, a timed-out player, affinity, host conditions, results, or expected rows
-fails the comparison job. The gate also requires its schema versions, managed
-artifact paths, snapshot order, and one measured commit and exact Standalone
-IL2CPP x64 Release platform across all 27 DxMessaging rows. A spread above 3% is
-retained as an instability verdict and emits a workflow warning instead of
-failing the test run. Such a verdict keeps the runtime-candidate gate closed; it
-does not turn an unstable host into a performance regression.
+No cycle is discarded and no median is taken. A spread above the predeclared 3%
+materiality band emits a warning and remains in the NUnit output. It does not
+fail correctness or turn an unstable measurement into a regression. Each side
+still has an exact fan-out assertion over warm-up plus every measured operation.
+The paired fixture emits only `DXM_PAIRED_COMPARISON` evidence markers, not
+structured or CSV performance rows, so it cannot replace or duplicate canonical
+`Comparison_` rows in the published matrix.
+`SubUnsub` stays on the canonical continuous window: its allocation and collection
+work can spill into the other workload's next batch, which breaks paired isolation.
+The paired fixture lives in the lexically last comparison assembly. The CI gate
+reads the chronological player log and requires its first paired marker to follow
+the last canonical marker, so sustained paired load cannot silently heat published rows.
 
 Cases run scenario-major within each roster assembly. This keeps same-scenario cells
 closer together inside the zero-dependency, external-package, and Unity Atoms rosters,
-but assembly boundaries still separate the complete matrix. A single pass cannot
-eliminate machine drift, so close rankings require repeated, rotated runs as described
-in [Pull-request performance evidence](#pull-request-performance-evidence).
+but assembly boundaries still separate the complete matrix. Use the paired
+DxMessaging/MessagePipe ratios for candidate/control/candidate attribution when
+absolute rates move together.
+
+Predeclare the reduction before launching candidate/control/candidate (`C1/R/C2`).
+Let each symbol be that run's paired DxMessaging/MessagePipe headline ratio:
+
+```text
+candidate_effect = sqrt(C1 * C2) / R - 1
+outer_spread_percent = (maximum(C1, C2) / minimum(C1, C2) - 1) * 100
+```
+
+Retain all three summary files and every raw cycle ratio. Report a candidate
+verdict only when `outer_spread_percent <= 3` and every run's raw cycle spread is
+also at most 3%. Otherwise report the experiment as uninterpretable and do not
+discard or replace a run. A performance candidate must additionally produce a
+strictly greater than 3% effect in its intended direction and satisfy its
+scenario-specific regression and allocation gates. For control/candidate/control,
+invert the reduction: `candidate_effect = R / sqrt(C1 * C2) - 1`, where `R` is
+the center candidate ratio and the outer values are controls.
 
 Capability cells follow the pinned libraries' public APIs. MessagePipe uses predicate
 subscription and pre/post filters, UniRx uses `Where`, Zenject uses signal identifiers,

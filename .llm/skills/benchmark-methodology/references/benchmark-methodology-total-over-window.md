@@ -1,12 +1,12 @@
 # Benchmark Methodology: Total Over One Window
 
-> **One-line summary**: Warm up, then measure ONE continuous N-second window
-> (N = `BenchmarkProtocol.MeasurementSeconds` = 5) and report total operations
-> divided by measured elapsed seconds; managed allocations are COUNTED via the
-> `GC.Alloc` recorder over a SEPARATE batch, and the total allocated BYTES are
-> measured alongside that count from the live `"GC Allocated In Frame"` counter
-> (informational; the count is the gate). Never median-of-runs, never a single
-> untimed pass.
+> **One-line summary**: Canonical rows warm up, then measure ONE continuous
+> N-second window (N = `BenchmarkProtocol.MeasurementSeconds` = 5). Diagnostic
+> paired rows counterbalance two workloads inside one process and retain every
+> raw cycle. Managed allocations are COUNTED via the `GC.Alloc` recorder over a
+> SEPARATE batch, and allocated BYTES are measured alongside that count from the
+> live `"GC Allocated In Frame"` counter. Never discard a sample, never use a
+> median for warm throughput, and never use a single untimed pass.
 
 ## Overview
 
@@ -87,6 +87,39 @@ SAME batch (see the dedicated section below), likewise `AllocationProbe.Unmeasur
 (`-1`, rendered `n/a`) when the byte counter is unavailable.
 `AllocationProbeOperations` is the operation count of the
 untimed allocation-probe batch (see the invariant below).
+
+### Paired in-process stability evidence
+
+`BenchmarkProtocol.MeasurePaired` is the diagnostic exception to the continuous-window shape.
+`PairedComparisonHarness` settles the heap after preparing both workloads, then the protocol warms
+and measures them in one player process so an unchanged second workload can expose common host
+movement. Four cycles repeat
+10000-operation batches in an ABBA/BAAB
+super-cycle until both workloads have at least 625 ms active time. The control stays milliseconds
+away, both workloads occupy every position, and each receives at least 2.5 seconds total active
+time without another player launch.
+
+The exact complement-palindromic sequence is `ABBABAAB`: across the `ABBA` and `BAAB` halves,
+each workload occupies ordinal positions 1 through 4 once. This controls only movement that is
+common and approximately multiplicative for both workloads. Workload-specific GC/cache effects or
+different frequency sensitivity remain visible in raw-cycle or outer-run spread.
+
+`PairedBenchmarkMeasurement` reports each workload's total operations, total active seconds, and
+aggregate rate. Each cycle divides its two aggregate workload rates. `FirstToSecondRatio` is the
+geometric combination of all four retained cycle ratios, while
+`AggregateRateRatio` retains the simpler ratio of total rates as a diagnostic. `CycleRatios` keeps
+all four raw values, and `CycleRatioSpreadPercent` is `(max / min - 1) * 100`. No cycle is removed
+and no median is taken. Paired rows use `PairedComparison_`, remain outside the published matrix,
+and do not run the allocation recorder inside timed batches. Allocation-heavy scenarios whose GC
+can spill into the other workload's batch stay on their canonical continuous window. The canonical
+rows still own allocation evidence and the published absolute throughput table.
+
+For candidate/control/candidate (`C1/R/C2`), predeclare the reduction as
+`sqrt(C1 * C2) / R - 1`. Retain all three summaries and raw cycles. The experiment is
+uninterpretable when `(max(C1, C2) / min(C1, C2) - 1) * 100` exceeds 3% or any run's raw cycle
+spread exceeds 3%; do not discard or replace a run. A candidate must then exceed 3% in the
+intended direction and pass its scenario-specific regression and allocation gates. Invert the
+formula for control/candidate/control.
 
 ## The Window Contract
 
@@ -328,11 +361,10 @@ noise. See the methodology runbook.
 
 ## Why It Holds
 
-Because `Measure` is the only place the window logic lives, a suite cannot
-silently drift to a different method. The dispatch benchmarks, the editor
-benchmarks, and each comparison bridge call the same function, so a cell in
-the throughput table and a cell in the comparison matrix are directly
-comparable. The allocation count stays honest because `AllocationProbe`
+Because `Measure` owns canonical window logic and `MeasurePaired` owns paired
+control logic, a suite cannot silently invent a third method. The dispatch
+benchmarks, editor benchmarks, and comparison bridges call the appropriate
+shared function. The allocation count stays honest because `AllocationProbe`
 self-validates the recorder and reports `Unmeasured` rather than a fabricated
 `0` when the backend cannot measure -- the report can never again claim a
 zero it did not observe.

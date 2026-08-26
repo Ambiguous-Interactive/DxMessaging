@@ -1,10 +1,10 @@
 ---
 name: benchmark-methodology
-description: How DxMessaging measures throughput and allocation - one warmed
-  5-second window through BenchmarkProtocol.Measure, a separate untimed GC.Alloc
-  probe batch, Standalone as the only published scope, and perf asmdef
+description: How DxMessaging measures throughput and allocation - warmed
+  5-second canonical windows, counterbalanced in-process comparison controls,
+  separate untimed GC.Alloc probes, Standalone publication, and perf asmdef
   isolation. Use when writing or editing a benchmark, adding a comparison bridge
-  or perf asmdef, interpreting emits/sec or n/a allocation cells, or proposing a
+  or perf asmdef, interpreting emits/sec or paired ratios, or proposing a
   performance change that needs an A/B verdict.
 ---
 

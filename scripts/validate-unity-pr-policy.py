@@ -3323,8 +3323,19 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
-            r"require-comparison-rows\.ps1 -BaselinePath \$currentBaseline",
-            "exact supported comparison row gate",
+            r"\$evidenceInputs = @\(Get-ChildItem[\s\S]*?"
+            r"'unity\.log', 'player\.log', 'results\.xml'",
+            "chronological comparison player-log evidence",
+        ),
+        (
+            benchmark,
+            r"require-comparison-rows\.ps1[\s\S]*?"
+            r"-BaselinePath \$currentBaseline[\s\S]*?"
+            r"-EvidencePaths \$evidenceInputs[\s\S]*?"
+            r"-SummaryJsonPath \(Join-Path \$artifactsPath 'paired-comparison-summary\.json'\)[\s\S]*?"
+            r"-SummaryMarkdownPath \(Join-Path \$artifactsPath 'paired-comparison-summary\.md'\)[\s\S]*?"
+            r"GITHUB_STEP_SUMMARY",
+            "exact supported comparison row and paired evidence gate",
         ),
         (
             source,
@@ -4226,8 +4237,9 @@ steps:
     require(
         paths_ignore.group("body")
         == '      - "docs/architecture/performance.md"\n'
-        '      - "docs/architecture/perf-baseline.csv"\n',
-        "Unity push trigger must ignore only the two CI-generated performance files",
+        '      - "docs/architecture/perf-baseline.csv"\n'
+        '      - "docs/architecture/perf-baseline-profile.json"\n',
+        "Unity push trigger must ignore only the three CI-generated performance files",
     )
     pull_request = re.search(
         r"^  pull_request:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",

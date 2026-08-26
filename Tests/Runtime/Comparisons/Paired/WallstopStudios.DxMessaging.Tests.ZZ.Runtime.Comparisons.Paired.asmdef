@@ -1,0 +1,50 @@
+{
+  "name": "WallstopStudios.DxMessaging.Tests.ZZ.Runtime.Comparisons.Paired",
+  "rootNamespace": "DxMessaging.Tests.Runtime.Comparisons.External",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Tests.Runtime",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons.External",
+    "MessagePipe"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS",
+    "MESSAGEPIPE_PRESENT",
+    "UNIRX_PRESENT",
+    "ZENJECT_PRESENT",
+    "UNITASK_PRESENT"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.cysharp.messagepipe",
+      "expression": "0.0.1",
+      "define": "MESSAGEPIPE_PRESENT"
+    },
+    {
+      "name": "com.neuecc.unirx",
+      "expression": "0.0.1",
+      "define": "UNIRX_PRESENT"
+    },
+    {
+      "name": "com.svermeulen.extenject",
+      "expression": "0.0.1",
+      "define": "ZENJECT_PRESENT"
+    },
+    {
+      "name": "com.cysharp.unitask",
+      "expression": "0.0.1",
+      "define": "UNITASK_PRESENT"
+    }
+  ],
+  "noEngineReferences": false
+}

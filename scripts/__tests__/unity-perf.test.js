@@ -234,6 +234,7 @@ test("extractRows parses CSV and structured log lines, dedupes, skips noise", ()
     `UntargetedFlood_OneHandler,${PLATFORM},abc1234,0,1000000,0,12.5,2048`,
     `{scenario:"TargetedFlood_OneListener",platform:"${PLATFORM}",commit:"abc1234",runIndex:1,emitsPerSec:2500000.5,gcAllocations:64,wallClockMs:8.25,gcAllocatedBytes:4096}`,
     `{scenario:"RegistrationAttribution_TokenActive_131072",platform:"${PLATFORM}",commit:"abc1234",runIndex:-1,emitsPerSec:0,gcAllocations:10000,wallClockMs:42.5,gcAllocatedBytes:640000}`,
+    `PairedComparison_DxMessaging_GlobalToOne,${PLATFORM},abc1234,-1,1000000,-1,12.5,-1`,
     `UnknownScenario,${PLATFORM},abc1234,0,1,0,1,0`
   ].join("\n");
   const rows = extractRows(content);
@@ -786,6 +787,10 @@ test("a winner flip within tolerance does not defeat table idempotence", () => {
   ].join("\n");
 
   assert.equal(blocksEquivalent(existing, candidate, 0.02), true);
+  assert.equal(
+    blocksEquivalent(`Runner: old\n${existing}`, `Runner: new\n${candidate}`, 0.02),
+    false
+  );
   assert.equal(
     blocksEquivalent(
       existing,
