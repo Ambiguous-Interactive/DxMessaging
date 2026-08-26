@@ -308,31 +308,36 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             token.Enable();
 
-            SimpleUntargetedMessage message = new();
-            Assert.DoesNotThrow(
-                () => messageBus.UntargetedBroadcast(ref message),
-                "A nested same-type plan refresh must not invalidate the outer emission's "
-                    + "borrowed post route. trace=[{0}]",
-                string.Join(",", trace)
-            );
+            try
+            {
+                SimpleUntargetedMessage message = new();
+                Assert.DoesNotThrow(
+                    () => messageBus.UntargetedBroadcast(ref message),
+                    "A nested same-type plan refresh must not invalidate the outer emission's "
+                        + "borrowed post route. trace=[{0}]",
+                    string.Join(",", trace)
+                );
 
-            CollectionAssert.AreEqual(
-                new[]
-                {
-                    "d0:handle",
-                    "d1:handle",
-                    "d1:existing-post",
-                    "d1:late-post",
-                    "d0:existing-post",
-                },
-                trace,
-                "The nested emission must use the refreshed post route while the outer "
-                    + "emission resumes its original frozen route. trace=[{0}]",
-                string.Join(",", trace)
-            );
-
-            token.Disable();
-            handler.active = false;
+                CollectionAssert.AreEqual(
+                    new[]
+                    {
+                        "d0:handle",
+                        "d1:handle",
+                        "d1:existing-post",
+                        "d1:late-post",
+                        "d0:existing-post",
+                    },
+                    trace,
+                    "The nested emission must use the refreshed post route while the outer "
+                        + "emission resumes its original frozen route. trace=[{0}]",
+                    string.Join(",", trace)
+                );
+            }
+            finally
+            {
+                token.Disable();
+                handler.active = false;
+            }
         }
 
         [Test]
