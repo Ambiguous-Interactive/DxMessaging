@@ -3990,55 +3990,50 @@ namespace DxMessaging.Core.MessageBus
                 // handler waits until the next emission.
                 bool fastFound = false;
                 HandlerCache<int, HandlerCache> fastHandlers = plan.scalarHandle;
-                if (fastHandlers != null && 0 < fastHandlers.handlers.Count)
+                object handleEntries = plan.handleEntries;
+                int handleEntryCount = plan.handleEntryCount;
+                if (handleEntries != null)
                 {
-                    object handleEntries = plan.handleEntries;
-                    int handleEntryCount = plan.handleEntryCount;
-                    if (handleEntries == null)
+                    // Equivalent steady-state stores from
+                    // AcquireDispatchSnapshotFast. The cached route is valid only while
+                    // the plan stamp matches, and every relevant mutation invalidates it.
+                    fastHandlers.lastTouchTicks = _tickCounter;
+                    fastHandlers.dispatchState.snapshotEmissionId = emissionId;
+                }
+                else if (fastHandlers != null && 0 < fastHandlers.handlers.Count)
+                {
+                    DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        fastHandlers,
+                        UntargetedHandleSlot,
+                        emissionId,
+                        default
+                    );
+                    FlatDispatchArray flatBase = fastSnapshot.flat;
+                    if (flatBase != null)
                     {
-                        DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                            this,
-                            fastHandlers,
-                            UntargetedHandleSlot,
-                            emissionId,
-                            default
-                        );
-                        FlatDispatchArray flatBase = fastSnapshot.flat;
-                        if (flatBase != null)
-                        {
-                            DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
-                            FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(
-                                flatBase
-                            );
-                            handleEntries = flat.entries;
-                            handleEntryCount = flat.count;
+                        DebugAssertFlatShape<FlatDispatch<TMessage>>(flatBase);
+                        FlatDispatch<TMessage> flat = DxUnsafe.As<FlatDispatch<TMessage>>(flatBase);
+                        handleEntries = flat.entries;
+                        handleEntryCount = flat.count;
 
-                            // Publish the settled route BEFORE user code runs. A handler can
-                            // mutate registrations and re-emit this type; publishing after the
-                            // callback would let the outer emission overwrite the nested
-                            // emission's fresh route with a displaced array under a current
-                            // plan version.
-                            plan.handleEntryCount = handleEntryCount;
-                            plan.handleEntries = handleEntries;
-                        }
+                        // Publish the settled route BEFORE user code runs. A handler can
+                        // mutate registrations and re-emit this type; publishing after the
+                        // callback would let the outer emission overwrite the nested
+                        // emission's fresh route with a displaced array under a current
+                        // plan version.
+                        plan.handleEntryCount = handleEntryCount;
+                        plan.handleEntries = handleEntries;
                     }
-                    else
-                    {
-                        // Equivalent steady-state stores from
-                        // AcquireDispatchSnapshotFast. The cached route is valid only while
-                        // the plan stamp matches, and every relevant mutation invalidates it.
-                        fastHandlers.lastTouchTicks = _tickCounter;
-                        fastHandlers.dispatchState.snapshotEmissionId = emissionId;
-                    }
+                }
 
-                    if (handleEntries != null)
-                    {
-                        fastFound = DispatchCachedUntargetedEntries(
-                            handleEntries,
-                            handleEntryCount,
-                            ref typedMessage
-                        );
-                    }
+                if (handleEntries != null)
+                {
+                    fastFound = DispatchCachedUntargetedEntries(
+                        handleEntries,
+                        handleEntryCount,
+                        ref typedMessage
+                    );
                 }
 
                 if (!fastFound && MessagingDebug.enabled)
