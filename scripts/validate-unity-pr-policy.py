@@ -3329,11 +3329,14 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
-            r"require-comparison-rows\.ps1[\s\S]*?"
-            r"-BaselinePath \$currentBaseline[\s\S]*?"
-            r"-EvidencePaths \$evidenceInputs[\s\S]*?"
-            r"-SummaryJsonPath \(Join-Path \$artifactsPath 'paired-comparison-summary\.json'\)[\s\S]*?"
-            r"-SummaryMarkdownPath \(Join-Path \$artifactsPath 'paired-comparison-summary\.md'\)[\s\S]*?"
+            r"\$comparisonGateArguments = @\{[\s\S]*?"
+            r"BaselinePath = \$currentBaseline[\s\S]*?"
+            r"EvidencePaths = \$evidenceInputs[\s\S]*?"
+            r"SummaryJsonPath = Join-Path \$artifactsPath 'paired-comparison-summary\.json'[\s\S]*?"
+            r"SummaryMarkdownPath = Join-Path \$artifactsPath 'paired-comparison-summary\.md'[\s\S]*?"
+            r"\$bracketManifestPath = 'scripts/unity/paired-bracket-manifest\.json'[\s\S]*?"
+            r"\$comparisonGateArguments\.BracketManifestPath = \$bracketManifestPath[\s\S]*?"
+            r"require-comparison-rows\.ps1 @comparisonGateArguments[\s\S]*?"
             r"GITHUB_STEP_SUMMARY",
             "exact supported comparison row and paired evidence gate",
         ),

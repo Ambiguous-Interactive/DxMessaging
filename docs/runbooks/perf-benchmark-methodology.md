@@ -490,22 +490,101 @@ but assembly boundaries still separate the complete matrix. Use the paired
 DxMessaging/MessagePipe ratios for candidate/control/candidate attribution when
 absolute rates move together.
 
-Predeclare the reduction before launching candidate/control/candidate (`C1/R/C2`).
-Let each symbol be that run's paired DxMessaging/MessagePipe headline ratio:
+Before the first run, commit `scripts/unity/paired-bracket-manifest.json`. Keep it
+byte-for-byte unchanged through all three runs. The workflow embeds the file's
+SHA-256 digest in each paired summary. The manifest assigns every paired row one
+of three roles:
 
-```text
-candidate_effect = sqrt(C1 * C2) / R - 1
-outer_spread_percent = (maximum(C1, C2) / minimum(C1, C2) - 1) * 100
+- `target`: a primary row whose sentinel-normalized effect must strictly exceed 3%.
+- `affected`: a row the changed call path can reach whose sentinel-normalized regression must not
+  exceed 3%.
+- `sentinel`: a row the changed call path cannot reach whose absolute effect must stay within 3%.
+
+Declare at least one target and two sentinels. Prove every role from the
+production call path during review. Do not classify a row after any bracket run
+has started. Declare the exact `Runtime/` files or directories that contain the candidate mechanism
+in `candidatePaths`. Every path must exist in all three arms. Do not use a broad path to make an
+unrelated runtime edit satisfy the candidate-source check. Manifest preflight checks exact tracked
+path case at the current `HEAD`; later artifact reduction uses retained digests and stays replayable
+if a subsequent change renames or removes the source path.
+
+The file uses this exact schema and every paired row in canonical summary order. Change only the
+bracket ID, orientation, candidate paths, and call-path-proven roles:
+
+```json
+{
+  "schemaVersion": 1,
+  "bracketId": "issue-414-candidate-name",
+  "orientation": "candidate-control-candidate",
+  "materialityBandPercent": 3,
+  "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+  "rows": [
+    { "scenario": "GlobalToOne", "role": "sentinel" },
+    { "scenario": "GlobalToMany", "role": "sentinel" },
+    { "scenario": "KeyedToOne", "role": "sentinel" },
+    { "scenario": "Filtered", "role": "target" },
+    { "scenario": "PostProcess", "role": "sentinel" },
+    { "scenario": "FilteredPostProcess", "role": "affected" },
+    { "scenario": "StructNoBox", "role": "sentinel" }
+  ]
+}
 ```
 
-Retain all three summary files and every raw cycle ratio. Report a candidate
-verdict only when `outer_spread_percent <= 3` and every run's raw cycle spread is
-also at most 3%. Otherwise report the experiment as uninterpretable and do not
-discard or replace a run. A performance candidate must additionally produce a
-strictly greater than 3% effect in its intended direction and satisfy its
-scenario-specific regression and allocation gates. For control/candidate/control,
-invert the reduction: `candidate_effect = R / sqrt(C1 * C2) - 1`, where `R` is
-the center candidate ratio and the outer values are controls.
+Let `q1`, `q2`, and `q3` be the first, center, and last paired
+DxMessaging/MessagePipe headline ratios. The positional reductions are:
+
+```text
+candidate/control/candidate: candidate_effect = sqrt(q1 * q3) / q2 - 1
+control/candidate/control: candidate_effect = q2 / sqrt(q1 * q3) - 1
+outer_spread_percent = (maximum(q1, q3) / minimum(q1, q3) - 1) * 100
+```
+
+The reducer performs these calculations in log space and rejects non-finite results. Compute
+`candidate_effect` for every row. Let `sentinel_reference` be the geometric mean of all sentinel
+effect factors (`1 + candidate_effect`). Compute each target and affected row's normalized effect
+as:
+
+```text
+sentinel_normalized_effect = (1 + candidate_effect) / sentinel_reference - 1
+```
+
+Run the repository reducer; do not reproduce this arithmetic in an issue comment:
+
+```bash
+node scripts/unity/reduce-paired-bracket.js \
+  --manifest scripts/unity/paired-bracket-manifest.json \
+  --first <first-summary.json> \
+  --center <center-summary.json> \
+  --last <last-summary.json> \
+  --output <bracket-verdict.json>
+```
+
+The producer requires checked-out `HEAD` to equal the published commit and rejects tracked runtime
+or benchmark-source dirt. It derives the whole-tree ID and a SHA-256 digest of the predeclared
+candidate paths from that commit. The reducer requires three distinct commit stamps, equal outer
+whole-tree and candidate-source IDs, different center whole-tree and candidate-source IDs, and the
+exact manifest digest, execution profile, protocol, materiality band, and complete ordered row set
+in all three summaries. It recomputes each headline and raw spread from the four retained cycle
+ratios. It
+returns `accepted` only when all of these conditions hold:
+
+- Every run's raw-cycle spread and every row's outer spread are at most 3%.
+- Every causally untouched sentinel has an absolute candidate effect at most 3%.
+- Every sentinel-normalized target effect is strictly greater than 3% in the intended direction.
+- Every sentinel-normalized affected row regresses by no more than 3%.
+
+It returns `uninterpretable` for a raw, outer, or sentinel stability failure and
+`rejected` for a stable target or affected-row failure. Both non-accepted states
+exit nonzero. Retain the manifest, all summaries, every commit and source-tree ID, every raw cycle
+ratio, and the verdict. Do not discard or replace a run. Allocation gates remain separate. A
+low raw-cycle spread proves stability inside one player process; it does not
+prove that the center run is representative across builds.
+
+Rows without a valid paired control stay canonical-only. `SubUnsub` remains on
+its allocation-heavy continuous window. Its separate deregistration palindrome
+is diagnostic-only and is not candidate acceptance evidence. `PriorityOrdered`
+also remains canonical-only until a causally independent paired workload exists.
+Neither row is a causal sentinel or candidate evidence.
 
 Capability cells follow the pinned libraries' public APIs. MessagePipe uses predicate
 subscription and pre/post filters, UniRx uses `Where`, Zenject uses signal identifiers,

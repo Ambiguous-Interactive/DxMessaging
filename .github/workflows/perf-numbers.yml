@@ -355,6 +355,15 @@ jobs:
         with:
           node-version: "22.18.0"
 
+      - name: Validate the predeclared paired bracket manifest
+        if: ${{ hashFiles('scripts/unity/paired-bracket-manifest.json') != '' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: >-
+          node scripts/unity/reduce-paired-bracket.js
+          --validate-manifest
+          --manifest scripts/unity/paired-bracket-manifest.json
+
       # Each suite opts into only its own test assemblies. The separate matrix
       # entries build separate players and therefore separate managed heaps.
       - name: Compute benchmark assembly list
@@ -1173,13 +1182,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'Comparison baseline extraction failed.'
           }
-          ./scripts/unity/require-comparison-rows.ps1 `
-            -BaselinePath $currentBaseline `
-            -EvidencePaths $evidenceInputs `
-            -ProcessEvidencePath (Join-Path $artifactsPath 'standalone-process.json') `
-            -CpuProfilePath (Join-Path $artifactsPath 'performance-cpu-profile.json') `
-            -SummaryJsonPath (Join-Path $artifactsPath 'paired-comparison-summary.json') `
-            -SummaryMarkdownPath (Join-Path $artifactsPath 'paired-comparison-summary.md')
+          $comparisonGateArguments = @{
+            BaselinePath = $currentBaseline
+            EvidencePaths = $evidenceInputs
+            ProcessEvidencePath = Join-Path $artifactsPath 'standalone-process.json'
+            CpuProfilePath = Join-Path $artifactsPath 'performance-cpu-profile.json'
+            SummaryJsonPath = Join-Path $artifactsPath 'paired-comparison-summary.json'
+            SummaryMarkdownPath = Join-Path $artifactsPath 'paired-comparison-summary.md'
+          }
+          $bracketManifestPath = 'scripts/unity/paired-bracket-manifest.json'
+          if (Test-Path -LiteralPath $bracketManifestPath -PathType Leaf) {
+            $comparisonGateArguments.BracketManifestPath = $bracketManifestPath
+          }
+          ./scripts/unity/require-comparison-rows.ps1 @comparisonGateArguments
           Get-Content `
             -LiteralPath (Join-Path $artifactsPath 'paired-comparison-summary.md') `
             -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
@@ -1385,8 +1400,8 @@ jobs:
             --jq '.[] | [.filename, .previous_filename] | .[] | select(. != null)')"
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
           methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
-          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|render-perf|run-ci-tests|resolve-performance-cpu-profile)'
-          methodology_pattern+='|scripts/unity/post-route-perf-scenarios\.json$'
+          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|reduce-paired-bracket|render-perf|run-ci-tests|resolve-performance-cpu-profile)'
+          methodology_pattern+='|scripts/unity/(paired-bracket-manifest|post-route-perf-scenarios)\.json$'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
           methodology_pattern+='|\.github/unity-versions\.json$'

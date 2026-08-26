@@ -86,20 +86,19 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
   Windows CPU-set `EfficiencyClass`; keep Normal priority; verify and retain topology and process
   settings. Fail closed on topology or setting drift. Historical deltas require an exact committed
   sidecar match on profile ID, affinity mask, and priority; otherwise omit them.
-- After preparing both paired workloads, settle the heap once outside timed work, then warm both.
-  Run four cycles; each repeats 10000-operation batches in ABBA/BAAB order until both workloads
-  reach 625 ms active time. This keeps the control milliseconds away and balances ordinal position.
+- Settle once, warm both workloads, then run four 625-ms cycles of 10000-operation ABBA/BAAB batches.
 - Treat the ratio as common-mode only when host movement affects both bridges approximately
   multiplicatively. Workload-specific GC/cache effects or frequency sensitivity stay in spread.
-- Divide each cycle's aggregate workload rates, geometrically combine all four cycle ratios for
-  the headline, and report their max/min spread. Do not take a
+- Geometrically combine all four cycle rate ratios and report their max/min spread. Do not take a
   median, remove an outlier, or turn a spread warning into a performance regression.
-- Pair DxMessaging with an unchanged in-process control such as the same MessagePipe scenario.
-  Candidate/control/candidate verdicts compare the paired ratio so host-wide movement shared by
-  both workloads does not masquerade as route-specific movement.
-- Reduce candidate/control/candidate paired headlines as `sqrt(C1 * C2) / R - 1`. Retain every
-  summary and raw cycle. Reject the verdict unless both outer same-code ratios and every run's raw
-  cycle spread stay within the 3% band; require a strictly greater than 3% effect for a candidate.
+- Pair DxMessaging with the same unchanged in-process MessagePipe scenario so shared host movement
+  does not masquerade as route-specific movement.
+- Predeclare each paired row and the exact candidate `Runtime/` paths in the committed manifest
+  before run one. Require at least one target and two sentinels; keep the manifest unchanged.
+- Use `scripts/unity/reduce-paired-bracket.js` only. It validates the manifest, distinct commits,
+  whole-tree and candidate-source digests, full profile, protocol, cycles, spreads, sentinels, and
+  normalized effects. Require stability within 3%, every target above 3%, and no affected regression
+  beyond 3%.
 - Keep exact fan-out assertions over warm-up plus every paired measured operation. Allocation
   evidence remains on the canonical rows; do not enable a profiler recorder inside paired batches.
   Do not pair an allocation-heavy workload whose collections can spill into the other side's batch;
@@ -133,7 +132,8 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
 - Do not repeat a rejected candidate without new evidence or a materially different
   representation. The campaign decision reference records accepted and rejected work.
 - Claims need a fresh A/B/A bracket, an interpretable paired result, and an effect
-  strictly greater than 3%.
+  strictly greater than 3%, as accepted by `reduce-paired-bracket.js` from the immutable manifest
+  and all three retained summaries.
 - Do not read `MessageBusConstruction_1000` or cold teardown rows as dispatch
   regressions - they are wall-time first-touch rows and move independently.
 - Do not attribute a result to branch, cache, or memory stalls: no CPU-sampling

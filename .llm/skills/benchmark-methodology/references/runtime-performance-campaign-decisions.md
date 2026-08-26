@@ -3,10 +3,9 @@
 <!-- cspell:ignore gshared -->
 
 > **One-line summary**: Keep the measured physical-two handler-entry map,
-> holder-local flat-dispatch count read, and same-trial deregistration
-> diagnostic; the targeted post-phase state bundle and other small-container,
-> dispatch-switch, and private-pool candidates failed explicit timing or storage
-> gates and were reverted.
+> holder-local flat-dispatch count read, same-trial deregistration diagnostic,
+> and controlled one-process comparison profile. Reject performance attribution
+> when causally untouched sentinels move with the target.
 
 ## Decision rule
 
@@ -39,6 +38,17 @@ separately.
 
 ## Accepted measurement method
 
+- Keep the controlled one-process comparison profile from PR #467. The
+  Standalone IL2CPP Release player uses the highest Windows CPU-set
+  `EfficiencyClass`, affinity `0xFFFF`, Normal priority, four retained
+  `ABBABAAB` cycles, and at least 625 ms of active time per workload per cycle.
+  All seven paired raw-cycle spreads passed the fixed 3% limit on the accepted
+  host. This proves within-process stability only. A candidate/control/candidate
+  verdict must also commit the complete target/affected/sentinel manifest before
+  the first run and keep it unchanged through the bracket. The workflow embeds
+  its digest in every summary. Only `reduce-paired-bracket.js` produces the
+  verdict from all three summaries and every declared row. See the developer
+  runbook for the schema and gates.
 - Keep the joint deregistration palindrome. Its predecessor minimized four
   independent seven-trial windows, so the reported H/B/B/H arms could come from
   four different host phases. The corrected diagnostic prepares four fresh
@@ -64,6 +74,25 @@ separately.
 
 ## Rejected runtime candidates
 
+- Do not retain `AggressiveInlining` on `InterceptorCache<T>.EnsureFlat` from
+  PR #468. The native artifacts proved the intended call disappeared, and every
+  raw-cycle and outer-candidate spread passed 3%, but the center control was not
+  representative across builds. `GlobalToOne` and `StructNoBox` cannot call
+  `EnsureFlat`; they nevertheless reported +7.285% and +7.341%, matching the
+  `Filtered` target's +7.334%. Both sentinel effects exceed the fixed 3% bound,
+  so the bracket is uninterpretable. All five unreachable paired rows produce a
+  diagnostic normalized `Filtered` effect of +4.754%, but no target effect from
+  this failed bracket is acceptance evidence. The attribute and its user-facing
+  performance claim were reverted.
+- Caller-side duplication of the settled
+  `AcquireDispatchSnapshotFast<TMessage>` branch improved `PostProcess` by only
+  1.19% in a fresh Standalone candidate/control/candidate bracket. Keep the
+  shared helper until a materially different representation removes more work.
+- Inlining all of `RunUntargetedInterceptors<T>` removed the intended native
+  call and improved the four-interceptor internal row by 19.15%, but the old
+  cross-process comparison bracket moved unrelated rows by 4% to 27%. The
+  candidate was reverted. Do not retry it until the causal-sentinel protocol
+  first produces an interpretable bracket for the smaller `EnsureFlat` change.
 - Do not bundle `RunTargetedPostPhases<TMessage>`'s immutable arguments into a
   readonly struct passed by `in`. Fresh Standalone IL2CPP Release A/B/B/A means
   regressed targeted stable, rewritten-empty-final, and
@@ -125,6 +154,18 @@ separately.
 
 ## Rejected measurement methods
 
+- Do not accept a cross-build target effect merely because every raw cycle and
+  both outer candidate arms are stable. PR #468's one anomalous control moved
+  two impossible-to-affect routes by the same roughly 7.3% as the target. The
+  old gate rejected only non-target regressions, so correlated positive movement
+  passed. Require bounded causal sentinels and a target-specific normalized
+  effect for every future bracket.
+- Do not treat PR #437's cross-build comparison against the historical PR #434
+  baseline as authoritative route-cache attribution. Unrelated rows moved from
+  -11.22% to +19.41%, and no fresh Standalone three-run bracket existed. Keep
+  the tested route-cache mechanism, but describe it factually and do not claim
+  a measured throughput improvement until the immutable-manifest reducer accepts
+  a fresh bracket.
 - The original marginal-registration rows timed one sub-millisecond
   1000-registration pass while the Mono allocation recorder was active. Five
   candidate launches compared against that single historical master row are not a

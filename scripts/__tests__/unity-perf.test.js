@@ -524,7 +524,18 @@ test("performance workflow publishes exact player-size and codegen evidence", ()
     path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
     "utf8"
   );
-  assert.match(workflow, /post-route-perf-scenarios\\\.json\$/);
+  assert.match(
+    workflow,
+    /scripts\/unity\/\(paired-bracket-manifest\|post-route-perf-scenarios\)\\\.json\$/
+  );
+  assert.match(
+    workflow,
+    /\$bracketManifestPath = 'scripts\/unity\/paired-bracket-manifest\.json'[\s\S]*\$comparisonGateArguments\.BracketManifestPath = \$bracketManifestPath[\s\S]*require-comparison-rows\.ps1 @comparisonGateArguments/
+  );
+  assert.match(
+    workflow,
+    /Validate the predeclared paired bracket manifest\n\s+if: \$\{\{ hashFiles\('scripts\/unity\/paired-bracket-manifest\.json'\) != '' \}\}[\s\S]*reduce-paired-bracket\.js[\s\S]*--validate-manifest[\s\S]*paired-bracket-manifest\.json/
+  );
   assert.match(
     workflow,
     /Get-ChildItem -LiteralPath \$playerDir -File -Recurse -Force[\s\S]*player-size\.json[\s\S]*Set-StrictMode -Version Latest[\s\S]*HashSet\[string\][\s\S]*StringComparer\]::Ordinal(?![A-Za-z0-9_])[\s\S]*DefinitionLocations[\s\S]*repeated identical body[\s\S]*case-distinct bodies[\s\S]*StringComparison\]::Ordinal[\s\S]*Generated-method extractor self-test passed[\s\S]*DeregistrationAttributionState_Execute_m[\s\S]*TypedHandlerDeregistrationState_Deregister_m[\s\S]*MessageBus_Deregister_Tis[\s\S]*GenericInterface[\s\S]*_\+messageBus[\s\S]*typedCallSymbol[\s\S]*typedSharedCallSymbol[\s\S]*directBusCallSymbol[\s\S]*typedInterfaceDispatchEvidenceLineCount[\s\S]*typedDirectBusDispatchEvidenceLineCount[\s\S]*typedBusDispatchRecognized[\s\S]*directBusDispatchEvidenceLineCount[\s\S]*definitionOccurrenceCount[\s\S]*definitionLocation=[\s\S]*typed-deregistration-codegen\.txt[\s\S]*Capture dispatch-route codegen and native layout[\s\S]*benchmark-suite == 'comparisons'[\s\S]*standalone-comparisons[\s\S]*\.artifacts\/unity\/perf\/\$\{\{ matrix\.unity-version \}\}-standalone-comparisons[\s\S]*capture-dispatch-codegen\.ps1[\s\S]*native-layout-inventory\.txt[\s\S]*native-line-map\.txt[\s\S]*requiredTargetsResolved=True[\s\S]*native-disassembly\.txt/
