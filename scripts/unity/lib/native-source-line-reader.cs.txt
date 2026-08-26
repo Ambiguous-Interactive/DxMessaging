@@ -1,4 +1,4 @@
-// cspell:ignore dbghelp IMAGEHLP LINEW nobytes syms undname
+// cspell:ignore dbghelp IMAGEHLP INFOW LINEW nobytes syms undname
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -23,6 +23,10 @@ public sealed class DxMessagingNativeSourceLine
     public uint RequestedLine { get; set; }
     public uint SelectedLine { get; set; }
     public ulong Address { get; set; }
+    public ulong ExtentEndAddress { get; set; }
+    public string NativeSymbolName { get; set; }
+    public ulong NativeSymbolAddress { get; set; }
+    public ulong NativeSymbolEndAddress { get; set; }
     public ulong RelativeVirtualAddress { get; set; }
 }
 
@@ -36,6 +40,9 @@ public sealed class DxMessagingNativeSourceLineResult
 
 public static class DxMessagingNativeSourceLineReader
 {
+    private const int SymbolInfoSize = 88;
+    private const int SymbolInfoNameOffset = 84;
+    private const int MaximumSymbolNameLength = 1024;
     private const uint SymOptUndname = 0x00000002;
     private const uint SymOptLoadLines = 0x00000010;
     private const uint SymOptExactSymbols = 0x00000400;
@@ -48,6 +55,17 @@ public static class DxMessagingNativeSourceLineReader
         public uint LineNumber;
         public IntPtr FileName;
         public ulong Address;
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = SymbolInfoSize, CharSet = CharSet.Unicode)]
+    private struct SymbolInfoWLayout
+    {
+        [FieldOffset(0)] public uint SizeOfStruct;
+        [FieldOffset(28)] public uint Size;
+        [FieldOffset(56)] public ulong Address;
+        [FieldOffset(76)] public uint NameLen;
+        [FieldOffset(80)] public uint MaxNameLen;
+        [FieldOffset(SymbolInfoNameOffset)] public char Name;
     }
 
     [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -78,6 +96,20 @@ public static class DxMessagingNativeSourceLineReader
         out int displacement,
         ref ImageHlpLineW64 line);
 
+    [DllImport("dbghelp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SymGetLineNextW64(
+        IntPtr process,
+        ref ImageHlpLineW64 line);
+
+    [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SymFromAddrW(
+        IntPtr process,
+        ulong address,
+        out ulong displacement,
+        IntPtr symbol);
+
     [DllImport("dbghelp.dll")]
     private static extern uint SymSetOptions(uint options);
 
@@ -99,6 +131,16 @@ public static class DxMessagingNativeSourceLineReader
         if (Marshal.SizeOf(typeof(ImageHlpLineW64)) != 40)
         {
             throw new InvalidOperationException("IMAGEHLP_LINEW64 size is not 40 bytes on x64.");
+        }
+        AssertSymbolOffset("SizeOfStruct", 0);
+        AssertSymbolOffset("Size", 28);
+        AssertSymbolOffset("Address", 56);
+        AssertSymbolOffset("NameLen", 76);
+        AssertSymbolOffset("MaxNameLen", 80);
+        AssertSymbolOffset("Name", SymbolInfoNameOffset);
+        if (Marshal.SizeOf(typeof(SymbolInfoWLayout)) != SymbolInfoSize)
+        {
+            throw new InvalidOperationException("SYMBOL_INFOW size is not 88 bytes on x64.");
         }
     }
 
@@ -262,15 +304,85 @@ public static class DxMessagingNativeSourceLineReader
         {
             return null;
         }
+        uint selectedLineNumber = line.LineNumber;
+        ulong selectedAddress = line.Address;
+        ulong extentEndAddress = 0;
+        ImageHlpLineW64 nextLine = line;
+        while (SymGetLineNextW64(process, ref nextLine))
+        {
+            if (nextLine.Address > selectedAddress)
+            {
+                extentEndAddress = nextLine.Address;
+                break;
+            }
+        }
+        NativeSymbol nativeSymbol = ReadNativeSymbol(process, selectedAddress);
         return new DxMessagingNativeSourceLine
         {
             Target = target.Id,
             SourcePath = sourcePath,
             RequestedLine = target.RequestedLine,
-            SelectedLine = line.LineNumber,
-            Address = line.Address,
-            RelativeVirtualAddress = line.Address - moduleBase
+            SelectedLine = selectedLineNumber,
+            Address = selectedAddress,
+            ExtentEndAddress = extentEndAddress,
+            NativeSymbolName = nativeSymbol.Name,
+            NativeSymbolAddress = nativeSymbol.Address,
+            NativeSymbolEndAddress = nativeSymbol.EndAddress,
+            RelativeVirtualAddress = selectedAddress - moduleBase
         };
+    }
+
+    private static NativeSymbol ReadNativeSymbol(IntPtr process, ulong address)
+    {
+        int bufferSize = SymbolInfoSize + (MaximumSymbolNameLength - 1) * sizeof(char);
+        IntPtr buffer = Marshal.AllocHGlobal(bufferSize);
+        try
+        {
+            for (int offset = 0; offset < bufferSize; offset++)
+            {
+                Marshal.WriteByte(buffer, offset, 0);
+            }
+            Marshal.WriteInt32(buffer, 0, SymbolInfoSize);
+            Marshal.WriteInt32(buffer, 80, MaximumSymbolNameLength);
+            ulong displacement;
+            if (!SymFromAddrW(process, address, out displacement, buffer))
+            {
+                throw NativeFailure("SymFromAddrW");
+            }
+            uint symbolSize = unchecked((uint)Marshal.ReadInt32(buffer, 28));
+            ulong symbolAddress = unchecked((ulong)Marshal.ReadInt64(buffer, 56));
+            uint nameLength = unchecked((uint)Marshal.ReadInt32(buffer, 76));
+            if (
+                symbolSize == 0 ||
+                symbolAddress > address ||
+                symbolAddress + symbolSize <= address ||
+                nameLength == 0 ||
+                nameLength >= MaximumSymbolNameLength)
+            {
+                throw new InvalidOperationException(
+                    "SymFromAddrW returned an invalid or unbounded containing symbol.");
+            }
+            string name = Marshal.PtrToStringUni(
+                IntPtr.Add(buffer, SymbolInfoNameOffset),
+                checked((int)nameLength));
+            return new NativeSymbol
+            {
+                Name = name,
+                Address = symbolAddress,
+                EndAddress = symbolAddress + symbolSize
+            };
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    private sealed class NativeSymbol
+    {
+        public string Name { get; set; }
+        public ulong Address { get; set; }
+        public ulong EndAddress { get; set; }
     }
 
     private static string NormalizePath(string path)
@@ -285,6 +397,16 @@ public static class DxMessagingNativeSourceLineReader
         {
             throw new InvalidOperationException(
                 "IMAGEHLP_LINEW64." + field + " offset " + actual + " did not equal " + expected + ".");
+        }
+    }
+
+    private static void AssertSymbolOffset(string field, int expected)
+    {
+        int actual = Marshal.OffsetOf(typeof(SymbolInfoWLayout), field).ToInt32();
+        if (actual != expected)
+        {
+            throw new InvalidOperationException(
+                "SYMBOL_INFOW." + field + " offset " + actual + " did not equal " + expected + ".");
         }
     }
 
