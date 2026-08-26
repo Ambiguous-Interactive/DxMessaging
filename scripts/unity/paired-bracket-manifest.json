@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "bracketId": "session-242-cached-untargeted-route-count-elision",
+  "orientation": "candidate-control-candidate",
+  "materialityBandPercent": 3,
+  "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+  "rows": [
+    { "scenario": "GlobalToOne", "role": "target" },
+    { "scenario": "GlobalToMany", "role": "affected" },
+    { "scenario": "KeyedToOne", "role": "sentinel" },
+    { "scenario": "Filtered", "role": "sentinel" },
+    { "scenario": "PostProcess", "role": "sentinel" },
+    { "scenario": "FilteredPostProcess", "role": "sentinel" },
+    { "scenario": "StructNoBox", "role": "target" }
+  ]
+}
