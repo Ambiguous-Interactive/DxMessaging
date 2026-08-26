@@ -222,24 +222,15 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         /// <summary>
-        /// The untargeted fast and post-only routes are cached on the bus-wide
-        /// dispatch plan only after their active snapshots settle. Unrelated
-        /// registration churn invalidates that plan without dirtying either
-        /// measured sink, so every measured operation below is the first emit
-        /// that must reacquire and republish the borrowed entry arrays.
+        /// The untargeted post-only handle and post routes are cached on the
+        /// bus-wide dispatch plan only after both active snapshots settle.
+        /// Unrelated registration churn invalidates that plan without dirtying
+        /// either measured sink, so every measured operation below is the first
+        /// emit that must reacquire and republish both borrowed entry arrays.
         /// </summary>
-        [TestCase(
-            false,
-            TestName = "UntargetedEmitIsZeroAllocAfterUnrelatedPlanInvalidation_FastPath"
-        )]
-        [TestCase(
-            true,
-            TestName = "UntargetedEmitIsZeroAllocAfterUnrelatedPlanInvalidation_PostOnlyPath"
-        )]
+        [Test]
         [Category("Allocation")]
-        public void UntargetedEmitIsZeroAllocAfterUnrelatedPlanInvalidation(
-            bool includePostProcessor
-        )
+        public void UntargetedEmitIsZeroAllocAfterUnrelatedPlanInvalidation()
         {
             MessageScenario scenario = MessageScenario.Untargeted();
             RunWithFreshHarness(
@@ -256,14 +247,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                     MessageHandler.FastHandler<SimpleUntargetedMessage> postProcessor = (
                         ref SimpleUntargetedMessage _
                     ) => postInvocationCount++;
-                    if (includePostProcessor)
-                    {
-                        _ = ScenarioHarness.RegisterUntargetedPostProcessor(
-                            scenario,
-                            token,
-                            postProcessor
-                        );
-                    }
+                    _ = ScenarioHarness.RegisterUntargetedPostProcessor(
+                        scenario,
+                        token,
+                        postProcessor
+                    );
                     MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
                         ref ComplexUntargetedMessage _
                     ) => { };
@@ -292,17 +280,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                         AllocationMeasurementAttempts,
                         invocationCount - invocationCountBeforeMeasurement,
                         "Every measured first emit after unrelated invalidation must still "
-                            + "deliver exactly once to the registered untargeted handler. "
-                            + "includePostProcessor={0}.",
-                        includePostProcessor
+                            + "deliver exactly once to the registered untargeted handler."
                     );
                     Assert.AreEqual(
-                        includePostProcessor ? AllocationMeasurementAttempts : 0,
+                        AllocationMeasurementAttempts,
                         postInvocationCount - postInvocationCountBeforeMeasurement,
-                        "Every measured first emit after unrelated invalidation must deliver "
-                            + "the expected number of post-process callbacks. "
-                            + "includePostProcessor={0}.",
-                        includePostProcessor
+                        "Every measured first emit after unrelated invalidation must still "
+                            + "deliver exactly once to the registered untargeted post-processor."
                     );
                     if (delta == AllocationProbe.Unmeasured)
                     {
@@ -314,10 +298,8 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Assert.AreEqual(
                         0,
                         delta,
-                        "The first untargeted emit after an unrelated plan invalidation must "
-                            + "reacquire and cache its routes without allocating. "
-                            + "includePostProcessor={0}.",
-                        includePostProcessor
+                        "The first untargeted post-only emit after an unrelated plan "
+                            + "invalidation must reacquire and cache both routes without allocating."
                     );
                 }
             );
