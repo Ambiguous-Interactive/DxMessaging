@@ -369,6 +369,12 @@ namespace DxMessaging.Tests.Editor.Contract
                     priority: 17,
                     messageBus: bus
                 );
+                Action postDeregistration = handler.RegisterUntargetedPostProcessor(
+                    callback,
+                    callback,
+                    priority: 17,
+                    messageBus: bus
+                );
                 ProbeMessage probe = new ProbeMessage();
                 bus.UntargetedBroadcast(ref probe);
 
@@ -399,8 +405,22 @@ namespace DxMessaging.Tests.Editor.Contract
                     entriesField.GetValue(plan),
                     "The first untargeted emit must publish the borrowed route."
                 );
+                FieldInfo postEntriesField = plan.GetType()
+                    .GetField(
+                        "postEntries",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    );
+                Assert.IsNotNull(
+                    postEntriesField,
+                    "The untargeted plan must expose its borrowed post-entry-array field."
+                );
+                Assert.IsNotNull(
+                    postEntriesField.GetValue(plan),
+                    "The first untargeted post-only emit must publish the borrowed post route."
+                );
 
                 deregistration();
+                postDeregistration();
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
 
                 OtherProbeMessage other = new OtherProbeMessage();
@@ -412,6 +432,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.IsNull(
                     entriesField.GetValue(plan),
                     "The automatic emit-time sweep must drop the stale borrowed route."
+                );
+                Assert.IsNull(
+                    postEntriesField.GetValue(plan),
+                    "The automatic emit-time sweep must drop the stale borrowed post route."
                 );
             }
             finally

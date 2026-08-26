@@ -222,11 +222,11 @@ namespace DxMessaging.Tests.Editor.Allocations
         }
 
         /// <summary>
-        /// The untargeted no-feature route is cached on the bus-wide dispatch
-        /// plan only after its active snapshot settles. Unrelated registration
-        /// churn invalidates that plan without dirtying the measured sink, so
-        /// every measured operation below is the first emit that must reacquire
-        /// and republish the borrowed entry array.
+        /// The untargeted post-only handle and post routes are cached on the
+        /// bus-wide dispatch plan only after both active snapshots settle.
+        /// Unrelated registration churn invalidates that plan without dirtying
+        /// either measured sink, so every measured operation below is the first
+        /// emit that must reacquire and republish both borrowed entry arrays.
         /// </summary>
         [Test]
         [Category("Allocation")]
@@ -243,6 +243,15 @@ namespace DxMessaging.Tests.Editor.Allocations
                         ref SimpleUntargetedMessage _
                     ) => invocationCount++;
                     _ = ScenarioHarness.RegisterUntargeted(scenario, token, measuredHandler);
+                    int postInvocationCount = 0;
+                    MessageHandler.FastHandler<SimpleUntargetedMessage> postProcessor = (
+                        ref SimpleUntargetedMessage _
+                    ) => postInvocationCount++;
+                    _ = ScenarioHarness.RegisterUntargetedPostProcessor(
+                        scenario,
+                        token,
+                        postProcessor
+                    );
                     MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
                         ref ComplexUntargetedMessage _
                     ) => { };
@@ -261,6 +270,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     }
 
                     int invocationCountBeforeMeasurement = invocationCount;
+                    int postInvocationCountBeforeMeasurement = postInvocationCount;
                     long delta = AllocationProbe.MeasureMin(
                         AllocationMeasurementAttempts,
                         prepare: InvalidatePlan,
@@ -272,6 +282,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                         "Every measured first emit after unrelated invalidation must still "
                             + "deliver exactly once to the registered untargeted handler."
                     );
+                    Assert.AreEqual(
+                        AllocationMeasurementAttempts,
+                        postInvocationCount - postInvocationCountBeforeMeasurement,
+                        "Every measured first emit after unrelated invalidation must still "
+                            + "deliver exactly once to the registered untargeted post-processor."
+                    );
                     if (delta == AllocationProbe.Unmeasured)
                     {
                         Assert.Ignore(
@@ -282,8 +298,8 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Assert.AreEqual(
                         0,
                         delta,
-                        "The first untargeted no-feature emit after an unrelated plan "
-                            + "invalidation must reacquire and cache its route without allocating."
+                        "The first untargeted post-only emit after an unrelated plan "
+                            + "invalidation must reacquire and cache both routes without allocating."
                     );
                 }
             );

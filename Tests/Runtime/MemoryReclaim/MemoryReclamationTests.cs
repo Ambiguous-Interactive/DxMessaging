@@ -82,7 +82,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         [TestCase(false)]
         [TestCase(true)]
-        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force)
+        public void UntargetedPlanSweepDropsBorrowedEntryArrays(bool force)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new FakeClock(),
@@ -91,15 +91,22 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
                 bus,
-                label: nameof(UntargetedPlanSweepDropsBorrowedEntryArray)
+                label: nameof(UntargetedPlanSweepDropsBorrowedEntryArrays)
             );
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
             Action deregister = null;
+            Action postDeregister = null;
             try
             {
                 Action<UntargetedOne> callback = _ => { };
                 deregister = handler.RegisterUntargetedMessageHandler(
+                    callback,
+                    callback,
+                    priority: 0,
+                    messageBus: bus
+                );
+                postDeregister = handler.RegisterUntargetedPostProcessor(
                     callback,
                     callback,
                     priority: 0,
@@ -142,6 +149,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     "handleEntryCount",
                     declaredInstanceFields
                 );
+                FieldInfo postEntriesField = planType.GetField(
+                    "postEntries",
+                    declaredInstanceFields
+                );
+                FieldInfo postCountField = planType.GetField(
+                    "postEntryCount",
+                    declaredInstanceFields
+                );
                 Assert.That(
                     entriesField,
                     Is.Not.Null,
@@ -153,6 +168,16 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     "The untargeted plan must expose its borrowed entry-count field to this contract."
                 );
                 Assert.That(
+                    postEntriesField,
+                    Is.Not.Null,
+                    "The untargeted plan must expose its borrowed post-entry-array field to this contract."
+                );
+                Assert.That(
+                    postCountField,
+                    Is.Not.Null,
+                    "The untargeted plan must expose its borrowed post-entry-count field to this contract."
+                );
+                Assert.That(
                     entriesField.GetValue(plan),
                     Is.Not.Null,
                     "The first untargeted fast emit must publish the settled borrowed route."
@@ -162,9 +187,21 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.GreaterThan(0),
                     "The borrowed route must describe the invocable handler entry."
                 );
+                Assert.That(
+                    postEntriesField.GetValue(plan),
+                    Is.Not.Null,
+                    "The first untargeted post-only emit must publish the settled post route."
+                );
+                Assert.That(
+                    (int)postCountField.GetValue(plan),
+                    Is.GreaterThan(0),
+                    "The borrowed post route must describe the invocable processor entry."
+                );
 
                 deregister();
                 deregister = null;
+                postDeregister();
+                postDeregister = null;
                 _ = bus.Trim(force);
 
                 Assert.That(
@@ -177,10 +214,21 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.EqualTo(0),
                     "Sweeping stale untargeted plans must reset the cached entry count."
                 );
+                Assert.That(
+                    postEntriesField.GetValue(plan),
+                    Is.Null,
+                    "Sweeping stale untargeted plans must drop the borrowed post-entry array."
+                );
+                Assert.That(
+                    postCountField.GetValue(plan),
+                    Is.EqualTo(0),
+                    "Sweeping stale untargeted plans must reset the cached post-entry count."
+                );
             }
             finally
             {
                 deregister?.Invoke();
+                postDeregister?.Invoke();
                 handler.active = false;
             }
         }
