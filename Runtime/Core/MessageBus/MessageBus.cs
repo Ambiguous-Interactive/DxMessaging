@@ -568,22 +568,29 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
-        /// Untargeted plan extension that borrows the resolved entry array from
-        /// the active handle snapshot after its first post-refresh acquisition.
-        /// The snapshot remains the array owner; this plan only removes the
-        /// steady-state state/snapshot/holder pointer chase. Targeted and
-        /// broadcast plans stay at the smaller common shape because their
-        /// context-keyed routes cannot share one entry array per message type.
+        /// Untargeted plan extension that borrows resolved entry arrays from
+        /// the active handle and post snapshots after their first post-refresh
+        /// acquisitions. Each snapshot remains its array's owner; this plan
+        /// only removes the steady-state state/snapshot/holder pointer chase.
+        /// Targeted and broadcast plans stay at the smaller common shape
+        /// because their context-keyed routes cannot share one entry array per
+        /// message type.
         /// </summary>
         private sealed class UntargetedDispatchPlan : DispatchPlan
         {
+            public bool postOnlyPath;
             public object handleEntries;
             public int handleEntryCount;
+            public object postEntries;
+            public int postEntryCount;
 
             public void ClearCachedRoute()
             {
+                postOnlyPath = false;
                 handleEntries = null;
                 handleEntryCount = 0;
+                postEntries = null;
+                postEntryCount = 0;
             }
         }
 
@@ -4053,6 +4060,112 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
+            if (plan.postOnlyPath)
+            {
+                // The post-only lane has no interceptor or global phase. Freeze both
+                // routes before the first handler runs, then borrow their settled entry
+                // arrays on later emissions. Registration mutations invalidate the plan;
+                // a nested emission refreshes it while these locals keep the outer
+                // emission's frozen arrays alive through the dispatch lease.
+                object postEntries = plan.postEntries;
+                int postEntryCount = plan.postEntryCount;
+                HandlerCache<int, HandlerCache> postHandlers = plan.scalarPost;
+                if (postEntries == null && postHandlers != null && 0 < postHandlers.handlers.Count)
+                {
+                    DispatchSnapshot postSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        postHandlers,
+                        UntargetedPostSlot,
+                        emissionId,
+                        default
+                    );
+                    FlatDispatchArray postFlatBase = postSnapshot.flat;
+                    if (postFlatBase != null)
+                    {
+                        DebugAssertFlatShape<FlatDispatch<TMessage>>(postFlatBase);
+                        FlatDispatch<TMessage> postFlat = DxUnsafe.As<FlatDispatch<TMessage>>(
+                            postFlatBase
+                        );
+                        postEntries = postFlat.entries;
+                        postEntryCount = postFlat.count;
+                        plan.postEntryCount = postEntryCount;
+                        plan.postEntries = postEntries;
+                    }
+                }
+                else if (postEntries != null)
+                {
+                    postHandlers.lastTouchTicks = _tickCounter;
+                    postHandlers.dispatchState.snapshotEmissionId = emissionId;
+                }
+
+                object handleEntries = plan.handleEntries;
+                int handleEntryCount = plan.handleEntryCount;
+                HandlerCache<int, HandlerCache> handleHandlers = plan.scalarHandle;
+                if (
+                    handleEntries == null
+                    && handleHandlers != null
+                    && 0 < handleHandlers.handlers.Count
+                )
+                {
+                    DispatchSnapshot handleSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        handleHandlers,
+                        UntargetedHandleSlot,
+                        emissionId,
+                        default
+                    );
+                    FlatDispatchArray handleFlatBase = handleSnapshot.flat;
+                    if (handleFlatBase != null)
+                    {
+                        DebugAssertFlatShape<FlatDispatch<TMessage>>(handleFlatBase);
+                        FlatDispatch<TMessage> handleFlat = DxUnsafe.As<FlatDispatch<TMessage>>(
+                            handleFlatBase
+                        );
+                        handleEntries = handleFlat.entries;
+                        handleEntryCount = handleFlat.count;
+                        plan.handleEntryCount = handleEntryCount;
+                        plan.handleEntries = handleEntries;
+                    }
+                }
+                else if (handleEntries != null)
+                {
+                    handleHandlers.lastTouchTicks = _tickCounter;
+                    handleHandlers.dispatchState.snapshotEmissionId = emissionId;
+                }
+
+                long postOnlyResetGeneration = _resetGeneration;
+                bool postOnlyFoundAnyHandlers =
+                    handleEntries != null
+                    && DispatchCachedUntargetedEntries(
+                        handleEntries,
+                        handleEntryCount,
+                        ref typedMessage
+                    );
+                if (
+                    postOnlyResetGeneration == _resetGeneration
+                    && postEntries != null
+                    && DispatchCachedUntargetedEntries(
+                        postEntries,
+                        postEntryCount,
+                        ref typedMessage
+                    )
+                )
+                {
+                    postOnlyFoundAnyHandlers = true;
+                }
+
+                if (!postOnlyFoundAnyHandlers && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Info,
+                        "Could not find a matching untargeted broadcast handler for Message: {0}.",
+                        typedMessage
+                    );
+                }
+
+                return;
+            }
+
             long emissionResetGeneration = _resetGeneration;
 
             // Pre-freeze the post-processing snapshot for this emission so
@@ -4170,6 +4283,7 @@ namespace DxMessaging.Core.MessageBus
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
             bool hasPost = post != null && 0 < post.handlers.Count;
             plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
+            plan.postOnlyPath = !hasInterceptors && !hasGlobal && hasPost;
             plan.version = _dispatchPlanVersion;
         }
 
