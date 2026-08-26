@@ -74,6 +74,18 @@ separately.
 
 ## Rejected runtime candidates
 
+- Do not move the warmed untargeted cached-route check ahead of
+  `fastHandlers.handlers.Count` in `UntargetedBroadcast<TMessage>`. Native
+  IL2CPP output proved that the dictionary-count call moved behind the cache-miss
+  branch, and both candidate arms were byte-identical and stable. The immutable
+  candidate/control/candidate reducer still rejected the result as
+  uninterpretable. Unreachable `Filtered`, `PostProcess`, and
+  `FilteredPostProcess` sentinels moved +24.863%, +19.225%, and +14.210% against
+  the center control. Those shifts exceed the fixed 3% bound. The diagnostic
+  normalized effects of +26.820% for `GlobalToOne` and -3.480% for
+  `StructNoBox` are not acceptance evidence. The candidate was reverted.
+  Revisit only with a materially different representation and a fresh immutable
+  bracket.
 - Do not retain `AggressiveInlining` on `InterceptorCache<T>.EnsureFlat` from
   PR #468. The native artifacts proved the intended call disappeared, and every
   raw-cycle and outer-candidate spread passed 3%, but the center control was not
