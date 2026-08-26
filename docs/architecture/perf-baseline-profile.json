@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "executionProfileId": "legacy-unrestricted-unrecorded-v1",
-  "affinityMask": "unrestricted",
-  "priorityClass": "unrecorded"
+  "executionProfileId": "highest-efficiency-class-affinity-normal-v1",
+  "affinityMask": "0xFFFF",
+  "priorityClass": "Normal"
 }
