@@ -141,7 +141,14 @@ const path = require("path");
 //     actions and a new ci-aggregate-workflow test enforces the ignore list,
 //     converting every future bump into one manual commit across workflows
 //     and docs, plus the 7 lines this entry itself adds: 18398.
-const TOTAL_BUDGET = 18398;
+// 083 Fail closed on confounded three-run performance attribution. A 577-line
+//     reducer validates the manifest, canonical roster, source-tree provenance,
+//     profile, protocol, retained cycles, spreads, sentinels, and normalized
+//     target and affected rows. Its 801-line suite covers both bracket orders,
+//     CLI exit states, malformed evidence, non-finite arithmetic, and the exact
+//     PR #468 ratios. Workflow and PowerShell tests pin manifest and source-tree
+//     provenance into each authoritative summary: 19780.
+const TOTAL_BUDGET = 19780;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -16,7 +16,9 @@ param(
     [string]$SummaryJsonPath,
 
     [Parameter(Mandatory = $true)]
-    [string]$SummaryMarkdownPath
+    [string]$SummaryMarkdownPath,
+
+    [string]$BracketManifestPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -27,6 +29,25 @@ if (-not (Test-Path -LiteralPath $BaselinePath -PathType Leaf)) {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+$bracketManifestSha256 = $null
+$candidatePaths = @()
+if (-not [string]::IsNullOrWhiteSpace($BracketManifestPath)) {
+    $resolvedBracketManifestPath = if ([System.IO.Path]::IsPathRooted($BracketManifestPath)) {
+        $BracketManifestPath
+    }
+    else {
+        Join-Path $repoRoot $BracketManifestPath
+    }
+    if (-not (Test-Path -LiteralPath $resolvedBracketManifestPath -PathType Leaf)) {
+        throw "Bracket manifest does not exist: $resolvedBracketManifestPath"
+    }
+    $bracketManifestSha256 = (Get-FileHash -LiteralPath $resolvedBracketManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $bracketManifest = Get-Content -LiteralPath $resolvedBracketManifestPath -Raw | ConvertFrom-Json
+    $candidatePaths = @($bracketManifest.candidatePaths)
+    if ($candidatePaths.Count -eq 0) {
+        throw 'Bracket manifest candidatePaths must contain at least one runtime source path.'
+    }
+}
 # SYNC: BenchmarkProtocol.PairedProtocolId, PairedMeasurementCycles,
 # PairedMinimumCycleActiveMilliseconds, BatchSize, and PairedMaterialityBandPercent define these values.
 $pairedProtocol = 'interleaved-abba-baab-v1'
@@ -289,8 +310,75 @@ try {
     if ([string]::IsNullOrWhiteSpace($publishedCommit)) {
         throw 'Published comparison rows must carry a non-empty commit.'
     }
+    if ($publishedCommit -cnotmatch '^[0-9a-f]{40}$') {
+        throw "Published comparison rows must carry a full lowercase Git SHA-1: '$publishedCommit'."
+    }
     if ($publishedPlatform -cnotmatch '^Standalone IL2CPP x64 Release \(WindowsPlayer; Unity [^)]+\)$') {
         throw "Published comparison rows use an invalid platform: '$publishedPlatform'."
+    }
+
+    $headCommitOutput = @(& git -C $repoRoot rev-parse HEAD 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $headCommitOutput.Count -ne 1) {
+        throw 'Could not resolve the checked-out Git commit for paired comparison provenance.'
+    }
+    $headCommit = ([string]$headCommitOutput[0]).Trim()
+    if ($headCommit -cne $publishedCommit) {
+        throw "Checked-out HEAD '$headCommit' does not match published commit '$publishedCommit'."
+    }
+    $measuredSourcePaths = @(
+        'Runtime',
+        'Tests/Runtime/Benchmarks',
+        'Tests/Runtime/Comparisons',
+        'Tests/Runtime/Scripts/Messages'
+    )
+    & git -C $repoRoot diff --quiet -- $measuredSourcePaths
+    $workingDiffExitCode = $LASTEXITCODE
+    if ($workingDiffExitCode -eq 1) {
+        throw 'Measured runtime or benchmark sources differ from the checked-out commit.'
+    }
+    if ($workingDiffExitCode -ne 0) {
+        throw "Could not verify measured working-tree sources; git diff exited $workingDiffExitCode."
+    }
+    & git -C $repoRoot diff --cached --quiet -- $measuredSourcePaths
+    $indexDiffExitCode = $LASTEXITCODE
+    if ($indexDiffExitCode -eq 1) {
+        throw 'The index contains measured runtime or benchmark source changes.'
+    }
+    if ($indexDiffExitCode -ne 0) {
+        throw "Could not verify measured index sources; git diff exited $indexDiffExitCode."
+    }
+    $sourceTreeOutput = @(& git -C $repoRoot rev-parse "${publishedCommit}^{tree}" 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $sourceTreeOutput.Count -ne 1) {
+        throw 'Could not resolve the published Git source tree for paired comparison provenance.'
+    }
+    $sourceTree = ([string]$sourceTreeOutput[0]).Trim()
+    if ($sourceTree -cnotmatch '^[0-9a-f]{40}$') {
+        throw "Paired comparison source tree is not a full lowercase Git tree SHA-1: '$sourceTree'."
+    }
+    $candidateSourceSha256 = $null
+    if ($candidatePaths.Count -ne 0) {
+        foreach ($candidatePath in $candidatePaths) {
+            $candidatePathRows = @(& git -C $repoRoot ls-tree -r --full-tree $publishedCommit -- $candidatePath 2>&1)
+            if ($LASTEXITCODE -ne 0 -or $candidatePathRows.Count -eq 0) {
+                throw "Could not resolve candidate source path '$candidatePath' at the published commit."
+            }
+        }
+        $gitArguments = @('-C', $repoRoot, 'ls-tree', '-r', '--full-tree', $publishedCommit, '--') + $candidatePaths
+        $candidateSourceRows = @(& git @gitArguments 2>&1)
+        if ($LASTEXITCODE -ne 0 -or $candidateSourceRows.Count -eq 0) {
+            throw 'Could not resolve every predeclared candidate source path at the published commit.'
+        }
+        $candidateSourcePayload = ($candidateSourceRows -join "`n") + "`n"
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $candidateSourceHash = $sha256.ComputeHash(
+                [System.Text.Encoding]::UTF8.GetBytes($candidateSourcePayload)
+            )
+        }
+        finally {
+            $sha256.Dispose()
+        }
+        $candidateSourceSha256 = -join @($candidateSourceHash | ForEach-Object { $_.ToString('x2') })
     }
 
     # SYNC: PairedDxMessagingMessagePipeTests.cs uses this MessagePipe capability set and
@@ -500,6 +588,8 @@ try {
         schemaVersion = 2
         platform = $publishedPlatform
         commit = $publishedCommit
+        sourceTree = $sourceTree
+        candidateSourceSha256 = $candidateSourceSha256
         executionProfile = [ordered]@{
             id = $cpuProfile.executionProfileId
             cpuModel = $cpuProfile.cpuModel
@@ -515,6 +605,7 @@ try {
         minimumCycleActiveMilliseconds = $pairedMinimumCycleActiveMilliseconds
         batchOperations = $pairedBatchOperations
         materialityBandPercent = $pairedMaterialityBandPercent
+        bracketManifestSha256 = $bracketManifestSha256
         allRowsWithinMaterialityBand = @($summaryRows | Where-Object { -not $_.withinMaterialityBand }).Count -eq 0
         rows = $summaryRows
     }
@@ -533,8 +624,14 @@ try {
     $markdown = [System.Collections.Generic.List[string]]::new()
     $markdown.Add('### In-process paired comparison')
     $markdown.Add('')
-    $markdown.Add("Protocol: ``$($summary.protocol)``; commit: ``$publishedCommit``; platform: $publishedPlatform.")
+    $markdown.Add("Protocol: ``$($summary.protocol)``; commit: ``$publishedCommit``; source tree: ``$sourceTree``; platform: $publishedPlatform.")
+    if ($null -ne $summary.candidateSourceSha256) {
+        $markdown.Add("Candidate source SHA-256: ``$($summary.candidateSourceSha256)``.")
+    }
     $markdown.Add("Execution profile: ``$($summary.executionProfile.id)``; affinity: ``$($summary.executionProfile.affinityMask)``; priority: ``$($summary.executionProfile.priorityClass)``.")
+    if ($null -ne $summary.bracketManifestSha256) {
+        $markdown.Add("Bracket manifest SHA-256: ``$($summary.bracketManifestSha256)``.")
+    }
     $markdown.Add('')
     $markdown.Add("| Scenario | DxMessaging / MessagePipe | Raw cycle spread | Within $pairedMaterialityBandPercent% band |")
     $markdown.Add('| --- | ---: | ---: | :---: |')

@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..')).Path
+$headCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
 $scriptPath = Join-Path $repoRoot 'scripts' 'unity' 'require-comparison-rows.ps1'
 $tempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "dxm-comparison-row-gate-$([guid]::NewGuid())"
 $baselinePath = Join-Path $tempDirectory 'comparison-rows.csv'
@@ -12,12 +13,13 @@ $processEvidencePath = Join-Path $tempDirectory 'standalone-process.json'
 $cpuProfilePath = Join-Path $tempDirectory 'performance-cpu-profile.json'
 $summaryJsonPath = Join-Path $tempDirectory 'paired-comparison-summary.json'
 $summaryMarkdownPath = Join-Path $tempDirectory 'paired-comparison-summary.md'
+$bracketManifestPath = Join-Path $tempDirectory 'paired-bracket-manifest.json'
 $csvHeader = 'scenario,platform,commit,runIndex,emitsPerSec,gcAllocations,wallClockMs,gcAllocatedBytes'
 
 function Write-Baseline {
     param(
         [string[]]$Scenarios,
-        [string]$Commit = 'abc1234',
+        [string]$Commit = $headCommit,
         [string]$Platform = 'Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)'
     )
 
@@ -30,6 +32,7 @@ function New-PairedRecord {
         [string]$Scenario,
         [string]$First = 'DxMessaging',
         [string]$Second = 'MessagePipe',
+        [string]$Commit = $headCommit,
         [double[]]$Ratios = @(0.5, 0.51, 0.49, 0.505)
     )
 
@@ -55,7 +58,7 @@ function New-PairedRecord {
         first = $First
         second = $Second
         platform = 'Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)'
-        commit = 'abc1234'
+        commit = $Commit
         protocol = 'interleaved-abba-baab-v1'
         cycles = 4
         minimumCycleActiveMilliseconds = 625
@@ -146,15 +149,23 @@ function Write-ExecutionEvidence {
 }
 
 function Invoke-Gate {
-    param([string[]]$EvidenceInputs = @($evidencePath, $playerLogPath))
+    param(
+        [string[]]$EvidenceInputs = @($evidencePath, $playerLogPath),
+        [bool]$IncludeBracketManifest = $true
+    )
 
-    & $scriptPath `
-        -BaselinePath $baselinePath `
-        -EvidencePaths $EvidenceInputs `
-        -ProcessEvidencePath $processEvidencePath `
-        -CpuProfilePath $cpuProfilePath `
-        -SummaryJsonPath $summaryJsonPath `
-        -SummaryMarkdownPath $summaryMarkdownPath
+    $arguments = @{
+        BaselinePath = $baselinePath
+        EvidencePaths = $EvidenceInputs
+        ProcessEvidencePath = $processEvidencePath
+        CpuProfilePath = $cpuProfilePath
+        SummaryJsonPath = $summaryJsonPath
+        SummaryMarkdownPath = $summaryMarkdownPath
+    }
+    if ($IncludeBracketManifest) {
+        $arguments.BracketManifestPath = $bracketManifestPath
+    }
+    & $scriptPath @arguments
 }
 
 function Assert-GateFails {
@@ -181,6 +192,11 @@ function Assert-GateFails {
 
 try {
     [System.IO.Directory]::CreateDirectory($tempDirectory) | Out-Null
+    [System.IO.File]::WriteAllText(
+        $bracketManifestPath,
+        '{"schemaVersion":1,"bracketId":"test","orientation":"candidate-control-candidate","materialityBandPercent":3,"candidatePaths":["Runtime/Core/MessageBus/MessageBus.cs"],"rows":[]}' + "`n"
+    )
+    $bracketManifestSha256 = (Get-FileHash -LiteralPath $bracketManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $pairedFixturePath = Join-Path $repoRoot 'Tests/Runtime/Comparisons/Paired/PairedDxMessagingMessagePipeTests.cs'
     $pairedFixture = Get-Content -LiteralPath $pairedFixturePath -Raw
     $pairedHarnessPath = Join-Path $repoRoot 'Tests/Runtime/Comparisons/PairedComparisonHarness.cs'
@@ -208,20 +224,37 @@ try {
     Write-Baseline -Scenarios $expected
     Write-Evidence -Records $validRecords
     Write-ExecutionEvidence
+    Invoke-Gate -IncludeBracketManifest $false
+    $summaryWithoutManifest = Get-Content -LiteralPath $summaryJsonPath -Raw | ConvertFrom-Json
+    $markdownWithoutManifest = Get-Content -LiteralPath $summaryMarkdownPath -Raw
+    if (
+        $null -ne $summaryWithoutManifest.bracketManifestSha256 -or
+        $null -ne $summaryWithoutManifest.candidateSourceSha256 -or
+        $markdownWithoutManifest.Contains('Bracket manifest SHA-256')
+    ) {
+        throw 'The default comparison path emitted a bracket manifest digest without a manifest.'
+    }
+
     Invoke-Gate
     $summary = Get-Content -LiteralPath $summaryJsonPath -Raw | ConvertFrom-Json
     $summaryMarkdown = Get-Content -LiteralPath $summaryMarkdownPath -Raw
     if (
         $summary.schemaVersion -ne 2 -or
+        $summary.sourceTree -cnotmatch '^[0-9a-f]{40}$' -or
+        $summary.candidateSourceSha256 -cnotmatch '^[0-9a-f]{64}$' -or
         $summary.protocol -ne 'interleaved-abba-baab-v1' -or
         $summary.executionProfile.id -cne 'highest-efficiency-class-affinity-normal-v1' -or
         $summary.executionProfile.affinityMask -cne '0xFFFF' -or
         $summary.executionProfile.priorityClass -cne 'Normal' -or
+        $summary.bracketManifestSha256 -cne $bracketManifestSha256 -or
         @($summary.rows).Count -ne 7 -or
         $summary.allRowsWithinMaterialityBand -ne $false -or
         @($summary.rows | Where-Object { $_.withinMaterialityBand -ne $false }).Count -ne 0 -or
         -not $summaryMarkdown.Contains('| no |') -or
-        -not $summaryMarkdown.Contains('highest-efficiency-class-affinity-normal-v1')
+        -not $summaryMarkdown.Contains('highest-efficiency-class-affinity-normal-v1') -or
+        -not $summaryMarkdown.Contains($summary.sourceTree) -or
+        -not $summaryMarkdown.Contains($summary.candidateSourceSha256) -or
+        -not $summaryMarkdown.Contains($bracketManifestSha256)
     ) {
         throw 'The paired comparison gate did not write the expected summary artifacts.'
     }
@@ -245,6 +278,24 @@ try {
     ) {
         throw 'Stable paired records did not render a passing user-facing verdict.'
     }
+
+    $mismatchedCommit = 'f' * 40
+    $mismatchedCommitRecords = @($pairedScenarios | ForEach-Object {
+        New-PairedRecord -Scenario $_ -Commit $mismatchedCommit
+    })
+    Write-Baseline -Scenarios $expected -Commit $mismatchedCommit
+    Write-Evidence -Records $mismatchedCommitRecords
+    try {
+        Invoke-Gate
+        throw 'The comparison gate accepted a published commit different from checked-out HEAD.'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'Checked-out HEAD.*does not match published commit') {
+            throw
+        }
+    }
+    Write-Baseline -Scenarios $expected
+    Write-Evidence -Records $stableRecords
 
     $invalidProcessEvidence = Get-Content -LiteralPath $processEvidencePath -Raw | ConvertFrom-Json
     $invalidProcessEvidence.actualProcessorAffinityMask = '0xFFFFFFFF'

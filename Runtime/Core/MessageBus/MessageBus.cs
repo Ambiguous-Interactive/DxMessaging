@@ -676,7 +676,6 @@ namespace DxMessaging.Core.MessageBus
             /// the NEXT emission, matching the handler path's snapshot freeze
             /// (see <see cref="DispatchSnapshot"/>).
             /// </summary>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public TValue[] EnsureFlat(out int count)
             {
                 if (_flatDirty)

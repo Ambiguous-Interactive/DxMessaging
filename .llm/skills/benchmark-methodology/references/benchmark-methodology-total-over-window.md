@@ -114,12 +114,24 @@ and do not run the allocation recorder inside timed batches. Allocation-heavy sc
 can spill into the other workload's batch stay on their canonical continuous window. The canonical
 rows still own allocation evidence and the published absolute throughput table.
 
-For candidate/control/candidate (`C1/R/C2`), predeclare the reduction as
-`sqrt(C1 * C2) / R - 1`. Retain all three summaries and raw cycles. The experiment is
-uninterpretable when `(max(C1, C2) / min(C1, C2) - 1) * 100` exceeds 3% or any run's raw cycle
-spread exceeds 3%; do not discard or replace a run. A candidate must then exceed 3% in the
-intended direction and pass its scenario-specific regression and allocation gates. Invert the
-formula for control/candidate/control.
+Before the first bracket run, commit `scripts/unity/paired-bracket-manifest.json`. Classify every
+paired row as a primary `target`, reachable `affected` row, or causally unreachable `sentinel`.
+Declare at least one target, two sentinels, and the exact `Runtime/` paths containing the candidate
+mechanism. Keep the manifest byte-for-byte unchanged through all three runs; the workflow embeds its
+SHA-256 digest and a Git-derived digest of those candidate paths in every summary.
+
+Let `q1`, `q2`, and `q3` be the first, center, and last paired headlines. The candidate factor is
+`sqrt(q1 * q3) / q2` for candidate/control/candidate and `q2 / sqrt(q1 * q3)` for
+control/candidate/control. Run `scripts/unity/reduce-paired-bracket.js` with the manifest and all
+three retained summaries. It verifies three distinct commits, equal outer and different center
+whole trees and candidate-source digests, the exact manifest digest, profile, protocol, complete
+ordered row set, retained cycle ratios, raw spreads, outer spreads, every sentinel, and each target
+and affected-row effect
+normalized by the geometric mean of all sentinel factors. The experiment is
+uninterpretable when a raw or outer spread exceeds 3% or any sentinel effect leaves +/-3%. A stable
+candidate is rejected when a normalized affected row regresses by more than 3% or a normalized
+target effect does not strictly exceed 3%. Do not discard or replace a run. Allocation gates remain
+separate.
 
 ## The Window Contract
 

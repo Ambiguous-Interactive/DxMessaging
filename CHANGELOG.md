@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Improve untargeted dispatch throughput for steady-state routes without optional hooks and for
-  filtered routes with interceptors, while retaining zero allocations
-  ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
 - Reduce repeated message-handler subscribe/unsubscribe churn by six managed allocation calls per
   cycle ([#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414)).
 - **BREAKING (diagnostics output):** Diagnostic emission records no longer capture the emission-site
