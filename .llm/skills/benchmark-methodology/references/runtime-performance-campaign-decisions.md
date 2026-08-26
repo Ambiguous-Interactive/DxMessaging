@@ -74,6 +74,17 @@ separately.
 
 ## Rejected runtime candidates
 
+- Do not add a post-only `UntargetedDispatchPlan` lane that borrows both the
+  settled handle and post flat-entry arrays. The candidate arms were
+  byte-identical, every raw-cycle spread was below 2.54%, and every
+  outer-candidate spread was below 0.71%. The immutable reducer still rejected
+  the result as uninterpretable. `PostProcess` appeared +29.288% against
+  control, but unreachable `GlobalToOne`, `GlobalToMany`, and
+  `StructNoBox` sentinels moved +21.503%, +14.970%, and -10.068%. Those shifts
+  exceed the fixed 3% bound. The diagnostic normalized target effect of
+  +22.054% is not acceptance evidence. The candidate was reverted. Revisit only
+  with a materially different representation and a fresh immutable bracket
+  whose sentinel cells agree.
 - Do not move the warmed untargeted cached-route check ahead of
   `fastHandlers.handlers.Count` in `UntargetedBroadcast<TMessage>`. Native
   IL2CPP output proved that the dictionary-count call moved behind the cache-miss
