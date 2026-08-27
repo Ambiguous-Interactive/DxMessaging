@@ -214,8 +214,9 @@ function Get-GeneratedBodySha256 {
     }
 }
 
-function Get-GeneratedSymbolMatches {
+function Get-UniqueGeneratedSymbol {
     param(
+        [Parameter(Mandatory = $true)] [string]$Label,
         [Parameter(Mandatory = $true)] [string]$Pattern,
         [object]$Method
     )
@@ -239,26 +240,7 @@ function Get-GeneratedSymbolMatches {
             $symbols.Add($symbolMatch.Value)
         }
     }
-    return @($symbols)
-}
-
-function Get-GeneratedSymbols {
-    param(
-        [Parameter(Mandatory = $true)] [string]$Pattern,
-        [object]$Method
-    )
-
-    return @(Get-GeneratedSymbolMatches -Pattern $Pattern -Method $Method | Sort-Object -Unique)
-}
-
-function Get-UniqueGeneratedSymbol {
-    param(
-        [Parameter(Mandatory = $true)] [string]$Label,
-        [Parameter(Mandatory = $true)] [string]$Pattern,
-        [object]$Method
-    )
-
-    $symbols = @(Get-GeneratedSymbols -Pattern $Pattern -Method $Method)
+    $symbols = @($symbols | Sort-Object -Unique)
     if ($symbols.Count -ne 1) {
         throw "Expected one exact generated symbol for $Label, found $($symbols.Count)."
     }
@@ -1535,9 +1517,6 @@ if ($SelfTestOnly) {
             $expectedEvidence in @(
                 'capturedMethodCount=10',
                 'untargetedInterceptorSharedCallSymbol=',
-                'untargetedInterceptorEnsureFlatCallCount=1',
-                'untargetedBroadcastEnsureFlatCallCount=0',
-                'untargetedSteadyStateEnsureFlatCallCount=1',
                 'untargetedInterceptorEnsureFlatCallSymbol=InterceptorCache_1_EnsureFlat_mC006_gshared_inline',
                 'untargetedPostSharedCallSymbol=',
                 'untargetedHandleSharedCallSymbol=',
@@ -1549,99 +1528,6 @@ if ($SelfTestOnly) {
             if (!$untargetedIntegrationEvidence.Contains($expectedEvidence)) {
                 throw "Dispatch codegen integration evidence omitted '$expectedEvidence'."
             }
-        }
-
-        $integrationSource = [System.IO.File]::ReadAllText($integrationCppPath)
-        $ensureFlatCall = 'InterceptorCache_1_EnsureFlat_mC006_gshared_inline();'
-        if (
-            [regex]::Matches(
-                $integrationSource,
-                [regex]::Escape($ensureFlatCall)
-            ).Count -ne 1
-        ) {
-            throw 'Dispatch codegen integration fixture must contain one EnsureFlat call.'
-        }
-        $borrowedIntegrationArtifacts = Join-Path $integrationTestRoot 'borrowed-artifacts'
-        New-Item -ItemType Directory -Path $borrowedIntegrationArtifacts | Out-Null
-        try {
-            [System.IO.File]::WriteAllText(
-                $integrationCppPath,
-                $integrationSource.Replace($ensureFlatCall, '// borrowed interceptor view')
-            )
-            & $PSCommandPath `
-                -ProjectPath $integrationTestRoot `
-                -ArtifactsPath $borrowedIntegrationArtifacts `
-                -SkipNativeInventory
-            if (!$?) {
-                throw 'Borrowed-view dispatch codegen integration child invocation failed.'
-            }
-            $borrowedEvidence = Get-Content `
-                -LiteralPath (
-                    Join-Path $borrowedIntegrationArtifacts 'untargeted-hook-codegen.txt'
-                ) `
-                -Raw
-            foreach (
-                $expectedEvidence in @(
-                    'untargetedInterceptorEnsureFlatCallCount=0',
-                    'untargetedBroadcastEnsureFlatCallCount=0',
-                    'untargetedSteadyStateEnsureFlatCallCount=0',
-                    'untargetedInterceptorEnsureFlatCallSymbol=absent'
-                )
-            ) {
-                if (!$borrowedEvidence.Contains($expectedEvidence)) {
-                    throw "Borrowed-view integration evidence omitted '$expectedEvidence'."
-                }
-            }
-
-            $outerInterceptorCall =
-                'MessageBus_RunUntargetedInterceptors_TisSimpleUntargetedMessage_tBBBB_mB002();'
-            if (
-                [regex]::Matches(
-                    $integrationSource,
-                    [regex]::Escape($outerInterceptorCall)
-                ).Count -ne 1
-            ) {
-                throw 'Dispatch codegen integration fixture must contain one outer helper call.'
-            }
-            $relocatedIntegrationArtifacts = Join-Path `
-                $integrationTestRoot `
-                'relocated-artifacts'
-            New-Item -ItemType Directory -Path $relocatedIntegrationArtifacts | Out-Null
-            $relocatedSource = $integrationSource.Replace(
-                $ensureFlatCall,
-                '// EnsureFlat moved out of the helper'
-            ).Replace(
-                $outerInterceptorCall,
-                "$ensureFlatCall`n$outerInterceptorCall"
-            )
-            [System.IO.File]::WriteAllText($integrationCppPath, $relocatedSource)
-            & $PSCommandPath `
-                -ProjectPath $integrationTestRoot `
-                -ArtifactsPath $relocatedIntegrationArtifacts `
-                -SkipNativeInventory
-            if (!$?) {
-                throw 'Relocated-call dispatch codegen integration child invocation failed.'
-            }
-            $relocatedEvidence = Get-Content `
-                -LiteralPath (
-                    Join-Path $relocatedIntegrationArtifacts 'untargeted-hook-codegen.txt'
-                ) `
-                -Raw
-            foreach (
-                $expectedEvidence in @(
-                    'untargetedInterceptorEnsureFlatCallCount=0',
-                    'untargetedBroadcastEnsureFlatCallCount=1',
-                    'untargetedSteadyStateEnsureFlatCallCount=1',
-                    'untargetedInterceptorEnsureFlatCallSymbol=InterceptorCache_1_EnsureFlat_mC006_gshared_inline'
-                )
-            ) {
-                if (!$relocatedEvidence.Contains($expectedEvidence)) {
-                    throw "Relocated-call integration evidence omitted '$expectedEvidence'."
-                }
-            }
-        }
-        finally {
-            [System.IO.File]::WriteAllText($integrationCppPath, $integrationSource)
         }
 
         $playerDir = Join-Path $integrationTestRoot 'Build\DxmTestPlayer'
@@ -2489,37 +2375,13 @@ if ($untargetedInterceptorHelpers.Count -ne 1) {
     )
 }
 $untargetedInterceptor = $untargetedInterceptorHelpers[0]
-$untargetedInterceptorEnsureFlatCallPattern =
-    '(?<![A-Za-z0-9_])InterceptorCache_1_EnsureFlat_m[0-9A-F]+' +
-    '(?:_gshared)?(?:_inline)?(?![A-Za-z0-9_])'
-$untargetedBroadcastEnsureFlatCallSymbols = @(
-    Get-GeneratedSymbolMatches `
-        -Pattern $untargetedInterceptorEnsureFlatCallPattern `
-        -Method $untargetedBroadcast.Implementation
-)
-$untargetedInterceptorEnsureFlatCallSymbols = @(
-    Get-GeneratedSymbolMatches `
-        -Pattern $untargetedInterceptorEnsureFlatCallPattern `
-        -Method $untargetedInterceptor.Implementation
-)
-$untargetedSteadyStateEnsureFlatCallSymbols = @(
-    $untargetedBroadcastEnsureFlatCallSymbols
-    $untargetedInterceptorEnsureFlatCallSymbols
-)
-if ($untargetedSteadyStateEnsureFlatCallSymbols.Count -gt 1) {
-    throw (
-        'Expected at most one exact InterceptorCache.EnsureFlat call across the ' +
-        'steady untargeted broadcast and interceptor bodies; found ' +
-        "$($untargetedSteadyStateEnsureFlatCallSymbols.Count)."
-    )
-}
-$untargetedInterceptorEnsureFlatCallSymbol =
-    if ($untargetedSteadyStateEnsureFlatCallSymbols.Count -eq 1) {
-        $untargetedSteadyStateEnsureFlatCallSymbols[0]
-    }
-    else {
-        $null
-    }
+$untargetedInterceptorEnsureFlatCallSymbol = Get-UniqueGeneratedSymbol `
+    -Label 'InterceptorCache.EnsureFlat call from RunUntargetedInterceptors' `
+    -Pattern (
+        '(?<![A-Za-z0-9_])InterceptorCache_1_EnsureFlat_m[0-9A-F]+' +
+        '(?:_gshared)?(?:_inline)?(?![A-Za-z0-9_])'
+    ) `
+    -Method $untargetedInterceptor.Implementation
 
 $untargetedEvidence = [System.Collections.Generic.List[string]]::new()
 $untargetedEvidence.Add("il2cppOutput=$($il2cppRoot.FullName)")
@@ -2538,19 +2400,7 @@ foreach ($helper in $untargetedHelperEvidence) {
     $untargetedEvidence.Add("$($helper.Key)SharedCallSymbol=$($helper.SharedCallSymbol)")
 }
 $untargetedEvidence.Add(
-    "untargetedInterceptorEnsureFlatCallCount=$($untargetedInterceptorEnsureFlatCallSymbols.Count)"
-)
-$untargetedEvidence.Add(
-    "untargetedBroadcastEnsureFlatCallCount=$($untargetedBroadcastEnsureFlatCallSymbols.Count)"
-)
-$untargetedEvidence.Add(
-    "untargetedSteadyStateEnsureFlatCallCount=$($untargetedSteadyStateEnsureFlatCallSymbols.Count)"
-)
-$untargetedInterceptorEnsureFlatCallDisplay =
-    if ($null -eq $untargetedInterceptorEnsureFlatCallSymbol) { 'absent' }
-    else { $untargetedInterceptorEnsureFlatCallSymbol }
-$untargetedEvidence.Add(
-    "untargetedInterceptorEnsureFlatCallSymbol=$untargetedInterceptorEnsureFlatCallDisplay"
+    "untargetedInterceptorEnsureFlatCallSymbol=$untargetedInterceptorEnsureFlatCallSymbol"
 )
 Add-GeneratedMethodEvidence `
     -Evidence $untargetedEvidence `
@@ -2571,37 +2421,19 @@ foreach ($helper in $untargetedHelperEvidence) {
     $nativeSymbols.Add($helper.CallSymbol)
     $nativeSymbols.Add($helper.SharedCallSymbol)
 }
-if ($null -ne $untargetedInterceptorEnsureFlatCallSymbol) {
-    $nativeSymbols.Add($untargetedInterceptorEnsureFlatCallSymbol)
-}
+$nativeSymbols.Add($untargetedInterceptorEnsureFlatCallSymbol)
 if (!$SkipNativeInventory) {
-    $requiredNativeMethods = [System.Collections.Generic.List[object]]::new()
-    $requiredNativeMethods.Add($untargetedBroadcast.Implementation)
-    if ($untargetedInterceptorEnsureFlatCallSymbols.Count -eq 1) {
-        $requiredNativeMethods.Add($untargetedInterceptor.Implementation)
-    }
-    $nativeInventoryArguments = @{
-        ProjectRoot    = $resolvedProjectPath
-        ArtifactsRoot  = $resolvedArtifactsPath
-        Symbols        = @($nativeSymbols)
-        Methods        = @($untargetedRouteMethods)
-        RequiredMethods = @($requiredNativeMethods)
-    }
-    if ($null -ne $untargetedInterceptorEnsureFlatCallSymbol) {
-        $ensureFlatProbeIsInterceptor =
-            $untargetedInterceptorEnsureFlatCallSymbols.Count -eq 1
-        $nativeInventoryArguments.NativeInlineProbeMethod =
-            if ($ensureFlatProbeIsInterceptor) { $untargetedInterceptor.Implementation }
-            else { $untargetedBroadcast.Implementation }
-        $nativeInventoryArguments.NativeInlineProbeCallSymbol =
-            $untargetedInterceptorEnsureFlatCallSymbol
-        $nativeInventoryArguments.NativeInlineProbeExpectedSymbolPrefix =
-            if ($ensureFlatProbeIsInterceptor) {
-                'MessageBus_RunUntargetedInterceptors_Tis'
-            }
-            else {
-                'MessageBus_UntargetedBroadcast_Tis'
-            }
-    }
-    Add-NativeLayoutInventory @nativeInventoryArguments
+    Add-NativeLayoutInventory `
+        -ProjectRoot $resolvedProjectPath `
+        -ArtifactsRoot $resolvedArtifactsPath `
+        -Symbols @($nativeSymbols) `
+        -Methods @($untargetedRouteMethods) `
+        -RequiredMethods @(
+            $untargetedBroadcast.Implementation,
+            $untargetedInterceptor.Implementation
+        ) `
+        -NativeInlineProbeMethod $untargetedInterceptor.Implementation `
+        -NativeInlineProbeCallSymbol $untargetedInterceptorEnsureFlatCallSymbol `
+        -NativeInlineProbeExpectedSymbolPrefix `
+            'MessageBus_RunUntargetedInterceptors_Tis'
 }

@@ -162,6 +162,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.GreaterThan(0),
                     "The borrowed route must describe the invocable handler entry."
                 );
+
                 deregister();
                 deregister = null;
                 _ = bus.Trim(force);
@@ -181,116 +182,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 deregister?.Invoke();
                 handler.active = false;
-            }
-        }
-
-        [TestCase(false)]
-        [TestCase(true)]
-        public void UntargetedInterceptorPlanSweepDropsBorrowedEntryArray(bool force)
-        {
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                new FakeClock(),
-                idleEvictionTicks: 0,
-                trimApiEnabled: true
-            );
-            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
-                bus,
-                label: nameof(UntargetedInterceptorPlanSweepDropsBorrowedEntryArray)
-            );
-            using IDisposable cleanup = ForceTrimCleanup(bus);
-            MessageBusRegistration registration = bus.RegisterUntargetedInterceptor<UntargetedOne>(
-                (ref UntargetedOne _) => true
-            );
-            bool registered = true;
-            try
-            {
-                UntargetedOne message = new UntargetedOne();
-                bus.UntargetedBroadcast(ref message);
-
-                const BindingFlags declaredInstanceFields =
-                    BindingFlags.Instance
-                    | BindingFlags.Public
-                    | BindingFlags.NonPublic
-                    | BindingFlags.DeclaredOnly;
-                FieldInfo plansField = typeof(MessageBus).GetField(
-                    "_untargetedDispatchPlans",
-                    declaredInstanceFields
-                );
-                Assert.That(
-                    plansField,
-                    Is.Not.Null,
-                    "MessageBus must retain the untargeted plan cache field registered for sweep."
-                );
-                object plan = null;
-                foreach (
-                    object candidate in (System.Collections.IEnumerable)plansField.GetValue(bus)
-                )
-                {
-                    Assert.That(plan, Is.Null, "The scenario must create exactly one plan.");
-                    plan = candidate;
-                }
-                Assert.That(plan, Is.Not.Null, "The first emit must create a dispatch plan.");
-                Type planType = plan.GetType();
-                FieldInfo entriesField = planType.GetField(
-                    "interceptorEntries",
-                    declaredInstanceFields
-                );
-                FieldInfo countField = planType.GetField(
-                    "interceptorEntryCount",
-                    declaredInstanceFields
-                );
-                Assert.That(
-                    entriesField,
-                    Is.Not.Null,
-                    "The plan must expose the borrowed interceptor view field."
-                );
-                Assert.That(
-                    countField,
-                    Is.Not.Null,
-                    "The plan must expose the borrowed interceptor count field."
-                );
-                Assert.That(
-                    entriesField.GetValue(plan),
-                    Is.Not.Null,
-                    "The first filtered emit must publish the borrowed interceptor view."
-                );
-                Assert.That(
-                    countField.GetValue(plan),
-                    Is.EqualTo(1),
-                    "The borrowed view must contain the registered interceptor."
-                );
-
-                bus.Deregister<UntargetedOne>(in registration);
-                registered = false;
-                Assert.That(
-                    entriesField.GetValue(plan),
-                    Is.Null,
-                    "Deregistration must immediately drop the stale interceptor view."
-                );
-                Assert.That(
-                    countField.GetValue(plan),
-                    Is.EqualTo(0),
-                    "Deregistration must immediately reset the interceptor count."
-                );
-                _ = bus.Trim(force);
-
-                Assert.That(
-                    entriesField.GetValue(plan),
-                    Is.Null,
-                    "Sweeping the plan must drop its borrowed interceptor view."
-                );
-                Assert.That(
-                    countField.GetValue(plan),
-                    Is.EqualTo(0),
-                    "Sweeping the plan must reset its borrowed interceptor count."
-                );
-            }
-            finally
-            {
-                if (registered)
-                {
-                    bus.Deregister<UntargetedOne>(in registration);
-                }
             }
         }
 
