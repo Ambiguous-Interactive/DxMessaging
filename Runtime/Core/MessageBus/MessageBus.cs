@@ -580,17 +580,10 @@ namespace DxMessaging.Core.MessageBus
             public object handleEntries;
             public int handleEntryCount;
 
-            // Borrowed immutable view of the untargeted interceptor cache. The cache owns and
-            // replaces this array; the plan only removes the steady-state EnsureFlat call.
-            public object[] interceptorEntries;
-            public int interceptorEntryCount;
-
             public void ClearCachedRoute()
             {
                 handleEntries = null;
                 handleEntryCount = 0;
-                interceptorEntries = null;
-                interceptorEntryCount = 0;
             }
         }
 
@@ -3640,7 +3633,6 @@ namespace DxMessaging.Core.MessageBus
                 count = 0;
                 interceptors.Add(interceptor);
                 prioritizedInterceptors.MarkFlatDirty();
-                ClearUntargetedInterceptorPlanView<T>();
             }
 
             priorityCount[priority] = count + 1;
@@ -4086,15 +4078,10 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
-            object[] untargetedInterceptorEntries = plan.interceptorEntries;
-            int untargetedInterceptorEntryCount = plan.interceptorEntryCount;
+            InterceptorCache<object> untargetedInterceptors = plan.interceptorCache;
             if (
-                0 < untargetedInterceptorEntryCount
-                && !RunUntargetedInterceptors(
-                    ref typedMessage,
-                    untargetedInterceptorEntries,
-                    untargetedInterceptorEntryCount
-                )
+                untargetedInterceptors != null
+                && !RunUntargetedInterceptors(ref typedMessage, untargetedInterceptors)
             )
             {
                 return;
@@ -4180,10 +4167,6 @@ namespace DxMessaging.Core.MessageBus
                 out InterceptorCache<object> interceptors
             );
             bool hasInterceptors = RefreshInterceptorPlan(plan, interceptors);
-            if (hasInterceptors)
-            {
-                plan.interceptorEntries = interceptors.EnsureFlat(out plan.interceptorEntryCount);
-            }
             bool hasGlobal = 0 < _globalSlots.sharedHandlers.Count;
             bool hasPost = post != null && 0 < post.handlers.Count;
             plan.fastPath = !hasInterceptors && !hasGlobal && !hasPost;
@@ -4194,10 +4177,9 @@ namespace DxMessaging.Core.MessageBus
         /// Caches the interceptor store for this message type on the plan and
         /// reports whether any interceptor is registered. The store owns the
         /// flattened array (see <see cref="InterceptorCache{TValue}.EnsureFlat"/>);
-        /// untargeted plans separately borrow that immutable view after this
-        /// method returns, while targeted and broadcast plans resolve it at the
-        /// dispatch site. An unrelated registration or idle sweep therefore
-        /// cannot discard the store-owned view and force a reallocation.
+        /// the plan only caches the reference, so an unrelated registration or
+        /// an idle sweep invalidating the plan does not discard the flattened
+        /// view and force a reallocation.
         /// </summary>
         /// <returns><c>true</c> when at least one interceptor is registered.</returns>
         private static bool RefreshInterceptorPlan(
@@ -5536,13 +5518,13 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>
         /// Runs the untargeted interceptor phase over the plan's frozen,
         /// priority-ordered interceptor array. Callers gate on
-        /// <see cref="UntargetedDispatchPlan.interceptorEntryCount"/>, so this method is
+        /// <see cref="DispatchPlan.interceptorCount"/>, so this method is
         /// entered only when at least one interceptor was registered when the
         /// plan was refreshed.
         /// </summary>
         /// <remarks>
         /// The array is never mutated in place (see
-        /// <see cref="InterceptorCache{TValue}.MarkFlatDirty"/>), so an interceptor that
+        /// <see cref="RefreshInterceptorPlan"/>), so an interceptor that
         /// registers or deregisters interceptors cannot shorten, lengthen, or
         /// reorder the walk in progress; its mutation is observed by the next
         /// emission. The <see cref="_resetGeneration"/> guard still aborts the
@@ -5553,9 +5535,10 @@ namespace DxMessaging.Core.MessageBus
         // by plan construction and the loop bound is the plan's own count.
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
-        private bool RunUntargetedInterceptors<T>(ref T message, object[] interceptors, int count)
+        private bool RunUntargetedInterceptors<T>(ref T message, InterceptorCache<object> cache)
             where T : IUntargetedMessage
         {
+            object[] interceptors = cache.EnsureFlat(out int count);
             long resetGeneration = _resetGeneration;
             for (int index = 0; index < count; ++index)
             {
@@ -6313,10 +6296,6 @@ namespace DxMessaging.Core.MessageBus
                         // removed interceptor is not kept alive until the next
                         // emission or sweep.
                         prioritizedInterceptors.MarkFlatDirty();
-                        if (reg.kind == MessageBusRegistration.Kind.UntargetedInterceptor)
-                        {
-                            ClearUntargetedInterceptorPlanView<T>();
-                        }
                     }
                 }
 
@@ -6328,16 +6307,6 @@ namespace DxMessaging.Core.MessageBus
                         interceptor
                     );
                 }
-            }
-        }
-
-        private void ClearUntargetedInterceptorPlanView<T>()
-            where T : IMessage
-        {
-            if (_untargetedDispatchPlans.TryGetValue<T>(out UntargetedDispatchPlan plan))
-            {
-                plan.interceptorEntries = null;
-                plan.interceptorEntryCount = 0;
             }
         }
 

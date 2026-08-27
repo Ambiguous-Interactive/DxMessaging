@@ -399,6 +399,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     entriesField.GetValue(plan),
                     "The first untargeted emit must publish the borrowed route."
                 );
+
                 deregistration();
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);
 
@@ -416,97 +417,6 @@ namespace DxMessaging.Tests.Editor.Contract
             finally
             {
                 handler.active = false;
-            }
-        }
-
-        [Test]
-        public void EmitTimeSweepDropsBorrowedInterceptorView()
-        {
-            MessageBus bus = MessageBus.CreateForInternalUse(
-                new ManualClock(),
-                idleEvictionTicks: 0,
-                evictionTickIntervalSeconds: 0d,
-                idleEvictionEnabled: true,
-                trimApiEnabled: true
-            );
-            MessageBusRegistration registration = bus.RegisterUntargetedInterceptor<ProbeMessage>(
-                (ref ProbeMessage _) => true
-            );
-            bool registered = true;
-            try
-            {
-                ProbeMessage probe = new ProbeMessage();
-                bus.UntargetedBroadcast(ref probe);
-
-                FieldInfo plansField = typeof(MessageBus).GetField(
-                    "_untargetedDispatchPlans",
-                    BindingFlags.Instance | BindingFlags.NonPublic
-                );
-                Assert.IsNotNull(plansField, "MessageBus must retain its untargeted plan cache.");
-                object plan = null;
-                foreach (
-                    object candidate in (System.Collections.IEnumerable)plansField.GetValue(bus)
-                )
-                {
-                    plan = candidate;
-                    break;
-                }
-                Assert.IsNotNull(plan, "The first filtered emit must create a dispatch plan.");
-                FieldInfo entriesField = plan.GetType()
-                    .GetField(
-                        "interceptorEntries",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    );
-                FieldInfo countField = plan.GetType()
-                    .GetField(
-                        "interceptorEntryCount",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    );
-                Assert.IsNotNull(
-                    entriesField,
-                    "The plan must expose the borrowed interceptor view."
-                );
-                Assert.IsNotNull(countField, "The plan must expose the interceptor view count.");
-                Assert.IsNotNull(
-                    entriesField.GetValue(plan),
-                    "The first filtered emit must publish the borrowed interceptor view."
-                );
-                Assert.AreEqual(
-                    1,
-                    countField.GetValue(plan),
-                    "The borrowed interceptor view must contain the registered interceptor."
-                );
-
-                bus.Deregister<ProbeMessage>(in registration);
-                registered = false;
-                Assert.IsNull(
-                    entriesField.GetValue(plan),
-                    "Deregistration must immediately drop the stale interceptor view."
-                );
-                Assert.AreEqual(
-                    0,
-                    countField.GetValue(plan),
-                    "Deregistration must immediately reset the interceptor count."
-                );
-                OtherProbeMessage other = new OtherProbeMessage();
-                EmitUntargetedSweepSampleWindow(bus, ref other);
-
-                Assert.IsNull(
-                    entriesField.GetValue(plan),
-                    "The automatic emit-time sweep must drop the stale interceptor view."
-                );
-                Assert.AreEqual(
-                    0,
-                    countField.GetValue(plan),
-                    "The automatic emit-time sweep must reset the interceptor count."
-                );
-            }
-            finally
-            {
-                if (registered)
-                {
-                    bus.Deregister<ProbeMessage>(in registration);
-                }
             }
         }
 
