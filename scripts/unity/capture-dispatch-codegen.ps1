@@ -2575,15 +2575,17 @@ if ($null -ne $untargetedInterceptorEnsureFlatCallSymbol) {
     $nativeSymbols.Add($untargetedInterceptorEnsureFlatCallSymbol)
 }
 if (!$SkipNativeInventory) {
+    $requiredNativeMethods = [System.Collections.Generic.List[object]]::new()
+    $requiredNativeMethods.Add($untargetedBroadcast.Implementation)
+    if ($untargetedInterceptorEnsureFlatCallSymbols.Count -eq 1) {
+        $requiredNativeMethods.Add($untargetedInterceptor.Implementation)
+    }
     $nativeInventoryArguments = @{
         ProjectRoot    = $resolvedProjectPath
         ArtifactsRoot  = $resolvedArtifactsPath
         Symbols        = @($nativeSymbols)
         Methods        = @($untargetedRouteMethods)
-        RequiredMethods = @(
-            $untargetedBroadcast.Implementation,
-            $untargetedInterceptor.Implementation
-        )
+        RequiredMethods = @($requiredNativeMethods)
     }
     if ($null -ne $untargetedInterceptorEnsureFlatCallSymbol) {
         $ensureFlatProbeIsInterceptor =
