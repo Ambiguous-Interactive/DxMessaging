@@ -62,6 +62,25 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <summary>
+        /// Shows a tracked capture host without a dock tab. A normal <see cref="EditorWindow.Show"/>
+        /// paints the test window's tab into the same panel render target as its root visual tree
+        /// on macOS, so an offscreen readback cannot separate that native chrome from the package
+        /// surface. Popup mode still creates the attached panel the renderer needs but adds no tab.
+        /// </summary>
+        internal static void ShowPopupWindow(EditorWindow window)
+        {
+            if (window == null)
+            {
+                return;
+            }
+
+            window.hideFlags = HideFlags.HideAndDontSave;
+            SuppressHeadlessWindowRenderErrors();
+            window.ShowPopup();
+            window.hideFlags = HideFlags.HideAndDontSave;
+        }
+
+        /// <summary>
         /// Headless CI runs Unity with -nographics, where showing a window and repainting
         /// the inspector (including while destroying editors/objects during teardown) logs
         /// benign "No graphic device is available to initialize the view. / show the window."
@@ -92,9 +111,8 @@ namespace DxMessaging.Tests.Editor
 
             // A window that was created but never shown has no host view, and
             // EditorWindow.Close() dereferences that parent unconditionally. Destroying the
-            // instance is the whole of its teardown. Tests that only need a panel to lay out
-            // and render -- offscreen capture, for one -- never show their window, so closing
-            // one has to be safe rather than a NullReferenceException in teardown.
+            // instance is the whole of its teardown. Some tests inspect an unattached root tree,
+            // so closing one has to be safe rather than a NullReferenceException in teardown.
             if (ReadMember(window, "m_Parent") == null)
             {
                 Object.DestroyImmediate(window);

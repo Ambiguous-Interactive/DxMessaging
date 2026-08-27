@@ -15,17 +15,16 @@ namespace DxMessaging.Tests.Editor
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// Pins the documentation capture path. These tests are the retained, repeatable half of
-    /// PLAN.md WS-7.3: they prove the mechanism renders real shipped views into a 24-bit PNG
+    /// Pins issue #314's documentation capture path. These tests prove the mechanism renders
+    /// real shipped views into a 24-bit PNG
     /// without touching the desktop, without leaking editor state, and without emitting console
-    /// diagnostics. Choosing the final Personal/light artwork stays a human review step.
+    /// diagnostics. The explicit catalog capture adds the human review step for published art.
     /// </summary>
     [TestFixture]
     public sealed class EditorSurfaceCaptureTests
     {
-        // The canvas is deliberately larger than the surface. The host window draws a tab
-        // strip at the top of its panel, so a surface laid out at the canvas size would be
-        // pushed partly off the bottom and the crop would come back short.
+        // The canvas is deliberately larger than the surface so the capture can prove that it
+        // crops to the package content rather than silently returning all available slack.
         private const int CanvasWidth = 960;
         private const int CanvasHeight = 600;
         private const int SurfaceWidth = 720;
@@ -218,6 +217,45 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        public void CaptureExcludesTheHostWindowTabFromTheSurface()
+        {
+            EditorSurfaceCaptureResult result = Capture(
+                CreateOpaqueProbe(),
+                nameof(CaptureExcludesTheHostWindowTabFromTheSurface)
+            );
+            Texture2D captured = new(2, 2, TextureFormat.RGB24, false, true);
+            _createdObjects.Add(captured);
+            Assert.That(
+                captured.LoadImage(File.ReadAllBytes(result.OutputPath), markNonReadable: false),
+                Is.True,
+                "The capture PNG must load before its chrome-free frame can be inspected."
+            );
+
+            Color center = captured.GetPixel(captured.width / 2, captured.height / 2);
+            const int inset = 10;
+            Assert.That(
+                captured.GetPixel(inset, inset),
+                Is.EqualTo(center),
+                "The lower-left surface corner must match the solid center instead of host chrome."
+            );
+            Assert.That(
+                captured.GetPixel(captured.width - inset - 1, inset),
+                Is.EqualTo(center),
+                "The lower-right surface corner must match the solid center instead of host chrome."
+            );
+            Assert.That(
+                captured.GetPixel(inset, captured.height - inset - 1),
+                Is.EqualTo(center),
+                "The upper-left surface corner must match the solid center instead of host chrome."
+            );
+            Assert.That(
+                captured.GetPixel(captured.width - inset - 1, captured.height - inset - 1),
+                Is.EqualTo(center),
+                "The upper-right surface corner must match the solid center instead of host chrome."
+            );
+        }
+
+        [Test]
         public void CaptureRecordsTheSkinAndUnityVersionItWasTakenUnder()
         {
             EditorSurfaceCaptureResult result = Capture(
@@ -225,10 +263,16 @@ namespace DxMessaging.Tests.Editor
                 nameof(CaptureRecordsTheSkinAndUnityVersionItWasTakenUnder)
             );
 
-            // The manifest bans switching skins to reach Personal/light, so the capture reports
-            // the skin instead of changing it and the reviewer rejects a Pro/dark artifact.
-            Assert.That(result.IsProSkin, Is.EqualTo(EditorGUIUtility.isProSkin));
-            Assert.That(result.UnityVersion, Is.EqualTo(Application.unityVersion));
+            Assert.That(
+                result.IsProSkin,
+                Is.EqualTo(EditorGUIUtility.isProSkin),
+                "Capture metadata must report the unchanged host skin."
+            );
+            Assert.That(
+                result.UnityVersion,
+                Is.EqualTo(Application.unityVersion),
+                "Capture metadata must report the host Unity version."
+            );
         }
 
         [Test]

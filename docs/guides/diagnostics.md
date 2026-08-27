@@ -94,6 +94,8 @@ Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect the
 default global bus. The window has two modes, and a badge in its toolbar always
 says which one is showing:
 
+![Message Monitor snapshot ready state with diagnostics enabled](../images/inspector-overlay/message-monitor.png)
+
 - **SNAPSHOT** reads the buffered bus history as of the last **Refresh**. One row
   per emission, newest first, nothing merged.
 - **LIVE** streams new emissions as they happen. Repeats of the same message and
@@ -181,6 +183,8 @@ feathered curve accepts clicks through a generous hit corridor. Select a route
 near either endpoint or between crossings; the selected path stays bright while
 unrelated paths dim. Nodes use named metric rows instead of compact `+N`
 summaries.
+
+![Flow Graph with two messages, two receivers, and four routes](../images/inspector-overlay/flow-graph.png)
 
 Broadcast nodes identify source scope, targeted nodes identify target scope,
 and untargeted nodes identify the global bus. A type with more than one visible
