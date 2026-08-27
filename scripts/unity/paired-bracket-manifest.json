@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "bracketId": "session-244-borrowed-untargeted-interceptor-view",
+  "orientation": "candidate-control-candidate",
+  "materialityBandPercent": 3,
+  "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+  "rows": [
+    { "scenario": "GlobalToOne", "role": "sentinel" },
+    { "scenario": "GlobalToMany", "role": "sentinel" },
+    { "scenario": "KeyedToOne", "role": "sentinel" },
+    { "scenario": "Filtered", "role": "target" },
+    { "scenario": "PostProcess", "role": "sentinel" },
+    { "scenario": "FilteredPostProcess", "role": "affected" },
+    { "scenario": "StructNoBox", "role": "sentinel" }
+  ]
+}
