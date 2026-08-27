@@ -94,7 +94,7 @@ Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect the
 default global bus. The window has two modes, and a badge in its toolbar always
 says which one is showing:
 
-![Message Monitor snapshot ready state with diagnostics enabled](../images/inspector-overlay/message-monitor.png)
+![Message Monitor snapshot with Untargeted, Targeted, and Broadcast traffic](../images/inspector-overlay/message-monitor.png)
 
 - **SNAPSHOT** reads the buffered bus history as of the last **Refresh**. One row
   per emission, newest first, nothing merged.
@@ -111,6 +111,8 @@ Selecting a row fills the detail pane below the log; the stack trace lives there
 behind a disclosure that starts closed, so a long call stack never buries the log
 itself. When emission-site capture is off the disclosure starts open instead, says
 so, and offers the switch -- see [Emission-Site Capture](#emission-site-capture).
+
+![Message Monitor with a Broadcast message selected and its captured stack expanded](../images/inspector-overlay/message-monitor-selected.png)
 
 The detail pane links out to what a row stands for:
 
@@ -186,6 +188,15 @@ summaries.
 
 ![Flow Graph with two messages, two receivers, and four routes](../images/inspector-overlay/flow-graph.png)
 
+Select the left message/source node, right destination node, or connecting route
+to open the corresponding evidence pane:
+
+![Flow Graph with the PlayerDamaged message source selected](../images/inspector-overlay/flow-graph-message-selected.png)
+
+![Flow Graph with the Player receiver destination selected](../images/inspector-overlay/flow-graph-component-selected.png)
+
+![Flow Graph with the PlayerDamaged to Player route selected](../images/inspector-overlay/flow-graph-route-selected.png)
+
 Broadcast nodes identify source scope, targeted nodes identify target scope,
 and untargeted nodes identify the global bus. A type with more than one visible
 route kind uses a `MIXED` node with neutral route, receiver, and call metrics;
@@ -237,7 +248,6 @@ filtered graph; ambiguous, destroyed, or filtered-out contexts remain text.
 Message details also provide a collapsed **Route roster**; expand it to see each
 receiver and stable receiver ID, exact registration subtype, route context, and
 context ID, then select any exact route. Receiver and context IDs distinguish
-routes whose hierarchy text is otherwise identical.
 The first eight rows appear immediately; larger rosters keep the remainder
 behind a nested disclosure. A selected route already shows that relationship above its
 evidence, so its diagnostics omit redundant aggregate relationship records. Use

@@ -14,6 +14,11 @@ manual rescan menu. For the full reference -- every diagnostic id,
 exact detection policy, suppression precedence, and Unity 2021 setup
 notes -- see [Roslyn Analyzers & Diagnostics](../reference/analyzers.md).
 
+The current diagnostic catalog starts at `DXMSG002`; no `DXMSG001` is assigned.
+`DXMSG002` through `DXMSG005` are compiler and source-generator diagnostics, so
+they appear in Unity's Console or the IDE rather than in this Inspector overlay.
+The overlay covers `DXMSG006` through `DXMSG010`.
+
 ## When a Warning Appears
 
 Whenever your code triggers one of the base-call diagnostics
@@ -55,11 +60,28 @@ subclasses keep their normal inspector body; the package injects the
 same warning data through Unity's component-header hook as an IMGUI
 HelpBox so the user's editor can stay in charge of its body.
 
-![Inspector overlay warning panel (DXMSG009 implicit-hide example) at the top of a MessageAwareComponent subclass Inspector](../images/inspector-overlay/dxmsg009-overlay.png)
+The title includes the contributing diagnostic ID. An aggregated report sorts
+and deduplicates multiple IDs before rendering them.
+
+### DXMSG006: missing base call
+
+![Inspector overlay showing a DXMSG006 missing Awake base-call warning](../images/inspector-overlay/dxmsg006-overlay.png)
+
+### DXMSG007: explicit lifecycle hide
+
+![Inspector overlay showing a DXMSG007 explicit lifecycle hide warning](../images/inspector-overlay/dxmsg007-overlay.png)
+
+### DXMSG009: implicit lifecycle hide
+
+![Inspector overlay showing a DXMSG009 implicit lifecycle hide warning](../images/inspector-overlay/dxmsg009-overlay.png)
+
+### DXMSG010: broken transitive chain
+
+![Inspector overlay showing a DXMSG010 broken transitive base-call chain warning](../images/inspector-overlay/dxmsg010-overlay.png)
 
 The panel follows this shape:
 
-- **Title:** `Missing MessageAwareComponent base calls`
+- **Title:** `DXMSG###: Missing MessageAwareComponent base calls`
 - **Body:** `<FullyQualifiedTypeName> has lifecycle methods that do not chain to MessageAwareComponent. DxMessaging will not function on this component.`
 - **Method list:** one row per missing method, such as `OnEnable:
 '<type>' overrides MessageAwareComponent.OnEnable but does not call
@@ -134,7 +156,7 @@ When the component **is** in the ignore list, the overlay shows the info
 shape -- the type is explicitly excluded from the base-call check -- and
 the action row collapses to a single button:
 
-![Stop ignoring action for an excluded type](../images/inspector-overlay/inspector-ignored.png)
+![DXMSG008 Inspector information state with the Stop ignoring action](../images/inspector-overlay/dxmsg008-overlay.png)
 
 - **Stop ignoring** -- removes the component's fully-qualified type
   name from the ignore list. The ignored info state clears on the next

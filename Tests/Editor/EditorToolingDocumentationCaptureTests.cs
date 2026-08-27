@@ -27,12 +27,17 @@ namespace DxMessaging.Tests.Editor
     {
         private const string Dxmsg006FileName = "dxmsg006-overlay.png";
         private const string Dxmsg007FileName = "dxmsg007-overlay.png";
+        private const string Dxmsg008FileName = "dxmsg008-overlay.png";
         private const string Dxmsg009FileName = "dxmsg009-overlay.png";
         private const string Dxmsg010FileName = "dxmsg010-overlay.png";
         private const string FlowGraphFileName = "flow-graph.png";
-        private const string InspectorIgnoredFileName = "inspector-ignored.png";
+        private const string FlowGraphComponentSelectedFileName =
+            "flow-graph-component-selected.png";
+        private const string FlowGraphMessageSelectedFileName = "flow-graph-message-selected.png";
+        private const string FlowGraphRouteSelectedFileName = "flow-graph-route-selected.png";
         private const string InspectorSubscriptionsFileName = "inspector-subscriptions.png";
         private const string MessageMonitorFileName = "message-monitor.png";
+        private const string MessageMonitorSelectedFileName = "message-monitor-selected.png";
         private const string ProjectSettingsFileName = "project-settings-panel.png";
 
         internal const string DocumentationOutputDirectory =
@@ -43,12 +48,16 @@ namespace DxMessaging.Tests.Editor
             {
                 Dxmsg006FileName,
                 Dxmsg007FileName,
+                Dxmsg008FileName,
                 Dxmsg009FileName,
                 Dxmsg010FileName,
                 FlowGraphFileName,
-                InspectorIgnoredFileName,
+                FlowGraphComponentSelectedFileName,
+                FlowGraphMessageSelectedFileName,
+                FlowGraphRouteSelectedFileName,
                 InspectorSubscriptionsFileName,
                 MessageMonitorFileName,
+                MessageMonitorSelectedFileName,
                 ProjectSettingsFileName,
             };
 
@@ -67,9 +76,9 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 CapturedFileNames.Count,
-                Is.EqualTo(9),
-                "The inventory covers four warning states plus Inspector subscriptions, "
-                    + "Project Settings, Message Monitor, and Flow Graph."
+                Is.EqualTo(13),
+                "The inventory covers five analyzer states, Inspector subscriptions, "
+                    + "Project Settings, two Message Monitor states, and four Flow Graph states."
             );
             foreach (string fileName in CapturedFileNames)
             {
@@ -79,6 +88,157 @@ namespace DxMessaging.Tests.Editor
                     File.Exists(imagePath + ".meta"),
                     Is.True,
                     $"Missing Unity metadata for {imagePath}."
+                );
+            }
+        }
+
+        /// <remarks>
+        /// Added 2026-08-27 after review found DXMSG007, DXMSG009, and DXMSG010 were
+        /// byte-for-byte duplicates because the shipped Inspector title did not render the
+        /// diagnostic ID.
+        /// </remarks>
+        [Test]
+        public void PublishedDiagnosticCapturesAreVisuallyDistinct()
+        {
+            string[] diagnosticFiles =
+            {
+                Dxmsg006FileName,
+                Dxmsg007FileName,
+                Dxmsg008FileName,
+                Dxmsg009FileName,
+                Dxmsg010FileName,
+            };
+            Dictionary<string, string> encodedImages = new(StringComparer.Ordinal);
+            foreach (string fileName in diagnosticFiles)
+            {
+                string path = Path.Combine(DocumentationOutputDirectory, fileName);
+                Assert.That(
+                    File.Exists(path),
+                    Is.True,
+                    $"The diagnostic comparison requires published image {path}."
+                );
+                encodedImages.Add(fileName, Convert.ToBase64String(File.ReadAllBytes(path)));
+            }
+
+            for (int left = 0; left < diagnosticFiles.Length; left++)
+            {
+                for (int right = left + 1; right < diagnosticFiles.Length; right++)
+                {
+                    string leftName = diagnosticFiles[left];
+                    string rightName = diagnosticFiles[right];
+                    Assert.That(
+                        encodedImages[leftName],
+                        Is.Not.EqualTo(encodedImages[rightName]),
+                        $"{leftName} and {rightName} must show different diagnostic states."
+                    );
+                }
+            }
+        }
+
+        [Test]
+        public void MessageMonitorCaptureSurfacesContainTrafficAndSelectedDetails()
+        {
+            VisualElement overview = CreateMessageMonitorSurface(showSelectedDetails: false);
+            VisualElement selected = CreateMessageMonitorSurface(showSelectedDetails: true);
+
+            Assert.That(
+                overview
+                    .Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
+                    .ToList()
+                    .Count,
+                Is.EqualTo(3),
+                "The overview capture must show one Untargeted, Targeted, and Broadcast message."
+            );
+            Assert.That(
+                overview.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
+                Is.Null,
+                "The offscreen capture host must replace the nested log ScrollView whose body "
+                    + "does not paint without a native docked-window geometry event."
+            );
+            Label overviewDetails = overview.Q<Label>(
+                DxMessagingMessageMonitorWindow.DetailsTypeLabelName
+            );
+            Assert.That(
+                overviewDetails,
+                Is.Not.Null,
+                "The populated overview must render its newest-message details."
+            );
+            Assert.That(
+                overviewDetails.text,
+                Does.Contain("PlayerDamaged"),
+                "The overview must render the newest message's real selected-detail pane."
+            );
+            Label selectedDetails = selected.Q<Label>(
+                DxMessagingMessageMonitorWindow.DetailsTypeLabelName
+            );
+            Assert.That(
+                selectedDetails,
+                Is.Not.Null,
+                "The interaction capture must render the selected message details."
+            );
+            Assert.That(
+                selectedDetails.text,
+                Does.Contain("EnemySpawned"),
+                "The interaction capture must select a different message row."
+            );
+            Foldout selectedStack = selected.Q<Foldout>(
+                DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
+            );
+            Assert.That(
+                selectedStack,
+                Is.Not.Null,
+                "The selected message must expose its captured call stack."
+            );
+            Assert.That(
+                selectedStack.value,
+                Is.True,
+                "The interaction capture must show the expanded stack disclosure."
+            );
+            Assert.That(
+                selected
+                    .Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName)
+                    .Query<ScrollView>()
+                    .First(),
+                Is.Null,
+                "The offscreen capture host must replace the nested details ScrollView so its "
+                    + "emission fields and expanded stack paint into the documentation image."
+            );
+        }
+
+        [Test]
+        public void FlowGraphCaptureSurfacesContainSourceDestinationAndRouteDetails()
+        {
+            FlowGraphSnapshot snapshot = CreateFlowGraphSnapshot();
+            VisualElement source = CreateFlowGraphSurface(
+                snapshot,
+                DocumentationFlowGraphSelection.Message
+            );
+            VisualElement destination = CreateFlowGraphSurface(
+                snapshot,
+                DocumentationFlowGraphSelection.Component
+            );
+            VisualElement route = CreateFlowGraphSurface(
+                snapshot,
+                DocumentationFlowGraphSelection.Route
+            );
+
+            AssertFlowGraphDetailsTitle(source, "PlayerDamaged", "source");
+            AssertFlowGraphDetailsTitle(destination, "Player", "destination");
+            AssertFlowGraphDetailsTitle(route, "PlayerDamaged -> Player", "route");
+            foreach (VisualElement surface in new[] { source, destination, route })
+            {
+                Foldout evidence = surface.Q<Foldout>(
+                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
+                );
+                Assert.That(
+                    evidence,
+                    Is.Not.Null,
+                    "Every selected Flow Graph capture must render its evidence disclosure."
+                );
+                Assert.That(
+                    evidence.value,
+                    Is.True,
+                    "Every selected Flow Graph capture must expand its evidence disclosure."
                 );
             }
         }
@@ -97,6 +257,13 @@ namespace DxMessaging.Tests.Editor
             IReadOnlyList<EditorSurfaceCaptureResult> results = CaptureAll(
                 DocumentationOutputDirectory
             );
+            foreach (EditorSurfaceCaptureResult result in results)
+            {
+                AssetDatabase.ImportAsset(
+                    result.OutputPath,
+                    ImportAssetOptions.ForceSynchronousImport
+                );
+            }
 
             Assert.That(
                 results.Count,
@@ -171,6 +338,7 @@ namespace DxMessaging.Tests.Editor
                         settings,
                         "DXMSG006",
                         "Awake",
+                        "Gameplay.HealthComponent",
                         Dxmsg006FileName,
                         stagingDirectory
                     )
@@ -181,16 +349,19 @@ namespace DxMessaging.Tests.Editor
                         settings,
                         "DXMSG007",
                         "OnEnable",
+                        "Gameplay.HiddenLifecycleComponent",
                         Dxmsg007FileName,
                         stagingDirectory
                     )
                 );
+                stagedResults.Add(CaptureIgnoredInspector(component, settings, stagingDirectory));
                 stagedResults.Add(
                     CaptureInspectorWarning(
                         component,
                         settings,
                         "DXMSG009",
-                        "OnEnable",
+                        "OnDisable",
+                        "Gameplay.ImplicitLifecycleComponent",
                         Dxmsg009FileName,
                         stagingDirectory
                     )
@@ -200,15 +371,31 @@ namespace DxMessaging.Tests.Editor
                         component,
                         settings,
                         "DXMSG010",
-                        "OnEnable",
+                        "OnDestroy",
+                        "Gameplay.TransitiveLifecycleComponent",
                         Dxmsg010FileName,
                         stagingDirectory
                     )
                 );
-                stagedResults.Add(CaptureFlowGraph(stagingDirectory));
-                stagedResults.Add(CaptureIgnoredInspector(component, settings, stagingDirectory));
+                stagedResults.Add(
+                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.None)
+                );
+                stagedResults.Add(
+                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Component)
+                );
+                stagedResults.Add(
+                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Message)
+                );
+                stagedResults.Add(
+                    CaptureFlowGraph(stagingDirectory, DocumentationFlowGraphSelection.Route)
+                );
                 stagedResults.Add(CaptureSubscriptions(component, stagingDirectory));
-                stagedResults.Add(CaptureMessageMonitor(stagingDirectory));
+                stagedResults.Add(
+                    CaptureMessageMonitor(stagingDirectory, showSelectedDetails: false)
+                );
+                stagedResults.Add(
+                    CaptureMessageMonitor(stagingDirectory, showSelectedDetails: true)
+                );
                 stagedResults.Add(CaptureProjectSettings(settings, stagingDirectory));
 
                 ValidateCapturedResults(stagedResults);
@@ -480,11 +667,11 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettings settings,
             string diagnosticId,
             string methodName,
+            string fullName,
             string fileName,
             string stagingDirectory
         )
         {
-            const string fullName = "Gameplay.HealthComponent";
             BaseCallReportEntry entry = new()
             {
                 typeName = fullName,
@@ -521,7 +708,7 @@ namespace DxMessaging.Tests.Editor
                 MessageAwareComponentInspectorState.ForIgnoredType(
                     component,
                     settings,
-                    "Gameplay.HealthComponent",
+                    "Gameplay.OptedOutLifecycleComponent",
                     isFreshThisSession: true
                 );
             MessageAwareComponentInspectorViewActions actions = new(
@@ -531,7 +718,7 @@ namespace DxMessaging.Tests.Editor
             );
             VisualElement surface = MessageAwareComponentInspectorView.Create(state, actions);
             surface.style.width = 720;
-            return Capture(surface, 800, 320, InspectorIgnoredFileName, stagingDirectory);
+            return Capture(surface, 800, 320, Dxmsg008FileName, stagingDirectory);
         }
 
         private static EditorSurfaceCaptureResult CaptureSubscriptions(
@@ -558,25 +745,133 @@ namespace DxMessaging.Tests.Editor
             return Capture(surface, 800, 680, ProjectSettingsFileName, stagingDirectory);
         }
 
-        private static EditorSurfaceCaptureResult CaptureMessageMonitor(string stagingDirectory)
+        private static EditorSurfaceCaptureResult CaptureMessageMonitor(
+            string stagingDirectory,
+            bool showSelectedDetails
+        )
         {
-            VisualElement surface = CreateMessageMonitorSurface();
-            return Capture(surface, 1200, 600, MessageMonitorFileName, stagingDirectory);
+            VisualElement surface = CreateMessageMonitorSurface(showSelectedDetails);
+            string fileName = showSelectedDetails
+                ? MessageMonitorSelectedFileName
+                : MessageMonitorFileName;
+            int canvasHeight = showSelectedDetails ? 940 : 820;
+            return Capture(surface, 1200, canvasHeight, fileName, stagingDirectory);
         }
 
-        private static VisualElement CreateMessageMonitorSurface()
+        private static VisualElement CreateMessageMonitorSurface(bool showSelectedDetails)
         {
+            const string stackTrace =
+                "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)\n"
+                + "UnityEngine.StackTraceUtility:ExtractStackTrace ()\n"
+                + "Gameplay.Combat.DamageSystem:EmitPlayerDamaged () "
+                + "(at Assets/Scripts/Combat/DamageSystem.cs:84)\n"
+                + "Gameplay.Match.RoundController:ApplyDamage () "
+                + "(at Assets/Scripts/Match/RoundController.cs:142)";
+            MessageMonitorEntry[] entries =
+            {
+                new(
+                    "PlayerDamaged",
+                    "Context: Arena/Player",
+                    stackTrace,
+                    messageTypeIdentity: "Gameplay.Messages.PlayerDamaged, Gameplay",
+                    messageTypeDisplayPath: "Gameplay.Messages.PlayerDamaged",
+                    routeKind: "Targeted",
+                    traceId: 1042
+                ),
+                new(
+                    "EnemySpawned",
+                    "Context: Arena/WaveDirector",
+                    "Gameplay.Spawning.WaveDirector:SpawnEnemy () "
+                        + "(at Assets/Scripts/Spawning/WaveDirector.cs:117)",
+                    messageTypeIdentity: "Gameplay.Messages.EnemySpawned, Gameplay",
+                    messageTypeDisplayPath: "Gameplay.Messages.EnemySpawned",
+                    routeKind: "Broadcast",
+                    traceId: 1041
+                ),
+                new(
+                    "RoundStarted",
+                    "Context: none",
+                    "Gameplay.Match.RoundController:BeginRound () "
+                        + "(at Assets/Scripts/Match/RoundController.cs:62)",
+                    messageTypeIdentity: "Gameplay.Messages.RoundStarted, Gameplay",
+                    messageTypeDisplayPath: "Gameplay.Messages.RoundStarted",
+                    routeKind: "Untargeted",
+                    traceId: 1040
+                ),
+            };
+            ComponentMonitorEntry[] components =
+            {
+                new(
+                    "Arena/Player",
+                    "PlayerMessagingComponent",
+                    activeInHierarchy: true,
+                    listenerCount: 3,
+                    enabledListenerCount: 3,
+                    diagnosticsListenerCount: 3,
+                    registrationCount: 4,
+                    callCount: 24,
+                    localEmissionCount: 6,
+                    providerStatusText: "Global bus",
+                    warningText: string.Empty
+                ),
+                new(
+                    "UI/HUD",
+                    "HudMessagingComponent",
+                    activeInHierarchy: true,
+                    listenerCount: 2,
+                    enabledListenerCount: 2,
+                    diagnosticsListenerCount: 2,
+                    registrationCount: 3,
+                    callCount: 18,
+                    localEmissionCount: 0,
+                    providerStatusText: "Global bus",
+                    warningText: string.Empty
+                ),
+            };
+
             VisualElement surface = new();
             surface.style.width = 1120;
-            surface.style.height = 520;
+            surface.style.height = showSelectedDetails ? 860 : 740;
             DxMessagingMessageMonitorWindow.BuildMonitorUi(
                 surface,
                 new MessageMonitorSnapshot(
                     diagnosticsEnabled: true,
                     capacity: 100,
-                    entries: Array.Empty<MessageMonitorEntry>()
-                )
+                    entries: entries
+                ),
+                new MessageMonitorViewState(selectedEntryIndex: showSelectedDetails ? 1 : 0),
+                onRefresh: () => { },
+                onCopyExport: _ => { },
+                componentEntries: components,
+                onEnterLiveMode: () => { }
             );
+
+            // The hidden capture host never receives the native docked-window event that makes
+            // nested ScrollViews paint their content. Their viewports lay out, but an offscreen
+            // panel render produces blank bodies. Keep the shipped rows and detail cards intact,
+            // and host them in equivalent clipped containers for this static documentation frame.
+            // The Flow Graph only has a top-level ScrollView and does not need this accommodation.
+            ReplaceNestedScrollViewForCapture(
+                surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName)
+            );
+            VisualElement detailsPane = surface.Q<VisualElement>(
+                DxMessagingMessageMonitorWindow.DetailsPaneName
+            );
+            ReplaceNestedScrollViewForCapture(detailsPane?.Query<ScrollView>().First());
+            if (showSelectedDetails)
+            {
+                Foldout stack = surface.Q<Foldout>(
+                    DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
+                );
+                if (stack == null)
+                {
+                    throw new InvalidOperationException(
+                        "The selected documentation message must expose its stack trace."
+                    );
+                }
+                stack.value = true;
+            }
+
             // Window roots normally flex to their dock. Pin the requested viewport or the
             // surface grows to the capture canvas instead of retaining documentation dimensions.
             surface.style.flexGrow = 0;
@@ -584,12 +879,119 @@ namespace DxMessaging.Tests.Editor
             return surface;
         }
 
-        private static EditorSurfaceCaptureResult CaptureFlowGraph(string stagingDirectory)
+        private static void ReplaceNestedScrollViewForCapture(ScrollView scrollView)
         {
+            if (scrollView?.parent == null)
+            {
+                throw new InvalidOperationException(
+                    "The documentation Monitor must expose each expected nested scroll body."
+                );
+            }
+
+            VisualElement parent = scrollView.parent;
+            int index = parent.IndexOf(scrollView);
+            VisualElement clippedContent = new();
+            clippedContent.style.flexGrow = 1;
+            clippedContent.style.flexShrink = 1;
+            clippedContent.style.minHeight = 0;
+            clippedContent.style.overflow = Overflow.Hidden;
+            while (scrollView.contentContainer.childCount > 0)
+            {
+                VisualElement child = scrollView.contentContainer[0];
+                child.RemoveFromHierarchy();
+                clippedContent.Add(child);
+            }
+
+            scrollView.RemoveFromHierarchy();
+            parent.Insert(index, clippedContent);
+        }
+
+        private static EditorSurfaceCaptureResult CaptureFlowGraph(
+            string stagingDirectory,
+            DocumentationFlowGraphSelection selection
+        )
+        {
+            FlowGraphSnapshot snapshot = CreateFlowGraphSnapshot();
+            VisualElement surface = CreateFlowGraphSurface(snapshot, selection);
+            string fileName = selection switch
+            {
+                DocumentationFlowGraphSelection.None => FlowGraphFileName,
+                DocumentationFlowGraphSelection.Component => FlowGraphComponentSelectedFileName,
+                DocumentationFlowGraphSelection.Message => FlowGraphMessageSelectedFileName,
+                DocumentationFlowGraphSelection.Route => FlowGraphRouteSelectedFileName,
+                _ => throw new ArgumentOutOfRangeException(nameof(selection), selection, null),
+            };
+            int surfaceHeight = GetFlowGraphSurfaceHeight(selection);
+            return Capture(surface, 1280, surfaceHeight + 80, fileName, stagingDirectory);
+        }
+
+        private static VisualElement CreateFlowGraphSurface(
+            FlowGraphSnapshot snapshot,
+            DocumentationFlowGraphSelection selection
+        )
+        {
+            string selectedItemKey = selection switch
+            {
+                DocumentationFlowGraphSelection.None => string.Empty,
+                DocumentationFlowGraphSelection.Component =>
+                    DxMessagingFlowGraphWindow.CreateComponentSelectionKey(
+                        snapshot.ComponentNodes[0]
+                    ),
+                DocumentationFlowGraphSelection.Message =>
+                    DxMessagingFlowGraphWindow.CreateMessageSelectionKey(snapshot.MessageNodes[0]),
+                DocumentationFlowGraphSelection.Route =>
+                    DxMessagingFlowGraphWindow.CreateEdgeSelectionKey(snapshot.Edges[0]),
+                _ => throw new ArgumentOutOfRangeException(nameof(selection), selection, null),
+            };
+            VisualElement surface = new();
+            surface.style.width = 1200;
+            surface.style.height = GetFlowGraphSurfaceHeight(selection);
+            DxMessagingFlowGraphWindow.BuildGraphUi(
+                surface,
+                snapshot,
+                new FlowGraphViewState(selectedItemKey: selectedItemKey),
+                onRefresh: () => { },
+                onCopyExport: _ => { },
+                onSelectionChanged: _ => { }
+            );
+            if (selection != DocumentationFlowGraphSelection.None)
+            {
+                Foldout evidence = surface.Q<Foldout>(
+                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
+                );
+                if (evidence == null)
+                {
+                    throw new InvalidOperationException(
+                        $"The {selection} documentation selection must expose its evidence."
+                    );
+                }
+                evidence.value = true;
+            }
+            surface.style.flexGrow = 0;
+            surface.style.flexShrink = 0;
+            return surface;
+        }
+
+        private static int GetFlowGraphSurfaceHeight(DocumentationFlowGraphSelection selection)
+        {
+            return selection switch
+            {
+                DocumentationFlowGraphSelection.None => 800,
+                DocumentationFlowGraphSelection.Message => 1100,
+                DocumentationFlowGraphSelection.Component => 1200,
+                DocumentationFlowGraphSelection.Route => 1300,
+                _ => throw new ArgumentOutOfRangeException(nameof(selection), selection, null),
+            };
+        }
+
+        private static FlowGraphSnapshot CreateFlowGraphSnapshot()
+        {
+            const string playerId = "component:player";
+            const string hudId = "component:hud";
             FlowGraphComponentNode[] components =
             {
                 new(
-                    "component:player",
+                    playerId,
                     "Arena/Player",
                     "PlayerMessagingComponent",
                     activeInHierarchy: true,
@@ -599,7 +1001,7 @@ namespace DxMessaging.Tests.Editor
                     localMessageCount: 3
                 ),
                 new(
-                    "component:hud",
+                    hudId,
                     "UI/HUD",
                     "HudMessagingComponent",
                     activeInHierarchy: true,
@@ -612,68 +1014,147 @@ namespace DxMessaging.Tests.Editor
             FlowGraphMessageNode[] messages =
             {
                 new(
-                    "PlayerDamaged",
+                    "Gameplay.Messages.PlayerDamaged",
                     2,
                     18,
                     recentGlobalEmissionCount: 6,
-                    recentTracedDeliveryCount: 6
+                    recentLocalMessageCount: 3,
+                    recentTracedDeliveryCount: 6,
+                    messageKindName: "TARGETED",
+                    recentEmissionSites: new[]
+                    {
+                        "Gameplay.Combat.DamageSystem.EmitPlayerDamaged (DamageSystem.cs:84)",
+                    },
+                    recentContexts: new[] { "Arena/Player" },
+                    recentContextComponentIds: new Dictionary<string, string>
+                    {
+                        ["Arena/Player"] = playerId,
+                    }
                 ),
                 new(
-                    "ScoreChanged",
+                    "Gameplay.Messages.ScoreChanged",
                     2,
                     15,
                     recentGlobalEmissionCount: 5,
-                    recentTracedDeliveryCount: 5
+                    recentTracedDeliveryCount: 5,
+                    messageKindName: "UNTARGETED",
+                    recentEmissionSites: new[]
+                    {
+                        "Gameplay.Scoring.ScoreSystem.EmitScoreChanged (ScoreSystem.cs:51)",
+                    }
                 ),
             };
             FlowGraphEdge[] edges =
             {
                 new(
-                    "PlayerDamaged",
-                    "component:player",
+                    messages[0].MessageTypeName,
+                    playerId,
                     "Arena/Player",
                     "Targeted",
                     registrationCount: 1,
                     callCount: 10,
                     recentTracedDeliveryCount: 4,
-                    context: "Arena/Player"
+                    context: "Arena/Player",
+                    recentEmissionSites: messages[0].RecentEmissionSites,
+                    contextId: 1201
                 ),
                 new(
-                    "PlayerDamaged",
-                    "component:hud",
+                    messages[0].MessageTypeName,
+                    hudId,
                     "UI/HUD",
                     "Broadcast",
                     registrationCount: 1,
                     callCount: 8,
-                    recentTracedDeliveryCount: 2
+                    recentTracedDeliveryCount: 2,
+                    recentEmissionSites: messages[0].RecentEmissionSites
                 ),
                 new(
-                    "ScoreChanged",
-                    "component:player",
+                    messages[1].MessageTypeName,
+                    playerId,
                     "Arena/Player",
                     "Untargeted",
                     registrationCount: 1,
                     callCount: 8,
-                    recentTracedDeliveryCount: 3
+                    recentTracedDeliveryCount: 3,
+                    recentEmissionSites: messages[1].RecentEmissionSites
                 ),
                 new(
-                    "ScoreChanged",
-                    "component:hud",
+                    messages[1].MessageTypeName,
+                    hudId,
                     "UI/HUD",
                     "Untargeted",
                     registrationCount: 1,
                     callCount: 7,
-                    recentTracedDeliveryCount: 2
+                    recentTracedDeliveryCount: 2,
+                    recentEmissionSites: messages[1].RecentEmissionSites
                 ),
             };
-            FlowGraphSnapshot snapshot = new(components, messages, edges, Array.Empty<string>());
-            VisualElement surface = new();
-            surface.style.width = 1200;
-            surface.style.height = 800;
-            DxMessagingFlowGraphWindow.BuildGraphUi(surface, snapshot);
-            surface.style.flexGrow = 0;
-            surface.style.flexShrink = 0;
-            return Capture(surface, 1280, 880, FlowGraphFileName, stagingDirectory);
+            FlowGraphTracePath[] tracePaths =
+            {
+                new(
+                    messages[0].MessageTypeName,
+                    "Arena/Player",
+                    playerId,
+                    "Arena/Player",
+                    "Targeted",
+                    recentTracedDeliveryCount: 4,
+                    traceIds: new long[] { 1034, 1037, 1042 },
+                    contextId: 1201
+                ),
+                new(
+                    messages[0].MessageTypeName,
+                    "Arena/WaveDirector",
+                    hudId,
+                    "UI/HUD",
+                    "Broadcast",
+                    recentTracedDeliveryCount: 2,
+                    traceIds: new long[] { 1035, 1041 }
+                ),
+                new(
+                    messages[1].MessageTypeName,
+                    string.Empty,
+                    playerId,
+                    "Arena/Player",
+                    "Untargeted",
+                    recentTracedDeliveryCount: 3,
+                    traceIds: new long[] { 1036, 1038, 1040 }
+                ),
+                new(
+                    messages[1].MessageTypeName,
+                    string.Empty,
+                    hudId,
+                    "UI/HUD",
+                    "Untargeted",
+                    recentTracedDeliveryCount: 2,
+                    traceIds: new long[] { 1039, 1040 }
+                ),
+            };
+            return new FlowGraphSnapshot(
+                components,
+                messages,
+                edges,
+                tracePaths,
+                Array.Empty<string>()
+            );
+        }
+
+        private static void AssertFlowGraphDetailsTitle(
+            VisualElement surface,
+            string expectedText,
+            string selectionDescription
+        )
+        {
+            Label title = surface.Q<Label>(DxMessagingFlowGraphWindow.DetailsTitleLabelName);
+            Assert.That(
+                title,
+                Is.Not.Null,
+                $"The selected {selectionDescription} must render a Flow Graph details pane."
+            );
+            Assert.That(
+                title.text,
+                Does.Contain(expectedText),
+                $"The {selectionDescription} details title must identify the selected graph item."
+            );
         }
 
         private static EditorSurfaceCaptureResult Capture(
@@ -690,6 +1171,14 @@ namespace DxMessaging.Tests.Editor
                 canvasHeight,
                 Path.Combine(stagingDirectory, fileName)
             );
+        }
+
+        private enum DocumentationFlowGraphSelection
+        {
+            None,
+            Component,
+            Message,
+            Route,
         }
     }
 

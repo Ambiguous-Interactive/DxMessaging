@@ -2,6 +2,7 @@ namespace DxMessaging.Editor.CustomEditors
 {
 #if UNITY_EDITOR
     using System;
+    using System.Collections.Generic;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Analyzers;
     using UnityEngine;
@@ -55,7 +56,7 @@ namespace DxMessaging.Editor.CustomEditors
                 case MessageAwareComponentInspectorStateKind.IgnoredType:
                     PopulateInfo(
                         root,
-                        "Base-call check ignored",
+                        "DXMSG008: Base-call check ignored",
                         $"{state.FullName} is excluded from the DxMessaging base-call check.",
                         InfoColor
                     );
@@ -128,7 +129,7 @@ namespace DxMessaging.Editor.CustomEditors
                 CreateLabel(
                     TitleLabelName,
                     TitleClassName,
-                    "Missing MessageAwareComponent base calls",
+                    CreateWarningTitle(state.Entry),
                     bold: true
                 )
             );
@@ -169,6 +170,28 @@ namespace DxMessaging.Editor.CustomEditors
                     state
                 )
             );
+        }
+
+        private static string CreateWarningTitle(BaseCallReportEntry entry)
+        {
+            const string title = "Missing MessageAwareComponent base calls";
+            if (entry?.diagnosticIds == null || entry.diagnosticIds.Count == 0)
+            {
+                return title;
+            }
+
+            SortedSet<string> diagnosticIds = new(StringComparer.Ordinal);
+            foreach (string diagnosticId in entry.diagnosticIds)
+            {
+                if (!string.IsNullOrWhiteSpace(diagnosticId))
+                {
+                    diagnosticIds.Add(diagnosticId.Trim());
+                }
+            }
+
+            return diagnosticIds.Count == 0
+                ? title
+                : string.Join(" / ", diagnosticIds) + ": " + title;
         }
 
         private static void ConfigurePanel(VisualElement root, Color borderColor)

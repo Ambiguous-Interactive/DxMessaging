@@ -8,7 +8,7 @@ the capture boundary.
 ## Automated capture
 
 `EditorToolingDocumentationCaptureTests.CaptureAllPublishedEditorTooling` builds the
-real shipped UI trees with deterministic sample data and renders all nine images in one
+real shipped UI trees with deterministic sample data and renders all 13 images in one
 explicit operation. Run that test through Unity MCP in a graphics-enabled Editor. The
 ordinary `CaptureInventoryNamesEveryPublishedAutomatedSurfaceExactlyOnce` test keeps
 the output inventory covered in normal CI without rewriting tracked documentation.
@@ -19,12 +19,13 @@ The writer uses `EditorSurfaceCapture` and follows this sequence:
    surfaces. Do not use prototype UXML or screenshot-only copies.
 1. Show the tracked `HideAndDontSave` capture host as a popup. Popup mode supplies an
    attached panel without drawing the host's dock tab into the render target.
-1. Settle UI Toolkit layout, repaint the panel, and render into a temporary linear
-   `RenderTexture` with `GL.sRGBWrite` disabled.
+1. Settle UI Toolkit layout, then repaint and render the panel twice into a temporary
+   linear `RenderTexture` with `GL.sRGBWrite` disabled. The second pass paints text and
+   scroll content realized by the first pass.
 1. Read only the package surface's laid-out bounds into an RGB24 `Texture2D` and require
    PNG color type 2.
 1. Stage every image under `Temp/`. Copy the complete set into this directory only
-   after all nine renders pass. If replacement fails, restore every prior image.
+   after all 13 renders pass. If replacement fails, restore every prior image.
 1. Restore render state and destroy the textures, window, settings object, and hidden
    component host on both success and failure.
 
@@ -38,22 +39,32 @@ All images were generated and visually reviewed on 2026-08-27 on the configured 
 host with Unity 6000.4.6f1 in Pro/dark skin. Host OS, skin, and Unity version are
 capture metadata, not acceptance gates. Every file is RGB24 PNG color type 2.
 
-| File                          | Package-owned subject                                   | Size     |
-| ----------------------------- | ------------------------------------------------------- | -------- |
-| `dxmsg006-overlay.png`        | Missing `Awake` base-call warning and actions           | 720x139  |
-| `dxmsg007-overlay.png`        | Explicitly hidden `OnEnable` warning and actions        | 720x139  |
-| `dxmsg009-overlay.png`        | Implicitly hidden `OnEnable` warning and actions        | 720x139  |
-| `dxmsg010-overlay.png`        | Broken transitive `OnEnable` chain warning and actions  | 720x139  |
-| `inspector-ignored.png`       | Ignored-type information state and **Stop ignoring**    | 720x88   |
-| `inspector-subscriptions.png` | Edit-mode **Message subscriptions** state               | 720x86   |
-| `project-settings-panel.png`  | All seven current DxMessaging Project Settings controls | 720x600  |
-| `message-monitor.png`         | Snapshot Monitor ready-state with diagnostics enabled   | 1120x520 |
-| `flow-graph.png`              | Two-message, two-receiver, four-route topology          | 1200x800 |
+| File                                | Package-owned subject                                   | Size      |
+| ----------------------------------- | ------------------------------------------------------- | --------- |
+| `dxmsg006-overlay.png`              | DXMSG006 missing `Awake` base call                      | 720x139   |
+| `dxmsg007-overlay.png`              | DXMSG007 explicit `OnEnable` hide                       | 720x139   |
+| `dxmsg008-overlay.png`              | DXMSG008 opt-out state and **Stop ignoring**            | 720x88    |
+| `dxmsg009-overlay.png`              | DXMSG009 implicit `OnDisable` hide                      | 720x139   |
+| `dxmsg010-overlay.png`              | DXMSG010 broken transitive `OnDestroy` chain            | 720x154   |
+| `inspector-subscriptions.png`       | Edit-mode **Message subscriptions** state               | 720x86    |
+| `project-settings-panel.png`        | All seven current DxMessaging Project Settings controls | 720x600   |
+| `message-monitor.png`               | Three route kinds with newest-message details           | 1120x740  |
+| `message-monitor-selected.png`      | Selected Broadcast row with expanded stack              | 1120x860  |
+| `flow-graph.png`                    | Two-message, two-receiver, four-route topology          | 1200x800  |
+| `flow-graph-message-selected.png`   | Selected message/source node and evidence               | 1200x1100 |
+| `flow-graph-component-selected.png` | Selected receiver/destination node and evidence         | 1200x1200 |
+| `flow-graph-route-selected.png`     | Selected route and evidence                             | 1200x1300 |
 
-DXMSG007 and DXMSG009 are visually identical because the Editor's IL scanner cannot
-distinguish an explicit `new` hide from an implicit hide. The compile-time analyzer
-remains authoritative for the diagnostic ID. DXMSG010 uses the same warning layout but
-represents a broken parent chain.
+The current catalog has no DXMSG001. DXMSG002 through DXMSG005 are compiler-only
+source-generator diagnostics and do not own an Inspector or EditorWindow surface to
+capture. The Inspector gallery starts at DXMSG006 and includes the DXMSG008 opt-out
+state. Diagnostic IDs appear in the shipped overlay title, and the ordinary capture
+contract rejects byte-identical diagnostic images.
+
+The Message Monitor capture uses the shipped rows and detail cards. Its static capture
+surface replaces the two nested `ScrollView` wrappers with clipped containers because
+an offscreen popup does not receive the native docked-window geometry event that makes
+those nested bodies paint. The production window keeps its interactive scroll views.
 
 ## Review contract
 

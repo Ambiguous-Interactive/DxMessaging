@@ -146,15 +146,20 @@ namespace DxMessaging.Tests.Editor
                 // Three steps, in this order. Settling layout resolves deferred text, scroll,
                 // and wrapping geometry across as many passes as the tree needs. Repaint walks
                 // the settled tree and records the draw commands, and Render flushes those
-                // commands to the active target. Skipping the repaint yields a valid PNG of a
-                // blank frame, which is why the tests count distinct colors.
+                // commands to the active target. Nested ScrollViews realize their content during
+                // the first repaint, so a second repaint/render cycle is required to draw those
+                // newly realized rows. Skipping either repaint can yield a valid PNG with blank
+                // scroll bodies, which is why the tests inspect the rendered content too.
                 EditorWindowTestUtility.SettleLayout(host);
-                InvokeInheritedPanelMethod(
-                    panel,
-                    "Repaint",
-                    new object[] { new Event { type = EventType.Repaint } }
-                );
-                InvokeInheritedPanelMethod(panel, "Render", Array.Empty<object>());
+                for (int repaintPass = 0; repaintPass < 2; repaintPass++)
+                {
+                    InvokeInheritedPanelMethod(
+                        panel,
+                        "Repaint",
+                        new object[] { new Event { type = EventType.Repaint } }
+                    );
+                    InvokeInheritedPanelMethod(panel, "Render", Array.Empty<object>());
+                }
 
                 // Read back only the surface, not the whole canvas. Cropping to the surface's
                 // own laid-out rect gives the manifest its tight frame: the padding in the image
