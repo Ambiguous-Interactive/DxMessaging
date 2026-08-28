@@ -17,8 +17,8 @@ namespace DxMessaging.Tests.Editor
     /// The documentation screenshot manifest bans Unity's internal screen-pixel reader, native
     /// window capture, and programmatic skin switching, because all three read whatever the host
     /// desktop happens to be showing. This helper never looks outside its own render target: it
-    /// hosts the real shipped view in a hidden window, drives that window's panel through one
-    /// layout and one repaint, and reads back only the temporary target it created. The blocked
+    /// hosts the real shipped view in a hidden window, settles that window's panel layout, drives
+    /// one repaint, and reads back only the temporary target it created. The blocked
     /// identifiers are listed in scripts/__tests__/design-system-dumps.test.js, which fails on
     /// any tracked source that names one.
     ///
@@ -106,10 +106,11 @@ namespace DxMessaging.Tests.Editor
                 host.minSize = new Vector2(canvasWidth, canvasHeight);
                 host.position = new Rect(0f, 0f, canvasWidth, canvasHeight);
                 // A window only gets a panel once it is shown, and a panel is what
-                // ValidateLayout and Render operate on. Showing it does not make the capture
-                // read the desktop: the pixels still come from the render target below, never
-                // from the screen.
-                EditorWindowTestUtility.ShowWindow(host);
+                // ValidateLayout and Render operate on. Popup mode avoids painting a dock tab
+                // into that panel on macOS. Showing it does not make the capture read the
+                // desktop: the pixels still come from the render target below, never from the
+                // screen.
+                EditorWindowTestUtility.ShowPopupWindow(host);
 
                 VisualElement root = host.rootVisualElement;
                 root.style.width = canvasWidth;
@@ -142,24 +143,28 @@ namespace DxMessaging.Tests.Editor
                 RenderTexture.active = target;
                 GL.Clear(true, true, Color.clear);
 
-                // Three steps, in this order. ValidateLayout resolves the tree's geometry,
-                // Repaint walks it and records the draw commands, and Render flushes those
-                // commands to whatever target is active. Skipping the repaint yields a valid
-                // PNG of a blank frame, which is why the tests count distinct colors.
-                InvokeInheritedPanelMethod(panel, "ValidateLayout", Array.Empty<object>());
-                InvokeInheritedPanelMethod(
-                    panel,
-                    "Repaint",
-                    new object[] { new Event { type = EventType.Repaint } }
-                );
-                InvokeInheritedPanelMethod(panel, "Render", Array.Empty<object>());
+                // Three steps, in this order. Settling layout resolves deferred text, scroll,
+                // and wrapping geometry across as many passes as the tree needs. Repaint walks
+                // the settled tree and records the draw commands, and Render flushes those
+                // commands to the active target. Nested ScrollViews realize their content during
+                // the first repaint, and newly introduced glyphs can extend the dynamic font
+                // atlas during the second. A third repaint/render cycle draws both settled sets.
+                // Stopping earlier can yield a valid PNG with blank scroll bodies or partially
+                // missing labels, which is why the tests inspect the rendered content too.
+                EditorWindowTestUtility.SettleLayout(host);
+                for (int repaintPass = 0; repaintPass < 3; repaintPass++)
+                {
+                    InvokeInheritedPanelMethod(
+                        panel,
+                        "Repaint",
+                        new object[] { new Event { type = EventType.Repaint } }
+                    );
+                    InvokeInheritedPanelMethod(panel, "Render", Array.Empty<object>());
+                }
 
-                // Read back only the surface, not the whole canvas. The host window draws its
-                // own tab strip at the top of the panel, so a full-canvas readback frames the
-                // test host's chrome and pushes the surface underneath it. Cropping to the
-                // surface's own laid-out rect is also what gives the manifest its tight frame:
-                // the padding in the image comes from the surface's styling, not from slack in
-                // the canvas.
+                // Read back only the surface, not the whole canvas. Cropping to the surface's
+                // own laid-out rect gives the manifest its tight frame: the padding in the image
+                // comes from the surface's styling, not from slack in the canvas.
                 RectInt crop = ResolveCropRect(content, canvasWidth, canvasHeight);
                 readback = new Texture2D(crop.width, crop.height, TextureFormat.RGB24, false, true);
                 readback.ReadPixels(new Rect(crop.x, crop.y, crop.width, crop.height), 0, 0, false);
@@ -354,8 +359,7 @@ namespace DxMessaging.Tests.Editor
         internal int DistinctColorCount { get; }
 
         /// <summary>
-        /// The manifest requires Personal/light captures and bans switching skins to get there,
-        /// so every capture records the skin it was taken under and the reviewer checks it.
+        /// Records the host skin as artifact metadata without changing the developer's preference.
         /// </summary>
         internal bool IsProSkin { get; }
 

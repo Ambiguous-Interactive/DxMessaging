@@ -94,6 +94,8 @@ Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect the
 default global bus. The window has two modes, and a badge in its toolbar always
 says which one is showing:
 
+![Message Monitor snapshot with Untargeted, Targeted, and Broadcast traffic](../images/inspector-overlay/message-monitor.png)
+
 - **SNAPSHOT** reads the buffered bus history as of the last **Refresh**. One row
   per emission, newest first, nothing merged.
 - **LIVE** streams new emissions as they happen. Repeats of the same message and
@@ -109,6 +111,8 @@ Selecting a row fills the detail pane below the log; the stack trace lives there
 behind a disclosure that starts closed, so a long call stack never buries the log
 itself. When emission-site capture is off the disclosure starts open instead, says
 so, and offers the switch -- see [Emission-Site Capture](#emission-site-capture).
+
+![Message Monitor with a Broadcast message selected and its captured stack expanded](../images/inspector-overlay/message-monitor-selected.png)
 
 The detail pane links out to what a row stands for:
 
@@ -152,6 +156,12 @@ The active filter strip shows whether the current filter is typed or plain text
 and provides a Clear action without changing JSON export. **Copy JSON** copies
 exactly the entries the log is showing, chips included.
 
+![Message Monitor filtered to Broadcast EnemySpawned traffic with two active typed facets](../images/inspector-overlay/message-monitor-filtered.png)
+
+This example combines `type:Enemy context:WaveDirector` with the Untargeted and
+Targeted chips disabled. The active-filter strip keeps both parsed terms visible,
+and the log and JSON export contain only the remaining Broadcast row.
+
 **Breakdown** is a collapsed disclosure holding one clickable pill per message
 type and per context in the visible log. Each pill shows its share of the log and
 applies the filter that isolates it: message-type pills apply a `type:` filter,
@@ -163,6 +173,8 @@ pill, and the contexts or message types it covers, are in its tooltip.
 listener counts, enabled/diagnostics listener counts, registrations, call counts,
 local message counts, provider status, and provider warnings such as a missing
 serialized provider or a provider that resolves no bus.
+
+![Message Monitor with Component Diagnostics expanded for two loaded components](../images/inspector-overlay/message-monitor-components.png)
 
 If the active global bus is not the default concrete DxMessaging `MessageBus`,
 the message list reports that it is unavailable. Component diagnostics still use
@@ -181,6 +193,17 @@ feathered curve accepts clicks through a generous hit corridor. Select a route
 near either endpoint or between crossings; the selected path stays bright while
 unrelated paths dim. Nodes use named metric rows instead of compact `+N`
 summaries.
+
+![Flow Graph with two messages, two receivers, and four routes](../images/inspector-overlay/flow-graph.png)
+
+Select the left message/source node, right destination node, or connecting route
+to open the corresponding evidence pane:
+
+![Flow Graph with the PlayerDamaged message source selected](../images/inspector-overlay/flow-graph-message-selected.png)
+
+![Flow Graph with the Player receiver destination selected](../images/inspector-overlay/flow-graph-component-selected.png)
+
+![Flow Graph with the PlayerDamaged to Player route selected](../images/inspector-overlay/flow-graph-route-selected.png)
 
 Broadcast nodes identify source scope, targeted nodes identify target scope,
 and untargeted nodes identify the global bus. A type with more than one visible
@@ -233,7 +256,6 @@ filtered graph; ambiguous, destroyed, or filtered-out contexts remain text.
 Message details also provide a collapsed **Route roster**; expand it to see each
 receiver and stable receiver ID, exact registration subtype, route context, and
 context ID, then select any exact route. Receiver and context IDs distinguish
-routes whose hierarchy text is otherwise identical.
 The first eight rows appear immediately; larger rosters keep the remainder
 behind a nested disclosure. A selected route already shows that relationship above its
 evidence, so its diagnostics omit redundant aggregate relationship records. Use

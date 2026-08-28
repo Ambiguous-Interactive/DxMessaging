@@ -1,281 +1,97 @@
-# Inspector Overlay Screenshot Manifest
+# Editor Tooling Screenshot Manifest
 
-This directory holds the screenshots referenced from
-[`docs/guides/inspector-overlay.md`](../../guides/inspector-overlay.md) and the
-inspector-overlay sections of
-[`docs/reference/analyzers.md`](../../reference/analyzers.md).
+This directory holds the generated screenshots used by the Inspector, diagnostics,
+and analyzer documentation. The images show package-owned UI or a labeled compiler
+diagnostic specimen built from the published diagnostic text and triggering C#.
+Native Unity window chrome, menus, Hierarchy panes, project names, and desktop content
+are outside the capture boundary.
 
-Every entry below has a PNG asset so `mkdocs build --strict` produces no image
-warnings while final captures are pending. These PNGs are draft/stale capture
-assets, not final publishable screenshots. Each entry tells the screenshot
-author exactly what to capture (Unity version, scene state, component, expected
-UI annotations, recommended dimensions). When you replace a draft PNG with the
-final screenshot at the same filename, the docs pick up the artwork
-automatically.
+## Automated capture
 
-## Conventions
+`EditorToolingDocumentationCaptureTests.CaptureAllPublishedEditorTooling` builds the
+real shipped UI trees and labeled compiler specimens with deterministic sample data,
+then renders all 18 images in one explicit operation. Run that test through Unity MCP
+in a graphics-enabled Editor. The
+ordinary `CaptureInventoryNamesEveryPublishedAutomatedSurfaceExactlyOnce` test keeps
+the output inventory covered in normal CI without rewriting tracked documentation.
 
-- **Format:** PNG (web-safe, 24-bit). No animated GIFs.
-- **Width:** Aim for 960px-1200px for full-panel shots; 480px-720px for
-  cropped warning-panel shots. Retina-quality (2x) renders are welcome but make
-  sure the file size stays under 500 KB after compression.
-- **Theme:** Capture using Unity's **Personal** (light) editor theme so the
-  Inspector panel background matches the Material for MkDocs default site theme.
-  If you also want a Pro (dark) variant, suffix it `-dark.png` and add a
-  separate manifest entry; the docs do not currently consume dark variants.
-- **Cropping:** Trim the OS chrome (Windows title bar, macOS traffic
-  lights). Keep at least 16px of editor padding around the subject so the
-  warning panel does not look squished against the image edge.
-- **Annotations:** Avoid burned-in arrows or call-outs unless explicitly
-  requested by the capture entry. The docs already explain each control
-  in prose; redundant annotations clutter the screenshot.
-- **Privacy:** Make sure no user-specific paths, Unity license badges, or
-  third-party asset thumbnails leak into the frame.
+The writer uses `EditorSurfaceCapture` and follows this sequence:
 
-## Automation status
+1. Build the shipped Inspector, Project Settings, Message Monitor, and Flow Graph
+   surfaces, plus the three labeled compiler diagnostic specimens. Do not use
+   prototype UXML or screenshot-only copies of package tooling.
+1. Show the tracked `HideAndDontSave` capture host as a popup. Popup mode supplies an
+   attached panel without drawing the host's dock tab into the render target.
+1. Settle UI Toolkit layout, then repaint and render the panel three times into a
+   temporary linear `RenderTexture` with `GL.sRGBWrite` disabled. The later passes
+   paint scroll content and dynamic-font glyphs realized by the earlier passes.
+1. Read only the package surface's laid-out bounds into an RGB24 `Texture2D` and require
+   PNG color type 2.
+1. Stage every image under `Temp/`. Copy the complete set into this directory only
+   after all 18 renders pass. If replacement fails, restore every prior image.
+1. Restore render state and destroy the textures, window, settings object, and hidden
+   component host on both success and failure.
 
-Unity MCP scene/camera captures are suitable for scene-layout checks, but the
-current host setup has not yet proven a complete acceptance-ready editor-window
-screenshot path for these docs targets. On 2026-07-03,
-`UnityEditorInternal.InternalEditorUtility.ReadScreenPixel` probes captured the
-visible VS Code desktop instead of Unity editor windows, even when MCP-reported
-Unity window coordinates were used. A later synchronous Win32/GDI `PrintWindow`
-probe captured a separate Unity utility window correctly after vertically
-flipping the `GetDIBits` rows. The same synchronous path captured the actual
-Project Settings window with correct content when rows used their original
-order, but the host editor stayed in Pro/dark skin and the image still included
-OS chrome. A live editor-skin switch later changed the host to
-Personal/light-theme asynchronously, but the follow-up Project Settings capture
-timed out without writing an artifact and left Unity MCP unresponsive. The
-delayed callback attempt also stalled, and the path has not yet been proven
-against the Inspector or menu cascade targets. Do not overwrite the tracked
-Inspector overlay PNGs until the actual target artifact is Personal/light-theme,
-cropped per this manifest, visually inspected, and Unity has a clean
-post-capture console and editor-window list.
+The automation never reads desktop pixels, invokes native window capture, or changes
+the Editor skin. The source guard in
+`scripts/__tests__/design-system-dumps.test.js` keeps those primitives blocked.
 
-On 2026-07-31, that experiment became a retained helper:
-`Tests/Editor/EditorSurfaceCapture.cs`, covered by
-`Tests/Editor/EditorSurfaceCaptureTests.cs`. Use it rather than re-deriving the
-method. It renders a package-owned surface offscreen and writes a cropped 24-bit
-PNG:
+## Published capture set
 
-1. Host the real shipped view in a `HideAndDontSave` window from
-   `EditorWindowTestUtility`. The window must be shown, because a window that was
-   never shown has no panel and there is nothing to lay out or render.
-1. Create a linear `RenderTexture`, make it active, and disable `GL.sRGBWrite`.
-   In this linear-color project that pairing is what matches the real panel
-   colors.
-1. Drive the panel through `ValidateLayout()`, then `Repaint(Event)` with
-   `EventType.Repaint`, then `Render()`. All three are inherited, so reflect them
-   with instance, public, and non-public binding flags and without
-   `DeclaredOnly`. Skipping the repaint step yields a valid PNG of a blank frame.
-1. Read back the surface's own `worldBound`, not the whole canvas. The host
-   window draws a tab strip at the top of its panel, so a full-canvas readback
-   frames that chrome and pushes the surface underneath it. Cropping is also
-   what gives each image the tight frame the capture list asks for. Render-target
-   rows start at the bottom while UI Toolkit measures from the top, so the
-   vertical origin is `canvasHeight - worldBound.yMax`.
-1. Read into an RGB24 `Texture2D` and verify PNG color type 2 (truecolor without
-   alpha) before writing. Earlier staging proofs were RGBA and did not satisfy
-   this manifest.
-1. Restore the active render target and `GL.sRGBWrite`, and destroy the window
-   and both textures, including on the failure path.
+All images were generated and visually reviewed on 2026-08-28 on the configured macOS
+host with Unity 6000.4.6f1 in Pro/dark skin. Host OS, skin, and Unity version are
+capture metadata, not acceptance gates. Every file is RGB24 PNG color type 2.
 
-The helper reports the skin and Unity version of every capture instead of
-changing them, and the tests count distinct colors so a blank frame fails rather
-than passing as a valid PNG.
+| File                                | Subject                                                 | Size      |
+| ----------------------------------- | ------------------------------------------------------- | --------- |
+| `dxmsg002-compiler-diagnostic.png`  | DXMSG002 error and its triggering C# declaration        | 900x440   |
+| `dxmsg003-compiler-diagnostic.png`  | DXMSG003 warning and its triggering C# declaration      | 900x440   |
+| `dxmsg004-compiler-diagnostic.png`  | DXMSG004 info and its triggering C# declaration         | 900x440   |
+| `dxmsg006-overlay.png`              | DXMSG006 missing `Awake` base call                      | 720x139   |
+| `dxmsg007-overlay.png`              | DXMSG007 explicit `OnEnable` hide                       | 720x139   |
+| `dxmsg008-overlay.png`              | DXMSG008 opt-out state and **Stop ignoring**            | 720x88    |
+| `dxmsg009-overlay.png`              | DXMSG009 implicit `OnDisable` hide                      | 720x139   |
+| `dxmsg010-overlay.png`              | DXMSG010 broken transitive `OnDestroy` chain            | 720x154   |
+| `inspector-subscriptions.png`       | Edit-mode **Message subscriptions** state               | 720x86    |
+| `project-settings-panel.png`        | All seven current DxMessaging Project Settings controls | 720x600   |
+| `message-monitor.png`               | Three route kinds with newest-message details           | 1120x740  |
+| `message-monitor-components.png`    | Expanded diagnostics for two loaded components          | 1120x1020 |
+| `message-monitor-filtered.png`      | Typed facets plus Broadcast-only route filtering        | 1120x820  |
+| `message-monitor-selected.png`      | Selected Broadcast row with expanded stack              | 1120x860  |
+| `flow-graph.png`                    | Two-message, two-receiver, four-route topology          | 1200x800  |
+| `flow-graph-message-selected.png`   | Selected message/source node and evidence               | 1200x1100 |
+| `flow-graph-component-selected.png` | Selected receiver/destination node and evidence         | 1200x1200 |
+| `flow-graph-route-selected.png`     | Selected route and evidence                             | 1200x1300 |
 
-Verified on 2026-07-31 against Unity 6000.4.6f1: eight capture tests pass, the
-full editor assembly is 557/0, the real `MessageAwareComponentInspectorView`
-renders to a clean 720x63 RGB24 crop with no window chrome and no clipping, the
-Console gains no entry from a capture, and the host is left with only its seven
-standard windows. Rendering the package-owned UI Toolkit view directly is also
-what avoids the
-`EditorGUIUtility.AddCursorRect called outside an editor OnGUI` diagnostic the
-2026-07-30 experiment hit: that came from driving a whole live Inspector with an
-IMGUI body, which the overlay crops do not need.
+The current catalog has no DXMSG001. DXMSG002 through DXMSG005 are compiler-only
+source-generator diagnostics and do not own an Inspector or EditorWindow surface.
+The DXMSG002 through DXMSG004 images are labeled documentation specimens that pair
+their exact output with triggering code without imitating Unity Console or IDE chrome.
+The Inspector gallery starts at DXMSG006 and includes the DXMSG008 opt-out state.
+Diagnostic IDs appear in the shipped overlay title, and the ordinary capture contract
+rejects byte-identical Inspector diagnostic images.
 
-Do not clear the Console to hide capture diagnostics or erase user logs; abort
-acceptance if a capture adds an error. Native menu cascades and combined
-Hierarchy/Inspector frames still require manual host capture or an explicit scope
-change, because they frame Unity chrome this helper deliberately never reads.
+The Message Monitor capture uses the shipped rows and detail cards. Its static capture
+surface replaces the two nested `ScrollView` wrappers with clipped containers because
+an offscreen popup does not receive the native docked-window geometry event that makes
+those nested bodies paint. The production window keeps its interactive scroll views.
 
-Do not switch editor skins as part of automation. Start from an editor that is
-already in Personal/light theme, record `EditorGUIUtility.isProSkin` and the
-`UserSkin` editor preference before capture, and abort if the editor is not
-already in the expected skin.
+## Review contract
 
-## Capture target: Unity 2022 LTS
+Inspect every refreshed image at native resolution before keeping it. Reject a set if
+any image has:
 
-Unless an entry explicitly says otherwise, capture in **Unity 2022.3 LTS** with
-the **Built-in render pipeline** and the DxMessaging package embedded under
-`Packages/com.wallstop-studios.dxmessaging`. This mirrors the package's primary
-supported configuration. If an entry calls out Unity 2021.3 explicitly, capture
-that one in 2021.3 so the package-owned editor path is represented.
+- clipped or missing text, controls, rows, nodes, borders, or scroll content;
+- capture-host tabs, native window chrome, duplicate windows, or prototype UI;
+- inconsistent theme classes or incomplete semantic borders;
+- user paths, project names, license data, third-party assets, or other sensitive data;
+- an alpha channel, a blank frame, or dimensions different from the table above.
 
-The warning-panel screenshots in this directory target DxMessaging's
-package-owned UI Toolkit inspector path. A `MessageAwareComponent` with a
-user-defined custom editor uses the header-hook IMGUI HelpBox path instead;
-that compatibility surface is documented in prose but is not currently a
-screenshot target.
+After capture, confirm the original scenes remain clean, the main stage is active, the
+selection is unchanged, the skin is unchanged, and no capture error was added to the
+Console. Do not clear existing Console entries as part of verification.
 
-## Capture list
-
-Each entry below corresponds to a `<filename>.png` asset already committed in
-this directory. Overwrite the draft PNG with the final captured screenshot at
-the same filename; the docs already reference the `.png` path.
-
-### `dxmsg009-overlay.png`
-
-The UI Toolkit Inspector warning panel illustrating DXMSG009 (implicit
-hide / missing modifier), drawn at the very top of a
-`MessageAwareComponent` subclass's Inspector. Capture this with a
-throwaway component that has no user-defined `[CustomEditor]`, so Unity
-selects DxMessaging's package-owned component editor instead of the
-custom-editor IMGUI header-hook path. The component should declare
-`private void OnEnable() {}` (missing both `override` and `new`), which
-triggers DXMSG009 at compile time. The panel title should be
-**Missing MessageAwareComponent base calls**. Its body should name the
-FQN and state that lifecycle methods do not chain to
-`MessageAwareComponent`; the method list should include `OnEnable`
-and its runtime consequence. The overlay text matches DXMSG006/007
-because the IL scanner classifies all three identically; see the
-analyzers reference for the caveat. Beneath the panel, capture both
-buttons: **Open Script** and **Ignore this type**. This image doubles as the generic
-"warning state" illustration used at the top of the inspector-overlay
-guide and the analyzers reference. Recommended frame: 720px wide, just
-the panel plus the two buttons plus 12px of padding. Unity 2022.3
-LTS, light theme.
-
-### `inspector-actions.png`
-
-A close-up of the warning-panel action row showing **Open Script** and
-**Ignore this type** side by side, with no other Inspector chrome in
-the frame. This is the "happy path" annotated reference image used in
-the guide's "Three Inspector actions" section. Capture only the two
-buttons plus ~6px padding above and below; roughly 480px wide.
-
-### `inspector-ignored.png`
-
-The UI Toolkit warning panel in its **info** state for a type that is
-currently in the project ignore list. Capture this with the package-owned
-component editor path. The body text reads `<FQN> is excluded from
-the DxMessaging base-call check.` The single button below it is
-**Stop ignoring**. To reproduce: pick a `MessageAwareComponent`
-subclass that actually emits a warning, then add its FQN to the ignore
-list in `Assets/Editor/DxMessagingSettings.asset` (or click "Ignore
-this type" once). The panel should use the info color rail, not the
-warning color rail. Recommended dimensions: 720px wide.
-
-### `project-settings-panel.png`
-
-The **Project Settings > Wallstop Studios > DxMessaging** page, captured as it currently
-renders. The provider exposes six controls across three sections (see
-`Editor/Settings/DxMessagingSettingsProvider.cs`):
-
-- **Diagnostics / Diagnostics Targets** -- `PropertyField` for the
-  `DiagnosticsTarget` flags enum (`Off`, `Editor`, `Runtime`, `All`).
-- **Diagnostics / Message Buffer Size** -- integer field. Default is
-  `IMessageBus.DefaultMessageBufferSize`.
-- **Editor Safety / Suppress Domain Reload Warning** -- boolean checkbox.
-- **Inspector Checks / Base-Call Check Enabled** -- boolean toggle.
-- **Inspector Checks / Use Console Bridge** -- boolean toggle.
-- **Inspector Checks / Ignored Base-Call Types** -- editable list of fully-qualified
-  `MessageAwareComponent` type names excluded from overlay/analyzer base-call
-  warnings.
-
-Capture the entire DxMessaging section of the Project Settings window
-plus the breadcrumb that shows "DxMessaging" is selected in the left
-sidebar. Recommended dimensions: 1024px-1200px wide. Unity 2022.3 LTS,
-light theme. Include the Ignored Base-Call Types list even if it is empty.
-
-Current asset status: the tracked PNG is a stale dark-theme capture of the old
-three-control page and does not show the ignored-types list. Recapture this image
-before treating the Inspector Overlay guide's screenshot set as publishable.
-
-### `tools-menu-rescan.png`
-
-The Unity menu bar dropdown showing **Tools > Wallstop Studios > DxMessaging > Rescan
-Base-Call Warnings**. Open the menu, hover over **DxMessaging** so the
-sub-menu is expanded with **Rescan Base-Call Warnings** highlighted.
-Crop to just the menu cascade plus a sliver of the editor window
-behind it for context. Recommended dimensions: 480px-640px wide.
-
-### `worked-example-before.png`
-
-The "before" screenshot for the guide's worked example: a
-`MessageAwareComponent` subclass named `HealthComponent` whose
-`OnEnable` override does not call `base.OnEnable()`, attached to an
-empty GameObject in the Hierarchy. The Inspector should show the
-warning panel at the top with a clear `OnEnable` callout in the missing-base
-list. Frame both the GameObject Hierarchy entry on the left and the
-Inspector pane on the right so the reader can see the offending
-component is selected. Recommended dimensions: 1100px-1200px wide.
-
-### `worked-example-after.png`
-
-The "after" screenshot for the worked example, captured from the same
-GameObject after the developer added the missing `base.OnEnable()`
-call and recompiled. The warning panel is gone -- the Inspector renders the
-component cleanly with no DxMessaging overlay present. Same framing
-as `worked-example-before.png` so the side-by-side comparison reads
-naturally. Recommended dimensions: 1100px-1200px wide.
-
-### `dxmsg006-overlay.png`
-
-Cropped UI Toolkit warning panel + buttons for a class that triggers
-DXMSG006 on `Awake`. Use a subclass like
-`MissingAwakeBase : MessageAwareComponent` with
-`protected override void Awake() { /* missing base.Awake() */ }` and no
-user-defined custom editor. Used in the analyzers reference page next to
-the DXMSG006 section. Recommended dimensions: 720px wide.
-
-### `dxmsg007-overlay.png`
-
-Cropped UI Toolkit warning panel + buttons for a class that triggers
-DXMSG007 by hiding `OnEnable` with `new`. Use a subclass like
-`HidesWithNew : MessageAwareComponent` with `new void OnEnable() {}` and
-no user-defined custom editor. The panel surfaces the same "lifecycle
-methods that do not chain" message -- DXMSG007 and DXMSG009 are visually
-indistinguishable in the overlay because the IL scanner classifies both
-as DXMSG007. The annotation in the reference page calls this out; the
-screenshot is just the panel. Recommended dimensions: 720px wide.
-
-### `dxmsg010-overlay.png`
-
-Cropped UI Toolkit warning panel + buttons for a class that triggers
-DXMSG010 via a broken transitive base-call chain. Set up two subclasses:
-a parent `BrokenIntermediate : MessageAwareComponent` with
-`protected override void OnEnable() { }` (no base call) and a child
-`LeafComponent : BrokenIntermediate` with
-`protected override void OnEnable() => base.OnEnable();`. Do not add a
-user-defined custom editor. Capture the Inspector for the **child**
-GameObject -- its override looks correct in isolation, but DXMSG010 fires
-because the chain dies on the parent. The panel surfaces the same
-missing-method list the overlay always shows. Recommended dimensions:
-720px wide.
-
-## When you replace a screenshot
-
-1. Save the captured PNG with the matching filename (e.g.
-   `dxmsg009-overlay.png`) inside this directory, overwriting the draft PNG
-   already present.
-1. Run `mkdocs build --strict` locally to confirm no link warnings
-   surface; the build should be silent because the docs already
-   reference the `.png` filename.
-1. Record the pre-capture and post-capture `EditorGUIUtility.isProSkin` and
-   `UserSkin` values. Do not rely on live skin switching to produce the required
-   Personal/light-theme artifact.
-1. Update the sibling `.meta` file's GUID if Unity regenerates it on
-   the next import. Every screenshot must have a matching `.meta`
-   file (this is a hard requirement of the project's Unity-asset
-   convention; see the existing `.meta` files in this directory for
-   the format).
-
-## Draft asset rationale
-
-The PNGs committed here keep `mkdocs build --strict` quiet on the markdown
-image references while the final Unity captures are still in progress. Replace
-each draft image with a matching Personal/light-theme capture at the same
-filename when the real artwork is ready; the docs already reference the `.png`
-paths.
+Native menu cascades and combined Hierarchy/Inspector frames are intentionally
+documented in prose rather than screenshots. They contain Unity-owned chrome and cannot
+be produced by the package's desktop-independent renderer. This keeps every published
+tooling image on the same repeatable, non-desktop capture path.

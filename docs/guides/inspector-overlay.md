@@ -14,10 +14,43 @@ manual rescan menu. For the full reference -- every diagnostic id,
 exact detection policy, suppression precedence, and Unity 2021 setup
 notes -- see [Roslyn Analyzers & Diagnostics](../reference/analyzers.md).
 
-**Screenshot status:** The images in this guide are draft/stale capture assets
-and are not final publishable screenshots yet. The screenshot manifest tracks
-the exact recapture requirements in
-[the inspector-overlay image README](../images/inspector-overlay/README.md).
+The current diagnostic catalog starts at `DXMSG002`; no `DXMSG001` is assigned.
+`DXMSG002` through `DXMSG005` are compiler and source-generator diagnostics, so
+they appear in Unity's Console or the IDE rather than in this Inspector overlay.
+The overlay covers `DXMSG006` through `DXMSG010`.
+
+## Compiler Diagnostics Before the Overlay
+
+| ID         | Severity | Trigger                                                        |
+| ---------- | -------- | -------------------------------------------------------------- |
+| `DXMSG001` | -        | Unassigned. The package does not emit this diagnostic.         |
+| `DXMSG002` | Error    | One type has more than one Dx message-shape attribute.         |
+| `DXMSG003` | Warning  | A generated nested type has a non-`partial` containing type.   |
+| `DXMSG004` | Info     | Companion suggestion to add `partial` to that containing type. |
+
+The following deterministic specimens pair the exact compiler output with the
+C# declaration that triggers it. They use the package capture theme so the text
+is readable and repeatable; they do not imitate Unity Console or IDE chrome.
+
+### DXMSG002: multiple message attributes
+
+![DXMSG002 compiler error and the C# declaration with two message attributes that triggers it](../images/inspector-overlay/dxmsg002-compiler-diagnostic.png)
+
+Choose exactly one of `DxBroadcastMessage`, `DxTargetedMessage`, or
+`DxUntargetedMessage` for each message type.
+
+### DXMSG003: non-partial containing type
+
+![DXMSG003 compiler warning and the nested message declaration that triggers it](../images/inspector-overlay/dxmsg003-compiler-diagnostic.png)
+
+### DXMSG004: add partial suggestion
+
+![DXMSG004 compiler information diagnostic and the nested message declaration that triggers it](../images/inspector-overlay/dxmsg004-compiler-diagnostic.png)
+
+`DXMSG003` and `DXMSG004` intentionally point at the same declaration. Add
+`partial` to every containing type to resolve both diagnostics. See the
+[analyzer reference](../reference/analyzers.md#dxmsg003-containing-type-must-be-partial-for-nested-generation)
+for complete fixes and edge cases.
 
 ## When a Warning Appears
 
@@ -60,11 +93,28 @@ subclasses keep their normal inspector body; the package injects the
 same warning data through Unity's component-header hook as an IMGUI
 HelpBox so the user's editor can stay in charge of its body.
 
-![Inspector overlay warning panel (DXMSG009 implicit-hide example) at the top of a MessageAwareComponent subclass Inspector](../images/inspector-overlay/dxmsg009-overlay.png)
+The title includes the contributing diagnostic ID. An aggregated report sorts
+and deduplicates multiple IDs before rendering them.
+
+### DXMSG006: missing base call
+
+![Inspector overlay showing a DXMSG006 missing Awake base-call warning](../images/inspector-overlay/dxmsg006-overlay.png)
+
+### DXMSG007: explicit lifecycle hide
+
+![Inspector overlay showing a DXMSG007 explicit lifecycle hide warning](../images/inspector-overlay/dxmsg007-overlay.png)
+
+### DXMSG009: implicit lifecycle hide
+
+![Inspector overlay showing a DXMSG009 implicit lifecycle hide warning](../images/inspector-overlay/dxmsg009-overlay.png)
+
+### DXMSG010: broken transitive chain
+
+![Inspector overlay showing a DXMSG010 broken transitive base-call chain warning](../images/inspector-overlay/dxmsg010-overlay.png)
 
 The panel follows this shape:
 
-- **Title:** `Missing MessageAwareComponent base calls`
+- **Title:** `DXMSG###: Missing MessageAwareComponent base calls`
 - **Body:** `<FullyQualifiedTypeName> has lifecycle methods that do not chain to MessageAwareComponent. DxMessaging will not function on this component.`
 - **Method list:** one row per missing method, such as `OnEnable:
 '<type>' overrides MessageAwareComponent.OnEnable but does not call
@@ -123,8 +173,6 @@ fully-qualified type name is currently in the project ignore list.
 
 When the component is **not** ignored, you see two buttons:
 
-![Open Script and Ignore this type buttons](../images/inspector-overlay/inspector-actions.png)
-
 - **Open Script** -- opens the offending component's source file at the
   top; when the legacy console bridge is enabled and a line number is
   available, the file opens at that line.
@@ -141,7 +189,7 @@ When the component **is** in the ignore list, the overlay shows the info
 shape -- the type is explicitly excluded from the base-call check -- and
 the action row collapses to a single button:
 
-![Stop ignoring action for an excluded type](../images/inspector-overlay/inspector-ignored.png)
+![DXMSG008 Inspector information state with the Stop ignoring action](../images/inspector-overlay/dxmsg008-overlay.png)
 
 - **Stop ignoring** -- removes the component's fully-qualified type
   name from the ignore list. The ignored info state clears on the next
@@ -170,6 +218,8 @@ answers "is this component actually listening, and to what?" without adding a
 log statement. A subclass with its own `[CustomEditor]` draws that editor instead,
 so the section does not appear there; the base-call warning above still does,
 through the header hook.
+
+![Message subscriptions in its Edit-mode no-token state](../images/inspector-overlay/inspector-subscriptions.png)
 
 Each row shows:
 
@@ -218,6 +268,9 @@ split into three sections:
 - **Diagnostics Targets** -- flags-enum field (`Off`, `Editor`,
   `Runtime`, `All`) controlling where global diagnostics are enabled.
   See [Diagnostics](diagnostics.md) for what this toggle activates.
+- **Capture Emission Stack Traces** -- enables call-site stack capture for
+  diagnostic emission records. Leave it off until you need call-site evidence;
+  it adds work and allocations to each recorded emission.
 - **Message Buffer Size** -- integer; the default ring-buffer size
   used by every newly-created bus and token when diagnostics are
   active. Defaults to `IMessageBus.DefaultMessageBufferSize`.
@@ -261,9 +314,7 @@ in the analyzer reference.
 
 ## Tools > Wallstop Studios > DxMessaging > Rescan Base-Call Warnings
 
-The package adds a manual rescan menu entry:
-
-![Tools menu showing DxMessaging Rescan Base-Call Warnings entry](../images/inspector-overlay/tools-menu-rescan.png)
+The package adds a manual rescan menu entry.
 
 Click **Tools > Wallstop Studios > DxMessaging > Rescan Base-Call Warnings** to
 re-run the harvester on demand. You normally do not need to invoke
@@ -314,8 +365,6 @@ naming `Game.HealthComponent.OnEnable`. When you click into a
 GameObject that has `HealthComponent` attached, the Inspector
 renders the overlay warning panel at the top of the component:
 
-![HealthComponent Inspector with the missing-base-call warning panel visible](../images/inspector-overlay/worked-example-before.png)
-
 The panel names `OnEnable` in its missing-method list and gives the
 runtime consequence for the missing base call. **Open Script** opens
 the component source file; when line data is available, it opens at
@@ -337,9 +386,7 @@ After the next compile, the `DXMSG006` Console entry is gone. The
 Inspector warning disappears after the compile-triggered scan refreshes
 the report; if the Console is already clean but the Inspector still
 shows cached data, run **Tools > Wallstop Studios > DxMessaging > Rescan Base-Call
-Warnings** to refresh the overlay snapshot:
-
-![Same HealthComponent Inspector with the warning panel cleared after the fix](../images/inspector-overlay/worked-example-after.png)
+Warnings** to refresh the overlay snapshot.
 
 That is the entire loop: warning > fix > silence.
 

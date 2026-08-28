@@ -503,6 +503,17 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(stopIgnoring, Is.Not.Null);
             Assert.That(stopIgnoring.text, Is.EqualTo("Stop ignoring"));
+            Label ignoredTitle = root.Q<Label>(MessageAwareComponentInspectorView.TitleLabelName);
+            Assert.That(
+                ignoredTitle,
+                Is.Not.Null,
+                "An ignored Inspector must render its audit-state title."
+            );
+            Assert.That(
+                ignoredTitle.text,
+                Does.StartWith("DXMSG008:"),
+                "An ignored Inspector must identify the audit diagnostic represented by the info state."
+            );
             Assert.That(
                 root.Q<Label>(MessageAwareComponentInspectorView.BodyLabelName).text,
                 Does.Contain(fullName)
@@ -550,7 +561,8 @@ namespace DxMessaging.Tests.Editor
             AssertCompleteBorder(root, DxMessagingEditorPalette.Amber);
             Assert.That(
                 root.Q<Label>(MessageAwareComponentInspectorView.TitleLabelName).text,
-                Does.Contain("Missing MessageAwareComponent base calls")
+                Is.EqualTo("DXMSG006: Missing MessageAwareComponent base calls"),
+                "The warning title must expose the diagnostic ID that a user will find in the Console."
             );
             Assert.That(
                 GetMethodListTexts(root),
@@ -573,6 +585,43 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 root.Q<Button>(MessageAwareComponentInspectorView.IgnoreTypeButtonName),
                 Is.Not.Null
+            );
+        }
+
+        [Test]
+        public void InspectorViewSortsAndDeduplicatesDiagnosticIdsInWarningTitle()
+        {
+            DxMessagingSettings settings = CreateTransientSettings(baseCallCheckEnabled: true);
+            MessageAwareComponent component = CreateTrackedMessageAwareComponent(
+                "InspectorViewDiagnosticIdsHost",
+                typeof(EmptyMessageAwareComponentForFallbackTest)
+            );
+            BaseCallReportEntry entry = CreateReportEntry("OnEnable");
+            entry.diagnosticIds = new List<string>
+            {
+                "DXMSG010",
+                "DXMSG007",
+                "DXMSG010",
+                string.Empty,
+            };
+            MessageAwareComponentInspectorState state =
+                MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
+                    component,
+                    settings,
+                    GetOverlayTypeName(component),
+                    entry,
+                    isFreshThisSession: true
+                );
+
+            VisualElement root = MessageAwareComponentInspectorView.Create(
+                state,
+                MessageAwareComponentInspectorViewActions.None
+            );
+
+            Assert.That(
+                root.Q<Label>(MessageAwareComponentInspectorView.TitleLabelName).text,
+                Is.EqualTo("DXMSG007 / DXMSG010: Missing MessageAwareComponent base calls"),
+                "Merged analyzer reports must render one stable, sorted diagnostic title."
             );
         }
 
