@@ -579,11 +579,17 @@ namespace DxMessaging.Core.MessageBus
         {
             public object handleEntries;
             public int handleEntryCount;
+            public object singleRawHandler;
+            public object singleRegistration;
+            public MessageRegistrationToken singleRegistrationToken;
 
             public void ClearCachedRoute()
             {
                 handleEntries = null;
                 handleEntryCount = 0;
+                singleRawHandler = null;
+                singleRegistration = null;
+                singleRegistrationToken = null;
             }
         }
 
@@ -4013,6 +4019,18 @@ namespace DxMessaging.Core.MessageBus
                             handleEntries = flat.entries;
                             handleEntryCount = flat.count;
 
+                            if (
+                                handleEntryCount == 1
+                                && flat.entries[0].invoker.Target
+                                    is MessageRegistrationToken.IUntargetedFastRegistration<TMessage> registration
+                                && registration.RawHandler != null
+                            )
+                            {
+                                plan.singleRawHandler = registration.RawHandler;
+                                plan.singleRegistration = registration;
+                                plan.singleRegistrationToken = registration.OwnerToken;
+                            }
+
                             // Publish the settled route BEFORE user code runs. A handler can
                             // mutate registrations and re-emit this type; publishing after the
                             // callback would let the outer emission overwrite the nested
@@ -4033,11 +4051,21 @@ namespace DxMessaging.Core.MessageBus
 
                     if (handleEntries != null)
                     {
-                        fastFound = DispatchCachedUntargetedEntries(
-                            handleEntries,
-                            handleEntryCount,
-                            ref typedMessage
-                        );
+                        object singleRawHandler = plan.singleRawHandler;
+                        fastFound =
+                            singleRawHandler != null
+                                ? DispatchCachedSingleUntargetedEntry(
+                                    handleEntries,
+                                    singleRawHandler,
+                                    plan.singleRegistration,
+                                    plan.singleRegistrationToken,
+                                    ref typedMessage
+                                )
+                                : DispatchCachedUntargetedEntries(
+                                    handleEntries,
+                                    handleEntryCount,
+                                    ref typedMessage
+                                );
                     }
                 }
 
@@ -7326,6 +7354,41 @@ namespace DxMessaging.Core.MessageBus
                     {
                         break;
                     }
+                }
+            }
+
+            return true;
+        }
+
+        [Il2CppSetOption(Option.NullChecks, false)]
+        [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool DispatchCachedSingleUntargetedEntry<TMessage>(
+            object entriesObject,
+            object rawHandlerObject,
+            object registrationObject,
+            MessageRegistrationToken registrationToken,
+            ref TMessage message
+        )
+            where TMessage : IUntargetedMessage
+        {
+            DebugAssertCachedUntargetedRoute<TMessage>(entriesObject, 1);
+            FlatDispatchEntry<TMessage>[] entries = DxUnsafe.As<FlatDispatchEntry<TMessage>[]>(
+                entriesObject
+            );
+            ref FlatDispatchEntry<TMessage> entry = ref entries[0];
+            if (entry.handler.active)
+            {
+                MessageHandler.FastHandler<TMessage> rawHandler =
+                    DxUnsafe.As<MessageHandler.FastHandler<TMessage>>(rawHandlerObject);
+                rawHandler(ref message);
+                if (registrationToken.DiagnosticMode)
+                {
+                    MessageRegistrationToken.IUntargetedFastRegistration<TMessage> registration =
+                        DxUnsafe.As<MessageRegistrationToken.IUntargetedFastRegistration<TMessage>>(
+                            registrationObject
+                        );
+                    registration.RecordDiagnostic(ref message);
                 }
             }
 

@@ -81,6 +81,10 @@ exact inputs for the Asset Store upload:
 - the npm `.tgz` (the exact UPM payload, for reference and diffing);
 - `.sha256` checksums for both;
 - the tracked store media under `media/`;
+- four ordered product screenshots under `screenshots/`;
+- generated `ASSET-STORE-LISTING.json` with the exact listing title,
+  description, keywords, links, artwork paths, screenshot captions, package
+  version, minimum Unity version, and release notes;
 - generated `CLASSIC-UPLOAD-CHECKLIST.md` and
   `UPM-UPLOAD-CHECKLIST.md` files carrying package metadata and the matching
   changelog section;
@@ -90,8 +94,11 @@ exact inputs for the Asset Store upload:
 - `MANIFEST.json` with filenames, sizes, and SHA-256 hashes for the staged
   files.
 
-The listing draft stays in the Unity Publisher Portal. It is not tracked in the
-repository or copied into the submission artifact.
+The canonical listing source is `.github/asset-store-listing.json`. The release
+generator validates it and adds release-specific fields to
+`ASSET-STORE-LISTING.json`. The Unity Publisher Portal remains the submission
+interface, but it is not the source of truth for the listing text or media
+order.
 
 The `.unitypackage` is also attached to the GitHub Release, so a maintainer can
 grab it from either place. The pipeline stops at staging; it never contacts the
@@ -141,12 +148,10 @@ Run this once the release workflow for the tag is green.
    select the exact package version, and upload it. Follow
    `UPM-UPLOAD-CHECKLIST.md` from the artifact; do not install a working-tree
    copy.
-1. **Fill metadata.** Set the version to the released version and paste the
-   release notes from the matching `## [X.Y.Z]` section of
-   [`CHANGELOG.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/CHANGELOG.md).
-   Refresh screenshots, the compatibility
-   matrix (supported Unity versions from `package.json`), and the description if
-   they changed.
+1. **Apply the listing.** Open `ASSET-STORE-LISTING.json` from the artifact and
+   apply its title, description, keywords, links, artwork, ordered screenshots,
+   captions, version, minimum Unity version, and release notes to the Publisher
+   Portal draft. Do not copy stale values from an earlier portal version.
 1. **Submit for review.** Submit the draft and record that the version was
    submitted (date + reviewer-facing version) in the approved tracker, not in
    this repository.

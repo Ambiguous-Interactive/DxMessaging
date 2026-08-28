@@ -109,8 +109,14 @@ artifact containing:
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
 - tracked store media under `media/`
+- ordered product screenshots under `screenshots/`
 - generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`,
-  `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
+  `ASSET-STORE-LISTING.json`, `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
+
+`.github/asset-store-listing.json` is the canonical listing source. Release
+staging validates it, adds the package version, minimum Unity version, and
+matching changelog section, then writes the exact portal-ready fields and media
+order to `ASSET-STORE-LISTING.json`.
 
 The export stages the `npm pack` payload into an ephemeral Unity project
 under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
@@ -151,7 +157,8 @@ the `.unitypackage` upload:
    type, and validate the installed package.
 1. Open `Window > Tools > Asset Store > Uploader`, select the `UPM Packages`
    tab, and upload the exact package version.
-1. Complete Asset Store metadata, screenshots, compatibility, and review fields.
+1. Apply every listing field and ordered screenshot from
+   `ASSET-STORE-LISTING.json`, then complete the remaining review fields.
 1. Submit for review.
 1. Repeat for two versions. In a clean Unity project where neither version is
    installed, open Package Manager Version History, expand both versions, and

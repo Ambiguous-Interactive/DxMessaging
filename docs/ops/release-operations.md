@@ -121,8 +121,9 @@ The release workflow performs these gates:
 1. Assemble the `asset-store-submission` workflow artifact before the npm
    publish. The tested generator copies the `.unitypackage`, the `.tgz`,
    checksums, store media, and generated classic/UPM upload checklists plus
-   `EXPECTED-UPM-FIELDS.json` and `MANIFEST.json`. Upload the workflow
-   artifact immediately; missing or invalid store collateral fails before the
+   ordered screenshots, `ASSET-STORE-LISTING.json`,
+   `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`. Upload the workflow artifact
+   immediately; missing or invalid store collateral fails before the
    irreversible registry action.
 1. Publish to npm with Trusted Publishing and provenance.
 1. Create or update the GitHub Release. The body is the matching `## [version]`

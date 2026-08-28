@@ -581,8 +581,9 @@
     </div>
     <h1 class="dxm-h1">Decoupled, simple systems.</h1>
     <p class="dxm-sub">
-      Send a typed message and any system reacts, with no reference back to the sender. Three
-      message types, about 10 ns per handler, zero GC.
+      Connect gameplay systems without direct references between senders and receivers. Untargeted,
+      targeted, and broadcast messages keep those systems independent, testable, and observable,
+      while struct messages keep steady-state dispatch allocation-free.
     </p>
     <div class="dxm-actions">
       <a href="getting-started/" class="md-button md-button--primary">Get started</a>
