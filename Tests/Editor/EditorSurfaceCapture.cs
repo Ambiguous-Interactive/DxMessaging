@@ -147,11 +147,12 @@ namespace DxMessaging.Tests.Editor
                 // and wrapping geometry across as many passes as the tree needs. Repaint walks
                 // the settled tree and records the draw commands, and Render flushes those
                 // commands to the active target. Nested ScrollViews realize their content during
-                // the first repaint, so a second repaint/render cycle is required to draw those
-                // newly realized rows. Skipping either repaint can yield a valid PNG with blank
-                // scroll bodies, which is why the tests inspect the rendered content too.
+                // the first repaint, and newly introduced glyphs can extend the dynamic font
+                // atlas during the second. A third repaint/render cycle draws both settled sets.
+                // Stopping earlier can yield a valid PNG with blank scroll bodies or partially
+                // missing labels, which is why the tests inspect the rendered content too.
                 EditorWindowTestUtility.SettleLayout(host);
-                for (int repaintPass = 0; repaintPass < 2; repaintPass++)
+                for (int repaintPass = 0; repaintPass < 3; repaintPass++)
                 {
                     InvokeInheritedPanelMethod(
                         panel,

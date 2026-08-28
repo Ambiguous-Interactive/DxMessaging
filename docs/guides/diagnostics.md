@@ -156,6 +156,12 @@ The active filter strip shows whether the current filter is typed or plain text
 and provides a Clear action without changing JSON export. **Copy JSON** copies
 exactly the entries the log is showing, chips included.
 
+![Message Monitor filtered to Broadcast EnemySpawned traffic with two active typed facets](../images/inspector-overlay/message-monitor-filtered.png)
+
+This example combines `type:Enemy context:WaveDirector` with the Untargeted and
+Targeted chips disabled. The active-filter strip keeps both parsed terms visible,
+and the log and JSON export contain only the remaining Broadcast row.
+
 **Breakdown** is a collapsed disclosure holding one clickable pill per message
 type and per context in the visible log. Each pill shows its share of the log and
 applies the filter that isolates it: message-type pills apply a `type:` filter,
@@ -167,6 +173,8 @@ pill, and the contexts or message types it covers, are in its tooltip.
 listener counts, enabled/diagnostics listener counts, registrations, call counts,
 local message counts, provider status, and provider warnings such as a missing
 serialized provider or a provider that resolves no bus.
+
+![Message Monitor with Component Diagnostics expanded for two loaded components](../images/inspector-overlay/message-monitor-components.png)
 
 If the active global bus is not the default concrete DxMessaging `MessageBus`,
 the message list reports that it is unavailable. Component diagnostics still use

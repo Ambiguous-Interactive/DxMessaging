@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Editor
 {
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using System.IO;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Analyzers;
@@ -25,6 +26,16 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class EditorToolingDocumentationCaptureTests
     {
+        private const string CompilerDiagnosticCodeLabelName =
+            "dxmessaging-documentation-diagnostic-code";
+        private const string CompilerDiagnosticMessageLabelName =
+            "dxmessaging-documentation-diagnostic-message";
+        private const string DxMessageIdGeneratorSourcePath =
+            "Packages/com.wallstop-studios.dxmessaging/SourceGenerators/"
+            + "WallstopStudios.DxMessaging.SourceGenerators/DxMessageIdGenerator.cs";
+        private const string Dxmsg002FileName = "dxmsg002-compiler-diagnostic.png";
+        private const string Dxmsg003FileName = "dxmsg003-compiler-diagnostic.png";
+        private const string Dxmsg004FileName = "dxmsg004-compiler-diagnostic.png";
         private const string Dxmsg006FileName = "dxmsg006-overlay.png";
         private const string Dxmsg007FileName = "dxmsg007-overlay.png";
         private const string Dxmsg008FileName = "dxmsg008-overlay.png";
@@ -37,6 +48,8 @@ namespace DxMessaging.Tests.Editor
         private const string FlowGraphRouteSelectedFileName = "flow-graph-route-selected.png";
         private const string InspectorSubscriptionsFileName = "inspector-subscriptions.png";
         private const string MessageMonitorFileName = "message-monitor.png";
+        private const string MessageMonitorComponentsFileName = "message-monitor-components.png";
+        private const string MessageMonitorFilteredFileName = "message-monitor-filtered.png";
         private const string MessageMonitorSelectedFileName = "message-monitor-selected.png";
         private const string ProjectSettingsFileName = "project-settings-panel.png";
 
@@ -46,6 +59,9 @@ namespace DxMessaging.Tests.Editor
         internal static IReadOnlyList<string> CapturedFileNames { get; } =
             new[]
             {
+                Dxmsg002FileName,
+                Dxmsg003FileName,
+                Dxmsg004FileName,
                 Dxmsg006FileName,
                 Dxmsg007FileName,
                 Dxmsg008FileName,
@@ -57,6 +73,8 @@ namespace DxMessaging.Tests.Editor
                 FlowGraphRouteSelectedFileName,
                 InspectorSubscriptionsFileName,
                 MessageMonitorFileName,
+                MessageMonitorComponentsFileName,
+                MessageMonitorFilteredFileName,
                 MessageMonitorSelectedFileName,
                 ProjectSettingsFileName,
             };
@@ -76,9 +94,9 @@ namespace DxMessaging.Tests.Editor
             );
             Assert.That(
                 CapturedFileNames.Count,
-                Is.EqualTo(13),
-                "The inventory covers five analyzer states, Inspector subscriptions, "
-                    + "Project Settings, two Message Monitor states, and four Flow Graph states."
+                Is.EqualTo(18),
+                "The inventory covers eight analyzer states, Inspector subscriptions, "
+                    + "Project Settings, four Message Monitor states, and four Flow Graph states."
             );
             foreach (string fileName in CapturedFileNames)
             {
@@ -102,6 +120,9 @@ namespace DxMessaging.Tests.Editor
         {
             string[] diagnosticFiles =
             {
+                Dxmsg002FileName,
+                Dxmsg003FileName,
+                Dxmsg004FileName,
                 Dxmsg006FileName,
                 Dxmsg007FileName,
                 Dxmsg008FileName,
@@ -138,8 +159,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void MessageMonitorCaptureSurfacesContainTrafficAndSelectedDetails()
         {
-            VisualElement overview = CreateMessageMonitorSurface(showSelectedDetails: false);
-            VisualElement selected = CreateMessageMonitorSurface(showSelectedDetails: true);
+            VisualElement overview = CreateMessageMonitorSurface(
+                DocumentationMessageMonitorState.Overview
+            );
+            VisualElement selected = CreateMessageMonitorSurface(
+                DocumentationMessageMonitorState.SelectedStack
+            );
 
             Assert.That(
                 overview
@@ -202,6 +227,172 @@ namespace DxMessaging.Tests.Editor
                 Is.Null,
                 "The offscreen capture host must replace the nested details ScrollView so its "
                     + "emission fields and expanded stack paint into the documentation image."
+            );
+        }
+
+        [Test]
+        public void CompilerDiagnosticCapturesPairExactOutputWithTriggeringCode()
+        {
+            DocumentationCompilerDiagnosticState[] states =
+            {
+                DocumentationCompilerDiagnosticState.Dxmsg002,
+                DocumentationCompilerDiagnosticState.Dxmsg003,
+                DocumentationCompilerDiagnosticState.Dxmsg004,
+            };
+            string[] expectedIds = { "DXMSG002", "DXMSG003", "DXMSG004" };
+            string[] expectedCodeFragments =
+            {
+                "[DxBroadcastMessage]",
+                "public sealed class GameSystems",
+                "public sealed class GameSystems",
+            };
+
+            for (int index = 0; index < states.Length; index++)
+            {
+                VisualElement surface = CreateCompilerDiagnosticSurface(states[index]);
+                Label message = surface.Q<Label>(CompilerDiagnosticMessageLabelName);
+                Label code = surface.Q<Label>(CompilerDiagnosticCodeLabelName);
+
+                Assert.That(
+                    message,
+                    Is.Not.Null,
+                    $"The {expectedIds[index]} specimen must render its compiler output."
+                );
+                Assert.That(
+                    message.text,
+                    Does.StartWith(expectedIds[index] + ":"),
+                    $"The specimen must preserve the exact {expectedIds[index]} diagnostic id."
+                );
+                Assert.That(
+                    code,
+                    Is.Not.Null,
+                    $"The {expectedIds[index]} specimen must render triggering C# code."
+                );
+                Assert.That(
+                    code.text,
+                    Does.Contain(expectedCodeFragments[index]),
+                    $"The {expectedIds[index]} specimen must show the declaration that triggers it."
+                );
+            }
+        }
+
+        [Test]
+        public void MessageMonitorComponentCaptureExpandsLoadedComponentDiagnostics()
+        {
+            VisualElement components = CreateMessageMonitorSurface(
+                DocumentationMessageMonitorState.Components
+            );
+            Foldout componentFoldout = components.Q<Foldout>(
+                DxMessagingMessageMonitorWindow.ComponentFoldoutName
+            );
+
+            Assert.That(
+                componentFoldout,
+                Is.Not.Null,
+                "The component capture must include the Component Diagnostics disclosure."
+            );
+            Assert.That(
+                componentFoldout.value,
+                Is.True,
+                "The component capture must expand the Component Diagnostics disclosure."
+            );
+            Assert.That(
+                components
+                    .Query<VisualElement>(
+                        className: DxMessagingMessageMonitorWindow.ComponentRowClassName
+                    )
+                    .ToList()
+                    .Count,
+                Is.EqualTo(2),
+                "The component capture must show both deterministic loaded components."
+            );
+            Assert.That(
+                components.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName),
+                Is.Null,
+                "The offscreen capture host must flatten the component ScrollView so both "
+                    + "diagnostic cards paint."
+            );
+            List<Label> componentNames = components
+                .Query<Label>(name: DxMessagingMessageMonitorWindow.ComponentNameLabelName)
+                .ToList();
+            Assert.That(
+                componentNames.Exists(label => label.text.Contains("Arena/Player")),
+                Is.True,
+                "The component capture must identify the Arena/Player component."
+            );
+            Assert.That(
+                componentNames.Exists(label => label.text.Contains("UI/HUD")),
+                Is.True,
+                "The component capture must identify the UI/HUD component."
+            );
+        }
+
+        [Test]
+        public void MessageMonitorFilterCaptureShowsTypedAndRouteKindFilters()
+        {
+            const string filterText = "type:Enemy context:WaveDirector";
+            VisualElement filtered = CreateMessageMonitorSurface(
+                DocumentationMessageMonitorState.Filtered
+            );
+            TextField filter = filtered.Q<TextField>(
+                DxMessagingMessageMonitorWindow.FilterFieldName
+            );
+
+            Assert.That(
+                filter,
+                Is.Not.Null,
+                "The filtered capture must include the Message Monitor filter field."
+            );
+            Assert.That(
+                filter.value,
+                Is.EqualTo(filterText),
+                "The filtered capture must show the exact typed facet query."
+            );
+            Assert.That(
+                filtered
+                    .Query<Label>(
+                        className: DxMessagingMessageMonitorWindow.ActiveFilterTokenClassName
+                    )
+                    .ToList()
+                    .Count,
+                Is.EqualTo(2),
+                "The active-filter strip must show both typed facet tokens."
+            );
+            Assert.That(
+                filtered
+                    .Query<VisualElement>(className: DxMessagingMessageMonitorWindow.RowClassName)
+                    .ToList()
+                    .Count,
+                Is.EqualTo(1),
+                "The combined typed and route-kind filters must leave one Broadcast row."
+            );
+            Label messageType = filtered.Q<Label>(
+                DxMessagingMessageMonitorWindow.MessageTypeLabelName
+            );
+            Assert.That(
+                messageType,
+                Is.Not.Null,
+                "The filtered capture must keep a visible message row."
+            );
+            Assert.That(
+                messageType.text,
+                Does.Contain("EnemySpawned"),
+                "The filter must isolate the EnemySpawned traffic."
+            );
+            Assert.That(
+                filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).value,
+                Is.False,
+                "The filtered capture must show Untargeted traffic disabled."
+            );
+            Assert.That(
+                filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.TargetedChipName).value,
+                Is.False,
+                "The filtered capture must show Targeted traffic disabled."
+            );
+            Assert.That(
+                filtered.Q<Toggle>(DxMessagingMessageMonitorWindow.BroadcastChipName).value,
+                Is.True,
+                "The filtered capture must show Broadcast traffic enabled."
             );
         }
 
@@ -333,6 +524,24 @@ namespace DxMessaging.Tests.Editor
                     host.AddComponent<DocumentationMessageAwareComponent>();
 
                 stagedResults.Add(
+                    CaptureCompilerDiagnostic(
+                        stagingDirectory,
+                        DocumentationCompilerDiagnosticState.Dxmsg002
+                    )
+                );
+                stagedResults.Add(
+                    CaptureCompilerDiagnostic(
+                        stagingDirectory,
+                        DocumentationCompilerDiagnosticState.Dxmsg003
+                    )
+                );
+                stagedResults.Add(
+                    CaptureCompilerDiagnostic(
+                        stagingDirectory,
+                        DocumentationCompilerDiagnosticState.Dxmsg004
+                    )
+                );
+                stagedResults.Add(
                     CaptureInspectorWarning(
                         component,
                         settings,
@@ -391,10 +600,28 @@ namespace DxMessaging.Tests.Editor
                 );
                 stagedResults.Add(CaptureSubscriptions(component, stagingDirectory));
                 stagedResults.Add(
-                    CaptureMessageMonitor(stagingDirectory, showSelectedDetails: false)
+                    CaptureMessageMonitor(
+                        stagingDirectory,
+                        DocumentationMessageMonitorState.Overview
+                    )
                 );
                 stagedResults.Add(
-                    CaptureMessageMonitor(stagingDirectory, showSelectedDetails: true)
+                    CaptureMessageMonitor(
+                        stagingDirectory,
+                        DocumentationMessageMonitorState.Components
+                    )
+                );
+                stagedResults.Add(
+                    CaptureMessageMonitor(
+                        stagingDirectory,
+                        DocumentationMessageMonitorState.Filtered
+                    )
+                );
+                stagedResults.Add(
+                    CaptureMessageMonitor(
+                        stagingDirectory,
+                        DocumentationMessageMonitorState.SelectedStack
+                    )
                 );
                 stagedResults.Add(CaptureProjectSettings(settings, stagingDirectory));
 
@@ -733,6 +960,204 @@ namespace DxMessaging.Tests.Editor
             return Capture(surface, 800, 420, InspectorSubscriptionsFileName, stagingDirectory);
         }
 
+        private static EditorSurfaceCaptureResult CaptureCompilerDiagnostic(
+            string stagingDirectory,
+            DocumentationCompilerDiagnosticState state
+        )
+        {
+            VisualElement surface = CreateCompilerDiagnosticSurface(state);
+            string fileName = state switch
+            {
+                DocumentationCompilerDiagnosticState.Dxmsg002 => Dxmsg002FileName,
+                DocumentationCompilerDiagnosticState.Dxmsg003 => Dxmsg003FileName,
+                _ => Dxmsg004FileName,
+            };
+            return Capture(surface, 980, 520, fileName, stagingDirectory);
+        }
+
+        private static VisualElement CreateCompilerDiagnosticSurface(
+            DocumentationCompilerDiagnosticState state
+        )
+        {
+            string diagnosticId;
+            string severity;
+            string title;
+            string message;
+            string triggeringCode;
+            Color accent;
+            switch (state)
+            {
+                case DocumentationCompilerDiagnosticState.Dxmsg002:
+                    diagnosticId = "DXMSG002";
+                    severity = "ERROR";
+                    title = ReadSourceGeneratorDescriptorValue(diagnosticId, "title");
+                    message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        ReadSourceGeneratorDescriptorValue(diagnosticId, "messageFormat"),
+                        "Gameplay.Messages.Heal"
+                    );
+                    triggeringCode =
+                        "[DxBroadcastMessage]\n"
+                        + "[DxTargetedMessage]\n"
+                        + "public readonly partial struct Heal\n"
+                        + "{\n"
+                        + "\u00a0\u00a0\u00a0\u00a0public readonly int Amount;\n"
+                        + "}";
+                    accent = DxMessagingEditorPalette.Danger;
+                    break;
+                case DocumentationCompilerDiagnosticState.Dxmsg003:
+                    diagnosticId = "DXMSG003";
+                    severity = "WARNING";
+                    title = ReadSourceGeneratorDescriptorValue(diagnosticId, "title");
+                    message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        ReadSourceGeneratorDescriptorValue(diagnosticId, "messageFormat"),
+                        "GameSystems.SceneLoaded",
+                        "GameSystems"
+                    );
+                    triggeringCode = CreateNonPartialContainerCode();
+                    accent = DxMessagingEditorPalette.Amber;
+                    break;
+                default:
+                    diagnosticId = "DXMSG004";
+                    severity = "INFO";
+                    title = ReadSourceGeneratorDescriptorValue(diagnosticId, "title");
+                    message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        ReadSourceGeneratorDescriptorValue(diagnosticId, "messageFormat"),
+                        "GameSystems",
+                        "GameSystems.SceneLoaded"
+                    );
+                    triggeringCode = CreateNonPartialContainerCode();
+                    accent = DxMessagingEditorPalette.Trace;
+                    break;
+            }
+
+            VisualElement surface = new();
+            surface.style.width = 900;
+            surface.style.height = 440;
+            surface.style.paddingTop = 18;
+            surface.style.paddingRight = 20;
+            surface.style.paddingBottom = 18;
+            surface.style.paddingLeft = 20;
+            surface.style.flexGrow = 0;
+            surface.style.flexShrink = 0;
+            DxMessagingEditorTheme.ApplyWindow(surface);
+
+            Label eyebrow = new("COMPILER / IDE DIAGNOSTIC EXAMPLE");
+            eyebrow.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
+            surface.Add(eyebrow);
+
+            VisualElement heading = new();
+            heading.style.flexDirection = FlexDirection.Row;
+            heading.style.alignItems = Align.Center;
+            heading.style.marginTop = 6;
+            surface.Add(heading);
+
+            Label badge = new($"{severity}  {diagnosticId}");
+            badge.AddToClassList(DxMessagingEditorTheme.TypeBadgeClassName);
+            badge.style.color = accent;
+            badge.style.marginRight = 10;
+            heading.Add(badge);
+
+            Label headingTitle = new(title);
+            headingTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            headingTitle.style.fontSize = 16;
+            headingTitle.style.flexGrow = 1;
+            heading.Add(headingTitle);
+
+            VisualElement diagnosticCard = new();
+            diagnosticCard.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            diagnosticCard.style.marginTop = 12;
+            diagnosticCard.style.paddingTop = 12;
+            diagnosticCard.style.paddingRight = 14;
+            diagnosticCard.style.paddingBottom = 12;
+            diagnosticCard.style.paddingLeft = 14;
+            DxMessagingEditorTheme.ApplyCompleteBorder(diagnosticCard, accent);
+            surface.Add(diagnosticCard);
+
+            Label diagnosticMessage = new($"{diagnosticId}: {message}")
+            {
+                name = CompilerDiagnosticMessageLabelName,
+            };
+            diagnosticMessage.style.whiteSpace = WhiteSpace.Normal;
+            diagnosticMessage.style.fontSize = 13;
+            diagnosticCard.Add(diagnosticMessage);
+
+            Label codeHeading = new("Triggering C#");
+            codeHeading.style.unityFontStyleAndWeight = FontStyle.Bold;
+            codeHeading.style.marginTop = 14;
+            codeHeading.style.marginBottom = 6;
+            surface.Add(codeHeading);
+
+            Label code = new(triggeringCode) { name = CompilerDiagnosticCodeLabelName };
+            code.AddToClassList(DxMessagingEditorTheme.CardClassName);
+            code.style.unityFont = EditorStyles.textArea.font;
+            code.style.fontSize = 13;
+            code.style.whiteSpace = WhiteSpace.Normal;
+            code.style.paddingTop = 10;
+            code.style.paddingRight = 12;
+            code.style.paddingBottom = 10;
+            code.style.paddingLeft = 12;
+            code.style.flexGrow = 1;
+            DxMessagingEditorTheme.ApplyCompleteBorder(code, DxMessagingEditorPalette.BorderPanel);
+            surface.Add(code);
+            return surface;
+        }
+
+        private static string ReadSourceGeneratorDescriptorValue(
+            string diagnosticId,
+            string valueName
+        )
+        {
+            string source = File.ReadAllText(DxMessageIdGeneratorSourcePath);
+            string idAnchor = $"id: \"{diagnosticId}\"";
+            int idIndex = source.IndexOf(idAnchor, StringComparison.Ordinal);
+            if (idIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"The source generator does not declare {diagnosticId}."
+                );
+            }
+
+            string valueAnchor = valueName + ": \"";
+            int valueIndex = source.IndexOf(valueAnchor, idIndex, StringComparison.Ordinal);
+            int nextIdIndex = source.IndexOf(
+                "id: \"DXMSG",
+                idIndex + idAnchor.Length,
+                StringComparison.Ordinal
+            );
+            if (valueIndex < 0 || (nextIdIndex >= 0 && valueIndex > nextIdIndex))
+            {
+                throw new InvalidOperationException(
+                    $"The {diagnosticId} descriptor does not declare {valueName}."
+                );
+            }
+
+            int valueStart = valueIndex + valueAnchor.Length;
+            int valueEnd = source.IndexOf('"', valueStart);
+            if (valueEnd < 0)
+            {
+                throw new InvalidOperationException(
+                    $"The {diagnosticId} {valueName} value is not a quoted string."
+                );
+            }
+
+            return source.Substring(valueStart, valueEnd - valueStart);
+        }
+
+        private static string CreateNonPartialContainerCode()
+        {
+            return "public sealed class GameSystems\n"
+                + "{\n"
+                + "\u00a0\u00a0\u00a0\u00a0[DxUntargetedMessage]\n"
+                + "\u00a0\u00a0\u00a0\u00a0public readonly partial struct SceneLoaded\n"
+                + "\u00a0\u00a0\u00a0\u00a0{\n"
+                + "\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0public readonly int BuildIndex;\n"
+                + "\u00a0\u00a0\u00a0\u00a0}\n"
+                + "}";
+        }
+
         private static EditorSurfaceCaptureResult CaptureProjectSettings(
             DxMessagingSettings settings,
             string stagingDirectory
@@ -747,18 +1172,37 @@ namespace DxMessaging.Tests.Editor
 
         private static EditorSurfaceCaptureResult CaptureMessageMonitor(
             string stagingDirectory,
-            bool showSelectedDetails
+            DocumentationMessageMonitorState state
         )
         {
-            VisualElement surface = CreateMessageMonitorSurface(showSelectedDetails);
-            string fileName = showSelectedDetails
-                ? MessageMonitorSelectedFileName
-                : MessageMonitorFileName;
-            int canvasHeight = showSelectedDetails ? 940 : 820;
+            VisualElement surface = CreateMessageMonitorSurface(state);
+            string fileName;
+            int canvasHeight;
+            switch (state)
+            {
+                case DocumentationMessageMonitorState.Components:
+                    fileName = MessageMonitorComponentsFileName;
+                    canvasHeight = 1100;
+                    break;
+                case DocumentationMessageMonitorState.Filtered:
+                    fileName = MessageMonitorFilteredFileName;
+                    canvasHeight = 900;
+                    break;
+                case DocumentationMessageMonitorState.SelectedStack:
+                    fileName = MessageMonitorSelectedFileName;
+                    canvasHeight = 940;
+                    break;
+                default:
+                    fileName = MessageMonitorFileName;
+                    canvasHeight = 820;
+                    break;
+            }
             return Capture(surface, 1200, canvasHeight, fileName, stagingDirectory);
         }
 
-        private static VisualElement CreateMessageMonitorSurface(bool showSelectedDetails)
+        private static VisualElement CreateMessageMonitorSurface(
+            DocumentationMessageMonitorState state
+        )
         {
             const string stackTrace =
                 "UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)\n"
@@ -831,7 +1275,27 @@ namespace DxMessaging.Tests.Editor
 
             VisualElement surface = new();
             surface.style.width = 1120;
-            surface.style.height = showSelectedDetails ? 860 : 740;
+            surface.style.height = state switch
+            {
+                DocumentationMessageMonitorState.Components => 1020,
+                DocumentationMessageMonitorState.Filtered => 820,
+                DocumentationMessageMonitorState.SelectedStack => 860,
+                _ => 740,
+            };
+            MessageMonitorViewState viewState = state switch
+            {
+                DocumentationMessageMonitorState.Filtered => new MessageMonitorViewState(
+                    filterText: "type:Enemy context:WaveDirector",
+                    selectedEntryIndex: 0,
+                    showUntargeted: false,
+                    showTargeted: false,
+                    showBroadcast: true
+                ),
+                DocumentationMessageMonitorState.SelectedStack => new MessageMonitorViewState(
+                    selectedEntryIndex: 1
+                ),
+                _ => MessageMonitorViewState.Default,
+            };
             DxMessagingMessageMonitorWindow.BuildMonitorUi(
                 surface,
                 new MessageMonitorSnapshot(
@@ -839,7 +1303,7 @@ namespace DxMessaging.Tests.Editor
                     capacity: 100,
                     entries: entries
                 ),
-                new MessageMonitorViewState(selectedEntryIndex: showSelectedDetails ? 1 : 0),
+                viewState,
                 onRefresh: () => { },
                 onCopyExport: _ => { },
                 componentEntries: components,
@@ -858,7 +1322,15 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingMessageMonitorWindow.DetailsPaneName
             );
             ReplaceNestedScrollViewForCapture(detailsPane?.Query<ScrollView>().First());
-            if (showSelectedDetails)
+            if (state == DocumentationMessageMonitorState.Filtered)
+            {
+                ReplaceNestedScrollViewForCapture(
+                    surface.Q<ScrollView>(
+                        DxMessagingMessageMonitorWindow.ActiveFilterTokenScrollViewName
+                    )
+                );
+            }
+            if (state == DocumentationMessageMonitorState.SelectedStack)
             {
                 Foldout stack = surface.Q<Foldout>(
                     DxMessagingMessageMonitorWindow.DetailsStackFoldoutName
@@ -871,12 +1343,43 @@ namespace DxMessaging.Tests.Editor
                 }
                 stack.value = true;
             }
+            if (state == DocumentationMessageMonitorState.Components)
+            {
+                Foldout componentFoldout = surface.Q<Foldout>(
+                    DxMessagingMessageMonitorWindow.ComponentFoldoutName
+                );
+                if (componentFoldout == null)
+                {
+                    throw new InvalidOperationException(
+                        "The component documentation state must expose Component Diagnostics."
+                    );
+                }
+                componentFoldout.value = true;
+                ReplaceNestedScrollViewForCapture(
+                    surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ComponentScrollViewName)
+                );
+            }
 
             // Window roots normally flex to their dock. Pin the requested viewport or the
             // surface grows to the capture canvas instead of retaining documentation dimensions.
             surface.style.flexGrow = 0;
             surface.style.flexShrink = 0;
             return surface;
+        }
+
+        private enum DocumentationMessageMonitorState
+        {
+            Overview,
+            Components,
+            Filtered,
+            SelectedStack,
+        }
+
+        private enum DocumentationCompilerDiagnosticState
+        {
+            Dxmsg002,
+            Dxmsg003,
+            Dxmsg004,
         }
 
         private static void ReplaceNestedScrollViewForCapture(ScrollView scrollView)

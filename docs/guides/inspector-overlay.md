@@ -19,6 +19,39 @@ The current diagnostic catalog starts at `DXMSG002`; no `DXMSG001` is assigned.
 they appear in Unity's Console or the IDE rather than in this Inspector overlay.
 The overlay covers `DXMSG006` through `DXMSG010`.
 
+## Compiler Diagnostics Before the Overlay
+
+| ID         | Severity | Trigger                                                        |
+| ---------- | -------- | -------------------------------------------------------------- |
+| `DXMSG001` | -        | Unassigned. The package does not emit this diagnostic.         |
+| `DXMSG002` | Error    | One type has more than one Dx message-shape attribute.         |
+| `DXMSG003` | Warning  | A generated nested type has a non-`partial` containing type.   |
+| `DXMSG004` | Info     | Companion suggestion to add `partial` to that containing type. |
+
+The following deterministic specimens pair the exact compiler output with the
+C# declaration that triggers it. They use the package capture theme so the text
+is readable and repeatable; they do not imitate Unity Console or IDE chrome.
+
+### DXMSG002: multiple message attributes
+
+![DXMSG002 compiler error and the C# declaration with two message attributes that triggers it](../images/inspector-overlay/dxmsg002-compiler-diagnostic.png)
+
+Choose exactly one of `DxBroadcastMessage`, `DxTargetedMessage`, or
+`DxUntargetedMessage` for each message type.
+
+### DXMSG003: non-partial containing type
+
+![DXMSG003 compiler warning and the nested message declaration that triggers it](../images/inspector-overlay/dxmsg003-compiler-diagnostic.png)
+
+### DXMSG004: add partial suggestion
+
+![DXMSG004 compiler information diagnostic and the nested message declaration that triggers it](../images/inspector-overlay/dxmsg004-compiler-diagnostic.png)
+
+`DXMSG003` and `DXMSG004` intentionally point at the same declaration. Add
+`partial` to every containing type to resolve both diagnostics. See the
+[analyzer reference](../reference/analyzers.md#dxmsg003-containing-type-must-be-partial-for-nested-generation)
+for complete fixes and edge cases.
+
 ## When a Warning Appears
 
 Whenever your code triggers one of the base-call diagnostics
