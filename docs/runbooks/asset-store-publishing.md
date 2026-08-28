@@ -9,20 +9,21 @@ rules, and the UPM-vs-classic submission choice, see
 The Asset Store upload is **manual by design**: Unity now provides official
 Editor tools for both classic and UPM submissions, but neither tool documents a
 non-interactive upload path (see the determination below). The release pipeline
-removes every manual step it can -- it stages the exact upload payload and a
-generated checklist as a workflow artifact -- so the human step is reduced to
+removes every manual step it can -- it stages the release source payloads and
+generated checklists as a workflow artifact -- so the human step is reduced to
 "download the artifact, then drive the Editor uploader." Treat this runbook as
 the source of truth for that step; keep account IDs, screenshots, and review
 correspondence out of it.
 
-## Automation determination (re-verified 2026-08-24)
+## Automation determination (re-verified 2026-08-28)
 
 There is **no sanctioned (official, documented, supported) CLI, API, or headless
 mode** for uploading a package to the Unity Asset Store. The upload must be
 driven interactively through the Unity Editor by a signed-in publisher. Evidence:
 
 1. **Official Asset Store Publishing Tools** (`com.unity.asset-store-tools`):
-   its documented workflow is the Editor GUI (`Tools > Asset Store > Uploader`),
+   its documented workflow is the Editor GUI
+   (`Tools > Asset Store > Uploader`),
    which requires an interactive Unity ID login and an upload button click.
    There is no documented `-batchmode`, `-executeMethod`, command-line,
    API-token, or CI entry point.
@@ -53,25 +54,23 @@ driven interactively through the Unity Editor by a signed-in publisher. Evidence
 
 **Decision (accepted by the maintainer):** auto-publish was approved _only if_ a
 sanctioned non-interactive path exists. Because none does, the project does
-**not** fake one against an internal API. The publish step stays one-click
-manual, backed by the staged artifact below. This is revisited each release; see
+**not** fake one against an internal API. The publish step stays an interactive
+Editor procedure, backed by the staged artifact below. This is revisited each release; see
 [Re-evaluating automation](#re-evaluating-automation).
 
-Unsupported upload experiments are quarantined in the manual-only
+Public-documentation checks for unsupported upload experiments are quarantined in the manual-only
 `Asset Store Unsupported Upload Research` workflow. It has no tag trigger,
 requires the protected `asset-store-experimental` environment, and is limited to
-documenting risks around BatchSubmitter-style Editor API automation, whether the
-official UPM tool exposes a documented public Editor API and service
-authentication model, Asset Store registry metadata, and any future official
-Unity API. It must not upload, store publisher credentials, or harvest Unity ID
-browser sessions.
+recording the official source URLs and the current supported-automation verdict.
+It cannot inspect the package until an enrolled owner installs it, and it must
+not upload, store publisher credentials, call undocumented endpoints, or
+harvest Unity ID browser sessions.
 
 ## What the release pipeline stages for you
 
 Every tagged release runs the `publish` job in
 [`.github/workflows/release.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/release.yml).
-After the
-npm publish and the GitHub Release succeed, that job uploads an
+Before npm publish, that job uploads an
 `asset-store-submission` workflow artifact (30-day retention) containing the
 exact inputs for the Asset Store upload:
 
@@ -85,6 +84,9 @@ exact inputs for the Asset Store upload:
 - generated `CLASSIC-UPLOAD-CHECKLIST.md` and
   `UPM-UPLOAD-CHECKLIST.md` files carrying package metadata and the matching
   changelog section;
+- `EXPECTED-UPM-FIELDS.json` with the exact package name, version, and
+  `_upm.changelog` field values expected after registry publication. This is a
+  field-value reference, not a complete registry response schema;
 - `MANIFEST.json` with filenames, sizes, and SHA-256 hashes for the staged
   files.
 
@@ -99,6 +101,9 @@ Asset Store.
 
 Run this once the release workflow for the tag is green.
 
+1. **Choose the submission format.** Use the classic path unless the account has
+   `Active` UPM admittance and the UPM Publisher Portal is visible. Use the UPM
+   path after both conditions hold.
 1. **Get the payload.** Download the `asset-store-submission` artifact from the
    release workflow run (Actions tab -> the `release` run for the tag ->
    Artifacts), or download the `.unitypackage` from the matching GitHub Release
@@ -106,23 +111,36 @@ Run this once the release workflow for the tag is green.
    beside you -- it is generated for this exact version. Use
    `UPM-UPLOAD-CHECKLIST.md` only after the account reaches `Active` UPM
    admittance and the UPM Publisher Portal appears.
-1. **Verify integrity.** Confirm the `.unitypackage` SHA-256 matches its
-   `.sha256` sidecar before uploading (use `Get-FileHash` on Windows,
-   `shasum -a 256` elsewhere). This catches a truncated download before it
-   reaches review.
-1. **Sign in.** Open a Unity Editor (any version on the supported matrix; the
-   payload was exported from the pinned 2022.3.45f1), install the **Asset Store
-   Publishing Tools** package, and sign in to the publisher account via the
-   Editor's Unity ID login. Complete two-factor authentication when prompted --
-   this is the step that cannot be automated, because the upload is bound to an
-   interactive, 2FA-gated session.
-1. **Select the draft.** In `Tools > Asset Store > Uploader`, select the
-   DxMessaging package draft (create the draft once in the publisher portal if
-   it does not exist yet).
-1. **Import and upload.** Import the staged `.unitypackage` into a clean project
-   and upload its content through the uploader (`Export and Upload`). Do not
-   re-export from a working tree -- upload the staged payload so the Asset Store
-   build matches the npm/UPM build byte-for-byte.
+1. **Verify integrity.** Confirm the selected `.unitypackage` or `.tgz` SHA-256
+   matches its `.sha256` sidecar before uploading (use `Get-FileHash` on
+   Windows, `shasum -a 256` elsewhere). This catches a truncated download
+   before it reaches review.
+1. **Sign in.** Open a Unity Editor (any version on the supported matrix for the
+   classic path; an editor version supported by the installed UPM publishing
+   tool for the UPM path). The classic payload was exported from the pinned
+   2022.3.45f1. Install the applicable official Asset Store publishing tool and
+   sign in to the publisher account via the Editor's Unity ID login. Complete
+   two-factor authentication when prompted. This cannot be automated because
+   the documented upload is bound to an interactive Unity ID session and Unity
+   documents no service credential.
+1. **Upload the classic package.** Skip this step for a UPM submission. Import
+   the staged `.unitypackage` into a
+   clean project. Confirm the import created
+   `Assets/WallstopStudios/DxMessaging/` and no unrelated top-level content.
+   Resolve every import or duplicate-GUID error in the Unity Console. Open
+   `Tools > Asset Store > Validator`, add the DxMessaging folder, run
+   validation, and resolve every finding. In
+   `Tools > Asset Store > Uploader`, select the DxMessaging draft and
+   run `Export and Upload`. The official tool creates a new archive from the
+   inspected imported assets; archive hashes are not expected to match.
+1. **Upload the UPM package.** Skip this step for a classic submission. Choose
+   `Window > Package Manager > Add package from tarball...` and select the
+   staged `.tgz`. Open `Window > Tools > Asset Store > Validator`, select the
+   UPM validation type, and validate the installed package. Open
+   `Window > Tools > Asset Store > Uploader`, select the `UPM Packages` tab,
+   select the exact package version, and upload it. Follow
+   `UPM-UPLOAD-CHECKLIST.md` from the artifact; do not install a working-tree
+   copy.
 1. **Fill metadata.** Set the version to the released version and paste the
    release notes from the matching `## [X.Y.Z]` section of
    [`CHANGELOG.md`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/CHANGELOG.md).
@@ -132,6 +150,16 @@ Run this once the release workflow for the tag is green.
 1. **Submit for review.** Submit the draft and record that the version was
    submitted (date + reviewer-facing version) in the approved tracker, not in
    this repository.
+1. **Check UPM Version History.** After Unity publishes a UPM version, use a
+   clean Unity project where it is not installed. Open Package Manager Version
+   History, expand the version, and confirm its notes match
+   `EXPECTED-UPM-FIELDS.json`. For the
+   [per-version changelog experiment](https://github.com/Ambiguous-Interactive/DxMessaging/issues/403),
+   repeat this for two versions and verify that both non-installed rows display
+   their own expected notes. If the Publisher Portal or supported Unity tooling
+   exposes a version manifest, also compare its `name`, `version`, and
+   `_upm.changelog` values with the expected fields. Do not query undocumented
+   endpoints to obtain it; the Version History result is the acceptance proof.
 
 If the `.unitypackage` export itself failed, the whole release is blocked rather
 than shipping a half-release (the export is a required asset); fix the export and
@@ -144,9 +172,9 @@ credential is the **Unity publisher account**, used interactively in the Editor:
 
 - The account must be an approved Asset Store publisher with the package draft
   created, and the person uploading must hold a publisher role that can submit.
-- Two-factor authentication is required and is the hard blocker against
-  automation: a non-interactive job cannot satisfy the 2FA challenge, and Unity
-  exposes no service-account or upload-token alternative.
+- Complete two-factor authentication when the account requires it. More
+  generally, Unity documents only interactive Unity ID authentication and no
+  service-account or upload-token alternative.
 - Do not store the publisher password, recovery codes, or session cookies in the
   repository or in CI secrets. Keep them in the approved organization password
   manager. (If automation ever becomes sanctioned, wire its credentials as

@@ -94,6 +94,10 @@ The duplication is checked rather than hidden.
 The other brand PNGs are direct renders of a single SVG and are not produced by
 this script: `icon-256.png` and `dxmessaging-store-icon-320.png` come from
 `dxmessaging-icon-tile.svg`, and the favicons come from `dxmessaging-mark.svg`.
+The release staging generator pins the SHA-256 of every Asset Store SVG source
+and PNG output. After an intentional render change, update the matching
+`STORE_MEDIA` source/output hashes in `scripts/release/asset-store-submission.js`;
+otherwise release staging fails before publication.
 
 ## Release Staging Artifact
 
@@ -105,8 +109,8 @@ artifact containing:
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
 - tracked store media under `media/`
-- generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`, and
-  `MANIFEST.json`
+- generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`,
+  `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
 
 The export stages the `npm pack` payload into an ephemeral Unity project
 under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
@@ -117,7 +121,7 @@ generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
 import visibly.
 
 There is no sanctioned CLI or API for Unity Asset Store uploads (re-verified
-2026-08-24). Unity now ships the official `com.unity.upm-publishing-tools`
+2026-08-28). Unity now ships the official `com.unity.upm-publishing-tools`
 package alongside the classic publishing tool, but the official material for
 both describes interactive Editor workflows and does not document a headless
 entry point or service credential. Community batch uploaders still drive
@@ -141,10 +145,23 @@ the `.unitypackage` upload:
 
 1. Open an editor version listed as compatible with the installed UPM publishing
    tool, then install the tool from Unity's official channel.
-1. Validate the package with Unity's tooling.
-1. Upload the UPM package through the UPM publishing workflow.
+1. Add the staged `.tgz` through
+   `Window > Package Manager > Add package from tarball...`.
+1. Open `Window > Tools > Asset Store > Validator`, select the UPM validation
+   type, and validate the installed package.
+1. Open `Window > Tools > Asset Store > Uploader`, select the `UPM Packages`
+   tab, and upload the exact package version.
 1. Complete Asset Store metadata, screenshots, compatibility, and review fields.
 1. Submit for review.
+1. Repeat for two versions. In a clean Unity project where neither version is
+   installed, open Package Manager Version History, expand both versions, and
+   verify that each non-installed row displays its own expected release notes.
+   This UI result is the acceptance proof.
+1. If the Publisher Portal or supported Unity tooling exposes a version
+   manifest, also compare its `name`, `version`, and `_upm.changelog` values
+   with `EXPECTED-UPM-FIELDS.json`. This file records expected field values; it
+   is not a complete response schema. Do not query undocumented endpoints to
+   obtain the manifest.
 
 If Ambiguous does not have `Active` UPM admittance:
 
