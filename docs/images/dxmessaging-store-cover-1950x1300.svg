@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1950 1300" width="1950" height="1300" role="img" aria-label="DxMessaging - Connect gameplay systems without direct references.">
+  <defs>
+    <linearGradient id="cover-shade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117" stop-opacity="0.9"></stop>
+      <stop offset="0.56" stop-color="#0d1117" stop-opacity="0.55"></stop>
+      <stop offset="1" stop-color="#0d1117" stop-opacity="0.18"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1950" height="1300" fill="#0d1117"></rect>
+  <image href="inspector-overlay/flow-graph.png" x="0" y="0" width="1950" height="1300" preserveAspectRatio="xMidYMid slice" opacity="0.92"></image>
+  <rect x="0" y="0" width="1950" height="1300" fill="url(#cover-shade)"></rect>
+  <rect x="3" y="3" width="1944" height="1294" rx="48" fill="none" stroke="#f4a836" stroke-width="6" opacity="0.72"></rect>
+  <!-- Mark from dxmessaging-mark.svg at 144px (96 * 1.5). scripts/render-brand-cards.py refuses to render if these elements drift. -->
+  <g transform="translate(150,202) scale(1.5)">
+    <polygon points="88,48 68,82.64 28,82.64 8,48 28,13.36 68,13.36" fill="none" stroke="#f4a836" stroke-width="4.5"></polygon>
+    <circle cx="30" cy="48" r="6" fill="#ffd48e"></circle>
+    <path d="M46,34 a20,20 0 0 1 0,28" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round"></path>
+    <path d="M58,26 a32,32 0 0 1 0,44" fill="none" stroke="#ffd48e" stroke-width="4" stroke-linecap="round" opacity="0.55"></path>
+  </g>
+  <text x="475" y="330" text-anchor="end" font-family="Space Grotesk" font-weight="700" font-size="112" letter-spacing="-2" fill="#e9eef4">Dx</text>
+  <text x="475" y="330" text-anchor="start" font-family="Space Grotesk" font-weight="700" font-size="112" letter-spacing="-2" fill="#f4a836">Messaging</text>
+  <text x="154" y="440" font-family="IBM Plex Sans" font-size="43" letter-spacing="0.4" fill="#d3dae3">Connect gameplay systems without direct references.</text>
+  <text x="154" y="1140" font-family="JetBrains Mono" font-size="31" letter-spacing="1.4" fill="#aeb7c2">WALLSTOP STUDIOS</text>
+</svg>

@@ -9,10 +9,12 @@ const { isPathOutsideDirectory, toPosixPath } = require("../lib/path-classifier.
 const REQUIRED_ARGS =
   "outDir packageFile packageChecksum unitypackageFile unitypackageChecksum".split(" ");
 const STORE_MEDIA = [
-  "dxmessaging-store-icon-320.png|320|320|dxmessaging-icon-tile.svg|7519ef9ee3a299f377a53ef308e09db00a0e3f47a1692c5ed3666caf79a75843|982e6eb194ed863a7af446c45557aecb222b0b02e2933f60ca60cb20afe70fbe",
-  "dxmessaging-store-card-420x280.png|420|280|dxmessaging-store-card-420x280.svg|31c25bc776a17b65e3ea1e1a9750cfaef0688c9417e42276fed08fd6d6d76220|d9a5fb6bf1027ad4e9526dfdaf05333ca658efa51e16edbb000c169fe43adf54",
-  "dxmessaging-og-1200x630.png|1200|630|dxmessaging-og-1200x630.svg|1dec23fe6a2e2e14d3b13e870201c599c4b0e8039d20891f7ba2ed5f1cd11d61|fa294d4c821adb0339fcf5cfafb2bbc8a81987ba68cd61fa6af55a9f590a82fe"
+  "dxmessaging-store-icon-160.png|160|160|dxmessaging-icon-tile.svg|7519ef9ee3a299f377a53ef308e09db00a0e3f47a1692c5ed3666caf79a75843|b704fcd9e1bdbbd16b0ea8937192794ffee8124f8df62f66b35e636d061af2b5||",
+  "dxmessaging-store-card-420x280.png|420|280|dxmessaging-store-card-420x280.svg|eebe18742357a122c49bb55457037870404f4b1ac0b985f945284a5db4c63a92|e19ee873e9fd95b04ffedee05b4fb085885e9fea40c9c50238f6f23561144926|inspector-overlay/flow-graph.png|9d5a2b2649730c31f9e99342ca926397973346a971c330ba965c78e6936f631f",
+  "dxmessaging-store-cover-1950x1300.png|1950|1300|dxmessaging-store-cover-1950x1300.svg|c4edf98b793cc96ac23797515886c3e23ff7c2c1a33c0a0af546db055cbf96e1|a87697ca78419245b70ee92062d714a51e4e5e00e052ddf24cc8df3f153748bb|inspector-overlay/flow-graph.png|9d5a2b2649730c31f9e99342ca926397973346a971c330ba965c78e6936f631f"
 ].map((entry) => entry.split("|"));
+// prettier-ignore
+const hasExactKeys = (value, expected) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...expected].sort().join("\0"), isHttpsUrl = (value) => { try { const parsed = new URL(value); return parsed.protocol === "https:" && Boolean(parsed.hostname) && !parsed.username && !parsed.password; } catch { return false; } };
 function sha256(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
@@ -68,37 +70,38 @@ function readListing(repoRoot, pkg, changelogSection) {
   const configPath = path.join(repoRoot, ".github", "asset-store-listing.json"); assertFile(configPath, "Asset Store listing source");
   const listing = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const requiredStrings = ["locale", "title", "description", "keywords"];
+  const listingKeys = ["schemaVersion", ...requiredStrings, "links", "artwork", "screenshots"];
+  const linkKeys = ["documentation", "source", "support"], artworkKeys = ["icon", "card", "cover"];
   if (
-    listing.schemaVersion !== 1 ||
+    !hasExactKeys(listing, listingKeys) || listing.schemaVersion !== 1 || listing.locale !== "en-US" ||
     requiredStrings.some((key) => typeof listing[key] !== "string" || !listing[key].trim()) ||
-    listing.keywords.length > 255 ||
-    !listing.links ||
-    Object.values(listing.links).some((url) => !/^https:\/\//.test(url)) ||
-    !listing.artwork ||
-    Object.values(listing.artwork).some((file) => !STORE_MEDIA.some(([name]) => file === `media/${name}`)) ||
-    Object.keys(listing.artwork).length !== STORE_MEDIA.length ||
-    !Array.isArray(listing.screenshots) ||
-    listing.screenshots.length === 0
+    listing.keywords.length > 255 || listing.keywords.split(/\s+/).some((keyword) => !/^[a-z0-9][a-z0-9-]*$/i.test(keyword)) ||
+    !hasExactKeys(listing.links, linkKeys) || Object.values(listing.links).some((url) => !isHttpsUrl(url)) ||
+    !hasExactKeys(listing.artwork, artworkKeys) || artworkKeys.some((role, index) => listing.artwork[role] !== `media/${STORE_MEDIA[index][0]}`) ||
+    !Array.isArray(listing.screenshots) || listing.screenshots.length === 0
   ) {
     throw new Error("Asset Store listing source is incomplete or invalid.");
   }
   const screenshotRoot = path.join(repoRoot, "docs", "images", "inspector-overlay");
+  if (!fs.existsSync(screenshotRoot) || !fs.statSync(screenshotRoot).isDirectory() || fs.lstatSync(screenshotRoot).isSymbolicLink()) throw new Error("Asset Store screenshot root is unsafe or invalid.");
+  const realScreenshotRoot = fs.realpathSync(screenshotRoot);
+  if (isPathOutsideDirectory(realScreenshotRoot, fs.realpathSync(repoRoot))) throw new Error("Asset Store screenshot root is unsafe or invalid.");
   const fileNames = new Set();
-  const screenshots = listing.screenshots.map(({ source, fileName, caption }) => {
-    const sourcePath = path.resolve(repoRoot, source || "");
+  const screenshots = listing.screenshots.map((declaration) => {
+    const { source, fileName, caption } = declaration || {};
+    const sourcePath = path.resolve(repoRoot, typeof source === "string" ? source : "");
+    const portableName = typeof fileName === "string" && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(fileName) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(fileName);
+    let realSourcePath;
+    try { realSourcePath = fs.realpathSync(sourcePath); } catch { realSourcePath = ""; }
     if (
-      typeof fileName !== "string" ||
-      path.basename(fileName) !== fileName ||
-      !fileName.endsWith(".png") ||
-      fileNames.has(fileName) ||
-      typeof caption !== "string" ||
-      !caption.trim() ||
-      isPathOutsideDirectory(sourcePath, screenshotRoot)
+      !hasExactKeys(declaration, ["source", "fileName", "caption"]) || typeof source !== "string" || !source.trim() || !portableName || fileNames.has(fileName.toLowerCase()) ||
+      typeof caption !== "string" || !caption.trim() || !realSourcePath ||
+      isPathOutsideDirectory(realSourcePath, realScreenshotRoot)
     )
       throw new Error("Asset Store screenshot declaration is unsafe or invalid.");
-    fileNames.add(fileName);
-    validatePng(sourcePath);
-    return { sourcePath, fileName, caption };
+    fileNames.add(fileName.toLowerCase());
+    validatePng(realSourcePath);
+    return { sourcePath: realSourcePath, fileName, caption };
   });
   return {
     listing: { ...listing, packageVersion: pkg.version, minimumUnityVersion: pkg.unity || "", releaseNotes: changelogSection,
@@ -225,15 +228,14 @@ function stageAssetStoreSubmission(options = {}) {
     throw new Error(`package.json _upm.changelog does not match the CHANGELOG.md section for ${pkg.version}.`);
   const listing = readListing(repoRoot, pkg, changelogSection);
   const mediaRoot = path.join(repoRoot, "docs", "images");
-  for (const [name, width, height, source, sourceHash, pngHash] of STORE_MEDIA) {
+  for (const [name, width, height, source, sourceHash, pngHash, dependency, dependencyHash] of STORE_MEDIA) {
     const file = path.join(mediaRoot, name);
     const sourceFile = path.join(mediaRoot, source);
     validatePng(file, Number(width), Number(height));
     assertFile(sourceFile, "Store media source");
-    if (sha256(sourceFile) !== sourceHash || sha256(file) !== pngHash)
-      throw new Error(
-        `Store media source/output lock is stale for ${name}; re-render and update it.`
-      );
+    if (dependency) assertFile(path.join(mediaRoot, dependency), "Store media dependency");
+    if (sha256(sourceFile) !== sourceHash || sha256(file) !== pngHash || (dependency && sha256(path.join(mediaRoot, dependency)) !== dependencyHash))
+      throw new Error(`Store media source/output lock is stale for ${name}; re-render and update it.`);
   }
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });

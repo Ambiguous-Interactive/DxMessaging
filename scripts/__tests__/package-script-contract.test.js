@@ -70,7 +70,8 @@ test("release and store media stay out of the shipped package allowlist", () => 
   for (const asset of [
     "docs/images/dxmessaging-og-1200x630.png",
     "docs/images/dxmessaging-store-card-420x280.png",
-    "docs/images/dxmessaging-store-icon-320.png",
+    "docs/images/dxmessaging-store-cover-1950x1300.png",
+    "docs/images/dxmessaging-store-icon-160.png",
     "docs/images/favicon-32.png",
     "docs/images/icon-256.png"
   ]) {

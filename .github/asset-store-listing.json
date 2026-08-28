@@ -2,38 +2,38 @@
   "schemaVersion": 1,
   "locale": "en-US",
   "title": "DxMessaging",
-  "description": "Connect gameplay systems without direct references between senders and receivers. DxMessaging provides synchronous, type-safe untargeted, targeted, and broadcast messages for Unity 2021.3 and later. Lifecycle-managed registration tokens pair subscriptions with components and dependency-injection scopes. Message Monitor, Flow Graph, Inspector overlays, and runtime diagnostics make routes visible while you develop. Struct messages keep steady-state dispatch allocation-free. Optional samples cover Zenject, VContainer, and Reflex.",
-  "keywords": "unity, message, messaging, event bus, decoupling, type-safe, diagnostics, debugging, performance, zero-allocation, architecture, gameplay",
+  "description": "Connect gameplay systems without direct references between senders and receivers. DxMessaging provides synchronous, type-safe untargeted, targeted, and broadcast messages. Lifecycle-managed registration tokens pair subscriptions with components and dependency-injection scopes. Message Monitor, Flow Graph, Inspector overlays, and runtime diagnostics make routes visible while you develop. Struct messages keep steady-state dispatch allocation-free. Optional samples cover Zenject, VContainer, and Reflex.",
+  "keywords": "unity message messaging event-bus decoupling type-safe diagnostics debugging performance zero-allocation architecture gameplay",
   "links": {
     "documentation": "https://ambiguous-interactive.github.io/DxMessaging/",
     "source": "https://github.com/Ambiguous-Interactive/DxMessaging",
     "support": "https://github.com/Ambiguous-Interactive/DxMessaging/issues"
   },
   "artwork": {
-    "icon": "media/dxmessaging-store-icon-320.png",
+    "icon": "media/dxmessaging-store-icon-160.png",
     "card": "media/dxmessaging-store-card-420x280.png",
-    "social": "media/dxmessaging-og-1200x630.png"
+    "cover": "media/dxmessaging-store-cover-1950x1300.png"
   },
   "screenshots": [
     {
-      "source": "docs/images/inspector-overlay/inspector-subscriptions.png",
-      "fileName": "01-inspector-subscriptions.png",
-      "caption": "Inspect the active message subscriptions on a component."
-    },
-    {
       "source": "docs/images/inspector-overlay/message-monitor.png",
-      "fileName": "02-message-monitor.png",
+      "fileName": "01-message-monitor.png",
       "caption": "Watch live message traffic and filter emissions by type."
     },
     {
       "source": "docs/images/inspector-overlay/flow-graph.png",
-      "fileName": "03-flow-graph.png",
+      "fileName": "02-flow-graph.png",
       "caption": "Trace message routes between senders and receivers."
     },
     {
       "source": "docs/images/inspector-overlay/project-settings-panel.png",
-      "fileName": "04-project-settings.png",
+      "fileName": "03-project-settings.png",
       "caption": "Configure diagnostics and memory reclamation in Project Settings."
+    },
+    {
+      "source": "docs/images/inspector-overlay/dxmsg006-overlay.png",
+      "fileName": "04-lifecycle-diagnostic.png",
+      "caption": "Catch missing lifecycle base calls in the Inspector before Play mode."
     }
   ]
 }

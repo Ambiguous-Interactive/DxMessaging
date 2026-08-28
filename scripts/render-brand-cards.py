@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Render the composed brand cards from their SVG sources.
+"""Render the composed brand cards and store key images from SVG sources.
 
-The Open Graph card and the Asset Store card are shipped as PNG, because social
+The Open Graph card and Asset Store key images are shipped as PNG, because social
 scrapers and the Asset Store submission form do not accept SVG. Their source of
 truth is the SVG beside each one, so a palette, copy, or mark change is a text
 edit followed by this script.
@@ -27,7 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # (SVG source, PNG output, width, height)
 CARDS = [
     ("docs/images/dxmessaging-og-1200x630.svg", "docs/images/dxmessaging-og-1200x630.png", 1200, 630),
+    ("docs/images/dxmessaging-icon-tile.svg", "docs/images/dxmessaging-store-icon-160.png", 160, 160),
     ("docs/images/dxmessaging-store-card-420x280.svg", "docs/images/dxmessaging-store-card-420x280.png", 420, 280),
+    ("docs/images/dxmessaging-store-cover-1950x1300.svg", "docs/images/dxmessaging-store-cover-1950x1300.png", 1950, 1300),
 ]
 
 REQUIRED_FONTS = ["Space Grotesk", "IBM Plex Sans", "JetBrains Mono"]
@@ -44,6 +46,7 @@ MARK_COPIES = [
     "docs/images/dxmessaging-icon-tile.svg",
     "docs/images/dxmessaging-og-1200x630.svg",
     "docs/images/dxmessaging-store-card-420x280.svg",
+    "docs/images/dxmessaging-store-cover-1950x1300.svg",
 ]
 
 FONT_HELP = """Install the missing faces where fontconfig can see them, for example:
@@ -117,7 +120,11 @@ def main():
         if not source.is_file():
             sys.exit(f"Missing SVG source: {svg}")
         cairosvg.svg2png(
-            url=str(source), write_to=str(target), output_width=width, output_height=height
+            url=str(source),
+            write_to=str(target),
+            output_width=width,
+            output_height=height,
+            unsafe=True,  # Trusted tracked SVGs reference one tracked product screenshot.
         )
         print(f"{png} <- {svg} ({width}x{height}, {target.stat().st_size} bytes)")
 

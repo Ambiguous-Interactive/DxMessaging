@@ -80,7 +80,7 @@ exact inputs for the Asset Store upload:
   sources replaced by the shipped `Runtime/Analyzers/` RoslynAnalyzer DLLs);
 - the npm `.tgz` (the exact UPM payload, for reference and diffing);
 - `.sha256` checksums for both;
-- the tracked store media under `media/`;
+- the tracked 160x160 icon, 420x280 card, and 1950x1300 cover under `media/`;
 - four ordered product screenshots under `screenshots/`;
 - generated `ASSET-STORE-LISTING.json` with the exact listing title,
   description, keywords, links, artwork paths, screenshot captions, package
@@ -95,10 +95,12 @@ exact inputs for the Asset Store upload:
   files.
 
 The canonical listing source is `.github/asset-store-listing.json`. The release
-generator validates it and adds release-specific fields to
-`ASSET-STORE-LISTING.json`. The Unity Publisher Portal remains the submission
-interface, but it is not the source of truth for the listing text or media
-order.
+generator validates its exact schema, HTTPS links, whitespace-separated keywords,
+three key-image roles, and portable screenshot paths before it adds release-specific
+fields to `ASSET-STORE-LISTING.json`. The Unity Publisher Portal remains the
+submission interface, but it is not the source of truth for the listing text or
+media order. This validation prepares consistent inputs; it does not predict or
+replace Unity's review decision.
 
 The `.unitypackage` is also attached to the GitHub Release, so a maintainer can
 grab it from either place. The pipeline stops at staging; it never contacts the
