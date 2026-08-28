@@ -894,7 +894,7 @@ jobs:
 
       - name: Assemble the Asset Store submission staging artifact
         # The official classic and UPM publishing tools document Editor UI,
-        # not a sanctioned headless API (re-verified 2026-08-24).
+        # not a sanctioned headless API (re-verified 2026-08-28).
         # This tested generator STAGES the
         # submission inputs, store media, manifest, and manual
         # checklists. It runs before npm publish so missing store collateral
@@ -908,6 +908,19 @@ jobs:
             --unitypackage-file "${{ steps.unitypackage_asset.outputs.unitypackage-file }}" \
             --unitypackage-checksum "${{ steps.unitypackage_asset.outputs.unitypackage-checksum }}" \
             --tag "${{ needs.verify-tag.outputs.tag }}"
+
+      - name: Upload the Asset Store submission staging artifact
+        # Upload before npm publication so a green irreversible registry step
+        # never precedes delivery of the operator's exact staged inputs.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: asset-store-submission
+          path: .artifacts/asset-store-submission/
+          if-no-files-found: error
+          # overwrite: a release workflow re-run may replace the artifact from
+          # an earlier attempt before the idempotent npm/release steps resume.
+          overwrite: true
+          retention-days: 30
 
       # ORDERING INVARIANT: a published GitHub Release must never exist without
       # the matching npm version. The IRREVERSIBLE npm publish runs FIRST; the
@@ -996,16 +1009,3 @@ jobs:
             exit 1
           fi
           echo "::notice::Release ${tag} has all ${#expected[@]} expected assets."
-
-      - name: Upload the Asset Store submission staging artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: asset-store-submission
-          path: .artifacts/asset-store-submission/
-          if-no-files-found: error
-          # overwrite: the documented unitypackage-failure recovery is a workflow
-          # re-run, and attempt 1 already uploaded this artifact; without
-          # overwrite the re-run 409s here AFTER npm publish + the GitHub
-          # release succeeded, leaving a misleading red run.
-          overwrite: true
-          retention-days: 30

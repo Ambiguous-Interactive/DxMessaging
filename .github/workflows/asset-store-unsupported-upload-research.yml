@@ -1,4 +1,5 @@
 name: Asset Store Unsupported Upload Research
+# cspell:ignore tlsv
 
 on:
   workflow_dispatch:
@@ -9,7 +10,7 @@ on:
         type: string
 
 concurrency:
-  group: asset-store-unsupported-upload-research
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -23,9 +24,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Refuse accidental execution
+        env:
+          ACKNOWLEDGE_RISKS: ${{ inputs.acknowledge_risks }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.acknowledge_risks }}" != "I understand" ]; then
+          if [ "${ACKNOWLEDGE_RISKS}" != "I understand" ]; then
             echo "::error::This workflow is quarantined. Re-run manually with acknowledge_risks set to 'I understand'."
             exit 1
           fi
@@ -34,21 +37,69 @@ jobs:
             exit 1
           fi
 
-      - name: Document unsupported upload risk
+      - name: Capture official public documentation
         run: |
           set -euo pipefail
-          cat <<'RISK'
-          This workflow is a research quarantine only. It must not upload to the
-          Unity Asset Store, persist Unity publisher credentials, harvest browser
-          sessions, or call undocumented publisher endpoints.
+          evidence_dir=".artifacts/asset-store-research"
+          mkdir -p "${evidence_dir}"
+          sources=(
+            "https://assetstore.unity.com/publishing/upm-publishing|UPM publishing"
+            "https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply|Enroll as a UPM publisher"
+            "https://docs.unity.com/en-us/asset-store/publishing/upm-packages/validate|Validate and upload a UPM package"
+            "https://docs.unity.com/en-us/asset-store/publishing/upm-packages/submit|Submit a UPM product for approval"
+            "https://docs.unity.com/en-us/asset-store/publishing/asset-packages/upload|Validate and upload assets to your package"
+          )
+          : > "${evidence_dir}/SOURCES.txt"
+          : > "${evidence_dir}/FAILURES.txt"
+          index=0
+          for source in "${sources[@]}"; do
+            index=$((index + 1))
+            IFS='|' read -r url marker <<< "${source}"
+            output="${evidence_dir}/official-${index}.html"
+            if curl --proto '=https' --tlsv1.2 --location --fail-with-body \
+                --connect-timeout 5 --max-time 15 --output "${output}" "${url}" \
+                && grep -Fqi -- "${marker}" "${output}"; then
+              status="captured"
+            else
+              status="unavailable-or-unrecognized"
+              printf '%s\n' "${url}" >> "${evidence_dir}/FAILURES.txt"
+              touch "${output}"
+            fi
+            digest="$(sha256sum "${output}" | cut -d ' ' -f 1)"
+            printf '%s\t%s\t%s\n' "${status}" "${digest}" "${url}" >> "${evidence_dir}/SOURCES.txt"
+          done
+          cat > "${evidence_dir}/SUMMARY.md" <<'SUMMARY'
+          # Asset Store Automation Research
 
-          Research topics that stay outside release.yml:
-          - BatchSubmitter-style Editor API automation.
-          - Whether com.unity.upm-publishing-tools exposes a documented public Editor API and service authentication model.
-          - Prerequisites for an owner-run, sanctioned two-version publication that can test whether the Asset Store registry preserves _upm.changelog.
-          - Official Unity changes that might introduce a supported non-interactive API.
+          This artifact captures Unity's public publishing documentation for a
+          manual research run. It does not upload a package or prove that an
+          undocumented API is safe.
 
-          Before any CI upload wiring exists, Unity must document a supported
-          non-interactive upload path with service credentials that do not depend
-          on an interactive Unity ID session or 2FA browser cookie.
-          RISK
+          The release workflow must stay manual unless Unity documents both:
+
+          1. A supported non-interactive upload entry point.
+          1. A service credential that does not use a Unity ID browser session
+             or an interactive two-factor authentication challenge.
+
+          After an enrolled owner installs `com.unity.upm-publishing-tools`,
+          inspect its public API only to locate the matching Unity documentation.
+          Do not call internal methods or publisher endpoints. Record any new
+          official URLs in the issue before changing `release.yml`.
+          SUMMARY
+
+      - name: Upload research evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: asset-store-automation-research
+          path: .artifacts/asset-store-research/
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+
+      - name: Require complete official evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f .artifacts/asset-store-research/FAILURES.txt
+          test ! -s .artifacts/asset-store-research/FAILURES.txt
