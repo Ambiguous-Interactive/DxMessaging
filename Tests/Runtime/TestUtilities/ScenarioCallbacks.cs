@@ -38,7 +38,7 @@ namespace DxMessaging.Tests.Runtime
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
+                        (in SimpleUntargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -48,7 +48,7 @@ namespace DxMessaging.Tests.Runtime
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
+                        (in SimpleTargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -58,7 +58,7 @@ namespace DxMessaging.Tests.Runtime
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
+                        (in SimpleBroadcastMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -142,7 +142,7 @@ namespace DxMessaging.Tests.Runtime
                     return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
+                        (in SimpleUntargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -152,7 +152,7 @@ namespace DxMessaging.Tests.Runtime
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
+                        (in SimpleTargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -162,21 +162,21 @@ namespace DxMessaging.Tests.Runtime
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
+                        (in SimpleBroadcastMessage _) => onInvoked(),
                         priority
                     );
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
                     return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked(),
+                        (in InstanceId _, in SimpleTargetedMessage __) => onInvoked(),
                         priority: priority
                     );
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
                     return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked(),
+                        (in InstanceId _, in SimpleBroadcastMessage __) => onInvoked(),
                         priority: priority
                     );
                 }

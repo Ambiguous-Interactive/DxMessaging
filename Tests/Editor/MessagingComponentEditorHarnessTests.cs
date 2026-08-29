@@ -214,7 +214,7 @@ namespace DxMessaging.Tests.Editor
 
         private sealed class TestListener : MonoBehaviour
         {
-            public void OnMessage(ref TestHarnessMessage message) { }
+            public void OnMessage(in TestHarnessMessage message) { }
         }
 
         private readonly struct TestHarnessMessage : IUntargetedMessage { }

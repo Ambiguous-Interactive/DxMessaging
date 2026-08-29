@@ -12,7 +12,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         {
             base.RegisterMessageHandlers();
             _ = _messageRegistrationToken.RegisterUntargeted(
-                (ref GenericUntargetedMessage<int> _) => Debug.Log("Received generic int message.")
+                (in GenericUntargetedMessage<int> _) => Debug.Log("Received generic int message.")
             );
         }
     }

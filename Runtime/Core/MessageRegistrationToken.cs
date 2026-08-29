@@ -35,8 +35,8 @@ namespace DxMessaging.Core
     ///     private void OnEnable() =&gt; _token.Enable();
     ///     private void OnDisable() =&gt; _token.Disable();
     ///
-    ///     private void OnInventoryChanged(ref InventoryChanged msg) { /* update UI */ }
-    ///     private void OnEquipItem(ref EquipItem msg) { /* play animation */ }
+    ///     private void OnInventoryChanged(in InventoryChanged msg) { /* update UI */ }
+    ///     private void OnEquipItem(in EquipItem msg) { /* play animation */ }
     /// }
     /// </code>
     /// </example>
@@ -226,12 +226,12 @@ namespace DxMessaging.Core
         /// </note>
         /// <typeparam name="T">Type of message to handle.</typeparam>
         /// <param name="target">Target GameObject to receive messages for.</param>
-        /// <param name="targetedHandler">High-performance handler receiving <typeparamref name="T"/> by ref.</param>
+        /// <param name="targetedHandler">High-performance handler receiving <typeparamref name="T"/> by readonly reference.</param>
         /// <param name="priority">Execution order. Lower runs earlier; same priority uses registration order.</param>
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterGameObjectTargeted&lt;ApplyDamage&gt;(gameObject, (ref ApplyDamage m) =&gt; Apply(m));
+        /// _ = token.RegisterGameObjectTargeted&lt;ApplyDamage&gt;(gameObject, (in ApplyDamage m) =&gt; Apply(m));
         /// token.Enable();
         /// </code>
         /// </example>
@@ -303,7 +303,7 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterGameObjectTargetedPostProcessor&lt;ApplyDamage&gt;(gameObject, (ref ApplyDamage m) =&gt; metrics.RecordProcessedDamageRequest(m.amount));
+        /// _ = token.RegisterGameObjectTargetedPostProcessor&lt;ApplyDamage&gt;(gameObject, (in ApplyDamage m) =&gt; metrics.RecordProcessedDamageRequest(m.amount));
         /// </code>
         /// </example>
         public MessageRegistrationHandle RegisterGameObjectTargetedPostProcessor<T>(
@@ -583,7 +583,7 @@ namespace DxMessaging.Core
         /// <code>
         /// _ = token.RegisterUntargeted&lt;VideoSettingsChanged&gt;(OnSettingsChanged);
         /// token.Enable();
-        /// void OnSettingsChanged(ref VideoSettingsChanged m) { /* refresh UI */ }
+        /// void OnSettingsChanged(in VideoSettingsChanged m) { /* refresh UI */ }
         /// </code>
         /// </example>
         public MessageRegistrationHandle RegisterUntargeted<T>(
@@ -607,18 +607,18 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Stages a registration to accept untargeted messages of type <typeparamref name="T"/> (by-ref fast path).
+        /// Stages a registration to accept untargeted messages of type <typeparamref name="T"/> (readonly by-reference fast path).
         /// </summary>
         /// <note>
         /// DOES NOT ACTUALLY REGISTER THE HANDLER IF NOT ENABLED. To register, a call to Enable() is needed.
         /// </note>
         /// <typeparam name="T">Type of message that the handler accepts.</typeparam>
-        /// <param name="untargetedHandler">High-performance handler that receives <typeparamref name="T"/> by ref.</param>
+        /// <param name="untargetedHandler">High-performance handler that receives <typeparamref name="T"/> by readonly reference.</param>
         /// <param name="priority">Execution order. Lower runs earlier; same priority uses registration order.</param>
         /// <returns>A handle that allows for registration and de-registration.</returns>
         /// <example>
         /// <code>
-        /// _ = token.RegisterUntargeted&lt;WorldRegenerated&gt;((ref WorldRegenerated m) =&gt; { /* ... */ });
+        /// _ = token.RegisterUntargeted&lt;WorldRegenerated&gt;((in WorldRegenerated m) =&gt; { /* ... */ });
         /// token.Enable();
         /// </code>
         /// </example>
@@ -954,7 +954,7 @@ namespace DxMessaging.Core
         /// <example>
         /// <code>
         /// var enemy = (DxMessaging.Core.InstanceId)enemyGameObject;
-        /// _ = token.RegisterBroadcast&lt;TookDamage&gt;(enemy, (ref TookDamage m) =&gt; OnEnemyDamaged(m));
+        /// _ = token.RegisterBroadcast&lt;TookDamage&gt;(enemy, (in TookDamage m) =&gt; OnEnemyDamaged(m));
         /// </code>
         /// </example>
         public MessageRegistrationHandle RegisterBroadcast<T>(
@@ -1205,9 +1205,9 @@ namespace DxMessaging.Core
         /// <example>
         /// <code>
         /// _ = token.RegisterGlobalAcceptAll(
-        ///     (ref DxMessaging.Core.IUntargetedMessage m) =&gt; UnityEngine.Debug.Log(m.MessageType),
-        ///     (ref DxMessaging.Core.InstanceId t, ref DxMessaging.Core.ITargetedMessage m) =&gt; UnityEngine.Debug.Log($"{m.MessageType} to {t}"),
-        ///     (ref DxMessaging.Core.InstanceId s, ref DxMessaging.Core.IBroadcastMessage m) =&gt; UnityEngine.Debug.Log($"{m.MessageType} from {s}")
+        ///     (in DxMessaging.Core.Messages.IUntargetedMessage m) =&gt; UnityEngine.Debug.Log(m.MessageType),
+        ///     (in DxMessaging.Core.InstanceId t, in DxMessaging.Core.Messages.ITargetedMessage m) =&gt; UnityEngine.Debug.Log($"{m.MessageType} to {t}"),
+        ///     (in DxMessaging.Core.InstanceId s, in DxMessaging.Core.Messages.IBroadcastMessage m) =&gt; UnityEngine.Debug.Log($"{m.MessageType} from {s}")
         /// );
         /// </code>
         /// </example>
@@ -2817,7 +2817,7 @@ namespace DxMessaging.Core
             // the identity/dedup key; this flat invoker runs for the default slot. Calls
             // the typed field directly (no castclass) then records the (message, _context)
             // emission, matching the former AugmentedHandler bodies exactly.
-            private void AugmentedScalarAction(ref T message)
+            private void AugmentedScalarAction(in T message)
             {
                 _scalarAction(message);
                 if (Token._diagnosticMode)
@@ -2826,9 +2826,9 @@ namespace DxMessaging.Core
                 }
             }
 
-            private void AugmentedScalarFast(ref T message)
+            private void AugmentedScalarFast(in T message)
             {
-                _scalarFast(ref message);
+                _scalarFast(in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message, _context);
@@ -2836,9 +2836,9 @@ namespace DxMessaging.Core
             }
 
             // Context invokers (without-targeting handler / post-processor). Emission data
-            // uses the dispatch-supplied target (the ref param), not the stored _context
+            // uses the dispatch-supplied target (the readonly parameter), not the stored _context
             // (default for these kinds), matching the former bodies exactly.
-            private void AugmentedContextAction(ref InstanceId target, ref T message)
+            private void AugmentedContextAction(in InstanceId target, in T message)
             {
                 _contextAction(target, message);
                 if (Token._diagnosticMode)
@@ -2847,9 +2847,9 @@ namespace DxMessaging.Core
                 }
             }
 
-            private void AugmentedContextFast(ref InstanceId target, ref T message)
+            private void AugmentedContextFast(in InstanceId target, in T message)
             {
-                _contextFast(ref target, ref message);
+                _contextFast(in target, in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message, target);
@@ -2945,7 +2945,7 @@ namespace DxMessaging.Core
 
             // Untargeted scalar invokers. No context: emission data carries the message
             // only, matching the former AugmentedHandler bodies exactly.
-            private void AugmentedScalarAction(ref T message)
+            private void AugmentedScalarAction(in T message)
             {
                 _scalarAction(message);
                 if (Token._diagnosticMode)
@@ -2954,9 +2954,9 @@ namespace DxMessaging.Core
                 }
             }
 
-            private void AugmentedScalarFast(ref T message)
+            private void AugmentedScalarFast(in T message)
             {
-                _scalarFast(ref message);
+                _scalarFast(in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message);
@@ -3124,7 +3124,7 @@ namespace DxMessaging.Core
 
             // Broadcast scalar invokers. Emission data carries the stored source
             // (_context), matching the former AugmentedHandler bodies exactly.
-            private void AugmentedScalarAction(ref T message)
+            private void AugmentedScalarAction(in T message)
             {
                 _scalarAction(message);
                 if (Token._diagnosticMode)
@@ -3133,9 +3133,9 @@ namespace DxMessaging.Core
                 }
             }
 
-            private void AugmentedScalarFast(ref T message)
+            private void AugmentedScalarFast(in T message)
             {
-                _scalarFast(ref message);
+                _scalarFast(in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message, _context);
@@ -3143,9 +3143,9 @@ namespace DxMessaging.Core
             }
 
             // Broadcast context invokers for the without-source kinds. Emission data uses
-            // the dispatch-supplied source (the ref param), not the stored _context
+            // the dispatch-supplied source (the readonly parameter), not the stored _context
             // (default for these kinds), matching the former bodies exactly.
-            private void AugmentedContextAction(ref InstanceId source, ref T message)
+            private void AugmentedContextAction(in InstanceId source, in T message)
             {
                 _contextAction(source, message);
                 if (Token._diagnosticMode)
@@ -3154,9 +3154,9 @@ namespace DxMessaging.Core
                 }
             }
 
-            private void AugmentedContextFast(ref InstanceId source, ref T message)
+            private void AugmentedContextFast(in InstanceId source, in T message)
             {
-                _contextFast(ref source, ref message);
+                _contextFast(in source, in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message, source);
@@ -3481,30 +3481,27 @@ namespace DxMessaging.Core
                 }
             }
 
-            private void AugmentedUntargetedFast(ref IUntargetedMessage message)
+            private void AugmentedUntargetedFast(in IUntargetedMessage message)
             {
-                _untargetedFast(ref message);
+                _untargetedFast(in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message);
                 }
             }
 
-            private void AugmentedTargetedFast(ref InstanceId target, ref ITargetedMessage message)
+            private void AugmentedTargetedFast(in InstanceId target, in ITargetedMessage message)
             {
-                _targetedFast(ref target, ref message);
+                _targetedFast(in target, in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message, target);
                 }
             }
 
-            private void AugmentedBroadcastFast(
-                ref InstanceId source,
-                ref IBroadcastMessage message
-            )
+            private void AugmentedBroadcastFast(in InstanceId source, in IBroadcastMessage message)
             {
-                _broadcastFast(ref source, ref message);
+                _broadcastFast(in source, in message);
                 if (Token._diagnosticMode)
                 {
                     RecordDiagnosticEmission(message, source);

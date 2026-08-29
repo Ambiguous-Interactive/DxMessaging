@@ -146,12 +146,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             return;
 
-            void Test1Receive(ref SimpleTargetedMessage message)
+            void Test1Receive(in SimpleTargetedMessage message)
             {
                 ++test1TargetedCount;
             }
 
-            void Test2Receive(ref SimpleTargetedMessage message)
+            void Test2Receive(in SimpleTargetedMessage message)
             {
                 ++test2TargetedCount;
             }
@@ -221,12 +221,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             return;
 
-            void Test1Receive(ref SimpleTargetedMessage message)
+            void Test1Receive(in SimpleTargetedMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleTargetedMessage message)
+            void Test2Receive(in SimpleTargetedMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -360,12 +360,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref SimpleTargetedMessage message)
+            void Test1Receive(in SimpleTargetedMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleTargetedMessage message)
+            void Test2Receive(in SimpleTargetedMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -437,12 +437,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref SimpleTargetedMessage message)
+            void Test1Receive(in SimpleTargetedMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleTargetedMessage message)
+            void Test2Receive(in SimpleTargetedMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -583,12 +583,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref InstanceId id, ref SimpleTargetedMessage message)
+            void Test1Receive(in InstanceId id, in SimpleTargetedMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref InstanceId id, ref SimpleTargetedMessage message)
+            void Test2Receive(in InstanceId id, in SimpleTargetedMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -656,7 +656,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref InstanceId id, ref SimpleTargetedMessage message)
+            void Test1Receive(in InstanceId id, in SimpleTargetedMessage message)
             {
                 ++test1ReceiveCount;
             }
@@ -700,12 +700,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void ReceiveGameObject(ref SimpleTargetedMessage message)
+            void ReceiveGameObject(in SimpleTargetedMessage message)
             {
                 ++gameObjectCount;
             }
 
-            void ReceiveComponent(ref SimpleTargetedMessage message)
+            void ReceiveComponent(in SimpleTargetedMessage message)
             {
                 ++componentCount;
             }
@@ -728,7 +728,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int priority = i;
                 token.RegisterGameObjectTargeted(
                     test,
-                    (ref SimpleTargetedMessage _) =>
+                    (in SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
                         for (int j = priority - 1; j >= 0; --j)
@@ -744,7 +744,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
                 token.RegisterGameObjectTargetedPostProcessor(
                     test,
-                    (ref SimpleTargetedMessage _) =>
+                    (in SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);
@@ -798,7 +798,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int priority = i;
                 token.RegisterComponentTargeted(
                     component,
-                    (ref SimpleTargetedMessage _) =>
+                    (in SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
                         for (int j = priority - 1; j >= 0; --j)
@@ -814,7 +814,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
                 token.RegisterComponentTargetedPostProcessor(
                     component,
-                    (ref SimpleTargetedMessage _) =>
+                    (in SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);

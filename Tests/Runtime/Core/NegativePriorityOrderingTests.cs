@@ -232,7 +232,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => order.Add(effectiveLabel),
+                        (in SimpleUntargetedMessage _) => order.Add(effectiveLabel),
                         priority
                     );
                 }
@@ -242,7 +242,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => order.Add(effectiveLabel),
+                        (in SimpleTargetedMessage _) => order.Add(effectiveLabel),
                         priority
                     );
                 }
@@ -252,7 +252,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => order.Add(effectiveLabel),
+                        (in SimpleBroadcastMessage _) => order.Add(effectiveLabel),
                         priority
                     );
                 }
@@ -345,7 +345,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => order.Add(effectiveLabel),
+                        (in SimpleUntargetedMessage _) => order.Add(effectiveLabel),
                         priority
                     );
                 }
@@ -355,7 +355,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => order.Add(effectiveLabel),
+                        (in SimpleTargetedMessage _) => order.Add(effectiveLabel),
                         priority
                     );
                 }
@@ -365,7 +365,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => order.Add(effectiveLabel),
+                        (in SimpleBroadcastMessage _) => order.Add(effectiveLabel),
                         priority
                     );
                 }

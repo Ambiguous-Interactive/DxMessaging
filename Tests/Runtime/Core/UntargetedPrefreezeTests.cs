@@ -31,7 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool registeredLate = false;
 
             _ = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage message) =>
+                (in SimpleUntargetedMessage message) =>
                 {
                     if (registeredLate)
                     {
@@ -40,13 +40,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     registeredLate = true;
                     _ = token.RegisterUntargetedPostProcessor(
-                        (ref SimpleUntargetedMessage _) => latePostProcessCount++,
+                        (in SimpleUntargetedMessage _) => latePostProcessCount++,
                         priority: 0
                     );
                 }
             );
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => existingPostProcessCount++,
+                (in SimpleUntargetedMessage _) => existingPostProcessCount++,
                 priority: 0
             );
 
@@ -99,7 +99,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             registeredLate = true;
                             _ = token.RegisterUntargetedPostProcessor(
-                                (ref SimpleUntargetedMessage _) => latePostProcessCount++,
+                                (in SimpleUntargetedMessage _) => latePostProcessCount++,
                                 priority: 0
                             );
                         }
@@ -109,9 +109,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     priority: 0,
                     messageBus: messageBus
                 );
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => { });
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => { });
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => existingPostProcessCount++,
+                (in SimpleUntargetedMessage _) => existingPostProcessCount++,
                 priority: 0
             );
 
@@ -151,17 +151,17 @@ namespace DxMessaging.Tests.Runtime.Core
             int removedPostProcessCount = 0;
             int peerPostProcessCount = 0;
             MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => removedPostProcessCount++,
+                (in SimpleUntargetedMessage _) => removedPostProcessCount++,
                 priority: 0
             );
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => peerPostProcessCount++,
+                (in SimpleUntargetedMessage _) => peerPostProcessCount++,
                 priority: 0
             );
 
             bool removed = false;
             _ = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage _) =>
+                (in SimpleUntargetedMessage _) =>
                 {
                     if (!removed)
                     {
@@ -218,13 +218,13 @@ namespace DxMessaging.Tests.Runtime.Core
             )
             {
                 MessageRegistrationHandle postHandle = token.RegisterUntargetedPostProcessor(
-                    (ref SimpleUntargetedMessage _) => postProcessCount++,
+                    (in SimpleUntargetedMessage _) => postProcessCount++,
                     priority: 0
                 );
 
                 bool removed = false;
                 _ = token.RegisterUntargeted(
-                    (ref SimpleUntargetedMessage _) =>
+                    (in SimpleUntargetedMessage _) =>
                     {
                         if (!removed)
                         {
@@ -274,7 +274,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool registeredLate = false;
 
             _ = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage message) =>
+                (in SimpleUntargetedMessage message) =>
                 {
                     if (registeredLate)
                     {
@@ -283,7 +283,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     registeredLate = true;
                     _ = token.RegisterUntargeted(
-                        (ref SimpleUntargetedMessage _) => lateHandlerCount++,
+                        (in SimpleUntargetedMessage _) => lateHandlerCount++,
                         priority: 100
                     );
                 }

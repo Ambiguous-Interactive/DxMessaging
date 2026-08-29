@@ -41,19 +41,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     handles.Add(
                         token.RegisterUntargeted<MultiKindMessage>(
-                            (ref MultiKindMessage _) => ++untargetedCount
+                            (in MultiKindMessage _) => ++untargetedCount
                         )
                     );
                     handles.Add(
                         token.RegisterTargeted<MultiKindMessage>(
                             target,
-                            (ref MultiKindMessage _) => ++targetedCount
+                            (in MultiKindMessage _) => ++targetedCount
                         )
                     );
                     handles.Add(
                         token.RegisterBroadcast<MultiKindMessage>(
                             source,
-                            (ref MultiKindMessage _) => ++broadcastCount
+                            (in MultiKindMessage _) => ++broadcastCount
                         )
                     );
 

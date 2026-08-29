@@ -155,7 +155,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(HandleUserUntargeted);
         }
 
-        protected override void HandleStringComponentMessage(ref StringMessage message)
+        protected override void HandleStringComponentMessage(in StringMessage message)
         {
             // The base class normally registers this as a handler. Without the
             // base call in RegisterMessageHandlers, this should never run for
@@ -163,7 +163,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             defaultHandlerInvocations++;
         }
 
-        private void HandleUserUntargeted(ref SimpleUntargetedMessage message)
+        private void HandleUserUntargeted(in SimpleUntargetedMessage message)
         {
             userHandlerInvocations++;
         }
@@ -208,7 +208,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(HandleUserUntargeted);
         }
 
-        private void HandleUserUntargeted(ref SimpleUntargetedMessage message)
+        private void HandleUserUntargeted(in SimpleUntargetedMessage message)
         {
             userHandlerInvocations++;
         }

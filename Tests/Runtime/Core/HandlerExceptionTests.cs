@@ -739,13 +739,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Targeted:
                 {
                     return token.RegisterTargetedWithoutTargeting(
-                        (ref InstanceId _, ref SimpleTargetedMessage _) => onInvoked()
+                        (in InstanceId _, in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
                 {
                     return token.RegisterBroadcastWithoutSource(
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) => onInvoked()
+                        (in InstanceId _, in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:
@@ -770,13 +770,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Targeted:
                 {
                     return token.RegisterTargetedWithoutTargetingPostProcessor(
-                        (ref InstanceId _, ref SimpleTargetedMessage _) => onInvoked()
+                        (in InstanceId _, in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
                 {
                     return token.RegisterBroadcastWithoutSourcePostProcessor(
-                        (ref InstanceId _, ref SimpleBroadcastMessage _) => onInvoked()
+                        (in InstanceId _, in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:

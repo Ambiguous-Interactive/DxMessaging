@@ -2,6 +2,39 @@
 
 This guide helps you introduce DxMessaging into an existing Unity project **gradually and pragmatically**. You don't need to rewrite everything at once.
 
+## Migrating to 4.0.0
+
+DxMessaging 4.0 makes fast handlers and post-processors readonly. Change explicit handler
+parameters from `ref` to `in`:
+
+```csharp
+// 3.x
+void OnDamageV3(ref ApplyDamage message) { }
+
+// 4.0
+void OnDamageV4(in ApplyDamage message) { }
+```
+
+Apply the same change to both parameters of callbacks that receive a target or source:
+
+```csharp
+void OnDamage(in InstanceId source, in TookDamage message) { }
+```
+
+Overrides of `MessageAwareComponent.HandleStringGameObjectMessage`,
+`HandleStringComponentMessage`, and `HandleGlobalStringMessage` must also change their message
+parameter from `ref` to `in`.
+
+Keep interceptor parameters and emitted message variables as `ref`. Interceptors remain the
+supported place to mutate a payload or its routing context before handlers observe it.
+
+Rebuild precompiled assemblies and plugins that reference `MessageHandler.FastHandler<T>`,
+`MessageHandler.FastHandlerWithContext<T>`, or the changed `MessageAwareComponent` virtual methods
+because their metadata changed. Prefer `readonly struct` messages and readonly instance members;
+calling a non-readonly member through an `in` parameter can make the compiler create a defensive
+copy. For class messages, `in` protects the reference itself but does not make the referenced
+object's fields immutable.
+
 ## Philosophy: Start Small, Prove Value
 
 ### Don't do this
@@ -36,7 +69,7 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
            base.RegisterMessageHandlers();
            _ = Token.RegisterUntargeted<TestMessage>(OnTest);
        }
-       void OnTest(ref TestMessage m) => Debug.Log($"Got {m.value}");
+       void OnTest(in TestMessage m) => Debug.Log($"Got {m.value}");
    }
 
    // In another script:
@@ -150,7 +183,7 @@ public class HealthBar : MessageAwareComponent {
         _ = Token.RegisterGameObjectBroadcast<HealthChanged>(playerObject, OnHealthChanged);
     }
 
-    void OnHealthChanged(ref HealthChanged msg) => UpdateBar(msg.newHealth);
+    void OnHealthChanged(in HealthChanged msg) => UpdateBar(msg.newHealth);
 }
 ```
 
@@ -289,7 +322,7 @@ public class ModernBridge : MessageAwareComponent {
         _ = Token.RegisterUntargeted<NewMessage>(OnMessage);
     }
 
-    void OnMessage(ref NewMessage msg) {
+    void OnMessage(in NewMessage msg) {
         LegacyEvent?.Invoke(msg.value); // Fire old event
     }
 }
@@ -520,7 +553,7 @@ public sealed class InventoryService : IStartable, IDisposable
         lease.Dispose();
     }
 
-    private static void OnInventoryChanged(ref InventoryChanged message)
+    private static void OnInventoryChanged(in InventoryChanged message)
     {
         // respond to updates
     }

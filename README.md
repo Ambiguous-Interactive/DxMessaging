@@ -231,7 +231,7 @@ public sealed class DamageReceiver : MessageAwareComponent
         _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    private void OnDamageRequested(ref DamageRequested message)
+    private void OnDamageRequested(in DamageRequested message)
     {
         Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
     }
@@ -501,7 +501,7 @@ public class Player : MessageAwareComponent {
         _ = Token.RegisterComponentTargeted<Heal>(this, OnHeal);
     }
 
-    void OnHeal(ref Heal m) {
+    void OnHeal(in Heal m) {
         health += m.amount;
         Debug.Log($"Healed {m.amount}!");
     }
@@ -535,13 +535,13 @@ invocation itself can be allocation-free.
 #### DxMessaging solution
 
 ```csharp
-void OnDamage(ref ApplyDamage msg) { // Pass by ref = zero allocations
+void OnDamage(in ApplyDamage msg) { // Pass by in = zero allocations
     health -= msg.amount;            // No boxing, no GC pressure
 }
 // Automatic cleanup prevents common leak patterns
 ```
 
-**Note:** Struct messages passed by ref avoid GC allocations, which is standard behavior for value types in C#.
+**Note:** Struct messages passed by readonly reference avoid copies without allocating.
 
 ### Three Message Types
 
@@ -628,7 +628,7 @@ _ = token.RegisterTargetedInterceptor<ApplyDamage>(
 
 // Now ALL handlers receive clean, validated data
 _ = token.RegisterComponentTargeted<ApplyDamage>(player, OnDamage);
-void OnDamage(ref ApplyDamage msg) {
+void OnDamage(in ApplyDamage msg) {
     // No validation needed - interceptor guarantees validity!
     health -= msg.amount;
 }
@@ -865,7 +865,7 @@ public class AudioSystem : MessageAwareComponent {
         base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<SceneTransition>(OnScene, priority: 0);
     }
-    void OnScene(ref SceneTransition m) => FadeOutMusic();
+    void OnScene(in SceneTransition m) => FadeOutMusic();
 }
 
 public class SaveSystem : MessageAwareComponent {
@@ -873,7 +873,7 @@ public class SaveSystem : MessageAwareComponent {
         base.RegisterMessageHandlers();
         _ = Token.RegisterUntargeted<SceneTransition>(OnScene, priority: 0);
     }
-    void OnScene(ref SceneTransition m) => SaveGame();
+    void OnScene(in SceneTransition m) => SaveGame();
 }
 ```
 

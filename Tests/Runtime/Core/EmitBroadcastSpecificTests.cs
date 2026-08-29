@@ -147,12 +147,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             return;
 
-            void Test1Receive(ref SimpleBroadcastMessage message)
+            void Test1Receive(in SimpleBroadcastMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleBroadcastMessage message)
+            void Test2Receive(in SimpleBroadcastMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -229,12 +229,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             return;
 
-            void Test1Receive(ref SimpleBroadcastMessage message)
+            void Test1Receive(in SimpleBroadcastMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleBroadcastMessage message)
+            void Test2Receive(in SimpleBroadcastMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -368,12 +368,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref SimpleBroadcastMessage message)
+            void Test1Receive(in SimpleBroadcastMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleBroadcastMessage message)
+            void Test2Receive(in SimpleBroadcastMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -445,12 +445,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref SimpleBroadcastMessage message)
+            void Test1Receive(in SimpleBroadcastMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref SimpleBroadcastMessage message)
+            void Test2Receive(in SimpleBroadcastMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -591,12 +591,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref InstanceId id, ref SimpleBroadcastMessage message)
+            void Test1Receive(in InstanceId id, in SimpleBroadcastMessage message)
             {
                 ++test1ReceiveCount;
             }
 
-            void Test2Receive(ref InstanceId id, ref SimpleBroadcastMessage message)
+            void Test2Receive(in InstanceId id, in SimpleBroadcastMessage message)
             {
                 ++test2ReceiveCount;
             }
@@ -664,7 +664,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Test1Receive(ref InstanceId id, ref SimpleBroadcastMessage message)
+            void Test1Receive(in InstanceId id, in SimpleBroadcastMessage message)
             {
                 ++test1ReceiveCount;
             }
@@ -708,12 +708,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void ReceiveGameObject(ref SimpleBroadcastMessage message)
+            void ReceiveGameObject(in SimpleBroadcastMessage message)
             {
                 ++gameObjectCount;
             }
 
-            void ReceiveComponent(ref SimpleBroadcastMessage message)
+            void ReceiveComponent(in SimpleBroadcastMessage message)
             {
                 ++componentCount;
             }
@@ -736,7 +736,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int priority = i;
                 token.RegisterGameObjectBroadcast(
                     test,
-                    (ref SimpleBroadcastMessage _) =>
+                    (in SimpleBroadcastMessage _) =>
                     {
                         int previous = received[priority]++;
                         if (0 < priority)
@@ -752,7 +752,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
                 token.RegisterGameObjectBroadcastPostProcessor(
                     test,
-                    (ref SimpleBroadcastMessage _) =>
+                    (in SimpleBroadcastMessage _) =>
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);
@@ -806,7 +806,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int priority = i;
                 token.RegisterComponentBroadcast(
                     component,
-                    (ref SimpleBroadcastMessage _) =>
+                    (in SimpleBroadcastMessage _) =>
                     {
                         int previous = received[priority]++;
                         for (int j = priority - 1; j >= 0; --j)
@@ -822,7 +822,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
                 token.RegisterComponentBroadcastPostProcessor(
                     component,
-                    (ref SimpleBroadcastMessage _) =>
+                    (in SimpleBroadcastMessage _) =>
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);

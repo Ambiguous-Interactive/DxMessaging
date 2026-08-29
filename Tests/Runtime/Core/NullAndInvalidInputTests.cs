@@ -172,19 +172,19 @@ namespace DxMessaging.Tests.Runtime.Core
             using TokenScope scope = TokenScope.Create();
             MessageRegistrationHandle stale =
                 scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
             scope.Token.RemoveRegistration(stale);
 
             int invocationCount = 0;
             MessageRegistrationHandle current =
                 scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => ++invocationCount
+                    (in SimpleUntargetedMessage _) => ++invocationCount
                 );
             using TokenScope foreignScope = TokenScope.Create();
             MessageRegistrationHandle foreign =
                 foreignScope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
 
             Assert.DoesNotThrow(() => scope.Token.RemoveRegistration(stale));
@@ -211,7 +211,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int capture = i;
                 original.Add(
                     scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => GC.KeepAlive(capture)
+                        (in SimpleUntargetedMessage _) => GC.KeepAlive(capture)
                     )
                 );
             }
@@ -235,15 +235,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
             MessageRegistrationHandle reuseTail =
                 scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
             MessageRegistrationHandle reuseMiddle =
                 scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
             MessageRegistrationHandle reuseHead =
                 scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
 
             CollectionAssert.AllItemsAreUnique(
@@ -318,7 +318,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int invocationCount = 0;
             MessageRegistrationHandle handle = scope.Token.RegisterTargeted<SimpleTargetedMessage>(
                 default,
-                (ref SimpleTargetedMessage _) => ++invocationCount
+                (in SimpleTargetedMessage _) => ++invocationCount
             );
 
             SimpleTargetedMessage message = new();
@@ -338,7 +338,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle handle =
                 scope.Token.RegisterBroadcast<SimpleBroadcastMessage>(
                     default,
-                    (ref SimpleBroadcastMessage _) => ++invocationCount
+                    (in SimpleBroadcastMessage _) => ++invocationCount
                 );
 
             SimpleBroadcastMessage message = new();
@@ -402,7 +402,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int invocationCount = 0;
             MessageRegistrationHandle handle =
                 scope.Token.RegisterUntargeted<ClassUntargetedMessage>(
-                    (ref ClassUntargetedMessage _) => ++invocationCount
+                    (in ClassUntargetedMessage _) => ++invocationCount
                 );
 
             Assert.DoesNotThrow(() => scope.Bus.EmitUntargeted((ClassUntargetedMessage)null));
@@ -424,7 +424,7 @@ namespace DxMessaging.Tests.Runtime.Core
             using TokenScope scope = TokenScope.Create();
             MessageRegistrationHandle handle =
                 scope.Token.RegisterUntargeted<ClassUntargetedMessage>(
-                    (ref ClassUntargetedMessage message) => _ = message.GetType()
+                    (in ClassUntargetedMessage message) => _ = message.GetType()
                 );
 
             Assert.Throws<NullReferenceException>(() =>
@@ -477,7 +477,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int invocationCount = 0;
             _ = token.RegisterTargeted<SimpleTargetedMessage>(
                 default,
-                (ref SimpleTargetedMessage _) => ++invocationCount
+                (in SimpleTargetedMessage _) => ++invocationCount
             );
             token.Enable();
 
@@ -689,8 +689,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     token =>
                         token.RegisterGlobalAcceptAll(
                             (MessageHandler.FastHandler<IUntargetedMessage>)null,
-                            static (ref InstanceId _, ref ITargetedMessage _) => { },
-                            static (ref InstanceId _, ref IBroadcastMessage _) => { }
+                            static (in InstanceId _, in ITargetedMessage _) => { },
+                            static (in InstanceId _, in IBroadcastMessage _) => { }
                         )
                 );
                 yield return new NullHandlerCase(
@@ -698,9 +698,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     "acceptAllTargeted",
                     token =>
                         token.RegisterGlobalAcceptAll(
-                            static (ref IUntargetedMessage _) => { },
+                            static (in IUntargetedMessage _) => { },
                             (MessageHandler.FastHandlerWithContext<ITargetedMessage>)null,
-                            static (ref InstanceId _, ref IBroadcastMessage _) => { }
+                            static (in InstanceId _, in IBroadcastMessage _) => { }
                         )
                 );
                 yield return new NullHandlerCase(
@@ -708,8 +708,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     "acceptAllBroadcast",
                     token =>
                         token.RegisterGlobalAcceptAll(
-                            static (ref IUntargetedMessage _) => { },
-                            static (ref InstanceId _, ref ITargetedMessage _) => { },
+                            static (in IUntargetedMessage _) => { },
+                            static (in InstanceId _, in ITargetedMessage _) => { },
                             (MessageHandler.FastHandlerWithContext<IBroadcastMessage>)null
                         )
                 );
@@ -761,7 +761,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         int invocationCount = 0;
                         MessageRegistrationHandle handle =
                             scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                                (ref SimpleUntargetedMessage _) => ++invocationCount
+                                (in SimpleUntargetedMessage _) => ++invocationCount
                             );
                         scope.Token.RemoveRegistration(handle);
                         scope.Token.RemoveRegistration(handle);

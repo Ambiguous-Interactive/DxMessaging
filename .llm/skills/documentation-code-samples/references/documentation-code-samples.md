@@ -55,7 +55,7 @@ public sealed class HealthComponent : MessageAwareComponent
         );
     }
 
-    private void HandleDamage(ref DamageMessage message)
+    private void HandleDamage(in DamageMessage message)
     {
         currentHealth -= message.amount;
         Debug.Log($"Took {message.amount} damage from {message.source}. Health: {currentHealth}");
@@ -70,7 +70,7 @@ public sealed class HealthComponent : MessageAwareComponent
 // Missing class context
 // Uses outdated API
 
-public void HandleDamage(DamageMessage msg)  // Wrong signature! Should be (ref DamageMessage message)
+public void HandleDamage(DamageMessage msg)  // Wrong fast signature! Should be (in DamageMessage message)
 {
     health -= msg.damage;  // Field doesn't exist in example - should be msg.amount
 }

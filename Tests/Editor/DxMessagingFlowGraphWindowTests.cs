@@ -12208,15 +12208,15 @@ namespace DxMessaging.Tests.Editor
 
         private sealed class TestListener : MonoBehaviour
         {
-            public void OnFlowGraphMessage(ref FlowGraphMessage message) { }
+            public void OnFlowGraphMessage(in FlowGraphMessage message) { }
 
-            public void OnFlowGraphBroadcast(ref FlowGraphBroadcastMessage message) { }
+            public void OnFlowGraphBroadcast(in FlowGraphBroadcastMessage message) { }
 
-            public void OnFlowGraphTargeted(ref FlowGraphTargetedMessage message) { }
+            public void OnFlowGraphTargeted(in FlowGraphTargetedMessage message) { }
 
-            public void OnFlowGraphMixed(ref FlowGraphMixedMessage message) { }
+            public void OnFlowGraphMixed(in FlowGraphMixedMessage message) { }
 
-            public void PostProcessFlowGraphMessage(ref FlowGraphMessage message) { }
+            public void PostProcessFlowGraphMessage(in FlowGraphMessage message) { }
 
             public void OnGlobalUntargeted(IUntargetedMessage message) { }
 

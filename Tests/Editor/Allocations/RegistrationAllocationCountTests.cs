@@ -135,24 +135,24 @@ namespace DxMessaging.Tests.Editor.Allocations
             IMessageBus.GlobalDiagnosticsTargets = _savedDiagnostics;
         }
 
-        private static void NoOp(ref SimpleUntargetedMessage message) { }
+        private static void NoOp(in SimpleUntargetedMessage message) { }
 
         private static void NoOpAction(SimpleUntargetedMessage message) { }
 
-        private static void NoOpTargetedPostProcessor(ref SimpleTargetedMessage message) { }
+        private static void NoOpTargetedPostProcessor(in SimpleTargetedMessage message) { }
 
         private static void NoOpTargetedActionPostProcessor(SimpleTargetedMessage message) { }
 
-        private static void NoOpGlobalUntargeted(ref IUntargetedMessage message) { }
+        private static void NoOpGlobalUntargeted(in IUntargetedMessage message) { }
 
         private static void NoOpGlobalTargeted(
-            ref InstanceId target,
-            ref ITargetedMessage message
+            in InstanceId target,
+            in ITargetedMessage message
         ) { }
 
         private static void NoOpGlobalBroadcast(
-            ref InstanceId source,
-            ref IBroadcastMessage message
+            in InstanceId source,
+            in IBroadcastMessage message
         ) { }
 
         private static MessageBus NewBus()

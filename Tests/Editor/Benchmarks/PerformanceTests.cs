@@ -428,7 +428,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             DisplayCount("DxMessaging (GameObject) - No-Copy", count, timer.Elapsed, allocating);
             return;
 
-            void Handle(ref ComplexTargetedMessage _)
+            void Handle(in ComplexTargetedMessage _)
             {
                 ++count;
             }
@@ -475,7 +475,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             DisplayCount("DxMessaging (Component) - No-Copy", count, timer.Elapsed, allocating);
             return;
 
-            void Handle(ref ComplexTargetedMessage _)
+            void Handle(in ComplexTargetedMessage _)
             {
                 ++count;
             }
@@ -519,7 +519,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             DisplayCount("DxMessaging (Untargeted) - No-Copy", count, timer.Elapsed, allocating);
             return;
 
-            void Handle(ref SimpleUntargetedMessage _)
+            void Handle(in SimpleUntargetedMessage _)
             {
                 ++count;
             }
@@ -590,7 +590,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             );
             return;
 
-            void Handle(ref SimpleUntargetedMessage _)
+            void Handle(in SimpleUntargetedMessage _)
             {
                 ++handlerInvocationCount;
             }
@@ -611,7 +611,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             for (int i = 0; i < PostProcessorCount; ++i)
             {
                 token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => ++postProcessorInvocationCount
+                    (in SimpleUntargetedMessage _) => ++postProcessorInvocationCount
                 );
             }
 
@@ -657,7 +657,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             );
             return;
 
-            void Handle(ref SimpleUntargetedMessage _)
+            void Handle(in SimpleUntargetedMessage _)
             {
                 ++handlerInvocationCount;
             }

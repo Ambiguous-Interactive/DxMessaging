@@ -104,6 +104,12 @@ internal sealed class DocsSnippetCompilationTests
                 | System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
 
+    private static readonly System.Text.RegularExpressions.Regex WritableHandlerRegistrationRegex =
+        new(
+            @"(?is)\bRegister(?![A-Za-z0-9_]*Interceptor\b)[A-Za-z0-9_]*(?:<[^;>{}]+>)?\s*\([^;{}]{0,500}?\(\s*ref\s+",
+            System.Text.RegularExpressions.RegexOptions.Compiled
+        );
+
     private static readonly System.Text.RegularExpressions.Regex RegistrationOverrideRegex = new(
         @"protected\s+override\s+void\s+RegisterMessageHandlers\s*\(\s*\)\s*(?:\{(?<body>.*?)\}|(?<body>=>[^;\r\n]*;))",
         System.Text.RegularExpressions.RegexOptions.Compiled
@@ -292,6 +298,51 @@ internal sealed class DocsSnippetCompilationTests
         );
     }
 
+    [TestCase(
+        "using DxMessaging.Core; using DxMessaging.Core.Messages; public readonly struct Probe : IUntargetedMessage { } public static class Usage { private static void Mutate(in Probe message) { message = default; } public static MessageHandler.FastHandler<Probe> Create() => Mutate; }",
+        "CS8331",
+        TestName = "Readonly parameters reject struct reassignment"
+    )]
+    [TestCase(
+        "using DxMessaging.Core; using DxMessaging.Core.Messages; public struct Probe : IUntargetedMessage { public int Value; } public static class Usage { private static void Mutate(in Probe message) { message.Value = 1; } public static MessageHandler.FastHandler<Probe> Create() => Mutate; }",
+        "CS8332",
+        TestName = "Readonly parameters reject mutable struct field writes"
+    )]
+    [TestCase(
+        "using DxMessaging.Core; using DxMessaging.Core.Messages; public readonly struct Probe : IUntargetedMessage { } public static class Usage { private static void Handle(ref Probe message) { } public static MessageHandler.FastHandler<Probe> Create() => Handle; }",
+        "CS0123",
+        TestName = "Readonly handlers reject ref method groups"
+    )]
+    [TestCase(
+        "using DxMessaging.Core; using DxMessaging.Core.Messages; public readonly struct Probe : ITargetedMessage { } public static class Usage { private static void Handle(ref InstanceId context, ref Probe message) { } public static MessageHandler.FastHandlerWithContext<Probe> Create() => Handle; }",
+        "CS0123",
+        TestName = "Readonly context handlers reject ref method groups"
+    )]
+    [TestCase(
+        "using DxMessaging.Core; public sealed class InvalidHandler : MessageHandler { public InvalidHandler() : base(new InstanceId(1)) { } }",
+        "CS0509",
+        TestName = "MessageHandler documentation stub remains sealed"
+    )]
+    public void SnippetCompilerEnforcesReadonlyParameterAndHandlerContracts(
+        string source,
+        string diagnosticId
+    )
+    {
+        Microsoft.CodeAnalysis.Diagnostic[] diagnostics = DocsSnippetCompiler
+            .CompileSnippet(source)
+            .Where(diagnostic => !ContextOnlyDiagnosticIds.Contains(diagnostic.Id))
+            .ToArray();
+
+        Assert.That(
+            diagnostics,
+            Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
+                diagnostic.Id == diagnosticId
+                && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
+            ),
+            $"The readonly contract snippet must report {diagnosticId}."
+        );
+    }
+
     [TestCaseSource(nameof(GetDocumentationSnippets))]
     public void DocumentationSnippetsCompile(string markdownPath, string snippet)
     {
@@ -393,6 +444,45 @@ internal sealed class DocsSnippetCompilationTests
     }
 
     [Test]
+    public void DocumentationDoesNotRegisterWritableHandlerLambdas()
+    {
+        string[] violations = GetTemporaryEmitDocumentationSources()
+            .SelectMany(source =>
+                WritableHandlerRegistrationRegex
+                    .Matches(source.Text)
+                    .Cast<System.Text.RegularExpressions.Match>()
+                    .Select(match =>
+                        $"{source.Path}:{source.Text[..match.Index].Count(character => character == '\n') + 1}: {match.Value.Trim()}"
+                    )
+            )
+            .ToArray();
+
+        Assert.That(
+            violations,
+            Is.Empty,
+            "Handler and post-processor registration lambdas must use readonly `in` parameters. "
+                + "Interceptor registrations remain writable `ref`:"
+                + System.Environment.NewLine
+                + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    [TestCase("token.RegisterUntargeted<T>((ref T message) => Use(message));", true)]
+    [TestCase(
+        "token.RegisterTargetedWithoutTargeting<T>((ref InstanceId target, ref T message) => Use(target, message));",
+        true
+    )]
+    [TestCase("token.RegisterBroadcastPostProcessor<T>((ref T message) => Use(message));", true)]
+    [TestCase("token.RegisterUntargetedInterceptor<T>((ref T message) => true);", false)]
+    [TestCase("token.RegisterUntargeted<T>((in T message) => Use(message));", false)]
+    [TestCase("bus.TargetedBroadcast(ref target, ref message);", false)]
+    [TestCase("void OnDamageV3(ref ApplyDamage message) { }", false)]
+    public void WritableHandlerRegistrationGuardClassifiesRegistrations(string source, bool invalid)
+    {
+        Assert.That(WritableHandlerRegistrationRegex.IsMatch(source), Is.EqualTo(invalid));
+    }
+
+    [Test]
     public void MessageAwareComponentExamplesCallBaseRegistrationHook()
     {
         string[] violations = GetBroadcastExampleSources()
@@ -449,7 +539,7 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("token.RegisterBroadcastPostProcessor<T>((T m) => SaveDamageTelemetry(m));", true)]
     [TestCase("token.RegisterBroadcastPostProcessor<T>(RecordProcessedDamageRequest);", false)]
     [TestCase(
-        "token.RegisterTargetedPostProcessor<ApplyDamage>((ref ApplyDamage m) => RecordProcessedDamageRequest(m));",
+        "token.RegisterTargetedPostProcessor<ApplyDamage>((in ApplyDamage m) => RecordProcessedDamageRequest(m));",
         false
     )]
     [TestCase("void RecordDamage() { } // PostProcessor documentation", false)]

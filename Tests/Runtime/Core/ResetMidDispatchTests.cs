@@ -120,16 +120,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Targeted:
                 {
                     _ = token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        (ref InstanceId _, ref SimpleTargetedMessage __) =>
-                            ++withoutContextPostCount
+                        (in InstanceId _, in SimpleTargetedMessage __) => ++withoutContextPostCount
                     );
                     break;
                 }
                 case MessageKind.Broadcast:
                 {
                     _ = token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) =>
-                            ++withoutContextPostCount
+                        (in InstanceId _, in SimpleBroadcastMessage __) => ++withoutContextPostCount
                     );
                     break;
                 }

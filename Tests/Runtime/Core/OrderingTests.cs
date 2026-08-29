@@ -23,7 +23,7 @@ namespace DxMessaging.Tests.Runtime.Core
             EmptyMessageAwareComponent comp = go.GetComponent<EmptyMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => order.Add("F1"), 0);
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add("F1"), 0);
             _ = token.RegisterUntargeted((SimpleUntargetedMessage _) => order.Add("A1"), 0);
             _ = token.RegisterUntargeted((SimpleUntargetedMessage _) => order.Add("A2"), 0);
             SimpleUntargetedMessage msg = new();
@@ -66,11 +66,11 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = token.RegisterGlobalAcceptAll(_ => stages.Add("G"), (_, _) => { }, (_, _) => { });
 
             // Type handler
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => stages.Add("H"));
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => stages.Add("H"));
 
             // Post-processor
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => stages.Add("P")
+                (in SimpleUntargetedMessage _) => stages.Add("P")
             );
 
             SimpleUntargetedMessage msg = new();
@@ -118,11 +118,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = token.RegisterGameObjectTargeted(
                 go,
-                (ref SimpleTargetedMessage _) => stages.Add("H")
+                (in SimpleTargetedMessage _) => stages.Add("H")
             );
             _ = token.RegisterGameObjectTargetedPostProcessor(
                 go,
-                (ref SimpleTargetedMessage _) => stages.Add("P")
+                (in SimpleTargetedMessage _) => stages.Add("P")
             );
 
             SimpleTargetedMessage msg = new();
@@ -168,11 +168,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = token.RegisterGameObjectBroadcast(
                 go,
-                (ref SimpleBroadcastMessage _) => stages.Add("H")
+                (in SimpleBroadcastMessage _) => stages.Add("H")
             );
             _ = token.RegisterGameObjectBroadcastPostProcessor(
                 go,
-                (ref SimpleBroadcastMessage _) => stages.Add("P")
+                (in SimpleBroadcastMessage _) => stages.Add("P")
             );
 
             SimpleBroadcastMessage msg = new();
@@ -198,17 +198,17 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             _ = token.RegisterGameObjectTargetedPostProcessor(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add(1),
+                (in SimpleTargetedMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterGameObjectTargetedPostProcessor(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add(2),
+                (in SimpleTargetedMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterGameObjectTargetedPostProcessor(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add(3),
+                (in SimpleTargetedMessage _) => order.Add(3),
                 0
             );
 
@@ -235,17 +235,17 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             _ = token.RegisterGameObjectBroadcastPostProcessor(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add(1),
+                (in SimpleBroadcastMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterGameObjectBroadcastPostProcessor(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add(2),
+                (in SimpleBroadcastMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterGameObjectBroadcastPostProcessor(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add(3),
+                (in SimpleBroadcastMessage _) => order.Add(3),
                 0
             );
 
@@ -409,9 +409,9 @@ namespace DxMessaging.Tests.Runtime.Core
             // Register action first, then fast; fast should still run first
             _ = token.RegisterGlobalAcceptAll(_ => order.Add("A"), (_, _) => { }, (_, _) => { });
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => order.Add("F"),
-                (ref InstanceId _, ref ITargetedMessage _) => { },
-                (ref InstanceId _, ref IBroadcastMessage _) => { }
+                (in IUntargetedMessage _) => order.Add("F"),
+                (in InstanceId _, in ITargetedMessage _) => { },
+                (in InstanceId _, in IBroadcastMessage _) => { }
             );
 
             SimpleUntargetedMessage msg = new();
@@ -437,9 +437,9 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> order = new();
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => order.Add("A"), (_, _) => { });
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => { },
-                (ref InstanceId _, ref ITargetedMessage _) => order.Add("F"),
-                (ref InstanceId _, ref IBroadcastMessage _) => { }
+                (in IUntargetedMessage _) => { },
+                (in InstanceId _, in ITargetedMessage _) => order.Add("F"),
+                (in InstanceId _, in IBroadcastMessage _) => { }
             );
 
             SimpleTargetedMessage msg = new();
@@ -465,9 +465,9 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> order = new();
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => order.Add("A"));
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => { },
-                (ref InstanceId _, ref ITargetedMessage _) => { },
-                (ref InstanceId _, ref IBroadcastMessage _) => order.Add("F")
+                (in IUntargetedMessage _) => { },
+                (in InstanceId _, in ITargetedMessage _) => { },
+                (in InstanceId _, in IBroadcastMessage _) => order.Add("F")
             );
 
             SimpleBroadcastMessage msg = new();
@@ -497,7 +497,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterTargetedWithoutTargeting(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add("F"),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"),
                 0
             );
 
@@ -523,7 +523,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add("F"),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"),
                 0
             );
 
@@ -556,14 +556,14 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => stages.Add("G"), (_, _) => { });
             _ = token.RegisterGameObjectTargeted(
                 go,
-                (ref SimpleTargetedMessage _) => stages.Add("Hspec")
+                (in SimpleTargetedMessage _) => stages.Add("Hspec")
             );
             _ = token.RegisterTargetedWithoutTargeting(
                 (InstanceId _, SimpleTargetedMessage _) => stages.Add("Hall")
             );
             _ = token.RegisterGameObjectTargetedPostProcessor(
                 go,
-                (ref SimpleTargetedMessage _) => stages.Add("Pspec")
+                (in SimpleTargetedMessage _) => stages.Add("Pspec")
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
                 (InstanceId _, SimpleTargetedMessage _) => stages.Add("Pall")
@@ -601,14 +601,14 @@ namespace DxMessaging.Tests.Runtime.Core
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => stages.Add("G"));
             _ = token.RegisterGameObjectBroadcast(
                 go,
-                (ref SimpleBroadcastMessage _) => stages.Add("Hspec")
+                (in SimpleBroadcastMessage _) => stages.Add("Hspec")
             );
             _ = token.RegisterBroadcastWithoutSource(
                 (InstanceId _, SimpleBroadcastMessage _) => stages.Add("Hall")
             );
             _ = token.RegisterGameObjectBroadcastPostProcessor(
                 go,
-                (ref SimpleBroadcastMessage _) => stages.Add("Pspec")
+                (in SimpleBroadcastMessage _) => stages.Add("Pspec")
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
                 (InstanceId _, SimpleBroadcastMessage _) => stages.Add("Pall")
@@ -660,9 +660,9 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
 
             List<int> order = new();
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => order.Add(1), 0);
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => order.Add(2), 0);
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => order.Add(3), 0);
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add(1), 0);
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add(2), 0);
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add(3), 0);
 
             SimpleUntargetedMessage msg = new();
             msg.EmitUntargeted();
@@ -687,8 +687,8 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> order = new();
             // Register an action handler first (by-value)
             _ = token.RegisterUntargeted((SimpleUntargetedMessage _) => order.Add("A1"), 0);
-            // Then a fast handler (by-ref)
-            _ = token.RegisterUntargeted((ref SimpleUntargetedMessage _) => order.Add("F1"), 0);
+            // Then a fast handler (readonly by-ref)
+            _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => order.Add("F1"), 0);
             // Another action handler (by-value)
             _ = token.RegisterUntargeted((SimpleUntargetedMessage _) => order.Add("A2"), 0);
 
@@ -736,15 +736,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<int> order = new();
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add(1),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add(2),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add(3),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(3),
                 0
             );
 
@@ -768,15 +768,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<int> order = new();
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add(1),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add(2),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add(3),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(3),
                 0
             );
 
@@ -799,17 +799,17 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             _ = token.RegisterGameObjectTargeted(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add(1),
+                (in SimpleTargetedMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterGameObjectTargeted(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add(2),
+                (in SimpleTargetedMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterGameObjectTargeted(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add(3),
+                (in SimpleTargetedMessage _) => order.Add(3),
                 0
             );
 
@@ -873,17 +873,17 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             _ = token.RegisterGameObjectBroadcast(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add(1),
+                (in SimpleBroadcastMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterGameObjectBroadcast(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add(2),
+                (in SimpleBroadcastMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterGameObjectBroadcast(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add(3),
+                (in SimpleBroadcastMessage _) => order.Add(3),
                 0
             );
 
@@ -909,15 +909,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<int> order = new();
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => order.Add(1),
+                (in SimpleUntargetedMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => order.Add(2),
+                (in SimpleUntargetedMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterUntargetedPostProcessor(
-                (ref SimpleUntargetedMessage _) => order.Add(3),
+                (in SimpleUntargetedMessage _) => order.Add(3),
                 0
             );
 
@@ -943,7 +943,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int count = 0;
             MessageRegistrationHandle handle = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage _) => ++count
+                (in SimpleUntargetedMessage _) => ++count
             );
             using (token.AsDisposable(handle))
             {
@@ -976,7 +976,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = token.RegisterGameObjectTargeted(
                 go,
-                (ref SimpleTargetedMessage _) => order.Add("F1"),
+                (in SimpleTargetedMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterGameObjectTargeted(
@@ -1009,7 +1009,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = token.RegisterGameObjectBroadcast(
                 go,
-                (ref SimpleBroadcastMessage _) => order.Add("F1"),
+                (in SimpleBroadcastMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterGameObjectBroadcast(
@@ -1055,17 +1055,17 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             _ = token.RegisterComponentTargeted(
                 comp,
-                (ref SimpleTargetedMessage _) => order.Add(1),
+                (in SimpleTargetedMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterComponentTargeted(
                 comp,
-                (ref SimpleTargetedMessage _) => order.Add(2),
+                (in SimpleTargetedMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterComponentTargeted(
                 comp,
-                (ref SimpleTargetedMessage _) => order.Add(3),
+                (in SimpleTargetedMessage _) => order.Add(3),
                 0
             );
             SimpleTargetedMessage msg = new();
@@ -1091,7 +1091,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = token.RegisterComponentTargeted(
                 comp,
-                (ref SimpleTargetedMessage _) => order.Add("F1"),
+                (in SimpleTargetedMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterComponentTargeted(
@@ -1148,17 +1148,17 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             _ = token.RegisterComponentBroadcast(
                 comp,
-                (ref SimpleBroadcastMessage _) => order.Add(1),
+                (in SimpleBroadcastMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterComponentBroadcast(
                 comp,
-                (ref SimpleBroadcastMessage _) => order.Add(2),
+                (in SimpleBroadcastMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterComponentBroadcast(
                 comp,
-                (ref SimpleBroadcastMessage _) => order.Add(3),
+                (in SimpleBroadcastMessage _) => order.Add(3),
                 0
             );
             SimpleBroadcastMessage msg = new();
@@ -1184,7 +1184,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = token.RegisterComponentBroadcast(
                 comp,
-                (ref SimpleBroadcastMessage _) => order.Add("F1"),
+                (in SimpleBroadcastMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterComponentBroadcast(
@@ -1241,7 +1241,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterTargetedWithoutTargeting(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add("F1"),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterTargetedWithoutTargeting(
@@ -1295,15 +1295,15 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add(1),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add(2),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add(3),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add(3),
                 0
             );
             SimpleTargetedMessage msg = new();
@@ -1355,7 +1355,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add("F1"),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterBroadcastWithoutSource(
@@ -1409,15 +1409,15 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
             List<int> order = new();
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add(1),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(1),
                 0
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add(2),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(2),
                 0
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add(3),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add(3),
                 0
             );
             SimpleBroadcastMessage msg = new();
@@ -1533,14 +1533,14 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> order = new();
             // Fast group (F1, F2)
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => order.Add("F1"),
-                (ref InstanceId _, ref ITargetedMessage _) => { },
-                (ref InstanceId _, ref IBroadcastMessage _) => { }
+                (in IUntargetedMessage _) => order.Add("F1"),
+                (in InstanceId _, in ITargetedMessage _) => { },
+                (in InstanceId _, in IBroadcastMessage _) => { }
             );
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => order.Add("F2"),
-                (ref InstanceId _, ref ITargetedMessage _) => { },
-                (ref InstanceId _, ref IBroadcastMessage _) => { }
+                (in IUntargetedMessage _) => order.Add("F2"),
+                (in InstanceId _, in ITargetedMessage _) => { },
+                (in InstanceId _, in IBroadcastMessage _) => { }
             );
             // Action group (A1, A2)
             _ = token.RegisterGlobalAcceptAll(_ => order.Add("A1"), (_, _) => { }, (_, _) => { });
@@ -1564,14 +1564,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<string> order = new();
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => { },
-                (ref InstanceId _, ref ITargetedMessage _) => order.Add("F1"),
-                (ref InstanceId _, ref IBroadcastMessage _) => { }
+                (in IUntargetedMessage _) => { },
+                (in InstanceId _, in ITargetedMessage _) => order.Add("F1"),
+                (in InstanceId _, in IBroadcastMessage _) => { }
             );
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => { },
-                (ref InstanceId _, ref ITargetedMessage _) => order.Add("F2"),
-                (ref InstanceId _, ref IBroadcastMessage _) => { }
+                (in IUntargetedMessage _) => { },
+                (in InstanceId _, in ITargetedMessage _) => order.Add("F2"),
+                (in InstanceId _, in IBroadcastMessage _) => { }
             );
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => order.Add("A1"), (_, _) => { });
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => order.Add("A2"), (_, _) => { });
@@ -1594,14 +1594,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             List<string> order = new();
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => { },
-                (ref InstanceId _, ref ITargetedMessage _) => { },
-                (ref InstanceId _, ref IBroadcastMessage _) => order.Add("F1")
+                (in IUntargetedMessage _) => { },
+                (in InstanceId _, in ITargetedMessage _) => { },
+                (in InstanceId _, in IBroadcastMessage _) => order.Add("F1")
             );
             _ = token.RegisterGlobalAcceptAll(
-                (ref IUntargetedMessage _) => { },
-                (ref InstanceId _, ref ITargetedMessage _) => { },
-                (ref InstanceId _, ref IBroadcastMessage _) => order.Add("F2")
+                (in IUntargetedMessage _) => { },
+                (in InstanceId _, in ITargetedMessage _) => { },
+                (in InstanceId _, in IBroadcastMessage _) => order.Add("F2")
             );
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => order.Add("A1"));
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => order.Add("A2"));
@@ -1625,7 +1625,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             // Priority 0: fast then action
             _ = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage _) => order.Add("F0"),
+                (in SimpleUntargetedMessage _) => order.Add("F0"),
                 priority: 0
             );
             _ = token.RegisterUntargeted(
@@ -1634,7 +1634,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             // Priority 1: fast then action
             _ = token.RegisterUntargeted(
-                (ref SimpleUntargetedMessage _) => order.Add("F1"),
+                (in SimpleUntargetedMessage _) => order.Add("F1"),
                 priority: 1
             );
             _ = token.RegisterUntargeted(
@@ -1661,7 +1661,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
             _ = token.RegisterTargetedWithoutTargeting(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add("F1"),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterTargetedWithoutTargeting(
@@ -1689,7 +1689,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
             _ = token.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add("F1"),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterBroadcastWithoutSource(
@@ -1719,7 +1719,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add("F"),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"),
                 0
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
@@ -1747,7 +1747,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => order.Add("F"),
+                (in InstanceId _, in SimpleTargetedMessage _) => order.Add("F"),
                 0
             );
             SimpleTargetedMessage msg = new();
@@ -1767,7 +1767,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
             List<string> order = new();
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add("F"),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"),
                 0
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
@@ -1795,7 +1795,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => order.Add("F"),
+                (in InstanceId _, in SimpleBroadcastMessage _) => order.Add("F"),
                 0
             );
             SimpleBroadcastMessage msg = new();
@@ -1816,7 +1816,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> order = new();
             _ = token.RegisterComponentTargeted(
                 comp,
-                (ref SimpleTargetedMessage _) => order.Add("F1"),
+                (in SimpleTargetedMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterComponentTargeted(
@@ -1847,7 +1847,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> order = new();
             _ = token.RegisterComponentBroadcast(
                 comp,
-                (ref SimpleBroadcastMessage _) => order.Add("F1"),
+                (in SimpleBroadcastMessage _) => order.Add("F1"),
                 0
             );
             _ = token.RegisterComponentBroadcast(

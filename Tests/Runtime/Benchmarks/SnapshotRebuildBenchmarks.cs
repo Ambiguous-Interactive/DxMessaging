@@ -154,7 +154,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                             _tokens[TokenIndex(slot, generation)] = token;
                             token.DiagnosticMode = false;
                             _ = token.RegisterUntargeted<SnapshotRebuildMessage>(
-                                (ref SnapshotRebuildMessage message) =>
+                                (in SnapshotRebuildMessage message) =>
                                 {
                                     ++_calls;
                                     if (capturedGeneration == 1)

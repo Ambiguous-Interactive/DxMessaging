@@ -31,7 +31,7 @@ public sealed class TimeScaleDriver : MessageAwareComponent
         _ = Token.RegisterUntargeted<GamePaused>(OnGamePaused);
     }
 
-    private void OnGamePaused(ref GamePaused message)
+    private void OnGamePaused(in GamePaused message)
     {
         Time.timeScale = message.IsPaused ? 0f : 1f;
     }
@@ -45,7 +45,7 @@ public sealed class AudioPauseDriver : MessageAwareComponent
         _ = Token.RegisterUntargeted<GamePaused>(OnGamePaused);
     }
 
-    private void OnGamePaused(ref GamePaused message)
+    private void OnGamePaused(in GamePaused message)
     {
         AudioListener.pause = message.IsPaused;
     }

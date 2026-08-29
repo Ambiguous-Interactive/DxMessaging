@@ -365,7 +365,7 @@ long medianBytes = cold.MedianGcAllocatedBytes; // -1 == AllocationProbe.Unmeasu
 
 Cold/latency results carry `emitsPerSecond=0` (the time lives in `wallClockMs`),
 which is what auto-excludes them from the regression gate. The three cold dispatch
-scenarios are the callers: each trial registers a BY-REF (`FastHandler<T>`) no-op
+scenarios are the callers: each trial registers a READONLY-BY-REF (`FastHandler<T>`) no-op
 handler on a fresh bus, then times one emit of a distinct closed generic type, so
 it JIT-compiles and measures the SAME fast dispatch path (`RunFastHandlers`) the
 warm/hot scenarios use; the median over the distinct types stabilizes the JIT

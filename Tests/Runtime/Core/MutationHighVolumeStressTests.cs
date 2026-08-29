@@ -40,7 +40,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 MessageRegistrationHandle baseHandle =
                     token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) =>
+                        (in SimpleUntargetedMessage _) =>
                         {
                             baseCounts[capturedIndex]++;
                             if (expanded)
@@ -60,7 +60,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 MessageRegistrationToken extraToken = GetToken(extraComponent);
                                 MessageRegistrationHandle extraHandle =
                                     extraToken.RegisterUntargeted<SimpleUntargetedMessage>(
-                                        (ref SimpleUntargetedMessage _) =>
+                                        (in SimpleUntargetedMessage _) =>
                                         {
                                             dynamicCounts[dynamicIndex]++;
                                         }
@@ -161,7 +161,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken sinkToken = GetToken(sinkComponent);
             MessageRegistrationHandle sinkHandle =
                 sinkToken.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
             registrations.Add((sinkToken, sinkHandle));
 
@@ -224,16 +224,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 int capturedIndex = i;
 
                 MessageRegistrationHandle baseHandle = token.RegisterGlobalAcceptAll(
-                    (ref IUntargetedMessage _) =>
+                    (in IUntargetedMessage _) =>
                     {
                         baseUntargetedCounts[capturedIndex]++;
                         ExpandIfNeeded();
                     },
-                    (ref InstanceId _, ref ITargetedMessage _) =>
+                    (in InstanceId _, in ITargetedMessage _) =>
                     {
                         baseTargetedCounts[capturedIndex]++;
                     },
-                    (ref InstanceId _, ref IBroadcastMessage _) =>
+                    (in InstanceId _, in IBroadcastMessage _) =>
                     {
                         baseBroadcastCounts[capturedIndex]++;
                     }
@@ -260,15 +260,15 @@ namespace DxMessaging.Tests.Runtime.Core
                         );
                         MessageRegistrationToken extraToken = GetToken(extraComponent);
                         MessageRegistrationHandle extraHandle = extraToken.RegisterGlobalAcceptAll(
-                            (ref IUntargetedMessage _) =>
+                            (in IUntargetedMessage _) =>
                             {
                                 dynamicUntargetedCounts[dynamicIndex]++;
                             },
-                            (ref InstanceId _, ref ITargetedMessage _) =>
+                            (in InstanceId _, in ITargetedMessage _) =>
                             {
                                 dynamicTargetedCounts[dynamicIndex]++;
                             },
-                            (ref InstanceId _, ref IBroadcastMessage _) =>
+                            (in InstanceId _, in IBroadcastMessage _) =>
                             {
                                 dynamicBroadcastCounts[dynamicIndex]++;
                             }
@@ -383,7 +383,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 MessageRegistrationHandle handlerHandle =
                     token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) =>
+                        (in SimpleUntargetedMessage _) =>
                         {
                             baseHandlerCounts[capturedIndex]++;
                         }
@@ -392,7 +392,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 MessageRegistrationHandle postHandle =
                     token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) =>
+                        (in SimpleUntargetedMessage _) =>
                         {
                             basePostCounts[capturedIndex]++;
                             if (expanded)
@@ -412,7 +412,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 MessageRegistrationToken extraToken = GetToken(extraComponent);
                                 MessageRegistrationHandle extraHandle =
                                     extraToken.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                                        (ref SimpleUntargetedMessage _) =>
+                                        (in SimpleUntargetedMessage _) =>
                                         {
                                             dynamicPostCounts[dynamicIndex]++;
                                         }

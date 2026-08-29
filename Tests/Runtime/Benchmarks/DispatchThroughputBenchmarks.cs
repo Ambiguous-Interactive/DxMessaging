@@ -837,7 +837,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             for (int index = 0; index < total; index++)
             {
                 int captured = index;
-                handlers[index] = (ref T message) =>
+                handlers[index] = (in T message) =>
                 {
                     // Reference the captured index so each delegate is a distinct closure
                     // instance (the compiler cannot fold them to one cached static delegate),
@@ -1167,7 +1167,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // dispatch infrastructure, and a single sample cannot be trusted. So, symmetric with
         // the registration flood, this routes through BenchmarkProtocol.MeasureColdLatency
         // (the cold counterpart to Measure) over 32 trials, one per RegistrationFloodMarkerTypes
-        // marker. Each trial spins up a FRESH bus, registers a BY-REF (FastHandler<T>) no-op
+        // marker. Each trial spins up a FRESH bus, registers a READONLY BY-REF
+        // (FastHandler<T>) no-op
         // handler for a DISTINCT closed generic message type (UNTIMED), then times EXACTLY ONE
         // emit of that type -- which JIT-compiles that closed type's fast dispatch path
         // (RunFastHandlers), the SAME path the warm/hot scenarios measure. The MEDIAN of the
@@ -1415,17 +1416,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
             }
 
-            void CountPostProcessed(ref SimpleUntargetedMessage message)
+            void CountPostProcessed(in SimpleUntargetedMessage message)
             {
                 handlerInvocations.Increment();
             }
 
-            void CountTargetedPostProcessed(ref SimpleTargetedMessage message)
+            void CountTargetedPostProcessed(in SimpleTargetedMessage message)
             {
                 handlerInvocations.Increment();
             }
 
-            void CountBroadcastPostProcessed(ref SimpleBroadcastMessage message)
+            void CountBroadcastPostProcessed(in SimpleBroadcastMessage message)
             {
                 handlerInvocations.Increment();
             }
@@ -1452,7 +1453,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             MessageRegistrationToken token = scope.CreateToken(active);
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage message) => handlerInvocations.Increment(),
+                (in SimpleUntargetedMessage message) => handlerInvocations.Increment(),
                 priority
             );
         }
@@ -1466,7 +1467,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             MessageRegistrationToken token = scope.CreateToken();
             _ = token.RegisterTargeted<SimpleTargetedMessage>(
                 Target,
-                (ref SimpleTargetedMessage message) => handlerInvocations.Increment(),
+                (in SimpleTargetedMessage message) => handlerInvocations.Increment(),
                 priority
             );
         }
@@ -1480,7 +1481,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             MessageRegistrationToken token = scope.CreateToken();
             _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
                 Source,
-                (ref SimpleBroadcastMessage message) => handlerInvocations.Increment(),
+                (in SimpleBroadcastMessage message) => handlerInvocations.Increment(),
                 priority
             );
         }
@@ -2036,7 +2037,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         private static void NoOpFloodHandler<TMarker>(
-            ref RegistrationFloodMessage<TMarker> message
+            in RegistrationFloodMessage<TMarker> message
         ) { }
 
         private readonly struct RegistrationFloodMessage<TMarker>
@@ -2045,8 +2046,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // Per-kind cold first-dispatch set-up helpers. Each is generic over the closed
         // message type, so reflection (MakeGenericMethod over a marker) yields a distinct
         // closed generic whose fast dispatch path JIT-compiles on its first emit. The
-        // helper (UNTIMED) creates a fresh bus, registers a BY-REF (FastHandler<T>) no-op
-        // handler -- the (ref ...) lambda binds the FastHandler<T> overload, so the timed
+        // helper (UNTIMED) creates a fresh bus, registers a READONLY BY-REF
+        // (FastHandler<T>) no-op handler -- the (in ...) lambda binds the FastHandler<T>
+        // overload, so the timed
         // emit JIT-compiles RunFastHandlers, the SAME path the warm/hot scenarios measure --
         // and returns a ColdTrialState whose Emit performs EXACTLY ONE emit (the single
         // timed cold sample). The static Target/Source are read here, OUTSIDE the timed
@@ -2088,7 +2090,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             BenchmarkRegistrationScope scope = new();
             _ = scope.PrimaryToken.RegisterUntargeted<ColdDispatchUntargetedMessage<TMarker>>(
-                (ref ColdDispatchUntargetedMessage<TMarker> message) => { }
+                (in ColdDispatchUntargetedMessage<TMarker> message) => { }
             );
             MessageBus bus = scope.Bus;
             return new ColdTrialState(
@@ -2107,7 +2109,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             InstanceId target = Target;
             _ = scope.PrimaryToken.RegisterTargeted<ColdDispatchTargetedMessage<TMarker>>(
                 target,
-                (ref ColdDispatchTargetedMessage<TMarker> message) => { }
+                (in ColdDispatchTargetedMessage<TMarker> message) => { }
             );
             MessageBus bus = scope.Bus;
             return new ColdTrialState(
@@ -2127,7 +2129,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             InstanceId source = Source;
             _ = scope.PrimaryToken.RegisterBroadcast<ColdDispatchBroadcastMessage<TMarker>>(
                 source,
-                (ref ColdDispatchBroadcastMessage<TMarker> message) => { }
+                (in ColdDispatchBroadcastMessage<TMarker> message) => { }
             );
             MessageBus bus = scope.Bus;
             return new ColdTrialState(
@@ -2322,7 +2324,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 MessageHandler handler = new(new InstanceId(_nextOwner++), Bus) { active = true };
                 MessageHandler.FastHandler<SimpleUntargetedMessage> callback = (
-                    ref SimpleUntargetedMessage message
+                    in SimpleUntargetedMessage message
                 ) => handlerInvocations.Increment();
                 _directUntargetedDeregistration = handler.RegisterUntargetedMessageHandler(
                     callback,

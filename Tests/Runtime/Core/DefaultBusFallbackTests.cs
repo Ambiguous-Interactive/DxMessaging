@@ -67,7 +67,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     handle = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => ++callCount
+                        (in SimpleUntargetedMessage _) => ++callCount
                     );
                     break;
                 }
@@ -77,7 +77,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleTargetedMessage _) => ++callCount
+                        (in SimpleTargetedMessage _) => ++callCount
                     );
                     break;
                 }
@@ -87,7 +87,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleBroadcastMessage _) => ++callCount
+                        (in SimpleBroadcastMessage _) => ++callCount
                     );
                     break;
                 }
@@ -181,7 +181,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int callCount = 0;
             MessageRegistrationHandle handle =
                 token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                    (ref InstanceId _, ref SimpleBroadcastMessage _) => ++callCount
+                    (in InstanceId _, in SimpleBroadcastMessage _) => ++callCount
                 );
             _handles.Add(handle);
 

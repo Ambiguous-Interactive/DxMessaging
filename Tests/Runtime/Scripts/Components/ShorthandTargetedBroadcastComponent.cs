@@ -27,7 +27,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
                 _ => componentTargetedCount++
             );
             _ = Token.RegisterTargetedWithoutTargeting(
-                (ref InstanceId _, ref SimpleTargetedMessage _) => targetedWithoutTargetingCount++
+                (in InstanceId _, in SimpleTargetedMessage _) => targetedWithoutTargetingCount++
             );
 
             _ = Token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
@@ -39,7 +39,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
                 _ => componentBroadcastCount++
             );
             _ = Token.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) => broadcastWithoutSourceCount++
+                (in InstanceId _, in SimpleBroadcastMessage _) => broadcastWithoutSourceCount++
             );
         }
     }

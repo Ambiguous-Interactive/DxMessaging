@@ -141,7 +141,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             slowComplexTargetedHandler?.Invoke();
         }
 
-        public void HandleComplexTargetedMessage(ref ComplexTargetedMessage message)
+        public void HandleComplexTargetedMessage(in ComplexTargetedMessage message)
         {
             complexTargetedHandler?.Invoke();
         }
@@ -151,48 +151,48 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             slowTargetedHandler?.Invoke();
         }
 
-        public void HandleSimpleUntargetedMessage(ref SimpleUntargetedMessage message)
+        public void HandleSimpleUntargetedMessage(in SimpleUntargetedMessage message)
         {
             untargetedHandler?.Invoke();
         }
 
-        public void HandleSimpleTargetedMessage(ref SimpleTargetedMessage message)
+        public void HandleSimpleTargetedMessage(in SimpleTargetedMessage message)
         {
             targetedHandler?.Invoke();
         }
 
         public void HandleSimpleTargetedWithoutTargetingMessage(
-            ref InstanceId target,
-            ref SimpleTargetedMessage message
+            in InstanceId target,
+            in SimpleTargetedMessage message
         )
         {
             targetedWithoutTargetingHandler?.Invoke();
         }
 
-        public void HandleSimpleBroadcastMessage(ref SimpleBroadcastMessage message)
+        public void HandleSimpleBroadcastMessage(in SimpleBroadcastMessage message)
         {
             broadcastHandler?.Invoke();
         }
 
         public void HandleSimpleBroadcastWithoutSourceMessage(
-            ref InstanceId source,
-            ref SimpleBroadcastMessage message
+            in InstanceId source,
+            in SimpleBroadcastMessage message
         )
         {
             broadcastWithoutSourceHandler?.Invoke();
         }
 
-        public void HandleSimpleComponentTargetedMessage(ref SimpleTargetedMessage message)
+        public void HandleSimpleComponentTargetedMessage(in SimpleTargetedMessage message)
         {
             componentTargetedHandler?.Invoke();
         }
 
-        public void HandleComplexComponentTargetedMessage(ref ComplexTargetedMessage message)
+        public void HandleComplexComponentTargetedMessage(in ComplexTargetedMessage message)
         {
             complexComponentTargetedHandler?.Invoke();
         }
 
-        public void HandleSimpleComponentBroadcastMessage(ref SimpleBroadcastMessage message)
+        public void HandleSimpleComponentBroadcastMessage(in SimpleBroadcastMessage message)
         {
             componentBroadcastHandler?.Invoke();
         }

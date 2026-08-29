@@ -174,11 +174,11 @@ using DxMessaging.Core.Messages;
 
 // Observe every Heal regardless of target
 _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
-void OnAnyHeal(ref InstanceId target, ref Heal m) => Audit(target, m);
+void OnAnyHeal(in InstanceId target, in Heal m) => Audit(target, m);
 
 // Observe every TookDamage regardless of source
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyTookDamage);
-void OnAnyTookDamage(ref InstanceId source, ref TookDamage m) => Track(source, m);
+void OnAnyTookDamage(in InstanceId source, in TookDamage m) => Track(source, m);
 ```
 
 ## Choosing the right type

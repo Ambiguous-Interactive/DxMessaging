@@ -246,7 +246,7 @@ public sealed class DxToSignalBridge : IInitializable, IDisposable
         _token?.Disable();
     }
 
-    private void OnSceneTransition(ref SceneTransition message)
+    private void OnSceneTransition(in SceneTransition message)
     {
         // Forward to SignalBus for legacy consumers
         _signalBus.Fire(message);
@@ -290,7 +290,7 @@ public class GameInitializerTests : ZenjectUnitTestFixture
         var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
         var token = MessageRegistrationToken.Create(handler, bus);
         _ = token.RegisterUntargeted<GameStarted>(
-            (ref GameStarted msg) => messageReceived = true
+            (in GameStarted msg) => messageReceived = true
         );
         token.Enable();
 

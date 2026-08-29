@@ -72,7 +72,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             ScenarioHarness.RegisterUntargeted<ClassUntargetedMessage>(
                                 scenario,
                                 token,
-                                (ref ClassUntargetedMessage message) =>
+                                (in ClassUntargetedMessage message) =>
                                 {
                                     ++count;
                                     received = message;
@@ -92,7 +92,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref ClassTargetedMessage message) =>
+                                (in ClassTargetedMessage message) =>
                                 {
                                     ++count;
                                     received = message;
@@ -112,7 +112,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref ClassBroadcastMessage message) =>
+                                (in ClassBroadcastMessage message) =>
                                 {
                                     ++count;
                                     received = message;
@@ -178,7 +178,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             ScenarioHarness.RegisterUntargeted<ClassUntargetedMessage>(
                                 scenario,
                                 token,
-                                (ref ClassUntargetedMessage message) =>
+                                (in ClassUntargetedMessage message) =>
                                 {
                                     ++count;
                                     observedText = message.text;
@@ -199,7 +199,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref ClassTargetedMessage message) =>
+                                (in ClassTargetedMessage message) =>
                                 {
                                     ++count;
                                     observedText = message.text;
@@ -220,7 +220,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref ClassBroadcastMessage message) =>
+                                (in ClassBroadcastMessage message) =>
                                 {
                                     ++count;
                                     observedText = message.text;
@@ -297,7 +297,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             ScenarioHarness.RegisterUntargeted<MutableClassUntargetedMessage>(
                                 scenario,
                                 token,
-                                (ref MutableClassUntargetedMessage message) =>
+                                (in MutableClassUntargetedMessage message) =>
                                 {
                                     message.counter += 5;
                                     message.label = "mutated";
@@ -309,7 +309,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             ScenarioHarness.RegisterUntargeted<MutableClassUntargetedMessage>(
                                 scenario,
                                 token,
-                                (ref MutableClassUntargetedMessage message) =>
+                                (in MutableClassUntargetedMessage message) =>
                                 {
                                     observedByLaterHandler = message.counter;
                                     labelSeenByLaterHandler = message.label;
@@ -321,7 +321,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             ScenarioHarness.RegisterUntargetedPostProcessor<MutableClassUntargetedMessage>(
                                 scenario,
                                 token,
-                                (ref MutableClassUntargetedMessage message) =>
+                                (in MutableClassUntargetedMessage message) =>
                                 {
                                     observedByPostProcessor = message.counter;
                                     postProcessorSawSameInstance = ReferenceEquals(
@@ -343,7 +343,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref MutableClassTargetedMessage message) =>
+                                (in MutableClassTargetedMessage message) =>
                                 {
                                     message.counter += 5;
                                     message.label = "mutated";
@@ -356,7 +356,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref MutableClassTargetedMessage message) =>
+                                (in MutableClassTargetedMessage message) =>
                                 {
                                     observedByLaterHandler = message.counter;
                                     labelSeenByLaterHandler = message.label;
@@ -369,7 +369,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref MutableClassTargetedMessage message) =>
+                                (in MutableClassTargetedMessage message) =>
                                 {
                                     observedByPostProcessor = message.counter;
                                     postProcessorSawSameInstance = ReferenceEquals(
@@ -391,7 +391,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref MutableClassBroadcastMessage message) =>
+                                (in MutableClassBroadcastMessage message) =>
                                 {
                                     message.counter += 5;
                                     message.label = "mutated";
@@ -404,7 +404,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref MutableClassBroadcastMessage message) =>
+                                (in MutableClassBroadcastMessage message) =>
                                 {
                                     observedByLaterHandler = message.counter;
                                     labelSeenByLaterHandler = message.label;
@@ -417,7 +417,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 scenario,
                                 token,
                                 hostId,
-                                (ref MutableClassBroadcastMessage message) =>
+                                (in MutableClassBroadcastMessage message) =>
                                 {
                                     observedByPostProcessor = message.counter;
                                     postProcessorSawSameInstance = ReferenceEquals(

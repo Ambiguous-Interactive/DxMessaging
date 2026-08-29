@@ -221,25 +221,25 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     case MessageKind.Untargeted:
                         return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                            (ref SimpleUntargetedMessage _) => onInvoked()
+                            (in SimpleUntargetedMessage _) => onInvoked()
                         );
                     case MessageKind.Targeted:
                         return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
                             context,
-                            (ref SimpleTargetedMessage _) => onInvoked()
+                            (in SimpleTargetedMessage _) => onInvoked()
                         );
                     case MessageKind.Broadcast:
                         return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
                             context,
-                            (ref SimpleBroadcastMessage _) => onInvoked()
+                            (in SimpleBroadcastMessage _) => onInvoked()
                         );
                     case MessageKind.TargetedWithoutTargeting:
                         return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                            (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked()
+                            (in InstanceId _, in SimpleTargetedMessage __) => onInvoked()
                         );
                     case MessageKind.BroadcastWithoutSource:
                         return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                            (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked()
+                            (in InstanceId _, in SimpleBroadcastMessage __) => onInvoked()
                         );
                     default:
                         throw UnsupportedScenario(scenario);
@@ -250,25 +250,25 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                     return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => onInvoked()
+                        (in SimpleUntargetedMessage _) => onInvoked()
                     );
                 case MessageKind.Targeted:
                     return token.RegisterTargeted<SimpleTargetedMessage>(
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 case MessageKind.Broadcast:
                     return token.RegisterBroadcast<SimpleBroadcastMessage>(
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 case MessageKind.TargetedWithoutTargeting:
                     return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked()
+                        (in InstanceId _, in SimpleTargetedMessage __) => onInvoked()
                     );
                 case MessageKind.BroadcastWithoutSource:
                     return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked()
+                        (in InstanceId _, in SimpleBroadcastMessage __) => onInvoked()
                     );
                 default:
                     throw UnsupportedScenario(scenario);

@@ -240,11 +240,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Action emit = BuildEmitClosure(scenario, bus);
                     int invocationCount = 0;
                     MessageHandler.FastHandler<SimpleUntargetedMessage> measuredHandler = (
-                        ref SimpleUntargetedMessage _
+                        in SimpleUntargetedMessage _
                     ) => invocationCount++;
                     _ = ScenarioHarness.RegisterUntargeted(scenario, token, measuredHandler);
                     MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
-                        ref ComplexUntargetedMessage _
+                        in ComplexUntargetedMessage _
                     ) => { };
 
                     void InvalidatePlan()
@@ -555,7 +555,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     // bus-wide dispatch-plan stamp, which is what used to discard
                     // the flattened interceptor view.
                     MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
-                        ref ComplexUntargetedMessage _
+                        in ComplexUntargetedMessage _
                     ) => { };
 
                     void InvalidateThePlan()
@@ -1605,20 +1605,20 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static void NoOpUntargeted(ref SimpleUntargetedMessage message) { }
+        private static void NoOpUntargeted(in SimpleUntargetedMessage message) { }
 
-        private static void NoOpTargeted(ref SimpleTargetedMessage message) { }
+        private static void NoOpTargeted(in SimpleTargetedMessage message) { }
 
-        private static void NoOpBroadcast(ref SimpleBroadcastMessage message) { }
+        private static void NoOpBroadcast(in SimpleBroadcastMessage message) { }
 
         private static void NoOpTargetedWithoutTargeting(
-            ref InstanceId target,
-            ref SimpleTargetedMessage message
+            in InstanceId target,
+            in SimpleTargetedMessage message
         ) { }
 
         private static void NoOpBroadcastWithoutSource(
-            ref InstanceId source,
-            ref SimpleBroadcastMessage message
+            in InstanceId source,
+            in SimpleBroadcastMessage message
         ) { }
 
         private static bool AllowUntargeted(ref SimpleUntargetedMessage message)

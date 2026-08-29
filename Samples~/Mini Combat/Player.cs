@@ -12,7 +12,7 @@ public sealed class Player : MessageAwareComponent
         _ = Token.RegisterComponentTargeted<Heal>(this, OnHeal);
     }
 
-    private void OnHeal(ref Heal m)
+    private void OnHeal(in Heal m)
     {
         _hp += m.amount;
         Debug.Log($"Player healed: +{m.amount}, HP={_hp}");

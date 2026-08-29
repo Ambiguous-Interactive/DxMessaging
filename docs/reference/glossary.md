@@ -29,7 +29,7 @@ A **function** that runs when a message is received. Your game logic goes here.
 Example:
 
 ```csharp
-void OnHeal(ref Heal msg) {
+void OnHeal(in Heal msg) {
     health += msg.amount; // This is the handler
 }
 ```
@@ -81,7 +81,7 @@ Example: "Count every processed damage message for telemetry"
 // Use the type-specific post-processor variant based on your message type:
 // - RegisterUntargetedPostProcessor<T> for IUntargetedMessage
 // - RegisterTargetedWithoutTargetingPostProcessor<T> for ITargetedMessage to any target
-_ = token.RegisterTargetedWithoutTargetingPostProcessor<ApplyDamage>((ref InstanceId target, ref ApplyDamage msg) => {
+_ = token.RegisterTargetedWithoutTargetingPostProcessor<ApplyDamage>((in InstanceId target, in ApplyDamage msg) => {
     Analytics.RecordProcessedDamageRequest(target, msg.amount);
 });
 ```
@@ -159,9 +159,9 @@ A special handler that receives **every single message** regardless of type. Use
 
 ```csharp
 _ = Token.RegisterGlobalAcceptAll(
-    (ref IUntargetedMessage m) => Debug.Log("Untargeted: " + m),
-    (ref InstanceId t, ref ITargetedMessage m) => Debug.Log("Targeted: " + m),
-    (ref InstanceId s, ref IBroadcastMessage m) => Debug.Log("Broadcast: " + m)
+    (in IUntargetedMessage m) => Debug.Log("Untargeted: " + m),
+    (in InstanceId t, in ITargetedMessage m) => Debug.Log("Targeted: " + m),
+    (in InstanceId s, in IBroadcastMessage m) => Debug.Log("Broadcast: " + m)
 );
 ```
 

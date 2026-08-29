@@ -38,7 +38,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             );
         }
 
-        private void HandleSimpleUntargetedMessage(ref SimpleUntargetedMessage message)
+        private void HandleSimpleUntargetedMessage(in SimpleUntargetedMessage message)
         {
             untargetedHandler?.Invoke();
         }

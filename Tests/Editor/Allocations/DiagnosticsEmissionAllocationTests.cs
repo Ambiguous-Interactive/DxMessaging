@@ -122,7 +122,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static readonly InstanceId Owner = new InstanceId(0x4433_4433);
 
-        private static void NoOp(ref SimpleUntargetedMessage message) { }
+        private static void NoOp(in SimpleUntargetedMessage message) { }
     }
 }
 #endif

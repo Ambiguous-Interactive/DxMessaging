@@ -571,6 +571,97 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
+        private static IEnumerable<TestCaseData> HandlerDelegateCases()
+        {
+            yield return new TestCaseData(
+                typeof(MessageHandler.FastHandler<AotHookUntargetedMessage>),
+                new[] { true }
+            ).SetName("FastHandler_MessageIsReadonly");
+            yield return new TestCaseData(
+                typeof(MessageHandler.FastHandlerWithContext<AotHookTargetedMessage>),
+                new[] { true, true }
+            ).SetName("FastHandlerWithContext_ContextAndMessageAreReadonly");
+            yield return new TestCaseData(
+                typeof(IMessageBus.UntargetedInterceptor<AotHookUntargetedMessage>),
+                new[] { false }
+            ).SetName("UntargetedInterceptor_MessageRemainsWritable");
+            yield return new TestCaseData(
+                typeof(IMessageBus.TargetedInterceptor<AotHookTargetedMessage>),
+                new[] { false, false }
+            ).SetName("TargetedInterceptor_ContextAndMessageRemainWritable");
+            yield return new TestCaseData(
+                typeof(IMessageBus.BroadcastInterceptor<AotHookBroadcastMessage>),
+                new[] { false, false }
+            ).SetName("BroadcastInterceptor_ContextAndMessageRemainWritable");
+        }
+
+        [Test]
+        [TestCaseSource(nameof(HandlerDelegateCases))]
+        public void HandlerDelegateByRefModifiersMatchCallbackRole(
+            Type delegateType,
+            bool[] expectedIsIn
+        )
+        {
+            MethodInfo invoke = delegateType.GetMethod("Invoke");
+            ParameterInfo[] parameters = invoke.GetParameters();
+            string caseDescription = delegateType.FullName;
+
+            Assert.That(
+                parameters.Length,
+                Is.EqualTo(expectedIsIn.Length),
+                $"{caseDescription} must expose the expected parameter count."
+            );
+            for (int i = 0; i < parameters.Length; ++i)
+            {
+                ParameterInfo parameter = parameters[i];
+                Assert.That(
+                    parameter.ParameterType.IsByRef,
+                    Is.True,
+                    $"{caseDescription} parameter {i} must remain allocation-free by-reference."
+                );
+                Assert.That(
+                    parameter.IsIn,
+                    Is.EqualTo(expectedIsIn[i]),
+                    $"{caseDescription} parameter {i} has the wrong readonly modifier."
+                );
+                Assert.That(
+                    parameter.IsOut,
+                    Is.False,
+                    $"{caseDescription} parameter {i} must not be an out parameter."
+                );
+            }
+        }
+
+        [Test]
+        public void ReadonlyHandlerMethodGroupsAndLambdasCompileAndInvoke()
+        {
+            int invocationCount = 0;
+            MessageHandler.FastHandler<AotHookUntargetedMessage> scalarMethod = HandleScalar;
+            MessageHandler.FastHandlerWithContext<AotHookTargetedMessage> contextMethod =
+                HandleContext;
+            MessageHandler.FastHandler<AotHookUntargetedMessage> scalarLambda = (
+                in AotHookUntargetedMessage _
+            ) => ++invocationCount;
+            MessageHandler.FastHandlerWithContext<AotHookTargetedMessage> contextLambda = (
+                in InstanceId _,
+                in AotHookTargetedMessage __
+            ) => ++invocationCount;
+            AotHookUntargetedMessage untargeted = default;
+            AotHookTargetedMessage targeted = default;
+            InstanceId context = new InstanceId(42);
+
+            scalarMethod(in untargeted);
+            contextMethod(in context, in targeted);
+            scalarLambda(in untargeted);
+            contextLambda(in context, in targeted);
+
+            Assert.That(invocationCount, Is.EqualTo(4), "Every readonly callback shape must run.");
+
+            void HandleScalar(in AotHookUntargetedMessage _) => ++invocationCount;
+
+            void HandleContext(in InstanceId _, in AotHookTargetedMessage __) => ++invocationCount;
+        }
+
         private static FieldInfo[] GetMessageCacheStorageFields()
         {
             return typeof(MessageBus)

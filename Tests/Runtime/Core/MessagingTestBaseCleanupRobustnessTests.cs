@@ -248,7 +248,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     _ = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => { }
+                        (in SimpleUntargetedMessage _) => { }
                     );
                     break;
                 case MessageKind.Targeted:
@@ -256,7 +256,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         hostId,
-                        (ref SimpleTargetedMessage _) => { }
+                        (in SimpleTargetedMessage _) => { }
                     );
                     break;
                 case MessageKind.Broadcast:
@@ -264,7 +264,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         hostId,
-                        (ref SimpleBroadcastMessage _) => { }
+                        (in SimpleBroadcastMessage _) => { }
                     );
                     break;
                 default:
@@ -371,7 +371,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         _ = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                             scenario,
                             token,
-                            (ref SimpleUntargetedMessage _) => { }
+                            (in SimpleUntargetedMessage _) => { }
                         );
                         break;
                     case MessageKind.Targeted:
@@ -379,7 +379,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             scenario,
                             token,
                             hostId,
-                            (ref SimpleTargetedMessage _) => { }
+                            (in SimpleTargetedMessage _) => { }
                         );
                         break;
                     case MessageKind.Broadcast:
@@ -387,7 +387,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             scenario,
                             token,
                             hostId,
-                            (ref SimpleBroadcastMessage _) => { }
+                            (in SimpleBroadcastMessage _) => { }
                         );
                         break;
                     default:

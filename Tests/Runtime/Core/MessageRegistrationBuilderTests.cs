@@ -199,6 +199,6 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.IsTrue(disposeInvoked, "Disposing a lease should trigger OnDispose callbacks.");
         }
 
-        private static void OnSimpleMessage(ref SimpleUntargetedMessage message) { }
+        private static void OnSimpleMessage(in SimpleUntargetedMessage message) { }
     }
 }

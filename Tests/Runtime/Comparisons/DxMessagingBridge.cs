@@ -8,11 +8,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using DxMessaging.Tests.Runtime.Scripts.Messages;
 
     /// <summary>
-    /// Bridges DxMessaging using its by-ref fast-path API on an isolated
+    /// Bridges DxMessaging using its readonly by-ref fast-path API on an isolated
     /// <see cref="MessageBus"/>. Mirrors the benchmark suite's isolated
     /// <c>new MessageBus()</c> + <see cref="MessageHandler"/> + <see cref="MessageRegistrationToken"/>
-    /// setup so no global state leaks between cases. Supports every scenario; the by-ref
-    /// handler and struct messages keep the dispatch path allocation-free.
+    /// setup so no global state leaks between cases. Supports every scenario; the readonly
+    /// by-ref handler and struct messages keep the dispatch path allocation-free.
     ///
     /// Fan-out is modeled the faithful DxMessaging way: each subscriber is its OWN component,
     /// i.e. its own <see cref="MessageHandler"/> behind its own
@@ -79,17 +79,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             _bus = new MessageBus();
             _token = CreateToken();
 
-            void Handle(ref SimpleUntargetedMessage message)
+            void Handle(in SimpleUntargetedMessage message)
             {
                 _progress++;
             }
 
-            void HandleStruct(ref ComparisonStructPayload message)
+            void HandleStruct(in ComparisonStructPayload message)
             {
                 _progress++;
             }
 
-            void HandleTargeted(ref SimpleTargetedMessage message)
+            void HandleTargeted(in SimpleTargetedMessage message)
             {
                 _progress++;
             }
@@ -214,7 +214,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             return true;
         }
 
-        private void PostProcess(ref SimpleUntargetedMessage message)
+        private void PostProcess(in SimpleUntargetedMessage message)
         {
             // Post-processor body intentionally runs without touching the handler marker;
             // its execution is the thing being measured for this scenario.

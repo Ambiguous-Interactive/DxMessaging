@@ -514,9 +514,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ =
                 pollutingToken.RegisterUntargeted<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage>(
-                    (
-                        ref DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage _
-                    ) => { }
+                    (in DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage _) => { }
                 );
             pollutingToken.Enable();
 

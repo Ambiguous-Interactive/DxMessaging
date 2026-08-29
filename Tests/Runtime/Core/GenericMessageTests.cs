@@ -23,10 +23,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(messaging);
 
             int totalCount = 0;
-            token.RegisterUntargeted((ref GenericUntargetedMessage<int> _) => totalCount++);
-            token.RegisterUntargeted((ref GenericUntargetedMessage<float> _) => totalCount++);
-            token.RegisterUntargeted((ref GenericUntargetedMessage<string> _) => totalCount++);
-            token.RegisterUntargeted((ref GenericUntargetedMessage<Vector3> _) => totalCount++);
+            token.RegisterUntargeted((in GenericUntargetedMessage<int> _) => totalCount++);
+            token.RegisterUntargeted((in GenericUntargetedMessage<float> _) => totalCount++);
+            token.RegisterUntargeted((in GenericUntargetedMessage<string> _) => totalCount++);
+            token.RegisterUntargeted((in GenericUntargetedMessage<Vector3> _) => totalCount++);
 
             GenericUntargetedMessage<int> intMessage = new();
             intMessage.EmitUntargeted();

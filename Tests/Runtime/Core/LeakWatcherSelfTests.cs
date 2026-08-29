@@ -353,7 +353,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => { }
+                        (in SimpleUntargetedMessage _) => { }
                     );
                 }
                 case MessageKind.Targeted:
@@ -362,7 +362,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleTargetedMessage _) => { }
+                        (in SimpleTargetedMessage _) => { }
                     );
                 }
                 case MessageKind.Broadcast:
@@ -371,7 +371,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleBroadcastMessage _) => { }
+                        (in SimpleBroadcastMessage _) => { }
                     );
                 }
                 default:

@@ -43,7 +43,7 @@ public sealed class Player : MessageAwareComponent
         _ = Token.RegisterComponentTargeted<Heal>(this, OnHeal);
     }
 
-    private void OnHeal(ref Heal m) => _hp += m.amount;
+    private void OnHeal(in Heal m) => _hp += m.amount;
 }
 ```
 
@@ -82,8 +82,8 @@ public sealed class UIOverlay : MessageAwareComponent
         _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
     }
 
-    private void OnSettings(ref VideoSettingsChanged m) => RebuildUI(m.width, m.height);
-    private void OnAnyDamage(ref InstanceId src, ref TookDamage m) => ShowFloatingText(src, $"-{m.amount}");
+    private void OnSettings(in VideoSettingsChanged m) => RebuildUI(m.width, m.height);
+    private void OnAnyDamage(in InstanceId src, in TookDamage m) => ShowFloatingText(src, $"-{m.amount}");
 }
 ```
 

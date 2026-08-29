@@ -43,7 +43,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(101), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             int providerCount = 0;
-            _ = token.RegisterUntargeted((ref TestUntargetedMessage _) => providerCount++);
+            _ = token.RegisterUntargeted((in TestUntargetedMessage _) => providerCount++);
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(102)) { active = true };
@@ -52,7 +52,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             int globalCount = 0;
-            _ = globalToken.RegisterUntargeted((ref TestUntargetedMessage _) => globalCount++);
+            _ = globalToken.RegisterUntargeted((in TestUntargetedMessage _) => globalCount++);
             globalToken.Enable();
 
             TestUntargetedMessage message = new(5);
@@ -75,7 +75,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             int globalCount = 0;
-            _ = globalToken.RegisterUntargeted((ref TestUntargetedMessage _) => globalCount++);
+            _ = globalToken.RegisterUntargeted((in TestUntargetedMessage _) => globalCount++);
             globalToken.Enable();
 
             TestUntargetedMessage message = new(9);
@@ -103,7 +103,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 explicitBus
             );
             int explicitCount = 0;
-            _ = explicitToken.RegisterUntargeted((ref TestUntargetedMessage _) => explicitCount++);
+            _ = explicitToken.RegisterUntargeted((in TestUntargetedMessage _) => explicitCount++);
             explicitToken.Enable();
 
             MessageHandler providerHandler = new(new InstanceId(302), providerBus)
@@ -115,7 +115,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 providerBus
             );
             int providerCount = 0;
-            _ = providerToken.RegisterUntargeted((ref TestUntargetedMessage _) => providerCount++);
+            _ = providerToken.RegisterUntargeted((in TestUntargetedMessage _) => providerCount++);
             providerToken.Enable();
 
             TestUntargetedMessage message = new(11);
@@ -138,7 +138,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(401), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             int providerCount = 0;
-            _ = token.RegisterTargeted(target, (ref TestTargetedMessage _) => providerCount++);
+            _ = token.RegisterTargeted(target, (in TestTargetedMessage _) => providerCount++);
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(402)) { active = true };
@@ -147,7 +147,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             int globalCount = 0;
-            _ = globalToken.RegisterTargeted(target, (ref TestTargetedMessage _) => globalCount++);
+            _ = globalToken.RegisterTargeted(target, (in TestTargetedMessage _) => globalCount++);
             globalToken.Enable();
 
             TestTargetedMessage message = new(17);
@@ -170,7 +170,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(501), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             int providerCount = 0;
-            _ = token.RegisterBroadcast(source, (ref TestBroadcastMessage _) => providerCount++);
+            _ = token.RegisterBroadcast(source, (in TestBroadcastMessage _) => providerCount++);
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(502)) { active = true };
@@ -179,10 +179,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             int globalCount = 0;
-            _ = globalToken.RegisterBroadcast(
-                source,
-                (ref TestBroadcastMessage _) => globalCount++
-            );
+            _ = globalToken.RegisterBroadcast(source, (in TestBroadcastMessage _) => globalCount++);
             globalToken.Enable();
 
             TestBroadcastMessage message = new(23);
@@ -205,7 +202,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(503), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             int providerCount = 0;
-            _ = token.RegisterBroadcast(source, (ref TestBroadcastMessage _) => providerCount++);
+            _ = token.RegisterBroadcast(source, (in TestBroadcastMessage _) => providerCount++);
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(504)) { active = true };
@@ -214,10 +211,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             int globalCount = 0;
-            _ = globalToken.RegisterBroadcast(
-                source,
-                (ref TestBroadcastMessage _) => globalCount++
-            );
+            _ = globalToken.RegisterBroadcast(source, (in TestBroadcastMessage _) => globalCount++);
             globalToken.Enable();
 
             TestBroadcastMessage message = new(24);
@@ -249,7 +243,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             int explicitCount = 0;
             _ = explicitToken.RegisterBroadcast(
                 source,
-                (ref TestBroadcastMessage _) => explicitCount++
+                (in TestBroadcastMessage _) => explicitCount++
             );
             explicitToken.Enable();
 
@@ -264,7 +258,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             int providerCount = 0;
             _ = providerToken.RegisterBroadcast(
                 source,
-                (ref TestBroadcastMessage _) => providerCount++
+                (in TestBroadcastMessage _) => providerCount++
             );
             providerToken.Enable();
 
@@ -288,7 +282,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(601), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             string received = null;
-            _ = token.RegisterTargeted(target, (ref StringMessage m) => received = m.message);
+            _ = token.RegisterTargeted(target, (in StringMessage m) => received = m.message);
             token.Enable();
 
             MessageHandler globalHandler = new(new InstanceId(602)) { active = true };
@@ -299,7 +293,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             string globalReceived = null;
             _ = globalToken.RegisterTargeted(
                 target,
-                (ref StringMessage m) => globalReceived = m.message
+                (in StringMessage m) => globalReceived = m.message
             );
             globalToken.Enable();
 
@@ -324,7 +318,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             string received = null;
             _ = token.RegisterBroadcast(
                 source,
-                (ref SourcedStringMessage m) => received = m.message
+                (in SourcedStringMessage m) => received = m.message
             );
             token.Enable();
 
@@ -336,7 +330,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             string globalReceived = null;
             _ = globalToken.RegisterBroadcast(
                 source,
-                (ref SourcedStringMessage m) => globalReceived = m.message
+                (in SourcedStringMessage m) => globalReceived = m.message
             );
             globalToken.Enable();
 

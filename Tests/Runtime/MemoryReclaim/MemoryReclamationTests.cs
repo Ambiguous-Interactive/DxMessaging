@@ -1764,17 +1764,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<UntargetedTwo>((ref UntargetedTwo _) => { });
+                    return token.RegisterUntargeted<UntargetedTwo>((in UntargetedTwo _) => { });
                 }
                 case MessageKind.Targeted:
                 {
-                    return token.RegisterTargeted<TargetedTwo>(context, (ref TargetedTwo _) => { });
+                    return token.RegisterTargeted<TargetedTwo>(context, (in TargetedTwo _) => { });
                 }
                 case MessageKind.Broadcast:
                 {
                     return token.RegisterBroadcast<BroadcastTwo>(
                         context,
-                        (ref BroadcastTwo _) => { }
+                        (in BroadcastTwo _) => { }
                     );
                 }
                 default:
@@ -1794,22 +1794,20 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 case MessageKind.Untargeted:
                 {
-                    return token.RegisterUntargeted<UntargetedThree>(
-                        (ref UntargetedThree _) => { }
-                    );
+                    return token.RegisterUntargeted<UntargetedThree>((in UntargetedThree _) => { });
                 }
                 case MessageKind.Targeted:
                 {
                     return token.RegisterTargeted<TargetedThree>(
                         context,
-                        (ref TargetedThree _) => { }
+                        (in TargetedThree _) => { }
                     );
                 }
                 case MessageKind.Broadcast:
                 {
                     return token.RegisterBroadcast<BroadcastThree>(
                         context,
-                        (ref BroadcastThree _) => { }
+                        (in BroadcastThree _) => { }
                     );
                 }
                 default:
@@ -1832,7 +1830,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 case MessageKind.Untargeted:
                 {
                     return token.RegisterUntargeted<UntargetedOne>(
-                        (ref UntargetedOne _) => onMessage(),
+                        (in UntargetedOne _) => onMessage(),
                         priority: priority
                     );
                 }
@@ -1840,7 +1838,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 {
                     return token.RegisterTargeted<TargetedOne>(
                         context,
-                        (ref TargetedOne _) => onMessage(),
+                        (in TargetedOne _) => onMessage(),
                         priority: priority
                     );
                 }
@@ -1848,7 +1846,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 {
                     return token.RegisterBroadcast<BroadcastOne>(
                         context,
-                        (ref BroadcastOne _) => onMessage(),
+                        (in BroadcastOne _) => onMessage(),
                         priority: priority
                     );
                 }

@@ -86,21 +86,21 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                     _ = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
-                        scenario, token, (ref SimpleUntargetedMessage _) => ++count);
+                        scenario, token, (in SimpleUntargetedMessage _) => ++count);
                     SimpleUntargetedMessage u = new();
                     ScenarioHarness.EmitUntargeted(scenario, ref u);
                     break;
                 case MessageKind.Targeted:
                     _ = ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
                         scenario, token, component,
-                        (ref SimpleTargetedMessage _) => ++count);
+                        (in SimpleTargetedMessage _) => ++count);
                     SimpleTargetedMessage t = new();
                     ScenarioHarness.EmitTargeted(scenario, ref t, component);
                     break;
                 case MessageKind.Broadcast:
                     _ = ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
                         scenario, token, component,
-                        (ref SimpleBroadcastMessage _) => ++count);
+                        (in SimpleBroadcastMessage _) => ++count);
                     SimpleBroadcastMessage b = new();
                     ScenarioHarness.EmitBroadcast(scenario, ref b, component);
                     break;

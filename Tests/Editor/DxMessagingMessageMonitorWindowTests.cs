@@ -3978,7 +3978,7 @@ namespace DxMessaging.Tests.Editor
 
         private sealed class TestListener : MonoBehaviour
         {
-            public void OnOlderMessage(ref OlderMessage message) { }
+            public void OnOlderMessage(in OlderMessage message) { }
         }
 
         private sealed class ThrowingScriptableMessageBusProvider : ScriptableMessageBusProvider

@@ -44,7 +44,7 @@ These apply to `DispatchFlatSnapshot`, `DispatchContextFlatSnapshot`,
    `sealed` or the method non-virtual. Audit `MessageBus`,
    `MessageHandler.TypedHandler<T>`, `FlatDispatch<TMessage>`,
    `ContextFlatDispatch<TMessage>`, and `HandlerActionCache<T>`.
-1. Boxing. Keep the `ref TMessage where TMessage : IMessage` shape end to end;
+1. Boxing. Keep emission state as `ref TMessage` and observer calls as `in TMessage`;
    a struct message must never touch an `object` field.
 1. `ArrayPool<T>.Shared.Rent`/`Return`. Its `Interlocked` operations are
    expensive on IL2CPP. Use private bus-owned pools or `DxPools`.

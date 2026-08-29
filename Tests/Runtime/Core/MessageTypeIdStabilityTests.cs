@@ -48,7 +48,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int receivedCount = 0;
             MessageRegistrationHandle handle = _token.RegisterUntargeted<RoutingTestMessage>(
-                (ref RoutingTestMessage msg) =>
+                (in RoutingTestMessage msg) =>
                 {
                     ++receivedCount;
                 }
@@ -81,7 +81,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int receivedCount = 0;
             MessageRegistrationHandle handle = _token.RegisterUntargeted<PostResetRoutingMessage>(
-                (ref PostResetRoutingMessage msg) =>
+                (in PostResetRoutingMessage msg) =>
                 {
                     ++receivedCount;
                 }
@@ -293,14 +293,14 @@ namespace DxMessaging.Tests.Runtime.Core
 
             MessageRegistrationHandle handleA =
                 _token.RegisterUntargeted<MultiResetRoutingMessageA>(
-                    (ref MultiResetRoutingMessageA msg) =>
+                    (in MultiResetRoutingMessageA msg) =>
                     {
                         ++messageACount;
                     }
                 );
             MessageRegistrationHandle handleB =
                 _token.RegisterUntargeted<MultiResetRoutingMessageB>(
-                    (ref MultiResetRoutingMessageB msg) =>
+                    (in MultiResetRoutingMessageB msg) =>
                     {
                         ++messageBCount;
                     }

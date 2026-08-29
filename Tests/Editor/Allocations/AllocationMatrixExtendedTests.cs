@@ -214,8 +214,8 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// <summary>
         /// Pins zero-allocation steady-state emission for the global accept-all
         /// dispatch path. The global accept-all delegate signatures take
-        /// <c>ref IUntargetedMessage</c> / <c>ref ITargetedMessage</c> /
-        /// <c>ref IBroadcastMessage</c>, so emitting a struct message under
+        /// <c>in IUntargetedMessage</c> / <c>in ITargetedMessage</c> /
+        /// <c>in IBroadcastMessage</c>, so emitting a struct message under
         /// a registered global accept-all forces a struct-to-interface box
         /// at the dispatch site
         /// (<c>MessageBus.cs</c> lines 1290, 1471, 2485). That box is
@@ -598,29 +598,26 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static void AcceptAllUntargeted(ref IUntargetedMessage message) { }
+        private static void AcceptAllUntargeted(in IUntargetedMessage message) { }
 
-        private static void AcceptAllTargeted(
-            ref InstanceId target,
-            ref ITargetedMessage message
-        ) { }
+        private static void AcceptAllTargeted(in InstanceId target, in ITargetedMessage message) { }
 
         private static void AcceptAllBroadcast(
-            ref InstanceId source,
-            ref IBroadcastMessage message
+            in InstanceId source,
+            in IBroadcastMessage message
         ) { }
 
-        private static void NoOpUntargeted(ref SimpleUntargetedMessage message) { }
+        private static void NoOpUntargeted(in SimpleUntargetedMessage message) { }
 
-        private static void NoOpTargeted(ref SimpleTargetedMessage message) { }
+        private static void NoOpTargeted(in SimpleTargetedMessage message) { }
 
-        private static void NoOpBroadcast(ref SimpleBroadcastMessage message) { }
+        private static void NoOpBroadcast(in SimpleBroadcastMessage message) { }
 
-        private static void NoOpClassUntargeted(ref ClassUntargetedMessage message) { }
+        private static void NoOpClassUntargeted(in ClassUntargetedMessage message) { }
 
-        private static void NoOpClassTargeted(ref ClassTargetedMessage message) { }
+        private static void NoOpClassTargeted(in ClassTargetedMessage message) { }
 
-        private static void NoOpClassBroadcast(ref ClassBroadcastMessage message) { }
+        private static void NoOpClassBroadcast(in ClassBroadcastMessage message) { }
 
         private static bool AllowUntargeted(ref SimpleUntargetedMessage message)
         {

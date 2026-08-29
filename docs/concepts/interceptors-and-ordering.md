@@ -61,7 +61,7 @@ DxMessaging runs emissions through a fixed pipeline. This section documents the 
 
 - Priority: lower numbers run earlier.
 - Same priority: registration order is preserved.
-- Within a priority group, fast handlers (by-ref) run before action handlers.
+- Within a priority group, fast handlers (readonly by-reference) run before action handlers.
 - Each category (Untargeted, Targeted, Broadcast) has its own pipeline.
 
 Untargeted pipeline
@@ -91,7 +91,7 @@ Broadcast pipeline
 
 Notes on handler groups
 
-- Fast vs Action: At a given priority, fast handlers (by-ref delegates) are invoked before action handlers, and within each group the registration order is preserved.
+- Fast vs Action: At a given priority, fast handlers (readonly by-reference delegates) are invoked before action handlers, and within each group the registration order is preserved.
 - "Without Targeting/Source" registrations run in their own groups and do not replace the specific target/source groups.
 
 Visual overview

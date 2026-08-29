@@ -247,7 +247,7 @@ separately.
   DLL. The campaign's loaded `DispatchFlatSnapshot<T>` compiled to 113 IL bytes,
   six locals, and no exception regions. Its instructions form one indexed entry
   loop with a live `MessageHandler.active` read, direct
-  `FastHandler<T>.Invoke(ref T)`, post-call reset-generation comparison, and
+  `FastHandler<T>.Invoke(in T)`, post-call reset-generation comparison, and
   `HasAnyDispatchEntries` fallback. The context sibling was 114 bytes with the
   same six-local/no-exception shape. This supports retaining the compact loop;
   it does not justify further generic specialization or source generation.

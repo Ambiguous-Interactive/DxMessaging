@@ -37,37 +37,37 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
             _ = Token.RegisterBroadcastWithoutSource<SourcedStringMessage>(HandleAnySourcedString);
         }
 
-        private void HandleStringGameObjectTargeted(ref StringMessage message)
+        private void HandleStringGameObjectTargeted(in StringMessage message)
         {
             gameObjectTargetedCount++;
         }
 
-        private void HandleStringComponentTargeted(ref StringMessage message)
+        private void HandleStringComponentTargeted(in StringMessage message)
         {
             componentTargetedCount++;
         }
 
-        private void HandleAnyStringTargeted(ref InstanceId target, ref StringMessage message)
+        private void HandleAnyStringTargeted(in InstanceId target, in StringMessage message)
         {
             targetedWithoutTargetingCount++;
         }
 
-        protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+        protected override void HandleGlobalStringMessage(in GlobalStringMessage message)
         {
             untargetedGlobalCount++;
         }
 
-        private void HandleSourcedStringGameObjectBroadcast(ref SourcedStringMessage message)
+        private void HandleSourcedStringGameObjectBroadcast(in SourcedStringMessage message)
         {
             gameObjectBroadcastCount++;
         }
 
-        private void HandleSourcedStringComponentBroadcast(ref SourcedStringMessage message)
+        private void HandleSourcedStringComponentBroadcast(in SourcedStringMessage message)
         {
             componentBroadcastCount++;
         }
 
-        private void HandleAnySourcedString(ref InstanceId source, ref SourcedStringMessage message)
+        private void HandleAnySourcedString(in InstanceId source, in SourcedStringMessage message)
         {
             broadcastWithoutSourceCount++;
         }

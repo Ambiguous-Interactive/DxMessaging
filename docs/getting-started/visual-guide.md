@@ -244,7 +244,7 @@ public sealed class DamageReceiver : MessageAwareComponent
         _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    private void OnDamageRequested(ref DamageRequested message)
+    private void OnDamageRequested(in DamageRequested message)
     {
         Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
     }
@@ -358,7 +358,7 @@ void Update() {
 
 // Player (doesn't know about Input system!)
 _ = token.RegisterComponentTargeted<Jump>(this, OnJump);
-void OnJump(ref Jump msg) {
+void OnJump(in Jump msg) {
     rb.AddForce(Vector3.up * msg.force, ForceMode.Impulse);
 }
 ```
@@ -397,9 +397,9 @@ public class AchievementSystem : MessageAwareComponent {
         base.RegisterMessageHandlers();
         // Listen to EVERYTHING
         _ = Token.RegisterGlobalAcceptAll(
-            (ref IUntargetedMessage m) => Check(m),
-            (ref InstanceId t, ref ITargetedMessage m) => Check(m),
-            (ref InstanceId s, ref IBroadcastMessage m) => Check(m)
+            (in IUntargetedMessage m) => Check(m),
+            (in InstanceId t, in ITargetedMessage m) => Check(m),
+            (in InstanceId s, in IBroadcastMessage m) => Check(m)
         );
     }
 }

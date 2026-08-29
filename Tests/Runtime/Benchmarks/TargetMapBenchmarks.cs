@@ -447,7 +447,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 Emit(replacement);
             }
 
-            private void Handle(ref TargetMapMessage message)
+            private void Handle(in TargetMapMessage message)
             {
                 Invocations++;
             }

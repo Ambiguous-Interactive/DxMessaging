@@ -50,7 +50,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Targeted:
                 {
                     MessageHandler.FastHandler<SimpleTargetedMessage> local = null;
-                    local = (ref SimpleTargetedMessage _) =>
+                    local = (in SimpleTargetedMessage _) =>
                     {
                         count++;
                         if (secondHandle == null)
@@ -74,7 +74,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Broadcast:
                 {
                     MessageHandler.FastHandler<SimpleBroadcastMessage> local = null;
-                    local = (ref SimpleBroadcastMessage _) =>
+                    local = (in SimpleBroadcastMessage _) =>
                     {
                         count++;
                         if (secondHandle == null)
