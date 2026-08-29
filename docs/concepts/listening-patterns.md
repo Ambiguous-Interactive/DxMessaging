@@ -61,7 +61,11 @@ bus.Deregister<IMessage>(in registration);
 
 ### Development Debug Dump
 
-Capture all messages during development for debugging and diagnostics:
+Use [Message Monitor](../guides/diagnostics.md#message-monitor) for recent
+emissions and [Flow Graph](../guides/diagnostics.md#flow-graph) for loaded-scene
+`MessagingComponent` topology in the Editor. Add a global observer when a
+runtime build, direct bus registrations, automated export, or custom dashboard
+needs the same stream in code:
 
 ```csharp
 using System;

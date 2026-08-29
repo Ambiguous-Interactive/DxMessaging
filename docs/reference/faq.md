@@ -20,7 +20,7 @@
 
 ## Does DxMessaging allocate memory? Is dispatch zero-GC?
 
-- Steady-state dispatch is allocation-free: emitting a struct message and invoking a registered handler allocates nothing after the first warm-up emit of that message type (a one-time JIT cost in the editor that IL2CPP precompiles away). The by-ref (`FastHandler`) handler overloads also avoid copying the struct on each call; the by-value `Action<T>` overloads add one struct copy per dispatch but still do not allocate. Heap allocations come from constructing a class message instance; boxing happens only if you upcast a struct message to a non-generic interface yourself. Registration itself allocates a small, bounded amount per handler (delegates and dictionary entries), so register handlers in `Awake`/setup rather than every frame. See [Performance](../architecture/performance.md) for measured numbers and [Troubleshooting](troubleshooting.md#allocations-and-boxing) if you observe unexpected allocations.
+- Ordinary typed steady-state dispatch is allocation-free: emitting a struct message and invoking a typed registered handler allocates nothing after the first warm-up emit of that message type (a one-time JIT cost in the editor that IL2CPP precompiles away). The by-ref (`FastHandler`) handler overloads also avoid copying the struct on each call; the by-value `Action<T>` overloads add one struct copy per dispatch but still do not allocate. Heap allocations come from constructing a class message instance. A struct message is boxed when it reaches a global accept-all handler or when user code upcasts it to a non-generic interface. Emission-site stack-trace capture also allocates while enabled. Registration itself allocates a small, bounded amount per handler (delegates and dictionary entries), so register handlers in `Awake`/setup rather than every frame. See [Performance](../architecture/performance.md) for measured numbers and [Troubleshooting](troubleshooting.md#allocations-and-boxing) if you observe unexpected allocations.
 
 ## How do I enforce ordering?
 
@@ -32,7 +32,24 @@
 
 ## How do I diagnose what's happening?
 
-- Enable logs and diagnostics: [Diagnostics](../guides/diagnostics.md).
+Enable Editor diagnostics, then choose the view that answers your question:
+
+- Use [Message Monitor](../guides/diagnostics.md#message-monitor) to confirm that
+  a message emitted, inspect its route kind and context, and open its captured
+  call site.
+- For loaded-scene `MessagingComponent` receivers, use
+  [Flow Graph](../guides/diagnostics.md#flow-graph) to check whether a receiver
+  registered for that message and whether the route has delivered calls. Direct
+  bus or token registrations outside those components require bus logs or
+  registration counters instead.
+- Use the [Inspector overlay](../guides/inspector-overlay.md) when a
+  `MessageAwareComponent` may have missed a required base lifecycle call.
+
+Start with Message Monitor. If the emission exists but a loaded-scene component
+receiver does not, move to Flow Graph to distinguish a missing registration from
+a route that has not delivered. The
+[Diagnostics guide](../guides/diagnostics.md) explains the tool scope, toggles,
+filters, trace capture, and release-build cost.
 
 ## My MessageAwareComponent subclass does not receive messages. What is wrong?
 

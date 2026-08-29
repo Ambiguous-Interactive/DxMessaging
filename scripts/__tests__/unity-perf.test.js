@@ -574,13 +574,13 @@ test("buildComparisonSections bolds per-scenario throughput winners only", () =>
       ["MessagePipe|KeyedToOne", comparisonRow("9000000.000")]
     ])
   );
-  const throughput = sections[0].join("\n");
-  const allocations = sections[1].join("\n");
+  const throughput = sections[1].join("\n");
+  const allocations = sections[2].join("\n");
 
-  for (const expected of ["**90.00 M emits/sec**", "**12.00 M emits/sec**", "30.00 M emits/sec"]) {
+  for (const expected of ["**90.00 M ops/sec**", "**12.00 M ops/sec**", "30.00 M ops/sec"]) {
     assert.ok(throughput.includes(expected));
   }
-  for (const forbidden of ["**30.00 M emits/sec**", "**9.00 M emits/sec**", "**N/A**"]) {
+  for (const forbidden of ["**30.00 M ops/sec**", "**9.00 M ops/sec**", "**N/A**"]) {
     assert.ok(!throughput.includes(forbidden));
   }
   assert.ok(!allocations.includes("**"));
@@ -590,15 +590,42 @@ test("buildComparisonSections bolds a sole present tech and display-precision ti
   const sole = buildComparisonSections(
     standaloneRows([["UnityAtoms|Filtered", comparisonRow("5000000.000")]])
   )[0].join("\n");
-  assert.ok(sole.includes("**5.00 M emits/sec**"));
+  assert.ok(sole.includes("**5.00 M ops/sec**"));
 
   const tied = buildComparisonSections(
     standaloneRows([
       ["DxMessaging|GlobalToOne", comparisonRow("5001000.000")],
       ["MessagePipe|GlobalToOne", comparisonRow("5004000.000")]
     ])
+  )[1].join("\n");
+  assert.equal((tied.match(/\*\*5\.00 M ops\/sec\*\*/g) || []).length, 2);
+});
+
+test("generated performance block summarizes comparisons before internal dispatch", () => {
+  const rows = [
+    dispatchRow("UntargetedFlood_OneHandler", "37500000.000"),
+    dispatchRow("Comparison_DxMessaging_GlobalToOne", "30000000.000", "-1", "-1"),
+    dispatchRow("Comparison_DxMessaging_SubUnsub", "2000000.000", "-1", "-1"),
+    dispatchRow("Comparison_MessagePipe_GlobalToOne", "90000000.000", "-1", "-1")
+  ];
+  const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
+
+  const summaryAt = block.indexOf("### DxMessaging comparison summary");
+  const matrixAt = block.indexOf("### Library comparison - throughput");
+  const dispatchAt = block.indexOf("### Dispatch throughput");
+  assert.ok(summaryAt >= 0 && summaryAt < matrixAt, block);
+  assert.ok(matrixAt < dispatchAt, block);
+  assert.match(block, /Global -> 1 subscriber.*30\.00 M ops\/sec.*33\.33 ns\/op/s);
+  assert.match(block, /0 per emit contract; count unmeasured/);
+  assert.match(block, /Subscribe\/unsubscribe churn.*Allocates; count unmeasured/s);
+
+  const monoRow = comparisonRow("25000000.000", "7");
+  monoRow.platform = EDITOR_PLAYMODE_PLATFORM;
+  const monoSummary = buildComparisonSections(
+    new Map([["PlayMode", new Map([["DxMessaging|GlobalToOne", monoRow]])]])
   )[0].join("\n");
-  assert.equal((tied.match(/\*\*5\.00 M emits\/sec\*\*/g) || []).length, 2);
+  assert.match(monoSummary, /PlayMode \(Mono\).*7 measured per 10k ops/s);
+  assert.doesNotMatch(monoSummary, /Release player|\|.*count unmeasured.*\|/);
 });
 
 test("deriveScope reads the execution scope from platform strings", () => {
@@ -662,11 +689,11 @@ test("comparison throughput stays on Standalone while GC count+bytes come from t
     playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "110806", "5000.000", "20000")
   ];
   const sections = comparisonSectionsFor(rows);
-  assert.equal(sections.length, 3);
-  const [throughput, allocations, bytes] = sections;
+  assert.equal(sections.length, 4);
+  const [, throughput, allocations, bytes] = sections;
 
   assert.ok(throughput.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
-  assert.ok(throughput.includes("68.00 M emits/sec"), throughput);
+  assert.ok(throughput.includes("68.00 M ops/sec"), throughput);
   assert.ok(
     allocations.includes("### Library comparison - GC allocations per 10k ops (PlayMode (Mono))"),
     allocations
@@ -711,7 +738,7 @@ test("comparison bytes choose their own measured scope", () => {
     ]
   ];
   for (const [rows, allocHeading, allocValue, bytesHeading] of cases) {
-    const [, allocations, bytes] = comparisonSectionsFor(rows);
+    const [, , allocations, bytes] = comparisonSectionsFor(rows);
     assert.ok(allocations.includes(allocHeading) && allocations.includes(allocValue), allocations);
     assert.ok(bytes.includes(bytesHeading), bytes);
     assert.ok(bytes.includes("4,096") && bytes.includes("8,192"), bytes);
@@ -725,8 +752,8 @@ test("comparison count+bytes matrices are omitted when no leg measured them", ()
       ["MessagePipe|GlobalToOne", comparisonRow("68000000.000", "-1", "-1")]
     ])
   );
-  assert.equal(sections.length, 1);
-  const onlySection = sections[0].join("\n");
+  assert.equal(sections.length, 2);
+  const onlySection = sections[1].join("\n");
   assert.ok(onlySection.includes("### Library comparison - throughput (Standalone (IL2CPP))"));
   const joined = sections.map((section) => section.join("\n")).join("\n");
   assert.ok(!joined.includes("GC allocations per 10k ops"), joined);

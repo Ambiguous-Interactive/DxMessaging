@@ -8,7 +8,7 @@ DxMessaging is a type-safe messaging system for Unity that **addresses three com
 
 1. **Memory leaks** from forgotten unsubscribes -> Automatic lifecycle management
 1. **Tight coupling** creating refactoring nightmares -> Full decoupling with no direct references
-1. **Debugging black holes** ("what fired when?") -> Built-in Inspector diagnostics
+1. **Debugging black holes** ("what fired when?") -> Message Monitor, Flow Graph, and Inspector diagnostics
 
 ## What Problems Does It Solve?
 
@@ -58,7 +58,10 @@ DxMessaging manages subscription lifecycle automatically, eliminating the need f
 
 ### For Advanced Devs: "I need observability and control"
 
-- See message history in Inspector (timestamps, payloads, call counts)
+- Inspect emission history and call sites in Message Monitor
+- Inspect loaded-scene `MessagingComponent` topology and delivery evidence in
+  Flow Graph
+- Catch lifecycle mistakes and provider warnings in the Inspector
 - Priority-based execution (deterministic ordering)
 - Interceptors (validate/normalize before handlers)
 - Global observers (track ALL instances of a message type)
@@ -134,7 +137,8 @@ _ = Token.RegisterBroadcastWithoutSource<TookDamage>(
 - **Low-allocation design** - struct messages passed by-ref, minimizes boxing and GC pressure
 - **Auto-constructor generation** - `[DxAutoConstructor]` eliminates boilerplate while keeping type safety
 - **Unity-first helpers** - `EmitGameObjectTargeted()`, `EmitComponentBroadcast()` feel natural
-- **Inspector diagnostics** - see message history, registrations, call counts in real-time
+- **Editor diagnostics** - inspect emissions in Message Monitor, routes in Flow
+  Graph, and component warnings in the Inspector
 
 ---
 

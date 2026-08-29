@@ -6,6 +6,24 @@
 
 ## Not receiving messages
 
+Use the Editor tools to locate the failed stage before changing code:
+
+1. Enable Editor diagnostics and open
+   [Message Monitor](../guides/diagnostics.md#message-monitor). If the emission
+   is absent, inspect the sender, route kind, and target/source context.
+1. Select the emission to inspect its exact message type and context. Enable
+   stack-trace capture only when you need the emitting file and line.
+1. If the receiver uses a loaded-scene `MessagingComponent`, open
+   [Flow Graph](../guides/diagnostics.md#flow-graph). A missing component edge
+   points to registration, token state, or provider setup. An existing edge with
+   no calls points to context mismatch, an interceptor veto, or disabled state.
+   Direct bus or token registrations outside those components do not appear in
+   the graph; use bus logs and registration counters for those paths.
+1. Check the [Inspector overlay](../guides/inspector-overlay.md) for missing
+   `MessageAwareComponent` base calls and provider warnings.
+
+Then check the matching cause below:
+
 - Ensure your `MessageRegistrationToken` is enabled (Enable in `OnEnable`, Disable in `OnDisable`).
 - Verify the category matches the emission (Untargeted vs Targeted vs Broadcast).
 - Targeted/Broadcast require a valid `InstanceId`; ensure the target/source object exists when you emit.
@@ -33,13 +51,15 @@
 ## Double registration or over-deregistration warnings
 
 - Avoid calling stage/enable multiple times; pair registrations and lifecycles consistently.
-- Review logs with `bus.Log.Enabled = true` to see the registration history.
+- Use Flow Graph to inspect loaded-scene `MessagingComponent` route topology.
+  Review logs with `bus.Log.Enabled = true` for direct registrations or when you
+  need the registration mutation history.
 
 ## Allocations and boxing
 
 - Prefer struct messages implementing the generic interfaces: `I*Message<T>`.
 - Use by-ref handler overloads to avoid copies.
-- Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while steady-state dispatch is allocation-free. See the [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
+- Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while ordinary typed steady-state struct dispatch is allocation-free. Struct global accept-all dispatch boxes the message, and emission-site stack-trace capture allocates while enabled. See the [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
 
 ## Emitting while disabled
 

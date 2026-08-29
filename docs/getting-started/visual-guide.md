@@ -454,31 +454,34 @@ to "Excuse me, I need a refill!" (from table 3)
 
 ## Debugging Visualized
 
-DxMessaging has built-in Inspector support!
+DxMessaging has three built-in Editor views for message flow.
+
+### Message Monitor
+
+Inspect recent emissions by route kind, message type, and context. Select an
+entry to inspect its call site.
+
+### Flow Graph
+
+Inspect loaded-scene `MessagingComponent` topology, route activity, and delivery
+evidence. Direct bus or token registrations outside those components do not
+appear in this graph.
 
 ### MessagingComponent Inspector
 
-#### Message History (last 10)
-
-- `12:34:05 - Heal -> Player (50)`
-- `12:34:03 - Jump -> Player`
-- `12:34:01 - GamePaused (global)`
-
-##### Registrations
-
-- Heal (priority: 0, 5 calls)
-- Jump (priority: 0, 2 calls)
-- TookDamage (priority: 10)
+Inspect component-local registrations, buffers, provider warnings, and missing
+base-call diagnostics. See the [Diagnostics guide](../guides/diagnostics.md) for
+screenshots and the complete workflow.
 
 ## Performance at a Glance
 
-| Metric       | Traditional C# Events | DxMessaging                         |
-| ------------ | --------------------- | ----------------------------------- |
-| **Speed**    | (baseline)            | (~10ns slower, negligible)          |
-| **Memory**   | Can leak!             | Automatic cleanup (struct messages) |
-| **Coupling** | Tight coupling        | Zero coupling                       |
+| Metric       | Traditional C# Events | DxMessaging                                                                        |
+| ------------ | --------------------- | ---------------------------------------------------------------------------------- |
+| **Speed**    | Direct callback path  | [Current CI results](../architecture/performance.md#latest-ci-performance-results) |
+| **Memory**   | Can leak!             | Automatic cleanup (struct messages)                                                |
+| **Coupling** | Tight coupling        | Zero coupling                                                                      |
 
-**Bottom line:** Slightly slower than raw events, but:
+**Bottom line:** It adds routing work compared with raw events, but:
 
 - Prevents common memory leaks
 - Zero coupling
@@ -558,15 +561,13 @@ protected override void RegisterMessageHandlers() {
 
 ### "Is it slower than regular events?"
 
-**Barely** (~10ns per handler = 0.00001 milliseconds).
+It has more routing work than a direct callback. Read the
+[current CI results](../architecture/performance.md#latest-ci-performance-results)
+for the measured cost on the published runner; do not rely on a fixed overhead
+because the difference changes by scenario, subscriber count, and backend.
 
-#### Benchmark comparison
-
-- Regular C# event: ~50ns
-- DxMessaging: ~60ns
-- Difference: ~10ns per invocation
-
-You get automatic lifecycle, automatic cleanup, full observability, and predictable ordering for approximately 20% overhead compared to direct method calls.
+That cost buys automatic lifecycle, cleanup, observability, and predictable
+ordering when those features matter.
 
 ### "Can I cancel a message?"
 
@@ -592,13 +593,15 @@ _ = token.RegisterTargetedInterceptor<ApplyDamage>(
 
 ### "Can I see what messages are firing?"
 
-#### Yes! Open any component in the Inspector and scroll down
+#### Yes. Open Message Monitor and Flow Graph
 
 You'll see:
 
-- Message history (last 50 messages with timestamps)
-- Active registrations (what you're listening to)
-- Call counts (how many times each handler ran)
+- Message Monitor shows recent emissions, contexts, filters, and captured call sites.
+- Flow Graph shows loaded-scene `MessagingComponent` routes, receivers, call
+  counts, and delivery evidence. Use bus logs or counters for direct token or bus
+  registrations outside those components.
+- The Inspector shows component-local registrations and lifecycle warnings.
 
 **No more guessing.** You can literally see your event flow in real-time.
 
@@ -621,7 +624,7 @@ Ready for more?
 1. **[Getting Started Guide](getting-started.md)** - Full guide with more details
 1. **[Common Patterns](../guides/patterns.md)** - Real-world examples
 1. **[Message Types](../concepts/message-types.md)** - When to pick Untargeted, Targeted, or Broadcast
-1. **[Diagnostics](../guides/diagnostics.md)** - Master the Inspector tools
+1. **[Diagnostics](../guides/diagnostics.md)** - Use Message Monitor, Flow Graph, and the Inspector
 
 ---
 
