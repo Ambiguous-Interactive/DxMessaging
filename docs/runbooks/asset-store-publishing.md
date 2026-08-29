@@ -96,11 +96,11 @@ exact inputs for the Asset Store upload:
 
 The canonical listing source is `.github/asset-store-listing.json`. The release
 generator validates its exact schema, HTTPS links, whitespace-separated keywords,
-three key-image roles, and portable screenshot paths before it adds release-specific
-fields to `ASSET-STORE-LISTING.json`. The Unity Publisher Portal remains the
-submission interface, but it is not the source of truth for the listing text or
-media order. This validation prepares consistent inputs; it does not predict or
-replace Unity's review decision.
+three key-image roles, portable screenshot paths, and a 1200-pixel minimum screenshot
+width before it adds release-specific fields to `ASSET-STORE-LISTING.json`. The
+Unity Publisher Portal remains the submission interface, but it is not the source
+of truth for the listing text or media order. This validation prepares consistent
+inputs; it does not predict or replace Unity's review decision.
 
 The `.unitypackage` is also attached to the GitHub Release, so a maintainer can
 grab it from either place. The pipeline stops at staging; it never contacts the

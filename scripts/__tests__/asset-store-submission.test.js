@@ -48,7 +48,7 @@ test("stageAssetStoreSubmission creates a verified operator artifact", (t) => {
     "ASSET-STORE-LISTING.json", "CLASSIC-UPLOAD-CHECKLIST.md", "EXPECTED-UPM-FIELDS.json",
     "fixture-1.2.3.tgz", "fixture-1.2.3.tgz.sha256", "fixture-1.2.3.unitypackage", "fixture-1.2.3.unitypackage.sha256",
     "media/dxmessaging-store-card-420x280.png", "media/dxmessaging-store-cover-1950x1300.png", "media/dxmessaging-store-icon-160.png",
-    "screenshots/01-message-monitor.png", "screenshots/02-flow-graph.png", "screenshots/03-project-settings.png", "screenshots/04-lifecycle-diagnostic.png",
+    "screenshots/01-flow-graph.png", "screenshots/02-component-routes.png", "screenshots/03-message-routes.png", "screenshots/04-route-details.png",
     "UPM-UPLOAD-CHECKLIST.md"
   ]);
   for (const file of manifest.files) {
@@ -88,6 +88,7 @@ test("stageAssetStoreSubmission rejects missing, corrupt, and stale collateral",
   const unsafeScreenshot = fixture(t), unsafePath = path.join(unsafeScreenshot.root, ".github", "asset-store-listing.json"), unsafeListing = JSON.parse(fs.readFileSync(unsafePath));
   unsafeListing.screenshots[0].source = "../outside.png"; write(unsafePath, JSON.stringify(unsafeListing));
   assert.throws(() => stage(unsafeScreenshot), /screenshot declaration is unsafe or invalid/);
+  const undersizedScreenshot = fixture(t), undersizedPath = path.join(undersizedScreenshot.root, ".github", "asset-store-listing.json"), undersizedListing = JSON.parse(fs.readFileSync(undersizedPath)); undersizedListing.screenshots[0].source = "docs/images/inspector-overlay/message-monitor.png"; write(undersizedPath, JSON.stringify(undersizedListing)); assert.throws(() => stage(undersizedScreenshot), /1120x740; expected at least 1200 pixels wide/);
 });
 // prettier-ignore
 test("stageAssetStoreSubmission rejects ambiguous listing fields and URLs", (t) => {

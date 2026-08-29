@@ -62,8 +62,8 @@ function validatePng(filePath, expectedWidth = 0, expectedHeight = 0) {
   } catch {
     throw new Error(`Store media lacks the required PNG structure: ${toPosixPath(filePath)}`);
   }
-  if (expectedWidth && (width !== expectedWidth || height !== expectedHeight))
-    throw new Error(`Store media ${toPosixPath(filePath)} is ${width}x${height}; expected ${expectedWidth}x${expectedHeight}.`);
+  if (expectedWidth && (width !== expectedWidth || height !== expectedHeight)) throw new Error(`Store media ${toPosixPath(filePath)} is ${width}x${height}; expected ${expectedWidth}x${expectedHeight}.`);
+  return { width, height };
 }
 // prettier-ignore
 function readListing(repoRoot, pkg, changelogSection) {
@@ -100,7 +100,7 @@ function readListing(repoRoot, pkg, changelogSection) {
     )
       throw new Error("Asset Store screenshot declaration is unsafe or invalid.");
     fileNames.add(fileName.toLowerCase());
-    validatePng(realSourcePath);
+    const { width, height } = validatePng(realSourcePath); if (width < 1200) throw new Error(`Store screenshot ${toPosixPath(realSourcePath)} is ${width}x${height}; expected at least 1200 pixels wide.`);
     return { sourcePath: realSourcePath, fileName, caption };
   });
   return {

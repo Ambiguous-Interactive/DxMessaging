@@ -16,24 +16,24 @@
   },
   "screenshots": [
     {
-      "source": "docs/images/inspector-overlay/message-monitor.png",
-      "fileName": "01-message-monitor.png",
-      "caption": "Watch live message traffic and filter emissions by type."
-    },
-    {
       "source": "docs/images/inspector-overlay/flow-graph.png",
-      "fileName": "02-flow-graph.png",
+      "fileName": "01-flow-graph.png",
       "caption": "Trace message routes between senders and receivers."
     },
     {
-      "source": "docs/images/inspector-overlay/project-settings-panel.png",
-      "fileName": "03-project-settings.png",
-      "caption": "Configure diagnostics and memory reclamation in Project Settings."
+      "source": "docs/images/inspector-overlay/flow-graph-component-selected.png",
+      "fileName": "02-component-routes.png",
+      "caption": "Select a component to inspect every message route it participates in."
     },
     {
-      "source": "docs/images/inspector-overlay/dxmsg006-overlay.png",
-      "fileName": "04-lifecycle-diagnostic.png",
-      "caption": "Catch missing lifecycle base calls in the Inspector before Play mode."
+      "source": "docs/images/inspector-overlay/flow-graph-message-selected.png",
+      "fileName": "03-message-routes.png",
+      "caption": "Select a message type to focus its senders, receivers, and route details."
+    },
+    {
+      "source": "docs/images/inspector-overlay/flow-graph-route-selected.png",
+      "fileName": "04-route-details.png",
+      "caption": "Inspect one route while keeping its connected gameplay objects visible."
     }
   ]
 }

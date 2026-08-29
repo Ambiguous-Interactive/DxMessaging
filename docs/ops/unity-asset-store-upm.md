@@ -123,10 +123,10 @@ artifact containing:
 
 `.github/asset-store-listing.json` is the canonical listing source. Release
 staging validates its exact schema, portable screenshot paths, whitespace-separated
-keywords, HTTPS links, and three required key-image roles. It then adds the package
-version, minimum Unity version, and matching changelog section and writes the
-reviewed portal inputs and media order to `ASSET-STORE-LISTING.json`. Unity still
-decides whether a submission passes review.
+keywords, HTTPS links, three required key-image roles, and a 1200-pixel minimum
+screenshot width. It then adds the package version, minimum Unity version, and
+matching changelog section and writes the reviewed portal inputs and media order to
+`ASSET-STORE-LISTING.json`. Unity still decides whether a submission passes review.
 
 The export stages the `npm pack` payload into an ephemeral Unity project
 under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
