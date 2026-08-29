@@ -9,7 +9,8 @@
 # There is deliberately no --check gate on the pair. Recompiling resolves to
 # whatever is newest that day, so a drift check would go red the moment an
 # upstream project published a release - the exact failure the lock removes.
-# Dependabot proposes bumps instead, as a reviewed diff.
+# Dependabot's root uv updater edits this input and recompiles the same-named
+# .txt lock as a reviewed diff. PR #481 confirmed that behavior on GitHub.
 
 # MkDocs core
 mkdocs>=1.6.0
@@ -26,7 +27,7 @@ mkdocs-git-revision-date-localized-plugin>=1.2.4
 pygments>=2.17.0
 
 # Markdown extensions (included with mkdocs-material, listed for completeness)
-pymdown-extensions>=10.7.0
+pymdown-extensions>=11.0.2
 
 # Version management (optional, for future versioned docs)
 mike>=2.0.0

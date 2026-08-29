@@ -538,21 +538,69 @@
   }
 
   .dxm-trust {
-    border-bottom: 1px solid var(--md-default-fg-color--lightest);
-    border-top: 1px solid var(--md-default-fg-color--lightest);
     color: var(--md-default-fg-color--light);
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     font-family: var(--md-code-font-family);
     font-size: 0.62rem;
-    gap: 0.4rem 1.4rem;
+    gap: 0.65rem;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     margin-bottom: 2.2rem;
-    padding: 0.7rem 0;
+  }
+
+  .dxm-trust > span {
+    align-items: center;
+    background: var(--md-code-bg-color);
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 9px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.3rem;
+    justify-content: center;
+    min-height: 3.2rem;
+    padding: 0.55rem 0.45rem;
+    text-align: center;
   }
 
   .dxm-trust b {
     color: var(--md-default-fg-color);
     font-weight: 600;
+  }
+
+  .dxm-trust a {
+    color: var(--md-default-fg-color--light);
+    text-decoration-color: var(--md-default-fg-color--lightest);
+    text-decoration-line: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  .dxm-trust a:hover,
+  .dxm-trust a:focus-visible {
+    color: var(--dxm-eyebrow-color);
+    text-decoration-color: currentcolor;
+  }
+
+  .dxm-trust-source-line {
+    align-items: center;
+    column-gap: 0.2rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .dxm-trust-source-line > b {
+    flex-basis: 100%;
+  }
+
+  @media (max-width: 960px) {
+    .dxm-trust {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 520px) {
+    .dxm-trust {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 </style>
 {% endblock %} {% block content %}
@@ -666,13 +714,26 @@
   </div>
 </div>
 
-<div class="dxm-trust">
-  <span><b>MIT</b> License</span>
-  <span><b>zero</b> dependencies</span>
-  <span><b>O(1)</b> routing</span>
-  <span><b>zero</b> allocation</span>
-  <span><b>~10ns</b> / handler</span>
-  <span><b>sources</b> OpenUPM &middot; npm &middot; Git</span>
+<div class="dxm-trust" role="list" aria-label="Project facts">
+  <span role="listitem"><b>10+ years</b> in production</span>
+  <span role="listitem"
+    ><a href="https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/LICENSE.md"
+      ><b>MIT</b> License</a
+    ></span
+  >
+  <span role="listitem"><b>zero</b> dependencies</span>
+  <span role="listitem"><b>O(1)</b> routing</span>
+  <span role="listitem"><b>zero</b> allocations</span>
+  <span role="listitem"
+    ><span class="dxm-trust-source-line"
+      ><b>sources</b>
+      <a href="https://openupm.com/packages/com.wallstop-studios.dxmessaging/">OpenUPM</a>
+      &middot;
+      <a href="https://www.npmjs.com/package/com.wallstop-studios.dxmessaging">npm</a>
+      &middot;
+      <a href="https://github.com/Ambiguous-Interactive/DxMessaging">Git</a></span
+    ></span
+  >
 </div>
 
 <h2 class="dxm-visually-hidden">The three message types</h2>
