@@ -401,7 +401,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     _handlers[index] = (in LifecycleMessage message) =>
                     {
                         _ = capturedIndex;
-                        Counter.Increment(ref message);
+                        Counter.Increment(in message);
                     };
                 }
             }
@@ -1351,7 +1351,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         _handlers[index] = (in AttributionMessage message) =>
                         {
                             _ = capturedIndex;
-                            _counter.Increment(ref message);
+                            _counter.Increment(in message);
                         };
                     }
 

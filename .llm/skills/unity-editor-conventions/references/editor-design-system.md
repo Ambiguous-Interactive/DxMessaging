@@ -30,6 +30,12 @@
 - Use UI Toolkit editor entry points: `CreateGUI` for windows and `CreateInspectorGUI` for custom inspectors.
 - Preserve default inspector parity with `InspectorElement.FillDefaultInspector`.
 - Keep IMGUI fallback paths functional where they already exist.
+- Source migration commands operate on consumer-owned C# files under `Assets` only. They mask
+  comments and literals, recognize explicit API and declaration shapes, preview the complete batch,
+  preserve encoding and line endings, and attempt transactional rollback without overwriting later
+  edits. Preserve a safety backup and report the path when a concurrent edit prevents rollback.
+  Ambiguous callbacks are skipped and reported for manual review. Tests must distinguish readonly
+  handlers from mutable interceptors and emission calls.
 - Project Settings > Wallstop Studios > DxMessaging > Inspector Checks must expose
   the base-call master toggle, console bridge toggle, and Ignored Base-Call Types
   list together. Keep the provider, screenshot manifest, analyzer docs, and

@@ -9,11 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING:** Fast handlers and post-processors now receive messages and target/source context by
-  readonly reference. Change explicit callback parameters from `ref` to `in`, keep interceptor and
-  emission parameters as `ref`, and rebuild precompiled consumers. See the
-  [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400)
-  ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
+- **BREAKING:** Fast handlers and post-processors now use readonly references; change callback
+  parameters from `ref` to `in` and follow the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
 - Show `DXMSG006` through `DXMSG010` in MessageAwareComponent Inspector diagnostic titles so
   lifecycle failures and opt-outs remain distinguishable
   ([#314](https://github.com/Ambiguous-Interactive/DxMessaging/issues/314)).

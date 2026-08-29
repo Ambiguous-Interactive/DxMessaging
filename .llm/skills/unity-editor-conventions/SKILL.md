@@ -1,6 +1,6 @@
 ---
 name: unity-editor-conventions
-description: "Three Unity-side contracts for DxMessaging: the MessageAwareComponent base-call contract (Awake, OnEnable, OnDisable, OnDestroy, RegisterMessageHandlers must chain base.<method>(), enforced by DXMSG006-DXMSG010 plus an IL scanner, inspector overlay, runtime breadcrumb, and meta-test); the package-owned editor design system built on DxMessagingEditorTheme, UI Toolkit, and EditorWindowTestUtility; and the devcontainer named-volume cache contract in .devcontainer/cache-contract.sh. Use when subclassing MessageAwareComponent, adding a guarded lifecycle method, styling or testing an editor window or inspector, or adding/diagnosing a devcontainer cache mount."
+description: "Unity-side contracts for DxMessaging: MessageAwareComponent base calls and diagnostics, the package-owned editor design system, safe consumer source migration commands, and the devcontainer cache contract. Use when subclassing MessageAwareComponent, adding a guarded lifecycle method, styling or testing an editor window or inspector, writing a source upgrade command under Assets, or changing a devcontainer cache mount."
 metadata:
   category: "unity"
   tags: "unity, analyzer, lifecycle, diagnostics, messageawarecomponent, base-call, dxmsg006"
@@ -18,6 +18,7 @@ devcontainer cache mount contract.
   the base class itself.
 - Triaging DXMSG006 through DXMSG010, or "messages stop being received" with no exception.
 - Styling, restyling, or testing a package editor window, inspector, or Project Settings page.
+- Adding an Editor migration command that rewrites consumer source under `Assets`.
 - Adding, removing, or debugging a devcontainer named-volume cache mount.
 
 ## Rules
@@ -97,6 +98,26 @@ devcontainer cache mount contract.
   README, manifest entry, and `DiagnosticsToolingSampleContractTests` aligned when editor
   diagnostics change, and keep `DxMessagingSettingsProviderTests` aligned with the Inspector
   Checks controls.
+
+### Consumer source migration tools
+
+- Limit automatic rewrites to consumer-owned C# files under `Assets`. Never rewrite package,
+  cache, generated, or project-settings content unless the migration explicitly owns it. Exclude
+  conventional generated paths and suffixes and inspect source headers for generation markers.
+- Mask comments, strings, and character literals before recognizing C# syntax. Do not run a broad
+  text replacement over source files. Restrict each rewrite to named APIs and syntax shapes whose
+  semantics the tool can prove.
+- Analyze every file before writing, show the file and replacement counts, and require confirmation.
+  Preserve BOM/encoding and line endings. Apply the batch transactionally and restore all changed
+  files if any write fails. Fingerprint both the previewed input and the tool-written output so a
+  concurrent user edit is never overwritten during replacement or rollback.
+- Skip and report ambiguous constructs such as overloads, callback declarations outside the
+  current file, qualified callbacks, or direct same-file callbacks shared by mutable and readonly
+  APIs. Tell users to review project-wide callback uses because text analysis cannot prove that a
+  same-file declaration is not referenced from another file.
+- Add focused tests for positive forms and for adjacent syntax that must remain unchanged. When
+  callback mutability differs by API, pin readonly handlers separately from mutable interceptors
+  and emission calls. Include idempotency and line-ending coverage.
 
 ### Devcontainer cache contract
 

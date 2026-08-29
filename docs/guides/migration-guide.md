@@ -15,6 +15,22 @@ void OnDamageV3(ref ApplyDamage message) { }
 void OnDamageV4(in ApplyDamage message) { }
 ```
 
+To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
+Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
+scans C# scripts under `Assets`, updates callbacks used by recognized DxMessaging registrations,
+explicit `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It does not
+change package or generated sources, interceptors, emission calls, comments, or strings.
+
+The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
+UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
+replacement. It attempts to restore every earlier write if a later write fails. If a script changes
+again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
+leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
+ambiguous receivers unchanged. The tool also detects callbacks passed directly to both a handler
+and an interceptor in the same script. It lists these cases in the Console for manual review.
+Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
+migration.
+
 Apply the same change to both parameters of callbacks that receive a target or source:
 
 ```csharp
