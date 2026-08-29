@@ -52,8 +52,10 @@ this repository's publishing path:
 | `_upm` in the shipped `package.json`                       | Survives `npm pack` byte-for-byte, so it reaches npm, OpenUPM (which repacks from the Git tag), Git-URL installs, and the `.unitypackage` alike.                                                                                                                                                                                                                                                                                                                                                                  |
 
 npm [staged publishing](https://docs.npmjs.com/staged-publishing/) now offers a supported,
-owner-reviewed rehearsal mechanism. A disposable real-registry package must still prove that the
-approved version document retains `_upm` before the irreversible DxMessaging release step changes.
+owner-reviewed rehearsal mechanism. The rehearsal needs an existing disposable package, publish
+access, two-factor authentication, npm 11.15 or newer, and Node.js 22.14 or newer. Its next version
+must prove that the approved registry document retains `_upm` before the irreversible DxMessaging
+release step changes.
 
 OpenUPM matters here: it is the recommended install path and republishes the package through
 its own pipeline, whose stored document carries the `_from` / `_resolved` / `_integrity` /
