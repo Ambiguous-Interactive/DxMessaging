@@ -29,7 +29,7 @@ Use it when one system needs to announce a fact, command a target, or broadcast 
 openupm add com.wallstop-studios.dxmessaging
 ```
 
-The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics mark them blue, purple, and green, respectively, and reserve red for problems. Message Monitor shows recent emissions and filters, Flow Graph shows registration topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes.
+The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics mark them blue, purple, and green, respectively, and reserve red for problems. Message Monitor shows recent emissions and filters, Flow Graph shows loaded-scene `MessagingComponent` topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes. Use bus logs or counters for direct bus/token registrations outside those components.
 
 See the [Install Guide](docs/getting-started/install.md) for Git URL, scoped registry, and release tarball options.
 
@@ -68,7 +68,7 @@ See the [Install Guide](docs/getting-started/install.md) for Git URL, scoped reg
 
 - **Automatic lifecycle management** - manages subscription lifecycle automatically, no manual unsubscribe
 - **Zero coupling** - systems communicate without knowing each other exist
-- **Full visibility** - see every message in the Inspector with timestamps and payloads
+- **Full visibility** - inspect emission history in Message Monitor and loaded-scene component routes in Flow Graph
 - **Complete control** - priority-based ordering, validation, and interception
 
 ##### Three simple message types
@@ -480,20 +480,11 @@ public class GameUI : MessageAwareComponent {
 
 ##### Scenario 3: Debugging is Built In
 
-Open any `MessageAwareComponent` in the Inspector:
-
-```text
-Message History (last 50):
-[12:34:56] HealthChanged (amount: 25) -> Priority: 0
-[12:34:55] ItemAdded (id: 42, count: 1) -> Priority: 5
-[12:34:54] WaveStarted (wave: 3) -> Priority: 0
-
-Active Registrations:
- HealthChanged (5 handlers)
- ItemAdded (2 handlers)
-```
-
-**See exactly what fired, when, and who handled it.** No guesswork.
+Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to inspect
+recent emissions and their call sites. Open **Flow Graph** from the same menu to
+inspect routes between loaded-scene `MessagingComponent` instances. For direct
+bus/token registrations outside those components, use bus logs and registration
+counters.
 
 ### How It Transforms Your Code
 
@@ -525,7 +516,7 @@ heal.EmitComponentTargeted(playerComponent);
 
 - [x] **Automatic cleanup** - tokens clean up when components are destroyed
 - [x] **Zero coupling** - no SerializeFields, no GetComponent, no direct references
-- [x] **Full visibility** - see message flow in Inspector with timestamps and payloads
+- [x] **Full visibility** - inspect emission history, call sites, and loaded-scene component routes
 - [x] **Predictable order** - priority-based execution (no more mystery race conditions)
 - [x] **Type-safe** - compile-time guarantees, refactor with confidence
 - [x] **Intercept & validate** - enforce rules before handlers run (clamp damage, block invalid input)
@@ -537,7 +528,9 @@ What DxMessaging offers:
 
 ### Performance: Zero-Allocation Design
 
-**The problem with normal events:** Boxing allocations, GC spikes, memory leaks from forgotten unsubscribes.
+**The problem in event-heavy systems:** Interface or object conversions can box values, handler
+code can allocate, and forgotten cleanup can leak subscribers. Strongly typed C# event
+invocation itself can be allocation-free.
 
 #### DxMessaging solution
 
@@ -606,7 +599,7 @@ _ = token.RegisterBroadcastWithoutSource<TookDamage>(
 - **Achievement system:** Track all kills, deaths, damage across the entire game
 - **Combat log:** "Player took 25 damage, Enemy3 took 50 damage, Boss took 100 damage"
 - **Analytics:** Aggregate stats from all entities without knowing about them upfront
-- **Debug tools:** Watch ALL messages in the Inspector without instrumenting code
+- **Debug tools:** Observe all message types with the handler, then inspect emissions in Message Monitor
 
 **How this differs:** Some event bus patterns require subscribing to each entity type separately. DxMessaging allows observing all instances of a message type in one registration.
 
@@ -699,7 +692,9 @@ and any `MessageAwareComponent` subclass for base-call warning surfaces.
 #### Real-world debugging scenarios
 
 - "Did my message fire?" -> Check Message Monitor history.
-- "Why didn't my handler run?" -> Check registrations and Flow Graph edges.
+- "Why didn't my handler run?" -> For loaded-scene `MessagingComponent`s, check
+  registrations and Flow Graph edges. For direct bus/token registrations, check
+  bus logs and counters.
 - "What's firing too often?" -> Compare call counts in component and route summaries.
 - "Which source/target context was involved?" -> Check Message Monitor context
   and Flow Graph trace paths.
@@ -809,19 +804,19 @@ See the [DI Compatible section](#dependency-injection-di-compatible) above for a
 
 #### Quick Framework Comparison
 
-| Framework           | Best For                          | Key Strength                     | Unity Support   | Learning Curve |
-| ------------------- | --------------------------------- | -------------------------------- | --------------- | -------------- |
-| **DxMessaging**     | Unity pub/sub with lifecycle mgmt | Inspector debugging + control    | Built for Unity | Moderate       |
-| **UniRx**           | Complex event stream transforms   | Reactive operators (LINQ)        | Built for Unity | Easy           |
-| **MessagePipe**     | High-performance DI messaging     | Highest throughput (74M ops/sec) | Built for Unity | Steep          |
-| **Zenject Signals** | DI-integrated messaging           | Zenject ecosystem                | Built for Unity | Easy           |
-| **C# Events**       | Simple, local communication       | Minimal overhead                 | Native C#       | Steepest       |
+| Framework           | Best For                          | Key Strength                                                                         | Unity Support   | Learning Curve |
+| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------ | --------------- | -------------- |
+| **DxMessaging**     | Unity pub/sub with lifecycle mgmt | Visual diagnostics + control                                                         | Built for Unity | Moderate       |
+| **UniRx**           | Complex event stream transforms   | Reactive operators (LINQ)                                                            | Built for Unity | Easy           |
+| **MessagePipe**     | High-performance DI messaging     | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | Built for Unity | Steep          |
+| **Zenject Signals** | DI-integrated messaging           | Zenject ecosystem                                                                    | Built for Unity | Easy           |
+| **C# Events**       | Simple, local communication       | Minimal overhead                                                                     | Native C#       | Steepest       |
 
 ##### Choose DxMessaging when you want
 
 - Unity-first design with GameObject/Component targeting
 - Automatic lifecycle management (prevents common memory leaks)
-- Inspector debugging to see message flow and history
+- Message Monitor, loaded-scene Flow Graph, and Inspector diagnostics
 - Execution order control (priority-based handlers)
 - Message validation/interception pipeline
 - Global observers (listen to all message instances)
@@ -900,8 +895,8 @@ public class AchievementTracker : MessageAwareComponent {
 
 ## Performance
 
-- **Zero GC allocations** for struct messages
-- **~10ns overhead** per handler (compared to C# events)
+- **Zero GC allocations** for ordinary typed steady-state struct dispatch; stack-trace diagnostics and struct global accept-all dispatch allocate ([details](docs/reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc))
+- **CI-generated time/op and cross-library results** for the published runner
 - **Type-indexed caching** for O(1) lookups
 - **Optimized for hot paths** with aggressive inlining
 
@@ -913,34 +908,34 @@ For live, CI-generated Standalone IL2CPP dispatch tables and a cross-library com
 
 ### Comparison with Unity Messaging Frameworks
 
-| Feature                  | DxMessaging     | UniRx           | MessagePipe     | Zenject Signals |
-| ------------------------ | --------------- | --------------- | --------------- | --------------- |
-| **Unity Compatibility**  | Built for Unity | Built for Unity | Built for Unity | Built for Unity |
-| **Decoupling**           | Full            | Full            | Full            | Full            |
-| **Lifecycle Safety**     | Auto            | Manual          | Manual          | DI-managed      |
-| **Execution Order**      | Priority        | None            | None            | None            |
-| **Type Safety**          | Strong          | Strong          | Strong          | Strong          |
-| **Inspector Debug**      | Built-in        | No              | No              | No              |
-| **GameObject Targeting** | Yes             | No              | No              | No              |
-| **Global Observers**     | Yes             | No              | No              | No              |
-| **Interceptors**         | Pipeline        | No              | Filters         | No              |
-| **Post-Processing**      | Dedicated       | No              | Filters         | No              |
-| **Stream Operators**     | No              | Extensive       | No              | With UniRx      |
-| **Performance**          | Good (27M)      | Moderate (4M)   | High (74M)      | Moderate (2M)   |
-| **Dependencies**         | None            | UniTask         | None            | Zenject         |
+| Feature                  | DxMessaging                                                                          | UniRx                                                                                | MessagePipe                                                                          | Zenject Signals                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **Unity Compatibility**  | Built for Unity                                                                      | Built for Unity                                                                      | Built for Unity                                                                      | Built for Unity                                                                      |
+| **Decoupling**           | Full                                                                                 | Full                                                                                 | Full                                                                                 | Full                                                                                 |
+| **Lifecycle Safety**     | Auto                                                                                 | Manual                                                                               | Manual                                                                               | DI-managed                                                                           |
+| **Execution Order**      | Priority                                                                             | None                                                                                 | None                                                                                 | None                                                                                 |
+| **Type Safety**          | Strong                                                                               | Strong                                                                               | Strong                                                                               | Strong                                                                               |
+| **Visual Diagnostics**   | Built-in                                                                             | No                                                                                   | No                                                                                   | No                                                                                   |
+| **GameObject Targeting** | Yes                                                                                  | No                                                                                   | No                                                                                   | No                                                                                   |
+| **Global Observers**     | Yes                                                                                  | No                                                                                   | No                                                                                   | No                                                                                   |
+| **Interceptors**         | Pipeline                                                                             | No                                                                                   | Filters                                                                              | No                                                                                   |
+| **Post-Processing**      | Dedicated                                                                            | No                                                                                   | Filters                                                                              | No                                                                                   |
+| **Stream Operators**     | No                                                                                   | Extensive                                                                            | No                                                                                   | With UniRx                                                                           |
+| **Performance**          | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) |
+| **Dependencies**         | None                                                                                 | UniTask                                                                              | None                                                                                 | Zenject                                                                              |
 
 ### Comparison with Traditional Approaches
 
-| Feature                | DxMessaging | C# Events | UnityEvents | Static Event Bus |
-| ---------------------- | ----------- | --------- | ----------- | ---------------- |
-| **Decoupling**         | Full        | Tight     | Hidden      | Yes              |
-| **Lifecycle Safety**   | Auto        | Manual    | Unity-only  | Manual           |
-| **Execution Order**    | Priority    | Undefined | Undefined   | Undefined        |
-| **Type Safety**        | Strong      | Strong    | Weak        | Weak             |
-| **Context (Who/What)** | Rich        | None      | None        | None             |
-| **Interception**       | Yes         | No        | No          | No               |
-| **Observability**      | Built-in    | No        | No          | No               |
-| **Performance**        | Zero-alloc  | Good      | Boxing      | Good             |
+| Feature                | DxMessaging                                                                          | C# Events                                                                            | UnityEvents                                                                          | Static Event Bus                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **Decoupling**         | Full                                                                                 | Tight                                                                                | Hidden                                                                               | Yes                                                                                  |
+| **Lifecycle Safety**   | Auto                                                                                 | Manual                                                                               | Unity-only                                                                           | Manual                                                                               |
+| **Execution Order**    | Priority                                                                             | Undefined                                                                            | Undefined                                                                            | Undefined                                                                            |
+| **Type Safety**        | Strong                                                                               | Strong                                                                               | Weak                                                                                 | Weak                                                                                 |
+| **Context (Who/What)** | Rich                                                                                 | None                                                                                 | None                                                                                 | None                                                                                 |
+| **Interception**       | Yes                                                                                  | No                                                                                   | No                                                                                   | No                                                                                   |
+| **Observability**      | Built-in                                                                             | No                                                                                   | No                                                                                   | No                                                                                   |
+| **Performance**        | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) |
 
 ## Samples
 

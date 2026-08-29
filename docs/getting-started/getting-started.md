@@ -50,7 +50,8 @@ By the end of this guide, you will:
 
 - **Decoupled systems** - no manual subscribe/unsubscribe, leak prevention built-in
 - **Predictable execution** - priority-based ordering, see exactly what runs when
-- **Actually debuggable** - Inspector shows message history with timestamps
+- **Actually debuggable** - Message Monitor shows emissions and Flow Graph shows
+  loaded-scene component routes
 - **Designed to scale** - works for prototypes and larger codebases
 
 ## Quick Start
@@ -176,7 +177,8 @@ Checklist:
 1. Did you call `base.RegisterMessageHandlers()` first?
 1. Is your component enabled in the scene?
 1. Are you emitting to the right target? (Check GameObject vs Component)
-1. Check the Inspector - does the registration show up?
+1. For a loaded-scene `MessagingComponent`, check Flow Graph - does the receiver
+   route show up? For direct bus/token registrations, check bus logs and counters.
 
 ### "My message is firing twice"
 

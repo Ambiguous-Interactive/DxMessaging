@@ -167,11 +167,17 @@ _ = Token.RegisterGlobalAcceptAll(
 
 ### Diagnostics Mode
 
-A **debug feature** that tracks message history and handler statistics. Enable in Editor, disable in builds for performance.
+A **debug feature** that tracks emission history, registrations, routes, and
+handler statistics. Enable it in the Editor, inspect emissions in
+[Message Monitor](../guides/diagnostics.md#message-monitor), and inspect
+loaded-scene `MessagingComponent` topology in
+[Flow Graph](../guides/diagnostics.md#flow-graph). Direct bus/token registrations
+outside those components require logs or counters. Disable diagnostics in
+release builds when runtime diagnostics are not required.
 
 ```csharp
 // DiagnosticsTarget.Editor turns diagnostics on in the Editor only, off in builds.
-IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor; // See message history
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 ```
 
 ## Memory Reclamation Terms

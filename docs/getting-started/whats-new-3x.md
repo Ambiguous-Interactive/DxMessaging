@@ -18,8 +18,11 @@ is faster, safer, or new opt-in surface.
 ## Faster dispatch, still zero-allocation
 
 Message dispatch and registration are faster across the 3.x line, with the
-largest dispatch gains when one message reaches several handlers. The
-steady-state send path still allocates no managed objects.
+largest dispatch gains when one message reaches several handlers. Ordinary
+typed steady-state struct dispatch still allocates no managed objects.
+Stack-trace diagnostics and struct global accept-all dispatch are bounded
+allocating paths; the [allocation FAQ](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc)
+describes those exceptions.
 
 Delivery behavior is unchanged: handlers keep their priority and registration
 order, and registration changes made during an emission take effect on the next
@@ -69,10 +72,11 @@ dedicated windows under **Tools > Wallstop Studios > DxMessaging**:
   context, stack trace, search filters, component details, and JSON export. Use
   Live mode while reproducing a problem or Snapshot mode to inspect buffered
   history.
-- **Flow Graph** maps messages to receivers through their active registrations.
+- **Flow Graph** maps messages to loaded-scene `MessagingComponent` receivers.
   Select a message, component, or route to inspect delivery activity, source
-  locations, context, and recent trace evidence. Filtering and JSON export help
-  with dense scenes.
+  locations, context, and recent trace evidence. Direct bus/token registrations
+  outside those components require bus logs or counters. Filtering and JSON
+  export help with dense scenes.
 
 See the [Diagnostics guide](../guides/diagnostics.md) for the current semantics.
 Trace paths are recent evidence aggregates, not a replacement for a full

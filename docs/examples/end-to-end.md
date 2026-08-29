@@ -161,10 +161,15 @@ public sealed class SettingsMenu
 
 Diagnostics (Editor)
 
-- On any GameObject with a MessagingComponent:
-  - Enable Global Diagnostics to record emissions.
-  - Inspect Global Buffer for recent messages (type + context). Matching listeners are highlighted.
-  - Inspect Local Buffer per listener and paginated Registrations with priorities and contexts.
+- Enable Editor diagnostics in **Project Settings > Wallstop Studios > DxMessaging**.
+- Open **Tools > Wallstop Studios > DxMessaging > Message Monitor** to verify
+  the three emissions, their route kinds, and their source/target contexts.
+- Open **Tools > Wallstop Studios > DxMessaging > Flow Graph** to inspect the
+  message-to-receiver routes and select a route for delivery evidence.
+- Select a `MessagingComponent` to inspect its local buffer, registrations, and
+  lifecycle warnings.
+- See the [Diagnostics guide](../guides/diagnostics.md) for filters, call-site
+  capture, and screenshots of both tools.
 
 Notes
 

@@ -457,7 +457,8 @@ to After: Added achievement system with zero changes to existing code."
 ### For Developers
 
 - "No more manual unsubscribe hell"
-- "Built-in debugging (Inspector shows message history)"
+- "Built-in debugging (Message Monitor shows emissions and Flow Graph shows
+  loaded-scene component routes)"
 - "Add features without touching existing code"
 
 ### For QA

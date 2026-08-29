@@ -13,10 +13,12 @@ hide:
   your first message.
 - [Mental Model](concepts/mental-model.md) - Choose between untargeted,
   targeted, and broadcast messages.
-- [Inspector Tools](guides/inspector-overlay.md) - Use diagnostics and
-  base-call warnings inside Unity.
-- [Message Monitor](guides/diagnostics.md) - Inspect emissions, trace paths, and
-  registration topology.
+- [Message Monitor](guides/diagnostics.md#message-monitor) - Inspect emissions,
+  filters, contexts, and captured call sites.
+- [Flow Graph](guides/diagnostics.md#flow-graph) - Inspect loaded-scene
+  `MessagingComponent` routes and delivery evidence.
+- [Inspector Tools](guides/inspector-overlay.md) - Catch base-call mistakes and
+  inspect component-local diagnostics.
 - [Performance](architecture/performance.md) - Read the current published
   benchmark tables.
 
@@ -53,7 +55,7 @@ See the [Install Guide](getting-started/install.md) for scoped registry, Git URL
   </section>
   <section>
     <h3>High performance</h3>
-    <p>Struct messages and by-ref handlers keep steady-state dispatch at zero allocation. Type-indexed routing stays O(1), with published results around 10 ns per handler.</p>
+    <p>Struct messages and by-ref handlers keep steady-state dispatch at zero allocation. Type-indexed routing stays O(1); see the current CI table for measured scenario costs.</p>
   </section>
 </div>
 
