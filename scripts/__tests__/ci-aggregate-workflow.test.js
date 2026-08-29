@@ -431,7 +431,6 @@ test("copyable build-lock documentation follows the runner and App credential co
     const acquireExample = new RegExp(
       `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${ACQUIRE_ACTION_SHA}${escapeRegExp(LOCK_ACTION_PIN.comment)}[\\s\\S]*?\`\`\``
     ).exec(source);
-
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
     for (const binding of [
       /runner-id: \$\{\{ runner\.name \}\}/,
@@ -451,7 +450,6 @@ test("copyable build-lock documentation follows the runner and App credential co
     );
   }
 });
-
 test("dependabot never splits a build-lock bump from the copyable docs examples", () => {
   const updates = YAML.parse(
     fs.readFileSync(path.join(REPO_ROOT, ".github", "dependabot.yml"), "utf8")
@@ -472,6 +470,8 @@ test("dependabot never splits a build-lock bump from the copyable docs examples"
     );
   }
 });
+// prettier-ignore
+test("dependabot selects the uv updater for the uv-generated Python locks", () => { const updates = YAML.parse(fs.readFileSync(path.join(REPO_ROOT, ".github", "dependabot.yml"), "utf8")).updates; const rootUvUpdates = updates.filter((update) => update["package-ecosystem"] === "uv" && update.directory === "/"); const rootPipUpdates = updates.filter((update) => update["package-ecosystem"] === "pip" && update.directory === "/"); assert.equal(rootUvUpdates.length, 1, "dependabot.yml must define one root uv update entry"); assert.equal(rootPipUpdates.length, 0, "uv-generated locks must not use the pip updater, which recompiles with pip-compile"); assert.deepEqual(rootUvUpdates[0].groups?.["python-locks-all"]?.patterns, ["*"]); });
 test("every Unity lock window releases with explicit cleanup proof", () => {
   const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
   const returnLicense = `uses: ${LOCK_ACTION_PREFIX}return-unity-license@${CLEANUP_POLICY_SHA}`;

@@ -74,6 +74,15 @@ separately.
 
 ## Rejected runtime candidates
 
+- Do not omit the `snapshotEmissionId` refresh from the cached untargeted route.
+  The local Mono candidate/control/candidate screen used byte-identical outer
+  trees and the committed seven-row causal manifest. Sentinel-normalized target
+  effects were +0.265% for `GlobalToOne` and +0.190% for `StructNoBox`, far below
+  the predeclared 3% keep threshold. `StructNoBox` also reached 3.141% raw-cycle
+  spread, so the immutable gate would classify the bracket as uninterpretable
+  before considering materiality. The candidate and manifest were removed
+  before Standalone IL2CPP CI. Revisit only with a materially different
+  mechanism that removes more hot-path work.
 - Do not add a post-only `UntargetedDispatchPlan` lane that borrows both the
   settled handle and post flat-entry arrays. The candidate arms were
   byte-identical, every raw-cycle spread was below 2.54%, and every
