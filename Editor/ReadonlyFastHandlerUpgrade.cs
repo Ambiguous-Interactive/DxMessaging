@@ -1581,8 +1581,10 @@ namespace DxMessaging.Editor
 
             int handlerQualifier = PreviousNonWhitespace(text, identifierStart - 1);
             return HasDxMessagingCoreQualifier(text, identifierStart)
-                || (handlerQualifier < 0 || text[handlerQualifier] != '.')
-                    && HasNamespaceImport(text, "DxMessaging.Core");
+                || (
+                    handlerQualifier < 0
+                    || text[handlerQualifier] != '.' && text[handlerQualifier] != ':'
+                ) && HasNamespaceImport(text, "DxMessaging.Core");
         }
 
         private static bool HasDxMessagingCoreQualifier(string text, int messageHandlerStart)

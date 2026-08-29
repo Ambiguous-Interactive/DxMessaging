@@ -384,6 +384,8 @@ Vendor :: DxMessaging.Core.MessageRegistrationToken aliasToken;
 aliasToken.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message));
 Vendor :: DxMessaging.Core.MessageHandler.FastHandler<Pulse> aliasHandler =
     (ref Pulse message) => Observe(message);
+Vendor :: MessageHandler.FastHandler<Pulse> directAliasHandler =
+    (ref Pulse message) => Observe(message);
 sealed class AliasExternal : Vendor :: DxMessaging.Unity.MessageAwareComponent
 {
     protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
