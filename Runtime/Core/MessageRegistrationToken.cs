@@ -42,14 +42,6 @@ namespace DxMessaging.Core
     /// </example>
     public sealed class MessageRegistrationToken : IDisposable
     {
-        internal interface IUntargetedFastRegistration<T>
-            where T : IUntargetedMessage
-        {
-            MessageHandler.FastHandler<T> RawHandler { get; }
-            MessageRegistrationToken OwnerToken { get; }
-            void RecordDiagnostic(ref T message);
-        }
-
         /// <summary>
         /// Whether the token is currently enabled (registrations are active).
         /// </summary>
@@ -2865,9 +2857,7 @@ namespace DxMessaging.Core
             }
         }
 
-        private sealed class UntargetedRegistration<T>
-            : Registration<T>,
-                IUntargetedFastRegistration<T>
+        private sealed class UntargetedRegistration<T> : Registration<T>
             where T : IUntargetedMessage
         {
             private readonly RegistrationKind _kind;
@@ -2879,11 +2869,6 @@ namespace DxMessaging.Core
             // the hot path. Exactly one is set per registration kind.
             private Action<T> _scalarAction;
             private MessageHandler.FastHandler<T> _scalarFast;
-
-            MessageHandler.FastHandler<T> IUntargetedFastRegistration<T>.RawHandler =>
-                _kind == RegistrationKind.UntargetedHandlerFast ? _scalarFast : null;
-
-            MessageRegistrationToken IUntargetedFastRegistration<T>.OwnerToken => Token;
 
             internal UntargetedRegistration(
                 MessageRegistrationToken token,
@@ -2976,11 +2961,6 @@ namespace DxMessaging.Core
                 {
                     RecordDiagnosticEmission(message);
                 }
-            }
-
-            void IUntargetedFastRegistration<T>.RecordDiagnostic(ref T message)
-            {
-                RecordDiagnosticEmission(message);
             }
         }
 

@@ -48,63 +48,6 @@ namespace DxMessaging.Tests.Runtime.Core
             token.RemoveRegistration(handle);
         }
 
-        [TestCase(false, true, 1)]
-        [TestCase(true, false, 0)]
-        public void TokenDiagnosticModeSamplesFastHandlerToggleAfterCallback(
-            bool initialMode,
-            bool callbackMode,
-            int expectedDiagnosticCount
-        )
-        {
-            GameObject host = new(nameof(TokenDiagnosticModeSamplesFastHandlerToggleAfterCallback));
-            _spawned.Add(host);
-            MessageHandler handler = new(host) { active = true };
-            MessageBus customBus = new MessageBus();
-            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, customBus);
-            token.DiagnosticMode = initialMode;
-            token.Enable();
-
-            int callbackCount = 0;
-            MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) =>
-                {
-                    ++callbackCount;
-                    token.DiagnosticMode = callbackMode;
-                }
-            );
-
-            SimpleUntargetedMessage message = new SimpleUntargetedMessage();
-            customBus.UntargetedBroadcast(ref message);
-
-            Assert.AreEqual(
-                1,
-                callbackCount,
-                "The fast callback count must match for initialMode={0}, callbackMode={1}, expectedDiagnosticCount={2}.",
-                initialMode,
-                callbackMode,
-                expectedDiagnosticCount
-            );
-            Assert.AreEqual(
-                expectedDiagnosticCount,
-                GetCallCounts(token).GetValueOrDefault(handle),
-                "Diagnostics must sample the post-callback mode for initialMode={0}, callbackMode={1}, expectedDiagnosticCount={2}.",
-                initialMode,
-                callbackMode,
-                expectedDiagnosticCount
-            );
-            Assert.AreEqual(
-                expectedDiagnosticCount,
-                GetEmissionBuffer(token).Count,
-                "Emission history must match for initialMode={0}, callbackMode={1}, expectedDiagnosticCount={2}.",
-                initialMode,
-                callbackMode,
-                expectedDiagnosticCount
-            );
-
-            token.Dispose();
-            handler.active = false;
-        }
-
         [Test]
         public void TokenDiagnosticModeStampsTraceIdsAndRegistrationHandles()
         {

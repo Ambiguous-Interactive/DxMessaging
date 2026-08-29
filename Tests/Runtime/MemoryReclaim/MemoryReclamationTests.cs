@@ -82,7 +82,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
         [TestCase(false)]
         [TestCase(true)]
-        public void UntargetedPlanSweepDropsBorrowedEntryArrayAndSingleHandlerSidecars(bool force)
+        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new FakeClock(),
@@ -91,16 +91,20 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
                 bus,
-                label: nameof(UntargetedPlanSweepDropsBorrowedEntryArrayAndSingleHandlerSidecars)
+                label: nameof(UntargetedPlanSweepDropsBorrowedEntryArray)
             );
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
-            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            MessageRegistrationHandle handle = default;
+            Action deregister = null;
             try
             {
-                token.Enable();
-                handle = token.RegisterUntargeted<UntargetedOne>((ref UntargetedOne _) => { });
+                Action<UntargetedOne> callback = _ => { };
+                deregister = handler.RegisterUntargetedMessageHandler(
+                    callback,
+                    callback,
+                    priority: 0,
+                    messageBus: bus
+                );
                 UntargetedOne message = new UntargetedOne();
                 bus.UntargetedBroadcast(ref message);
 
@@ -138,18 +142,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     "handleEntryCount",
                     declaredInstanceFields
                 );
-                FieldInfo rawHandlerField = planType.GetField(
-                    "singleRawHandler",
-                    declaredInstanceFields
-                );
-                FieldInfo registrationField = planType.GetField(
-                    "singleRegistration",
-                    declaredInstanceFields
-                );
-                FieldInfo tokenField = planType.GetField(
-                    "singleRegistrationToken",
-                    declaredInstanceFields
-                );
                 Assert.That(
                     entriesField,
                     Is.Not.Null,
@@ -170,27 +162,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.GreaterThan(0),
                     "The borrowed route must describe the invocable handler entry."
                 );
-                Assert.That(rawHandlerField, Is.Not.Null);
-                Assert.That(registrationField, Is.Not.Null);
-                Assert.That(tokenField, Is.Not.Null);
-                Assert.That(
-                    rawHandlerField.GetValue(plan),
-                    Is.Not.Null,
-                    "The settled token route must retain its raw handler sidecar."
-                );
-                Assert.That(
-                    registrationField.GetValue(plan),
-                    Is.Not.Null,
-                    "The settled token route must retain its diagnostic recorder sidecar."
-                );
-                Assert.That(
-                    tokenField.GetValue(plan),
-                    Is.SameAs(token),
-                    "The settled token route must retain the token whose live mode is sampled."
-                );
 
-                token.RemoveRegistration(handle);
-                handle = default;
+                deregister();
+                deregister = null;
                 _ = bus.Trim(force);
 
                 Assert.That(
@@ -203,17 +177,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.EqualTo(0),
                     "Sweeping stale untargeted plans must reset the cached entry count."
                 );
-                Assert.That(rawHandlerField.GetValue(plan), Is.Null);
-                Assert.That(registrationField.GetValue(plan), Is.Null);
-                Assert.That(tokenField.GetValue(plan), Is.Null);
             }
             finally
             {
-                if (handle != default)
-                {
-                    token.RemoveRegistration(handle);
-                }
-                token.Dispose();
+                deregister?.Invoke();
                 handler.active = false;
             }
         }
