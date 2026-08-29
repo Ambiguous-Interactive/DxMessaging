@@ -142,6 +142,14 @@ separately.
   difference.
 - A 0-4 flat-dispatch `switch` preserved live-active and reset-generation reads
   but regressed representative dispatch by roughly 8-11% versus the compact loop.
+- Do not peel the final entry from the cached untargeted flat-dispatch loop to
+  omit its post-callback reset-generation read. A fresh-assembly local Mono
+  control/candidate/control screen regressed `GlobalToOne` by 4.555% against the
+  geometric mean of both controls. `StructNoBox` moved -2.179%, below the 3%
+  keep threshold, while untouched `Filtered`, `PostProcess`, and
+  `FilteredPostProcess` sentinels moved -3.654%, -4.011%, and -4.976%. The
+  candidate was removed before Standalone IL2CPP CI. Revisit only with a
+  materially different representation or new backend evidence.
 - `[ThreadStatic]` snapshot-holder stacks changed a process-wide 64-holder ceiling
   into 64 holders plus a stack per participating thread. They failed the
   no-retained-memory-increase gate before a timing claim.
