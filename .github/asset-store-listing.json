@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "locale": "en-US",
+  "title": "DxMessaging",
+  "description": "Connect gameplay systems without direct references between senders and receivers. DxMessaging provides synchronous, type-safe untargeted, targeted, and broadcast messages. Lifecycle-managed registration tokens pair subscriptions with components and dependency-injection scopes. Message Monitor, Flow Graph, Inspector overlays, and runtime diagnostics make routes visible while you develop. Struct messages keep steady-state dispatch allocation-free. Optional samples cover Zenject, VContainer, and Reflex.",
+  "keywords": "unity message messaging event-bus decoupling type-safe diagnostics debugging performance zero-allocation architecture gameplay",
+  "links": {
+    "documentation": "https://ambiguous-interactive.github.io/DxMessaging/",
+    "source": "https://github.com/Ambiguous-Interactive/DxMessaging",
+    "support": "https://github.com/Ambiguous-Interactive/DxMessaging/issues"
+  },
+  "artwork": {
+    "icon": "media/dxmessaging-store-icon-160.png",
+    "card": "media/dxmessaging-store-card-420x280.png",
+    "cover": "media/dxmessaging-store-cover-1950x1300.png"
+  },
+  "screenshots": [
+    {
+      "source": "docs/images/inspector-overlay/flow-graph.png",
+      "fileName": "01-flow-graph.png",
+      "caption": "Trace message routes between senders and receivers."
+    },
+    {
+      "source": "docs/images/inspector-overlay/flow-graph-component-selected.png",
+      "fileName": "02-component-routes.png",
+      "caption": "Select a component to inspect every message route it participates in."
+    },
+    {
+      "source": "docs/images/inspector-overlay/flow-graph-message-selected.png",
+      "fileName": "03-message-routes.png",
+      "caption": "Select a message type to focus its senders, receivers, and route details."
+    },
+    {
+      "source": "docs/images/inspector-overlay/flow-graph-route-selected.png",
+      "fileName": "04-route-details.png",
+      "caption": "Inspect one route while keeping its connected gameplay objects visible."
+    }
+  ]
+}

@@ -59,18 +59,23 @@ Run:
 npm pack --dry-run
 ```
 
-## Brand Card Sources
+## Brand and Key Image Sources
 
-The Open Graph card and the Asset Store card ship as PNG, because social
-scrapers and the Asset Store submission form do not accept SVG. Each one is
-rendered from the SVG beside it:
+The Open Graph card and Asset Store key images ship as PNG, because social
+scrapers and the Asset Store submission form do not accept SVG. The three store
+outputs match Unity's current
+[publisher image template](https://assetstore.unity.com/publishing/image-template):
+160x160 icon, 420x280 card, and 1950x1300 cover. Each output is rendered from
+the SVG beside it:
 
-| Source                                           | Output                                           | Size     |
-| ------------------------------------------------ | ------------------------------------------------ | -------- |
-| `docs/images/dxmessaging-og-1200x630.svg`        | `docs/images/dxmessaging-og-1200x630.png`        | 1200x630 |
-| `docs/images/dxmessaging-store-card-420x280.svg` | `docs/images/dxmessaging-store-card-420x280.png` | 420x280  |
+| Source                                              | Output                                              | Size      |
+| --------------------------------------------------- | --------------------------------------------------- | --------- |
+| `docs/images/dxmessaging-og-1200x630.svg`           | `docs/images/dxmessaging-og-1200x630.png`           | 1200x630  |
+| `docs/images/dxmessaging-icon-tile.svg`             | `docs/images/dxmessaging-store-icon-160.png`        | 160x160   |
+| `docs/images/dxmessaging-store-card-420x280.svg`    | `docs/images/dxmessaging-store-card-420x280.png`    | 420x280   |
+| `docs/images/dxmessaging-store-cover-1950x1300.svg` | `docs/images/dxmessaging-store-cover-1950x1300.png` | 1950x1300 |
 
-Edit the SVG, then render both PNGs:
+Edit the SVG, then render all four PNGs:
 
 ```bash
 python3 -m venv .artifacts/docs-venv
@@ -87,9 +92,12 @@ because cairo substitutes a default face instead of failing.
 
 The script also checks that every SVG drawing the mark inline still matches
 `dxmessaging-mark.svg`, and refuses to render when one has drifted. There is no
-portable way to reference an external SVG that both a browser and cairo honour,
-so the geometry is duplicated in `dxmessaging-icon-tile.svg` and in both cards.
-The duplication is checked rather than hidden.
+portable way to reference an external SVG that both a browser and cairo honor,
+so the geometry is duplicated in `dxmessaging-icon-tile.svg` and in the cards.
+The duplication is checked rather than hidden. The store card and cover include
+the tracked Flow Graph product screenshot. Release staging locks that dependency
+hash with each rendered output, so a screenshot update cannot leave stale key
+images unnoticed.
 
 The other brand PNGs are direct renders of a single SVG and are not produced by
 this script: `icon-256.png` and `dxmessaging-store-icon-320.png` come from
@@ -109,8 +117,16 @@ artifact containing:
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
 - tracked store media under `media/`
+- ordered product screenshots under `screenshots/`
 - generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`,
-  `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
+  `ASSET-STORE-LISTING.json`, `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
+
+`.github/asset-store-listing.json` is the canonical listing source. Release
+staging validates its exact schema, portable screenshot paths, whitespace-separated
+keywords, HTTPS links, three required key-image roles, and a 1200-pixel minimum
+screenshot width. It then adds the package version, minimum Unity version, and
+matching changelog section and writes the reviewed portal inputs and media order to
+`ASSET-STORE-LISTING.json`. Unity still decides whether a submission passes review.
 
 The export stages the `npm pack` payload into an ephemeral Unity project
 under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
@@ -151,7 +167,8 @@ the `.unitypackage` upload:
    type, and validate the installed package.
 1. Open `Window > Tools > Asset Store > Uploader`, select the `UPM Packages`
    tab, and upload the exact package version.
-1. Complete Asset Store metadata, screenshots, compatibility, and review fields.
+1. Apply every listing field and ordered screenshot from
+   `ASSET-STORE-LISTING.json`, then complete the remaining review fields.
 1. Submit for review.
 1. Repeat for two versions. In a clean Unity project where neither version is
    installed, open Package Manager Version History, expand both versions, and
