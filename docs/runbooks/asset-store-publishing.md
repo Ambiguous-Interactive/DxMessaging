@@ -89,8 +89,8 @@ exact inputs for the Asset Store upload:
   `UPM-UPLOAD-CHECKLIST.md` files carrying package metadata and the matching
   changelog section;
 - `EXPECTED-UPM-FIELDS.json` with the exact package name, version, and
-  `_upm.changelog` field values expected after registry publication. This is a
-  field-value reference, not a complete registry response schema;
+  `_upm.changelog` field values expected after Unity Asset Store UPM publication.
+  This is a field-value reference, not a complete registry response schema;
 - `MANIFEST.json` with filenames, sizes, and SHA-256 hashes for the staged
   files.
 
