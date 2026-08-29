@@ -1,8 +1,8 @@
 {#- Overrides the theme partial to put links in the footer meta bar. The upstream partial renders
 the copyright and, unless extra.generator is false, a "Made with Material for MkDocs" line. This
 site sets generator: false, so the bar was one line of copyright text and a single social icon
-wrapped underneath it -- see issue #301. The destinations below are deliberately the ones the site
-nav does not carry: the repository, releases, and where to report something. -#}
+wrapped underneath it. The destinations below are deliberately the ones the site nav does not carry:
+the repository, releases, and where to report something. -#}
 <div class="md-copyright">
   {% if config.copyright %}
   <div class="md-copyright__highlight">{{ config.copyright }}</div>

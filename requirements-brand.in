@@ -11,6 +11,8 @@
 # There is deliberately no --check gate on the pair. Recompiling resolves to
 # whatever is newest that day, so a drift check would go red the moment an
 # upstream project published a release - the exact failure a compiled lock
-# removes. Dependabot proposes bumps instead, as a reviewed diff.
+# removes. Dependabot's root uv updater edits each input and recompiles its
+# same-named .txt lock as a reviewed diff. PR #481 confirmed that behavior for
+# the documentation pair; the same configured updater covers this pair.
 
 cairosvg>=2.7.1

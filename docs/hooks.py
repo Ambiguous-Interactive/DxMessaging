@@ -371,7 +371,6 @@ def on_post_build(config):
 
     html = index_path.read_text(encoding="utf-8")
     text = html_to_text(html)
-    normalized_text = " ".join(text.split())
     failures = []
 
     if "new Heal(50).EmitGameObjectTargeted" in text:
@@ -389,21 +388,70 @@ def on_post_build(config):
     if "removing it is deleting that line" not in text:
         failures.append("homepage is missing the decouple/add-remove feature copy")
 
+    trust_match = re.search(
+        r'<div\s+class=(["\']?)dxm-trust\1(?:\s|>).*?</div>', html, re.DOTALL
+    )
+    trust_segment = trust_match.group(0) if trust_match is not None else ""
+    trust_text = " ".join(html_to_text(trust_segment).split())
     trust_markers = (
+        "10+ years in production",
         "MIT License",
         "zero dependencies",
         "O(1) routing",
-        "zero allocation",
-        "~10ns / handler",
+        "zero allocations",
         "sources OpenUPM \u00b7 npm \u00b7 Git",
     )
     trust_position = -1
     for marker in trust_markers:
-        next_position = normalized_text.find(marker, trust_position + 1)
+        next_position = trust_text.find(marker, trust_position + 1)
         if next_position < 0:
             failures.append(f"homepage trust strip is missing or orders incorrectly: {marker}")
             break
         trust_position = next_position
+
+    list_role = re.search(r'role=(["\']?)list\1(?:\s|>)', trust_segment)
+    item_roles = re.findall(r'role=(["\']?)listitem\1(?:\s|>)', trust_segment)
+    if list_role is None or len(item_roles) != 6:
+        failures.append("homepage trust strip must expose one list with six facts")
+
+    for link in (
+        f'{REPO_URL}/blob/{BRANCH}/LICENSE.md',
+        "https://openupm.com/packages/com.wallstop-studios.dxmessaging/",
+        "https://www.npmjs.com/package/com.wallstop-studios.dxmessaging",
+        REPO_URL,
+    ):
+        link_pattern = rf'href=(["\']?){re.escape(link)}\1(?:\s|>)'
+        if re.search(link_pattern, trust_segment) is None:
+            failures.append(f"homepage trust strip is missing link: {link}")
+
+    trust_style_guards = (
+        (
+            r"\.dxm-trust\s*\{(?=[^}]*display\s*:\s*grid)[^}]*"
+            r"grid-template-columns\s*:\s*"
+            r"repeat\(\s*6\s*,\s*minmax\(\s*0\s*,\s*1fr\s*\)\s*\)",
+            "an operative six-column desktop grid",
+        ),
+        (
+            r"\.dxm-trust\s*>\s*span\s*\{[^}]*border\s*:\s*1px\s+solid\s+"
+            r"var\(--md-default-fg-color--lightest\)",
+            "complete fact borders",
+        ),
+        (
+            r"@media\s*\(\s*max-width\s*:\s*960px\s*\)\s*\{\s*"
+            r"\.dxm-trust\s*\{[^}]*grid-template-columns\s*:\s*"
+            r"repeat\(\s*3\s*,\s*minmax\(\s*0\s*,\s*1fr\s*\)\s*\)",
+            "three columns at the tablet breakpoint",
+        ),
+        (
+            r"@media\s*\(\s*max-width\s*:\s*520px\s*\)\s*\{\s*"
+            r"\.dxm-trust\s*\{[^}]*grid-template-columns\s*:\s*"
+            r"repeat\(\s*2\s*,\s*minmax\(\s*0\s*,\s*1fr\s*\)\s*\)",
+            "two columns at the phone breakpoint",
+        ),
+    )
+    for pattern, description in trust_style_guards:
+        if re.search(pattern, html, re.DOTALL) is None:
+            failures.append(f"homepage trust strip is missing {description}")
 
     if "data-dxm-copy" not in html:
         failures.append("homepage install command has no copy button")
