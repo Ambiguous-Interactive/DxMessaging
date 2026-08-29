@@ -4024,13 +4024,11 @@ namespace DxMessaging.Core.MessageBus
                     }
                     else
                     {
-                        // Keep the idle-age touch equivalent to AcquireDispatchSnapshotFast.
-                        // The cached route does not reacquire this sink later in the same
-                        // emission, so its snapshot emission stamp can remain at the acquire
-                        // that published the route. Every relevant mutation invalidates the
-                        // plan and the next or nested emission promotes the staged snapshot
-                        // under its own emission id.
+                        // Equivalent steady-state stores from
+                        // AcquireDispatchSnapshotFast. The cached route is valid only while
+                        // the plan stamp matches, and every relevant mutation invalidates it.
                         fastHandlers.lastTouchTicks = _tickCounter;
+                        fastHandlers.dispatchState.snapshotEmissionId = emissionId;
                     }
 
                     if (handleEntries != null)
