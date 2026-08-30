@@ -167,13 +167,13 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             lastPayload = "None";
         }
 
-        private void OnPulse(ref ToolingPulse message)
+        private void OnPulse(in ToolingPulse message)
         {
             untargetedCount++;
             Record("Untargeted", message.traceId, message.channel);
         }
 
-        private void OnCommand(ref ToolingCommand message)
+        private void OnCommand(in ToolingCommand message)
         {
             targetedCount++;
             Record("Targeted", message.traceId, message.command);
@@ -185,7 +185,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             Record("Broadcast without source", message.traceId, message.sourceLabel);
         }
 
-        private void OnSignalFromExactSource(ref ToolingSignal message)
+        private void OnSignalFromExactSource(in ToolingSignal message)
         {
             broadcastCount++;
             Record("Broadcast exact source", message.traceId, message.sourceLabel);

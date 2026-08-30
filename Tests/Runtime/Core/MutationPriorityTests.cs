@@ -105,7 +105,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
+                        (in SimpleTargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -115,7 +115,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
+                        (in SimpleBroadcastMessage _) => onInvoked(),
                         priority
                     );
                 }

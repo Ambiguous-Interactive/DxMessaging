@@ -41,7 +41,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
             bool deactivateOnInvoke = true;
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) =>
+                (in SimpleUntargetedMessage _) =>
                 {
                     ++firstCount;
                     if (deactivateOnInvoke)
@@ -52,7 +52,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 priority: 0
             );
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => ++secondCount,
+                (in SimpleUntargetedMessage _) => ++secondCount,
                 priority: 0
             );
 
@@ -97,7 +97,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool deactivateOnInvoke = true;
             _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
                 host,
-                (ref SimpleTargetedMessage _) =>
+                (in SimpleTargetedMessage _) =>
                 {
                     ++firstCount;
                     if (deactivateOnInvoke)
@@ -109,7 +109,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
                 host,
-                (ref SimpleTargetedMessage _) => ++secondCount,
+                (in SimpleTargetedMessage _) => ++secondCount,
                 priority: 0
             );
 

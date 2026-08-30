@@ -41,7 +41,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     {
                         case "untargeted":
                             token.RegisterUntargeted<SimpleUntargetedMessage>(
-                                (ref SimpleUntargetedMessage _) => ++count
+                                (in SimpleUntargetedMessage _) => ++count
                             );
                             SimpleUntargetedMessage untargetedMessage = new();
                             untargetedMessage.EmitUntargeted();
@@ -49,7 +49,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                         case "targeted-game-object":
                             token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
                                 component.gameObject,
-                                (ref SimpleTargetedMessage _) => ++count
+                                (in SimpleTargetedMessage _) => ++count
                             );
                             SimpleTargetedMessage targetedGameObjectMessage = new();
                             targetedGameObjectMessage.EmitGameObjectTargeted(component.gameObject);
@@ -57,7 +57,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                         case "targeted-component":
                             token.RegisterComponentTargeted<SimpleTargetedMessage>(
                                 component,
-                                (ref SimpleTargetedMessage _) => ++count
+                                (in SimpleTargetedMessage _) => ++count
                             );
                             SimpleTargetedMessage targetedComponentMessage = new();
                             targetedComponentMessage.EmitComponentTargeted(component);
@@ -114,7 +114,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     (_, token) =>
                     {
                         token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (ref SimpleUntargetedMessage _) => ++leakedInvocationCount
+                            (in SimpleUntargetedMessage _) => ++leakedInvocationCount
                         );
                         throw new InvalidOperationException(
                             "Intentional benchmark action failure."
@@ -160,7 +160,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     (_, token) =>
                     {
                         token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (ref SimpleUntargetedMessage _) => ++cumulativeInvocationCount
+                            (in SimpleUntargetedMessage _) => ++cumulativeInvocationCount
                         );
                         message.EmitUntargeted();
 
@@ -199,7 +199,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     int count = 0;
                     SimpleUntargetedMessage message = new();
                     token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++count
+                        (in SimpleUntargetedMessage _) => ++count
                     );
 
                     for (int i = 0; i < emissions; ++i)
@@ -225,7 +225,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     int count = 0;
                     SimpleUntargetedMessage message = new();
                     token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++count
+                        (in SimpleUntargetedMessage _) => ++count
                     );
 
                     token.Disable();

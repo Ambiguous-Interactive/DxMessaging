@@ -1631,7 +1631,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
@@ -1640,7 +1640,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:
@@ -1678,7 +1678,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
@@ -1695,7 +1695,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:

@@ -1,4 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -114,7 +115,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleUntargetedMessage message)
+            void Handle(in SimpleUntargetedMessage message)
             {
                 ++count;
             }
@@ -151,7 +152,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleUntargetedMessage message)
+            void Handle(in SimpleUntargetedMessage message)
             {
                 ++count;
             }
@@ -265,7 +266,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleTargetedMessage message)
+            void Handle(in SimpleTargetedMessage message)
             {
                 ++count;
             }
@@ -307,7 +308,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleTargetedMessage message)
+            void Handle(in SimpleTargetedMessage message)
             {
                 ++count;
             }
@@ -383,7 +384,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleTargetedMessage message)
+            void Handle(in SimpleTargetedMessage message)
             {
                 ++count;
             }
@@ -425,7 +426,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleTargetedMessage message)
+            void Handle(in SimpleTargetedMessage message)
             {
                 ++count;
             }
@@ -540,7 +541,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref InstanceId target, ref SimpleTargetedMessage message)
+            void Handle(in InstanceId target, in SimpleTargetedMessage message)
             {
                 ++count;
             }
@@ -622,7 +623,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref InstanceId target, ref SimpleTargetedMessage message)
+            void Handle(in InstanceId target, in SimpleTargetedMessage message)
             {
                 ++count;
             }
@@ -698,7 +699,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleBroadcastMessage message)
+            void Handle(in SimpleBroadcastMessage message)
             {
                 ++count;
             }
@@ -740,7 +741,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleBroadcastMessage message)
+            void Handle(in SimpleBroadcastMessage message)
             {
                 ++count;
             }
@@ -818,7 +819,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleBroadcastMessage message)
+            void Handle(in SimpleBroadcastMessage message)
             {
                 ++count;
             }
@@ -860,7 +861,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref SimpleBroadcastMessage message)
+            void Handle(in SimpleBroadcastMessage message)
             {
                 ++count;
             }
@@ -975,7 +976,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref InstanceId id, ref SimpleBroadcastMessage message)
+            void Handle(in InstanceId id, in SimpleBroadcastMessage message)
             {
                 ++count;
             }
@@ -1057,7 +1058,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Handle(ref InstanceId id, ref SimpleBroadcastMessage message)
+            void Handle(in InstanceId id, in SimpleBroadcastMessage message)
             {
                 ++count;
             }
@@ -1203,17 +1204,17 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void HandleUntargeted(ref IUntargetedMessage message)
+            void HandleUntargeted(in IUntargetedMessage message)
             {
                 ++untargetedCount;
             }
 
-            void HandleTargeted(ref InstanceId id, ref ITargetedMessage message)
+            void HandleTargeted(in InstanceId id, in ITargetedMessage message)
             {
                 ++targetedCount;
             }
 
-            void HandleBroadcast(ref InstanceId id, ref IBroadcastMessage message)
+            void HandleBroadcast(in InstanceId id, in IBroadcastMessage message)
             {
                 ++broadcastCount;
             }
@@ -1277,4 +1278,5 @@ namespace DxMessaging.Tests.Runtime.Core
     }
 }
 
+#pragma warning restore RCS1242
 #endif

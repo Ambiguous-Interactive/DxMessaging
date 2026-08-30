@@ -71,7 +71,7 @@ DxMessaging manages subscription lifecycle automatically, eliminating the need f
 
 - **Decoupling without references** - producers/consumers never know about each other
 - **Predictable lifecycle** - explicit tokens tied to Unity component lifecycles
-- **Performance** - struct messages passed by-ref, designed to minimize allocations and boxing
+- **Performance** - struct messages passed by readonly reference to minimize allocations and boxing
 - **Observability** - interceptors, post-processors, diagnostics, registration logs
 - **Scalable taxonomy** - three message types (Untargeted/Targeted/Broadcast) cover most common messaging patterns
 
@@ -134,7 +134,7 @@ _ = Token.RegisterBroadcastWithoutSource<TookDamage>(
 - **Priority-based ordering** - control execution flow explicitly
 - **Interceptor pipeline** - validate/normalize messages BEFORE handlers run (one validation, all handlers protected)
 - **Local bus islands** - isolated testing with zero global state contamination
-- **Low-allocation design** - struct messages passed by-ref, minimizes boxing and GC pressure
+- **Low-allocation design** - struct messages passed by readonly reference, minimizes boxing and GC pressure
 - **Auto-constructor generation** - `[DxAutoConstructor]` eliminates boilerplate while keeping type safety
 - **Unity-first helpers** - `EmitGameObjectTargeted()`, `EmitComponentBroadcast()` feel natural
 - **Editor diagnostics** - inspect emissions in Message Monitor, routes in Flow

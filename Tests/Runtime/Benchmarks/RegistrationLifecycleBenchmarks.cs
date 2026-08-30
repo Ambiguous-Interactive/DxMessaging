@@ -362,7 +362,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             public int Count { get; private set; }
 
-            public void Increment(ref LifecycleMessage message)
+            public void Increment(in LifecycleMessage message)
             {
                 Count++;
             }
@@ -398,10 +398,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 for (int index = 0; index < cardinality; index++)
                 {
                     int capturedIndex = index;
-                    _handlers[index] = (ref LifecycleMessage message) =>
+                    _handlers[index] = (in LifecycleMessage message) =>
                     {
                         _ = capturedIndex;
-                        Counter.Increment(ref message);
+                        Counter.Increment(in message);
                     };
                 }
             }
@@ -851,7 +851,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             }
 
-            private void Handle(ref AttributionMessage message)
+            private void Handle(in AttributionMessage message)
             {
                 _handlerInvocations++;
             }
@@ -1295,7 +1295,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             public int Count { get; private set; }
 
-            public void Increment(ref AttributionMessage message)
+            public void Increment(in AttributionMessage message)
             {
                 Count++;
             }
@@ -1348,10 +1348,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     for (int index = 0; index < cardinality; index++)
                     {
                         int capturedIndex = index;
-                        _handlers[index] = (ref AttributionMessage message) =>
+                        _handlers[index] = (in AttributionMessage message) =>
                         {
                             _ = capturedIndex;
-                            _counter.Increment(ref message);
+                            _counter.Increment(in message);
                         };
                     }
 

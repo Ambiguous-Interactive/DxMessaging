@@ -8,6 +8,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     [Category("PerfGate")]
     public sealed class EmitGateClockReadIsRare
     {
@@ -317,22 +318,22 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
-        private static void NoOpUntargeted(ref SimpleUntargetedMessage message) { }
+        private static void NoOpUntargeted(in SimpleUntargetedMessage message) { }
 
-        private static void NoOpTargeted(ref SimpleTargetedMessage message) { }
+        private static void NoOpTargeted(in SimpleTargetedMessage message) { }
 
-        private static void NoOpBroadcast(ref SimpleBroadcastMessage message) { }
+        private static void NoOpBroadcast(in SimpleBroadcastMessage message) { }
 
-        private static void NoOpClassUntargeted(ref ClassUntargetedMessage message) { }
+        private static void NoOpClassUntargeted(in ClassUntargetedMessage message) { }
 
         private static void NoOpTargetedWithoutTargeting(
-            ref InstanceId target,
-            ref SimpleTargetedMessage message
+            in InstanceId target,
+            in SimpleTargetedMessage message
         ) { }
 
         private static void NoOpBroadcastWithoutSource(
-            ref InstanceId source,
-            ref SimpleBroadcastMessage message
+            in InstanceId source,
+            in SimpleBroadcastMessage message
         ) { }
 
         private sealed class CountingClock : IDxMessagingClock
@@ -349,5 +350,6 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
     }
+#pragma warning restore RCS1242
 }
 #endif

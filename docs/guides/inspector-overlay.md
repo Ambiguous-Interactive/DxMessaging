@@ -354,7 +354,7 @@ public sealed class HealthComponent : MessageAwareComponent
         _ = Token.RegisterComponentTargeted<ApplyDamage>(this, OnHit);
     }
 
-    private void OnHit(ref ApplyDamage m) => Debug.Log($"hit for {m.amount}");
+    private void OnHit(in ApplyDamage m) => Debug.Log($"hit for {m.amount}");
 }
 ```
 

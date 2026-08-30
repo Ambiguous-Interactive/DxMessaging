@@ -97,8 +97,8 @@ they are report-only -- rendered as wall clock, never gated.
   `*FirstDispatch_Cold` scenarios instead route through
   `BenchmarkProtocol.MeasureColdLatency` over 32 trials, one per distinct closed
   generic message type. Each trial spins up a FRESH bus, registers a no-op handler
-  via the BY-REF (`FastHandler<T>`) overload (untimed), then times EXACTLY ONE emit
-  of that type. The by-ref handler is deliberate: it makes the timed emit
+  via the READONLY-BY-REF (`FastHandler<T>`) overload (untimed), then times EXACTLY ONE emit
+  of that type. The readonly by-reference handler is deliberate: it makes the timed emit
   JIT-compile and exercise `RunFastHandlers` -- the SAME fast dispatch path the
   warm/hot scenarios measure -- rather than the slower by-value default path. Each
   first emit JIT-compiles that closed type's fast dispatch path, and the reported
@@ -133,7 +133,7 @@ they are report-only -- rendered as wall clock, never gated.
 - **Registration-cycle attribution.** The four `RegistrationAttribution_*_131072`
   rows time complete same-type register/remove cycles through the direct bus,
   direct handler, disabled token, and active token layers. Every row reuses one
-  cached by-ref handler, selects the operation outside the timed loop, and ends
+  cached readonly by-reference handler, selects the operation outside the timed loop, and ends
   with zero bus registrations, flat handlers, token metadata, and deliveries.
   `TokenActive` matches the DxMessaging subscribe/unsubscribe comparison shape.
   `TokenStage` is a sibling measurement, not a cumulative lower layer. The
@@ -148,7 +148,7 @@ they are report-only -- rendered as wall clock, never gated.
   state without putting profiler overhead in the latency clock. A stripped IL2CPP
   player reports `n/a` for both allocation fields.
 - **Token dispatch attribution.** Compare `UntargetedFlood_OneDirectHandler` with
-  `UntargetedFlood_OneHandler`. Both use the same by-ref fast slot, one active
+  `UntargetedFlood_OneHandler`. Both use the same readonly by-reference fast slot, one active
   handler, and exact fan-out. The first registers the user delegate directly
   through `MessageHandler`; the second uses the public enabled-token path and its
   `AugmentedScalarFast` callback. The token's diagnostics flag remains mutable, so

@@ -75,8 +75,8 @@ The following are forbidden inside the steady-state dispatch loops
 1. **Virtual / interface dispatch through unsealed types.** Unity Mono lacks
    guarded devirtualization; sealed types let the JIT inline. Every class on
    the dispatch chain must be `sealed` or the method must be non-virtual.
-1. **Boxing.** Never let a struct message hit an `object` field. Keep the
-   `ref TMessage where TMessage : IMessage` shape end-to-end.
+1. **Boxing.** Never let a struct message hit an `object` field. Keep emission
+   state as `ref TMessage` and observer calls as `in TMessage` end-to-end.
 1. **`ArrayPool<T>.Shared.Rent` / `Return`.** The shared pool uses
    `Interlocked` operations that are very expensive on IL2CPP. Use private
    bus-owned pools or `DxPools` instead.
@@ -95,7 +95,7 @@ for (int i = 0; i < count; ++i)
     ref FlatDispatchEntry<TMessage> entry = ref entries[i];
     if (entry.handler.active)
     {
-        entry.invoker(ref message);
+        entry.invoker(in message);
         if (_resetGeneration != resetGeneration) { break; } // mid-dispatch reset
     }
 }

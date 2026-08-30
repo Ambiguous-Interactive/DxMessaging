@@ -1,4 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System.Linq;
@@ -79,12 +80,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Receive1(ref SimpleUntargetedMessage message)
+            void Receive1(in SimpleUntargetedMessage message)
             {
                 ++count1;
             }
 
-            void Receive2(ref SimpleUntargetedMessage message)
+            void Receive2(in SimpleUntargetedMessage message)
             {
                 ++count2;
             }
@@ -122,12 +123,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Receive1(ref SimpleUntargetedMessage message)
+            void Receive1(in SimpleUntargetedMessage message)
             {
                 ++count1;
             }
 
-            void Receive2(ref SimpleUntargetedMessage message)
+            void Receive2(in SimpleUntargetedMessage message)
             {
                 ++count2;
             }
@@ -160,7 +161,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             return;
 
-            void Receive(ref SimpleUntargetedMessage message)
+            void Receive(in SimpleUntargetedMessage message)
             {
                 ++count;
             }
@@ -179,7 +180,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int priority = i;
                 token.RegisterUntargeted(
-                    (ref SimpleUntargetedMessage _) =>
+                    (in SimpleUntargetedMessage _) =>
                     {
                         int previous = received[priority]++;
                         for (int j = priority - 1; j >= 0; --j)
@@ -194,7 +195,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     priority: priority
                 );
                 token.RegisterUntargetedPostProcessor(
-                    (ref SimpleUntargetedMessage _) =>
+                    (in SimpleUntargetedMessage _) =>
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);
@@ -279,4 +280,5 @@ namespace DxMessaging.Tests.Runtime.Core
     }
 }
 
+#pragma warning restore RCS1242
 #endif

@@ -7276,7 +7276,7 @@ namespace DxMessaging.Core.MessageBus
                 ref FlatDispatchEntry<TMessage> entry = ref entries[i];
                 if (entry.handler.active)
                 {
-                    entry.invoker(ref message);
+                    entry.invoker(in message);
                     if (_resetGeneration != resetGeneration)
                     {
                         break;
@@ -7321,7 +7321,7 @@ namespace DxMessaging.Core.MessageBus
                 ref FlatDispatchEntry<TMessage> entry = ref entries[i];
                 if (entry.handler.active)
                 {
-                    entry.invoker(ref message);
+                    entry.invoker(in message);
                     if (_resetGeneration != resetGeneration)
                     {
                         break;
@@ -7391,7 +7391,7 @@ namespace DxMessaging.Core.MessageBus
                 ref ContextFlatDispatchEntry<TMessage> entry = ref entries[i];
                 if (entry.handler.active)
                 {
-                    entry.invoker(ref context, ref message);
+                    entry.invoker(in context, in message);
                     if (_resetGeneration != resetGeneration)
                     {
                         break;

@@ -99,7 +99,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int index = i;
                 _ = token.RegisterUntargetedPostProcessor(
-                    (ref SimpleUntargetedMessage _) => postProcessorOrder.Add(index)
+                    (in SimpleUntargetedMessage _) => postProcessorOrder.Add(index)
                 );
             }
 
@@ -133,7 +133,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int index = i;
                 _ = token.RegisterTargetedPostProcessor(
                     target,
-                    (ref SimpleTargetedMessage _) => fastOrder.Add(index)
+                    (in SimpleTargetedMessage _) => fastOrder.Add(index)
                 );
             }
 
@@ -177,7 +177,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int index = i;
                 _ = token.RegisterTargetedWithoutTargeting(
-                    (ref InstanceId _, ref SimpleTargetedMessage _) => fastOrder.Add(index)
+                    (in InstanceId _, in SimpleTargetedMessage _) => fastOrder.Add(index)
                 );
             }
 
@@ -220,7 +220,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int index = i;
                 _ = token.RegisterTargetedWithoutTargetingPostProcessor(
-                    (ref InstanceId _, ref SimpleTargetedMessage _) => fastOrder.Add(index)
+                    (in InstanceId _, in SimpleTargetedMessage _) => fastOrder.Add(index)
                 );
             }
 
@@ -266,7 +266,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 int index = i;
                 _ = token.RegisterBroadcastPostProcessor(
                     source,
-                    (ref SimpleBroadcastMessage _) => fastOrder.Add(index)
+                    (in SimpleBroadcastMessage _) => fastOrder.Add(index)
                 );
             }
 
@@ -310,7 +310,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int index = i;
                 _ = token.RegisterBroadcastWithoutSource(
-                    (ref InstanceId _, ref SimpleBroadcastMessage _) => fastOrder.Add(index)
+                    (in InstanceId _, in SimpleBroadcastMessage _) => fastOrder.Add(index)
                 );
             }
 
@@ -353,7 +353,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int index = i;
                 _ = token.RegisterBroadcastWithoutSourcePostProcessor(
-                    (ref InstanceId _, ref SimpleBroadcastMessage _) => fastOrder.Add(index)
+                    (in InstanceId _, in SimpleBroadcastMessage _) => fastOrder.Add(index)
                 );
             }
 
@@ -445,9 +445,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int index = i;
                 _ = token.RegisterGlobalAcceptAll(
-                    (ref IUntargetedMessage _) => untargetedOrder.Add(index),
-                    (ref InstanceId _, ref ITargetedMessage _) => targetedOrder.Add(index),
-                    (ref InstanceId _, ref IBroadcastMessage _) => broadcastOrder.Add(index)
+                    (in IUntargetedMessage _) => untargetedOrder.Add(index),
+                    (in InstanceId _, in ITargetedMessage _) => targetedOrder.Add(index),
+                    (in InstanceId _, in IBroadcastMessage _) => broadcastOrder.Add(index)
                 );
             }
 
@@ -525,21 +525,21 @@ namespace DxMessaging.Tests.Runtime.Core
                 case MessageKind.Untargeted:
                 {
                     return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => onInvoked()
+                        (in SimpleUntargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Targeted:
                 {
                     return token.RegisterTargeted<SimpleTargetedMessage>(
                         target,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
                 {
                     return token.RegisterBroadcast<SimpleBroadcastMessage>(
                         target,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:

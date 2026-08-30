@@ -36,12 +36,12 @@ namespace DxMessaging.Unity
     ///         _ = Token.RegisterUntargeted&lt;DifficultyChanged&gt;(HandleDifficulty);
     ///     }
     ///
-    ///     private void HandleDamage(ref ApplyDamage msg)
+    ///     private void HandleDamage(in ApplyDamage msg)
     ///     {
     ///         // apply damage
     ///     }
     ///
-    ///     private void HandleDifficulty(ref DifficultyChanged msg)
+    ///     private void HandleDifficulty(in DifficultyChanged msg)
     ///     {
     ///         // adjust health scaling
     ///     }
@@ -324,7 +324,7 @@ namespace DxMessaging.Unity
         /// Demo handler: targeted string message to this GameObject.
         /// Override to implement behavior.
         /// </summary>
-        protected virtual void HandleStringGameObjectMessage(ref StringMessage message)
+        protected virtual void HandleStringGameObjectMessage(in StringMessage message)
         {
             // No-op by default
         }
@@ -333,7 +333,7 @@ namespace DxMessaging.Unity
         /// Demo handler: targeted string message to this Component.
         /// Override to implement behavior.
         /// </summary>
-        protected virtual void HandleStringComponentMessage(ref StringMessage message)
+        protected virtual void HandleStringComponentMessage(in StringMessage message)
         {
             // No-op by default
         }
@@ -342,7 +342,7 @@ namespace DxMessaging.Unity
         /// Demo handler: global string message.
         /// Override to implement behavior.
         /// </summary>
-        protected virtual void HandleGlobalStringMessage(ref GlobalStringMessage message)
+        protected virtual void HandleGlobalStringMessage(in GlobalStringMessage message)
         {
             // No-op by default
         }

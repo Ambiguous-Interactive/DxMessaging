@@ -1,3 +1,4 @@
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -199,6 +200,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.IsTrue(disposeInvoked, "Disposing a lease should trigger OnDispose callbacks.");
         }
 
-        private static void OnSimpleMessage(ref SimpleUntargetedMessage message) { }
+        private static void OnSimpleMessage(in SimpleUntargetedMessage message) { }
     }
 }
+#pragma warning restore RCS1242

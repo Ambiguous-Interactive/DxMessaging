@@ -109,7 +109,7 @@ namespace DxMessaging.Samples.DI.Reflex
                 _lease.Dispose();
             }
 
-            private void OnPlayerAlert(ref InstanceId source, ref PlayerAlert alert)
+            private void OnPlayerAlert(in InstanceId source, in PlayerAlert alert)
             {
                 Debug.Log($"Reflex alert from {source.Id}");
             }

@@ -117,7 +117,7 @@ evt.Emit();
 
 // Listener
 _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoaded);
-void OnSceneLoaded(ref SceneLoaded m) => RefreshUI();
+void OnSceneLoaded(in SceneLoaded m) => RefreshUI();
 ```
 
 ## 2) Directed Commands (Targeted)
@@ -139,7 +139,7 @@ heal.EmitComponentTargeted(this);
 
 // Listener (on the hero)
 _ = token.RegisterComponentTargeted<Heal>(this, OnHeal);
-void OnHeal(ref Heal m) => ApplyHeal(m.amount);
+void OnHeal(in Heal m) => ApplyHeal(m.amount);
 ```
 
 ## 3) Observability (Broadcast)
@@ -187,7 +187,7 @@ Post-processors run after handlers -- ideal for metrics.
 
 ```csharp
 _ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
-    (ref SceneLoaded m) => Metrics.RecordProcessedSceneLoad(m.buildIndex));
+    (in SceneLoaded m) => Metrics.RecordProcessedSceneLoad(m.buildIndex));
 ```
 
 ## 6) Local Bus Islands
@@ -253,9 +253,9 @@ Use when building tools or inspectors that want to observe everything.
 
 ```csharp
 _ = token.RegisterGlobalAcceptAll(
-    (ref IUntargetedMessage m) => Debug.Log($"Untargeted {m.MessageType}"),
-    (ref InstanceId target, ref ITargetedMessage m) => Debug.Log($"Targeted {m.MessageType} to {target}"),
-    (ref InstanceId source, ref IBroadcastMessage m) => Debug.Log($"Broadcast {m.MessageType} from {source}")
+    (in IUntargetedMessage m) => Debug.Log($"Untargeted {m.MessageType}"),
+    (in InstanceId target, in ITargetedMessage m) => Debug.Log($"Targeted {m.MessageType} to {target}"),
+    (in InstanceId source, in IBroadcastMessage m) => Debug.Log($"Broadcast {m.MessageType} from {source}")
 );
 ```
 
@@ -321,7 +321,7 @@ public class EnemyHealthBar : MessageAwareComponent {
         _ = Token.RegisterGameObjectBroadcast<EntityDamaged>(trackedEnemy, OnDamaged);
     }
 
-    void OnDamaged(ref EntityDamaged msg) => UpdateBar();
+    void OnDamaged(in EntityDamaged msg) => UpdateBar();
 }
 
 // Analytics: Observes ALL entities (global observation)
@@ -391,7 +391,7 @@ public class PersistentAchievementSystem : MessageAwareComponent {
         CheckAchievements();
     }
 
-    void OnLevelComplete(ref LevelCompleted msg) {
+    void OnLevelComplete(in LevelCompleted msg) {
         UnlockAchievement($"Complete_Level_{msg.levelIndex}");
     }
 }
@@ -509,7 +509,7 @@ public class SaveSystem : MessageAwareComponent {
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 0);
     }
 
-    void OnExit(ref GameExit msg) {
+    void OnExit(in GameExit msg) {
         SaveGame(); // Must complete before audio fades
     }
 }
@@ -521,7 +521,7 @@ public class AudioSystem : MessageAwareComponent {
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 5);
     }
 
-    void OnExit(ref GameExit msg) {
+    void OnExit(in GameExit msg) {
         FadeOutMusic(); // Runs after save
     }
 }
@@ -533,7 +533,7 @@ public class UISystem : MessageAwareComponent {
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 10);
     }
 
-    void OnExit(ref GameExit msg) {
+    void OnExit(in GameExit msg) {
         ShowExitAnimation(); // Runs after audio fade starts
     }
 }
@@ -590,7 +590,7 @@ public class CombatEntity : MessageAwareComponent {
         _ = Token.RegisterComponentTargeted<ApplyDamage>(this, OnApplyDamage);
     }
 
-    void OnApplyDamage(ref ApplyDamage msg) {
+    void OnApplyDamage(in ApplyDamage msg) {
         // No need to validate - interceptor already did it
         health -= msg.amount;
         var fact = new EntityDamaged(msg.amount, msg.damageType);
@@ -626,7 +626,7 @@ public class GameAnalytics : MessageAwareComponent {
         });
     }
 
-    void RecordProcessedLevelCompletion(ref LevelCompleted msg) {
+    void RecordProcessedLevelCompletion(in LevelCompleted msg) {
         SendAnalyticsEvent("level_completion_message_processed", new { level = msg.levelIndex });
     }
 }
@@ -656,9 +656,9 @@ IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off; // Production buil
 ```csharp
 //  SLOW: Receives ALL messages, even irrelevant ones
 _ = Token.RegisterGlobalAcceptAll(
-    (ref IUntargetedMessage m) => { /* called for every untargeted */ },
-    (ref InstanceId t, ref ITargetedMessage m) => { /* called for every targeted */ },
-    (ref InstanceId s, ref IBroadcastMessage m) => { /* called for every broadcast */ }
+    (in IUntargetedMessage m) => { /* called for every untargeted */ },
+    (in InstanceId t, in ITargetedMessage m) => { /* called for every targeted */ },
+    (in InstanceId s, in IBroadcastMessage m) => { /* called for every broadcast */ }
 );
 
 //  FAST: Only receives relevant messages
@@ -746,7 +746,7 @@ public class SelfHealthUI : MessageAwareComponent {
         _ = Token.RegisterGameObjectBroadcast<PlayerDamaged>(localPlayerObject, OnDamage);
     }
 
-    void OnDamage(ref PlayerDamaged msg) => UpdateHealthBar(msg.newHealth, msg.newArmor);
+    void OnDamage(in PlayerDamaged msg) => UpdateHealthBar(msg.newHealth, msg.newArmor);
 }
 
 // TEAMMATE health bars (selective observation)
@@ -760,7 +760,7 @@ public class TeamHealthUI : MessageAwareComponent {
         }
     }
 
-    void OnTeammateDamage(ref PlayerDamaged msg) => UpdateTeammateBar(msg.playerId, msg.newHealth);
+    void OnTeammateDamage(in PlayerDamaged msg) => UpdateTeammateBar(msg.playerId, msg.newHealth);
 }
 
 // KILL FEED (global observation)
@@ -945,7 +945,7 @@ public class AudioSystem : MessageAwareComponent
         _ = Token.RegisterUntargeted<SceneTransitionRequested>(OnTransition);
     }
 
-    void OnTransition(ref SceneTransitionRequested msg)
+    void OnTransition(in SceneTransitionRequested msg)
     {
         FadeOutMusic(); // Type-safe, debuggable via DxMessaging Inspector
     }

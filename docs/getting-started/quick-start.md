@@ -56,7 +56,7 @@ public sealed class DamageReceiver : MessageAwareComponent
         _ = Token.RegisterGameObjectTargeted<DamageRequested>(gameObject, OnDamageRequested);
     }
 
-    private void OnDamageRequested(ref DamageRequested message)
+    private void OnDamageRequested(in DamageRequested message)
     {
         Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
     }

@@ -294,7 +294,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 _token.Enable();
             }
 
-            private void OnUntargetedMessage(ref TestUntargetedMessage message)
+            private void OnUntargetedMessage(in TestUntargetedMessage message)
             {
                 ReceivedCount++;
             }

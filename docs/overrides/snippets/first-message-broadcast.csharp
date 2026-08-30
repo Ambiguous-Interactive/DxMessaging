@@ -31,7 +31,7 @@ public sealed class ImpactSound : MessageAwareComponent
         _ = Token.RegisterGameObjectBroadcast<CollisionOccurred>(gameObject, OnCollisionOccurred);
     }
 
-    private void OnCollisionOccurred(ref CollisionOccurred message)
+    private void OnCollisionOccurred(in CollisionOccurred message)
     {
         Source.volume = Mathf.Clamp01(message.Speed / 10f);
         Source.Play();
@@ -48,7 +48,7 @@ public sealed class BreakableObject : MessageAwareComponent
         _ = Token.RegisterGameObjectBroadcast<CollisionOccurred>(gameObject, OnCollisionOccurred);
     }
 
-    private void OnCollisionOccurred(ref CollisionOccurred message)
+    private void OnCollisionOccurred(in CollisionOccurred message)
     {
         if (BreakSpeed <= message.Speed)
         {

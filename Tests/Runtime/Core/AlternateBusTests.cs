@@ -207,7 +207,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => onInvoked()
+                        (in SimpleUntargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Targeted:
@@ -216,7 +216,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
@@ -225,7 +225,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:

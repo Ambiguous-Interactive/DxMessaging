@@ -590,7 +590,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 case PostProcessorVariant.Untargeted:
                 {
                     return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
+                        (in SimpleUntargetedMessage _) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -598,7 +598,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     return token.RegisterTargeted<SimpleTargetedMessage>(
                         source,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
+                        (in SimpleTargetedMessage _) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -606,7 +606,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     return token.RegisterBroadcast<SimpleBroadcastMessage>(
                         source,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
+                        (in SimpleBroadcastMessage _) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -649,7 +649,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 case PostProcessorVariant.Untargeted:
                 {
                     return token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
+                        (in SimpleUntargetedMessage _) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -666,7 +666,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     return token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
                         source,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
+                        (in SimpleTargetedMessage _) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -683,7 +683,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     return token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
                         source,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
+                        (in SimpleBroadcastMessage _) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -698,7 +698,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
 
                     return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        (ref InstanceId _, ref SimpleTargetedMessage __) => onInvoked(),
+                        (in InstanceId _, in SimpleTargetedMessage __) => onInvoked(),
                         priority: priority
                     );
                 }
@@ -713,7 +713,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
 
                     return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) => onInvoked(),
+                        (in InstanceId _, in SimpleBroadcastMessage __) => onInvoked(),
                         priority: priority
                     );
                 }

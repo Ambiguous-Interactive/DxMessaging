@@ -56,8 +56,8 @@ using DxMessaging.Core.Messages;
 _ = token.RegisterUntargeted<GlobalStringMessage>(OnGlobalText);
 _ = token.RegisterComponentTargeted<StringMessage>(this, OnTextToMe);
 
-void OnGlobalText(ref GlobalStringMessage m) => Debug.Log($"Global: {m.message}");
-void OnTextToMe(ref StringMessage m)       => Debug.Log($"To me: {m.message}");
+void OnGlobalText(in GlobalStringMessage m) => Debug.Log($"Global: {m.message}");
+void OnTextToMe(in StringMessage m)       => Debug.Log($"To me: {m.message}");
 ```
 
 Tips

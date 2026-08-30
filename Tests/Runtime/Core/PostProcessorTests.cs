@@ -1,4 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -132,7 +133,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref SimpleUntargetedMessage message)
+            void PostProcessor(in SimpleUntargetedMessage message)
             {
                 assertion.Invoke();
             }
@@ -280,7 +281,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref SimpleTargetedMessage message)
+            void PostProcessor(in SimpleTargetedMessage message)
             {
                 assertion.Invoke();
             }
@@ -399,7 +400,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref InstanceId target, ref SimpleTargetedMessage message)
+            void PostProcessor(in InstanceId target, in SimpleTargetedMessage message)
             {
                 assertion.Invoke();
             }
@@ -550,7 +551,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref SimpleTargetedMessage message)
+            void PostProcessor(in SimpleTargetedMessage message)
             {
                 assertion.Invoke();
             }
@@ -674,7 +675,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref InstanceId target, ref SimpleTargetedMessage message)
+            void PostProcessor(in InstanceId target, in SimpleTargetedMessage message)
             {
                 assertion.Invoke();
             }
@@ -838,7 +839,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref SimpleBroadcastMessage message)
+            void PostProcessor(in SimpleBroadcastMessage message)
             {
                 assertion.Invoke();
             }
@@ -973,7 +974,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref InstanceId target, ref SimpleBroadcastMessage message)
+            void PostProcessor(in InstanceId target, in SimpleBroadcastMessage message)
             {
                 assertion.Invoke();
             }
@@ -1124,7 +1125,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref SimpleBroadcastMessage message)
+            void PostProcessor(in SimpleBroadcastMessage message)
             {
                 assertion.Invoke();
             }
@@ -1246,7 +1247,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 finalCount = 0;
             }
 
-            void PostProcessor(ref InstanceId source, ref SimpleBroadcastMessage message)
+            void PostProcessor(in InstanceId source, in SimpleBroadcastMessage message)
             {
                 assertion.Invoke();
             }
@@ -1254,4 +1255,5 @@ namespace DxMessaging.Tests.Runtime.Core
     }
 }
 
+#pragma warning restore RCS1242
 #endif

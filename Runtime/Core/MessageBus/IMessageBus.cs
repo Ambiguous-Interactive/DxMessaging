@@ -38,7 +38,7 @@ namespace DxMessaging.Core.MessageBus
     /// <code>
     /// // Unity: register then send a targeted message
     /// var token = messagingComponent.Create(this);
-    /// token.RegisterComponentTargeted&lt;ApplyDamage&gt;(this, (ref ApplyDamage m) =&gt; OnDamage(m));
+    /// token.RegisterComponentTargeted&lt;ApplyDamage&gt;(this, (in ApplyDamage m) =&gt; OnDamage(m));
     /// token.Enable();
     ///
     /// // Later, somewhere else

@@ -622,6 +622,7 @@ namespace DxMessaging.Core.Extensions
 namespace DxMessaging.Core
 {
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
 
     public readonly struct InstanceId
     {
@@ -630,21 +631,79 @@ namespace DxMessaging.Core
         public static implicit operator InstanceId(UnityEngine.Component component) => default;
     }
 
-    public class MessageHandler
+    public sealed class MessageHandler
     {
-        public delegate void FastHandler<TMessage>(ref TMessage message);
+        // SYNC: Runtime/Core/MessageHandler.cs owns these parameter modifiers. Constraints are
+        // deliberately omitted because attributed snippets are not augmented by DxMessageIdGenerator.
+        public delegate void FastHandler<TMessage>(in TMessage message);
+
         public delegate void FastHandlerWithContext<TMessage>(
-            ref InstanceId context,
-            ref TMessage message
+            in InstanceId context,
+            in TMessage message
         );
 
         public MessageHandler(InstanceId id) { }
         public MessageHandler(InstanceId id, IMessageBus bus) { }
         public static IMessageBus MessageBus => new MessageBus.MessageBus();
         public bool active { get; set; }
-        public virtual void Handle(ref DxMessaging.Core.Messages.IUntargetedMessage message) { }
-        public virtual void Handle(ref InstanceId target, ref DxMessaging.Core.Messages.ITargetedMessage message) { }
-        public virtual void Handle(ref InstanceId source, ref DxMessaging.Core.Messages.IBroadcastMessage message) { }
+    }
+
+    public sealed class MessageRegistrationToken : System.IDisposable
+    {
+        public static MessageRegistrationToken Create(
+            MessageHandler handler,
+            IMessageBus bus = null
+        ) => new();
+
+        public void Enable() { }
+
+        public void Dispose() { }
+
+        public object RegisterGlobalAcceptAll(
+            System.Action<IUntargetedMessage> acceptAllUntargeted,
+            System.Action<InstanceId, ITargetedMessage> acceptAllTargeted,
+            System.Action<InstanceId, IBroadcastMessage> acceptAllBroadcast
+        ) => new object();
+
+        public object RegisterGlobalAcceptAll(
+            MessageHandler.FastHandler<IUntargetedMessage> acceptAllUntargeted,
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> acceptAllTargeted,
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> acceptAllBroadcast
+        ) => new object();
+
+        public object RegisterUntargeted<TMessage>(
+            System.Action<TMessage> untargetedHandler,
+            int priority = 0
+        ) => new object();
+
+        public object RegisterUntargeted<TMessage>(
+            MessageHandler.FastHandler<TMessage> untargetedHandler,
+            int priority = 0
+        ) => new object();
+
+        public object RegisterGameObjectTargeted<TMessage>(
+            UnityEngine.GameObject target,
+            System.Action<TMessage> targetedHandler,
+            int priority = 0
+        ) => new object();
+
+        public object RegisterGameObjectTargeted<TMessage>(
+            UnityEngine.GameObject target,
+            MessageHandler.FastHandler<TMessage> targetedHandler,
+            int priority = 0
+        ) => new object();
+
+        public object RegisterGameObjectBroadcast<TMessage>(
+            UnityEngine.GameObject source,
+            System.Action<TMessage> broadcastHandler,
+            int priority = 0
+        ) => new object();
+
+        public object RegisterGameObjectBroadcast<TMessage>(
+            UnityEngine.GameObject source,
+            MessageHandler.FastHandler<TMessage> broadcastHandler,
+            int priority = 0
+        ) => new object();
     }
 }
 
@@ -705,6 +764,8 @@ namespace DxMessaging.Unity
 
     public abstract class MessageAwareComponent : MonoBehaviour
     {
+        public virtual DxMessaging.Core.MessageRegistrationToken Token => default;
+
         protected virtual bool RegisterForStringMessages => true;
 
         protected virtual void Awake() { }

@@ -145,7 +145,7 @@ public class Enemy : MonoBehaviour
         damage.EmitAt(this);  // WON'T BE RECEIVED!
     }
 
-    void OnDamage(ref TakeDamage msg) { }
+    void OnDamage(in TakeDamage msg) { }
 }
 
 // FIX 1: Both use GameObject
@@ -200,7 +200,7 @@ void OnBossDamaged(int amount) { RecordDamage("Boss", amount); }
 // Yes DxMessaging: One subscription, zero coupling
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
 
-void OnAnyDamage(ref InstanceId source, ref TookDamage msg)
+void OnAnyDamage(in InstanceId source, in TookDamage msg)
 {
     // Works for Player, Enemy, NPC, Boss, and any future entity type!
     RecordDamage(source, msg.amount);
@@ -220,7 +220,7 @@ public readonly partial struct Heal { public readonly int amount; }
 // Listen to ALL heal messages, no matter who they're targeted at
 _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
 
-void OnAnyHeal(ref InstanceId target, ref Heal msg)
+void OnAnyHeal(in InstanceId target, in Heal msg)
 {
     Debug.Log($"Heal requested for {target}: {msg.amount}");
     // You get the target that received the request.
@@ -251,7 +251,7 @@ public readonly partial struct TookDamage { public readonly int amount; }
 // Listen to ALL damage events from any source
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
 
-void OnAnyDamage(ref InstanceId source, ref TookDamage msg)
+void OnAnyDamage(in InstanceId source, in TookDamage msg)
 {
     Debug.Log($"{source} took {msg.amount} damage");
     // You get the source as a parameter so you know WHO took damage
@@ -306,7 +306,7 @@ public class Player : MessageAwareComponent
         _ = Token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnPlayerTookDamage);
     }
 
-    void OnPlayerTookDamage(ref TookDamage msg)
+    void OnPlayerTookDamage(in TookDamage msg)
     {
         // The targeted command already changed health; react to the resulting fact.
         UpdateHealthBar();
@@ -323,7 +323,7 @@ public class CombatLog : MessageAwareComponent
         _ = Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
     }
 
-    void OnAnyDamage(ref InstanceId source, ref TookDamage msg)
+    void OnAnyDamage(in InstanceId source, in TookDamage msg)
     {
         // Global combat logging
         LogToFile($"{Time.time}: {source} took {msg.amount} damage");
@@ -339,7 +339,7 @@ public class AchievementSystem : MessageAwareComponent
         _ = Token.RegisterTargetedWithoutTargeting<DealDamage>(OnAnyDamageRequested);
     }
 
-    void OnAnyDamageRequested(ref InstanceId target, ref DealDamage msg)
+    void OnAnyDamageRequested(in InstanceId target, in DealDamage msg)
     {
         // Applied damage is a later broadcast fact.
         requestedDamage += msg.amount;

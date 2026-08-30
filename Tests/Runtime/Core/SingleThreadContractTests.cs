@@ -34,7 +34,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int invocationCount = 0;
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => Interlocked.Increment(ref invocationCount)
+                (in SimpleUntargetedMessage _) => Interlocked.Increment(ref invocationCount)
             );
             token.Enable();
 
@@ -105,7 +105,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             int invocationCount = 0;
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => ++invocationCount
+                (in SimpleUntargetedMessage _) => ++invocationCount
             );
             token.Enable();
 

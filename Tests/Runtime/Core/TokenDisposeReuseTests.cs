@@ -57,7 +57,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             MessageRegistrationHandle originalHandle =
                 token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priority: 1
                 );
             token.Enable();
@@ -91,7 +91,7 @@ namespace DxMessaging.Tests.Runtime.Core
             DxMessagingStaticState.Reset();
             MessageRegistrationHandle replacementHandle =
                 token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priority: 2
                 );
             Assert.AreEqual(
@@ -158,7 +158,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 label: nameof(CopiedRegistrationDisposableRetriesFailedDeregistration)
             );
             MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => { }
+                (in SimpleUntargetedMessage _) => { }
             );
             token.Enable();
             MessageRegistrationToken.RegistrationDisposable disposable = token.AsDisposable(handle);
@@ -221,14 +221,14 @@ namespace DxMessaging.Tests.Runtime.Core
             int oldCalls = 0;
             int replacementCalls = 0;
             MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => ++oldCalls
+                (in SimpleUntargetedMessage _) => ++oldCalls
             );
             bus.OnRegistration = () =>
             {
                 bus.OnRegistration = null;
                 token.RemoveRegistration(oldHandle);
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => ++replacementCalls
+                    (in SimpleUntargetedMessage _) => ++replacementCalls
                 );
             };
 
@@ -256,14 +256,14 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => { }
+                (in SimpleUntargetedMessage _) => { }
             );
             bus.OnRegistration = () =>
             {
                 bus.OnRegistration = null;
                 token.RemoveRegistration(oldHandle);
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { }
+                    (in SimpleUntargetedMessage _) => { }
                 );
             };
 
@@ -288,7 +288,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int oldCalls = 0;
             int replacementCalls = 0;
             MessageRegistrationHandle oldHandle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => ++oldCalls
+                (in SimpleUntargetedMessage _) => ++oldCalls
             );
             token.Enable();
 
@@ -299,7 +299,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 newBus.OnRegistration = null;
                 token.RemoveRegistration(oldHandle);
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => ++replacementCalls
+                    (in SimpleUntargetedMessage _) => ++replacementCalls
                 );
             };
 
@@ -333,7 +333,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < priorities.Length; ++i)
             {
                 handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priorities[i]
                 );
             }
@@ -348,7 +348,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus.OnRegistrationWithPriority = null;
                 token.RemoveRegistration(handles[orphanIndex]);
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priority: 40
                 );
             };
@@ -379,7 +379,7 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < priorities.Length; ++i)
             {
                 handles[i] = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priorities[i]
                 );
             }
@@ -394,7 +394,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus.OnRegistrationWithPriority = null;
                 token.RemoveRegistration(handles[orphanIndex]);
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priority: 40
                 );
             };
@@ -430,11 +430,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler handler = new(new InstanceId(OwnerInstanceId), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => { },
+                (in SimpleUntargetedMessage _) => { },
                 priority: 10
             );
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                (ref SimpleUntargetedMessage _) => { },
+                (in SimpleUntargetedMessage _) => { },
                 priority: 20
             );
             token.Enable();
@@ -459,7 +459,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                 };
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => { },
+                    (in SimpleUntargetedMessage _) => { },
                     priority: 40
                 );
             };
@@ -742,7 +742,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     MessageRegistrationHandle handle =
                         token.RegisterUntargeted<SimpleUntargetedMessage>(
-                            (ref SimpleUntargetedMessage _) => ++handled
+                            (in SimpleUntargetedMessage _) => ++handled
                         );
                     SimpleUntargetedMessage message = new();
                     throwingBus.UntargetedBroadcast(ref message);
@@ -887,9 +887,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     (ref SimpleUntargetedMessage _) => true
                 );
                 _ = scope.Token.RegisterGlobalAcceptAll(
-                    (ref IUntargetedMessage _) => { },
-                    (ref InstanceId _, ref ITargetedMessage __) => { },
-                    (ref InstanceId _, ref IBroadcastMessage __) => { }
+                    (in IUntargetedMessage _) => { },
+                    (in InstanceId _, in ITargetedMessage __) => { },
+                    (in InstanceId _, in IBroadcastMessage __) => { }
                 );
 
                 scope.Token.Disable();
@@ -912,16 +912,15 @@ namespace DxMessaging.Tests.Runtime.Core
                     + scenario.DisplayName
             );
             int calls = 0;
-            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (
-                ref IUntargetedMessage _
-            ) => ++calls;
+            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (in IUntargetedMessage _) =>
+                ++calls;
             MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted = (
-                ref InstanceId _,
-                ref ITargetedMessage __
+                in InstanceId _,
+                in ITargetedMessage __
             ) => ++calls;
             MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast = (
-                ref InstanceId _,
-                ref IBroadcastMessage __
+                in InstanceId _,
+                in IBroadcastMessage __
             ) => ++calls;
 
             MessageRegistrationHandle first = scope.Token.RegisterGlobalAcceptAll(
@@ -971,9 +970,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     label: nameof(GlobalAcceptAllFailedBusTeardownRemainsRetryable)
                 );
                 _ = token.RegisterGlobalAcceptAll(
-                    (ref IUntargetedMessage _) => { },
-                    (ref InstanceId _, ref ITargetedMessage __) => { },
-                    (ref InstanceId _, ref IBroadcastMessage __) => { }
+                    (in IUntargetedMessage _) => { },
+                    (in InstanceId _, in ITargetedMessage __) => { },
+                    (in InstanceId _, in IBroadcastMessage __) => { }
                 );
                 token.Enable();
 
@@ -1030,11 +1029,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
 
@@ -1100,11 +1099,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
                     token.Enable();
@@ -1199,10 +1198,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                     token.Enable();
                     int oldRegistrationCount = oldBus.RegisteredUntargeted;
@@ -1281,11 +1280,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
                     token.Enable();
@@ -1382,11 +1381,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
                     token.Enable();
@@ -1484,11 +1483,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
                     token.Enable();
@@ -1597,10 +1596,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
 
                     Assert.Throws<InvalidOperationException>(
@@ -1724,7 +1723,7 @@ namespace DxMessaging.Tests.Runtime.Core
             )
             {
                 _ = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => ++handled
+                    (in SimpleUntargetedMessage _) => ++handled
                 );
                 SimpleUntargetedMessage message = new();
                 scope.Bus.UntargetedBroadcast(ref message);
@@ -1760,7 +1759,7 @@ namespace DxMessaging.Tests.Runtime.Core
             )
             {
                 _ = scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                    (ref SimpleUntargetedMessage _) => ++handled
+                    (in SimpleUntargetedMessage _) => ++handled
                 );
                 SimpleUntargetedMessage message = new();
                 scope.Bus.UntargetedBroadcast(ref message);
@@ -1797,7 +1796,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => onInvoked()
+                        (in SimpleUntargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Targeted:
@@ -1806,7 +1805,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
@@ -1815,7 +1814,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         context,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:
@@ -1853,7 +1852,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                     SimpleUntargetedMessage message = new();
                     throwingBus.UntargetedBroadcast(ref message);

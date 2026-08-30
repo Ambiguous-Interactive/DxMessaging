@@ -11,6 +11,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     /// <summary>
     /// Pins the cost boundary of diagnostic emission-site capture (issue #433).
     ///
@@ -122,7 +123,8 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static readonly InstanceId Owner = new InstanceId(0x4433_4433);
 
-        private static void NoOp(ref SimpleUntargetedMessage message) { }
+        private static void NoOp(in SimpleUntargetedMessage message) { }
     }
+#pragma warning restore RCS1242
 }
 #endif

@@ -910,11 +910,11 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
-        private void OnAlpha(ref SubscriptionsAlphaMessage message) { }
+        private void OnAlpha(in SubscriptionsAlphaMessage message) { }
 
-        private void OnBeta(ref SubscriptionsBetaMessage message) { }
+        private void OnBeta(in SubscriptionsBetaMessage message) { }
 
-        private void OnOtherAlpha(ref Other.SubscriptionsAlphaMessage message) { }
+        private void OnOtherAlpha(in Other.SubscriptionsAlphaMessage message) { }
     }
 
     internal readonly struct SubscriptionsAlphaMessage : IUntargetedMessage { }

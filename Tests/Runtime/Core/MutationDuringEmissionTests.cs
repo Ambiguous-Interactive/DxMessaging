@@ -1581,7 +1581,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 // Any post-processor for the type forces the featured lane.
                 _ = token.RegisterGameObjectTargetedPostProcessor<SimpleTargetedMessage>(
                     host,
-                    (ref SimpleTargetedMessage _) => { }
+                    (in SimpleTargetedMessage _) => { }
                 );
             }
 
@@ -1589,7 +1589,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // assignment inside the body would bind to it instead.
             _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
                 host,
-                (ref SimpleTargetedMessage targeted) =>
+                (in SimpleTargetedMessage targeted) =>
                 {
                     if (registered)
                     {

@@ -105,7 +105,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             MessageBus bus = new();
             MessageHandler handler = new(new InstanceId(5000), bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
-            _ = token.RegisterUntargeted((ref BenchmarkUntargetedMessage _) => { });
+            _ = token.RegisterUntargeted((in BenchmarkUntargetedMessage _) => { });
             token.Enable();
 
             try

@@ -50,11 +50,13 @@ using DxMessaging.Core.MessageBus;
 
 IMessageBus bus = MessageHandler.MessageBus;
 MessageHandler handler = new(new InstanceId(1)) { active = true };
-MessageBusRegistration registration = bus.RegisterGlobalAcceptAll(handler);
-// implement handler callbacks for generic categories on your MessageHandler
+using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+_ = token.RegisterGlobalAcceptAll(OnUntargeted, OnTargeted, OnBroadcast);
+token.Enable();
 
-// When the owning tool shuts down:
-bus.Deregister<IMessage>(in registration);
+void OnUntargeted(in IUntargetedMessage message) { /* inspect message */ }
+void OnTargeted(in InstanceId target, in ITargetedMessage message) { /* inspect message */ }
+void OnBroadcast(in InstanceId source, in IBroadcastMessage message) { /* inspect message */ }
 ```
 
 ## Real-World Use Cases
@@ -74,42 +76,35 @@ using DxMessaging.Core.Messages;
 using DxMessaging.Core.MessageBus;
 using UnityEngine;
 
-public sealed class DebugMessageLogger : MessageHandler, IDisposable
+public sealed class DebugMessageLogger : IDisposable
 {
-    private readonly IMessageBus _bus;
-    private MessageBusRegistration _registration;
+    private readonly MessageHandler _handler;
+    private readonly MessageRegistrationToken _token;
 
-    public DebugMessageLogger(IMessageBus bus) : base(new InstanceId(999))
+    public DebugMessageLogger(IMessageBus bus)
     {
-        _bus = bus;
-        active = true;
-        _registration = bus.RegisterGlobalAcceptAll(this);
+        _handler = new MessageHandler(new InstanceId(999), bus) { active = true };
+        _token = MessageRegistrationToken.Create(_handler, bus);
+        _ = _token.RegisterGlobalAcceptAll(OnUntargeted, OnTargeted, OnBroadcast);
+        _token.Enable();
     }
 
-    public override void Handle(ref IUntargetedMessage message)
+    private void OnUntargeted(in IUntargetedMessage message)
     {
         Debug.Log($"[Untargeted] {message.GetType().Name}: {message}");
     }
 
-    public override void Handle(ref InstanceId target, ref ITargetedMessage message)
+    private void OnTargeted(in InstanceId target, in ITargetedMessage message)
     {
         Debug.Log($"[Targeted -> {target}] {message.GetType().Name}: {message}");
     }
 
-    public override void Handle(ref InstanceId source, ref IBroadcastMessage message)
+    private void OnBroadcast(in InstanceId source, in IBroadcastMessage message)
     {
         Debug.Log($"[Broadcast <- {source}] {message.GetType().Name}: {message}");
     }
 
-    public void Dispose()
-    {
-        if (!_registration.IsValid)
-        {
-            return;
-        }
-        _bus.Deregister<IMessage>(in _registration);
-        _registration = MessageBusRegistration.None;
-    }
+    public void Dispose() => _token.Dispose();
 }
 ```
 
@@ -130,8 +125,10 @@ using System;
 using System.Reflection;
 using System.Collections.Generic;
 using DxMessaging.Core;
+using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Messages;
 using DxMessaging.Core.MessageBus;
+using UnityEngine;
 
 // Mark messages that should be replicated
 [AttributeUsage(AttributeTargets.Struct)]
@@ -154,20 +151,21 @@ public readonly partial struct DealDamage
 }
 
 // Network replication handler
-public sealed class NetworkReplicator : MessageHandler, IDisposable
+public sealed class NetworkReplicator : IDisposable
 {
     private readonly INetworkManager _network;
-    private readonly IMessageBus _bus;
-    private MessageBusRegistration _registration;
+    private readonly MessageHandler _handler;
+    private readonly MessageRegistrationToken _token;
     private readonly HashSet<Type> _networkedTypes = new();
 
-    public NetworkReplicator(INetworkManager network, IMessageBus bus) : base(new InstanceId(1000))
+    public NetworkReplicator(INetworkManager network, IMessageBus bus)
     {
         _network = network;
-        _bus = bus;
+        _handler = new MessageHandler(new InstanceId(1000), bus) { active = true };
+        _token = MessageRegistrationToken.Create(_handler, bus);
         CacheNetworkedTypes();
-        active = true;
-        _registration = bus.RegisterGlobalAcceptAll(this);
+        _ = _token.RegisterGlobalAcceptAll(OnUntargeted, OnTargeted, OnBroadcast);
+        _token.Enable();
     }
 
     private void CacheNetworkedTypes()
@@ -185,7 +183,7 @@ public sealed class NetworkReplicator : MessageHandler, IDisposable
         }
     }
 
-    public override void Handle(ref IUntargetedMessage message)
+    private void OnUntargeted(in IUntargetedMessage message)
     {
         if (_networkedTypes.Contains(message.GetType()))
         {
@@ -193,7 +191,7 @@ public sealed class NetworkReplicator : MessageHandler, IDisposable
         }
     }
 
-    public override void Handle(ref InstanceId target, ref ITargetedMessage message)
+    private void OnTargeted(in InstanceId target, in ITargetedMessage message)
     {
         if (_networkedTypes.Contains(message.GetType()))
         {
@@ -201,7 +199,7 @@ public sealed class NetworkReplicator : MessageHandler, IDisposable
         }
     }
 
-    public override void Handle(ref InstanceId source, ref IBroadcastMessage message)
+    private void OnBroadcast(in InstanceId source, in IBroadcastMessage message)
     {
         if (_networkedTypes.Contains(message.GetType()))
         {
@@ -209,15 +207,7 @@ public sealed class NetworkReplicator : MessageHandler, IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        if (!_registration.IsValid)
-        {
-            return;
-        }
-        _bus.Deregister<IMessage>(in _registration);
-        _registration = MessageBusRegistration.None;
-    }
+    public void Dispose() => _token.Dispose();
 }
 ```
 
@@ -243,25 +233,34 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
+using DxMessaging.Core.MessageBus;
 
-public class MessageAnalytics : MessageHandler
+public sealed class MessageAnalytics : IDisposable
 {
     private readonly Dictionary<Type, (int count, long totalMs)> _stats = new();
     private readonly Stopwatch _stopwatch = new();
+    private readonly MessageHandler _handler;
+    private readonly MessageRegistrationToken _token;
 
-    public MessageAnalytics() : base(new InstanceId(1001)) { }
+    public MessageAnalytics(IMessageBus bus)
+    {
+        _handler = new MessageHandler(new InstanceId(1001), bus) { active = true };
+        _token = MessageRegistrationToken.Create(_handler, bus);
+        _ = _token.RegisterGlobalAcceptAll(OnUntargeted, OnTargeted, OnBroadcast);
+        _token.Enable();
+    }
 
-    public override void Handle(ref IUntargetedMessage message)
+    private void OnUntargeted(in IUntargetedMessage message)
     {
         TrackMessage(message.GetType());
     }
 
-    public override void Handle(ref InstanceId target, ref ITargetedMessage message)
+    private void OnTargeted(in InstanceId target, in ITargetedMessage message)
     {
         TrackMessage(message.GetType());
     }
 
-    public override void Handle(ref InstanceId source, ref IBroadcastMessage message)
+    private void OnBroadcast(in InstanceId source, in IBroadcastMessage message)
     {
         TrackMessage(message.GetType());
     }
@@ -287,6 +286,8 @@ public class MessageAnalytics : MessageHandler
             UnityEngine.Debug.Log($"{kvp.Key.Name}: {kvp.Value.count} messages, avg {avg:F2}ms");
         }
     }
+
+    public void Dispose() => _token.Dispose();
 }
 ```
 

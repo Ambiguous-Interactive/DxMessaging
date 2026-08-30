@@ -465,12 +465,12 @@
     {
       "name": "unity-editor-conventions",
       "path": ".llm/skills/unity-editor-conventions/SKILL.md",
-      "description": "Three Unity-side contracts for DxMessaging: the MessageAwareComponent base-call contract (Awake, OnEnable, OnDisable, OnDestroy, RegisterMessageHandlers must chain base.<method>(), enforced by DXMSG006-DXMSG010 plus an IL scanner, inspector overlay, runtime breadcrumb, and meta-test); the package-owned editor design system built on DxMessagingEditorTheme, UI Toolkit, and EditorWindowTestUtility; and the devcontainer named-volume cache contract in .devcontainer/cache-contract.sh. Use when subclassing MessageAwareComponent, adding a guarded lifecycle method, styling or testing an editor window or inspector, or adding/diagnosing a devcontainer cache mount.",
+      "description": "Unity-side contracts for DxMessaging: MessageAwareComponent base calls and diagnostics, the package-owned editor design system, safe consumer source migration commands, and the devcontainer cache contract. Use when subclassing MessageAwareComponent, adding a guarded lifecycle method, styling or testing an editor window or inspector, writing a source upgrade command under Assets, or changing a devcontainer cache mount.",
       "metadata": {
         "category": "unity",
         "tags": "unity, analyzer, lifecycle, diagnostics, messageawarecomponent, base-call, dxmsg006"
       },
-      "lineCount": 127,
+      "lineCount": 150,
       "references": [
         ".llm/skills/unity-editor-conventions/references/base-call-contract.md",
         ".llm/skills/unity-editor-conventions/references/devcontainer-cache-contract.md",

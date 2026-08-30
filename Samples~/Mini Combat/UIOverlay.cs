@@ -37,12 +37,12 @@ public sealed class UIOverlay : MessageAwareComponent
         );
     }
 
-    private void OnSettingsChanged(ref VideoSettingsChanged message)
+    private void OnSettingsChanged(in VideoSettingsChanged message)
     {
         resolutionText = $"Resolution: {message.width} x {message.height}";
     }
 
-    private void OnAnyDamage(ref InstanceId source, ref TookDamage message)
+    private void OnAnyDamage(in InstanceId source, in TookDamage message)
     {
         int damage = Mathf.Max(0, message.amount);
         totalDamageObserved += damage;

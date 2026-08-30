@@ -87,7 +87,7 @@ namespace DxMessaging.Samples.DI.VContainer
                 lease.Dispose();
             }
 
-            private void OnScoreUpdated(ref ScoreUpdated message)
+            private void OnScoreUpdated(in ScoreUpdated message)
             {
                 observedScores = message.Value;
                 Debug.Log($"Score observed: {observedScores}");

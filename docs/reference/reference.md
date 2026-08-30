@@ -33,7 +33,7 @@ MessageRegistrationHandle RegisterUntargeted<T>(
     int priority = 0
 );
 
-// Fast handler (zero-allocation, receives message by ref)
+// Fast handler (zero-allocation, receives message by readonly reference)
 MessageRegistrationHandle RegisterUntargeted<T>(
     MessageHandler.FastHandler<T> handler,
     int priority = 0

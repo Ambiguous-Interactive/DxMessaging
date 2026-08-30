@@ -19,7 +19,7 @@ public void DocumentedDamageMessagePatternCompiles()
 
     int damageReceived = 0;
     MessageRegistrationHandle handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-        (ref SimpleUntargetedMessage msg) => damageReceived++
+        (in SimpleUntargetedMessage msg) => damageReceived++
     );
 
     SimpleUntargetedMessage message = new SimpleUntargetedMessage();
@@ -36,7 +36,7 @@ public void DocumentedDamageMessagePatternCompiles()
 
 - [ ] All code samples paste into a real project without errors
 - [ ] API method names match the actual codebase
-- [ ] Handler signatures use `ref TMessage` pattern
+- [ ] Fast handler signatures use `in TMessage` pattern
 - [ ] Version annotations are accurate
 - [ ] Links to related docs work
 

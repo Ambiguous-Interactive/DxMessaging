@@ -55,7 +55,7 @@ See the [Install Guide](getting-started/install.md) for scoped registry, Git URL
   </section>
   <section>
     <h3>High performance</h3>
-    <p>Struct messages and by-ref handlers keep steady-state dispatch at zero allocation. Type-indexed routing stays O(1); see the current CI table for measured scenario costs.</p>
+    <p>Struct messages and readonly by-reference handlers keep steady-state dispatch at zero allocation. Type-indexed routing stays O(1); see the current CI table for measured scenario costs.</p>
   </section>
 </div>
 

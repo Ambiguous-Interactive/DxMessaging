@@ -299,25 +299,25 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 case MessageKind.Untargeted:
                     return token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => { }
+                        (in SimpleUntargetedMessage _) => { }
                     );
                 case MessageKind.Targeted:
                     return token.RegisterTargeted<SimpleTargetedMessage>(
                         context,
-                        (ref SimpleTargetedMessage _) => { }
+                        (in SimpleTargetedMessage _) => { }
                     );
                 case MessageKind.Broadcast:
                     return token.RegisterBroadcast<SimpleBroadcastMessage>(
                         context,
-                        (ref SimpleBroadcastMessage _) => { }
+                        (in SimpleBroadcastMessage _) => { }
                     );
                 case MessageKind.TargetedWithoutTargeting:
                     return token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                        (ref InstanceId _, ref SimpleTargetedMessage __) => { }
+                        (in InstanceId _, in SimpleTargetedMessage __) => { }
                     );
                 case MessageKind.BroadcastWithoutSource:
                     return token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                        (ref InstanceId _, ref SimpleBroadcastMessage __) => { }
+                        (in InstanceId _, in SimpleBroadcastMessage __) => { }
                     );
                 default:
                     throw new ArgumentOutOfRangeException(

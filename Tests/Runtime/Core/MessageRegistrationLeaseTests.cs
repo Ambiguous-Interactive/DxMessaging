@@ -58,7 +58,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(null, _ => ++activations, null, null),
@@ -98,7 +98,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -190,7 +190,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
             };
@@ -241,7 +241,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -302,7 +302,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -367,7 +367,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -449,7 +449,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     handle = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -528,7 +528,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -600,7 +600,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -670,11 +670,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
                 },
@@ -756,7 +756,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled
+                        (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
                 Lifecycle = new MessageRegistrationLifecycle(
@@ -820,11 +820,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 Configure = token =>
                 {
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 0
                     );
                     _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => ++handled,
+                        (in SimpleUntargetedMessage _) => ++handled,
                         priority: 1
                     );
                 },

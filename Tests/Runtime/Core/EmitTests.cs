@@ -46,7 +46,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     _ = ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => ++count
+                        (in SimpleUntargetedMessage _) => ++count
                     );
                     SimpleUntargetedMessage message = new();
                     for (int i = 0; i < numEmissions; ++i)
@@ -63,7 +63,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         component,
-                        (ref SimpleTargetedMessage _) => ++count
+                        (in SimpleTargetedMessage _) => ++count
                     );
                     SimpleTargetedMessage message = new();
                     for (int i = 0; i < numEmissions; ++i)
@@ -80,7 +80,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         component,
-                        (ref SimpleBroadcastMessage _) => ++count
+                        (in SimpleBroadcastMessage _) => ++count
                     );
                     SimpleBroadcastMessage message = new();
                     for (int i = 0; i < numEmissions; ++i)

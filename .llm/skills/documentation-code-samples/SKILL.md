@@ -76,7 +76,7 @@ explicit text-pattern guard.
 
 - Samples must be Correct (compiles), Complete (`using` directives and enclosing class
   present), Current (no deprecated API), and Tested.
-- Handler signatures take the message by reference: `private void HandleDamage(ref DamageMessage message)`.
+- Fast handler signatures take the message by readonly reference: `private void HandleDamage(in DamageMessage message)`.
 - Register through the token in `RegisterMessageHandlers`, calling `base.RegisterMessageHandlers()` first.
 - For anti-pattern examples of Markdown itself, fence with `text` or `none` rather than
   `markdown` so documentation linters do not treat the sample as real content. C# anti-patterns

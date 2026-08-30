@@ -179,7 +179,7 @@ heal.EmitAt(this);
 ```csharp
 // Listen to ALL heals, regardless of target
 _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
-void OnAnyHeal(ref InstanceId target, ref Heal msg)
+void OnAnyHeal(in InstanceId target, in Heal msg)
 {
     Debug.Log($"Heal requested for {target}: {msg.amount}");
     // You get the target that received the request.
@@ -187,7 +187,7 @@ void OnAnyHeal(ref InstanceId target, ref Heal msg)
 
 // Listen to ALL damage, regardless of source
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
-void OnAnyDamage(ref InstanceId source, ref TookDamage msg)
+void OnAnyDamage(in InstanceId source, in TookDamage msg)
 {
     Debug.Log($"{source} took {msg.amount} damage");
     // You get WHO took damage as a parameter!
@@ -438,7 +438,7 @@ public class UIManager : MessageAwareComponent
         _ = Token.RegisterUntargeted<WaveStarted>(OnWaveStarted);
     }
 
-    void OnWaveStarted(ref WaveStarted msg)
+    void OnWaveStarted(in WaveStarted msg)
     {
         Debug.Log($"Wave {msg.waveNumber} started!");
     }
@@ -453,7 +453,7 @@ public class AchievementTracker : MessageAwareComponent
         _ = Token.RegisterBroadcastWithoutSource<EnemyDied>(OnAnyEnemyDied);
     }
 
-    void OnAnyEnemyDied(ref InstanceId source, ref EnemyDied msg)
+    void OnAnyEnemyDied(in InstanceId source, in EnemyDied msg)
     {
         Debug.Log($"Enemy {source} died for {msg.score} points");
     }

@@ -57,7 +57,7 @@ public sealed class GlobalOverlay : MessageAwareComponent
         _ = Token.RegisterUntargeted<Resumed>(m => HidePause());
     }
 
-    private void OnSceneLoaded(ref SceneLoaded m) => RebuildUIForScene(m.buildIndex);
+    private void OnSceneLoaded(in SceneLoaded m) => RebuildUIForScene(m.buildIndex);
 }
 ```
 

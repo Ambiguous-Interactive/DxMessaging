@@ -457,7 +457,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<ComplexUntargetedMessage>(
                         scenario,
                         token,
-                        (ref ComplexUntargetedMessage message) => onHandled(message.firstId)
+                        (in ComplexUntargetedMessage message) => onHandled(message.firstId)
                     );
                 }
                 case MessageKind.Targeted:
@@ -466,7 +466,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref ComplexTargetedMessage message) => onHandled(message.firstId)
+                        (in ComplexTargetedMessage message) => onHandled(message.firstId)
                     );
                 }
                 case MessageKind.Broadcast:
@@ -475,7 +475,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref ComplexBroadcastMessage message) => onHandled(message.firstId)
+                        (in ComplexBroadcastMessage message) => onHandled(message.firstId)
                     );
                 }
                 default:
@@ -503,7 +503,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargetedPostProcessor<ComplexUntargetedMessage>(
                         scenario,
                         token,
-                        (ref ComplexUntargetedMessage message) => onPostProcessed(message.firstId)
+                        (in ComplexUntargetedMessage message) => onPostProcessed(message.firstId)
                     );
                 }
                 case MessageKind.Targeted:
@@ -512,7 +512,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref ComplexTargetedMessage message) => onPostProcessed(message.firstId)
+                        (in ComplexTargetedMessage message) => onPostProcessed(message.firstId)
                     );
                 }
                 case MessageKind.Broadcast:
@@ -521,7 +521,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref ComplexBroadcastMessage message) => onPostProcessed(message.firstId)
+                        (in ComplexBroadcastMessage message) => onPostProcessed(message.firstId)
                     );
                 }
                 default:

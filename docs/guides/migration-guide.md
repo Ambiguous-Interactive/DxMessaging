@@ -2,6 +2,60 @@
 
 This guide helps you introduce DxMessaging into an existing Unity project **gradually and pragmatically**. You don't need to rewrite everything at once.
 
+## Migrating to 4.0.0
+
+DxMessaging 4.0 makes fast handlers and post-processors readonly. Change explicit handler
+parameters from `ref` to `in`:
+
+```csharp
+// 3.x
+void OnDamageV3(ref ApplyDamage message) { }
+
+// 4.0
+void OnDamageV4(in ApplyDamage message) { }
+```
+
+To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
+Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
+scans C# scripts under `Assets`, updates callbacks used by recognized DxMessaging registrations,
+explicit `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It does not
+change package or generated sources, interceptors, emission calls, comments, or strings.
+
+The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
+UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
+replacement. It attempts to restore every earlier write if a later write fails. If a script changes
+again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
+leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
+ambiguous receivers unchanged. It also leaves a callback unchanged when its newly readonly
+parameter is passed as a `ref` or `out` argument, except for the matching `base` call in a changed
+`MessageAwareComponent` override, which it can update safely. The tool detects callbacks passed
+directly to both a handler and an interceptor in the same script. It lists these cases in the
+Console for manual review. Review project-wide callback uses, inspect the diff, and let Unity
+compile before committing the migration.
+
+Apply the same change to both parameters of callbacks that receive a target or source:
+
+```csharp
+void OnDamage(in InstanceId source, in TookDamage message) { }
+```
+
+Overrides of `MessageAwareComponent.HandleStringGameObjectMessage`,
+`HandleStringComponentMessage`, and `HandleGlobalStringMessage` must also change their message
+parameter from `ref` to `in`.
+
+Keep interceptor parameters and emitted message variables as `ref`. Interceptors remain the
+supported place to mutate a payload or its routing context before handlers observe it.
+
+Rebuild precompiled assemblies and plugins that reference `MessageHandler.FastHandler<T>`,
+`MessageHandler.FastHandlerWithContext<T>`, or the changed `MessageAwareComponent` virtual methods
+because their metadata changed. Prefer `readonly struct` messages and readonly instance members;
+calling a non-readonly member through an `in` parameter can make the compiler create a defensive
+copy. Roslynator rule RCS1242 also reports an `in` parameter whose concrete struct type is not
+declared `readonly`. Mark the message struct `readonly` when its fields and behavior are already
+immutable. Keep intentionally mutable messages mutable for interceptor use and configure RCS1242
+for those handler declarations instead. For class messages, `in` protects the reference itself but
+does not make the referenced object's fields immutable.
+
 ## Philosophy: Start Small, Prove Value
 
 ### Don't do this
@@ -36,7 +90,7 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
            base.RegisterMessageHandlers();
            _ = Token.RegisterUntargeted<TestMessage>(OnTest);
        }
-       void OnTest(ref TestMessage m) => Debug.Log($"Got {m.value}");
+       void OnTest(in TestMessage m) => Debug.Log($"Got {m.value}");
    }
 
    // In another script:
@@ -150,7 +204,7 @@ public class HealthBar : MessageAwareComponent {
         _ = Token.RegisterGameObjectBroadcast<HealthChanged>(playerObject, OnHealthChanged);
     }
 
-    void OnHealthChanged(ref HealthChanged msg) => UpdateBar(msg.newHealth);
+    void OnHealthChanged(in HealthChanged msg) => UpdateBar(msg.newHealth);
 }
 ```
 
@@ -289,7 +343,7 @@ public class ModernBridge : MessageAwareComponent {
         _ = Token.RegisterUntargeted<NewMessage>(OnMessage);
     }
 
-    void OnMessage(ref NewMessage msg) {
+    void OnMessage(in NewMessage msg) {
         LegacyEvent?.Invoke(msg.value); // Fire old event
     }
 }
@@ -520,7 +574,7 @@ public sealed class InventoryService : IStartable, IDisposable
         lease.Dispose();
     }
 
-    private static void OnInventoryChanged(ref InventoryChanged message)
+    private static void OnInventoryChanged(in InventoryChanged message)
     {
         // respond to updates
     }

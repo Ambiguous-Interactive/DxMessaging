@@ -47,9 +47,9 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (counts[1] == 0)
                     {
                         token.RegisterGlobalAcceptAll(
-                            (ref IUntargetedMessage _) => counts[1]++,
-                            (ref InstanceId _, ref ITargetedMessage _) => counts[1]++,
-                            (ref InstanceId _, ref IBroadcastMessage _) => counts[1]++
+                            (in IUntargetedMessage _) => counts[1]++,
+                            (in InstanceId _, in ITargetedMessage _) => counts[1]++,
+                            (in InstanceId _, in IBroadcastMessage _) => counts[1]++
                         );
                     }
                     counts[0]++;
@@ -102,7 +102,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
@@ -111,7 +111,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:

@@ -153,17 +153,17 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void HandleUntargeted(ref IUntargetedMessage message)
+            void HandleUntargeted(in IUntargetedMessage message)
             {
                 ++untargetedCount;
             }
 
-            void HandleTargeted(ref InstanceId target, ref ITargetedMessage message)
+            void HandleTargeted(in InstanceId target, in ITargetedMessage message)
             {
                 ++targetedCount;
             }
 
-            void HandleBroadcast(ref InstanceId source, ref IBroadcastMessage message)
+            void HandleBroadcast(in InstanceId source, in IBroadcastMessage message)
             {
                 ++broadcastCount;
             }

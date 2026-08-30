@@ -29,8 +29,8 @@ public sealed class HealthComponent : MessageAwareComponent
         _ = Token.RegisterUntargeted<WorldRegenerated>(OnWorldRegenerated);
     }
 
-    private void OnApplyDamage(ref ApplyDamage m) => Apply(m.amount);
-    private void OnWorldRegenerated(ref WorldRegenerated m) => Reset();
+    private void OnApplyDamage(in ApplyDamage m) => Apply(m.amount);
+    private void OnWorldRegenerated(in WorldRegenerated m) => Reset();
 }
 ```
 
@@ -88,8 +88,8 @@ public sealed class InventoryUI : UnityEngine.MonoBehaviour
     private void OnEnable() => _token.Enable();
     private void OnDisable() => _token.Disable();
 
-    private void OnWorld(ref WorldRegenerated m) { /* update UI */ }
-    private void OnDamage(ref ApplyDamage m) { /* apply damage */ }
+    private void OnWorld(in WorldRegenerated m) { /* update UI */ }
+    private void OnDamage(in ApplyDamage m) { /* apply damage */ }
 }
 ```
 
@@ -107,7 +107,7 @@ public sealed class AlwaysListening : MessageAwareComponent
         Token.Enable(); // explicitly enable once
     }
 
-    private void OnEvent(ref MyEvent m) { /* ... */ }
+    private void OnEvent(in MyEvent m) { /* ... */ }
 }
 ```
 

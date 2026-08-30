@@ -97,7 +97,7 @@ private bool ValidateMessage<TMessage>(ref TMessage message)
 /// <code>
 /// MessageRegistrationHandle handle = token.RegisterUntargeted<DifficultyChanged>(HandleDifficulty);
 ///
-/// private void HandleDifficulty(ref DifficultyChanged message)
+/// private void HandleDifficulty(in DifficultyChanged message)
 /// {
 ///     currentDifficulty = message.newLevel;
 /// }

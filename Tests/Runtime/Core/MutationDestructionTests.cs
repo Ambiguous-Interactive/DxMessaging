@@ -116,7 +116,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = tokenA.RegisterComponentTargeted(
                 targetComp,
-                (ref SimpleTargetedMessage _) =>
+                (in SimpleTargetedMessage _) =>
                 {
                     firstCount++;
                     Object.Destroy(b);
@@ -126,7 +126,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = tokenB.RegisterComponentTargeted(
                 targetComp,
-                (ref SimpleTargetedMessage _) =>
+                (in SimpleTargetedMessage _) =>
                 {
                     secondCount++;
                 }
@@ -170,7 +170,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
 
             _ = tokenA.RegisterTargetedWithoutTargeting(
-                (ref InstanceId _, ref SimpleTargetedMessage _) =>
+                (in InstanceId _, in SimpleTargetedMessage _) =>
                 {
                     firstCount++;
                     Object.Destroy(b);
@@ -179,7 +179,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             _ = tokenB.RegisterTargetedWithoutTargeting(
-                (ref InstanceId _, ref SimpleTargetedMessage _) =>
+                (in InstanceId _, in SimpleTargetedMessage _) =>
                 {
                     secondCount++;
                 }
@@ -231,7 +231,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = tokenA.RegisterComponentBroadcast(
                 sourceComp,
-                (ref SimpleBroadcastMessage _) =>
+                (in SimpleBroadcastMessage _) =>
                 {
                     firstCount++;
                     Object.Destroy(b);
@@ -241,7 +241,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = tokenB.RegisterComponentBroadcast(
                 sourceComp,
-                (ref SimpleBroadcastMessage _) =>
+                (in SimpleBroadcastMessage _) =>
                 {
                     secondCount++;
                 }
@@ -292,7 +292,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
 
             _ = tokenA.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) =>
+                (in InstanceId _, in SimpleBroadcastMessage _) =>
                 {
                     firstCount++;
                     Object.Destroy(b);
@@ -301,7 +301,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             _ = tokenB.RegisterBroadcastWithoutSource(
-                (ref InstanceId _, ref SimpleBroadcastMessage _) =>
+                (in InstanceId _, in SimpleBroadcastMessage _) =>
                 {
                     secondCount++;
                 }
@@ -337,7 +337,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => onInvoked(),
+                        (in SimpleUntargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -347,7 +347,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleTargetedMessage _) => onInvoked(),
+                        (in SimpleTargetedMessage _) => onInvoked(),
                         priority
                     );
                 }
@@ -357,7 +357,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleBroadcastMessage _) => onInvoked(),
+                        (in SimpleBroadcastMessage _) => onInvoked(),
                         priority
                     );
                 }

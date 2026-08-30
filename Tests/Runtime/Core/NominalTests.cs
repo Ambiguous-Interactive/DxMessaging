@@ -1,4 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -805,7 +806,7 @@ namespace DxMessaging.Tests.Runtime.Core
             HashSet<MessageRegistrationHandle> handles = new();
             try
             {
-                void UntargetedPostProcessor(ref SimpleUntargetedMessage message)
+                void UntargetedPostProcessor(in SimpleUntargetedMessage message)
                 {
                     if (lastSeenUntargetedCount == null)
                     {
@@ -817,7 +818,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     lastSeenUntargetedCount = unTargetedCount;
                 }
 
-                void GameObjectTargetedPostProcessor(ref SimpleTargetedMessage message)
+                void GameObjectTargetedPostProcessor(in SimpleTargetedMessage message)
                 {
                     if (lastSeenTargetedCount == null)
                     {
@@ -827,7 +828,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.AreEqual(lastSeenTargetedCount + 1, targetedCount);
                 }
 
-                void ComponentTargetedPostProcessor(ref SimpleTargetedMessage message)
+                void ComponentTargetedPostProcessor(in SimpleTargetedMessage message)
                 {
                     if (lastSeenComponentTargetedCount == null)
                     {
@@ -838,8 +839,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 void TargetedWithoutTargetingPostProcessor(
-                    ref InstanceId target,
-                    ref SimpleTargetedMessage message
+                    in InstanceId target,
+                    in SimpleTargetedMessage message
                 )
                 {
                     switch (target.Object)
@@ -878,7 +879,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                 }
 
-                void GameObjectBroadcastPostProcessor(ref SimpleBroadcastMessage message)
+                void GameObjectBroadcastPostProcessor(in SimpleBroadcastMessage message)
                 {
                     if (lastSeenBroadcastCount == null)
                     {
@@ -888,7 +889,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     Assert.AreEqual(lastSeenBroadcastCount + 1, broadcastCount);
                 }
 
-                void ComponentBroadcastPostProcessor(ref SimpleBroadcastMessage message)
+                void ComponentBroadcastPostProcessor(in SimpleBroadcastMessage message)
                 {
                     if (lastSeenComponentBroadcastCount == null)
                     {
@@ -899,8 +900,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 void BroadcastWithoutSourcePostProcessor(
-                    ref InstanceId source,
-                    ref SimpleBroadcastMessage message
+                    in InstanceId source,
+                    in SimpleBroadcastMessage message
                 )
                 {
                     switch (source.Object)
@@ -1253,7 +1254,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++untargetedCount;
             }
 
-            void HandleFastUntargeted(ref IUntargetedMessage message)
+            void HandleFastUntargeted(in IUntargetedMessage message)
             {
                 ++fastUntargetedCount;
             }
@@ -1263,7 +1264,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++targetedCount;
             }
 
-            void HandleFastTargeted(ref InstanceId target, ref ITargetedMessage message)
+            void HandleFastTargeted(in InstanceId target, in ITargetedMessage message)
             {
                 ++fastTargetedCount;
             }
@@ -1273,7 +1274,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++broadcastCount;
             }
 
-            void HandleFastBroadcast(ref InstanceId source, ref IBroadcastMessage message)
+            void HandleFastBroadcast(in InstanceId source, in IBroadcastMessage message)
             {
                 ++fastBroadcastCount;
             }
@@ -1490,7 +1491,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++callCount;
             }
 
-            void HandleFastUntargeted(ref SimpleUntargetedMessage message)
+            void HandleFastUntargeted(in SimpleUntargetedMessage message)
             {
                 ++fastCallCount;
             }
@@ -1665,7 +1666,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++callCount;
             }
 
-            void HandleFastTargeted(ref SimpleTargetedMessage message)
+            void HandleFastTargeted(in SimpleTargetedMessage message)
             {
                 ++fastCallCount;
             }
@@ -1842,7 +1843,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++callCount;
             }
 
-            void HandleFastBroadcast(ref SimpleBroadcastMessage message)
+            void HandleFastBroadcast(in SimpleBroadcastMessage message)
             {
                 ++fastCallCount;
             }
@@ -1850,4 +1851,5 @@ namespace DxMessaging.Tests.Runtime.Core
     }
 }
 
+#pragma warning restore RCS1242
 #endif

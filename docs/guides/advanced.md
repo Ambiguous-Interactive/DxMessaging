@@ -56,8 +56,8 @@ public sealed class PauseOverlay : MonoBehaviour
     private void OnEnable()  => _token.Enable();
     private void OnDisable() => _token.Disable();
 
-    private void OnPaused(ref GamePaused m)  => Show();
-    private void OnResumed(ref GameResumed m) { Hide(); _token.UnregisterAll(); }
+    private void OnPaused(in GamePaused m)  => Show();
+    private void OnResumed(in GameResumed m) { Hide(); _token.UnregisterAll(); }
 }
 ```
 
@@ -85,7 +85,7 @@ public sealed class PersistentListener : MessageAwareComponent
         Token.Enable(); // explicitly enable once
     }
 
-    private void OnMyEvent(ref MyEvent m) => DoWork();
+    private void OnMyEvent(in MyEvent m) => DoWork();
 }
 ```
 
@@ -296,7 +296,7 @@ public sealed class Spawner : MonoBehaviour {
 
 // Consumer (Unity)
 _ = token.RegisterComponentBroadcast<Spawned>(spawner, OnSpawned);
-void OnSpawned(ref Spawned m) => Refresh();
+void OnSpawned(in Spawned m) => Refresh();
 ```
 
 More advanced use cases

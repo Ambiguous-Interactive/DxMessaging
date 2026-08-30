@@ -58,7 +58,7 @@ Then check the matching cause below:
 ## Allocations and boxing
 
 - Prefer struct messages implementing the generic interfaces: `I*Message<T>`.
-- Use by-ref handler overloads to avoid copies.
+- Use readonly by-reference handler overloads to avoid copies.
 - Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while ordinary typed steady-state struct dispatch is allocation-free. Struct global accept-all dispatch boxes the message, and emission-site stack-trace capture allocates while enabled. See the [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
 
 ## Emitting while disabled

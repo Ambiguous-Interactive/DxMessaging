@@ -200,7 +200,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     for (int index = 0; index < cardinality; ++index)
                     {
                         int capturedIndex = index;
-                        _handlers[index] = (ref CardinalityMessage message) =>
+                        _handlers[index] = (in CardinalityMessage message) =>
                         {
                             _ = capturedIndex;
                             ++_calls;
@@ -316,7 +316,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             }
 
-            private void HandleSame(ref CardinalityMessage message)
+            private void HandleSame(in CardinalityMessage message)
             {
                 ++_calls;
             }

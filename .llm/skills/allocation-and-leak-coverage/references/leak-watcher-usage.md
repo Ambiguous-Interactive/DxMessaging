@@ -78,7 +78,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     .RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => { }
+                        (in SimpleUntargetedMessage _) => { }
                     );
                 token.RemoveRegistration(handle);
             }

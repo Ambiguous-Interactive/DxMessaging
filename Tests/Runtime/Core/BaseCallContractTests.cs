@@ -115,7 +115,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.Throws<System.NullReferenceException>(
                 () =>
                     _ = component.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                        (ref SimpleUntargetedMessage _) => { }
+                        (in SimpleUntargetedMessage _) => { }
                     ),
                 "[{0}] Registering through a null token must throw, not silently no-op.",
                 scenario.Kind
@@ -881,7 +881,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (ref SimpleUntargetedMessage _) => onInvoked()
+                        (in SimpleUntargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Targeted:
@@ -890,7 +890,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleTargetedMessage _) => onInvoked()
+                        (in SimpleTargetedMessage _) => onInvoked()
                     );
                 }
                 case MessageKind.Broadcast:
@@ -899,7 +899,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (ref SimpleBroadcastMessage _) => onInvoked()
+                        (in SimpleBroadcastMessage _) => onInvoked()
                     );
                 }
                 default:

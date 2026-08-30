@@ -195,8 +195,8 @@ public class HealthDisplay : MessageAwareComponent
         _ = Token.RegisterUntargeted<GamePaused>(OnGamePaused);
     }
 
-    private void OnPlayerDamaged(ref TookDamage msg) { /* update display */ }
-    private void OnGamePaused(ref GamePaused msg) { /* pause animations */ }
+    private void OnPlayerDamaged(in TookDamage msg) { /* update display */ }
+    private void OnGamePaused(in GamePaused msg) { /* pause animations */ }
 }
 ```
 
@@ -305,7 +305,7 @@ Sometimes you want to see all messages of a type, regardless of their target or 
 // See every Heal message, no matter who it's for
 Token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
 
-void OnAnyHeal(ref InstanceId target, ref Heal msg)
+void OnAnyHeal(in InstanceId target, in Heal msg)
 {
     // 'target' tells you who received the heal request
     Debug.Log($"Heal requested for {target}: {msg.amount}");
@@ -318,7 +318,7 @@ void OnAnyHeal(ref InstanceId target, ref Heal msg)
 // See every TookDamage message, no matter who broadcast it
 Token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
 
-void OnAnyDamage(ref InstanceId source, ref TookDamage msg)
+void OnAnyDamage(in InstanceId source, in TookDamage msg)
 {
     // 'source' tells you who took damage
     Debug.Log($"{source} took {msg.amount} damage");

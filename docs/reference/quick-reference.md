@@ -62,24 +62,24 @@ var hit   = new TookDamage(5);  hit.EmitComponentBroadcast(this);
 using DxMessaging.Core; // InstanceId
 // Untargeted
 _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoaded);
-void OnSceneLoaded(ref SceneLoaded m) { /* ... */ }
+void OnSceneLoaded(in SceneLoaded m) { /* ... */ }
 
 // Targeted: to this component or gameObject
 _ = token.RegisterComponentTargeted<Heal>(this, OnHeal);
 _ = token.RegisterGameObjectTargeted<Heal>(gameObject, OnHeal);
-void OnHeal(ref Heal m) { /* ... */ }
+void OnHeal(in Heal m) { /* ... */ }
 
 // Broadcast: from this component or gameObject
 _ = token.RegisterComponentBroadcast<TookDamage>(this, OnDamageFromMe);
 _ = token.RegisterGameObjectBroadcast<TookDamage>(gameObject, OnDamageFromMe);
-void OnDamageFromMe(ref TookDamage m) { /* ... */ }
+void OnDamageFromMe(in TookDamage m) { /* ... */ }
 
 // Listen to all targets/sources
 _ = token.RegisterTargetedWithoutTargeting<Heal>(OnAnyHeal);
-void OnAnyHeal(ref InstanceId target, ref Heal m) { /* ... */ }
+void OnAnyHeal(in InstanceId target, in Heal m) { /* ... */ }
 
 _ = token.RegisterBroadcastWithoutSource<TookDamage>(OnAnyDamage);
-void OnAnyDamage(ref InstanceId src, ref TookDamage m) { /* ... */ }
+void OnAnyDamage(in InstanceId src, in TookDamage m) { /* ... */ }
 ```
 
 ## Register (DI / services)
@@ -106,7 +106,7 @@ public sealed class DamageSystem : IStartable, IDisposable
 
     public void Dispose() => lease.Dispose();
 
-    private static void OnCombatStarted(ref CombatStarted message) { /* respond */ }
+    private static void OnCombatStarted(in CombatStarted message) { /* respond */ }
 }
 ```
 
@@ -156,7 +156,7 @@ Token registrations remain token-owned:
 
 ```csharp
 _ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
-    (ref SceneLoaded m) => metrics.RecordProcessedSceneLoad(m.buildIndex));
+    (in SceneLoaded m) => metrics.RecordProcessedSceneLoad(m.buildIndex));
 ```
 
 Direct bus registrations are not token-owned. Retain each `MessageBusRegistration` on the
@@ -192,7 +192,7 @@ public sealed class ScenePresenter : MessageAwareComponent
         base.OnDestroy();
     }
 
-    private static void OnSceneLoaded(ref SceneLoaded message) { /* present scene */ }
+    private static void OnSceneLoaded(in SceneLoaded message) { /* present scene */ }
 }
 ```
 
@@ -263,14 +263,14 @@ Interceptors -> Global Accept-All -> Handlers<T> @ source
 >
 > - Lower priority values run earlier
 > - Same priority preserves registration order
-> - Within a priority, fast (by-ref) handlers run before action handlers
+> - Within a priority, fast (readonly by-reference) handlers run before action handlers
 
 ## API Quick Reference
 
 ### Token: Untargeted
 
 ```csharp
-// Choose either the Action or by-ref overload.
+// Choose either the Action or readonly by-reference overload.
 _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoaded, priority: 0);
 _ = token.RegisterUntargeted<SceneLoaded>(OnSceneLoadedFast, priority: 0);
 
@@ -280,8 +280,8 @@ _ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
     priority: 0);
 
 void OnSceneLoaded(SceneLoaded message) => scenePresenter.Show(message.buildIndex);
-void OnSceneLoadedFast(ref SceneLoaded message) => scenePresenter.Show(message.buildIndex);
-void RecordProcessedSceneLoad(ref SceneLoaded message) =>
+void OnSceneLoadedFast(in SceneLoaded message) => scenePresenter.Show(message.buildIndex);
+void RecordProcessedSceneLoad(in SceneLoaded message) =>
     metrics.RecordProcessedSceneLoad(message.buildIndex);
 ```
 
@@ -298,8 +298,8 @@ _ = token.RegisterTargetedPostProcessor<Heal>(
     RecordProcessedHealRequest,
     priority: 0);
 
-void OnHeal(ref Heal message) => health.Apply(message.amount);
-void RecordProcessedHealRequest(ref Heal message) =>
+void OnHeal(in Heal message) => health.Apply(message.amount);
+void RecordProcessedHealRequest(in Heal message) =>
     metrics.RecordProcessedHealRequest(message.amount);
 ```
 
@@ -314,9 +314,9 @@ _ = token.RegisterTargetedWithoutTargetingPostProcessor<Heal>(
     RecordProcessedHealRequest,
     priority: 0);
 
-void OnAnyHeal(ref InstanceId target, ref Heal message) =>
+void OnAnyHeal(in InstanceId target, in Heal message) =>
     combatFeed.ShowRequestedHeal(target, message.amount);
-void RecordProcessedHealRequest(ref InstanceId target, ref Heal message) =>
+void RecordProcessedHealRequest(in InstanceId target, in Heal message) =>
     metrics.RecordProcessedHealRequest(target, message.amount);
 ```
 
@@ -333,8 +333,8 @@ _ = token.RegisterBroadcastPostProcessor<TookDamage>(
     RecordProcessedDamageMessage,
     priority: 0);
 
-void OnDamage(ref TookDamage message) => damageEffects.Play(message.amount);
-void RecordProcessedDamageMessage(ref TookDamage message) =>
+void OnDamage(in TookDamage message) => damageEffects.Play(message.amount);
+void RecordProcessedDamageMessage(in TookDamage message) =>
     replay.RecordProcessedDamageMessage(message.amount);
 ```
 
@@ -349,9 +349,9 @@ _ = token.RegisterBroadcastWithoutSourcePostProcessor<TookDamage>(
     RecordProcessedDamageMessage,
     priority: 0);
 
-void OnAnyDamage(ref InstanceId source, ref TookDamage message) =>
+void OnAnyDamage(in InstanceId source, in TookDamage message) =>
     damageNumbers.Show(source, message.amount);
-void RecordProcessedDamageMessage(ref InstanceId source, ref TookDamage message) =>
+void RecordProcessedDamageMessage(in InstanceId source, in TookDamage message) =>
     replay.RecordProcessedDamageMessage(source, message.amount);
 ```
 
@@ -366,10 +366,10 @@ _ = token.RegisterGlobalAcceptAll(
 
 // Fast handler-based
 _ = token.RegisterGlobalAcceptAll(
-    (ref IUntargetedMessage message) => Debug.Log(message.MessageType),
-    (ref InstanceId target, ref ITargetedMessage message) =>
+    (in IUntargetedMessage message) => Debug.Log(message.MessageType),
+    (in InstanceId target, in ITargetedMessage message) =>
         Debug.Log($"{message.MessageType} to {target}"),
-    (ref InstanceId source, ref IBroadcastMessage message) =>
+    (in InstanceId source, in IBroadcastMessage message) =>
         Debug.Log($"{message.MessageType} from {source}")
 );
 ```
