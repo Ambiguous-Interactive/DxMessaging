@@ -8,6 +8,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     [Category("PerfGate")]
     public sealed class EmitGateClockReadIsRare
     {
@@ -349,5 +350,6 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
     }
+#pragma warning restore RCS1242
 }
 #endif

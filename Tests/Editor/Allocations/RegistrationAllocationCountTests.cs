@@ -13,6 +13,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     /// <summary>
     /// Locks in two registration-path allocation reductions:
     /// <list type="bullet">
@@ -562,5 +563,6 @@ namespace DxMessaging.Tests.Editor.Allocations
             return value == AllocationProbe.Unmeasured ? "n/a" : value.ToString();
         }
     }
+#pragma warning restore RCS1242
 }
 #endif

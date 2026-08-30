@@ -16,6 +16,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using NUnit.Framework;
     using UnityEngine;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     /// <summary>
     /// Locks in the zero-GC dispatch contract across the full register / emit /
     /// deregister surface. Each test below is a row in the allocation matrix
@@ -1958,5 +1959,6 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
     }
+#pragma warning restore RCS1242
 }
 #endif

@@ -12,6 +12,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     /// <summary>
     /// Extends <see cref="AllocationMatrixTests"/> with rows that the existing
     /// fixture intentionally skips: class-message dispatch (boxed reference
@@ -637,5 +638,6 @@ namespace DxMessaging.Tests.Editor.Allocations
             return true;
         }
     }
+#pragma warning restore RCS1242
 }
 #endif
