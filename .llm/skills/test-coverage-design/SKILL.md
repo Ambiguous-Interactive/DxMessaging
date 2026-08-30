@@ -32,6 +32,11 @@ Every feature, fix, and dispatch-path change must arrive with tests that span th
 
 Cover all five scenario categories, not just the first: normal / happy path, negative (error conditions), edge (boundaries such as `0`, `int.MaxValue`, `int.MinValue`, empty, null), unexpected usage (duplicate registration, out-of-order calls), and defensive "impossible" cases (a handler that throws mid-dispatch).
 
+For a value-type `IDisposable` scope or lease, unexpected-usage coverage must copy the value and
+dispose both copies, retry a stale copy after a replacement is active, and attempt out-of-order
+nested disposal. A mutable disposed flag belongs to one struct copy and does not prove shared
+idempotence.
+
 ### Parameterize by message kind - never write triplets
 
 - A test that exercises more than one dispatch kind MUST be a single method taking a `MessageScenario` via `[ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]`, using `ScenarioHarness.RegisterUntargeted` / `RegisterTargeted` / `RegisterBroadcast` and the matching `Emit*` overloads. NUnit expands one source method into three discovered tests.

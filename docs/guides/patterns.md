@@ -239,6 +239,13 @@ Untargeted messages flow anywhere; targeted/broadcast require a valid `InstanceI
 
 `ReflexiveMessage` mirrors `SendMessage*` patterns but keeps you in the bus pipeline.
 
+> **Fixed in v4.0.0:** Combine `Flat`, `Upwards`, and `Downwards` to traverse more than one
+> direction. Sends include disabled components and inactive GameObjects unless you also set
+> `OnlyIncludeActive`. A missing receiver is silent for every argument count. Nested reflexive
+> sends preserve the outer traversal, and receivers destroyed during traversal are skipped. Active
+> single-direction sends with zero or one argument keep Unity's native per-GameObject behavior, so a
+> reset from one receiver completes that GameObject before traversal stops.
+
 ```csharp
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;

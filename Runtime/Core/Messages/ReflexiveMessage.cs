@@ -10,8 +10,13 @@ namespace DxMessaging.Core.Messages
     /// - <c>Flat</c>: only the immediate <see cref="UnityEngine.GameObject"/>.
     /// - <c>Upwards</c>: up the transform parent chain.
     /// - <c>Downwards</c>: down into children.
-    /// - <c>OnlyIncludeActive</c>: exclude disabled components when sending.
+    /// - <c>OnlyIncludeActive</c>: exclude disabled components and components on inactive GameObjects.
     /// Modes can be combined via flags. See examples in <see cref="ReflexiveMessage"/>.
+    /// <para><b>Fixed in v4.0.0.</b> Combined traversal flags honor <c>OnlyIncludeActive</c>, and
+    /// sends without a matching receiver remain silent for every supported argument count. Nested
+    /// reflexive sends preserve the outer traversal, and receivers destroyed during traversal are skipped.
+    /// Active single-direction sends with zero or one argument retain Unity's native per-GameObject
+    /// dispatch semantics, so a reset from one receiver completes that GameObject before traversal stops.</para>
     /// </remarks>
     [Flags]
     public enum ReflexiveSendMode
@@ -38,7 +43,7 @@ namespace DxMessaging.Core.Messages
         Upwards = 1 << 2,
 
         /// <summary>
-        /// Skip disabled components during traversal.
+        /// Skip disabled components and components on inactive GameObjects during traversal.
         /// </summary>
         OnlyIncludeActive = 1 << 3,
     }

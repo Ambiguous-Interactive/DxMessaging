@@ -16,7 +16,6 @@ const {
   main,
   mirrorContent,
   parseFrontmatter,
-  renderIndexJson,
   renderIndexMarkdown,
   replaceRegistryBlock,
   validate,
@@ -504,17 +503,11 @@ test("writeArtifacts generates every artifact and artifactDrifts then reports no
       ".claude/skills/alpha/SKILL.md",
       ".claude/skills/beta/SKILL.md",
       ".llm/context.md",
-      ".llm/index.json",
       ".llm/index.md"
     ].sort()
   );
 
-  const index = JSON.parse(fs.readFileSync(path.join(root, ".llm", "index.json"), "utf8"));
-  assert.equal(index.skillCount, 2);
-  assert.deepEqual(
-    index.skills.map((skill) => skill.name),
-    ["alpha", "beta"]
-  );
+  assert.equal(fs.existsSync(path.join(root, ".llm", "index.json")), false);
   const indexMarkdown = fs.readFileSync(path.join(root, ".llm", "index.md"), "utf8");
   assert.match(indexMarkdown, /\.\/skills\/alpha\/SKILL\.md/);
   assert.match(fs.readFileSync(path.join(root, ".llm", "context.md"), "utf8"), /`alpha`, `beta`/);
@@ -780,14 +773,11 @@ test("every relative link in a SKILL.md or reference resolves on disk", () => {
   );
 });
 
-test("generated index artifacts are deterministic and cover every skill", () => {
+test("generated skill index is deterministic and covers every skill", () => {
   // Two independent reads of the same tree, so a nondeterministic walk or sort would diverge.
-  assert.equal(renderIndexJson(buildManifest()), renderIndexJson(buildManifest()));
   assert.equal(renderIndexMarkdown(buildManifest()), renderIndexMarkdown(buildManifest()));
 
   const manifest = buildManifest();
-  const parsed = JSON.parse(renderIndexJson(manifest));
-  assert.equal(parsed.skillCount, manifest.skills.length);
   const markdown = renderIndexMarkdown(manifest);
   for (const skill of manifest.skills) {
     assert.ok(markdown.includes(`./skills/${skill.name}/SKILL.md`), `index omits ${skill.name}`);

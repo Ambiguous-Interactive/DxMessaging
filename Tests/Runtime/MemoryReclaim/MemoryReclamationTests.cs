@@ -6,11 +6,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
     using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Configuration;
+    using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using DxMessaging.Core.Pooling;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Core;
+    using DxMessaging.Tests.Runtime.Scripts.Components;
     using NUnit.Framework;
     using UnityEngine;
 
@@ -532,6 +534,56 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _ = bus.Trim(force: false);
                 Assert.Greater(bus.GetContextDictPoolDiagnosticsForTesting().Cached, 0);
 
+                GameObject outerTarget = new(
+                    nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Outer",
+                    typeof(SimpleMessageAwareComponent)
+                );
+                _spawned.Add(outerTarget);
+                GameObject nestedTarget = new(
+                    nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Nested",
+                    typeof(SimpleMessageAwareComponent)
+                );
+                _spawned.Add(nestedTarget);
+                SimpleMessageAwareComponent outerComponent =
+                    outerTarget.GetComponent<SimpleMessageAwareComponent>();
+                SimpleMessageAwareComponent nestedComponent =
+                    nestedTarget.GetComponent<SimpleMessageAwareComponent>();
+                InstanceId nestedTargetId = nestedTarget;
+                nestedComponent.reflexiveTwoArgumentHandler = () => { };
+                outerComponent.reflexiveTwoArgumentHandler = () =>
+                {
+                    ReflexiveMessage nested = new(
+                        nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
+                        ReflexiveSendMode.Flat,
+                        3,
+                        4
+                    );
+                    nested.EmitTargeted(nestedTargetId, bus);
+                };
+                ReflexiveMessage outer = new(
+                    nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
+                    ReflexiveSendMode.Flat,
+                    1,
+                    2
+                );
+                InstanceId outerTargetId = outerTarget;
+                outer.EmitTargeted(outerTargetId, bus);
+
+                Assert.Greater(
+                    bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                    0,
+                    "Nested reflexive delivery must warm the per-bus state pool."
+                );
+                Assert.AreEqual(
+                    4,
+                    bus.ReflexiveDispatchPoolMaxRetained,
+                    "The reflexive state pool must inherit the initial retained-entry cap."
+                );
+                Assert.IsTrue(
+                    bus.ReflexiveDispatchPoolUsesLru,
+                    "The reflexive state pool must inherit the initial LRU policy."
+                );
+
                 settings._bufferMaxDistinctEntries = 0;
                 settings._bufferUseLruEviction = false;
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
@@ -540,6 +592,20 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.IsFalse(DxPools.ObjectLists.UseLru);
                 Assert.AreEqual(0, DxPools.DescribeAll().ObjectLists.Cached);
                 Assert.AreEqual(0, bus.GetContextDictPoolDiagnosticsForTesting().Cached);
+                Assert.AreEqual(
+                    0,
+                    bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                    "Lowering the cap to zero must drain retained reflexive states."
+                );
+                Assert.AreEqual(
+                    0,
+                    bus.ReflexiveDispatchPoolMaxRetained,
+                    "Hot reload must apply the zero cap to the reflexive state pool."
+                );
+                Assert.IsFalse(
+                    bus.ReflexiveDispatchPoolUsesLru,
+                    "Hot reload must apply the LIFO policy to the reflexive state pool."
+                );
                 GC.KeepAlive(bus);
             }
             finally

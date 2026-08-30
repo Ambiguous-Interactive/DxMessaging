@@ -59,8 +59,8 @@ folder because `Resources.Load` would not find it there.
 | Name                           | C# property                   | Type  | Default                                      | Min | Tooltip                                                                                                                                                                                                                 | Hot-reload | When to change                                                                                                                |
 | ------------------------------ | ----------------------------- | ----- | -------------------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Idle Eviction Seconds          | `IdleEvictionSeconds`         | float | 30.0                                         | 0   | Idle threshold in seconds. Empty per-message-type slots are evicted only after going at least this long without a register/deregister/dispatch touch.                                                                   | Yes        | Lower for leak diagnosis or aggressive reclaim; raise for high-throughput scenarios where slots empty briefly between bursts. |
-| Buffer Max Distinct Entries    | `BufferMaxDistinctEntries`    | int   | 512                                          | 0   | Soft cap on distinct entries retained by shared collection pools and the per-bus empty priority-leaf spare. Zero disables retention; LRU selection does not affect the one-entry spare.                                 | Yes        | Lower on memory-constrained targets; raise when profiling shows pool churn from a small cap.                                  |
-| Buffer Use LRU Eviction        | `BufferUseLruEviction`        | bool  | true                                         | --  | When true, shared collection pools use LRU eviction; otherwise pools behave as a bounded LIFO stack.                                                                                                                    | Yes        | Switch to LIFO when access patterns are short-lived bursts; keep LRU for steady-state reuse.                                  |
+| Buffer Max Distinct Entries    | `BufferMaxDistinctEntries`    | int   | 512                                          | 0   | Soft cap on entries retained by shared and per-bus collection pools plus the per-bus empty priority-leaf spare. Zero disables retention; LRU selection does not affect the one-entry spare.                             | Yes        | Lower on memory-constrained targets; raise when profiling shows pool churn from a small cap.                                  |
+| Buffer Use LRU Eviction        | `BufferUseLruEviction`        | bool  | true                                         | --  | When true, shared and per-bus collection pools use LRU eviction; otherwise pools behave as a bounded LIFO stack.                                                                                                        | Yes        | Switch to LIFO when access patterns are short-lived bursts; keep LRU for steady-state reuse.                                  |
 | Enable Trim API                | `EnableTrimApi`               | bool  | true                                         | --  | When true, IMessageBus.Trim performs its work; when false it is a no-op returning default. Lets shipped titles disable on-demand reclamation.                                                                           | Yes        | Disable in shipped titles that do not call Trim and do not want third-party code to force a sweep.                            |
 | Eviction Tick Interval Seconds | `EvictionTickIntervalSeconds` | float | 5.0                                          | 0   | Minimum interval in seconds between idle sweeps. Emit-time idle eviction samples the clock periodically instead of at the top of every Emit, and sweeps only when this much wall time has elapsed since the last sweep. | Yes        | Raise to reduce sweep frequency on busy hot paths; lower for tighter reclaim cadence.                                         |
 | Eviction Enabled               | `EvictionEnabled`             | bool  | true                                         | --  | Master switch for idle-time eviction. When false neither inline emit-time sweeps nor PlayerLoop sweeps run; explicit Trim still works (gated by EnableTrimApi).                                                         | Yes        | Disable when you only want explicit Trim to reclaim, or during editor safe-mode bring-up.                                     |
@@ -77,12 +77,12 @@ zero before raising `SettingsChanged`.
 `DxMessagingRuntimeSettings` exposes four `public const` fields so scripts can
 reference the same defaults the asset ships with:
 
-| Constant                             | Type     | Value                          | Purpose                                                                                   |
-| ------------------------------------ | -------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
-| `ResourceName`                       | `string` | `"DxMessagingRuntimeSettings"` | Resource name (no extension) used by `Resources.Load`.                                    |
-| `DefaultBufferMaxDistinctEntries`    | `int`    | 512                            | Default soft cap on retained entries in shared pools and the per-bus priority-leaf spare. |
-| `DefaultIdleEvictionSeconds`         | `float`  | 30                             | Default idle threshold in seconds before an empty slot becomes stale.                     |
-| `DefaultEvictionTickIntervalSeconds` | `float`  | 5                              | Default minimum interval between idle sweeps, in seconds.                                 |
+| Constant                             | Type     | Value                          | Purpose                                                                                                |
+| ------------------------------------ | -------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `ResourceName`                       | `string` | `"DxMessagingRuntimeSettings"` | Resource name (no extension) used by `Resources.Load`.                                                 |
+| `DefaultBufferMaxDistinctEntries`    | `int`    | 512                            | Default soft cap on retained entries in shared and per-bus pools plus the per-bus priority-leaf spare. |
+| `DefaultIdleEvictionSeconds`         | `float`  | 30                             | Default idle threshold in seconds before an empty slot becomes stale.                                  |
+| `DefaultEvictionTickIntervalSeconds` | `float`  | 5                              | Default minimum interval between idle sweeps, in seconds.                                              |
 
 Reference these constants from test fixtures and bootstrap code rather than
 duplicating literal values.
@@ -153,12 +153,12 @@ public readonly struct TrimResult : IEquatable<TrimResult>
 }
 ```
 
-| Field                      | Description                                                                                                                                              |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TypeSlotsEvicted`         | Number of typed-handler slots reset across all reclaimed message types.                                                                                  |
-| `TargetSlotsEvicted`       | Number of bus target or source context entries removed.                                                                                                  |
-| `PooledCollectionsEvicted` | Number of pooled collections dropped from shared pools (`DxPools` plus the bus-owned context-dictionary pool) and the per-bus empty priority-leaf spare. |
-| `LiveTypeSlotsRemaining`   | Number of occupied type slots remaining after the trim; equal to a post-trim read of `OccupiedTypeSlots`.                                                |
+| Field                      | Description                                                                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TypeSlotsEvicted`         | Number of typed-handler slots reset across all reclaimed message types.                                                                                                                     |
+| `TargetSlotsEvicted`       | Number of bus target or source context entries removed.                                                                                                                                     |
+| `PooledCollectionsEvicted` | Number of pooled collections dropped from shared pools (`DxPools` plus the bus-owned context-dictionary pool), per-bus reflexive-dispatch pools, and the per-bus empty priority-leaf spare. |
+| `LiveTypeSlotsRemaining`   | Number of occupied type slots remaining after the trim; equal to a post-trim read of `OccupiedTypeSlots`.                                                                                   |
 
 The struct overrides `ToString()` and implements equality on all four fields.
 
@@ -179,10 +179,11 @@ public static event Action<DxMessagingRuntimeSettings> SettingsChanged;
 Existing buses subscribe to the event and call `ApplyRuntimeSettings`, which
 re-applies the eviction toggles, idle threshold, tick interval, pool caps,
 retention mode, and message buffer size without recreating the bus. The
-shared `DxPools` pools, the bus-owned context-dictionary pool, and the one-entry
-per-bus empty priority-leaf spare reapply the new cap. Lowering the cap below the
-spare's distinct-handler high-water drains it immediately. LRU selection does
-not affect a one-entry spare. Live registrations are not disturbed.
+shared `DxPools` pools, the bus-owned context-dictionary pool, each bus's
+reentrant reflexive-dispatch pool, and the one-entry per-bus empty priority-leaf
+spare reapply the new cap. Lowering the cap below the spare's distinct-handler
+high-water drains it immediately. LRU selection does not affect a one-entry
+spare. Live registrations are not disturbed.
 
 The `RuntimeInitializeOnLoadMethod(SubsystemRegistration)` hook clears
 `SettingsChanged` subscribers when a new domain loads, preventing stale

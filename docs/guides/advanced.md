@@ -140,6 +140,9 @@ the listener stays unregistered across later enable/disable cycles. Override
 automatic recovery: the next enable re-creates the token and replays
 `RegisterMessageHandlers` exactly once.
 
+> **Fixed in v4.0.0:** A retained reference can release a listener after Unity destroys it.
+> `Release` disposes the token and removes the cached listener before returning `true`.
+
 ```csharp
 using DxMessaging.Unity;
 

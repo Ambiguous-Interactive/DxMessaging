@@ -397,6 +397,16 @@ namespace DxMessaging.Tests.Runtime.Unity
                 messaging.Release(null),
                 "Releasing a null listener should report failure."
             );
+            UnityEngine.Object.DestroyImmediate(neverRegistered);
+            Assert.That(
+                neverRegistered == null,
+                Is.True,
+                "Test setup must retain a Unity fake-null listener reference."
+            );
+            Assert.IsFalse(
+                messaging.Release(neverRegistered),
+                "Releasing a destroyed listener that never requested a token should report failure."
+            );
 
             message.EmitUntargeted();
             Assert.AreEqual(
@@ -404,6 +414,78 @@ namespace DxMessaging.Tests.Runtime.Unity
                 count,
                 "Failed release calls must have no side effects on registered listeners."
             );
+        }
+
+        [Test]
+        public void ReleaseDisposesRegisteredDestroyedListener()
+        {
+            GameObject host = new(
+                nameof(ReleaseDisposesRegisteredDestroyedListener),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+
+            using (
+                LeakWatcher watcher = new(
+                    bus,
+                    label: nameof(ReleaseDisposesRegisteredDestroyedListener)
+                )
+            )
+            {
+                MessageRegistrationToken token = listener.RequestToken(messaging);
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => { });
+                token.Enable();
+                Assert.That(
+                    bus.RegisteredUntargeted,
+                    Is.EqualTo(1),
+                    "Positive control: the manual listener must own one live registration."
+                );
+
+                UnityEngine.Object.DestroyImmediate(listener);
+                Assert.That(
+                    listener == null,
+                    Is.True,
+                    "Test setup must produce a Unity fake-null listener."
+                );
+                Assert.That(
+                    ReferenceEquals(listener, null),
+                    Is.False,
+                    "Test setup must retain the destroyed managed listener reference."
+                );
+
+                try
+                {
+                    Assert.That(
+                        messaging.Release(listener),
+                        Is.True,
+                        "Release must find and dispose the token retained under a destroyed listener key."
+                    );
+                    Assert.That(
+                        messaging._registeredListeners.Count,
+                        Is.Zero,
+                        "Successful release must remove the destroyed listener key."
+                    );
+                    Assert.That(
+                        token.Enabled,
+                        Is.False,
+                        "Successful release must disable the token."
+                    );
+                    Assert.That(
+                        bus.RegisteredUntargeted,
+                        Is.Zero,
+                        "Successful release must deregister the destroyed listener's handler."
+                    );
+                }
+                finally
+                {
+                    token.Dispose();
+                }
+            }
         }
 
         [Test]
@@ -498,8 +580,9 @@ namespace DxMessaging.Tests.Runtime.Unity
             );
         }
 
-        [Test]
-        public void ReleaseFailureKeepsListenerRegisteredForRetry()
+        [TestCase(false, TestName = "ReleaseFailureKeepsLiveListenerRegisteredForRetry")]
+        [TestCase(true, TestName = "ReleaseFailureKeepsDestroyedListenerRegisteredForRetry")]
+        public void ReleaseFailureKeepsListenerRegisteredForRetry(bool destroyBeforeRelease)
         {
             GameObject host = new(
                 nameof(ReleaseFailureKeepsListenerRegisteredForRetry),
@@ -514,45 +597,83 @@ namespace DxMessaging.Tests.Runtime.Unity
             messaging.Configure(failingBus, MessageBusRebindMode.RebindActive);
 
             int count = 0;
+            string caseContext = $"[destroyBeforeRelease={destroyBeforeRelease}]";
             SimpleUntargetedMessage message = new();
 
             using (
                 LeakWatcher watcher = new(
                     bus: failingBus,
                     throwOnLeak: true,
-                    label: nameof(ReleaseFailureKeepsListenerRegisteredForRetry)
+                    label: nameof(ReleaseFailureKeepsListenerRegisteredForRetry) + caseContext
                 )
             )
             {
                 MessageRegistrationToken token = listener.RequestToken(messaging);
-                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
-                token.Enable();
+                try
+                {
+                    _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++count);
+                    token.Enable();
 
-                message.EmitUntargeted(failingBus);
-                Assert.AreEqual(1, count, "Control failed: listener should receive.");
+                    message.EmitUntargeted(failingBus);
+                    Assert.AreEqual(
+                        1,
+                        count,
+                        $"{caseContext} Control failed: listener should receive."
+                    );
 
-                Assert.Throws<InvalidOperationException>(
-                    () => messaging.Release(listener),
-                    "The failing bus must surface the token disposal failure."
-                );
-                Assert.IsTrue(
-                    token.Enabled,
-                    "Failed release must leave the token active for cleanup retry."
-                );
-                Assert.AreEqual(
-                    1,
-                    failingBus.RegisteredUntargeted,
-                    "Failed release must not forget the live registration."
-                );
+                    if (destroyBeforeRelease)
+                    {
+                        UnityEngine.Object.DestroyImmediate(listener);
+                        Assert.That(
+                            listener == null,
+                            Is.True,
+                            $"{caseContext} Test setup must retain a Unity fake-null listener reference."
+                        );
+                    }
 
-                failingBus.AllowDeregistrations();
-                Assert.IsTrue(messaging.Release(listener), "Release retry must succeed.");
-                Assert.IsFalse(token.Enabled, "Release retry must disable the token.");
-                Assert.AreEqual(0, failingBus.RegisteredUntargeted, "Retry must deregister.");
-                Assert.IsFalse(
-                    messaging.Release(listener),
-                    "A second release after successful retry must report failure."
-                );
+                    Assert.Throws<InvalidOperationException>(
+                        () => messaging.Release(listener),
+                        $"{caseContext} The failing bus must surface the token disposal failure."
+                    );
+                    Assert.IsTrue(
+                        token.Enabled,
+                        $"{caseContext} Failed release must leave the token active for cleanup retry."
+                    );
+                    Assert.AreEqual(
+                        1,
+                        failingBus.RegisteredUntargeted,
+                        $"{caseContext} Failed release must not forget the live registration."
+                    );
+                    Assert.That(
+                        messaging._registeredListeners.Count,
+                        Is.EqualTo(1),
+                        $"{caseContext} Failed release must retain the listener key for retry."
+                    );
+
+                    failingBus.AllowDeregistrations();
+                    Assert.IsTrue(
+                        messaging.Release(listener),
+                        $"{caseContext} Release retry must succeed."
+                    );
+                    Assert.IsFalse(
+                        token.Enabled,
+                        $"{caseContext} Release retry must disable the token."
+                    );
+                    Assert.AreEqual(
+                        0,
+                        failingBus.RegisteredUntargeted,
+                        $"{caseContext} Retry must deregister."
+                    );
+                    Assert.IsFalse(
+                        messaging.Release(listener),
+                        $"{caseContext} A second release after successful retry must report failure."
+                    );
+                }
+                finally
+                {
+                    failingBus.AllowDeregistrations();
+                    token.Dispose();
+                }
             }
         }
 

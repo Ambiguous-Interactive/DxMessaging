@@ -36,9 +36,9 @@ Reclamation targets two kinds of state:
   after every registration that used it has been deregistered. Empty slots are
   retained until reclamation runs because a freshly empty slot is often about
   to be used again on the next dispatch.
-- **Pooled collections** held by `DxPools` and the bus-owned context-dictionary
-  pool. Pools cap their retained entries with either LRU or bounded LIFO
-  retention.
+- **Pooled collections** held by `DxPools`, the bus-owned context-dictionary
+  pool, and each bus's reentrant reflexive-dispatch pool. Pools cap their
+  retained entries with either LRU or bounded LIFO retention.
 - **One detached empty priority leaf per bus.** Register/remove churn reuses this
   leaf instead of rebuilding its dictionary and ordered list every cycle. Its
   distinct-handler high-water must stay within `BufferMaxDistinctEntries`; a
@@ -191,8 +191,8 @@ are read-only counters for the work the sweep performed:
 - `TargetSlotsEvicted` is the number of bus-side target or source context
   entries removed across all reclaimed `InstanceId`s.
 - `PooledCollectionsEvicted` is the number of pooled collections dropped from
-  shared pools (`DxPools` plus the bus-owned context-dictionary pool) and the
-  detached per-bus priority leaf.
+  shared pools (`DxPools` plus the bus-owned context-dictionary pool), per-bus
+  reentrant reflexive-dispatch pools, and the detached per-bus priority leaf.
 - `LiveTypeSlotsRemaining` is the count of occupied type slots remaining on
   the bus after the sweep. This is the same value `OccupiedTypeSlots` returns
   immediately after the sweep.

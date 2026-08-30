@@ -27,6 +27,11 @@ instance and returns it when the scope exits.
   `using var lease = Buffers<T>.List.Get(out List<T> items);`. `Dispose()`
   clears the collection and returns it; a manual `Return` on top of the lease
   double-returns it.
+- Make value-type leases copy-safe. A mutable `_disposed` field protects only
+  one struct copy. Put an opaque slot/generation identity on the pool owner (or
+  use shared reference state off hot paths), and make `Dispose()` return only
+  when that identity is still active. Cover original/copy disposal in both
+  orders, a stale copy after slot reuse, and out-of-order nested disposal.
 - Never let a pooled collection, array, or `StringBuilder` escape the `using`
   scope. Storing it in a field hands live state to the next renter.
 - Do not share a `PooledResource` or `PooledArray` across threads, and prefer
