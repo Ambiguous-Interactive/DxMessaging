@@ -3,5 +3,5 @@ namespace DxMessaging.Tests.Runtime.Scripts.Messages
     using DxMessaging.Core.Attributes;
 
     [DxBroadcastMessage]
-    public partial struct SimpleBroadcastMessage { }
+    public readonly partial struct SimpleBroadcastMessage { }
 }

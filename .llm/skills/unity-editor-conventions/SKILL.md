@@ -118,6 +118,8 @@ devcontainer cache mount contract.
 - Add focused tests for positive forms and for adjacent syntax that must remain unchanged. When
   callback mutability differs by API, pin readonly handlers separately from mutable interceptors
   and emission calls. Include idempotency and line-ending coverage.
+- If CI promotes Roslynator diagnostics to errors, scan migrated concrete `in` callbacks for
+  RCS1242. Use `readonly struct` only for already-immutable messages, never mutable interceptors.
 
 ### Devcontainer cache contract
 

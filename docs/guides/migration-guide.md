@@ -48,8 +48,11 @@ Rebuild precompiled assemblies and plugins that reference `MessageHandler.FastHa
 `MessageHandler.FastHandlerWithContext<T>`, or the changed `MessageAwareComponent` virtual methods
 because their metadata changed. Prefer `readonly struct` messages and readonly instance members;
 calling a non-readonly member through an `in` parameter can make the compiler create a defensive
-copy. For class messages, `in` protects the reference itself but does not make the referenced
-object's fields immutable.
+copy. Roslynator rule RCS1242 also reports an `in` parameter whose concrete struct type is not
+declared `readonly`. Mark the message struct `readonly` when its fields and behavior are already
+immutable. Keep intentionally mutable messages mutable for interceptor use and configure RCS1242
+for those handler declarations instead. For class messages, `in` protects the reference itself but
+does not make the referenced object's fields immutable.
 
 ## Philosophy: Start Small, Prove Value
 

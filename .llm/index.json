@@ -470,7 +470,7 @@
         "category": "unity",
         "tags": "unity, analyzer, lifecycle, diagnostics, messageawarecomponent, base-call, dxmsg006"
       },
-      "lineCount": 148,
+      "lineCount": 150,
       "references": [
         ".llm/skills/unity-editor-conventions/references/base-call-contract.md",
         ".llm/skills/unity-editor-conventions/references/devcontainer-cache-contract.md",
