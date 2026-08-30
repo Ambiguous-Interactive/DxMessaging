@@ -36,6 +36,9 @@
   edits. Preserve a safety backup and report the path when a concurrent edit prevents rollback.
   Ambiguous callbacks are skipped and reported for manual review. Tests must distinguish readonly
   handlers from mutable interceptors and emission calls.
+- Before changing a callback parameter to `in`, inspect its body for uses as a `ref` or `out`
+  argument. Rewrite an exact matching `base` call for a changed override; otherwise leave the whole
+  callback unchanged and report it for manual review.
 - Project Settings > Wallstop Studios > DxMessaging > Inspector Checks must expose
   the base-call master toggle, console bridge toggle, and Ignored Base-Call Types
   list together. Keep the provider, screenshot manifest, analyzer docs, and

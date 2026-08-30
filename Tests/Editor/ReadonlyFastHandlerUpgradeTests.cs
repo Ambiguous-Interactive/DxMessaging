@@ -295,6 +295,213 @@ sealed class Second : MessageAwareComponent
         }
 
         [Test]
+        public void AnalyzeConvertsChangedOverrideBaseForwardingCall()
+        {
+            const string Source =
+                @"
+using DxMessaging.Unity;
+sealed class Receiver : MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        base.HandleGlobalStringMessage(ref message);
+    }
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(
+                result.ReplacementCount,
+                Is.EqualTo(2),
+                $"Actual:\n{result.UpgradedSource}"
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("HandleGlobalStringMessage(in GlobalStringMessage message)")
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("base.HandleGlobalStringMessage(in message)")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeConvertsEscapedOverrideBaseForwardingCall()
+        {
+            const string Source =
+                @"
+using DxMessaging.Unity;
+sealed class Receiver : MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage @event)
+    {
+        base.HandleGlobalStringMessage(ref @event);
+    }
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("HandleGlobalStringMessage(in GlobalStringMessage @event)")
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("base.HandleGlobalStringMessage(in @event)")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeLeavesMethodGroupWithRefForwardingForManualReview()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message)
+{
+    Forward(ref message);
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'message' by ref")
+            );
+        }
+
+        [Test]
+        public void AnalyzeLeavesLambdaWithRefForwardingForManualReview()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit message) =>
+{
+    Forward(ref message);
+});";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'message' by ref")
+            );
+        }
+
+        [Test]
+        public void AnalyzeLeavesMethodGroupWithOutUseForManualReview()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message)
+{
+    Reset(out message);
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'message' by out")
+            );
+        }
+
+        [Test]
+        public void AnalyzeLeavesOverrideWithUnsafeRefForwardingEntirelyUnchanged()
+        {
+            const string Source =
+                @"
+using DxMessaging.Unity;
+sealed class Receiver : MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        Mutate(ref message);
+        base.HandleGlobalStringMessage(ref message);
+    }
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void AnalyzeIgnoresRefForwardingOfAnUnrelatedLocal()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message)
+{
+    Pulse local = message;
+    Forward(ref local);
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.UpgradedSource, Does.Contain("OnPulse(in Pulse message)"));
+            Assert.That(result.UpgradedSource, Does.Contain("Forward(ref local)"));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeIgnoresRefForwardingTextInCommentsAndStrings()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message)
+{
+    // Forward(ref message);
+    Log(""Forward(ref message);"");
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.UpgradedSource, Does.Contain("OnPulse(in Pulse message)"));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
         public void AnalyzeReportsIndirectMessageAwareOverrideWithoutChangingIt()
         {
             const string Source =

@@ -26,10 +26,12 @@ UTF-32 encoding. It also keeps line endings unchanged and checks for edits immed
 replacement. It attempts to restore every earlier write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
-ambiguous receivers unchanged. The tool also detects callbacks passed directly to both a handler
-and an interceptor in the same script. It lists these cases in the Console for manual review.
-Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
-migration.
+ambiguous receivers unchanged. It also leaves a callback unchanged when its newly readonly
+parameter is passed as a `ref` or `out` argument, except for the matching `base` call in a changed
+`MessageAwareComponent` override, which it can update safely. The tool detects callbacks passed
+directly to both a handler and an interceptor in the same script. It lists these cases in the
+Console for manual review. Review project-wide callback uses, inspect the diff, and let Unity
+compile before committing the migration.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 

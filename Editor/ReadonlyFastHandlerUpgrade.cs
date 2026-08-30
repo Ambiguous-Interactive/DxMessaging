@@ -68,6 +68,11 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
+        private static readonly Regex IdentifierRegexForParameter = new(
+            @"@?[A-Za-z_]\w*",
+            RegexOptions.CultureInvariant
+        );
+
         private static readonly Regex NamedIdentifierRegex = new(
             @"^(?:\(\s*(?:(?:global::)?DxMessaging\s*\.\s*Core\s*\.\s*)?MessageHandler\s*\.\s*FastHandler(?:WithContext)?\s*<[^()]+>\s*\)\s*)?(?:(?:this|base)\s*\.\s*)?(?<name>[A-Za-z_]\w*)$",
             RegexOptions.CultureInvariant
@@ -301,6 +306,8 @@ namespace DxMessaging.Editor
                     manualReview
                 );
             }
+
+            PruneUnsafeByReferenceUse(masked, replacementStarts, manualReview);
 
             List<int> orderedStarts = new(replacementStarts);
             orderedStarts.Sort();
@@ -564,6 +571,12 @@ namespace DxMessaging.Editor
                     masked,
                     declaration.ParametersStart,
                     declaration.ParametersEnd,
+                    replacementStarts
+                );
+                AddBaseOverrideForwardingReplacements(
+                    masked,
+                    declaration,
+                    methodName,
                     replacementStarts
                 );
             }
@@ -1236,6 +1249,353 @@ namespace DxMessaging.Editor
                 replacementStarts.Add(match.Index);
                 match = match.NextMatch();
             }
+        }
+
+        private static void AddBaseOverrideForwardingReplacements(
+            string masked,
+            ParameterList declaration,
+            string methodName,
+            HashSet<int> replacementStarts
+        )
+        {
+            if (!TryFindCallableBody(masked, declaration.ParametersEnd, out TextSpan body))
+            {
+                return;
+            }
+
+            HashSet<string> refParameterNames = GetRefParameterNames(
+                masked,
+                declaration.ParametersStart,
+                declaration.ParametersEnd
+            );
+            if (refParameterNames.Count == 0)
+            {
+                return;
+            }
+
+            Regex baseCall = new(
+                @"\bbase\s*\.\s*" + Regex.Escape(methodName) + @"\s*\(",
+                RegexOptions.CultureInvariant
+            );
+            foreach (Match match in baseCall.Matches(masked, body.Start))
+            {
+                if (match.Index >= body.Start + body.Length)
+                {
+                    break;
+                }
+                int open = masked.IndexOf('(', match.Index, match.Length);
+                int close = FindMatching(masked, open, '(', ')');
+                if (close < 0 || close > body.Start + body.Length)
+                {
+                    continue;
+                }
+                foreach (TextSpan argument in SplitArguments(masked, open + 1, close))
+                {
+                    string argumentText = masked.Substring(argument.Start, argument.Length);
+                    Match forwarded = Regex.Match(
+                        argumentText,
+                        @"^\s*ref\s+(?<name>@?[A-Za-z_]\w*)\s*$",
+                        RegexOptions.CultureInvariant
+                    );
+                    if (
+                        forwarded.Success
+                        && refParameterNames.Contains(forwarded.Groups["name"].Value)
+                    )
+                    {
+                        int refStart = argument.Start + forwarded.Index;
+                        refStart = NextNonWhitespace(masked, refStart);
+                        replacementStarts.Add(refStart);
+                    }
+                }
+            }
+        }
+
+        private static void PruneUnsafeByReferenceUse(
+            string masked,
+            HashSet<int> replacementStarts,
+            SortedSet<string> manualReview
+        )
+        {
+            Dictionary<int, List<int>> parameterReplacementsByOpen = new();
+            foreach (int replacementStart in replacementStarts)
+            {
+                int open = FindEnclosingOpenParenthesis(masked, replacementStart);
+                if (open < 0)
+                {
+                    continue;
+                }
+                int close = FindMatching(masked, open, '(', ')');
+                if (close < replacementStart)
+                {
+                    continue;
+                }
+                if (!parameterReplacementsByOpen.TryGetValue(open, out List<int> replacements))
+                {
+                    replacements = new List<int>();
+                    parameterReplacementsByOpen.Add(open, replacements);
+                }
+                replacements.Add(replacementStart);
+            }
+
+            foreach (KeyValuePair<int, List<int>> entry in parameterReplacementsByOpen)
+            {
+                int close = FindMatching(masked, entry.Key, '(', ')');
+                if (close < 0 || !TryFindCallableBody(masked, close, out TextSpan body))
+                {
+                    continue;
+                }
+
+                HashSet<string> parameterNames = new(StringComparer.Ordinal);
+                bool hasUnsupportedParameter = false;
+                foreach (int replacementStart in entry.Value)
+                {
+                    string parameterName = FindParameterName(
+                        masked,
+                        entry.Key + 1,
+                        close,
+                        replacementStart
+                    );
+                    if (parameterName.Length > 0)
+                    {
+                        parameterNames.Add(parameterName);
+                    }
+                    else
+                    {
+                        hasUnsupportedParameter = true;
+                    }
+                }
+
+                List<int> forwardingStarts = new();
+                string unsafeParameter = string.Empty;
+                string unsafeModifier = string.Empty;
+                bool hasUnsafeByReferenceUse = false;
+                foreach (string parameterName in parameterNames)
+                {
+                    Regex byReferenceUse = new(
+                        @"\b(?<modifier>ref|out)\s+" + Regex.Escape(parameterName) + @"\b",
+                        RegexOptions.CultureInvariant
+                    );
+                    foreach (Match match in byReferenceUse.Matches(masked, body.Start))
+                    {
+                        if (match.Index >= body.Start + body.Length)
+                        {
+                            break;
+                        }
+                        forwardingStarts.Add(match.Index);
+                        if (!replacementStarts.Contains(match.Index))
+                        {
+                            hasUnsafeByReferenceUse = true;
+                            unsafeParameter = parameterName;
+                            unsafeModifier = match.Groups["modifier"].Value;
+                        }
+                    }
+                }
+
+                if (!hasUnsafeByReferenceUse && !hasUnsupportedParameter)
+                {
+                    continue;
+                }
+                foreach (int replacementStart in entry.Value)
+                {
+                    replacementStarts.Remove(replacementStart);
+                }
+                foreach (int forwardingStart in forwardingStarts)
+                {
+                    replacementStarts.Remove(forwardingStart);
+                }
+                string reason =
+                    hasUnsupportedParameter && !hasUnsafeByReferenceUse
+                        ? "has unsupported parameter syntax"
+                        : $"passes parameter '{unsafeParameter}' by {unsafeModifier}";
+                manualReview.Add(
+                    $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
+                );
+            }
+        }
+
+        private static int FindEnclosingOpenParenthesis(string text, int position)
+        {
+            int depth = 0;
+            for (int index = position - 1; index >= 0; index--)
+            {
+                if (text[index] == ')')
+                {
+                    depth++;
+                }
+                else if (text[index] == '(')
+                {
+                    if (depth == 0)
+                    {
+                        return index;
+                    }
+                    depth--;
+                }
+            }
+            return -1;
+        }
+
+        private static HashSet<string> GetRefParameterNames(string text, int start, int end)
+        {
+            HashSet<string> names = new(StringComparer.Ordinal);
+            foreach (TextSpan parameter in SplitArguments(text, start, end))
+            {
+                string parameterText = text.Substring(parameter.Start, parameter.Length);
+                if (!RefRegex.IsMatch(parameterText))
+                {
+                    continue;
+                }
+                MatchCollection identifiers = IdentifierRegexForParameter.Matches(parameterText);
+                if (identifiers.Count > 0)
+                {
+                    names.Add(identifiers[identifiers.Count - 1].Value);
+                }
+            }
+            return names;
+        }
+
+        private static string FindParameterName(
+            string text,
+            int parametersStart,
+            int parametersEnd,
+            int modifierStart
+        )
+        {
+            foreach (TextSpan parameter in SplitArguments(text, parametersStart, parametersEnd))
+            {
+                if (
+                    modifierStart < parameter.Start
+                    || modifierStart >= parameter.Start + parameter.Length
+                )
+                {
+                    continue;
+                }
+                MatchCollection identifiers = IdentifierRegexForParameter.Matches(
+                    text.Substring(parameter.Start, parameter.Length)
+                );
+                if (identifiers.Count == 0)
+                {
+                    return string.Empty;
+                }
+                Match identifier = identifiers[identifiers.Count - 1];
+                string suffix = text.Substring(
+                    parameter.Start + identifier.Index + identifier.Length,
+                    parameter.Length - identifier.Index - identifier.Length
+                );
+                return string.IsNullOrWhiteSpace(suffix) ? identifier.Value : string.Empty;
+            }
+            return string.Empty;
+        }
+
+        private static bool TryFindCallableBody(string text, int parametersEnd, out TextSpan body)
+        {
+            int next = NextNonWhitespace(text, parametersEnd + 1);
+            if (next < 0)
+            {
+                body = default;
+                return false;
+            }
+
+            int blockStart = text[next] == '{' ? next : -1;
+            int expressionStart =
+                next + 1 < text.Length && text[next] == '=' && text[next + 1] == '>' ? next : -1;
+            if (blockStart < 0 && expressionStart < 0 && StartsWithIdentifier(text, next, "where"))
+            {
+                int semicolon = text.IndexOf(';', next + "where".Length);
+                blockStart = text.IndexOf('{', next + "where".Length);
+                expressionStart = text.IndexOf(
+                    "=>",
+                    next + "where".Length,
+                    StringComparison.Ordinal
+                );
+                if (semicolon >= 0)
+                {
+                    if (blockStart > semicolon)
+                    {
+                        blockStart = -1;
+                    }
+                    if (expressionStart > semicolon)
+                    {
+                        expressionStart = -1;
+                    }
+                }
+            }
+            if (blockStart >= 0 && (expressionStart < 0 || blockStart < expressionStart))
+            {
+                int blockEnd = FindMatching(text, blockStart, '{', '}');
+                if (blockEnd >= 0)
+                {
+                    body = new TextSpan(blockStart + 1, blockEnd - blockStart - 1);
+                    return true;
+                }
+            }
+            if (expressionStart >= 0)
+            {
+                int expressionEnd = FindExpressionEnd(text, expressionStart + 2);
+                body = new TextSpan(expressionStart + 2, expressionEnd - expressionStart - 2);
+                return true;
+            }
+            body = default;
+            return false;
+        }
+
+        private static int FindExpressionEnd(string text, int start)
+        {
+            int parentheses = 0;
+            int brackets = 0;
+            int braces = 0;
+            for (int index = start; index < text.Length; index++)
+            {
+                switch (text[index])
+                {
+                    case '(':
+                        parentheses++;
+                        break;
+                    case ')':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        {
+                            return index;
+                        }
+                        parentheses--;
+                        break;
+                    case '[':
+                        brackets++;
+                        break;
+                    case ']':
+                        brackets--;
+                        break;
+                    case '{':
+                        braces++;
+                        break;
+                    case '}':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        {
+                            return index;
+                        }
+                        braces--;
+                        break;
+                    case ',':
+                    case ';':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        {
+                            return index;
+                        }
+                        break;
+                }
+            }
+            return text.Length;
+        }
+
+        private static int LineNumber(string text, int position)
+        {
+            int line = 1;
+            for (int index = 0; index < position; index++)
+            {
+                if (text[index] == '\n')
+                {
+                    line++;
+                }
+            }
+            return line;
         }
 
         private static List<TextSpan> SplitArguments(string text, int start, int end)
