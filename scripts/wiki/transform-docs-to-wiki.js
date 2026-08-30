@@ -10,8 +10,9 @@ const { walkFiles } = require("../lib/repo-files");
 const DOCS_DIR = path.join(__dirname, "..", "..", "docs");
 const README_PATH = path.join(__dirname, "..", "..", "README.md");
 const OWNERSHIP_FILE = ".dxmessaging-generated-files.json";
-// Adopt only byte-identical outputs from the last Wiki state before ownership manifests existed.
-const LEGACY_WIKI_COMMIT = "725bf58fca45dd1f823a962f2f8d772cd0b2bd46";
+// Adopt only byte-identical outputs from the final Wiki state before ownership manifests existed.
+// This includes the last old-generator sync triggered by the performance documentation update.
+const LEGACY_WIKI_COMMIT = "64d016d061e3581ae93032ea96c249b401330b7c";
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]);
 
 class CodeBlockTracker {
