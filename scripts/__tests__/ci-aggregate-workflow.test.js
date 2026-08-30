@@ -71,13 +71,9 @@ const STATIC_CHILD_JOBS = [
   ["lint-doc-links", "docs_links"]
 ];
 
-function readWorkflow(file = "ci.yml") {
-  return fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-}
+const readWorkflow = (file = "ci.yml") => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 
-function readWorkflowDocument(file) {
-  return YAML.parseDocument(readWorkflow(file));
-}
+const readWorkflowDocument = (file) => YAML.parseDocument(readWorkflow(file));
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -184,6 +180,36 @@ test("active workflows keep the shared safety contract", () => {
       }
     }
   }
+});
+
+test("wiki sync deploys every admitted push and fails closed", () => {
+  const workflow = readWorkflowDocument("sync-wiki.yml").toJS();
+  const filters = workflow.on.push.paths;
+  const admitted = (files) =>
+    files.some((file) => filters.some((filter) => path.matchesGlob(file, filter)));
+  const admittedCases = {
+    "docs-only": ["docs/guides/testing.md"],
+    "transformer-only": ["scripts/wiki/transform-docs-to-wiki.js"],
+    "sidebar-only": ["scripts/wiki/generate-wiki-sidebar.js"],
+    "workflow-only": [".github/workflows/sync-wiki.yml"],
+    rename: ["docs/old-name.md", "docs/new-name.md"]
+  };
+
+  assert.deepEqual(filters, ["docs/**", "scripts/wiki/**", ".github/workflows/sync-wiki.yml"]);
+  for (const [name, files] of Object.entries(admittedCases)) {
+    assert.equal(admitted(files), true, name);
+  }
+  assert.equal(admitted(["Runtime/Core/MessageBus.cs"]), false, "unrelated");
+
+  const { validate, sync } = workflow.jobs;
+  assert.ok(Object.hasOwn(workflow.on, "workflow_dispatch"), "manual dispatch must remain enabled");
+  assert.equal(validate.outputs, undefined, "the divergent deployment detector must stay removed");
+  assert.equal(sync.needs, "validate", "validation failures must block deployment");
+  assert.equal(sync.if, undefined, "admitted pushes and manual dispatches must always deploy");
+  assert.ok(
+    validate.steps.every((step) => step.if === undefined),
+    "every admitted run must execute validation"
+  );
 });
 
 test("opt-in formatting never executes a fork head with repository write permissions", () => {
