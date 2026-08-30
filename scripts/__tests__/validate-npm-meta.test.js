@@ -264,17 +264,14 @@ test("validatePackEntries returns valid for properly paired Unity paths", () => 
 });
 
 test("validatePackEntries aggregates forbidden, missing, and orphan diagnostics", () => {
-  const result = validatePackEntries([
-    "Runtime/Foo.cs",
-    "Runtime.meta",
-    "Runtime/Leak.pdb",
-    "Runtime/Orphan.meta"
-  ]);
+  // prettier-ignore
+  const result = validatePackEntries(["Runtime/Foo.cs", "Runtime.meta", "Runtime/Leak.pdb", "Runtime/Orphan.meta", "docs.meta", "docs/images.meta", "docs/images/Banner.svg", "docs/Orphan.asset.meta", "RootOrphan.asset.meta"]);
 
   assert.equal(result.valid, false);
   assert.equal(result.forbidden.length, 1);
-  assert.deepEqual(result.missingMetas, ["Runtime/Foo.cs.meta"]);
-  assert.deepEqual(result.orphanMetas, ["Runtime/Orphan.meta"]);
+  assert.deepEqual(result.missingMetas, ["Runtime/Foo.cs.meta", "docs/images/Banner.svg.meta"]);
+  // prettier-ignore
+  assert.deepEqual(result.orphanMetas, ["RootOrphan.asset.meta", "Runtime/Orphan.meta", "docs/Orphan.asset.meta"]);
 });
 
 test("runValidation rejects forbidden paths from npm pack JSON output", () => {

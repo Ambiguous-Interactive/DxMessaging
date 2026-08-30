@@ -25,7 +25,7 @@ const { toPosixPath } = require("./lib/path-classifier");
 const { spawnPlatformCommandSync } = require("./lib/shell-command");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
-const UNITY_ROOTS = ["Editor", "Runtime", "Samples~", "SourceGenerators"];
+const UNITY_META_EXEMPT_PATHS = new Set(["Samples~"]);
 const STANDARD_CSHARP_META_MONO_IMPORTER_LINES = [
   "MonoImporter:",
   "  externalObjects: {}",
@@ -440,19 +440,6 @@ function validateReleaseArtifacts(options) {
   };
 }
 
-function isUnityRelevantPath(relativePath) {
-  if (typeof relativePath !== "string" || relativePath.length === 0) {
-    return false;
-  }
-
-  return UNITY_ROOTS.some(
-    (root) =>
-      relativePath === root ||
-      relativePath === `${root}.meta` ||
-      relativePath.startsWith(`${root}/`)
-  );
-}
-
 function findForbiddenTarballPaths(entries) {
   const violations = [];
   for (const entry of entries) {
@@ -469,7 +456,7 @@ function findForbiddenTarballPaths(entries) {
 
 function computeRequiredMetaPaths(entries, options = {}) {
   const excludedPaths = options.excludedPaths || new Set();
-  const isRelevant = options.isRelevant || isUnityRelevantPath;
+  const isRelevant = options.isRelevant || Boolean;
   const required = new Set();
 
   for (const entry of entries) {
@@ -477,22 +464,21 @@ function computeRequiredMetaPaths(entries, options = {}) {
       continue;
     }
 
-    required.add(`${entry}.meta`);
+    if (!UNITY_META_EXEMPT_PATHS.has(entry)) required.add(`${entry}.meta`);
 
     let parent = path.posix.dirname(entry);
     while (parent !== ".") {
-      required.add(`${parent}.meta`);
+      if (!UNITY_META_EXEMPT_PATHS.has(parent)) required.add(`${parent}.meta`);
       parent = path.posix.dirname(parent);
     }
   }
 
-  required.delete("Samples~.meta");
   return required;
 }
 
 function validateMetaPairs(entries, options = {}) {
   const excludedPaths = options.excludedPaths || new Set();
-  const isRelevant = options.isRelevant || isUnityRelevantPath;
+  const isRelevant = options.isRelevant || Boolean;
   const assets = entries.filter(
     (entry) => isRelevant(entry) && !entry.endsWith(".meta") && !excludedPaths.has(entry)
   );
@@ -723,16 +709,15 @@ if (require.main === module) {
 module.exports = {
   FORBIDDEN_PATH_RULES,
   STANDARD_CSHARP_META_MONO_IMPORTER_LINES,
-  UNITY_ROOTS,
   buildStandardCsharpMetaContent,
   buildLocalTarArchiveSpec,
   collectReleaseArtifacts,
+  collectDryRunEntries,
   collectTarballEntries,
   collectTrackedRepositoryPaths,
   computeRequiredMetaPaths,
   findForbiddenTarballPaths,
   getCsharpMetaShapeViolation,
-  isUnityRelevantPath,
   normalizePackEntry,
   parsePackJsonEntries,
   readTarballPackageJson,
