@@ -1,3 +1,4 @@
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -202,3 +203,4 @@ namespace DxMessaging.Tests.Runtime.Core
         private static void OnSimpleMessage(in SimpleUntargetedMessage message) { }
     }
 }
+#pragma warning restore RCS1242

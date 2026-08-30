@@ -1,4 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System.Linq;
@@ -902,4 +903,5 @@ namespace DxMessaging.Tests.Runtime.Core
     }
 }
 
+#pragma warning restore RCS1242
 #endif

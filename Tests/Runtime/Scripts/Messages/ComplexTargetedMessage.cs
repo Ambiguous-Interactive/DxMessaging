@@ -4,7 +4,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Messages
     using DxMessaging.Core.Attributes;
 
     [DxTargetedMessage]
-    public readonly partial struct ComplexTargetedMessage
+    public partial struct ComplexTargetedMessage
     {
         // Guids are a bit beefy structure
         public readonly Guid firstId;
