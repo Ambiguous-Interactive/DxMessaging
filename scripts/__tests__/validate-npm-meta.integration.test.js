@@ -8,7 +8,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
-const { runValidation } = require("../validate-npm-meta.js");
+// prettier-ignore
+const { collectDryRunEntries, runValidation, validatePackEntries } = require("../validate-npm-meta.js");
+// prettier-ignore
+const ROOT_DOC_METAS = require("../../package.json").files.filter((entry) => entry.endsWith(".meta") && (!entry.includes("/") || entry.startsWith("docs/")));
 
 function withQuietValidation(callback) {
   const originalLog = console.log;
@@ -36,7 +39,9 @@ function createReleaseFixture(t, options = {}) {
   t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
   const packageDir = path.join(tempDir, "package");
   fs.mkdirSync(packageDir, { recursive: true });
+  // prettier-ignore
   fs.writeFileSync(path.join(packageDir, "package.json"), JSON.stringify({ name, version }), "utf8");
+  fs.writeFileSync(path.join(packageDir, "package.json.meta"), "meta", "utf8");
 
   const tarball = path.join(tempDir, `${name}-${version}.tgz`);
   const tar = spawnSync("tar", ["-czf", `./${path.basename(tarball)}`, "-C", tempDir, "package"], {
@@ -59,6 +64,16 @@ function createReleaseFixture(t, options = {}) {
   fs.writeFileSync(path.join(tempDir, "release-notes.md"), "Release notes\n", "utf8");
   return { dir: tempDir, name, version, tarball };
 }
+
+test("real pack rejects every removed root or docs meta", () => {
+  const entries = collectDryRunEntries();
+  assert.equal(validatePackEntries(entries).valid, true, "unmodified real pack must be valid");
+  for (const missingMeta of ROOT_DOC_METAS) {
+    const result = validatePackEntries(entries.filter((entry) => entry !== missingMeta));
+    // prettier-ignore
+    assert.deepEqual([entries.includes(missingMeta), result.valid, result.missingMetas.includes(missingMeta)], [true, false, true], missingMeta);
+  }
+});
 
 test("runValidation rejects forbidden paths from a concrete tarball", (t) => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tarball-validation-test-"));

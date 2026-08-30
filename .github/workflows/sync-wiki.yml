@@ -6,15 +6,14 @@ on:
       - main
       - master
     paths:
-      - 'docs/**'
-      - 'scripts/wiki/**'
-      - '.github/workflows/sync-wiki.yml'
+      - "docs/**"
+      - "scripts/wiki/**"
+      - ".github/workflows/sync-wiki.yml"
   workflow_dispatch:
 
-# Prevent concurrent wiki updates
 concurrency:
-  group: wiki-sync
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -24,41 +23,13 @@ jobs:
     name: Validate Wiki Content
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      should-deploy: ${{ steps.check.outputs.should-deploy }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 2
           persist-credentials: false
 
-      - name: Check for documentation changes
-        id: check
-        run: |
-          # Check if parent commit exists (guards against initial commit)
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            # Normal case: compare with parent commit
-            if git diff --name-only HEAD~1 HEAD | grep -qE '^docs/'; then
-              echo "should-deploy=true" >> "${GITHUB_OUTPUT}"
-              echo "Documentation changes detected"
-            else
-              echo "should-deploy=false" >> "${GITHUB_OUTPUT}"
-              echo "No documentation changes"
-            fi
-          else
-            # Initial commit: check if docs/ exists in tree
-            if git ls-tree --name-only -r HEAD | grep -qE '^docs/'; then
-              echo "should-deploy=true" >> "${GITHUB_OUTPUT}"
-              echo "Initial commit with documentation detected"
-            else
-              echo "should-deploy=false" >> "${GITHUB_OUTPUT}"
-              echo "Initial commit without documentation"
-            fi
-          fi
-
       - name: Validate Markdown files
-        if: steps.check.outputs.should-deploy == 'true'
         run: |
           echo "Validating Markdown structure..."
           find docs -name "*.md" -type f | while read -r file; do
@@ -78,7 +49,6 @@ jobs:
   sync:
     name: Sync to Wiki
     needs: validate
-    if: needs.validate.outputs.should-deploy == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
