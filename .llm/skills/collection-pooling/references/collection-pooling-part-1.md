@@ -28,20 +28,25 @@ namespace WallstopStudios.UnityHelpers.Utils
     /// </summary>
     public readonly struct PooledResource<T> : IDisposable where T : class
     {
+        private readonly ObjectPool<T> owner;
         private readonly T value;
-        private readonly Action<T> returnAction;
+        private readonly long generation;
 
         public T Value => value;
 
-        internal PooledResource(T value, Action<T> returnAction)
+        internal PooledResource(ObjectPool<T> owner, T value, long generation)
         {
+            this.owner = owner;
             this.value = value;
-            this.returnAction = returnAction;
+            this.generation = generation;
         }
 
         public void Dispose()
         {
-            returnAction?.Invoke(value);
+            // TryReturn validates the owner-issued generation before clearing and
+            // returning the value. Every copied lease therefore observes the first
+            // successful return, and a stale copy cannot return a later rental.
+            owner?.TryReturn(value, generation);
         }
     }
 
@@ -78,12 +83,8 @@ namespace WallstopStudios.UnityHelpers.Utils
         {
             public static PooledResource<List<T>> Get(out List<T> list)
             {
-                list = listPool.Rent();
-                return new PooledResource<List<T>>(list, l =>
-                {
-                    l.Clear();
-                    listPool.Return(l);
-                });
+                list = listPool.Rent(out long generation);
+                return new PooledResource<List<T>>(listPool, list, generation);
             }
         }
 
@@ -91,12 +92,8 @@ namespace WallstopStudios.UnityHelpers.Utils
         {
             public static PooledResource<HashSet<T>> Get(out HashSet<T> set)
             {
-                set = hashSetPool.Rent();
-                return new PooledResource<HashSet<T>>(set, s =>
-                {
-                    s.Clear();
-                    hashSetPool.Return(s);
-                });
+                set = hashSetPool.Rent(out long generation);
+                return new PooledResource<HashSet<T>>(hashSetPool, set, generation);
             }
         }
 
@@ -104,12 +101,8 @@ namespace WallstopStudios.UnityHelpers.Utils
         {
             public static PooledResource<Stack<T>> Get(out Stack<T> stack)
             {
-                stack = stackPool.Rent();
-                return new PooledResource<Stack<T>>(stack, s =>
-                {
-                    s.Clear();
-                    stackPool.Return(s);
-                });
+                stack = stackPool.Rent(out long generation);
+                return new PooledResource<Stack<T>>(stackPool, stack, generation);
             }
         }
 
@@ -117,12 +110,8 @@ namespace WallstopStudios.UnityHelpers.Utils
         {
             public static PooledResource<Queue<T>> Get(out Queue<T> queue)
             {
-                queue = queuePool.Rent();
-                return new PooledResource<Queue<T>>(queue, q =>
-                {
-                    q.Clear();
-                    queuePool.Return(q);
-                });
+                queue = queuePool.Rent(out long generation);
+                return new PooledResource<Queue<T>>(queuePool, queue, generation);
             }
         }
     }

@@ -97,7 +97,7 @@
         "category": "performance",
         "tags": "memory, allocation, pooling, zero-alloc, collections, raii, disposable"
       },
-      "lineCount": 91,
+      "lineCount": 96,
       "references": [
         ".llm/skills/collection-pooling/references/array-pooling-part-1.md",
         ".llm/skills/collection-pooling/references/array-pooling-part-2.md",
@@ -386,7 +386,7 @@
         "category": "testing",
         "tags": "testing, coverage, edge-cases, data-driven, unity, nunit, best-practices, quality"
       },
-      "lineCount": 77,
+      "lineCount": 82,
       "references": [
         ".llm/skills/test-coverage-design/references/comprehensive-test-coverage.md",
         ".llm/skills/test-coverage-design/references/lifecycle-edge-coverage.md",

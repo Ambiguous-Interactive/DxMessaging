@@ -758,6 +758,8 @@ namespace DxMessaging.Core.MessageBus
         private readonly struct DispatchLease : IDisposable
         {
             private readonly MessageBus _bus;
+            private readonly long _leaseId;
+            private readonly long _previousLeaseId;
 
             // The scoped emission id of the emission this lease is nested
             // inside (or the idle value at the outermost lease). Restored on
@@ -771,13 +773,28 @@ namespace DxMessaging.Core.MessageBus
             public DispatchLease(MessageBus bus)
             {
                 _bus = bus;
+                _previousLeaseId = bus._activeDispatchLeaseId;
+                unchecked
+                {
+                    _leaseId = ++bus._dispatchLeaseSequence;
+                }
                 _previousScopedEmissionId = bus._scopedEmissionId;
+                bus._activeDispatchLeaseId = _leaseId;
                 bus._dispatchDepth++;
             }
 
             public void Dispose()
             {
                 MessageBus bus = _bus;
+                if (bus == null || bus._activeDispatchLeaseId != _leaseId)
+                {
+                    return;
+                }
+
+                // The owner-held identity makes copies idempotent. A mutable flag on this
+                // readonly struct would protect only one copy and still allow another copy to
+                // unwind the same dispatch twice.
+                bus._activeDispatchLeaseId = _previousLeaseId;
                 bus._scopedEmissionId = _previousScopedEmissionId;
                 int depth = bus._dispatchDepth - 1;
                 bus._dispatchDepth = depth;
@@ -818,6 +835,8 @@ namespace DxMessaging.Core.MessageBus
         private readonly struct ReflexiveDispatchLease : IDisposable
         {
             private readonly MessageBus _bus;
+            private readonly long _leaseId;
+            private readonly long _previousLeaseId;
             private readonly ReflexiveDispatchState _previousState;
             private readonly bool _rented;
             private readonly long _resetGeneration;
@@ -825,6 +844,11 @@ namespace DxMessaging.Core.MessageBus
             public ReflexiveDispatchLease(MessageBus bus)
             {
                 _bus = bus;
+                _previousLeaseId = bus._activeReflexiveDispatchLeaseId;
+                unchecked
+                {
+                    _leaseId = ++bus._reflexiveDispatchLeaseSequence;
+                }
                 _previousState = bus._reflexiveDispatchState;
                 _rented = bus._reflexiveDispatchDepth > 0;
                 _resetGeneration = bus._resetGeneration;
@@ -834,12 +858,21 @@ namespace DxMessaging.Core.MessageBus
                 }
 
                 bus._reflexiveDispatchDepth++;
+                bus._activeReflexiveDispatchLeaseId = _leaseId;
                 bus._reflexiveDispatchState.Clear();
             }
 
             public void Dispose()
             {
                 MessageBus bus = _bus;
+                if (bus == null || bus._activeReflexiveDispatchLeaseId != _leaseId)
+                {
+                    return;
+                }
+
+                // See DispatchLease.Dispose: the identity lives on the bus so every copied
+                // value observes that this logical lease has already ended.
+                bus._activeReflexiveDispatchLeaseId = _previousLeaseId;
                 ReflexiveDispatchState completedState = bus._reflexiveDispatchState;
                 completedState.Clear();
                 bus._reflexiveDispatchDepth--;
@@ -1936,6 +1969,8 @@ namespace DxMessaging.Core.MessageBus
         private ReflexiveDispatchState _reflexiveDispatchState = new();
         private CollectionPool<ReflexiveDispatchState> _reflexiveDispatchStatePool;
         private int _reflexiveDispatchDepth;
+        private long _reflexiveDispatchLeaseSequence;
+        private long _activeReflexiveDispatchLeaseId;
 
         /// <summary>Diagnostics for reentrant reflexive dispatch state retained by this bus.</summary>
         internal CollectionPoolDiagnostics ReflexiveDispatchPoolDiagnostics =>
@@ -1983,6 +2018,8 @@ namespace DxMessaging.Core.MessageBus
         private long _globalSlotSweepGeneration;
         private int _lastContextTypeSlotsEvicted;
         private int _dispatchDepth;
+        private long _dispatchLeaseSequence;
+        private long _activeDispatchLeaseId;
 
         // Deferred teardown for ResetState() invoked from inside a handler
         // while an emission is in flight. Clearing a context HandlerCache (or

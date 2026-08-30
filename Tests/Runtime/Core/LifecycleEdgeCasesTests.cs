@@ -3,6 +3,8 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Collections;
+    using System.Reflection;
+    using System.Runtime.CompilerServices;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime;
@@ -41,6 +43,80 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class LifecycleEdgeCasesTests : MessagingTestBase
     {
         private const int PrefabPoolingCycleCount = 100;
+
+        [TestCase("DispatchLease", "_dispatchDepth", true)]
+        [TestCase("DispatchLease", "_dispatchDepth", false)]
+        [TestCase("ReflexiveDispatchLease", "_reflexiveDispatchDepth", true)]
+        [TestCase("ReflexiveDispatchLease", "_reflexiveDispatchDepth", false)]
+        public void CopiedMessageBusLeasesDisposeExactlyOnce(
+            string leaseTypeName,
+            string depthFieldName,
+            bool disposeCopyFirst
+        )
+        {
+            MessageBus bus = new();
+            object original = CreatePrivateLease(bus, leaseTypeName);
+            object copy = RuntimeHelpers.GetObjectValue(original);
+
+            Assert.AreNotSame(
+                original,
+                copy,
+                "[{0}] The test must exercise two independent boxes of the value-type lease.",
+                leaseTypeName
+            );
+            Assert.AreEqual(
+                1,
+                GetPrivateLeaseDepth(bus, depthFieldName),
+                "[{0}] Constructing the original lease must enter exactly one scope.",
+                leaseTypeName
+            );
+
+            object first = disposeCopyFirst ? copy : original;
+            object stale = disposeCopyFirst ? original : copy;
+            DisposePrivateLease(first);
+            Assert.AreEqual(
+                0,
+                GetPrivateLeaseDepth(bus, depthFieldName),
+                "[{0}] Disposing either copy must end the logical lease once.",
+                leaseTypeName
+            );
+
+            DisposePrivateLease(stale);
+            Assert.AreEqual(
+                0,
+                GetPrivateLeaseDepth(bus, depthFieldName),
+                "[{0}] Disposing the second copy must not decrement the depth twice.",
+                leaseTypeName
+            );
+
+            object replacement = CreatePrivateLease(bus, leaseTypeName);
+            DisposePrivateLease(stale);
+            Assert.AreEqual(
+                1,
+                GetPrivateLeaseDepth(bus, depthFieldName),
+                "[{0}] A stale copy must not dispose a later lease at the same depth.",
+                leaseTypeName
+            );
+
+            object replacementCopy = RuntimeHelpers.GetObjectValue(replacement);
+            object nested = CreatePrivateLease(bus, leaseTypeName);
+            DisposePrivateLease(replacementCopy);
+            Assert.AreEqual(
+                2,
+                GetPrivateLeaseDepth(bus, depthFieldName),
+                "[{0}] Out-of-order disposal must not unwind through the active nested lease.",
+                leaseTypeName
+            );
+
+            DisposePrivateLease(nested);
+            DisposePrivateLease(replacement);
+            Assert.AreEqual(
+                0,
+                GetPrivateLeaseDepth(bus, depthFieldName),
+                "[{0}] Valid LIFO disposal after an ignored stale copy must restore idle depth.",
+                leaseTypeName
+            );
+        }
 
         [Test]
         public void PrefabPoolingEnableDisableCycles(
@@ -1086,6 +1162,57 @@ namespace DxMessaging.Tests.Runtime.Core
 
                 token.RemoveRegistration(handle);
             }
+        }
+
+        private static object CreatePrivateLease(MessageBus bus, string leaseTypeName)
+        {
+            Type leaseType = typeof(MessageBus).GetNestedType(
+                leaseTypeName,
+                BindingFlags.NonPublic
+            );
+            Assert.IsNotNull(
+                leaseType,
+                "[{0}] MessageBus must retain the private lease type under test.",
+                leaseTypeName
+            );
+
+            object lease = Activator.CreateInstance(leaseType, bus);
+            Assert.IsNotNull(
+                lease,
+                "[{0}] The private lease constructor must produce a boxed value.",
+                leaseTypeName
+            );
+            return lease;
+        }
+
+        private static int GetPrivateLeaseDepth(MessageBus bus, string depthFieldName)
+        {
+            FieldInfo depthField = typeof(MessageBus).GetField(
+                depthFieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.IsNotNull(
+                depthField,
+                "MessageBus must retain the private depth field {0}.",
+                depthFieldName
+            );
+            return (int)depthField.GetValue(bus);
+        }
+
+        private static void DisposePrivateLease(object lease)
+        {
+            MethodInfo dispose = lease
+                .GetType()
+                .GetMethod(
+                    nameof(IDisposable.Dispose),
+                    BindingFlags.Instance | BindingFlags.Public
+                );
+            Assert.IsNotNull(
+                dispose,
+                "[{0}] The private lease must expose IDisposable.Dispose.",
+                lease.GetType().Name
+            );
+            dispose.Invoke(lease, null);
         }
     }
 }
