@@ -1543,6 +1543,7 @@ namespace DxMessaging.Editor
             int parentheses = 0;
             int brackets = 0;
             int braces = 0;
+            int angles = 0;
             for (int index = start; index < text.Length; index++)
             {
                 switch (text[index])
@@ -1551,7 +1552,7 @@ namespace DxMessaging.Editor
                         parentheses++;
                         break;
                     case ')':
-                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
                         {
                             return index;
                         }
@@ -1567,15 +1568,24 @@ namespace DxMessaging.Editor
                         braces++;
                         break;
                     case '}':
-                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
                         {
                             return index;
                         }
                         braces--;
                         break;
+                    case '<':
+                        angles++;
+                        break;
+                    case '>':
+                        if (angles > 0)
+                        {
+                            angles--;
+                        }
+                        break;
                     case ',':
                     case ';':
-                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
                         {
                             return index;
                         }

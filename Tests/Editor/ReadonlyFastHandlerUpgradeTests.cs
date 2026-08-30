@@ -408,6 +408,28 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
         }
 
         [Test]
+        public void AnalyzeLeavesExpressionBodyWithGenericRefForwardingForManualReview()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message) => Forward<First, Second>(ref message);";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'message' by ref")
+            );
+        }
+
+        [Test]
         public void AnalyzeLeavesMethodGroupWithOutUseForManualReview()
         {
             const string Source =
