@@ -4,7 +4,7 @@
 /**
  * The `.llm` harness: validation, index generation, and agent-visible skill mirrors.
  *
- *   node scripts/llm/harness.js index      Regenerate .llm/index.json, .llm/index.md, mirrors
+ *   node scripts/llm/harness.js index      Regenerate .llm/index.md, registry, and mirrors
  *   node scripts/llm/harness.js validate   Check Agent Skills conformance and line limits
  *   node scripts/llm/harness.js check      validate + fail on any stale generated artifact
  *
@@ -50,7 +50,6 @@ function layout() {
     skillsDir: path.join(llmDir, "skills"),
     contextFile: path.join(llmDir, "context.md"),
     indexMd: path.join(llmDir, "index.md"),
-    indexJson: path.join(llmDir, "index.json"),
     mirrorRoots: [path.join(root, ".claude", "skills"), path.join(root, ".agents", "skills")]
   };
 }
@@ -386,18 +385,6 @@ function validate() {
 // Generated artifacts
 // ---------------------------------------------------------------------------
 
-function renderIndexJson(manifest) {
-  const skills = manifest.skills.map((skill) => ({
-    name: skill.name,
-    path: skill.path,
-    description: skill.description,
-    metadata: skill.metadata,
-    lineCount: skill.lineCount,
-    references: skill.references.map((reference) => reference.path)
-  }));
-  return `${JSON.stringify({ skillCount: skills.length, skills }, null, 2)}\n`;
-}
-
 function renderIndexMarkdown(manifest) {
   const lines = [
     "# Skill Index",
@@ -476,9 +463,8 @@ function mirrorContent(skill) {
 }
 
 function expectedArtifacts(manifest) {
-  const { contextFile, indexJson, indexMd, mirrorRoots } = layout();
+  const { contextFile, indexMd, mirrorRoots } = layout();
   const artifacts = new Map();
-  artifacts.set(indexJson, renderIndexJson(manifest));
   artifacts.set(indexMd, renderIndexMarkdown(manifest));
   artifacts.set(
     contextFile,
@@ -652,7 +638,6 @@ module.exports = {
   main,
   mirrorContent,
   parseFrontmatter,
-  renderIndexJson,
   renderIndexMarkdown,
   replaceRegistryBlock,
   staleMirrors,
