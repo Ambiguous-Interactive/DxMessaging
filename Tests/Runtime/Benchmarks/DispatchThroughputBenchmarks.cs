@@ -1416,6 +1416,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
             }
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
             void CountPostProcessed(in SimpleUntargetedMessage message)
             {
                 handlerInvocations.Increment();
@@ -1430,6 +1431,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 handlerInvocations.Increment();
             }
+#pragma warning restore RCS1242
         }
 
         private static bool RewriteTarget(ref InstanceId target, ref SimpleTargetedMessage message)
