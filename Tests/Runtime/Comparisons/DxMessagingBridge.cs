@@ -7,6 +7,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     /// <summary>
     /// Bridges DxMessaging using its readonly by-ref fast-path API on an isolated
     /// <see cref="MessageBus"/>. Mirrors the benchmark suite's isolated
@@ -220,5 +221,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             // its execution is the thing being measured for this scenario.
         }
     }
+#pragma warning restore RCS1242
 }
 #endif

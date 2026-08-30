@@ -13,6 +13,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
     using UnityEngine.TestTools.Constraints;
     using Is = NUnit.Framework.Is;
 
+#pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     [Category("Performance")]
     public sealed class PerformanceTests : BenchmarkTestBase
     {
@@ -663,6 +664,7 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             }
         }
     }
+#pragma warning restore RCS1242
 }
 
 #endif
