@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix combined `ReflexiveSendMode` flags so active filtering is opt-in, inactive descendants are
+  included without it, and missing zero- or one-argument receivers remain silent
+  ([#489](https://github.com/Ambiguous-Interactive/DxMessaging/issues/489),
+  [#490](https://github.com/Ambiguous-Interactive/DxMessaging/issues/490)).
+- Fix nested reflexive sends so the outer hierarchy traversal resumes without duplicate delivery,
+  and skip receivers destroyed earlier in the same traversal
+  ([#489](https://github.com/Ambiguous-Interactive/DxMessaging/issues/489)).
+- Fix `MessagingComponent.Release` so destroyed listeners can dispose their registrations and are
+  no longer retained ([#491](https://github.com/Ambiguous-Interactive/DxMessaging/issues/491)).
 - Stop the base-call analyzer from reporting `DXMSG009` or `DXMSG007` for components that declare
   `OnApplicationFocus(bool)` or `OnApplicationPause(bool)`. `MessageAwareComponent` declares neither
   hook, so such a method overrides and hides nothing; the diagnostic claimed a CS0114 hiding that

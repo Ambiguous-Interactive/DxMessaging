@@ -1,6 +1,7 @@
 #if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
+    using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -16,6 +17,40 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GameObject,
             Component,
+        }
+
+        private static IEnumerable<TestCaseData> MissingReceiverCases()
+        {
+            ReflexiveSendMode[] modes =
+            {
+                ReflexiveSendMode.Flat,
+                ReflexiveSendMode.Upwards,
+                ReflexiveSendMode.Downwards,
+            };
+            foreach (ReflexiveSendMode mode in modes)
+            {
+                yield return new TestCaseData(mode, 0).SetName($"{mode}_NoArguments");
+                yield return new TestCaseData(mode, 1).SetName($"{mode}_OneArgument");
+            }
+        }
+
+        private static IEnumerable<TestCaseData> SupportedReceiverCases()
+        {
+            ReflexiveSendMode[] modes =
+            {
+                ReflexiveSendMode.Flat,
+                ReflexiveSendMode.Upwards,
+                ReflexiveSendMode.Downwards,
+            };
+            foreach (ReflexiveSendMode mode in modes)
+            {
+                for (int argumentCount = 0; argumentCount <= 2; ++argumentCount)
+                {
+                    yield return new TestCaseData(mode, argumentCount).SetName(
+                        $"{mode}_{argumentCount}Arguments_InactiveReceiver"
+                    );
+                }
+            }
         }
 
         /// <remarks>
@@ -115,6 +150,170 @@ namespace DxMessaging.Tests.Runtime.Core
             // Ensure nothing was called
             Assert.AreEqual(0, twoArgCount);
             Assert.AreEqual(0, threeArgCount);
+        }
+
+        [TestCaseSource(nameof(MissingReceiverCases))]
+        public void MissingReceiverIsSilentForSupportedArgumentCounts(
+            ReflexiveSendMode sendMode,
+            int argumentCount
+        )
+        {
+            GameObject host = new(nameof(MissingReceiverIsSilentForSupportedArgumentCounts));
+            _spawned.Add(host);
+            InstanceId hostId = host;
+            object[] arguments =
+                argumentCount == 0 ? global::System.Array.Empty<object>() : new object[] { 1 };
+            ReflexiveMessage message = new("NoSuchMethodOnComponent", sendMode, arguments);
+
+            Assert.DoesNotThrow(
+                () => message.EmitTargeted(hostId),
+                $"[{sendMode}, arguments={argumentCount}] A missing reflexive receiver must be a silent no-op."
+            );
+        }
+
+        [TestCaseSource(nameof(SupportedReceiverCases))]
+        public void SupportedArgumentCountsInvokeInactiveMatchingReceiver(
+            ReflexiveSendMode sendMode,
+            int argumentCount
+        )
+        {
+            GameObject receiver = new(
+                nameof(SupportedArgumentCountsInvokeInactiveMatchingReceiver) + "_Receiver",
+                typeof(SimpleMessageAwareComponent)
+            );
+            _spawned.Add(receiver);
+            GameObject target;
+            switch (sendMode)
+            {
+                case ReflexiveSendMode.Flat:
+                    target = receiver;
+                    break;
+                case ReflexiveSendMode.Upwards:
+                    target = new(
+                        nameof(SupportedArgumentCountsInvokeInactiveMatchingReceiver) + "_Target"
+                    );
+                    _spawned.Add(target);
+                    target.transform.SetParent(receiver.transform);
+                    break;
+                case ReflexiveSendMode.Downwards:
+                    target = new(
+                        nameof(SupportedArgumentCountsInvokeInactiveMatchingReceiver) + "_Target"
+                    );
+                    _spawned.Add(target);
+                    receiver.transform.SetParent(target.transform);
+                    break;
+                default:
+                    throw new AssertionException($"Unexpected send mode: {sendMode}.");
+            }
+
+            SimpleMessageAwareComponent component =
+                receiver.GetComponent<SimpleMessageAwareComponent>();
+            int callCount = 0;
+            string methodName;
+            object[] arguments;
+            if (argumentCount == 0)
+            {
+                component.reflexiveNoArgumentHandler = () => ++callCount;
+                methodName = nameof(SimpleMessageAwareComponent.HandleReflexiveMessageNoArguments);
+                arguments = global::System.Array.Empty<object>();
+            }
+            else if (argumentCount == 1)
+            {
+                component.reflexiveOneArgumentHandler = () => ++callCount;
+                methodName = nameof(SimpleMessageAwareComponent.HandleReflexiveMessageOneArgument);
+                arguments = new object[] { 1 };
+            }
+            else
+            {
+                component.reflexiveTwoArgumentHandler = () => ++callCount;
+                methodName = nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments);
+                arguments = new object[] { 1, 2 };
+            }
+
+            InstanceId targetId = target;
+            receiver.SetActive(false);
+            ReflexiveMessage message = new(methodName, sendMode, arguments);
+            message.EmitTargeted(targetId);
+
+            Assert.That(
+                callCount,
+                Is.EqualTo(1),
+                $"[{sendMode}, arguments={argumentCount}] An inactive matching reflexive receiver must run once when OnlyIncludeActive is absent."
+            );
+        }
+
+        [TestCase(ReflexiveSendMode.Flat)]
+        [TestCase(ReflexiveSendMode.Upwards)]
+        [TestCase(ReflexiveSendMode.Downwards)]
+        public void SingleArgumentNativeCompatibilityAcceptsIgnoredAndAssignableArguments(
+            ReflexiveSendMode sendMode
+        )
+        {
+            GameObject receiver = new(
+                nameof(SingleArgumentNativeCompatibilityAcceptsIgnoredAndAssignableArguments)
+                    + "_Receiver",
+                typeof(SimpleMessageAwareComponent)
+            );
+            _spawned.Add(receiver);
+            GameObject target;
+            switch (sendMode)
+            {
+                case ReflexiveSendMode.Flat:
+                    target = receiver;
+                    break;
+                case ReflexiveSendMode.Upwards:
+                    target = new(
+                        nameof(
+                            SingleArgumentNativeCompatibilityAcceptsIgnoredAndAssignableArguments
+                        ) + "_Target"
+                    );
+                    _spawned.Add(target);
+                    target.transform.SetParent(receiver.transform);
+                    break;
+                case ReflexiveSendMode.Downwards:
+                    target = new(
+                        nameof(
+                            SingleArgumentNativeCompatibilityAcceptsIgnoredAndAssignableArguments
+                        ) + "_Target"
+                    );
+                    _spawned.Add(target);
+                    receiver.transform.SetParent(target.transform);
+                    break;
+                default:
+                    throw new AssertionException($"Unexpected send mode: {sendMode}.");
+            }
+
+            SimpleMessageAwareComponent component =
+                receiver.GetComponent<SimpleMessageAwareComponent>();
+            int ignoredArgumentCount = 0;
+            int assignableArgumentCount = 0;
+            component.reflexiveIgnoredArgumentHandler = () => ++ignoredArgumentCount;
+            component.reflexiveObjectArgumentHandler = () => ++assignableArgumentCount;
+            InstanceId targetId = target;
+
+            ReflexiveMessage ignoredArgument = new(
+                nameof(SimpleMessageAwareComponent.HandleReflexiveMessageIgnoringArgument),
+                sendMode,
+                1
+            );
+            ignoredArgument.EmitTargeted(targetId);
+            ReflexiveMessage assignableArgument = new(
+                nameof(SimpleMessageAwareComponent.HandleReflexiveMessageObjectArgument),
+                sendMode,
+                "derived value"
+            );
+            assignableArgument.EmitTargeted(targetId);
+
+            Assert.That(
+                ignoredArgumentCount,
+                Is.EqualTo(1),
+                $"[{sendMode}] Native one-argument compatibility must allow a receiver to ignore the value."
+            );
+            Assert.That(
+                assignableArgumentCount,
+                Is.EqualTo(1),
+                $"[{sendMode}] Native one-argument compatibility must accept an assignable derived value."
+            );
         }
 
         [Test]

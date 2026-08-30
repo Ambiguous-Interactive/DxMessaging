@@ -798,6 +798,65 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+#if UNITY_2021_3_OR_NEWER
+        /// <summary>Per-send component and deduplication caches for reflexive traversal.</summary>
+        private sealed class ReflexiveDispatchState
+        {
+            public readonly HashSet<MonoBehaviour> recipients = new();
+            public readonly List<MonoBehaviour> components = new();
+            public readonly List<Transform> transforms = new();
+
+            public void Clear()
+            {
+                recipients.Clear();
+                components.Clear();
+                transforms.Clear();
+            }
+        }
+
+        /// <summary>Scopes reflexive caches so nested sends cannot overwrite their caller's traversal.</summary>
+        private readonly struct ReflexiveDispatchLease : IDisposable
+        {
+            private readonly MessageBus _bus;
+            private readonly ReflexiveDispatchState _previousState;
+            private readonly bool _rented;
+            private readonly long _resetGeneration;
+
+            public ReflexiveDispatchLease(MessageBus bus)
+            {
+                _bus = bus;
+                _previousState = bus._reflexiveDispatchState;
+                _rented = bus._reflexiveDispatchDepth > 0;
+                _resetGeneration = bus._resetGeneration;
+                if (_rented)
+                {
+                    bus._reflexiveDispatchState = bus.GetReflexiveDispatchStatePool().Rent();
+                }
+
+                bus._reflexiveDispatchDepth++;
+                bus._reflexiveDispatchState.Clear();
+            }
+
+            public void Dispose()
+            {
+                MessageBus bus = _bus;
+                ReflexiveDispatchState completedState = bus._reflexiveDispatchState;
+                completedState.Clear();
+                bus._reflexiveDispatchDepth--;
+                if (!_rented)
+                {
+                    return;
+                }
+
+                bus._reflexiveDispatchState = _previousState;
+                if (bus._resetGeneration == _resetGeneration)
+                {
+                    bus.GetReflexiveDispatchStatePool().Return(completedState);
+                }
+            }
+        }
+#endif
+
         private sealed class HandlerCache
         {
             public readonly Dictionary<MessageHandler, int> handlers = new();
@@ -1678,6 +1737,17 @@ namespace DxMessaging.Core.MessageBus
             internal int MaxRetained { get; }
         }
 
+        /// <summary>Gets the settings-bound pool used only by nested reflexive sends.</summary>
+        private CollectionPool<ReflexiveDispatchState> GetReflexiveDispatchStatePool()
+        {
+            return _reflexiveDispatchStatePool ??= new CollectionPool<ReflexiveDispatchState>(
+                _handlerCacheRetentionLimit,
+                ContextHandlerByTargetDicts.UseLru,
+                factory: static () => new ReflexiveDispatchState(),
+                onRecycled: static state => state.Clear()
+            );
+        }
+
         private void ApplyRuntimeSettings(DxMessagingRuntimeSettings settings)
         {
             if (settings == null)
@@ -1689,6 +1759,11 @@ namespace DxMessaging.Core.MessageBus
             ContextHandlerByTargetDicts.UseLru = settings.BufferUseLruEviction;
             ContextHandlerByTargetDicts.MaxRetained = settings.BufferMaxDistinctEntries;
             _handlerCacheRetentionLimit = Math.Max(0, settings.BufferMaxDistinctEntries);
+            if (_reflexiveDispatchStatePool != null)
+            {
+                _reflexiveDispatchStatePool.UseLru = settings.BufferUseLruEviction;
+                _reflexiveDispatchStatePool.MaxRetained = _handlerCacheRetentionLimit;
+            }
             if (
                 _recycledEmptyHandlerCache != null
                 && (
@@ -1858,8 +1933,21 @@ namespace DxMessaging.Core.MessageBus
         > _methodCache = new();
 
 #if UNITY_2021_3_OR_NEWER
-        private readonly HashSet<MonoBehaviour> _recipientCache = new();
-        private readonly List<MonoBehaviour> _componentCache = new();
+        private ReflexiveDispatchState _reflexiveDispatchState = new();
+        private CollectionPool<ReflexiveDispatchState> _reflexiveDispatchStatePool;
+        private int _reflexiveDispatchDepth;
+
+        /// <summary>Diagnostics for reentrant reflexive dispatch state retained by this bus.</summary>
+        internal CollectionPoolDiagnostics ReflexiveDispatchPoolDiagnostics =>
+            _reflexiveDispatchStatePool?.Snapshot() ?? default;
+
+        /// <summary>Current retained-entry cap for the reentrant reflexive state pool.</summary>
+        internal int ReflexiveDispatchPoolMaxRetained =>
+            _reflexiveDispatchStatePool?.MaxRetained ?? _handlerCacheRetentionLimit;
+
+        /// <summary>Whether the reentrant reflexive state pool retains entries in LRU order.</summary>
+        internal bool ReflexiveDispatchPoolUsesLru =>
+            _reflexiveDispatchStatePool?.UseLru ?? ContextHandlerByTargetDicts.UseLru;
 #endif
 
         private RegistrationLog _log;
@@ -2184,6 +2272,14 @@ namespace DxMessaging.Core.MessageBus
             pooledCollectionsEvicted += ContextHandlerByTargetDicts.Trim(
                 force ? 0 : ContextHandlerByTargetDicts.MaxRetained
             );
+#if UNITY_2021_3_OR_NEWER
+            if (_reflexiveDispatchStatePool != null)
+            {
+                pooledCollectionsEvicted += _reflexiveDispatchStatePool.Trim(
+                    force ? 0 : _reflexiveDispatchStatePool.MaxRetained
+                );
+            }
+#endif
             if (
                 force
                 && _dispatchDepth == 0
@@ -3289,8 +3385,11 @@ namespace DxMessaging.Core.MessageBus
             _lastSweepSeconds = _clock.NowSeconds;
 
 #if UNITY_2021_3_OR_NEWER
-            _recipientCache.Clear();
-            _componentCache.Clear();
+            if (_reflexiveDispatchDepth == 0)
+            {
+                _reflexiveDispatchState.Clear();
+            }
+            _ = _reflexiveDispatchStatePool?.Trim(0);
 #endif
 
             _log?.Clear();
@@ -4465,158 +4564,82 @@ namespace DxMessaging.Core.MessageBus
 
                 if (found)
                 {
-                    _recipientCache.Clear();
+                    using ReflexiveDispatchLease reflexiveDispatchLease = new(this);
                     bool sentInADirection = false;
                     ReflexiveSendMode sendMode = reflexiveMessage.sendMode;
+                    bool onlyActive = sendMode.HasFlagNoAlloc(ReflexiveSendMode.OnlyIncludeActive);
+                    bool preserveNativeSemantics =
+                        !onlyActive
+                        && reflexiveMessage.parameters.Length <= 1
+                        && (
+                            sendMode == ReflexiveSendMode.Flat
+                            || sendMode == ReflexiveSendMode.Upwards
+                            || sendMode == ReflexiveSendMode.Downwards
+                        );
                     if (sendMode.HasFlagNoAlloc(ReflexiveSendMode.Upwards))
                     {
                         sentInADirection = true;
-                        if (
-                            !sendMode.HasFlagNoAlloc(ReflexiveSendMode.Downwards)
-                            && !sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat)
-                            && !sendMode.HasFlagNoAlloc(ReflexiveSendMode.OnlyIncludeActive)
-                        )
+                        Transform current = go.transform;
+                        do
                         {
-                            switch (reflexiveMessage.parameters.Length)
+                            Transform next = current.parent;
+                            if (
+                                !SendMessage(
+                                    current.gameObject,
+                                    ref reflexiveMessage,
+                                    onlyActive,
+                                    preserveNativeSemantics,
+                                    emissionResetGeneration
+                                )
+                            )
                             {
-                                case 0:
-                                {
-                                    go.SendMessageUpwards(reflexiveMessage.method);
-                                    break;
-                                }
-                                case 1:
-                                {
-                                    go.SendMessageUpwards(
-                                        reflexiveMessage.method,
-                                        reflexiveMessage.parameters[0]
-                                    );
-                                    break;
-                                }
-                                default:
-                                {
-                                    Transform current = go.transform;
-                                    do
-                                    {
-                                        _componentCache.Clear();
-                                        current.GetComponents(_componentCache);
-                                        for (int i = 0; i < _componentCache.Count; ++i)
-                                        {
-                                            MonoBehaviour script = _componentCache[i];
-                                            SendMessage(script, ref reflexiveMessage, false);
-                                        }
-                                        current = current.parent;
-                                    } while (current != null);
-
-                                    break;
-                                }
+                                return;
                             }
-                        }
-                        else
-                        {
-                            Transform current = go.transform;
-                            do
-                            {
-                                _componentCache.Clear();
-                                current.GetComponents(_componentCache);
-                                for (int i = 0; i < _componentCache.Count; ++i)
-                                {
-                                    MonoBehaviour script = _componentCache[i];
-                                    SendMessage(script, ref reflexiveMessage, true);
-                                }
-                                current = current.parent;
-                            } while (current != null);
-                        }
+                            current = next;
+                        } while (current != null);
                     }
                     if (sendMode.HasFlagNoAlloc(ReflexiveSendMode.Downwards))
                     {
-                        if (
-                            !sendMode.HasFlagNoAlloc(ReflexiveSendMode.Upwards)
-                            && !sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat)
-                            && !sendMode.HasFlagNoAlloc(ReflexiveSendMode.OnlyIncludeActive)
-                        )
+                        if (go != null)
                         {
-                            switch (reflexiveMessage.parameters.Length)
+                            List<Transform> transforms = _reflexiveDispatchState.transforms;
+                            transforms.Clear();
+                            go.GetComponentsInChildren(true, transforms);
+                            for (int i = 0; i < transforms.Count; ++i)
                             {
-                                case 0:
+                                Transform current = transforms[i];
+                                if (current == null)
                                 {
-                                    go.BroadcastMessage(reflexiveMessage.method);
-                                    break;
+                                    continue;
                                 }
-                                case 1:
+                                if (
+                                    !SendMessage(
+                                        current.gameObject,
+                                        ref reflexiveMessage,
+                                        onlyActive,
+                                        preserveNativeSemantics,
+                                        emissionResetGeneration
+                                    )
+                                )
                                 {
-                                    go.BroadcastMessage(
-                                        reflexiveMessage.method,
-                                        reflexiveMessage.parameters[0]
-                                    );
-                                    break;
+                                    return;
                                 }
-                                default:
-                                {
-                                    _componentCache.Clear();
-                                    go.GetComponentsInChildren(true, _componentCache);
-                                    for (int i = 0; i < _componentCache.Count; ++i)
-                                    {
-                                        MonoBehaviour parentComponent = _componentCache[i];
-                                        SendMessage(parentComponent, ref reflexiveMessage, false);
-                                    }
-
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            _componentCache.Clear();
-                            go.GetComponentsInChildren(_componentCache);
-                            for (int i = 0; i < _componentCache.Count; ++i)
-                            {
-                                MonoBehaviour parentComponent = _componentCache[i];
-                                SendMessage(parentComponent, ref reflexiveMessage, true);
                             }
                         }
                     }
                     else if (!sentInADirection && sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat))
                     {
-                        if (!sendMode.HasFlagNoAlloc(ReflexiveSendMode.OnlyIncludeActive))
+                        if (
+                            !SendMessage(
+                                go,
+                                ref reflexiveMessage,
+                                onlyActive,
+                                preserveNativeSemantics,
+                                emissionResetGeneration
+                            )
+                        )
                         {
-                            switch (reflexiveMessage.parameters.Length)
-                            {
-                                case 0:
-                                {
-                                    go.SendMessage(reflexiveMessage.method);
-                                    break;
-                                }
-                                case 1:
-                                {
-                                    go.SendMessage(
-                                        reflexiveMessage.method,
-                                        reflexiveMessage.parameters[0]
-                                    );
-                                    break;
-                                }
-                                default:
-                                {
-                                    _componentCache.Clear();
-                                    go.GetComponents(_componentCache);
-                                    for (int i = 0; i < _componentCache.Count; ++i)
-                                    {
-                                        MonoBehaviour component = _componentCache[i];
-                                        SendMessage(component, ref reflexiveMessage, false);
-                                    }
-
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            _componentCache.Clear();
-                            go.GetComponents(_componentCache);
-                            for (int i = 0; i < _componentCache.Count; ++i)
-                            {
-                                MonoBehaviour component = _componentCache[i];
-                                SendMessage(component, ref reflexiveMessage, true);
-                            }
+                            return;
                         }
                     }
                 }
@@ -8078,18 +8101,76 @@ namespace DxMessaging.Core.MessageBus
         }
 #endif
 
+        /// <summary>Invokes one GameObject while preserving native single-argument compatibility.</summary>
+        private bool SendMessage(
+            GameObject recipient,
+            ref ReflexiveMessage message,
+            bool onlyActive,
+            bool preserveNativeSemantics,
+            long resetGeneration
+        )
+        {
+            if (resetGeneration != _resetGeneration)
+            {
+                return false;
+            }
+
+            if (recipient == null)
+            {
+                return true;
+            }
+
+            if (preserveNativeSemantics && recipient.activeInHierarchy)
+            {
+                if (message.parameters.Length == 0)
+                {
+                    recipient.SendMessage(message.method, SendMessageOptions.DontRequireReceiver);
+                }
+                else
+                {
+                    recipient.SendMessage(
+                        message.method,
+                        message.parameters[0],
+                        SendMessageOptions.DontRequireReceiver
+                    );
+                }
+
+                return resetGeneration == _resetGeneration;
+            }
+
+            List<MonoBehaviour> components = _reflexiveDispatchState.components;
+            components.Clear();
+            recipient.GetComponents(components);
+            for (int i = 0; i < components.Count; ++i)
+            {
+                MonoBehaviour component = components[i];
+                SendMessage(component, ref message, onlyActive);
+                if (resetGeneration != _resetGeneration)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private void SendMessage(
             MonoBehaviour recipient,
             ref ReflexiveMessage message,
             bool onlyActive
         )
         {
-            if (onlyActive && !recipient.enabled)
+            if (recipient == null)
             {
                 return;
             }
 
-            if (!_recipientCache.Add(recipient))
+            if (onlyActive && !recipient.isActiveAndEnabled)
+            {
+                return;
+            }
+
+            if (!_reflexiveDispatchState.recipients.Add(recipient))
             {
                 return;
             }

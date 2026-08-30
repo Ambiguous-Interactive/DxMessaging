@@ -38,6 +38,10 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         public Action componentTargetedHandler;
         public Action complexComponentTargetedHandler;
         public Action componentBroadcastHandler;
+        public Action reflexiveNoArgumentHandler;
+        public Action reflexiveIgnoredArgumentHandler;
+        public Action reflexiveObjectArgumentHandler;
+        public Action reflexiveOneArgumentHandler;
         public Action reflexiveTwoArgumentHandler;
         public Action reflexiveThreeArgumentHandler;
 
@@ -125,6 +129,26 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
                 _messageRegistrationToken.RemoveRegistration(_fastComplexTargetingHandle.Value);
                 _fastComplexTargetingHandle = null;
             }
+        }
+
+        public void HandleReflexiveMessageNoArguments()
+        {
+            reflexiveNoArgumentHandler?.Invoke();
+        }
+
+        public void HandleReflexiveMessageIgnoringArgument()
+        {
+            reflexiveIgnoredArgumentHandler?.Invoke();
+        }
+
+        public void HandleReflexiveMessageObjectArgument(object value)
+        {
+            reflexiveObjectArgumentHandler?.Invoke();
+        }
+
+        public void HandleReflexiveMessageOneArgument(int value)
+        {
+            reflexiveOneArgumentHandler?.Invoke();
         }
 
         public void HandleReflexiveMessageTwoArguments(int a, int b)

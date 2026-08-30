@@ -187,11 +187,17 @@ namespace DxMessaging.Unity
         /// <remarks>
         /// Invokes <see cref="MessageRegistrationToken.Dispose"/> and removes the listener from the internal cache after
         /// disposal succeeds. If token disposal throws, the listener remains cached so release can be retried. Safe to call
-        /// multiple times after a successful release.
+        /// multiple times after a successful release. A destroyed Unity listener can still be released by its retained
+        /// reference.
+        /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
+        /// <returns>
+        /// <c>true</c> when a retained token was disposed and removed; otherwise <c>false</c> for a CLR null
+        /// reference or a live or destroyed listener with no retained token.
+        /// </returns>
         public bool Release(MonoBehaviour listener)
         {
-            if (listener == null)
+            if (ReferenceEquals(listener, null))
             {
                 return false;
             }
