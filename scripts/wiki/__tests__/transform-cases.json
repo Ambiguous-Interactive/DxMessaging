@@ -1,0 +1,89 @@
+{
+  "wikiPages": [
+    ["concepts/message-types.md", "Concepts-Message-Types"],
+    ["concepts\\message-types.md", "Concepts-Message-Types"],
+    ["advanced/topics/index.md", "Advanced-Topics"],
+    ["index.md", "Home"],
+    ["README.md", "Home"],
+    ["../README.md", "Home"]
+  ],
+  "externalLinks": [
+    [true, ["https://x", "mailto:x@y", "git+ssh://x", "data:text/plain,x", "//cdn/x"]],
+    [false, ["./file.md", "../file.md", "file.md", "/docs/file.md"]]
+  ],
+  "parsedLinks": [
+    ["one", "a.md", false],
+    ["[nested]", "image_(v2).png", true]
+  ],
+  "relativeLinks": [
+    ["overview.md", "getting-started/index.md", "Getting-Started-Overview"],
+    ["../index.md", "getting-started/quick-start.md", "Home"],
+    ["../concepts/message-types.md", "getting-started/a.md", "Concepts-Message-Types"],
+    ["../../concepts/message-types.md", "guides/nested/a.md", "Concepts-Message-Types"],
+    ["../reference/faq.md#allocation", "guides/testing.md", "Reference-Faq#allocation"],
+    ["/docs/reference/faq.md", "guides/testing.md", "Reference-Faq"],
+    ["/docs", "guides/testing.md", "Home"],
+    ["/docs/", "guides/testing.md", "Home"],
+    ["reference/faq.md?view=1#top", "index.md", "Reference-Faq#top"],
+    ["..\\concepts\\message-types.md", "getting-started\\a.md", "Concepts-Message-Types"]
+  ],
+  "lineTransforms": [
+    ["[Self]()", "[Self]()"],
+    ["[Section](#section)", "[Section](#section)"],
+    ["[GitHub](https://github.com)", "[GitHub](https://github.com)"],
+    ["![Image](images/diagram.png)", "![Image](wiki-images/diagram.png)"],
+    ["![Image](images/diagram.png?raw=1#preview)", "![Image](wiki-images/diagram.png)"],
+    ["![Badge](https://img.shields.io/badge.svg)", "![Badge](https://img.shields.io/badge.svg)"],
+    ["[One](a.md) and [Two](b.md)", "[[A|One]] and [[B|Two]]"],
+    ["[Query](?view=1)", "[Query](?view=1)"]
+  ],
+  "fences": [
+    [
+      ["```csharp", "code", "```"],
+      [true, true, false]
+    ],
+    [
+      ["````", "```", "```", "````"],
+      [true, true, true, false]
+    ],
+    [
+      ["~~~", "code", "~~~", "```", "~~~", "```"],
+      [true, true, false, true, true, false]
+    ],
+    [
+      ["    ```python", "    code", "    ```"],
+      [true, true, false]
+    ]
+  ],
+  "ignoredCode": ["`[x](a.md)`", "``[x](a.md)``", "```[x](a.md)```"],
+  "unmatchedCode": ["``unclosed [x](a.md)", "``code` [x](a.md)", "`[x](a.md)"],
+  "protectedFiles": [
+    ["_Sidebar.md", "wiki sidebar"],
+    ["_Footer.md", "wiki footer"],
+    [".git/HEAD", "ref: refs/heads/master\n"],
+    ["wiki-images/README.txt", "wiki-owned image notes"],
+    ["Manual.md", "manual page"],
+    ["wiki-images/manual.png", "manual image"]
+  ],
+  "collisionFiles": {
+    "page": [
+      ["docs/a-b.md", "a"],
+      ["docs/a/b.md", "b"]
+    ],
+    "image": [
+      ["docs/x/a.png", "a"],
+      ["docs/y/A.png", "b"]
+    ],
+    "manual": [
+      ["docs/manual.md", "generated"],
+      ["wiki/Manual.md", "manual"]
+    ]
+  },
+  "symlinks": [
+    ["root", ""],
+    ["images", "wiki-images"],
+    ["manifest", ".dxmessaging-generated-files.json"],
+    ["planned", "Home.md"],
+    ["owned", "Owned.md"]
+  ]
+}

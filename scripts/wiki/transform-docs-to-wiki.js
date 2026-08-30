@@ -1,30 +1,19 @@
 #!/usr/bin/env node
 
-/**
- * Transform documentation from docs/ format to GitHub Wiki format.
- *
- * Handles:
- * - Markdown link conversion to [[WikiLinks]]
- * - Code block preservation (no transforms inside ```)
- * - Anchor/section link handling
- * - External link preservation
- * - Image path transformation
- * - README → Home special case
- * - Nested brackets and escaped characters
- *
- * Usage: node scripts/wiki/transform-docs-to-wiki.js <output-wiki-dir>
- */
-
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
+const childProcess = require("child_process");
 const { normalizeToLf } = require("../lib/line-endings");
 const { walkFiles } = require("../lib/repo-files");
 
 const DOCS_DIR = path.join(__dirname, "..", "..", "docs");
+const README_PATH = path.join(__dirname, "..", "..", "README.md");
+const OWNERSHIP_FILE = ".dxmessaging-generated-files.json";
+// Adopt only byte-identical outputs from the last Wiki state before ownership manifests existed.
+const LEGACY_WIKI_COMMIT = "725bf58fca45dd1f823a962f2f8d772cd0b2bd46";
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]);
 
-/**
- * State machine for code block detection
- */
 class CodeBlockTracker {
   constructor() {
     this.inCodeBlock = false;
@@ -33,9 +22,6 @@ class CodeBlockTracker {
 
   processLine(line) {
     const trimmed = line.trimStart();
-    // Match the fence run plus ANY info string. An opener may carry an info
-    // string (` ```ts {1,2} `, ` ```c-sharp `); a fence-blind `\w*` regex
-    // misses those and then treats a `## ` line inside the block as a heading.
     const fenceMatch = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
 
     if (fenceMatch) {
@@ -44,8 +30,6 @@ class CodeBlockTracker {
       const info = fenceMatch[2];
 
       if (!this.inCodeBlock) {
-        // CommonMark: a backtick opener's info string may not contain a
-        // backtick (else it is inline code like ` ```x``` `, not a fence).
         if (delimiter === "`" && info.includes("`")) {
           return this.inCodeBlock;
         }
@@ -56,7 +40,6 @@ class CodeBlockTracker {
         count >= this.codeBlockDelimiter.count &&
         info.trim() === ""
       ) {
-        // A closing fence carries no info string (only trailing whitespace).
         this.inCodeBlock = false;
         this.codeBlockDelimiter = null;
       }
@@ -64,23 +47,14 @@ class CodeBlockTracker {
 
     return this.inCodeBlock;
   }
-
-  reset() {
-    this.inCodeBlock = false;
-    this.codeBlockDelimiter = null;
-  }
 }
 
 function isExternalLink(href) {
-  return /^(https?:\/\/|mailto:|tel:|ftp:)/i.test(href);
-}
-
-function isAnchorOnlyLink(href) {
-  return href.startsWith("#");
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href);
 }
 
 function docsPathToWikiPage(docsPath) {
-  let pageName = docsPath.replace(/\.md$/i, "");
+  let pageName = docsPath.replace(/\\/g, "/").replace(/\.md$/i, "");
 
   if (pageName.endsWith("/index") || pageName === "index") {
     pageName = pageName.replace(/\/?index$/, "");
@@ -89,18 +63,28 @@ function docsPathToWikiPage(docsPath) {
     }
   }
 
-  // Handle README BEFORE slash replacement
   if (pageName === "README" || pageName === "../README") {
     return "Home";
   }
 
-  // NOW replace slashes
   pageName = pageName.replace(/\//g, "-");
 
   return pageName
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join("-");
+}
+
+function resolveDocsLink(href, currentFilePath) {
+  const currentDir = path.posix.dirname(currentFilePath.replace(/\\/g, "/"));
+  const normalizedHref = href.replace(/\\/g, "/");
+  let target = normalizedHref.startsWith("/")
+    ? path.posix.normalize(normalizedHref.replace(/^\/+/, ""))
+    : path.posix.normalize(path.posix.join(currentDir, normalizedHref));
+  if (target === "docs" || target === "../docs") return "index.md";
+  if (target.startsWith("../docs/")) target = target.slice(8);
+  if (target.startsWith("docs/")) target = target.slice(5);
+  return target || "index.md";
 }
 
 function findMarkdownLinks(line) {
@@ -114,25 +98,18 @@ function findMarkdownLinks(line) {
     }
 
     if (line[i] === "`") {
-      // Per CommonMark spec:
-      // - Code spans open with N backticks and close with exactly N backticks
-      // - If no matching closing delimiter is found, the backticks are literal text
-      // - Empty spans like `` `` (two backticks, space, two backticks) are valid
-      // Count consecutive backticks to determine delimiter length
       let backtickCount = 0;
       let j = i;
       while (j < line.length && line[j] === "`") {
         backtickCount++;
         j++;
       }
-      // Find closing delimiter with same backtick count
       const delimiter = "`".repeat(backtickCount);
       const endTick = line.indexOf(delimiter, j);
       if (endTick !== -1) {
         i = endTick + backtickCount;
         continue;
       }
-      // No matching closing delimiter, skip the opening backticks
       i = j;
       continue;
     }
@@ -210,15 +187,12 @@ function findMarkdownLinks(line) {
   return links;
 }
 
-function transformImagePath(imagePath, currentFilePath) {
+function transformImagePath(imagePath) {
   if (isExternalLink(imagePath)) {
     return imagePath;
   }
-
-  const currentDir = path.dirname(currentFilePath);
-  const resolvedPath = path.resolve(DOCS_DIR, currentDir, imagePath);
-  const baseName = path.basename(resolvedPath);
-  return `wiki-images/${baseName}`;
+  const localPath = imagePath.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+  return `wiki-images/${path.posix.basename(localPath)}`;
 }
 
 function transformLine(line, currentFilePath) {
@@ -236,12 +210,14 @@ function transformLine(line, currentFilePath) {
       continue;
     }
 
-    if (isAnchorOnlyLink(link.href)) {
+    if (link.href.startsWith("#")) {
       continue;
     }
 
+    if (!link.href || link.href.startsWith("?")) continue;
+
     if (link.isImage) {
-      const newPath = transformImagePath(link.href, currentFilePath);
+      const newPath = transformImagePath(link.href);
       const replacement = `![${link.text}](${newPath})`;
       result =
         result.substring(0, link.index) +
@@ -258,7 +234,10 @@ function transformLine(line, currentFilePath) {
       href = href.substring(0, anchorIndex);
     }
 
-    const wikiPage = docsPathToWikiPage(href);
+    const queryIndex = href.indexOf("?");
+    if (queryIndex !== -1) href = href.substring(0, queryIndex);
+
+    const wikiPage = docsPathToWikiPage(resolveDocsLink(href, currentFilePath));
     let wikiLink;
 
     if (anchor) {
@@ -299,122 +278,176 @@ function getAllMarkdownFiles(dir) {
   return walkFiles(dir, {
     match: (fullPath) => fullPath.endsWith(".md"),
     excludeDir: (fullPath, entry) => entry.name.startsWith(".") || entry.name === "includes",
-    onError: (error, failedDir) =>
-      console.warn(`Warning: Unable to read directory ${failedDir}: ${error.message}`)
-  });
+    onError: (error, failedDir) => {
+      throw new Error(`Unable to enumerate ${failedDir}: ${error.message}`);
+    }
+  }).sort();
 }
 
-function copyImages(sourceDir, targetDir, copiedImages = new Map()) {
-  const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"];
-  let entries;
-  try {
-    entries = fs.readdirSync(sourceDir, { withFileTypes: true });
-  } catch (error) {
-    console.warn(`Warning: Unable to read directory ${sourceDir}: ${error.message}`);
-    return copiedImages;
-  }
-
-  for (const entry of entries) {
+function collectImages(sourceDir, images = new Map()) {
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
     const fullPath = path.join(sourceDir, entry.name);
-    if (entry.isDirectory()) {
-      copyImages(fullPath, targetDir, copiedImages);
-    } else {
-      const ext = path.extname(entry.name).toLowerCase();
-      if (imageExtensions.includes(ext)) {
-        const targetPath = path.join(targetDir, entry.name);
-        if (copiedImages.has(entry.name)) {
-          const previousSource = copiedImages.get(entry.name);
-          console.warn(`WARNING: Image filename collision: "${entry.name}"`);
-          console.warn(`  Previous: ${previousSource}`);
-          console.warn(`  Current:  ${fullPath}`);
-          console.warn(`  The current file will overwrite the previous one.`);
-        }
-        fs.copyFileSync(fullPath, targetPath);
-        copiedImages.set(entry.name, fullPath);
-        console.log(`Copied image: ${entry.name}`);
+    if (entry.isDirectory()) collectImages(fullPath, images);
+    if (!entry.isFile() || !IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+    const collides = [...images.keys()].some(
+      (name) => name.toLowerCase() === entry.name.toLowerCase()
+    );
+    if (collides) throw new Error(`Image output collision: ${entry.name}`);
+    images.set(entry.name, fs.readFileSync(fullPath));
+  }
+  return images;
+}
+
+function createGenerationPlan(docsDir, readmePath) {
+  const pages = new Map();
+  for (const file of getAllMarkdownFiles(docsDir)) {
+    const relativePath = path.relative(docsDir, file).replace(/\\/g, "/");
+    const name = `${docsPathToWikiPage(relativePath)}.md`;
+    const collides = [...pages.keys()].some((page) => page.toLowerCase() === name.toLowerCase());
+    if (collides || name.startsWith("_")) throw new Error(`Page output collision: ${name}`);
+    pages.set(name, transformFile(fs.readFileSync(file, "utf8"), relativePath));
+  }
+  if (!pages.has("Home.md")) {
+    if (!fs.existsSync(readmePath)) throw new Error(`README missing: ${readmePath}`);
+    pages.set("Home.md", transformFile(fs.readFileSync(readmePath, "utf8"), "../README.md"));
+  }
+  return { pages, images: collectImages(docsDir) };
+}
+
+function gitBlobId(content) {
+  const header = Buffer.from(`blob ${content.length}\0`);
+  return crypto.createHash("sha1").update(header).update(content).digest("hex");
+}
+
+function isGeneratedName(name, kind) {
+  if (/[\\/]/.test(name)) return false;
+  return kind === "pages"
+    ? name.endsWith(".md") && !name.startsWith("_")
+    : IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase());
+}
+
+function validateOwnership(manifest) {
+  if (manifest.version !== 1 || !Array.isArray(manifest.pages) || !Array.isArray(manifest.images)) {
+    throw new Error("Invalid generated-file ownership manifest");
+  }
+  const pages = new Set(manifest.pages);
+  const images = new Set(manifest.images);
+  if (
+    pages.size !== manifest.pages.length ||
+    images.size !== manifest.images.length ||
+    [...pages].some((name) => !isGeneratedName(name, "pages")) ||
+    [...images].some((name) => !isGeneratedName(name, "images"))
+  ) {
+    throw new Error("Unsafe generated-file ownership manifest");
+  }
+  return { pages, images };
+}
+
+function readOwnership(wikiDir) {
+  const manifestPath = path.join(wikiDir, OWNERSHIP_FILE);
+  if (fs.existsSync(manifestPath)) {
+    return validateOwnership(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
+  }
+  const ownership = { pages: new Set(), images: new Set() };
+  if (!fs.existsSync(path.join(wikiDir, ".git"))) return ownership;
+  const tree = childProcess.execFileSync("git", ["ls-tree", "-r", "-z", LEGACY_WIKI_COMMIT], {
+    cwd: wikiDir,
+    encoding: "utf8"
+  });
+  for (const entry of tree.split("\0").filter(Boolean)) {
+    const match = entry.match(/^[^ ]+ blob ([a-f0-9]{40})\t(.+)$/);
+    if (!match) continue;
+    const [, expectedHash, relativePath] = match;
+    const isImage = relativePath.startsWith("wiki-images/");
+    const kind = isImage ? "images" : "pages";
+    const name = path.basename(relativePath);
+    const expectedPath = isImage ? `wiki-images/${name}` : name;
+    if (relativePath !== expectedPath || !isGeneratedName(name, kind)) continue;
+    const filePath = path.join(wikiDir, ...relativePath.split("/"));
+    if (!fs.existsSync(filePath) || gitBlobId(fs.readFileSync(filePath)) !== expectedHash) continue;
+    ownership[kind].add(name);
+  }
+  return ownership;
+}
+
+function outputPath(wikiDir, kind, name) {
+  return kind === "pages" ? path.join(wikiDir, name) : path.join(wikiDir, "wiki-images", name);
+}
+
+function rejectSymlink(target) {
+  const stats = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (stats?.isSymbolicLink()) throw new Error(`Managed wiki path is a symbolic link: ${target}`);
+}
+
+function validateOutputs(wikiDir, plan, ownership) {
+  for (const kind of ["pages", "images"]) {
+    const names = new Set([...plan[kind].keys(), ...ownership[kind]]);
+    for (const name of names) {
+      const target = outputPath(wikiDir, kind, name);
+      rejectSymlink(target);
+      if (plan[kind].has(name) && fs.existsSync(target) && !ownership[kind].has(name)) {
+        throw new Error(`Refusing to overwrite wiki-owned file: ${target}`);
+      }
+      if (ownership[kind].has(name) && fs.existsSync(target) && !fs.statSync(target).isFile())
+        throw new Error(`Owned output is not a file: ${target}`);
+    }
+  }
+}
+
+function processAllFiles(wikiDir, docsDir = DOCS_DIR, readmePath = README_PATH) {
+  const plan = createGenerationPlan(docsDir, readmePath);
+  for (const target of [
+    wikiDir,
+    path.join(wikiDir, "wiki-images"),
+    path.join(wikiDir, OWNERSHIP_FILE)
+  ])
+    rejectSymlink(target);
+  const ownership = readOwnership(wikiDir);
+  validateOutputs(wikiDir, plan, ownership);
+  fs.mkdirSync(path.join(wikiDir, "wiki-images"), { recursive: true });
+  for (const kind of ["pages", "images"]) {
+    for (const [name, content] of plan[kind]) {
+      fs.writeFileSync(outputPath(wikiDir, kind, name), content);
+    }
+    for (const name of ownership[kind]) {
+      const target = outputPath(wikiDir, kind, name);
+      if (!plan[kind].has(name) && fs.existsSync(target)) {
+        fs.unlinkSync(target);
       }
     }
   }
-  return copiedImages;
+  const manifest = {
+    version: 1,
+    pages: [...plan.pages.keys()].sort(),
+    images: [...plan.images.keys()].sort()
+  };
+  fs.writeFileSync(path.join(wikiDir, OWNERSHIP_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
+  return { generatedPages: new Set(manifest.pages), generatedImages: new Set(manifest.images) };
 }
 
-function processAllFiles(wikiDir) {
-  if (!fs.existsSync(wikiDir)) {
-    fs.mkdirSync(wikiDir, { recursive: true });
-  }
-
-  const imagesDir = path.join(wikiDir, "wiki-images");
-  if (!fs.existsSync(imagesDir)) {
-    fs.mkdirSync(imagesDir, { recursive: true });
-  }
-
-  const files = getAllMarkdownFiles(DOCS_DIR);
-  const processedPages = new Set();
-
-  for (const file of files) {
-    const relativePath = path.relative(DOCS_DIR, file);
-    const content = fs.readFileSync(file, "utf-8");
-    const transformed = transformFile(content, relativePath);
-    const wikiPageName = docsPathToWikiPage(relativePath);
-
-    if (processedPages.has(wikiPageName)) {
-      console.warn(`WARNING: Duplicate wiki page name: ${wikiPageName} (from ${relativePath})`);
-      continue;
-    }
-
-    const outputPath = path.join(wikiDir, `${wikiPageName}.md`);
-    fs.writeFileSync(outputPath, transformed);
-    processedPages.add(wikiPageName);
-    console.log(`Transformed: ${relativePath} → ${wikiPageName}.md`);
-  }
-
-  copyImages(DOCS_DIR, imagesDir);
-
-  if (!processedPages.has("Home")) {
-    const readmePath = path.join(__dirname, "..", "..", "README.md");
-    if (fs.existsSync(readmePath)) {
-      const readmeContent = fs.readFileSync(readmePath, "utf-8");
-      const transformed = transformFile(readmeContent, "../README.md");
-      fs.writeFileSync(path.join(wikiDir, "Home.md"), transformed);
-      console.log("Created Home.md from README.md");
-    }
-  }
-
-  console.log(`\nProcessed ${processedPages.size} wiki pages`);
-}
-
-// Main execution
-function main() {
-  const args = process.argv.slice(2);
-  if (args.length < 1) {
+if (require.main === module) {
+  const outputDirectory = process.argv[2];
+  if (!outputDirectory) {
     console.error("Usage: node transform-docs-to-wiki.js <output-wiki-dir>");
     process.exit(1);
-  }
-
-  const wikiDir = path.resolve(args[0]);
-  console.log(`Transforming docs to wiki format...`);
-  console.log(`Source: ${DOCS_DIR}`);
-  console.log(`Target: ${wikiDir}\n`);
-
-  processAllFiles(wikiDir);
-}
-
-// Only run main when executed directly (not when required as a module)
-if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
-    console.error("Error transforming docs to wiki:", error.message);
-    process.exit(1);
+  } else {
+    try {
+      processAllFiles(path.resolve(outputDirectory));
+    } catch (error) {
+      console.error("Error transforming docs to wiki:", error.message);
+      process.exit(1);
+    }
   }
 }
 
-// Export functions for testing
 module.exports = {
   isExternalLink,
   docsPathToWikiPage,
   findMarkdownLinks,
   CodeBlockTracker,
   transformLine,
-  transformFile
+  transformFile,
+  processAllFiles,
+  gitBlobId,
+  LEGACY_WIKI_COMMIT
 };
