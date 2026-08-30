@@ -81,7 +81,8 @@ function resolveDocsLink(href, currentFilePath) {
   let target = normalizedHref.startsWith("/")
     ? path.posix.normalize(normalizedHref.replace(/^\/+/, ""))
     : path.posix.normalize(path.posix.join(currentDir, normalizedHref));
-  if (target === "docs" || target === "../docs") return "index.md";
+  target = target.replace(/\/+$/, "");
+  if ([".", "..", "docs", "../docs"].includes(target)) return "index.md";
   if (target.startsWith("../docs/")) target = target.slice(8);
   if (target.startsWith("docs/")) target = target.slice(5);
   return target || "index.md";
