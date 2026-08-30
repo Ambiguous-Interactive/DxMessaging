@@ -430,6 +430,83 @@ void OnPulse(ref Pulse message) => Forward<First, Second>(ref message);";
         }
 
         [Test]
+        public void AnalyzeStopsComparisonExpressionBodyBeforeLaterMethod()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message) => Observe(message.Value < 10);
+void Later(ref Pulse message) => Forward(ref message);";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("OnPulse(in Pulse message) => Observe(message.Value < 10)")
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("Later(ref Pulse message) => Forward(ref message)")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeStopsComparisonLambdaBeforeFollowingArgument()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+Pulse message = default;
+token.RegisterUntargeted<Pulse>(
+    (ref Pulse message) => Observe(message.Value < 10),
+    priority: ReadPriority(ref message) > 0 ? 1 : 0
+);";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("(in Pulse message) => Observe(message.Value < 10)")
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("ReadPriority(ref message) > 0 ? 1 : 0")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeKeepsGenericCommaAfterComparisonInsideExpressionBody()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message) =>
+    message.Value < 10 ? Forward<First, Second>(ref message) : false;";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'message' by ref")
+            );
+        }
+
+        [Test]
         public void AnalyzeLeavesMethodGroupWithOutUseForManualReview()
         {
             const string Source =

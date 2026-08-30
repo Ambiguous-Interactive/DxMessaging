@@ -1552,7 +1552,7 @@ namespace DxMessaging.Editor
                         parentheses++;
                         break;
                     case ')':
-                        if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
                         {
                             return index;
                         }
@@ -1568,14 +1568,17 @@ namespace DxMessaging.Editor
                         braces++;
                         break;
                     case '}':
-                        if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
                         {
                             return index;
                         }
                         braces--;
                         break;
                     case '<':
-                        angles++;
+                        if (IsGenericOpenAngle(text, index))
+                        {
+                            angles++;
+                        }
                         break;
                     case '>':
                         if (angles > 0)
@@ -1584,8 +1587,13 @@ namespace DxMessaging.Editor
                         }
                         break;
                     case ',':
-                    case ';':
                         if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
+                        {
+                            return index;
+                        }
+                        break;
+                    case ';':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
                         {
                             return index;
                         }
@@ -1593,6 +1601,78 @@ namespace DxMessaging.Editor
                 }
             }
             return text.Length;
+        }
+
+        private static bool IsGenericOpenAngle(string text, int openAngle)
+        {
+            int parentheses = 0;
+            int brackets = 0;
+            int braces = 0;
+            int angles = 1;
+            for (int index = openAngle + 1; index < text.Length; index++)
+            {
+                switch (text[index])
+                {
+                    case '(':
+                        parentheses++;
+                        break;
+                    case ')':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        {
+                            return false;
+                        }
+                        parentheses--;
+                        break;
+                    case '[':
+                        brackets++;
+                        break;
+                    case ']':
+                        brackets--;
+                        break;
+                    case '{':
+                        braces++;
+                        break;
+                    case '}':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        {
+                            return false;
+                        }
+                        braces--;
+                        break;
+                    case '<':
+                        angles++;
+                        break;
+                    case '>':
+                        angles--;
+                        if (angles == 0)
+                        {
+                            int next = NextNonWhitespace(text, index + 1);
+                            return next < 0 || IsGenericAngleFollower(text[next]);
+                        }
+                        break;
+                    case ';':
+                        if (parentheses == 0 && brackets == 0 && braces == 0)
+                        {
+                            return false;
+                        }
+                        break;
+                }
+            }
+            return false;
+        }
+
+        private static bool IsGenericAngleFollower(char value)
+        {
+            return value == '('
+                || value == '.'
+                || value == '['
+                || value == '{'
+                || value == '?'
+                || value == '!'
+                || value == ','
+                || value == ';'
+                || value == ')'
+                || value == '}';
         }
 
         private static int LineNumber(string text, int position)
