@@ -2,8 +2,9 @@
 
 Date: 2026-08-31
 Branch: `perf/session-255-canonical-profile`
-Status: in progress
+Status: pull request open
 Issue: https://github.com/Ambiguous-Interactive/DxMessaging/issues/506
+Pull request: https://github.com/Ambiguous-Interactive/DxMessaging/pull/514
 
 ## Audit and scope
 
