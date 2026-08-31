@@ -36,6 +36,8 @@ param(
 
     [switch]$ReleasePlayerBuild,
 
+    [string]$CanonicalProfilePath,
+
     [ValidateRange(1, 10)]
     [int]$StandalonePlayerRunCount = 1,
 
@@ -1361,7 +1363,11 @@ PluginImporter:
 }
 
 function New-ConfiguratorSource {
-    param([string]$Backend = 'IL2CPP')
+    param(
+        [string]$Backend = 'IL2CPP',
+        [string]$CanonicalProfileId = '',
+        [string]$CanonicalProfileSha256 = ''
+    )
 
     # NOTE: this is a DOUBLE-quoted here-string so $Backend interpolates into the
     # generated C#. Every LITERAL C# dollar sign (the Debug.Log interpolated
@@ -1381,6 +1387,31 @@ using UnityEngine;
 
 public static class DxmCiTestConfigurator
 {
+    [Serializable]
+    private sealed class ConfigurationEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string evidenceKind = "configuration";
+        public string unityVersion = Application.unityVersion;
+        public ConfigurationValues values = new ConfigurationValues();
+    }
+
+    [Serializable]
+    private sealed class ConfigurationValues
+    {
+        public string buildTarget;
+        public string scriptingBackend;
+        public string apiCompatibilityLevel;
+        public string codeOptimization;
+        public string il2cppCompilerConfiguration;
+        public string il2cppCodeGeneration;
+        public string managedStrippingLevel;
+        public bool incrementalGc;
+        public bool stripEngineCode;
+    }
+
     public static void Apply()
     {
         // Prove Release editor code optimization for every Unity CI leg. Set FIRST
@@ -1408,9 +1439,28 @@ public static class DxmCiTestConfigurator
         // matches shipped-player behavior. Harmless under Mono.
         PlayerSettings.SetIl2CppCompilerConfiguration(standalone, Il2CppCompilerConfiguration.Release);
 
+        if (!string.IsNullOrEmpty("$CanonicalProfileId"))
+        {
+            PlayerSettings.gcIncremental = true;
+            PlayerSettings.stripEngineCode = true;
+#if UNITY_2022_1_OR_NEWER
+            PlayerSettings.SetIl2CppCodeGeneration(standalone, Il2CppCodeGeneration.OptimizeSpeed);
+#else
+            EditorUserBuildSettings.il2CppCodeGeneration = Il2CppCodeGeneration.OptimizeSpeed;
+#endif
+        }
+#if UNITY_2022_1_OR_NEWER
+        string il2CppCodeGeneration = PlayerSettings.GetIl2CppCodeGeneration(standalone).ToString();
+#else
+        string il2CppCodeGeneration = EditorUserBuildSettings.il2CppCodeGeneration.ToString();
+#endif
+
         // Print the EFFECTIVE Unity config so the artifact log PROVES Mono/IL2CPP
         // + .NET Standard 2.1 + Release for this run.
-        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}, il2cppConfig={PlayerSettings.GetIl2CppCompilerConfiguration(standalone)}");
+        Debug.Log(`$"DXM perf config: backend={PlayerSettings.GetScriptingBackend(standalone)}, api={PlayerSettings.GetApiCompatibilityLevel(standalone)}, codeOpt={UnityEditor.Compilation.CompilationPipeline.codeOptimization}, il2cppConfig={PlayerSettings.GetIl2CppCompilerConfiguration(standalone)}, il2cppCodeGeneration={il2CppCodeGeneration}");
+
+        string profilePath = Environment.GetEnvironmentVariable("DXM_CONFIGURED_PROFILE_PATH");
+        WriteConfigurationEvidence(profilePath);
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
@@ -1433,6 +1483,41 @@ public static class DxmCiTestConfigurator
             File.WriteAllText(markerPath, "DxmCiTestConfigurator.Apply completed");
         }
     }
+
+    internal static void WriteConfigurationEvidence(string profilePath)
+    {
+        if (string.IsNullOrEmpty(profilePath))
+        {
+            return;
+        }
+        NamedBuildTarget standalone = NamedBuildTarget.Standalone;
+#if UNITY_2022_1_OR_NEWER
+        string il2CppCodeGeneration = PlayerSettings.GetIl2CppCodeGeneration(standalone).ToString();
+#else
+        string il2CppCodeGeneration = EditorUserBuildSettings.il2CppCodeGeneration.ToString();
+#endif
+        ConfigurationEvidence evidence = new ConfigurationEvidence();
+        evidence.values.buildTarget = EditorUserBuildSettings.activeBuildTarget.ToString();
+        evidence.values.scriptingBackend = PlayerSettings.GetScriptingBackend(standalone).ToString();
+        evidence.values.apiCompatibilityLevel = PlayerSettings.GetApiCompatibilityLevel(standalone).ToString();
+        evidence.values.codeOptimization = UnityEditor.Compilation.CompilationPipeline.codeOptimization.ToString();
+        evidence.values.il2cppCompilerConfiguration = PlayerSettings.GetIl2CppCompilerConfiguration(standalone).ToString();
+        evidence.values.il2cppCodeGeneration = il2CppCodeGeneration;
+        evidence.values.managedStrippingLevel = PlayerSettings.GetManagedStrippingLevel(standalone).ToString();
+        evidence.values.incrementalGc = PlayerSettings.gcIncremental;
+        evidence.values.stripEngineCode = PlayerSettings.stripEngineCode;
+        WriteJson(profilePath, evidence);
+    }
+
+    private static void WriteJson(string path, object value)
+    {
+        string dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        File.WriteAllText(path, JsonUtility.ToJson(value, true));
+    }
 }
 "@
 }
@@ -1453,7 +1538,11 @@ public static class DxmCiTestConfigurator
 # so the editor idles forever. The PostBuildCleanup exit (run AFTER the build via
 # ExecutePostBuildCleanupMethods) is mandatory.
 function New-StandaloneBuildModifierSource {
-    param([bool]$DevelopmentBuild = $false)
+    param(
+        [bool]$DevelopmentBuild = $false,
+        [string]$CanonicalProfileId = '',
+        [string]$CanonicalProfileSha256 = ''
+    )
 
     # The Development BuildOptions flag is opt-in only. Unity CI defaults to a true
     # Release/non-development player; the compatibility -ReleasePlayerBuild switch is
@@ -1474,6 +1563,8 @@ using System;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
 using UnityEditor.TestTools;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -1488,17 +1579,52 @@ using UnityEngine.TestTools;
 // clears on the PlayerConnection runFinished message, which never arrives when
 // the player is not launched. PostBuildCleanup is the framework's hook (run after
 // the build) to exit the editor cleanly.
-public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPostBuildCleanup
+public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPostBuildCleanup, IPostprocessBuildWithReport
 {
+    [Serializable]
+    private sealed class BuildOptionsEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string evidenceKind = "buildOptions";
+        public string unityVersion = Application.unityVersion;
+        public BuildOptionsValues values = new BuildOptionsValues();
+    }
+
+    [Serializable]
+    private sealed class BuildOptionsValues
+    {
+        public bool developmentBuild;
+        public bool allowDebugging;
+        public bool deepProfiling;
+        public bool enableAssertions;
+        public bool includeTestAssemblies;
+        public bool autoRunPlayer;
+        public bool connectToHost;
+        public bool connectWithProfiler;
+        public bool cleanBuildCache;
+        public bool detailedBuildReport;
+    }
+
     private static bool s_Armed;
     private static readonly EditorApplication.CallbackFunction s_Exit = () => EditorApplication.Exit(0);
+    public int callbackOrder => 0;
 
     public BuildPlayerOptions ModifyOptions(BuildPlayerOptions playerOptions)
     {
         playerOptions.options &= ~BuildOptions.AutoRunPlayer;
         playerOptions.options &= ~BuildOptions.ConnectToHost;
         playerOptions.options &= ~BuildOptions.ConnectWithProfiler;
+        playerOptions.options &= ~BuildOptions.AllowDebugging;
+        playerOptions.options &= ~BuildOptions.EnableDeepProfilingSupport;
+        playerOptions.options &= ~BuildOptions.ForceEnableAssertions;
         playerOptions.options |= BuildOptions.IncludeTestAssemblies;
+        if (!string.IsNullOrEmpty("$CanonicalProfileId"))
+        {
+            playerOptions.options |= BuildOptions.CleanBuildCache;
+            playerOptions.options |= BuildOptions.DetailedBuildReport;
+        }
 $developmentOption
         string outPath = Environment.GetEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
         if (!string.IsNullOrEmpty(outPath))
@@ -1510,7 +1636,47 @@ $developmentOption
             }
             playerOptions.locationPathName = outPath;
         }
+        DxmCiTestConfigurator.WriteConfigurationEvidence(
+            Environment.GetEnvironmentVariable("DXM_PREBUILD_CONFIG_PROFILE_PATH"));
         return playerOptions;
+    }
+
+    public void OnPostprocessBuild(BuildReport report)
+    {
+        DxmCiTestConfigurator.WriteConfigurationEvidence(
+            Environment.GetEnvironmentVariable("DXM_POSTBUILD_CONFIG_PROFILE_PATH"));
+        WriteProfileEvidence(report.summary.options);
+    }
+
+    private static void WriteProfileEvidence(BuildOptions options)
+    {
+        string path = Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH");
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+        BuildOptionsEvidence evidence = new BuildOptionsEvidence();
+        evidence.values.developmentBuild = Has(options, BuildOptions.Development);
+        evidence.values.allowDebugging = Has(options, BuildOptions.AllowDebugging);
+        evidence.values.deepProfiling = Has(options, BuildOptions.EnableDeepProfilingSupport);
+        evidence.values.enableAssertions = Has(options, BuildOptions.ForceEnableAssertions);
+        evidence.values.includeTestAssemblies = Has(options, BuildOptions.IncludeTestAssemblies);
+        evidence.values.autoRunPlayer = Has(options, BuildOptions.AutoRunPlayer);
+        evidence.values.connectToHost = Has(options, BuildOptions.ConnectToHost);
+        evidence.values.connectWithProfiler = Has(options, BuildOptions.ConnectWithProfiler);
+        evidence.values.cleanBuildCache = Has(options, BuildOptions.CleanBuildCache);
+        evidence.values.detailedBuildReport = Has(options, BuildOptions.DetailedBuildReport);
+        string dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
+    }
+
+    private static bool Has(BuildOptions options, BuildOptions flag)
+    {
+        return (options & flag) == flag;
     }
 
     public void Cleanup()
@@ -1542,7 +1708,12 @@ $developmentOption
 # results channel is -dxmTestResults; there is NO environment-variable fallback and
 # NO per-user-data-folder silent-loss fallback.
 function New-StandaloneTestCallbackSource {
-    @'
+    param(
+        [string]$CanonicalProfileId = '',
+        [string]$CanonicalProfileSha256 = ''
+    )
+
+    @"
 using System;
 using System.IO;
 using System.Xml;
@@ -1556,6 +1727,23 @@ using UnityEngine.TestRunner;
 [Preserve]
 internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
 {
+    [Serializable]
+    private sealed class RuntimeEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string evidenceKind = "runtime";
+        public string unityVersion = Application.unityVersion;
+        public RuntimeValues values = new RuntimeValues();
+    }
+
+    [Serializable]
+    private sealed class RuntimeValues
+    {
+        public bool debugBuild;
+    }
+
     public void RunStarted(ITest testsToRun)
     {
     }
@@ -1580,6 +1768,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         int exitCode;
         try
         {
+            WriteRuntimeEvidence();
             WriteNUnitXml(result, path);
             exitCode = result.FailCount > 0 ? 1 : 0;
             int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
@@ -1602,17 +1791,39 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         Application.Quit(exitCode);
     }
 
-    private static string ResolveResultsPath()
+    private static string ResolveArgument(string name)
     {
         string[] args = Environment.GetCommandLineArgs();
         for (int i = 0; i < args.Length - 1; i++)
         {
-            if (string.Equals(args[i], "-dxmTestResults", StringComparison.Ordinal))
+            if (string.Equals(args[i], name, StringComparison.Ordinal))
             {
                 return args[i + 1];
             }
         }
         return null;
+    }
+
+    private static string ResolveResultsPath()
+    {
+        return ResolveArgument("-dxmTestResults");
+    }
+
+    private static void WriteRuntimeEvidence()
+    {
+        string path = ResolveArgument("-dxmRuntimeProfile");
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+        RuntimeEvidence evidence = new RuntimeEvidence();
+        evidence.values.debugBuild = Debug.isDebugBuild;
+        string dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
     }
 
     private static void WriteNUnitXml(ITestResult result, string filePath)
@@ -1651,7 +1862,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         }
     }
 }
-'@
+"@
 }
 
 # STANDALONE ONLY. The asmdef for the player-side test callback above. Referencing
@@ -1833,6 +2044,8 @@ function Initialize-EphemeralProject {
         [switch]$IncludeComparisons,
         [string]$Backend = 'IL2CPP',
         [bool]$DevelopmentBuild = $false,
+        [string]$CanonicalProfileId = '',
+        [string]$CanonicalProfileSha256 = '',
         [string]$RepoRoot,
         [Parameter(Mandatory = $true)][string]$ArtifactsPath
     )
@@ -1945,7 +2158,7 @@ EditorSettings:
         }
     }
     $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
-    New-ConfiguratorSource -Backend $Backend |
+    New-ConfiguratorSource -Backend $Backend -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
     Copy-SamplesForCompilation -Root $Root -Project $project -IncludeIntegrations:$includeIntegrations
 
@@ -1968,8 +2181,8 @@ EditorSettings:
     # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild) },
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
         foreach ($file in $standaloneFiles) {
@@ -2979,6 +3192,7 @@ function Invoke-StandaloneTestPlayer {
         [Parameter(Mandatory = $true)][string]$EditorBuiltExePath,
         [Parameter(Mandatory = $true)][string]$ResultsPath,
         [Parameter(Mandatory = $true)][string]$LogPath,
+        [string]$RuntimeProfilePath,
         [int]$TimeoutSeconds = 1800,
         [string]$HostConditionEvidencePath,
         [string]$ProcessEvidencePath,
@@ -2994,6 +3208,9 @@ function Invoke-StandaloneTestPlayer {
         '-logFile', '-',
         '-dxmTestResults', $ResultsPath
     )
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeProfilePath)) {
+        $playerArgs += @('-dxmRuntimeProfile', $RuntimeProfilePath)
+    }
     $PriorityClass = [System.Enum]::Parse(
         [System.Diagnostics.ProcessPriorityClass],
         $PriorityClass,
@@ -3729,6 +3946,32 @@ Assert-RepoRoot -Path $RepoRoot
 $ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
 New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
+$canonicalProfileId = ''
+$canonicalProfileSha256 = ''
+$resolvedCanonicalProfilePath = ''
+if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
+    if ($TestMode -ne 'standalone' -or $StandaloneScriptingBackend -cne 'IL2CPP') {
+        throw 'CanonicalProfilePath is valid only for a standalone IL2CPP run.'
+    }
+    $profileCandidate = if ([System.IO.Path]::IsPathRooted($CanonicalProfilePath)) {
+        $CanonicalProfilePath
+    } else {
+        [System.IO.Path]::Combine($RepoRoot, $CanonicalProfilePath)
+    }
+    $resolvedCanonicalProfilePath = Resolve-FullPath -Path $profileCandidate
+    $profileValidatorPath = Join-Path $PSScriptRoot 'validate-il2cpp-profile.ps1'
+    & $profileValidatorPath -ProfilePath $resolvedCanonicalProfilePath -ProfileOnly
+    $canonicalProfile = Get-Content -LiteralPath $resolvedCanonicalProfilePath -Raw | ConvertFrom-Json
+    $canonicalProfileId = [string]$canonicalProfile.profileId
+    $canonicalProfileSha256 = (Get-FileHash -LiteralPath $resolvedCanonicalProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $profileArtifactPath = Join-Path $ArtifactsPath 'canonical-il2cpp-profile.v1.json'
+    Copy-Item -LiteralPath $resolvedCanonicalProfilePath -Destination $profileArtifactPath -Force
+    [System.IO.File]::WriteAllText(
+        (Join-Path $ArtifactsPath 'canonical-il2cpp-profile.v1.sha256'),
+        "$canonicalProfileSha256  canonical-il2cpp-profile.v1.json`n"
+    )
+}
+
 Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion -Path $CachePath
 
 # Release is now the repo-wide Unity CI contract. The historical switches remain
@@ -3738,7 +3981,7 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion -Path $C
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -RepoRoot $RepoRoot -ArtifactsPath $ArtifactsPath
+$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -CanonicalProfileId $canonicalProfileId -CanonicalProfileSha256 $canonicalProfileSha256 -RepoRoot $RepoRoot -ArtifactsPath $ArtifactsPath
 $LibraryPath = Join-Path $ProjectPath 'Library'
 $LibraryEntries = @(
     if (Test-Path -LiteralPath $LibraryPath -PathType Container) {
@@ -3853,6 +4096,11 @@ $startupProbeLogPath = Join-Path $ArtifactsPath 'unity-startup-probe.log'
 # then crashed in a background thread during shutdown and returned a crash exit
 # code -- so we never fail a successful configure on a benign teardown crash.
 $configureMarkerPath = Join-Path $ArtifactsPath 'configure-complete.marker'
+$configuredProfileEvidencePath = Join-Path $ArtifactsPath 'configured-profile.json'
+$prebuildProfileEvidencePath = Join-Path $ArtifactsPath 'prebuild-profile.json'
+$postbuildProfileEvidencePath = Join-Path $ArtifactsPath 'postbuild-profile.json'
+$buildOptionsProfileEvidencePath = Join-Path $ArtifactsPath 'build-options-profile.json'
+$runtimeProfileEvidencePath = Join-Path $ArtifactsPath 'runtime-profile.json'
 
 # STANDALONE split-build artifacts. The built IL2CPP player goes under a stable
 # per-run project Build directory, not project Temp: Unity's test player build
@@ -3913,6 +4161,12 @@ try {
             Remove-Item -LiteralPath $configureMarkerPath -Force
         }
         $env:DXM_CONFIGURE_MARKER_PATH = $configureMarkerPath
+        if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+            if (Test-Path -LiteralPath $configuredProfileEvidencePath -PathType Leaf) {
+                Remove-Item -LiteralPath $configuredProfileEvidencePath -Force
+            }
+            $env:DXM_CONFIGURED_PROFILE_PATH = $configuredProfileEvidencePath
+        }
         $configureStartedUtc = [DateTime]::UtcNow
         $configureArgs = @(
             '-quit',
@@ -3932,6 +4186,7 @@ try {
         # inherited by the later build/player child processes (only Apply reads it,
         # so this is hygiene against a future invocation accidentally writing it).
         Remove-Item -LiteralPath Env:\DXM_CONFIGURE_MARKER_PATH -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Env:\DXM_CONFIGURED_PROFILE_PATH -ErrorAction SilentlyContinue
         $configureProblem = Test-UnityConfigureMarker -MarkerPath $configureMarkerPath -StartedUtc $configureStartedUtc
         if (-not [string]::IsNullOrWhiteSpace($configureProblem)) {
             Write-UnityRunFailureDiagnostics `
@@ -3945,6 +4200,13 @@ try {
             Write-UnityBenignExitWarning -Label 'Configure standalone IL2CPP project' -ExitCode $configureExit -LogPath $configureLogPath
         }
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $configureLogPath -Label 'standalone configure'
+        if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+            & $profileValidatorPath `
+                -ProfilePath $resolvedCanonicalProfilePath `
+                -EvidencePath $configuredProfileEvidencePath `
+                -EvidenceKind configuration `
+                -ExpectedSha256 $canonicalProfileSha256
+        }
     }
 
     if ($TestMode -eq 'standalone') {
@@ -3967,6 +4229,20 @@ try {
         # -runTests (so PlayerLauncher's ModifyBuildOptions reflection path fires) but
         # NO -quit (the editor must reach PostBuildCleanup, which arms the exit).
         $env:DXM_PLAYER_BUILD_PATH = $standaloneExe
+        if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+            foreach ($staleBuildProfilePath in @(
+                $prebuildProfileEvidencePath,
+                $postbuildProfileEvidencePath,
+                $buildOptionsProfileEvidencePath
+            )) {
+                if (Test-Path -LiteralPath $staleBuildProfilePath -PathType Leaf) {
+                    Remove-Item -LiteralPath $staleBuildProfilePath -Force
+                }
+            }
+            $env:DXM_PREBUILD_CONFIG_PROFILE_PATH = $prebuildProfileEvidencePath
+            $env:DXM_POSTBUILD_CONFIG_PROFILE_PATH = $postbuildProfileEvidencePath
+            $env:DXM_BUILD_OPTIONS_PROFILE_PATH = $buildOptionsProfileEvidencePath
+        }
         $standaloneBuildStartedUtc = [DateTime]::UtcNow
         $standaloneExeDir = Split-Path -Parent $standaloneExe
         if ($standaloneExeDir -and (Test-Path -LiteralPath $standaloneExeDir -PathType Container)) {
@@ -3997,6 +4273,9 @@ try {
             -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
             -LogPath $logPath `
             -Label "Build standalone IL2CPP test player (Unity $UnityVersion)"
+        Remove-Item -LiteralPath Env:\DXM_BUILD_OPTIONS_PROFILE_PATH -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Env:\DXM_PREBUILD_CONFIG_PROFILE_PATH -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Env:\DXM_POSTBUILD_CONFIG_PROFILE_PATH -ErrorAction SilentlyContinue
 
         # POST-BUILD ASSERT (the BUILT PLAYER EXE is the source of truth): the exe
         # MUST exist at DXM_PLAYER_BUILD_PATH, be fresh for this build, and include
@@ -4031,6 +4310,23 @@ try {
         # tree-killed, narrate the benign post-build shutdown crash and keep going.
         if ($buildResult.TimedOut -or $buildResult.ExitCode -ne 0) {
             Write-UnityBenignExitWarning -Label "Build standalone IL2CPP test player (Unity $UnityVersion)" -ExitCode $buildResult.ExitCode -TimedOut:$buildResult.TimedOut -LogPath $logPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+            foreach ($buildConfigurationEvidencePath in @(
+                $prebuildProfileEvidencePath,
+                $postbuildProfileEvidencePath
+            )) {
+                & $profileValidatorPath `
+                    -ProfilePath $resolvedCanonicalProfilePath `
+                    -EvidencePath $buildConfigurationEvidencePath `
+                    -EvidenceKind configuration `
+                    -ExpectedSha256 $canonicalProfileSha256
+            }
+            & $profileValidatorPath `
+                -ProfilePath $resolvedCanonicalProfilePath `
+                -EvidencePath $buildOptionsProfileEvidencePath `
+                -EvidenceKind buildOptions `
+                -ExpectedSha256 $canonicalProfileSha256
         }
 
         # MISSED-CASE GUARD: even when the exe exists, scan the build log for the
@@ -4083,6 +4379,13 @@ try {
             } else {
                 Join-Path $currentRunDirectory "repeat-$runNumber-process.json"
             }
+            $currentRuntimeProfilePath = if ([string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+                ''
+            } elseif ($playerRunIndex -eq 1) {
+                $runtimeProfileEvidencePath
+            } else {
+                Join-Path $currentRunDirectory "repeat-$runNumber-runtime-profile.json"
+            }
 
             # Delete STALE per-run outputs first. A timeout can then honor only the
             # file written by THIS launch, never a prior local run's leftover.
@@ -4090,7 +4393,8 @@ try {
                 $currentResultsPath,
                 $currentPlayerLogPath,
                 $hostConditionEvidencePath,
-                $processEvidencePath
+                $processEvidencePath,
+                $currentRuntimeProfilePath
             )) {
                 if (
                     -not [string]::IsNullOrWhiteSpace($staleOutputPath) -and
@@ -4104,6 +4408,7 @@ try {
                 -EditorBuiltExePath $standaloneExe `
                 -ResultsPath $currentResultsPath `
                 -LogPath $currentPlayerLogPath `
+                -RuntimeProfilePath $currentRuntimeProfilePath `
                 -TimeoutSeconds $playerTimeoutSeconds `
                 -HostConditionEvidencePath $hostConditionEvidencePath `
                 -ProcessEvidencePath $processEvidencePath `
@@ -4135,6 +4440,14 @@ try {
                 -LogPath $currentPlayerLogPath `
                 -Project $ProjectPath `
                 -UnityExitCode $playerExitForValidation
+
+            if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+                & $profileValidatorPath `
+                    -ProfilePath $resolvedCanonicalProfilePath `
+                    -EvidencePath $currentRuntimeProfilePath `
+                    -EvidenceKind runtime `
+                    -ExpectedSha256 $canonicalProfileSha256
+            }
 
             if ($captureSamePlayerEvidence) {
                 $relativeResultsPath = $currentResultsPath.Substring($ArtifactsPath.Length).TrimStart(
@@ -4221,6 +4534,16 @@ try {
         Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit
     }
 } finally {
+    foreach ($temporaryEnvironmentVariable in @(
+        'DXM_CONFIGURE_MARKER_PATH',
+        'DXM_CONFIGURED_PROFILE_PATH',
+        'DXM_PREBUILD_CONFIG_PROFILE_PATH',
+        'DXM_POSTBUILD_CONFIG_PROFILE_PATH',
+        'DXM_BUILD_OPTIONS_PROFILE_PATH',
+        'DXM_PLAYER_BUILD_PATH'
+    )) {
+        Remove-Item -LiteralPath "Env:\$temporaryEnvironmentVariable" -ErrorAction SilentlyContinue
+    }
     # Standalone/local callers retain deterministic return. Organization CI passes
     # Central so the immediately following trusted return action owns the one
     # authoritative post-activation attempt and its typed evidence.

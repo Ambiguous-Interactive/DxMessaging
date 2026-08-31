@@ -94,14 +94,40 @@ execute and write results. The runner's `StandaloneScriptingBackend` parameter
 defaults to `IL2CPP` and accepts `Mono2x`, so the same script can build either
 backend; the published leg pins IL2CPP.
 
+## Canonical profile
+
+`.github/perf/canonical-il2cpp-profile.v1.json` is the reviewed source of truth
+for the published standalone IL2CPP leg. The workflow passes it through
+`-CanonicalProfilePath`. The runner copies the exact bytes and a SHA-256 file to
+the run artifacts, then embeds the profile ID and hash in generated editor and
+player code.
+
+The profile also pins `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC,
+engine-code stripping, and the final `BuildOptions` flags. Keep these values in
+the JSON file instead of relying on defaults in an ephemeral Unity project.
+
 ## Proving the profile
 
-Two artifacts prove a published run used the right profile:
+Five JSON evidence files prove a published run used the reviewed profile:
+
+- `configured-profile.json` records the effective player settings after the
+  configurator applies them.
+- `prebuild-profile.json` and `postbuild-profile.json` record the settings in
+  the actual build process before and after Unity builds the player.
+- `build-options-profile.json` records the final options from Unity's
+  post-build `BuildReport`.
+- `runtime-profile.json` records `Debug.isDebugBuild` inside the player.
+
+`validate-il2cpp-profile.ps1` rejects a missing or extra property, a type or
+value mismatch, and a profile hash mismatch. The run cannot publish after any
+of those failures.
+
+Two diagnostic surfaces remain useful when investigating a failure:
 
 - The configurator logs the effective Unity settings into the CI log:
 
   ```text
-  DXM perf config: backend=..., api=..., codeOpt=..., il2cppConfig=...
+  DXM perf config: backend=..., api=..., codeOpt=..., il2cppConfig=..., il2cppCodeGeneration=...
   ```
 
   For the published leg that line must show `backend=IL2CPP`,
@@ -117,7 +143,7 @@ Two artifacts prove a published run used the right profile:
 
 The Performance Numbers workflow (`.github/workflows/perf-numbers.yml`) runs one
 `standalone` matrix cell with `StandaloneScriptingBackend = 'IL2CPP'` on top of
-`ReleasePlayerBuild` and `ReleaseCodeOptimization`. The
+`ReleasePlayerBuild`, `ReleaseCodeOptimization`, and the canonical profile. The
 regression gate (`render-perf-deltas.js`) compares `--scope Standalone` rows
 against the committed master baseline. The
 manually dispatched `unity-benchmarks.yml` runs the EditMode and PlayMode

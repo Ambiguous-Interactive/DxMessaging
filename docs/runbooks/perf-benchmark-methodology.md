@@ -264,15 +264,27 @@ metrics because the Release player strips the required profiler recorder (see
   stripping**, so the test assemblies and the `[Preserve]` standalone test-run
   callback survive into the player. The runner's `-StandaloneScriptingBackend`
   parameter defaults to `IL2CPP` and also accepts `Mono2x`; the published leg
-  pins IL2CPP. The configurator's
-  `DXM perf config: backend=..., api=..., codeOpt=..., il2cppConfig=...` log
-  line and each row's platform string
-  (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) prove the profile per
-  run; a published `x64 Debug` row is a configuration bug. A Release player
+  pins IL2CPP. The workflow passes
+  `.github/perf/canonical-il2cpp-profile.v1.json` as the reviewed source of
+  truth. That profile also pins speed-optimized IL2CPP code generation,
+  incremental GC, engine-code stripping, and the final build options. The
+  runner archives the exact profile and its SHA-256 with every published standalone run.
+  Generated editor and player code embed the same profile ID and hash.
+
+  `configured-profile.json`, `prebuild-profile.json`, and
+  `postbuild-profile.json` record the effective settings after configuration
+  and inside the actual build process. `build-options-profile.json` records
+  Unity's final post-build options, and `runtime-profile.json` records
+  `Debug.isDebugBuild`. The runner compares every field with the archived
+  profile and fails on a missing, extra, mistyped, or different value. The
+  `DXM perf config:` log line and each row's platform
+  string (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) remain
+  diagnostic surfaces; a published `x64 Debug` row is a configuration bug. A Release player
   strips the `GC.Alloc` profiler recorder, so the Standalone leg cannot measure
   allocations or bytes at all; rather than fill those columns with `n/a`, the
   renderer omits the all-unmeasured memory columns from the Standalone table and
   the all-unmeasured memory matrices entirely.
+
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
   manually dispatched `unity-benchmarks.yml` runs the editmode + playmode
