@@ -48,6 +48,9 @@ shipping-fidelity player, AOT-root proof, and complete build provenance remain l
 - Three adversarial review rounds found and closed build-process attestation, field-type,
   assertion-flag, mutation-honesty, workflow-classification, and wording gaps. Both final reviews
   reported zero findings.
+- The first CI run proved the fail-closed path by rejecting the profile's setter symbol
+  `NET_Standard`. Unity reports the effective getter value as `NET_Standard_2_0`; the profile and
+  its reference documentation now record that evidence string.
 
 ## Deferred #506 work
 

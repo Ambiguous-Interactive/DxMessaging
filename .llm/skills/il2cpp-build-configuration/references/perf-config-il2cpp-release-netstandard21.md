@@ -131,7 +131,7 @@ Two diagnostic surfaces remain useful when investigating a failure:
   ```
 
   For the published leg that line must show `backend=IL2CPP`,
-  `api=NET_Standard`, `codeOpt=Release`, and `il2cppConfig=Release`.
+  `api=NET_Standard_2_0`, `codeOpt=Release`, and `il2cppConfig=Release`.
 
 - Each benchmark row encodes the effective platform string. The published leg
   must read `Standalone IL2CPP x64 Release (WindowsPlayer; ...)`. A published
