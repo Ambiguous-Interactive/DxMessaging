@@ -285,6 +285,23 @@ metrics because the Release player strips the required profiler recorder (see
   renderer omits the all-unmeasured memory columns from the Standalone table and
   the all-unmeasured memory matrices entirely.
 
+- **Shipping-fidelity leg (not published)** builds a separate IL2CPP Release
+  player with High managed stripping and no test assemblies. It uses
+  `.github/perf/shipping-fidelity-il2cpp-profile.v1.json` and calls
+  `BuildPipeline.BuildPlayer` directly, without Unity Test Framework or a
+  PlayerConnection. The oldest and newest supported Unity editors each run the
+  same built binary twice: the positive run checks generated AOT roots across
+  every public top-level, public nested, and private nested class and readonly
+  struct message shape across all three message kinds, while the
+  missing-root run checks the expected failure for a private manual message.
+  Evidence records the exact ordered shape inventory for the first untyped,
+  typed, and registered untyped phases. The runner clears and hashes every
+  generated project input before reuse. It also archives a privacy-safe hash
+  and semantic summary of the resolved package lock, the exact two-assembly
+  player inventory, loaded assembly inventory, profile evidence, and
+  before/after binary manifests. This correctness slice does not contribute
+  benchmark rows or change the published performance profile.
+
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
   manually dispatched `unity-benchmarks.yml` runs the editmode + playmode

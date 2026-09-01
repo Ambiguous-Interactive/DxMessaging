@@ -2604,12 +2604,44 @@ def validate_grouped_unity_correctness() -> None:
             f"{mode}: artifact evidence must remain isolated",
         )
     require(run_positions == sorted(run_positions), "grouped Unity modes must run in order")
-    require(job.count("-LicenseReturnOwner Central") == 3, "every grouped mode needs central cleanup")
+
+    shipping = step_block(job, "Run stripped shipping-fidelity player")
+    run_positions.append(job.index(shipping))
+    for fragment in (
+        "id: run_shipping",
+        "!cancelled()",
+        "steps.acquire_lock.outputs.acquired == 'true'",
+        "matrix.unity-version == '2021.3.45f1'",
+        "matrix.unity-version == '6000.5.2f1'",
+        "continue-on-error: true",
+        "timeout-minutes: 150",
+        "-TestMode shipping",
+        "-AssemblyNames ''",
+        "-CanonicalProfilePath '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'",
+        "-LicenseReturnOwner Central",
+    ):
+        require(fragment in shipping, f"shipping: grouped run missing {fragment!r}")
+    require(
+        run_positions == sorted(run_positions),
+        "shipping fidelity must run after the grouped Unity test modes",
+    )
+    shipping_upload = step_block(job, "Upload shipping-fidelity artifacts")
+    require(
+        "if-no-files-found: error" in shipping_upload
+        and "!cancelled()" in shipping_upload
+        and "steps.acquire_lock.outputs.acquired == 'true'" in shipping_upload
+        and "unity-${{ matrix.unity-version }}-shipping" in shipping_upload
+        and ".artifacts/unity/${{ matrix.unity-version }}-shipping" in shipping_upload,
+        "shipping fidelity must upload isolated evidence after lock acquisition, skip cancellation, and fail when it is absent",
+    )
+    require(job.count("-LicenseReturnOwner Central") == 4, "every grouped mode needs central cleanup")
 
     gate = step_block(job, "Require every Unity mode to pass")
     require(
         "!cancelled() && steps.acquire_lock.outputs.acquired == 'true'" in gate
         and "Empty -eq 'true' -and $mode.Run -ne 'skipped'" in gate
+        and "$env:SHIPPING_REQUIRED -eq 'true'" in gate
+        and "$env:SHIPPING_RUN -ne 'success'" in gate
         and 'throw "Unity mode failures:' in gate,
         "grouped mode gate must fail closed on run, skip, and verification outcomes",
     )
@@ -2618,6 +2650,7 @@ def validate_grouped_unity_correctness() -> None:
             "EDIT_COMPUTE": "success", "EDIT_EMPTY": "false", "EDIT_RUN": "success", "EDIT_VERIFY": "success",
             "PLAY_COMPUTE": "success", "PLAY_EMPTY": "false", "PLAY_RUN": "success", "PLAY_VERIFY": "success",
             "STANDALONE_COMPUTE": "success", "STANDALONE_EMPTY": "false", "STANDALONE_RUN": "success", "STANDALONE_VERIFY": "success",
+            "SHIPPING_REQUIRED": "true", "SHIPPING_RUN": "success",
         }
         cases = (
             ("all modes pass", {}, 0),
@@ -2626,6 +2659,9 @@ def validate_grouped_unity_correctness() -> None:
             ("nonempty run skips", {"PLAY_RUN": "skipped"}, 1),
             ("empty mode runs", {"EDIT_EMPTY": "true"}, 1),
             ("verification fails", {"STANDALONE_VERIFY": "failure"}, 1),
+            ("required shipping fails", {"SHIPPING_RUN": "failure"}, 1),
+            ("non-target shipping skips", {"SHIPPING_REQUIRED": "false", "SHIPPING_RUN": "skipped"}, 0),
+            ("non-target shipping runs", {"SHIPPING_REQUIRED": "false"}, 1),
         )
         for name, mutation, expected in cases:
             environment = os.environ.copy()

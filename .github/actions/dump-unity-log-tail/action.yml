@@ -1,10 +1,10 @@
 name: Dump Unity log tail on failure or cancellation
 description: >-
-  Surface the tail of <results-dir>/unity.log and rescan it for catastrophic
-  compile-time failure patterns when an upstream Unity step fails OR is
-  cancelled. Gives operators something concrete to look at when the
-  test-runner step timed out or was cancelled and verify-unity-results
-  (which gates on !cancelled()) would otherwise skip.
+  Surface the tails of Unity diagnostic logs under <results-dir> and rescan
+  them for catastrophic compile-time failure patterns when an upstream Unity
+  step fails OR is cancelled. Gives operators something concrete to look at
+  when the test-runner step timed out or was cancelled and
+  verify-unity-results (which gates on !cancelled()) would otherwise skip.
 inputs:
   results-dir:
     description: "Directory the Unity runner wrote artifacts (and unity.log) into."
@@ -87,11 +87,17 @@ runs:
 
         $logFiles = @(Get-UnityDiagnosticLogFiles -ResultsDir $dir)
         $log = if ($dir) { Join-Path $dir 'unity.log' } else { $null }
+        $primaryLogFullPath = $null
         if (-not $log -or -not (Test-Path -LiteralPath $log -PathType Leaf)) {
           # Cancellation before Unity launched leaves no unity.log; this is
           # NOT an error condition for this diagnostic helper.
           Write-Host "::notice::${label}: no unity.log under '$dir' to dump (Unity may not have started, or the run was cancelled before launch)."
         } else {
+          try {
+            $primaryLogFullPath = (Resolve-Path -LiteralPath $log -ErrorAction Stop).Path
+          } catch {
+            $primaryLogFullPath = $null
+          }
           Write-Host "::group::Unity log tail (last $tailLines lines) -- $label"
           try {
             Get-Content -LiteralPath $log -Tail $tailLines | ForEach-Object {
@@ -106,19 +112,28 @@ runs:
           Write-Host "::endgroup::"
         }
 
-        # STANDALONE: the test player runs as a SEPARATE process and writes its own
-        # log (player.log), not unity.log. On a standalone failure the player log
-        # carries the actual test output and quit diagnostics, so tail it too when
-        # present (no-op for editmode/playmode, which write only unity.log).
-        $playerLog = if ($dir) { Join-Path $dir 'player.log' } else { $null }
-        if ($playerLog -and (Test-Path -LiteralPath $playerLog -PathType Leaf)) {
-          Write-Host "::group::Standalone player log tail (last $tailLines lines) -- $label"
+        # Standalone and shipping players run as separate processes. Tail every
+        # additional diagnostic log so player.log and both shipping process logs
+        # are visible without requiring the operator to download the artifact.
+        foreach ($additionalLog in $logFiles) {
+          if (
+            $primaryLogFullPath -and
+            [string]::Equals(
+              $additionalLog,
+              $primaryLogFullPath,
+              [StringComparison]::OrdinalIgnoreCase
+            )
+          ) {
+            continue
+          }
+          $additionalLogName = Split-Path -Leaf $additionalLog
+          Write-Host "::group::Diagnostic log tail: $additionalLogName (last $tailLines lines) -- $label"
           try {
-            Get-Content -LiteralPath $playerLog -Tail $tailLines | ForEach-Object {
+            Get-Content -LiteralPath $additionalLog -Tail $tailLines | ForEach-Object {
               Write-Host $_
             }
           } catch {
-            Write-Host "::notice::Unable to read tail of '$playerLog': $($_.Exception.Message)"
+            Write-Host "::notice::Unable to read tail of '$additionalLog': $($_.Exception.Message)"
           }
           Write-Host "::endgroup::"
         }

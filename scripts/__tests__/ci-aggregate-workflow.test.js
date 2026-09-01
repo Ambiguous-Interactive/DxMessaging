@@ -553,7 +553,9 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const label = `${file}:${jobId}`;
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
-    assert.match(job, /\n    timeout-minutes: 900\n/, `${label}: lifecycle budget`);
+    const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : 900;
+    // prettier-ignore
+    assert.match(job, new RegExp(`\\n    timeout-minutes: ${expectedJobTimeout}\\n`), `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
       assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
     }
@@ -693,7 +695,8 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
     aggregate,
     /DEPENDABOT_PR: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.user\.login == 'dependabot\[bot\]' \}\}/
   );
-  assert.doesNotMatch(aggregate, /github\.actor == 'dependabot\[bot\]'/);
+  // prettier-ignore
+  assert.doesNotMatch(aggregate, /github\.actor == 'dependabot\[bot\]'/); assert.match(getStepBlock(getJobBlock(unity, "unity-tests", "unity-tests.yml"), "Upload shipping-fidelity artifacts"), /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/);
 });
 // prettier-ignore
 test("active workflows pin external actions and scope licensed credentials", () => {

@@ -11,8 +11,9 @@ metadata:
 The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self-hosted
 Windows runners. `unity-tests.yml` is a four-version matrix. Each editor-scoped
 job runs `editmode`, `playmode`, and `standalone` as separate invocations under
-one lock and cleanup window; `standalone` builds and runs a
-`StandaloneWindows64` IL2CPP player from a runner-local project under
+one lock and cleanup window. The oldest and current endpoint jobs also run the
+stripped shipping-fidelity player. Both player modes build `StandaloneWindows64`
+IL2CPP players from runner-local projects under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`.
 
 ## When to use
@@ -51,11 +52,12 @@ one lock and cleanup window; `standalone` builds and runs a
   `unity-benchmarks.yml`, and `perf-numbers.yml`). A native
   `concurrency.group: wallstop-organization-builds` is repository-scoped and is FORBIDDEN.
 - Timeout invariant: every step before and including the cleanup gate has an explicit positive
-  timeout. Editor validation is capped at `10`, the acquire step cap (`305`) exceeds its
-  internal wait (`300`). Grouped correctness invocations use `90`/`90`/`150` caps;
-  other licensed work is capped at `120` to `180`. Cleanup uses `5`/`2`/`5`/`2`
-  for return/classify/release/gate. The `900`-minute job cap must retain at least 60 minutes
-  beyond the sum of those enforced step caps.
+  timeout. Editor validation is capped at `10`, and the acquire step cap (`305`) exceeds its
+  internal wait (`300`). Grouped correctness invocations use `90`/`90`/`150` caps, and the
+  endpoint-only shipping invocation uses `150`. Cleanup uses `5`/`2`/`5`/`2` for
+  return/classify/release/gate. `unity-tests.yml` uses a `1050`-minute job cap. Other licensed
+  jobs retain their `900`-minute cap. Each cap must retain at least 60 minutes beyond the sum
+  of its enforced step caps.
 - Editors and modules are installed manually by a runner administrator under
   `RUNNER_TOOL_CACHE/u6-v3`. Workflows MUST NOT install, repair, uninstall, or quarantine
   editors. Validate with `-CiManagedOnly -RequireHealthyExisting` before acquiring the lock.
@@ -75,9 +77,9 @@ one lock and cleanup window; `standalone` builds and runs a
 
 - CI must pass `-CiManagedOnly -RequireHealthyExisting` plus `-ProvisioningProfile`
   explicitly. The grouped correctness job validates `StandaloneWindowsIl2Cpp` once because
-  that superset serves all three invocations. Other jobs use `EditorOnly` for editmode,
-  playmode, benchmarks, and release checks, or `StandaloneWindowsIl2Cpp` for standalone
-  (verifies `windows-il2cpp`); `Android` and `Full`
+  that superset serves all test modes and the endpoint-only shipping invocation. Other jobs use
+  `EditorOnly` for editmode, playmode, benchmarks, and release checks, or
+  `StandaloneWindowsIl2Cpp` for standalone (verifies `windows-il2cpp`); `Android` and `Full`
   remain manual-maintenance profiles.
 - `unity install-path` with NO arguments is a GETTER. The SET form uses a flag (`-s`, then
   `--set` as fallback) and is best-effort only; discovery always relies on the getter.

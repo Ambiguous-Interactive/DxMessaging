@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "profileId": "shipping-fidelity-il2cpp-player-v1",
+  "configuration": {
+    "buildTarget": "StandaloneWindows64",
+    "scriptingBackend": "IL2CPP",
+    "apiCompatibilityLevel": "NET_Standard_2_0",
+    "codeOptimization": "Release",
+    "il2cppCompilerConfiguration": "Release",
+    "il2cppCodeGeneration": "OptimizeSpeed",
+    "managedStrippingLevel": "High",
+    "incrementalGc": true,
+    "stripEngineCode": true
+  },
+  "buildOptions": {
+    "developmentBuild": false,
+    "allowDebugging": false,
+    "deepProfiling": false,
+    "enableAssertions": false,
+    "includeTestAssemblies": false,
+    "autoRunPlayer": false,
+    "connectToHost": false,
+    "connectWithProfiler": false,
+    "cleanBuildCache": true,
+    "detailedBuildReport": true
+  },
+  "runtime": {
+    "debugBuild": false
+  }
+}

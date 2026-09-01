@@ -178,9 +178,9 @@ test("Unity result actions scan retry logs alongside or instead of unity.log", (
       name: "dump final plus retry",
       run: runDumpUnityLogTailAction,
       finalLog: "Final attempt failed later.\n",
-      retryLog: "CompilationFailedException: first attempt stopped before retry\n",
+      retryLog: "additional diagnostic tail sentinel\nCompilationFailedException: retry stopped\n",
       status: 0,
-      patterns: [/Pattern detected -- CompilationFailedException/, /unity\.first-attempt\.log/]
+      patterns: [/additional diagnostic tail sentinel/, /unity\.first-attempt\.log/]
     },
     {
       name: "dump retry only",
