@@ -6,10 +6,11 @@ param(
     [string]$UnityVersion,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet('editmode', 'playmode', 'standalone')]
+    [ValidateSet('editmode', 'playmode', 'standalone', 'shipping')]
     [string]$TestMode,
 
     [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
     [string]$AssemblyNames,
 
     [Parameter(Mandatory = $true)]
@@ -790,6 +791,45 @@ function Test-IsReparsePoint {
     return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
+function Remove-OwnedUnityInputEntry {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return
+    }
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        $isDirectoryReparsePoint = (
+            $item.PSIsContainer -or
+            (($item.Attributes -band [System.IO.FileAttributes]::Directory) -ne 0)
+        )
+        if ($isDirectoryReparsePoint) {
+            [System.IO.Directory]::Delete($item.FullName, $false)
+        } else {
+            [System.IO.File]::Delete($item.FullName)
+        }
+        return
+    }
+    if ($item.PSIsContainer) {
+        foreach ($child in @(Get-ChildItem -LiteralPath $item.FullName -Force)) {
+            Remove-OwnedUnityInputEntry -Path $child.FullName
+        }
+        [System.IO.Directory]::Delete($item.FullName, $false)
+        return
+    }
+    [System.IO.File]::Delete($item.FullName)
+}
+
+function Reset-OwnedUnityInputRoot {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Remove-OwnedUnityInputEntry -Path $Path
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    if (Test-IsReparsePoint -Path $Path) {
+        throw "Owned Unity input root remained a reparse point after reset: '$Path'."
+    }
+}
+
 function Test-PathContainsReparsePointBeforeBoundary {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -1185,19 +1225,31 @@ function New-ManifestJson {
         [Parameter(Mandatory = $true)][string]$Root,
         [switch]$IncludeComparisons,
         [switch]$IncludeIntegrations,
+        [switch]$ShippingFidelity,
         [string]$RepoRoot
     )
 
     $packagePath = ConvertTo-UnityFileUriPath -Path $Root
-    $dependencies = [ordered]@{
-        'com.unity.test-framework' = $TestFrameworkVersion
-        'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
-        $PackageName = "file:$packagePath"
-    }
-
-    $manifest = [ordered]@{
-        dependencies = $dependencies
-        testables = @($PackageName)
+    if ($ShippingFidelity) {
+        if ($IncludeComparisons -or $IncludeIntegrations) {
+            throw 'A shipping-fidelity project cannot include comparison or integration test packages.'
+        }
+        $dependencies = [ordered]@{
+            $PackageName = "file:$packagePath"
+        }
+        $manifest = [ordered]@{
+            dependencies = $dependencies
+        }
+    } else {
+        $dependencies = [ordered]@{
+            'com.unity.test-framework' = $TestFrameworkVersion
+            'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
+            $PackageName = "file:$packagePath"
+        }
+        $manifest = [ordered]@{
+            dependencies = $dependencies
+            testables = @($PackageName)
+        }
     }
 
     # Comparison legs install the benchmark dependencies and their required Unity
@@ -1365,6 +1417,8 @@ PluginImporter:
 function New-ConfiguratorSource {
     param(
         [string]$Backend = 'IL2CPP',
+        [ValidateSet('Disabled', 'Minimal', 'Low', 'Medium', 'High')]
+        [string]$ManagedStrippingLevel = 'Disabled',
         [string]$CanonicalProfileId = '',
         [string]$CanonicalProfileSha256 = ''
     )
@@ -1374,10 +1428,9 @@ function New-ConfiguratorSource {
     # string) is therefore backtick-escaped (`$). The LIVE code uses the
     # parameterized scripting backend (ScriptingImplementation.<Backend>), the
     # non-deprecated ApiCompatibilityLevel.NET_Standard (which targets .NET Standard
-    # 2.1), CompilationPipeline.codeOptimization = Release, disables managed
-    # stripping so the test assemblies + [Preserve] callback survive a Release Mono
-    # player build, and pins the IL2CPP C++ compiler configuration to Release. This
-    # is an invariant of the generated configurator.
+    # 2.1), CompilationPipeline.codeOptimization = Release, applies the selected
+    # managed stripping level, and pins the IL2CPP C++ compiler configuration to
+    # Release. This is an invariant of the generated configurator.
     @"
 using System;
 using System.IO;
@@ -1412,6 +1465,32 @@ public static class DxmCiTestConfigurator
         public bool stripEngineCode;
     }
 
+    [Serializable]
+    private sealed class BuildOptionsEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string evidenceKind = "buildOptions";
+        public string unityVersion = Application.unityVersion;
+        public BuildOptionsValues values = new BuildOptionsValues();
+    }
+
+    [Serializable]
+    private sealed class BuildOptionsValues
+    {
+        public bool developmentBuild;
+        public bool allowDebugging;
+        public bool deepProfiling;
+        public bool enableAssertions;
+        public bool includeTestAssemblies;
+        public bool autoRunPlayer;
+        public bool connectToHost;
+        public bool connectWithProfiler;
+        public bool cleanBuildCache;
+        public bool detailedBuildReport;
+    }
+
     public static void Apply()
     {
         // Prove Release editor code optimization for every Unity CI leg. Set FIRST
@@ -1427,10 +1506,9 @@ public static class DxmCiTestConfigurator
         // Standard 2.1). The deprecated 2.0 form and the non-existent 2.1 enum
         // member are intentionally NOT used.
         PlayerSettings.SetApiCompatibilityLevel(standalone, ApiCompatibilityLevel.NET_Standard);
-        // Disable managed code stripping so IncludeTestAssemblies + the [Preserve]
-        // standalone TestRunCallback survive a NON-development (Release) Mono player
-        // build; otherwise the stripper can drop the test code from the player.
-        PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.Disabled);
+        // Apply the reviewed profile's stripping level. Test players select
+        // Disabled so their callbacks survive; shipping fidelity selects High.
+        PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.$ManagedStrippingLevel);
         // Pin the IL2CPP C++ compiler configuration to Release explicitly. An
         // ephemeral CI project has no committed default for this setting, and
         // measured CI runs showed Debug's faster native compile is outweighed by a
@@ -1442,7 +1520,14 @@ public static class DxmCiTestConfigurator
         if (!string.IsNullOrEmpty("$CanonicalProfileId"))
         {
             PlayerSettings.gcIncremental = true;
-            PlayerSettings.stripEngineCode = true;
+            // Unity 2021.3 can omit UnityEngine.IMGUIModule while recompiling
+            // editor-only package code when engine stripping is already enabled.
+            // Keep it disabled while the shipping builder assembly loads; that
+            // builder applies the reviewed value immediately before BuildPlayer.
+            PlayerSettings.stripEngineCode = !string.Equals(
+                "$CanonicalProfileId",
+                "shipping-fidelity-il2cpp-player-v1",
+                StringComparison.Ordinal);
 #if UNITY_2022_1_OR_NEWER
             PlayerSettings.SetIl2CppCodeGeneration(standalone, Il2CppCodeGeneration.OptimizeSpeed);
 #else
@@ -1509,6 +1594,31 @@ public static class DxmCiTestConfigurator
         WriteJson(profilePath, evidence);
     }
 
+    internal static void WriteBuildOptionsEvidence(string profilePath, BuildOptions options)
+    {
+        if (string.IsNullOrEmpty(profilePath))
+        {
+            return;
+        }
+        BuildOptionsEvidence evidence = new BuildOptionsEvidence();
+        evidence.values.developmentBuild = Has(options, BuildOptions.Development);
+        evidence.values.allowDebugging = Has(options, BuildOptions.AllowDebugging);
+        evidence.values.deepProfiling = Has(options, BuildOptions.EnableDeepProfilingSupport);
+        evidence.values.enableAssertions = Has(options, BuildOptions.ForceEnableAssertions);
+        evidence.values.includeTestAssemblies = Has(options, BuildOptions.IncludeTestAssemblies);
+        evidence.values.autoRunPlayer = Has(options, BuildOptions.AutoRunPlayer);
+        evidence.values.connectToHost = Has(options, BuildOptions.ConnectToHost);
+        evidence.values.connectWithProfiler = Has(options, BuildOptions.ConnectWithProfiler);
+        evidence.values.cleanBuildCache = Has(options, BuildOptions.CleanBuildCache);
+        evidence.values.detailedBuildReport = Has(options, BuildOptions.DetailedBuildReport);
+        WriteJson(profilePath, evidence);
+    }
+
+    private static bool Has(BuildOptions options, BuildOptions flag)
+    {
+        return (options & flag) == flag;
+    }
+
     private static void WriteJson(string path, object value)
     {
         string dir = Path.GetDirectoryName(path);
@@ -1540,8 +1650,7 @@ public static class DxmCiTestConfigurator
 function New-StandaloneBuildModifierSource {
     param(
         [bool]$DevelopmentBuild = $false,
-        [string]$CanonicalProfileId = '',
-        [string]$CanonicalProfileSha256 = ''
+        [string]$CanonicalProfileId = ''
     )
 
     # The Development BuildOptions flag is opt-in only. Unity CI defaults to a true
@@ -1581,32 +1690,6 @@ using UnityEngine.TestTools;
 // the build) to exit the editor cleanly.
 public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPostBuildCleanup, IPostprocessBuildWithReport
 {
-    [Serializable]
-    private sealed class BuildOptionsEvidence
-    {
-        public int schemaVersion = 1;
-        public string profileId = "$CanonicalProfileId";
-        public string profileSha256 = "$CanonicalProfileSha256";
-        public string evidenceKind = "buildOptions";
-        public string unityVersion = Application.unityVersion;
-        public BuildOptionsValues values = new BuildOptionsValues();
-    }
-
-    [Serializable]
-    private sealed class BuildOptionsValues
-    {
-        public bool developmentBuild;
-        public bool allowDebugging;
-        public bool deepProfiling;
-        public bool enableAssertions;
-        public bool includeTestAssemblies;
-        public bool autoRunPlayer;
-        public bool connectToHost;
-        public bool connectWithProfiler;
-        public bool cleanBuildCache;
-        public bool detailedBuildReport;
-    }
-
     private static bool s_Armed;
     private static readonly EditorApplication.CallbackFunction s_Exit = () => EditorApplication.Exit(0);
     public int callbackOrder => 0;
@@ -1645,38 +1728,9 @@ $developmentOption
     {
         DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_POSTBUILD_CONFIG_PROFILE_PATH"));
-        WriteProfileEvidence(report.summary.options);
-    }
-
-    private static void WriteProfileEvidence(BuildOptions options)
-    {
-        string path = Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH");
-        if (string.IsNullOrEmpty(path))
-        {
-            return;
-        }
-        BuildOptionsEvidence evidence = new BuildOptionsEvidence();
-        evidence.values.developmentBuild = Has(options, BuildOptions.Development);
-        evidence.values.allowDebugging = Has(options, BuildOptions.AllowDebugging);
-        evidence.values.deepProfiling = Has(options, BuildOptions.EnableDeepProfilingSupport);
-        evidence.values.enableAssertions = Has(options, BuildOptions.ForceEnableAssertions);
-        evidence.values.includeTestAssemblies = Has(options, BuildOptions.IncludeTestAssemblies);
-        evidence.values.autoRunPlayer = Has(options, BuildOptions.AutoRunPlayer);
-        evidence.values.connectToHost = Has(options, BuildOptions.ConnectToHost);
-        evidence.values.connectWithProfiler = Has(options, BuildOptions.ConnectWithProfiler);
-        evidence.values.cleanBuildCache = Has(options, BuildOptions.CleanBuildCache);
-        evidence.values.detailedBuildReport = Has(options, BuildOptions.DetailedBuildReport);
-        string dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-        File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
-    }
-
-    private static bool Has(BuildOptions options, BuildOptions flag)
-    {
-        return (options & flag) == flag;
+        DxmCiTestConfigurator.WriteBuildOptionsEvidence(
+            Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH"),
+            report.summary.options);
     }
 
     public void Cleanup()
@@ -1892,6 +1946,848 @@ function New-StandaloneTestCallbackAsmdef {
 '@
 }
 
+# SHIPPING ONLY. This is a real Assembly-CSharp consumer with no NUnit or Unity
+# Test Framework references. It proves the package survives High managed
+# stripping and that generated AOT roots support typed and untyped dispatch for
+# public, private nested, class, and readonly-struct message shapes. A private
+# manual message intentionally has no generated bridge and supplies the RED
+# missing-root control from the same built binary.
+function New-ShippingFidelityPlayerSource {
+    param(
+        [Parameter(Mandatory = $true)][string]$CanonicalProfileId,
+        [Parameter(Mandatory = $true)][string]$CanonicalProfileSha256
+    )
+
+    @"
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using DxMessaging.Core;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Core.Messages;
+using UnityEngine;
+
+[DxUntargetedMessage]
+public sealed partial class DxmShippingPublicUntargetedClass
+{
+}
+
+[DxUntargetedMessage]
+public readonly partial struct DxmShippingPublicUntargetedStruct
+{
+}
+
+[DxTargetedMessage]
+public sealed partial class DxmShippingPublicTargetedClass
+{
+}
+
+[DxTargetedMessage]
+public readonly partial struct DxmShippingPublicTargetedStruct
+{
+}
+
+[DxBroadcastMessage]
+public sealed partial class DxmShippingPublicBroadcastClass
+{
+}
+
+[DxBroadcastMessage]
+public readonly partial struct DxmShippingPublicBroadcastStruct
+{
+}
+
+public sealed partial class DxmShippingFidelityPlayer
+{
+    private const string PositiveMode = "positive";
+    private const string MissingRootMode = "missing-root-mutant";
+    private const string MissingRootMessageFragment = "no rooted dispatch bridge was registered";
+
+    [DxUntargetedMessage]
+    private readonly partial struct NestedUntargetedStruct
+    {
+    }
+
+    [DxUntargetedMessage]
+    private sealed partial class NestedUntargetedClass
+    {
+    }
+
+    [DxTargetedMessage]
+    private sealed partial class NestedTargetedClass
+    {
+    }
+
+    [DxTargetedMessage]
+    private readonly partial struct NestedTargetedStruct
+    {
+    }
+
+    [DxBroadcastMessage]
+    private readonly partial struct NestedBroadcastStruct
+    {
+    }
+
+    [DxBroadcastMessage]
+    private sealed partial class NestedBroadcastClass
+    {
+    }
+
+    [DxUntargetedMessage]
+    public sealed partial class PublicNestedUntargetedClass
+    {
+    }
+
+    [DxUntargetedMessage]
+    public readonly partial struct PublicNestedUntargetedStruct
+    {
+    }
+
+    [DxTargetedMessage]
+    public sealed partial class PublicNestedTargetedClass
+    {
+    }
+
+    [DxTargetedMessage]
+    public readonly partial struct PublicNestedTargetedStruct
+    {
+    }
+
+    [DxBroadcastMessage]
+    public sealed partial class PublicNestedBroadcastClass
+    {
+    }
+
+    [DxBroadcastMessage]
+    public readonly partial struct PublicNestedBroadcastStruct
+    {
+    }
+
+    private sealed class MissingRootUntargetedMessage : IUntargetedMessage
+    {
+        public Type MessageType => typeof(MissingRootUntargetedMessage);
+    }
+
+    [Serializable]
+    private sealed class ShippingResult
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string unityVersion = Application.unityVersion;
+        public string mode = string.Empty;
+        public bool success;
+        public bool unityIncludeTests;
+        public int rootedUntypedProbeCount;
+        public int typedDispatchCount;
+        public int untypedDispatchCount;
+        public string[] rootedUntypedShapes = new string[0];
+        public string[] typedDispatchShapes = new string[0];
+        public string[] untypedDispatchShapes = new string[0];
+        public bool missingRootFailureObserved;
+        public string failureType = string.Empty;
+        public string failureMessage = string.Empty;
+        public string[] loadedAssemblies = new string[0];
+    }
+
+    [Serializable]
+    private sealed class RuntimeEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string evidenceKind = "runtime";
+        public string unityVersion = Application.unityVersion;
+        public RuntimeValues values = new RuntimeValues();
+    }
+
+    [Serializable]
+    private sealed class RuntimeValues
+    {
+        public bool debugBuild;
+    }
+
+    private static int s_TypedDispatchCount;
+    private static int s_UntypedDispatchCount;
+    private static bool s_UntypedPhase;
+    private static readonly List<string> TypedDispatchShapes = new List<string>(18);
+    private static readonly List<string> UntypedDispatchShapes = new List<string>(18);
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void Run()
+    {
+        string resultPath = ResolveArgument("-dxmShippingResult");
+        string runtimeProfilePath = ResolveArgument("-dxmRuntimeProfile");
+        string mode = ResolveArgument("-dxmShippingMode") ?? PositiveMode;
+        if (string.IsNullOrEmpty(resultPath) || string.IsNullOrEmpty(runtimeProfilePath))
+        {
+            Debug.LogError("DXM shipping player requires result and runtime-profile paths.");
+            Application.Quit(2);
+            return;
+        }
+
+        ShippingResult result = new ShippingResult { mode = mode };
+        try
+        {
+#if UNITY_INCLUDE_TESTS
+            result.unityIncludeTests = true;
+#endif
+            if (result.unityIncludeTests)
+            {
+                throw new InvalidOperationException(
+                    "Shipping player compiled with the forbidden UNITY_INCLUDE_TESTS define.");
+            }
+            result.loadedAssemblies = GetLoadedAssemblyNames();
+            AssertNoTestAssemblies(result.loadedAssemblies);
+            if (string.Equals(mode, PositiveMode, StringComparison.Ordinal))
+            {
+                RunPositiveSmoke(result);
+            }
+            else if (string.Equals(mode, MissingRootMode, StringComparison.Ordinal))
+            {
+                RunMissingRootMutant(result);
+            }
+            else
+            {
+                throw new InvalidOperationException("Unknown shipping-fidelity mode: " + mode);
+            }
+            result.success = true;
+        }
+        catch (Exception ex)
+        {
+            result.success = false;
+            result.failureType = ex.GetType().FullName;
+            result.failureMessage = ex.Message;
+            Debug.LogException(ex);
+        }
+
+        try
+        {
+            WriteRuntimeEvidence(runtimeProfilePath);
+            WriteJson(resultPath, result);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogException(ex);
+            Application.Quit(3);
+            return;
+        }
+
+        Application.Quit(result.success ? 0 : 1);
+    }
+
+    private static void RunPositiveSmoke(ShippingResult result)
+    {
+        MessageBus bus = new MessageBus();
+        InstanceId route = new InstanceId(0x5348_4950);
+
+        DxmShippingPublicUntargetedClass publicUntargetedClass = new DxmShippingPublicUntargetedClass();
+        DxmShippingPublicUntargetedStruct publicUntargetedStruct = default;
+        DxmShippingPublicTargetedClass publicTargetedClass = new DxmShippingPublicTargetedClass();
+        DxmShippingPublicTargetedStruct publicTargetedStruct = default;
+        DxmShippingPublicBroadcastClass publicBroadcastClass = new DxmShippingPublicBroadcastClass();
+        DxmShippingPublicBroadcastStruct publicBroadcastStruct = default;
+        NestedUntargetedClass nestedUntargetedClass = new NestedUntargetedClass();
+        NestedUntargetedStruct nestedUntargetedStruct = default;
+        NestedTargetedClass nestedTargetedClass = new NestedTargetedClass();
+        NestedTargetedStruct nestedTargetedStruct = default;
+        NestedBroadcastClass nestedBroadcastClass = new NestedBroadcastClass();
+        NestedBroadcastStruct nestedBroadcastStruct = default;
+        PublicNestedUntargetedClass publicNestedUntargetedClass = new PublicNestedUntargetedClass();
+        PublicNestedUntargetedStruct publicNestedUntargetedStruct = default;
+        PublicNestedTargetedClass publicNestedTargetedClass = new PublicNestedTargetedClass();
+        PublicNestedTargetedStruct publicNestedTargetedStruct = default;
+        PublicNestedBroadcastClass publicNestedBroadcastClass = new PublicNestedBroadcastClass();
+        PublicNestedBroadcastStruct publicNestedBroadcastStruct = default;
+
+        // First dispatch each shape only through its interface. No typed register
+        // or emit has had a chance to seed a bridge, so success proves the
+        // generated RuntimeInitializeOnLoadMethod root survived stripping.
+        long emissionIdBeforeRootProbe = bus.EmissionId;
+        List<string> rootedUntypedShapes = new List<string>(18);
+        ProbeUntargetedRoot(bus, publicUntargetedClass, rootedUntypedShapes);
+        ProbeUntargetedRoot(bus, publicUntargetedStruct, rootedUntypedShapes);
+        ProbeTargetedRoot(bus, route, publicTargetedClass, rootedUntypedShapes);
+        ProbeTargetedRoot(bus, route, publicTargetedStruct, rootedUntypedShapes);
+        ProbeBroadcastRoot(bus, route, publicBroadcastClass, rootedUntypedShapes);
+        ProbeBroadcastRoot(bus, route, publicBroadcastStruct, rootedUntypedShapes);
+        ProbeUntargetedRoot(bus, nestedUntargetedClass, rootedUntypedShapes);
+        ProbeUntargetedRoot(bus, nestedUntargetedStruct, rootedUntypedShapes);
+        ProbeTargetedRoot(bus, route, nestedTargetedClass, rootedUntypedShapes);
+        ProbeTargetedRoot(bus, route, nestedTargetedStruct, rootedUntypedShapes);
+        ProbeBroadcastRoot(bus, route, nestedBroadcastClass, rootedUntypedShapes);
+        ProbeBroadcastRoot(bus, route, nestedBroadcastStruct, rootedUntypedShapes);
+        ProbeUntargetedRoot(bus, publicNestedUntargetedClass, rootedUntypedShapes);
+        ProbeUntargetedRoot(bus, publicNestedUntargetedStruct, rootedUntypedShapes);
+        ProbeTargetedRoot(bus, route, publicNestedTargetedClass, rootedUntypedShapes);
+        ProbeTargetedRoot(bus, route, publicNestedTargetedStruct, rootedUntypedShapes);
+        ProbeBroadcastRoot(bus, route, publicNestedBroadcastClass, rootedUntypedShapes);
+        ProbeBroadcastRoot(bus, route, publicNestedBroadcastStruct, rootedUntypedShapes);
+        long rootedUntypedProbeCount = bus.EmissionId - emissionIdBeforeRootProbe;
+        if (rootedUntypedProbeCount != 18 || rootedUntypedShapes.Count != 18)
+        {
+            throw new InvalidOperationException(
+                "Shipping root probe did not execute all 18 first-untyped dispatches.");
+        }
+        result.rootedUntypedProbeCount = (int)rootedUntypedProbeCount;
+        result.rootedUntypedShapes = rootedUntypedShapes.ToArray();
+
+        MessageHandler handler = new MessageHandler(route, bus) { active = true };
+        MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+        try
+        {
+            _ = token.RegisterUntargeted<DxmShippingPublicUntargetedClass>(HandlePublicUntargetedClass);
+            _ = token.RegisterUntargeted<DxmShippingPublicUntargetedStruct>(HandlePublicUntargetedStruct);
+            _ = token.RegisterTargeted<DxmShippingPublicTargetedClass>(route, HandlePublicTargetedClass);
+            _ = token.RegisterTargeted<DxmShippingPublicTargetedStruct>(route, HandlePublicTargetedStruct);
+            _ = token.RegisterBroadcast<DxmShippingPublicBroadcastClass>(route, HandlePublicBroadcastClass);
+            _ = token.RegisterBroadcast<DxmShippingPublicBroadcastStruct>(route, HandlePublicBroadcastStruct);
+            _ = token.RegisterUntargeted<NestedUntargetedClass>(HandleNestedUntargetedClass);
+            _ = token.RegisterUntargeted<NestedUntargetedStruct>(HandleNestedUntargetedStruct);
+            _ = token.RegisterTargeted<NestedTargetedClass>(route, HandleNestedTargetedClass);
+            _ = token.RegisterTargeted<NestedTargetedStruct>(route, HandleNestedTargetedStruct);
+            _ = token.RegisterBroadcast<NestedBroadcastClass>(route, HandleNestedBroadcastClass);
+            _ = token.RegisterBroadcast<NestedBroadcastStruct>(route, HandleNestedBroadcastStruct);
+            _ = token.RegisterUntargeted<PublicNestedUntargetedClass>(HandlePublicNestedUntargetedClass);
+            _ = token.RegisterUntargeted<PublicNestedUntargetedStruct>(HandlePublicNestedUntargetedStruct);
+            _ = token.RegisterTargeted<PublicNestedTargetedClass>(route, HandlePublicNestedTargetedClass);
+            _ = token.RegisterTargeted<PublicNestedTargetedStruct>(route, HandlePublicNestedTargetedStruct);
+            _ = token.RegisterBroadcast<PublicNestedBroadcastClass>(route, HandlePublicNestedBroadcastClass);
+            _ = token.RegisterBroadcast<PublicNestedBroadcastStruct>(route, HandlePublicNestedBroadcastStruct);
+            token.Enable();
+
+            s_TypedDispatchCount = 0;
+            s_UntypedDispatchCount = 0;
+            TypedDispatchShapes.Clear();
+            UntypedDispatchShapes.Clear();
+            s_UntypedPhase = false;
+            bus.UntargetedBroadcast(ref publicUntargetedClass);
+            bus.UntargetedBroadcast(ref publicUntargetedStruct);
+            bus.TargetedBroadcast(ref route, ref publicTargetedClass);
+            bus.TargetedBroadcast(ref route, ref publicTargetedStruct);
+            bus.SourcedBroadcast(ref route, ref publicBroadcastClass);
+            bus.SourcedBroadcast(ref route, ref publicBroadcastStruct);
+            bus.UntargetedBroadcast(ref nestedUntargetedClass);
+            bus.UntargetedBroadcast(ref nestedUntargetedStruct);
+            bus.TargetedBroadcast(ref route, ref nestedTargetedClass);
+            bus.TargetedBroadcast(ref route, ref nestedTargetedStruct);
+            bus.SourcedBroadcast(ref route, ref nestedBroadcastClass);
+            bus.SourcedBroadcast(ref route, ref nestedBroadcastStruct);
+            bus.UntargetedBroadcast(ref publicNestedUntargetedClass);
+            bus.UntargetedBroadcast(ref publicNestedUntargetedStruct);
+            bus.TargetedBroadcast(ref route, ref publicNestedTargetedClass);
+            bus.TargetedBroadcast(ref route, ref publicNestedTargetedStruct);
+            bus.SourcedBroadcast(ref route, ref publicNestedBroadcastClass);
+            bus.SourcedBroadcast(ref route, ref publicNestedBroadcastStruct);
+
+            s_UntypedPhase = true;
+            bus.UntypedUntargetedBroadcast(publicUntargetedClass);
+            bus.UntypedUntargetedBroadcast(publicUntargetedStruct);
+            bus.UntypedTargetedBroadcast(route, publicTargetedClass);
+            bus.UntypedTargetedBroadcast(route, publicTargetedStruct);
+            bus.UntypedSourcedBroadcast(route, publicBroadcastClass);
+            bus.UntypedSourcedBroadcast(route, publicBroadcastStruct);
+            bus.UntypedUntargetedBroadcast(nestedUntargetedClass);
+            bus.UntypedUntargetedBroadcast(nestedUntargetedStruct);
+            bus.UntypedTargetedBroadcast(route, nestedTargetedClass);
+            bus.UntypedTargetedBroadcast(route, nestedTargetedStruct);
+            bus.UntypedSourcedBroadcast(route, nestedBroadcastClass);
+            bus.UntypedSourcedBroadcast(route, nestedBroadcastStruct);
+            bus.UntypedUntargetedBroadcast(publicNestedUntargetedClass);
+            bus.UntypedUntargetedBroadcast(publicNestedUntargetedStruct);
+            bus.UntypedTargetedBroadcast(route, publicNestedTargetedClass);
+            bus.UntypedTargetedBroadcast(route, publicNestedTargetedStruct);
+            bus.UntypedSourcedBroadcast(route, publicNestedBroadcastClass);
+            bus.UntypedSourcedBroadcast(route, publicNestedBroadcastStruct);
+
+            result.typedDispatchCount = s_TypedDispatchCount;
+            result.untypedDispatchCount = s_UntypedDispatchCount;
+            result.typedDispatchShapes = TypedDispatchShapes.ToArray();
+            result.untypedDispatchShapes = UntypedDispatchShapes.ToArray();
+            if (s_TypedDispatchCount != 18 || s_UntypedDispatchCount != 18)
+            {
+                throw new InvalidOperationException(
+                    string.Format(
+                        "Shipping dispatch counts differ (typed={0}, untyped={1}).",
+                        s_TypedDispatchCount,
+                        s_UntypedDispatchCount));
+            }
+        }
+        finally
+        {
+            token.UnregisterAll();
+            token.Dispose();
+            handler.active = false;
+        }
+    }
+
+    private static void ProbeUntargetedRoot(
+        MessageBus bus,
+        IUntargetedMessage message,
+        List<string> observedShapes)
+    {
+        bus.UntypedUntargetedBroadcast(message);
+        observedShapes.Add(message.MessageType.Name);
+    }
+
+    private static void ProbeTargetedRoot(
+        MessageBus bus,
+        InstanceId target,
+        ITargetedMessage message,
+        List<string> observedShapes)
+    {
+        bus.UntypedTargetedBroadcast(target, message);
+        observedShapes.Add(message.MessageType.Name);
+    }
+
+    private static void ProbeBroadcastRoot(
+        MessageBus bus,
+        InstanceId source,
+        IBroadcastMessage message,
+        List<string> observedShapes)
+    {
+        bus.UntypedSourcedBroadcast(source, message);
+        observedShapes.Add(message.MessageType.Name);
+    }
+
+    private static void RunMissingRootMutant(ShippingResult result)
+    {
+        MessageBus bus = new MessageBus();
+        try
+        {
+            bus.UntypedUntargetedBroadcast(new MissingRootUntargetedMessage());
+        }
+        catch (InvalidOperationException ex)
+        {
+            if (ex.Message.IndexOf(MissingRootMessageFragment, StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException(
+                    "The missing-root mutant threw the wrong InvalidOperationException.",
+                    ex);
+            }
+            result.missingRootFailureObserved = true;
+            return;
+        }
+        throw new InvalidOperationException(
+            "The missing-root mutant dispatched without the required AOT bridge failure.");
+    }
+
+    private static void HandlePublicUntargetedClass(in DxmShippingPublicUntargetedClass message) => Count("DxmShippingPublicUntargetedClass");
+    private static void HandlePublicUntargetedStruct(in DxmShippingPublicUntargetedStruct message) => Count("DxmShippingPublicUntargetedStruct");
+    private static void HandlePublicTargetedClass(in DxmShippingPublicTargetedClass message) => Count("DxmShippingPublicTargetedClass");
+    private static void HandlePublicTargetedStruct(in DxmShippingPublicTargetedStruct message) => Count("DxmShippingPublicTargetedStruct");
+    private static void HandlePublicBroadcastClass(in DxmShippingPublicBroadcastClass message) => Count("DxmShippingPublicBroadcastClass");
+    private static void HandlePublicBroadcastStruct(in DxmShippingPublicBroadcastStruct message) => Count("DxmShippingPublicBroadcastStruct");
+    private static void HandleNestedUntargetedClass(in NestedUntargetedClass message) => Count("NestedUntargetedClass");
+    private static void HandleNestedUntargetedStruct(in NestedUntargetedStruct message) => Count("NestedUntargetedStruct");
+    private static void HandleNestedTargetedClass(in NestedTargetedClass message) => Count("NestedTargetedClass");
+    private static void HandleNestedTargetedStruct(in NestedTargetedStruct message) => Count("NestedTargetedStruct");
+    private static void HandleNestedBroadcastClass(in NestedBroadcastClass message) => Count("NestedBroadcastClass");
+    private static void HandleNestedBroadcastStruct(in NestedBroadcastStruct message) => Count("NestedBroadcastStruct");
+    private static void HandlePublicNestedUntargetedClass(in PublicNestedUntargetedClass message) => Count("PublicNestedUntargetedClass");
+    private static void HandlePublicNestedUntargetedStruct(in PublicNestedUntargetedStruct message) => Count("PublicNestedUntargetedStruct");
+    private static void HandlePublicNestedTargetedClass(in PublicNestedTargetedClass message) => Count("PublicNestedTargetedClass");
+    private static void HandlePublicNestedTargetedStruct(in PublicNestedTargetedStruct message) => Count("PublicNestedTargetedStruct");
+    private static void HandlePublicNestedBroadcastClass(in PublicNestedBroadcastClass message) => Count("PublicNestedBroadcastClass");
+    private static void HandlePublicNestedBroadcastStruct(in PublicNestedBroadcastStruct message) => Count("PublicNestedBroadcastStruct");
+
+    private static void Count(string shape)
+    {
+        if (s_UntypedPhase)
+        {
+            s_UntypedDispatchCount++;
+            UntypedDispatchShapes.Add(shape);
+        }
+        else
+        {
+            s_TypedDispatchCount++;
+            TypedDispatchShapes.Add(shape);
+        }
+    }
+
+    private static string[] GetLoadedAssemblyNames()
+    {
+        System.Reflection.Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        List<string> names = new List<string>(assemblies.Length);
+        for (int i = 0; i < assemblies.Length; i++)
+        {
+            names.Add(assemblies[i].GetName().Name);
+        }
+        string[] result = names.ToArray();
+        Array.Sort(result, StringComparer.Ordinal);
+        return result;
+    }
+
+    private static void AssertNoTestAssemblies(string[] assemblyNames)
+    {
+        for (int i = 0; i < assemblyNames.Length; i++)
+        {
+            string name = assemblyNames[i];
+            if (
+                string.Equals(name, "nunit.framework", StringComparison.OrdinalIgnoreCase)
+                || name.IndexOf("TestRunner", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("PerformanceTesting", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)
+                || name.IndexOf(".Tests.", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.StartsWith("DxmCiStandalone", StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Shipping player loaded forbidden test assembly: " + name);
+            }
+        }
+    }
+
+    private static string ResolveArgument(string name)
+    {
+        string[] args = Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], name, StringComparison.Ordinal))
+            {
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    private static void WriteRuntimeEvidence(string path)
+    {
+        RuntimeEvidence evidence = new RuntimeEvidence();
+        evidence.values.debugBuild = Debug.isDebugBuild;
+        WriteJson(path, evidence);
+    }
+
+    private static void WriteJson(string path, ShippingResult value)
+    {
+        StringBuilder json = new StringBuilder(2048);
+        json.Append('{');
+        AppendProperty(json, "schemaVersion", value.schemaVersion.ToString(CultureInfo.InvariantCulture), false);
+        AppendProperty(json, "profileId", QuoteJson(value.profileId), true);
+        AppendProperty(json, "profileSha256", QuoteJson(value.profileSha256), true);
+        AppendProperty(json, "unityVersion", QuoteJson(value.unityVersion), true);
+        AppendProperty(json, "mode", QuoteJson(value.mode), true);
+        AppendProperty(json, "success", JsonBoolean(value.success), true);
+        AppendProperty(json, "unityIncludeTests", JsonBoolean(value.unityIncludeTests), true);
+        AppendProperty(json, "rootedUntypedProbeCount", value.rootedUntypedProbeCount.ToString(CultureInfo.InvariantCulture), true);
+        AppendProperty(json, "typedDispatchCount", value.typedDispatchCount.ToString(CultureInfo.InvariantCulture), true);
+        AppendProperty(json, "untypedDispatchCount", value.untypedDispatchCount.ToString(CultureInfo.InvariantCulture), true);
+        AppendProperty(json, "rootedUntypedShapes", SerializeStringArray(value.rootedUntypedShapes), true);
+        AppendProperty(json, "typedDispatchShapes", SerializeStringArray(value.typedDispatchShapes), true);
+        AppendProperty(json, "untypedDispatchShapes", SerializeStringArray(value.untypedDispatchShapes), true);
+        AppendProperty(json, "missingRootFailureObserved", JsonBoolean(value.missingRootFailureObserved), true);
+        AppendProperty(json, "failureType", QuoteJson(value.failureType), true);
+        AppendProperty(json, "failureMessage", QuoteJson(value.failureMessage), true);
+        AppendProperty(json, "loadedAssemblies", SerializeStringArray(value.loadedAssemblies), true);
+        json.Append('}');
+        WriteJsonText(path, json.ToString());
+    }
+
+    private static void WriteJson(string path, RuntimeEvidence value)
+    {
+        StringBuilder json = new StringBuilder(384);
+        json.Append('{');
+        AppendProperty(json, "schemaVersion", value.schemaVersion.ToString(CultureInfo.InvariantCulture), false);
+        AppendProperty(json, "profileId", QuoteJson(value.profileId), true);
+        AppendProperty(json, "profileSha256", QuoteJson(value.profileSha256), true);
+        AppendProperty(json, "evidenceKind", QuoteJson(value.evidenceKind), true);
+        AppendProperty(json, "unityVersion", QuoteJson(value.unityVersion), true);
+        json.Append(',').Append(QuoteJson("values")).Append(':').Append('{');
+        AppendProperty(json, "debugBuild", JsonBoolean(value.values.debugBuild), false);
+        json.Append('}').Append('}');
+        WriteJsonText(path, json.ToString());
+    }
+
+    private static void AppendProperty(
+        StringBuilder json,
+        string name,
+        string encodedValue,
+        bool prependComma)
+    {
+        if (prependComma)
+        {
+            json.Append(',');
+        }
+        json.Append(QuoteJson(name)).Append(':').Append(encodedValue);
+    }
+
+    private static string SerializeStringArray(string[] values)
+    {
+        StringBuilder json = new StringBuilder();
+        json.Append('[');
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (i > 0)
+            {
+                json.Append(',');
+            }
+            json.Append(QuoteJson(values[i]));
+        }
+        json.Append(']');
+        return json.ToString();
+    }
+
+    private static string QuoteJson(string value)
+    {
+        if (value == null)
+        {
+            return "null";
+        }
+        StringBuilder json = new StringBuilder(value.Length + 2);
+        json.Append('"');
+        for (int i = 0; i < value.Length; i++)
+        {
+            char character = value[i];
+            switch (character)
+            {
+                case '"': json.Append("\\\""); break;
+                case '\\': json.Append("\\\\"); break;
+                case '\b': json.Append("\\b"); break;
+                case '\f': json.Append("\\f"); break;
+                case '\n': json.Append("\\n"); break;
+                case '\r': json.Append("\\r"); break;
+                case '\t': json.Append("\\t"); break;
+                default:
+                    if (character < 0x20)
+                    {
+                        json.Append("\\u").Append(
+                            ((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        json.Append(character);
+                    }
+                    break;
+            }
+        }
+        return json.Append('"').ToString();
+    }
+
+    private static string JsonBoolean(bool value)
+    {
+        return value ? "true" : "false";
+    }
+
+    private static void WriteJsonText(string path, string json)
+    {
+        string directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        File.WriteAllText(path, json);
+    }
+}
+"@
+}
+
+# SHIPPING ONLY. Builds the Assembly-CSharp smoke consumer directly through
+# BuildPipeline, without -runTests, IncludeTestAssemblies, TestRunCallback, or
+# PlayerConnection. It records the exact final BuildOptions and the player
+# assembly inventory used by Unity before writing a fresh completion marker.
+function New-ShippingFidelityBuilderSource {
+    param(
+        [Parameter(Mandatory = $true)][string]$CanonicalProfileId,
+        [Parameter(Mandatory = $true)][string]$CanonicalProfileSha256
+    )
+
+    @"
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
+using UnityEditor.Compilation;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public static class DxmShippingFidelityBuilder
+{
+    [Serializable]
+    private sealed class AssemblyEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string unityVersion = Application.unityVersion;
+        public bool includeTestAssemblies;
+        public string[] playerAssemblies = new string[0];
+    }
+
+    public static void Build()
+    {
+        string outputPath = RequireEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
+        string markerPath = RequireEnvironmentVariable("DXM_SHIPPING_BUILD_MARKER_PATH");
+        string scenePath = "Assets/DxmShippingFidelity.unity";
+        string outputDirectory = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outputDirectory))
+        {
+            Directory.CreateDirectory(outputDirectory);
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        if (!EditorSceneManager.SaveScene(scene, scenePath))
+        {
+            throw new InvalidOperationException("Could not save the shipping-fidelity scene.");
+        }
+
+        UnityEditor.Compilation.Assembly[] playerAssemblies =
+            CompilationPipeline.GetAssemblies(AssembliesType.Player);
+        string[] assemblyNames = GetAssemblyNames(playerAssemblies);
+        AssertNoTestAssemblies(assemblyNames);
+
+        ApplyShippingProfile();
+
+        BuildPlayerOptions options = new BuildPlayerOptions
+        {
+            scenes = new[] { scenePath },
+            locationPathName = outputPath,
+            target = BuildTarget.StandaloneWindows64,
+            options = BuildOptions.CleanBuildCache | BuildOptions.DetailedBuildReport
+        };
+        options.options &= ~BuildOptions.Development;
+        options.options &= ~BuildOptions.AllowDebugging;
+        options.options &= ~BuildOptions.EnableDeepProfilingSupport;
+        options.options &= ~BuildOptions.ForceEnableAssertions;
+        options.options &= ~BuildOptions.IncludeTestAssemblies;
+        options.options &= ~BuildOptions.AutoRunPlayer;
+        options.options &= ~BuildOptions.ConnectToHost;
+        options.options &= ~BuildOptions.ConnectWithProfiler;
+
+        DxmCiTestConfigurator.WriteConfigurationEvidence(
+            Environment.GetEnvironmentVariable("DXM_PREBUILD_CONFIG_PROFILE_PATH"));
+        BuildReport report = BuildPipeline.BuildPlayer(options);
+        DxmCiTestConfigurator.WriteConfigurationEvidence(
+            Environment.GetEnvironmentVariable("DXM_POSTBUILD_CONFIG_PROFILE_PATH"));
+        DxmCiTestConfigurator.WriteBuildOptionsEvidence(
+            Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH"),
+            report.summary.options);
+        if (report.summary.result != BuildResult.Succeeded)
+        {
+            throw new InvalidOperationException(
+                "Shipping-fidelity build failed: " + report.summary.result);
+        }
+
+        WriteAssemblyEvidence(
+            RequireEnvironmentVariable("DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH"),
+            assemblyNames,
+            (report.summary.options & BuildOptions.IncludeTestAssemblies)
+                == BuildOptions.IncludeTestAssemblies);
+        WriteMarker(markerPath);
+    }
+
+    private static void ApplyShippingProfile()
+    {
+        NamedBuildTarget standalone = NamedBuildTarget.Standalone;
+        UnityEditor.Compilation.CompilationPipeline.codeOptimization =
+            UnityEditor.Compilation.CodeOptimization.Release;
+        PlayerSettings.SetScriptingBackend(standalone, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetApiCompatibilityLevel(standalone, ApiCompatibilityLevel.NET_Standard);
+        PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.High);
+        PlayerSettings.SetIl2CppCompilerConfiguration(
+            standalone,
+            Il2CppCompilerConfiguration.Release);
+        PlayerSettings.gcIncremental = true;
+        PlayerSettings.stripEngineCode = true;
+#if UNITY_2022_1_OR_NEWER
+        PlayerSettings.SetIl2CppCodeGeneration(
+            standalone,
+            Il2CppCodeGeneration.OptimizeSpeed);
+#else
+        EditorUserBuildSettings.il2CppCodeGeneration = Il2CppCodeGeneration.OptimizeSpeed;
+#endif
+    }
+
+    private static string[] GetAssemblyNames(UnityEditor.Compilation.Assembly[] assemblies)
+    {
+        List<string> names = new List<string>(assemblies.Length);
+        for (int i = 0; i < assemblies.Length; i++)
+        {
+            names.Add(assemblies[i].name);
+        }
+        string[] result = names.ToArray();
+        Array.Sort(result, StringComparer.Ordinal);
+        return result;
+    }
+
+    private static void AssertNoTestAssemblies(string[] assemblyNames)
+    {
+        for (int i = 0; i < assemblyNames.Length; i++)
+        {
+            string name = assemblyNames[i];
+            if (
+                string.Equals(name, "nunit.framework", StringComparison.OrdinalIgnoreCase)
+                || name.IndexOf("TestRunner", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("PerformanceTesting", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)
+                || name.IndexOf(".Tests.", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.StartsWith("DxmCiStandalone", StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Shipping build selected forbidden test assembly: " + name);
+            }
+        }
+        if (
+            assemblyNames.Length != 2
+            || !string.Equals(assemblyNames[0], "Assembly-CSharp", StringComparison.Ordinal)
+            || !string.Equals(
+                assemblyNames[1],
+                "WallstopStudios.DxMessaging",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Shipping build selected an unexpected player assembly inventory: "
+                + string.Join(",", assemblyNames));
+        }
+    }
+
+    private static void WriteAssemblyEvidence(
+        string path,
+        string[] assemblyNames,
+        bool includeTestAssemblies)
+    {
+        AssemblyEvidence evidence = new AssemblyEvidence
+        {
+            includeTestAssemblies = includeTestAssemblies,
+            playerAssemblies = assemblyNames
+        };
+        string directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
+    }
+
+    private static void WriteMarker(string path)
+    {
+        string directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        File.WriteAllText(path, "DxmShippingFidelityBuilder.Build completed");
+    }
+
+    private static string RequireEnvironmentVariable(string name)
+    {
+        string value = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrEmpty(value))
+        {
+            throw new InvalidOperationException("Missing required environment variable: " + name);
+        }
+        return value;
+    }
+}
+"@
+}
+
 function Assert-DxMessagingAnalyzerDllsPresent {
     param([Parameter(Mandatory = $true)][string]$Root)
 
@@ -2043,6 +2939,8 @@ function Initialize-EphemeralProject {
         [string]$Path,
         [switch]$IncludeComparisons,
         [string]$Backend = 'IL2CPP',
+        [ValidateSet('Disabled', 'Minimal', 'Low', 'Medium', 'High')]
+        [string]$ManagedStrippingLevel = 'Disabled',
         [bool]$DevelopmentBuild = $false,
         [string]$CanonicalProfileId = '',
         [string]$CanonicalProfileSha256 = '',
@@ -2116,13 +3014,38 @@ function Initialize-EphemeralProject {
             "with a DirectoryNotFoundException before any test ran. Shorten the project path (see issue #357).")
     }
 
-    New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
-    New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
-    Write-ProjectOwnershipMarker -ProjectPath $project
-
     $includeIntegrations = $Mode -eq 'editmode'
-    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -RepoRoot $RepoRoot |
+    $isShippingFidelity = $Mode -eq 'shipping'
+    New-Item -ItemType Directory -Force -Path $project | Out-Null
+    Write-ProjectOwnershipMarker -ProjectPath $project
+    if ($isShippingFidelity) {
+        # Reset every authored root before creating any child path. The helper
+        # unlinks reparse points without traversal and recursively checks real
+        # directories, so a cached junction or symlink cannot redirect cleanup
+        # outside the owned generated project.
+        foreach ($shippingInputRootName in @('Assets', 'Packages', 'ProjectSettings', 'UserSettings')) {
+            Reset-OwnedUnityInputRoot -Path (Join-Path $project $shippingInputRootName)
+        }
+        New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
+    } else {
+        New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
+        New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
+    }
+
+    $shippingProjectInputRelativePaths = @()
+    if ($isShippingFidelity) {
+        $shippingProjectInputRelativePaths = @(
+            'Assets/csc.rsp',
+            'Assets/DxmShippingFidelityPlayer.cs',
+            'Assets/Editor/DxmCiTestConfigurator.cs',
+            'Assets/Editor/DxmShippingFidelityBuilder.cs',
+            'Packages/manifest.json',
+            'ProjectSettings/EditorSettings.asset',
+            'ProjectSettings/ProjectVersion.txt'
+        )
+    }
+    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -ShippingFidelity:$isShippingFidelity -RepoRoot $RepoRoot |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
     "m_EditorVersion: $Version`n" |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
@@ -2158,9 +3081,11 @@ EditorSettings:
         }
     }
     $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
-    New-ConfiguratorSource -Backend $Backend -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |
+    New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
-    Copy-SamplesForCompilation -Root $Root -Project $project -IncludeIntegrations:$includeIntegrations
+    if (-not $isShippingFidelity) {
+        Copy-SamplesForCompilation -Root $Root -Project $project -IncludeIntegrations:$includeIntegrations
+    }
 
     # The generator + analyzer ship under the package's Runtime/Analyzers/
     # (RoslynAnalyzer-labeled, every platform disabled), so Unity scopes them to the
@@ -2181,7 +3106,7 @@ EditorSettings:
     # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
@@ -2208,6 +3133,80 @@ EditorSettings:
             Write-Host "  $($file.Path)"
         }
         Write-Host "::endgroup::"
+    } elseif ($isShippingFidelity) {
+        if (
+            [string]::IsNullOrWhiteSpace($CanonicalProfileId) -or
+            [string]::IsNullOrWhiteSpace($CanonicalProfileSha256)
+        ) {
+            throw 'Shipping-fidelity generation requires a validated IL2CPP profile identity.'
+        }
+        $shippingFiles = @(
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmShippingFidelityBuilder.cs')); Content = (New-ShippingFidelityBuilderSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmShippingFidelityPlayer.cs')); Content = (New-ShippingFidelityPlayerSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) }
+        )
+        foreach ($file in $shippingFiles) {
+            $dir = Split-Path -Parent $file.Path
+            if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            }
+            $needsWrite = -not (Test-Path -LiteralPath $file.Path -PathType Leaf)
+            if (-not $needsWrite) {
+                $existing = Get-Content -LiteralPath $file.Path -Raw
+                $needsWrite = ($existing.TrimEnd("`r", "`n") -ne $file.Content.TrimEnd("`r", "`n"))
+            }
+            if ($needsWrite) {
+                Set-Content -LiteralPath $file.Path -Value $file.Content -Encoding UTF8
+            }
+        }
+        Write-Host "::group::DxMessaging shipping-fidelity player"
+        Write-Host "Generated the stripped Assembly-CSharp consumer and direct player builder under $project."
+        foreach ($file in $shippingFiles) {
+            Write-Host "  $($file.Path)"
+        }
+        Write-Host "::endgroup::"
+
+        $observedProjectInputs = @(
+            foreach ($shippingInputRootName in @('Assets', 'Packages', 'ProjectSettings', 'UserSettings')) {
+                $shippingInputRoot = Join-Path $project $shippingInputRootName
+                if (-not (Test-Path -LiteralPath $shippingInputRoot -PathType Container)) {
+                    continue
+                }
+                Get-ChildItem -LiteralPath $shippingInputRoot -File -Recurse -Force |
+                    Where-Object { -not $_.Name.EndsWith('.meta', [StringComparison]::Ordinal) } |
+                    ForEach-Object {
+                        $_.FullName.Substring($project.Length).TrimStart(
+                            [System.IO.Path]::DirectorySeparatorChar,
+                            [System.IO.Path]::AltDirectorySeparatorChar
+                        ).Replace('\', '/')
+                    }
+            }
+        )
+        $unexpectedProjectInputs = @(
+            $observedProjectInputs |
+                Where-Object { $shippingProjectInputRelativePaths -cnotcontains $_ }
+        )
+        $missingProjectInputs = @(
+            $shippingProjectInputRelativePaths |
+                Where-Object { $observedProjectInputs -cnotcontains $_ }
+        )
+        if ($unexpectedProjectInputs.Count -gt 0 -or $missingProjectInputs.Count -gt 0) {
+            throw "Shipping project inputs differ (missing=$($missingProjectInputs -join ','), unexpected=$($unexpectedProjectInputs -join ','))."
+        }
+        $projectInputEntries = New-Object System.Collections.Generic.List[object]
+        foreach ($relativeInputPath in $shippingProjectInputRelativePaths) {
+            $fullInputPath = Join-Path $project $relativeInputPath
+            $projectInputEntries.Add([ordered]@{
+                    path = $relativeInputPath
+                    length = [long](Get-Item -LiteralPath $fullInputPath).Length
+                    sha256 = (Get-FileHash -LiteralPath $fullInputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                })
+        }
+        Write-JsonArtifact `
+            -Path (Join-Path $ArtifactsPath 'shipping-project-inputs.json') `
+            -Value ([ordered]@{
+                schemaVersion = 1
+                files = @($projectInputEntries.ToArray())
+            })
     }
 
     return $project
@@ -3872,6 +4871,438 @@ function Test-StandalonePlayerBuildOutput {
     return ''
 }
 
+function Assert-ExactJsonPropertyNames {
+    param(
+        [Parameter(Mandatory = $true)][object]$Value,
+        [Parameter(Mandatory = $true)][string[]]$Expected,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $actualNames = [string[]]@($Value.PSObject.Properties.Name)
+    [Array]::Sort($actualNames, [System.StringComparer]::Ordinal)
+    $expectedNames = [string[]]@($Expected)
+    [Array]::Sort($expectedNames, [System.StringComparer]::Ordinal)
+    if (($actualNames -join "`n") -cne ($expectedNames -join "`n")) {
+        throw "$Label has unexpected JSON properties. Expected [$($expectedNames -join ', ')], observed [$($actualNames -join ', ')]."
+    }
+}
+
+function Assert-JsonValueType {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][AllowEmptyString()][object]$Value,
+        [Parameter(Mandatory = $true)][ValidateSet('string', 'bool', 'integer', 'array')][string]$ExpectedKind,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $matches = switch ($ExpectedKind) {
+        'string' { $Value -is [string] }
+        'bool' { $Value -is [bool] }
+        'integer' { $Value -is [int] -or $Value -is [long] }
+        'array' { $Value -is [System.Array] }
+    }
+    if (-not $matches) {
+        $actualType = if ($null -eq $Value) { 'null' } else { $Value.GetType().FullName }
+        throw "$Path must be a JSON $ExpectedKind value; observed $actualType."
+    }
+}
+
+function Get-ExpectedShippingShapeNames {
+    return [string[]]@(
+        'DxmShippingPublicUntargetedClass',
+        'DxmShippingPublicUntargetedStruct',
+        'DxmShippingPublicTargetedClass',
+        'DxmShippingPublicTargetedStruct',
+        'DxmShippingPublicBroadcastClass',
+        'DxmShippingPublicBroadcastStruct',
+        'NestedUntargetedClass',
+        'NestedUntargetedStruct',
+        'NestedTargetedClass',
+        'NestedTargetedStruct',
+        'NestedBroadcastClass',
+        'NestedBroadcastStruct',
+        'PublicNestedUntargetedClass',
+        'PublicNestedUntargetedStruct',
+        'PublicNestedTargetedClass',
+        'PublicNestedTargetedStruct',
+        'PublicNestedBroadcastClass',
+        'PublicNestedBroadcastStruct'
+    )
+}
+
+function Assert-ExactJsonStringArray {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Value,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Expected,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    foreach ($element in @($Value)) {
+        Assert-JsonValueType -Value $element -ExpectedKind string -Path "$Path[]"
+    }
+    $actual = [string[]]@($Value)
+    if (
+        $actual.Count -ne $Expected.Count -or
+        ($actual -join "`n") -cne ($Expected -join "`n")
+    ) {
+        throw "$Path does not contain the exact expected ordered shape inventory."
+    }
+}
+
+function Assert-NoShippingTestAssemblies {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$AssemblyNames,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    foreach ($assemblyName in $AssemblyNames) {
+        if (
+            [string]::IsNullOrWhiteSpace($assemblyName) -or
+            $assemblyName -ieq 'nunit.framework' -or
+            $assemblyName -imatch 'TestRunner' -or
+            $assemblyName -imatch 'PerformanceTesting' -or
+            $assemblyName -imatch '(?:^|\.)Tests(?:\.|$)' -or
+            $assemblyName -clike 'DxmCiStandalone*'
+        ) {
+            throw "$Label contains a forbidden or empty assembly name: '$assemblyName'."
+        }
+    }
+    $uniqueNames = @($AssemblyNames | Sort-Object -Unique)
+    if ($uniqueNames.Count -ne $AssemblyNames.Count) {
+        throw "$Label contains duplicate assembly names."
+    }
+}
+
+function Test-ShippingAssemblyEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ExpectedProfileId,
+        [Parameter(Mandatory = $true)][string]$ExpectedProfileSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedUnityVersion
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Shipping build did not write assembly evidence at $Path."
+    }
+    $evidence = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    Assert-ExactJsonPropertyNames -Value $evidence -Expected @(
+        'schemaVersion',
+        'profileId',
+        'profileSha256',
+        'unityVersion',
+        'includeTestAssemblies',
+        'playerAssemblies'
+    ) -Label 'Shipping assembly evidence'
+    Assert-JsonValueType -Value $evidence.schemaVersion -ExpectedKind integer -Path 'shippingAssemblyEvidence.schemaVersion'
+    Assert-JsonValueType -Value $evidence.profileId -ExpectedKind string -Path 'shippingAssemblyEvidence.profileId'
+    Assert-JsonValueType -Value $evidence.profileSha256 -ExpectedKind string -Path 'shippingAssemblyEvidence.profileSha256'
+    Assert-JsonValueType -Value $evidence.unityVersion -ExpectedKind string -Path 'shippingAssemblyEvidence.unityVersion'
+    Assert-JsonValueType -Value $evidence.includeTestAssemblies -ExpectedKind bool -Path 'shippingAssemblyEvidence.includeTestAssemblies'
+    Assert-JsonValueType -Value $evidence.playerAssemblies -ExpectedKind array -Path 'shippingAssemblyEvidence.playerAssemblies'
+    if (
+        [int]$evidence.schemaVersion -ne 1 -or
+        [string]$evidence.profileId -cne $ExpectedProfileId -or
+        [string]$evidence.profileSha256 -cne $ExpectedProfileSha256 -or
+        [string]$evidence.unityVersion -cne $ExpectedUnityVersion -or
+        [bool]$evidence.includeTestAssemblies
+    ) {
+        throw 'Shipping assembly evidence does not match the selected profile or Unity version.'
+    }
+    foreach ($rawAssemblyName in @($evidence.playerAssemblies)) {
+        Assert-JsonValueType `
+            -Value $rawAssemblyName `
+            -ExpectedKind string `
+            -Path 'shippingAssemblyEvidence.playerAssemblies[]'
+    }
+    $assemblyNames = [string[]]@($evidence.playerAssemblies)
+    Assert-NoShippingTestAssemblies -AssemblyNames $assemblyNames -Label 'Shipping build assembly inventory'
+    $expectedAssemblyNames = @('Assembly-CSharp', 'WallstopStudios.DxMessaging')
+    if (($assemblyNames -join "`n") -cne ($expectedAssemblyNames -join "`n")) {
+        throw 'Shipping build assembly inventory differs from the exact two expected consumer assemblies.'
+    }
+}
+
+function Write-ShippingPackageResolutionEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string]$ArtifactsPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedRepoRoot,
+        [Parameter(Mandatory = $true)][string]$ExpectedManifestSha256
+    )
+
+    $packagesPath = Join-Path $ProjectPath 'Packages'
+    $packageEntries = @(Get-ChildItem -LiteralPath $packagesPath -Force)
+    $actualEntryNames = [string[]]@($packageEntries | ForEach-Object { $_.Name })
+    [Array]::Sort($actualEntryNames, [System.StringComparer]::Ordinal)
+    $expectedEntryNames = [string[]]@('manifest.json', 'packages-lock.json')
+    if (($actualEntryNames -join "`n") -cne ($expectedEntryNames -join "`n")) {
+        throw 'Shipping Packages contains an unexpected entry after package resolution.'
+    }
+    foreach ($packageEntry in $packageEntries) {
+        if ($packageEntry.PSIsContainer -or (Test-IsReparsePoint -Path $packageEntry.FullName)) {
+            throw "Shipping Packages entry '$($packageEntry.Name)' must be a regular file."
+        }
+    }
+
+    $manifestPath = Join-Path $packagesPath 'manifest.json'
+    $lockPath = Join-Path $packagesPath 'packages-lock.json'
+    $resolvedManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($resolvedManifestSha256 -cne $ExpectedManifestSha256) {
+        throw 'Shipping package manifest hash changed during package resolution.'
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($manifest -isnot [pscustomobject] -or $manifest.dependencies -isnot [pscustomobject]) {
+        throw 'Shipping package manifest and dependencies must be JSON objects.'
+    }
+    Assert-ExactJsonPropertyNames `
+        -Value $manifest `
+        -Expected @('dependencies') `
+        -Label 'Shipping package manifest'
+    $manifestDependencyNames = @($manifest.dependencies.PSObject.Properties.Name)
+    if (
+        $manifestDependencyNames.Count -ne 1 -or
+        $manifestDependencyNames[0] -cne 'com.wallstop-studios.dxmessaging'
+    ) {
+        throw 'Shipping package manifest differs from the single reviewed file dependency.'
+    }
+    $manifestDependency = $manifest.dependencies.'com.wallstop-studios.dxmessaging'
+    Assert-JsonValueType `
+        -Value $manifestDependency `
+        -ExpectedKind string `
+        -Path 'shippingPackageManifest.dependencies.com.wallstop-studios.dxmessaging'
+    $expectedManifestDependency = "file:$(ConvertTo-UnityFileUriPath -Path (Resolve-FullPath -Path $ExpectedRepoRoot))"
+    if ([string]$manifestDependency -cne $expectedManifestDependency) {
+        throw 'Shipping package manifest does not reference the reviewed repository root.'
+    }
+
+    $packageLock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+    if ($packageLock -isnot [pscustomobject] -or $packageLock.dependencies -isnot [pscustomobject]) {
+        throw 'Shipping packages-lock and dependencies must be JSON objects.'
+    }
+    Assert-ExactJsonPropertyNames `
+        -Value $packageLock `
+        -Expected @('dependencies') `
+        -Label 'Shipping packages-lock'
+    $lockDependencyNames = @($packageLock.dependencies.PSObject.Properties.Name)
+    if (
+        $lockDependencyNames.Count -ne 1 -or
+        $lockDependencyNames[0] -cne 'com.wallstop-studios.dxmessaging'
+    ) {
+        throw 'Shipping packages-lock differs from the exact one-package graph.'
+    }
+    $lockDependencyProperty = $packageLock.dependencies.PSObject.Properties[
+        'com.wallstop-studios.dxmessaging'
+    ]
+    $lockDependency = if ($null -eq $lockDependencyProperty) {
+        $null
+    } else {
+        $lockDependencyProperty.Value
+    }
+    if ($null -ne $lockDependency) {
+        Assert-ExactJsonPropertyNames `
+            -Value $lockDependency `
+            -Expected @('version', 'depth', 'source', 'dependencies') `
+            -Label 'Shipping packages-lock dependency'
+        Assert-JsonValueType -Value $lockDependency.version -ExpectedKind string -Path 'shippingPackagesLock.version'
+        Assert-JsonValueType -Value $lockDependency.depth -ExpectedKind integer -Path 'shippingPackagesLock.depth'
+        Assert-JsonValueType -Value $lockDependency.source -ExpectedKind string -Path 'shippingPackagesLock.source'
+        if ($lockDependency.dependencies -isnot [pscustomobject]) {
+            throw 'Shipping packages-lock transitive dependencies must be a JSON object.'
+        }
+    }
+    $transitiveDependencyNames = @()
+    if ($null -ne $lockDependency) {
+        $transitiveDependencyNames = @(
+            $lockDependency.dependencies.PSObject.Properties |
+                ForEach-Object { $_.Name }
+        )
+    }
+    if (
+        $null -eq $lockDependency -or
+        [string]$lockDependency.source -cne 'local' -or
+        [int]$lockDependency.depth -ne 0 -or
+        [string]$lockDependency.version -cne $expectedManifestDependency -or
+        $transitiveDependencyNames.Count -ne 0
+    ) {
+        throw 'Shipping packages-lock does not exactly resolve the reviewed checkout as one direct local dependency.'
+    }
+
+    $resolvedInputEntries = New-Object System.Collections.Generic.List[object]
+    foreach ($resolvedInputPath in @($manifestPath, $lockPath)) {
+        $resolvedInputEntries.Add([ordered]@{
+                path = "Packages/$([System.IO.Path]::GetFileName($resolvedInputPath))"
+                length = [long](Get-Item -LiteralPath $resolvedInputPath).Length
+                sha256 = (Get-FileHash -LiteralPath $resolvedInputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            })
+    }
+    Write-JsonArtifact `
+        -Path (Join-Path $ArtifactsPath 'shipping-resolved-package-inputs.json') `
+        -Value ([ordered]@{
+            schemaVersion = 1
+            resolvedPackage = [ordered]@{
+                packageId = 'com.wallstop-studios.dxmessaging'
+                source = 'local'
+                depth = 0
+                versionScheme = 'file'
+            }
+            files = @($resolvedInputEntries.ToArray())
+        })
+}
+
+function Test-ShippingFidelityResult {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][ValidateSet('positive', 'missing-root-mutant')][string]$ExpectedMode,
+        [Parameter(Mandatory = $true)][string]$ExpectedProfileId,
+        [Parameter(Mandatory = $true)][string]$ExpectedProfileSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedUnityVersion
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Shipping player did not write $ExpectedMode evidence at $Path."
+    }
+    $result = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    Assert-ExactJsonPropertyNames -Value $result -Expected @(
+        'schemaVersion',
+        'profileId',
+        'profileSha256',
+        'unityVersion',
+        'mode',
+        'success',
+        'unityIncludeTests',
+        'rootedUntypedProbeCount',
+        'typedDispatchCount',
+        'untypedDispatchCount',
+        'rootedUntypedShapes',
+        'typedDispatchShapes',
+        'untypedDispatchShapes',
+        'missingRootFailureObserved',
+        'failureType',
+        'failureMessage',
+        'loadedAssemblies'
+    ) -Label "Shipping $ExpectedMode result"
+    foreach ($stringProperty in @(
+        'profileId',
+        'profileSha256',
+        'unityVersion',
+        'mode',
+        'failureType',
+        'failureMessage'
+    )) {
+        Assert-JsonValueType `
+            -Value $result.$stringProperty `
+            -ExpectedKind string `
+            -Path "shippingResult.$stringProperty"
+    }
+    foreach ($booleanProperty in @('success', 'unityIncludeTests', 'missingRootFailureObserved')) {
+        Assert-JsonValueType `
+            -Value $result.$booleanProperty `
+            -ExpectedKind bool `
+            -Path "shippingResult.$booleanProperty"
+    }
+    foreach ($integerProperty in @(
+        'schemaVersion',
+        'rootedUntypedProbeCount',
+        'typedDispatchCount',
+        'untypedDispatchCount'
+    )) {
+        Assert-JsonValueType `
+            -Value $result.$integerProperty `
+            -ExpectedKind integer `
+            -Path "shippingResult.$integerProperty"
+    }
+    foreach ($arrayProperty in @(
+        'rootedUntypedShapes',
+        'typedDispatchShapes',
+        'untypedDispatchShapes',
+        'loadedAssemblies'
+    )) {
+        Assert-JsonValueType -Value $result.$arrayProperty -ExpectedKind array -Path "shippingResult.$arrayProperty"
+    }
+    if (
+        [int]$result.schemaVersion -ne 1 -or
+        [string]$result.profileId -cne $ExpectedProfileId -or
+        [string]$result.profileSha256 -cne $ExpectedProfileSha256 -or
+        [string]$result.unityVersion -cne $ExpectedUnityVersion -or
+        [string]$result.mode -cne $ExpectedMode -or
+        -not [bool]$result.success -or
+        [bool]$result.unityIncludeTests -or
+        -not [string]::IsNullOrEmpty([string]$result.failureType) -or
+        -not [string]::IsNullOrEmpty([string]$result.failureMessage)
+    ) {
+        throw "Shipping $ExpectedMode result does not satisfy the success contract."
+    }
+    [string[]]$expectedShapes = @()
+    if ($ExpectedMode -ceq 'positive') {
+        $expectedShapes = @(Get-ExpectedShippingShapeNames)
+    }
+    foreach ($shapeProperty in @(
+        'rootedUntypedShapes',
+        'typedDispatchShapes',
+        'untypedDispatchShapes'
+    )) {
+        Assert-ExactJsonStringArray `
+            -Value @($result.$shapeProperty) `
+            -Expected $expectedShapes `
+            -Path "shippingResult.$shapeProperty"
+    }
+    if ($ExpectedMode -ceq 'positive') {
+        if (
+            [int]$result.rootedUntypedProbeCount -ne 18 -or
+            [int]$result.typedDispatchCount -ne 18 -or
+            [int]$result.untypedDispatchCount -ne 18 -or
+            [bool]$result.missingRootFailureObserved
+        ) {
+            throw 'Shipping positive result does not contain the required 18 typed and 18 untyped dispatches.'
+        }
+    } elseif (
+        [int]$result.rootedUntypedProbeCount -ne 0 -or
+        [int]$result.typedDispatchCount -ne 0 -or
+        [int]$result.untypedDispatchCount -ne 0 -or
+        -not [bool]$result.missingRootFailureObserved
+    ) {
+        throw 'Shipping missing-root mutant did not observe the required rooted-bridge failure.'
+    }
+    foreach ($rawAssemblyName in @($result.loadedAssemblies)) {
+        Assert-JsonValueType `
+            -Value $rawAssemblyName `
+            -ExpectedKind string `
+            -Path 'shippingResult.loadedAssemblies[]'
+    }
+    $loadedAssemblies = [string[]]@($result.loadedAssemblies)
+    Assert-NoShippingTestAssemblies -AssemblyNames $loadedAssemblies -Label "Shipping $ExpectedMode loaded assembly inventory"
+    foreach ($requiredAssembly in @('Assembly-CSharp', 'WallstopStudios.DxMessaging')) {
+        if ($loadedAssemblies -cnotcontains $requiredAssembly) {
+            throw "Shipping $ExpectedMode loaded assembly inventory is missing '$requiredAssembly'."
+        }
+    }
+}
+
+function Invoke-ShippingFidelityPlayer {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExecutablePath,
+        [Parameter(Mandatory = $true)][ValidateSet('positive', 'missing-root-mutant')][string]$Mode,
+        [Parameter(Mandatory = $true)][string]$ResultPath,
+        [Parameter(Mandatory = $true)][string]$RuntimeProfilePath,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [int]$TimeoutSeconds = 1800
+    )
+
+    $arguments = @(
+        '-batchmode',
+        '-nographics',
+        '-logFile', '-',
+        '-dxmShippingResult', $ResultPath,
+        '-dxmRuntimeProfile', $RuntimeProfilePath,
+        '-dxmShippingMode', $Mode
+    )
+    return Invoke-ProcessWithTreeKillTimeout `
+        -FilePath $ExecutablePath `
+        -Arguments $arguments `
+        -TimeoutSeconds $TimeoutSeconds `
+        -LogPath $LogPath `
+        -Label "Run shipping-fidelity player ($Mode)"
+}
+
 function Test-NUnitResults {
     # The NUnit results.xml is the SOLE source of truth for editmode/playmode and
     # the standalone player run. $UnityExitCode is the process exit code of the
@@ -3946,12 +5377,38 @@ Assert-RepoRoot -Path $RepoRoot
 $ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
 New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
+$isShippingFidelity = $TestMode -eq 'shipping'
+if ($isShippingFidelity) {
+    if (-not [string]::IsNullOrWhiteSpace($AssemblyNames)) {
+        throw 'AssemblyNames must be empty for a shipping-fidelity player.'
+    }
+    if ($IncludeComparisons) {
+        throw 'IncludeComparisons is not valid for a shipping-fidelity player.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TestCategory)) {
+        throw 'TestCategory is not valid for a shipping-fidelity player.'
+    }
+    if ($StandaloneScriptingBackend -cne 'IL2CPP') {
+        throw 'A shipping-fidelity player requires the IL2CPP scripting backend.'
+    }
+    if ([string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
+        throw 'A shipping-fidelity player requires CanonicalProfilePath.'
+    }
+    if ($StandalonePlayerRunCount -ne 1) {
+        throw 'StandalonePlayerRunCount is not valid for a shipping-fidelity player.'
+    }
+} elseif ([string]::IsNullOrWhiteSpace($AssemblyNames)) {
+    throw "AssemblyNames must be non-empty for TestMode '$TestMode'."
+}
+
 $canonicalProfileId = ''
 $canonicalProfileSha256 = ''
 $resolvedCanonicalProfilePath = ''
+$managedStrippingLevel = 'Disabled'
+$includeTestAssemblies = $true
 if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
-    if ($TestMode -ne 'standalone' -or $StandaloneScriptingBackend -cne 'IL2CPP') {
-        throw 'CanonicalProfilePath is valid only for a standalone IL2CPP run.'
+    if (($TestMode -ne 'standalone' -and -not $isShippingFidelity) -or $StandaloneScriptingBackend -cne 'IL2CPP') {
+        throw 'CanonicalProfilePath is valid only for a standalone or shipping IL2CPP run.'
     }
     $profileCandidate = if ([System.IO.Path]::IsPathRooted($CanonicalProfilePath)) {
         $CanonicalProfilePath
@@ -3964,11 +5421,30 @@ if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
     $canonicalProfile = Get-Content -LiteralPath $resolvedCanonicalProfilePath -Raw | ConvertFrom-Json
     $canonicalProfileId = [string]$canonicalProfile.profileId
     $canonicalProfileSha256 = (Get-FileHash -LiteralPath $resolvedCanonicalProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $profileArtifactPath = Join-Path $ArtifactsPath 'canonical-il2cpp-profile.v1.json'
+    $managedStrippingLevel = [string]$canonicalProfile.configuration.managedStrippingLevel
+    $includeTestAssemblies = [bool]$canonicalProfile.buildOptions.includeTestAssemblies
+    if ($isShippingFidelity) {
+        if (
+            $canonicalProfileId -cne 'shipping-fidelity-il2cpp-player-v1' -or
+            $managedStrippingLevel -cne 'High' -or
+            $includeTestAssemblies
+        ) {
+            throw 'Shipping fidelity requires its reviewed profile with High stripping and includeTestAssemblies=false.'
+        }
+    } elseif (
+        $canonicalProfileId -cne 'canonical-il2cpp-verdict-player-v1' -or
+        $managedStrippingLevel -cne 'Disabled' -or
+        -not $includeTestAssemblies
+    ) {
+        throw 'The standalone test player requires its reviewed profile with Disabled stripping and includeTestAssemblies=true.'
+    }
+    $profileArtifactFileName = [System.IO.Path]::GetFileName($resolvedCanonicalProfilePath)
+    $profileArtifactPath = Join-Path $ArtifactsPath $profileArtifactFileName
     Copy-Item -LiteralPath $resolvedCanonicalProfilePath -Destination $profileArtifactPath -Force
+    $profileHashFileName = "{0}.sha256" -f [System.IO.Path]::GetFileNameWithoutExtension($profileArtifactFileName)
     [System.IO.File]::WriteAllText(
-        (Join-Path $ArtifactsPath 'canonical-il2cpp-profile.v1.sha256'),
-        "$canonicalProfileSha256  canonical-il2cpp-profile.v1.json`n"
+        (Join-Path $ArtifactsPath $profileHashFileName),
+        "$canonicalProfileSha256  $profileArtifactFileName`n"
     )
 }
 
@@ -3981,7 +5457,27 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion -Path $C
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
-$ProjectPath = Initialize-EphemeralProject -Root $RepoRoot -Version $UnityVersion -Mode $TestMode -Path $ProjectPath -IncludeComparisons:$IncludeComparisons -Backend $StandaloneScriptingBackend -DevelopmentBuild:(-not $UseReleasePlayerBuild) -CanonicalProfileId $canonicalProfileId -CanonicalProfileSha256 $canonicalProfileSha256 -RepoRoot $RepoRoot -ArtifactsPath $ArtifactsPath
+$ProjectPath = Initialize-EphemeralProject `
+    -Root $RepoRoot `
+    -Version $UnityVersion `
+    -Mode $TestMode `
+    -Path $ProjectPath `
+    -IncludeComparisons:$IncludeComparisons `
+    -Backend $StandaloneScriptingBackend `
+    -ManagedStrippingLevel $managedStrippingLevel `
+    -DevelopmentBuild:(-not $UseReleasePlayerBuild) `
+    -CanonicalProfileId $canonicalProfileId `
+    -CanonicalProfileSha256 $canonicalProfileSha256 `
+    -RepoRoot $RepoRoot `
+    -ArtifactsPath $ArtifactsPath
+$shippingPreResolutionManifestSha256 = ''
+if ($isShippingFidelity) {
+    $shippingPreResolutionManifestSha256 = (
+        Get-FileHash `
+            -LiteralPath (Join-Path $ProjectPath 'Packages/manifest.json') `
+            -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+}
 $LibraryPath = Join-Path $ProjectPath 'Library'
 $LibraryEntries = @(
     if (Test-Path -LiteralPath $LibraryPath -PathType Container) {
@@ -4000,6 +5496,8 @@ Write-Host "ArtifactsPath: $ArtifactsPath"
 Write-Host "IncludeComparisons: $IncludeComparisons"
 Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
 Write-Host "StandalonePlayerRunCount: $StandalonePlayerRunCount"
+Write-Host "ManagedStrippingLevel: $managedStrippingLevel"
+Write-Host "IncludeTestAssemblies: $includeTestAssemblies"
 Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
@@ -4076,6 +5574,7 @@ $testPlatform = switch ($TestMode) {
     'editmode' { 'EditMode' }
     'playmode' { 'PlayMode' }
     'standalone' { 'StandaloneWindows64' }
+    'shipping' { '' }
 }
 
 $categoryArgs = @()
@@ -4108,8 +5607,18 @@ $runtimeProfileEvidencePath = Join-Path $ArtifactsPath 'runtime-profile.json'
 # it before this script's post-build assertion runs. The player still stays out
 # of $ArtifactsPath because a full IL2CPP player is hundreds of MB; only the
 # small player log and NUnit XML are uploaded.
-$standaloneExe = [System.IO.Path]::Combine($ProjectPath, 'Build', 'DxmTestPlayer', 'DxmTestPlayer.exe')
+$standaloneExe = if ($isShippingFidelity) {
+    [System.IO.Path]::Combine($ProjectPath, 'Build', 'DxmShippingPlayer', 'DxmShippingPlayer.exe')
+} else {
+    [System.IO.Path]::Combine($ProjectPath, 'Build', 'DxmTestPlayer', 'DxmTestPlayer.exe')
+}
 $playerLogPath = Join-Path $ArtifactsPath 'player.log'
+$shippingBuildMarkerPath = Join-Path $ArtifactsPath 'shipping-build-complete.marker'
+$shippingAssemblyEvidencePath = Join-Path $ArtifactsPath 'shipping-assemblies.json'
+$shippingPositiveResultPath = Join-Path $ArtifactsPath 'shipping-positive.json'
+$shippingPositiveRuntimeProfilePath = Join-Path $ArtifactsPath 'shipping-positive-runtime-profile.json'
+$shippingMutantResultPath = Join-Path $ArtifactsPath 'shipping-missing-root-mutant.json'
+$shippingMutantRuntimeProfilePath = Join-Path $ArtifactsPath 'shipping-missing-root-mutant-runtime-profile.json'
 
 # Activation/return carry the serial/email/password in their argument arrays and
 # Unity may echo account/serial fragments into the activation log, so these logs
@@ -4147,7 +5656,8 @@ try {
         Invoke-UnityLicenseActivate -EditorPath $UnityEditorPath -Serial $env:UNITY_SERIAL -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $activateLogPath
     }
 
-    if ($TestMode -eq 'standalone') {
+    if ($TestMode -eq 'standalone' -or $isShippingFidelity) {
+        $configurationScope = if ($isShippingFidelity) { 'shipping-fidelity' } else { 'standalone' }
         # CONFIGURE the standalone IL2CPP project. The CONFIGURED PROJECT (proven by
         # the success marker DxmCiTestConfigurator.Apply writes as its final action)
         # is the source of truth -- NOT Unity's process exit code. Delete any stale
@@ -4161,10 +5671,13 @@ try {
             Remove-Item -LiteralPath $configureMarkerPath -Force
         }
         $env:DXM_CONFIGURE_MARKER_PATH = $configureMarkerPath
-        if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
-            if (Test-Path -LiteralPath $configuredProfileEvidencePath -PathType Leaf) {
-                Remove-Item -LiteralPath $configuredProfileEvidencePath -Force
-            }
+        if (Test-Path -LiteralPath $configuredProfileEvidencePath -PathType Leaf) {
+            Remove-Item -LiteralPath $configuredProfileEvidencePath -Force
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($canonicalProfileId) -and
+            -not $isShippingFidelity
+        ) {
             $env:DXM_CONFIGURED_PROFILE_PATH = $configuredProfileEvidencePath
         }
         $configureStartedUtc = [DateTime]::UtcNow
@@ -4180,7 +5693,7 @@ try {
         $configureExit = Invoke-UnityEditor `
             -EditorPath $UnityEditorPath `
             -Arguments $configureArgs `
-            -Label 'Configure standalone IL2CPP project' `
+            -Label "Configure $configurationScope IL2CPP project" `
             -LogPath $configureLogPath
         # The configurator has run; drop the marker-path env var so it cannot be
         # inherited by the later build/player child processes (only Apply reads it,
@@ -4192,24 +5705,214 @@ try {
             Write-UnityRunFailureDiagnostics `
                 -Project $ProjectPath `
                 -LogPath $configureLogPath `
-                -CscLabel 'standalone configure' `
-                -DiagnosticsLabel 'Unity standalone configure'
-            throw "Configure standalone IL2CPP project failed ($configureProblem; Unity exit code $configureExit / $(Get-NativeExitCodeDescription -ExitCode $configureExit)). See the streamed Unity log above (also saved to $configureLogPath)."
+                -CscLabel "$configurationScope configure" `
+                -DiagnosticsLabel "Unity $configurationScope configure"
+            throw "Configure $configurationScope IL2CPP project failed ($configureProblem; Unity exit code $configureExit / $(Get-NativeExitCodeDescription -ExitCode $configureExit)). See the streamed Unity log above (also saved to $configureLogPath)."
         }
         if ($configureExit -ne 0) {
-            Write-UnityBenignExitWarning -Label 'Configure standalone IL2CPP project' -ExitCode $configureExit -LogPath $configureLogPath
+            Write-UnityBenignExitWarning -Label "Configure $configurationScope IL2CPP project" -ExitCode $configureExit -LogPath $configureLogPath
         }
-        Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $configureLogPath -Label 'standalone configure'
-        if (-not [string]::IsNullOrWhiteSpace($canonicalProfileId)) {
+        Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $configureLogPath -Label "$configurationScope configure"
+        if (
+            -not [string]::IsNullOrWhiteSpace($canonicalProfileId) -and
+            -not $isShippingFidelity
+        ) {
             & $profileValidatorPath `
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $configuredProfileEvidencePath `
                 -EvidenceKind configuration `
                 -ExpectedSha256 $canonicalProfileSha256
+        } elseif (
+            $isShippingFidelity -and
+            (Test-Path -LiteralPath $configuredProfileEvidencePath -PathType Leaf)
+        ) {
+            throw 'Shipping configuration must defer reviewed engine-stripping evidence to the direct player build.'
         }
     }
 
-    if ($TestMode -eq 'standalone') {
+    if ($isShippingFidelity) {
+        Write-ShippingPackageResolutionEvidence `
+            -ProjectPath $ProjectPath `
+            -ArtifactsPath $ArtifactsPath `
+            -ExpectedRepoRoot $RepoRoot `
+            -ExpectedManifestSha256 $shippingPreResolutionManifestSha256
+        # Build a stripped consumer through BuildPipeline directly. This path does
+        # not invoke Unity Test Framework, add test assemblies, or establish a
+        # PlayerConnection. The same immutable binary runs both the positive AOT
+        # root proof and the expected-failure missing-root control.
+        $shippingPositiveLogPath = Join-Path $ArtifactsPath 'shipping-positive-player.log'
+        $shippingMutantLogPath = Join-Path $ArtifactsPath 'shipping-missing-root-mutant-player.log'
+        $shippingManifestPath = Join-Path $ArtifactsPath 'shipping-player-manifest.json'
+        $shippingBuildStartedUtc = [DateTime]::UtcNow
+        foreach ($staleShippingPath in @(
+            $shippingBuildMarkerPath,
+            $shippingAssemblyEvidencePath,
+            $prebuildProfileEvidencePath,
+            $postbuildProfileEvidencePath,
+            $buildOptionsProfileEvidencePath,
+            $shippingPositiveResultPath,
+            $shippingPositiveRuntimeProfilePath,
+            $shippingMutantResultPath,
+            $shippingMutantRuntimeProfilePath,
+            $shippingPositiveLogPath,
+            $shippingMutantLogPath,
+            $shippingManifestPath
+        )) {
+            if (Test-Path -LiteralPath $staleShippingPath -PathType Leaf) {
+                Remove-Item -LiteralPath $staleShippingPath -Force
+            }
+        }
+        $standaloneExeDir = Split-Path -Parent $standaloneExe
+        if ($standaloneExeDir -and (Test-Path -LiteralPath $standaloneExeDir -PathType Container)) {
+            Remove-Item -LiteralPath $standaloneExeDir -Recurse -Force
+        }
+        if ($standaloneExeDir) {
+            New-Item -ItemType Directory -Force -Path $standaloneExeDir | Out-Null
+        }
+
+        $env:DXM_PLAYER_BUILD_PATH = $standaloneExe
+        $env:DXM_SHIPPING_BUILD_MARKER_PATH = $shippingBuildMarkerPath
+        $env:DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH = $shippingAssemblyEvidencePath
+        $env:DXM_PREBUILD_CONFIG_PROFILE_PATH = $prebuildProfileEvidencePath
+        $env:DXM_POSTBUILD_CONFIG_PROFILE_PATH = $postbuildProfileEvidencePath
+        $env:DXM_BUILD_OPTIONS_PROFILE_PATH = $buildOptionsProfileEvidencePath
+        $shippingBuildArgs = @(
+            '-quit',
+            '-batchmode',
+            '-nographics',
+            '-projectPath', $ProjectPath,
+            '-buildTarget', 'StandaloneWindows64',
+            '-executeMethod', 'DxmShippingFidelityBuilder.Build',
+            '-releaseCodeOptimization',
+            '-logFile', '-'
+        ) + $acceleratorArgs
+        $shippingBuildResult = Invoke-ProcessWithTreeKillTimeout `
+            -FilePath $UnityEditorPath `
+            -Arguments $shippingBuildArgs `
+            -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
+            -LogPath $logPath `
+            -Label "Build shipping-fidelity IL2CPP player (Unity $UnityVersion)"
+        foreach ($buildEnvironmentVariable in @(
+            'DXM_SHIPPING_BUILD_MARKER_PATH',
+            'DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH',
+            'DXM_BUILD_OPTIONS_PROFILE_PATH',
+            'DXM_PREBUILD_CONFIG_PROFILE_PATH',
+            'DXM_POSTBUILD_CONFIG_PROFILE_PATH'
+        )) {
+            Remove-Item -LiteralPath "Env:\$buildEnvironmentVariable" -ErrorAction SilentlyContinue
+        }
+
+        $shippingMarkerProblem = Test-UnityConfigureMarker `
+            -MarkerPath $shippingBuildMarkerPath `
+            -StartedUtc $shippingBuildStartedUtc
+        $shippingBuildProblem = Test-StandalonePlayerBuildOutput `
+            -ExpectedExe $standaloneExe `
+            -BuildStartedUtc $shippingBuildStartedUtc
+        if (
+            -not [string]::IsNullOrWhiteSpace($shippingMarkerProblem) -or
+            -not [string]::IsNullOrWhiteSpace($shippingBuildProblem)
+        ) {
+            Write-UnityRunFailureDiagnostics `
+                -Project $ProjectPath `
+                -LogPath $logPath `
+                -CscLabel "$UnityVersion shipping-fidelity build" `
+                -DiagnosticsLabel "Unity $UnityVersion shipping-fidelity build"
+            Write-StandaloneBuildOutputDiagnostics `
+                -Project $ProjectPath `
+                -ExpectedExe $standaloneExe `
+                -LogPath $logPath `
+                -BuildStartedUtc $shippingBuildStartedUtc
+            throw "Shipping-fidelity build did not produce fresh complete evidence (marker: $shippingMarkerProblem; player: $shippingBuildProblem; exit code $($shippingBuildResult.ExitCode))."
+        }
+        if ($shippingBuildResult.TimedOut -or $shippingBuildResult.ExitCode -ne 0) {
+            Write-UnityBenignExitWarning `
+                -Label "Build shipping-fidelity IL2CPP player (Unity $UnityVersion)" `
+                -ExitCode $shippingBuildResult.ExitCode `
+                -TimedOut:$shippingBuildResult.TimedOut `
+                -LogPath $logPath
+        }
+        foreach ($shippingBuildConfigurationPath in @(
+            $prebuildProfileEvidencePath,
+            $postbuildProfileEvidencePath
+        )) {
+            & $profileValidatorPath `
+                -ProfilePath $resolvedCanonicalProfilePath `
+                -EvidencePath $shippingBuildConfigurationPath `
+                -EvidenceKind configuration `
+                -ExpectedSha256 $canonicalProfileSha256
+        }
+        & $profileValidatorPath `
+            -ProfilePath $resolvedCanonicalProfilePath `
+            -EvidencePath $buildOptionsProfileEvidencePath `
+            -EvidenceKind buildOptions `
+            -ExpectedSha256 $canonicalProfileSha256
+        Test-ShippingAssemblyEvidence `
+            -Path $shippingAssemblyEvidencePath `
+            -ExpectedProfileId $canonicalProfileId `
+            -ExpectedProfileSha256 $canonicalProfileSha256 `
+            -ExpectedUnityVersion $UnityVersion
+
+        $shippingManifestBefore = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+        $shippingRuns = @(
+            [ordered]@{
+                Mode = 'positive'
+                ResultPath = $shippingPositiveResultPath
+                RuntimePath = $shippingPositiveRuntimeProfilePath
+                LogPath = $shippingPositiveLogPath
+            },
+            [ordered]@{
+                Mode = 'missing-root-mutant'
+                ResultPath = $shippingMutantResultPath
+                RuntimePath = $shippingMutantRuntimeProfilePath
+                LogPath = $shippingMutantLogPath
+            }
+        )
+        $shippingPlayerTimeoutSeconds = Get-StandaloneTestPlayerTimeoutSeconds
+        foreach ($shippingRun in $shippingRuns) {
+            $shippingPlayerResult = Invoke-ShippingFidelityPlayer `
+                -ExecutablePath $standaloneExe `
+                -Mode $shippingRun.Mode `
+                -ResultPath $shippingRun.ResultPath `
+                -RuntimeProfilePath $shippingRun.RuntimePath `
+                -LogPath $shippingRun.LogPath `
+                -TimeoutSeconds $shippingPlayerTimeoutSeconds
+            Test-ShippingFidelityResult `
+                -Path $shippingRun.ResultPath `
+                -ExpectedMode $shippingRun.Mode `
+                -ExpectedProfileId $canonicalProfileId `
+                -ExpectedProfileSha256 $canonicalProfileSha256 `
+                -ExpectedUnityVersion $UnityVersion
+            & $profileValidatorPath `
+                -ProfilePath $resolvedCanonicalProfilePath `
+                -EvidencePath $shippingRun.RuntimePath `
+                -EvidenceKind runtime `
+                -ExpectedSha256 $canonicalProfileSha256
+            if ($shippingPlayerResult.TimedOut -or $shippingPlayerResult.ExitCode -ne 0) {
+                Write-UnityBenignExitWarning `
+                    -Label "Run shipping-fidelity player ($($shippingRun.Mode))" `
+                    -ExitCode $shippingPlayerResult.ExitCode `
+                    -TimedOut:$shippingPlayerResult.TimedOut `
+                    -LogPath $shippingRun.LogPath
+            }
+        }
+
+        $shippingManifestAfter = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+        $shippingManifestMatches = (
+            ($shippingManifestBefore | ConvertTo-Json -Depth 10 -Compress) -ceq
+            ($shippingManifestAfter | ConvertTo-Json -Depth 10 -Compress)
+        )
+        Write-JsonArtifact -Path $shippingManifestPath -Value ([ordered]@{
+                schemaVersion = 1
+                playerDirectoryManifestMatches = $shippingManifestMatches
+                playerDirectoryManifestBefore = $shippingManifestBefore
+                playerDirectoryManifestAfter = $shippingManifestAfter
+                runs = @('positive', 'missing-root-mutant')
+            })
+        if (-not $shippingManifestMatches) {
+            throw 'Shipping player directory manifest changed between the positive and missing-root-mutant runs.'
+        }
+        Write-CiNotice 'Shipping-fidelity player passed positive AOT dispatch and the missing-root mutant with an unchanged stripped binary.'
+    } elseif ($TestMode -eq 'standalone') {
         # STANDALONE SPLIT BUILD + FILE-BASED RESULTS (zero PlayerConnection
         # dependency). The legacy `-runTests -testPlatform StandaloneWindows64` flow
         # had the built player stream NUnit results back to the editor over
@@ -4540,7 +6243,9 @@ try {
         'DXM_PREBUILD_CONFIG_PROFILE_PATH',
         'DXM_POSTBUILD_CONFIG_PROFILE_PATH',
         'DXM_BUILD_OPTIONS_PROFILE_PATH',
-        'DXM_PLAYER_BUILD_PATH'
+        'DXM_PLAYER_BUILD_PATH',
+        'DXM_SHIPPING_BUILD_MARKER_PATH',
+        'DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH'
     )) {
         Remove-Item -LiteralPath "Env:\$temporaryEnvironmentVariable" -ErrorAction SilentlyContinue
     }

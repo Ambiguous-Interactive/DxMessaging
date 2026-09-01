@@ -154,7 +154,7 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository))
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
-    timeout-minutes: 900
+    timeout-minutes: 1050
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -342,7 +342,9 @@ jobs:
           ${{
             steps.compute.outputs.is-empty != 'true' ||
             steps.compute_playmode.outputs.is-empty != 'true' ||
-            steps.compute_standalone.outputs.is-empty != 'true'
+            steps.compute_standalone.outputs.is-empty != 'true' ||
+            matrix.unity-version == '2021.3.45f1' ||
+            matrix.unity-version == '6000.5.2f1'
           }}
         timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@168b8dea5351f1cc448ed499e354cb31ad64ef10 # post-v1.10.0
@@ -439,9 +441,6 @@ jobs:
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
-      # Keep standalone last. Its IL2CPP build is the longest mode, and the
-      # central cleanup action below returns the final activation before the
-      # editor-scoped organization lock is released.
       - name: Run Unity standalone tests
         id: run_standalone
         if: ${{ !cancelled() && steps.compute_standalone.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -470,8 +469,44 @@ jobs:
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
-      # A mode failure is tolerated until all three modes have had a chance to
-      # run. Preserve per-mode diagnostics and result verification, then fail
+      # Run the shipping-fidelity slice on the oldest and newest supported
+      # editors. Keep it last because it builds a second IL2CPP player, and the
+      # central cleanup action below returns the final activation before the
+      # editor-scoped organization lock is released.
+      - name: Run stripped shipping-fidelity player
+        id: run_shipping
+        if: >-
+          ${{
+            !cancelled() &&
+            steps.acquire_lock.outputs.acquired == 'true' &&
+            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')
+          }}
+        continue-on-error: true
+        timeout-minutes: 150
+        shell: pwsh
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+        run: |
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-shipping'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
+          ./scripts/unity/run-ci-tests.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping' `
+            -ProjectPath $projectPath `
+            -CachePath $cachePath `
+            -CanonicalProfilePath '.github/perf/shipping-fidelity-il2cpp-profile.v1.json' `
+            -LicenseReturnOwner Central `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild
+
+      # A mode failure is tolerated until the test modes and shipping slice have
+      # had a chance to run. Preserve diagnostics and result verification, then fail
       # the editor-scoped job from one summary gate before central cleanup.
       - name: Dump EditMode log tail on failure or cancellation
         if: ${{ steps.run_editmode.outcome == 'failure' || cancelled() }}
@@ -496,6 +531,14 @@ jobs:
         with:
           results-dir: .artifacts/unity/${{ matrix.unity-version }}-standalone
           label: Unity ${{ matrix.unity-version }} standalone
+
+      - name: Dump shipping-fidelity log tail on failure or cancellation
+        if: ${{ steps.run_shipping.outcome == 'failure' || cancelled() }}
+        timeout-minutes: 5
+        uses: ./.github/actions/dump-unity-log-tail
+        with:
+          results-dir: .artifacts/unity/${{ matrix.unity-version }}-shipping
+          label: Unity ${{ matrix.unity-version }} shipping fidelity
 
       # CLASS GUARD: Unity can fail before NUnit writes results. The shared
       # composite fails unless a results XML exists AND reports total > 0.
@@ -585,6 +628,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Upload shipping-fidelity artifacts
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            steps.acquire_lock.outputs.acquired == 'true' &&
+            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')
+          }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unity-${{ matrix.unity-version }}-shipping
+          path: .artifacts/unity/${{ matrix.unity-version }}-shipping
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Require every Unity mode to pass
         if: ${{ !cancelled() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
@@ -602,6 +661,8 @@ jobs:
           STANDALONE_EMPTY: ${{ steps.compute_standalone.outputs.is-empty }}
           STANDALONE_RUN: ${{ steps.run_standalone.outcome }}
           STANDALONE_VERIFY: ${{ steps.verify_standalone.outcome }}
+          SHIPPING_REQUIRED: ${{ matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1' }}
+          SHIPPING_RUN: ${{ steps.run_shipping.outcome }}
         run: |
           $failures = @()
           foreach ($mode in @(
@@ -620,10 +681,15 @@ jobs:
               $failures += "$($mode.Name): result verification $($mode.Verify)"
             }
           }
+          if ($env:SHIPPING_REQUIRED -eq 'true' -and $env:SHIPPING_RUN -ne 'success') {
+            $failures += "shipping: fidelity run $env:SHIPPING_RUN"
+          } elseif ($env:SHIPPING_REQUIRED -ne 'true' -and $env:SHIPPING_RUN -ne 'skipped') {
+            $failures += "shipping: non-target editor unexpectedly ran ($env:SHIPPING_RUN)"
+          }
           if ($failures.Count -gt 0) {
             throw "Unity mode failures: $($failures -join '; ')"
           }
-          Write-Host 'All Unity modes completed and produced valid results.'
+          Write-Host 'All required Unity test modes and shipping-fidelity runs completed.'
 
       - name: Return Unity license
         id: return_unity_license

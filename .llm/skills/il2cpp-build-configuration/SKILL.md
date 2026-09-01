@@ -47,7 +47,8 @@ spelled out in workflows so YAML drift is visible in review.
 Leg profiles: EditMode and PlayMode take `-ReleaseCodeOptimization`; the
 published Standalone perf leg takes `-StandaloneScriptingBackend IL2CPP`
 plus `-ReleasePlayerBuild` and `-ReleaseCodeOptimization`; Standalone tests take
-`-ReleasePlayerBuild -ReleaseCodeOptimization`.
+`-ReleasePlayerBuild -ReleaseCodeOptimization`. The non-published shipping
+fidelity leg additionally takes `-TestMode shipping` and the shipping profile.
 
 ### Player configuration
 
@@ -61,16 +62,20 @@ plus `-ReleasePlayerBuild` and `-ReleaseCodeOptimization`; Standalone tests take
 - `PlayerSettings.SetApiCompatibilityLevel(..., ApiCompatibilityLevel.NET_Standard)`
   is the non-deprecated profile targeting .NET Standard 2.1.
 - `PlayerSettings.SetManagedStrippingLevel(..., ManagedStrippingLevel.Disabled)`
-  is mandatory. Default stripping deletes the benchmark assemblies and the
-  `[Preserve]` standalone test-run callback, and the player then runs nothing.
+  is mandatory for test players. Default stripping deletes the benchmark
+  assemblies and the `[Preserve]` standalone test-run callback, and the player
+  then runs nothing.
+- `.github/perf/shipping-fidelity-il2cpp-profile.v1.json` pins High stripping
+  and `includeTestAssemblies=false` for the separate shipping consumer. That
+  player builds through `BuildPipeline` and must not use Unity Test Framework.
 - Pin `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC, and engine-code
   stripping from the canonical profile. Do not rely on an ephemeral project's
   defaults.
 
 ### Proving the profile
 
-- The runner archives the exact profile as `canonical-il2cpp-profile.v1.json`
-  and writes its SHA-256 beside it. Generated editor and player code embed that
+- The runner archives the exact selected profile under its source filename and
+  writes its SHA-256 beside it. Generated editor and player code embed that
   profile ID and hash.
 - `configured-profile.json`, `prebuild-profile.json`, and
   `postbuild-profile.json` record settings after configuration and inside the
@@ -88,6 +93,9 @@ plus `-ReleasePlayerBuild` and `-ReleaseCodeOptimization`; Standalone tests take
 - Never publish a Debug number. `perf-numbers.yml` publishes only the Standalone
   IL2CPP Release leg; manually dispatched `unity-benchmarks.yml` supplies
   per-version editor coverage and allocation evidence.
+- The Unity Tests workflow runs the shipping-fidelity player on the oldest and
+  newest supported editors. Its positive and missing-root runs use the same
+  binary and publish correctness evidence only, never throughput rows.
 
 ### Backend split
 

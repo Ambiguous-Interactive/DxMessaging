@@ -213,11 +213,8 @@ test("scenario filters keep only dispatch and DxMessaging comparison rows", () =
 });
 
 test("PowerShell performance harness regression tests pass", () => {
-  for (const script of [
-    "il2cpp-profile.test.ps1",
-    "require-comparison-rows.test.ps1",
-    "same-player-repeat-evidence.test.ps1"
-  ]) {
+  // prettier-ignore
+  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "shipping-fidelity.test.ps1"]) {
     const testScript = path.join(REPO_ROOT, "scripts", "unity", "__tests__", script);
     const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
       encoding: "utf8"

@@ -83,24 +83,24 @@ function Assert-EquivalentJsonValue {
     throw "$Path uses an unsupported profile value type '$($Expected.GetType().FullName)'."
 }
 
-$profile = Get-RequiredJsonObject -Path $ProfilePath -Label 'Canonical IL2CPP profile'
+$profile = Get-RequiredJsonObject -Path $ProfilePath -Label 'IL2CPP profile'
 
 Assert-ExactProperties `
     -Value $profile `
     -Expected @('schemaVersion', 'profileId', 'configuration', 'buildOptions', 'runtime') `
-    -Label 'Canonical IL2CPP profile'
+    -Label 'IL2CPP profile'
 
 if (
     ($profile.schemaVersion -isnot [int] -and $profile.schemaVersion -isnot [long]) -or
     [long]$profile.schemaVersion -ne 1
 ) {
-    throw "Unsupported canonical IL2CPP profile schemaVersion '$($profile.schemaVersion)'."
+    throw "Unsupported IL2CPP profile schemaVersion '$($profile.schemaVersion)'."
 }
 if (
     $profile.profileId -isnot [string] -or
     $profile.profileId -cnotmatch '^[a-z0-9][a-z0-9-]*-v1$'
 ) {
-    throw "Invalid canonical IL2CPP profileId '$($profile.profileId)'."
+    throw "Invalid IL2CPP profileId '$($profile.profileId)'."
 }
 
 $profileSchemas = [ordered]@{
@@ -135,16 +135,78 @@ foreach ($group in $profileSchemas.Keys) {
     Assert-ExactProperties `
         -Value $profile.$group `
         -Expected @($profileSchemas[$group].Keys) `
-        -Label "Canonical IL2CPP profile $group"
+        -Label "IL2CPP profile $group"
     foreach ($property in $profile.$group.PSObject.Properties) {
         $expectedType = $profileSchemas[$group][$property.Name]
         if ($expectedType -eq 'bool' -and $property.Value -isnot [bool]) {
-            throw "Canonical IL2CPP profile $group.$($property.Name) must be a Boolean."
+            throw "IL2CPP profile $group.$($property.Name) must be a Boolean."
         }
         if ($expectedType -eq 'string' -and $property.Value -isnot [string]) {
-            throw "Canonical IL2CPP profile $group.$($property.Name) must be a string."
+            throw "IL2CPP profile $group.$($property.Name) must be a string."
         }
     }
+}
+
+$fixedProfileValues = [ordered]@{
+    configuration = [ordered]@{
+        buildTarget = 'StandaloneWindows64'
+        scriptingBackend = 'IL2CPP'
+        apiCompatibilityLevel = 'NET_Standard_2_0'
+        codeOptimization = 'Release'
+        il2cppCompilerConfiguration = 'Release'
+        il2cppCodeGeneration = 'OptimizeSpeed'
+        incrementalGc = $true
+        stripEngineCode = $true
+    }
+    buildOptions = [ordered]@{
+        developmentBuild = $false
+        allowDebugging = $false
+        deepProfiling = $false
+        enableAssertions = $false
+        autoRunPlayer = $false
+        connectToHost = $false
+        connectWithProfiler = $false
+        cleanBuildCache = $true
+        detailedBuildReport = $true
+    }
+    runtime = [ordered]@{
+        debugBuild = $false
+    }
+}
+foreach ($group in $fixedProfileValues.Keys) {
+    foreach ($property in $fixedProfileValues[$group].Keys) {
+        Assert-EquivalentJsonValue `
+            -Expected $fixedProfileValues[$group][$property] `
+            -Actual $profile.$group.$property `
+            -Path "profile.$group.$property"
+    }
+}
+
+$profileVariants = [ordered]@{
+    'canonical-il2cpp-verdict-player-v1' = [ordered]@{
+        managedStrippingLevel = 'Disabled'
+        includeTestAssemblies = $true
+    }
+    'shipping-fidelity-il2cpp-player-v1' = [ordered]@{
+        managedStrippingLevel = 'High'
+        includeTestAssemblies = $false
+    }
+}
+if (-not $profileVariants.Contains($profile.profileId)) {
+    $supportedProfileIds = @($profileVariants.Keys) -join "', '"
+    throw "Unsupported IL2CPP profileId '$($profile.profileId)'. Supported profileIds: '$supportedProfileIds'."
+}
+$selectedVariant = $profileVariants[$profile.profileId]
+foreach ($variantProperty in $selectedVariant.Keys) {
+    $variantGroup = if ($variantProperty -ceq 'managedStrippingLevel') {
+        'configuration'
+    } else {
+        'buildOptions'
+    }
+    Assert-EquivalentJsonValue `
+        -Expected $selectedVariant[$variantProperty] `
+        -Actual $profile.$variantGroup.$variantProperty `
+        -Path "profile.$variantGroup.$variantProperty"
 }
 
 $profileSha256 = (Get-FileHash -LiteralPath $ProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -152,14 +214,14 @@ if (
     -not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and
     $profileSha256 -cne $ExpectedSha256.ToLowerInvariant()
 ) {
-    throw "Canonical IL2CPP profile SHA-256 differs (expected=$($ExpectedSha256.ToLowerInvariant()), actual=$profileSha256)."
+    throw "IL2CPP profile SHA-256 differs (expected=$($ExpectedSha256.ToLowerInvariant()), actual=$profileSha256)."
 }
 
 if ($ProfileOnly) {
     if (-not [string]::IsNullOrWhiteSpace($EvidencePath) -or -not [string]::IsNullOrWhiteSpace($EvidenceKind)) {
         throw 'Do not pass EvidencePath or EvidenceKind with ProfileOnly.'
     }
-    Write-Host "Validated canonical IL2CPP profile $($profile.profileId) ($profileSha256)."
+    Write-Host "Validated IL2CPP profile $($profile.profileId) ($profileSha256)."
     return
 }
 if ([string]::IsNullOrWhiteSpace($EvidencePath) -or [string]::IsNullOrWhiteSpace($EvidenceKind)) {

@@ -136,28 +136,6 @@ namespace DxMessaging.Core.Configuration
         }
 
 #if UNITY_EDITOR
-        private const string ResourceFolder = "Assets/Resources";
-        private const string ResourceAssetPath = ResourceFolder + "/" + ResourceName + ".asset";
-
-        [UnityEditor.MenuItem(
-            "Assets/Create/Wallstop Studios/DxMessaging/Runtime Settings (in Resources)"
-        )]
-        private static void CreateAssetInResources()
-        {
-            if (!UnityEditor.AssetDatabase.IsValidFolder(ResourceFolder))
-            {
-                UnityEditor.AssetDatabase.CreateFolder("Assets", "Resources");
-            }
-            string targetPath = UnityEditor.AssetDatabase.GenerateUniqueAssetPath(
-                ResourceAssetPath
-            );
-            DxMessagingRuntimeSettings asset =
-                ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
-            UnityEditor.AssetDatabase.CreateAsset(asset, targetPath);
-            UnityEditor.AssetDatabase.SaveAssets();
-            UnityEditor.EditorGUIUtility.PingObject(asset);
-        }
-
         private void OnValidate()
         {
             if (_idleEvictionSeconds < 0f)

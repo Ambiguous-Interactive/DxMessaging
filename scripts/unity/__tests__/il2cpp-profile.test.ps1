@@ -94,29 +94,29 @@ try {
 
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
-        New-StandaloneBuildModifierSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
         New-StandaloneTestCallbackSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
     )
     foreach ($source in $generatedSources) {
         Assert-That 'generated C# embeds the profile ID' ($source.Contains($profile.profileId))
         Assert-That 'generated C# embeds the profile SHA-256' ($source.Contains($profileSha256))
     }
+    $buildModifierSource = New-StandaloneBuildModifierSource -CanonicalProfileId $profile.profileId
     Assert-That 'the configurator pins OptimizeSpeed' (
         $generatedSources[0].Contains('Il2CppCodeGeneration.OptimizeSpeed')
     )
     Assert-That 'the build evidence reads final BuildReport options' (
-        $generatedSources[1].Contains('report.summary.options')
+        $buildModifierSource.Contains('report.summary.options')
     )
     Assert-That 'the build process records prebuild and postbuild configuration' (
-        $generatedSources[1].Contains('DXM_PREBUILD_CONFIG_PROFILE_PATH') -and
-        $generatedSources[1].Contains('DXM_POSTBUILD_CONFIG_PROFILE_PATH')
+        $buildModifierSource.Contains('DXM_PREBUILD_CONFIG_PROFILE_PATH') -and
+        $buildModifierSource.Contains('DXM_POSTBUILD_CONFIG_PROFILE_PATH')
     )
     Assert-That 'the build evidence uses Unity ForceEnableAssertions flag' (
-        $generatedSources[1].Contains('BuildOptions.ForceEnableAssertions') -and
-        -not $generatedSources[1].Contains('BuildOptions.EnableAssertions')
+        $generatedSources[0].Contains('BuildOptions.ForceEnableAssertions') -and
+        -not $generatedSources[0].Contains('BuildOptions.EnableAssertions')
     )
     Assert-That 'the player records Debug.isDebugBuild' (
-        $generatedSources[2].Contains('Debug.isDebugBuild')
+        $generatedSources[1].Contains('Debug.isDebugBuild')
     )
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
@@ -140,6 +140,19 @@ try {
     & $validatorPath -ProfilePath $profilePath -ProfileOnly -ExpectedSha256 $profileSha256
 
     $badProfilePath = Join-Path $fixtureRoot 'bad-profile.json'
+    foreach ($semanticMutation in @(
+        @{ Group = 'configuration'; Property = 'buildTarget'; Value = 'StandaloneLinux64' },
+        @{ Group = 'configuration'; Property = 'il2cppCodeGeneration'; Value = 'OptimizeSize' },
+        @{ Group = 'buildOptions'; Property = 'developmentBuild'; Value = $true },
+        @{ Group = 'runtime'; Property = 'debugBuild'; Value = $true }
+    )) {
+        $mutatedProfile = Copy-JsonValue -Value $profile
+        $mutatedProfile.($semanticMutation.Group).($semanticMutation.Property) = $semanticMutation.Value
+        Write-TestJson -Path $badProfilePath -Value $mutatedProfile
+        Assert-Fails "$($semanticMutation.Group).$($semanticMutation.Property) fixed profile value" {
+            & $validatorPath -ProfilePath $badProfilePath -ProfileOnly
+        }
+    }
     foreach ($kind in @('configuration', 'buildOptions', 'runtime')) {
         foreach ($property in $profile.$kind.PSObject.Properties) {
             $wrongTypeProfile = Copy-JsonValue -Value $profile
@@ -282,6 +295,16 @@ try {
     }
 
     $badProfile = Copy-JsonValue -Value $profile
+    $badProfile.profileId = 'unsupported-il2cpp-profile-v1'
+    Write-TestJson -Path $badProfilePath -Value $badProfile
+    Assert-Fails 'unsupported profile ID lists both accepted profiles' -ExpectedMessage (
+        "Supported profileIds: 'canonical-il2cpp-verdict-player-v1', " +
+        "'shipping-fidelity-il2cpp-player-v1'."
+    ) {
+        & $validatorPath -ProfilePath $badProfilePath -ProfileOnly
+    }
+
+    $badProfile = Copy-JsonValue -Value $profile
     $badProfile.schemaVersion = '1'
     Write-TestJson -Path $badProfilePath -Value $badProfile
     Assert-Fails 'string canonical profile schema version' {
@@ -293,7 +316,7 @@ try {
         & $validatorPath -ProfilePath $badProfilePath -ProfileOnly
     }
 
-    Write-Host 'Canonical IL2CPP profile contract tests passed.'
+    Write-Host 'IL2CPP profile contract tests passed.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot -PathType Container) {
         Remove-Item -LiteralPath $fixtureRoot -Recurse -Force

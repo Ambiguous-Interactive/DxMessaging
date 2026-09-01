@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix stripped IL2CPP projects on Unity 2021.3 failing to compile because the runtime assembly
+  referenced the optional IMGUI module ([#515](https://github.com/Ambiguous-Interactive/DxMessaging/pull/515)).
 - Fix combined `ReflexiveSendMode` flags so active filtering is opt-in, inactive descendants are
   included without it, and missing zero- or one-argument receivers remain silent
   ([#489](https://github.com/Ambiguous-Interactive/DxMessaging/issues/489),
