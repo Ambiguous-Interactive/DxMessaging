@@ -10,6 +10,28 @@ $unityScriptsRoot = Split-Path -Parent $PSScriptRoot
 $runnerPath = Join-Path $unityScriptsRoot 'run-ci-tests.ps1'
 $validatorPath = Join-Path $unityScriptsRoot 'validate-il2cpp-profile.ps1'
 $profilePath = Join-Path $repoRoot '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'
+$profileCases = @(
+    [ordered]@{
+        FileName = 'shipping-fidelity-il2cpp-minimal-profile.v1.json'
+        ProfileId = 'shipping-fidelity-il2cpp-minimal-player-v1'
+        ManagedStrippingLevel = 'Minimal'
+    },
+    [ordered]@{
+        FileName = 'shipping-fidelity-il2cpp-low-profile.v1.json'
+        ProfileId = 'shipping-fidelity-il2cpp-low-player-v1'
+        ManagedStrippingLevel = 'Low'
+    },
+    [ordered]@{
+        FileName = 'shipping-fidelity-il2cpp-medium-profile.v1.json'
+        ProfileId = 'shipping-fidelity-il2cpp-medium-player-v1'
+        ManagedStrippingLevel = 'Medium'
+    },
+    [ordered]@{
+        FileName = 'shipping-fidelity-il2cpp-profile.v1.json'
+        ProfileId = 'shipping-fidelity-il2cpp-player-v1'
+        ManagedStrippingLevel = 'High'
+    }
+)
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dxm-shipping-fidelity-{0}" -f [guid]::NewGuid().ToString('N'))
 
 function Assert-That {
@@ -84,6 +106,65 @@ try {
             throw "Function '$functionName' was not found in run-ci-tests.ps1."
         }
         Invoke-Expression $definition.Extent.Text
+    }
+
+    foreach ($profileCase in $profileCases) {
+        $caseProfilePath = Join-Path $repoRoot ".github/perf/$($profileCase.FileName)"
+        Assert-That "$($profileCase.ManagedStrippingLevel) shipping profile exists" (
+            Test-Path -LiteralPath $caseProfilePath -PathType Leaf
+        )
+        $caseProfile = Get-Content -LiteralPath $caseProfilePath -Raw | ConvertFrom-Json
+        Assert-That "$($profileCase.ManagedStrippingLevel) shipping profile has an exact identity" (
+            $caseProfile.profileId -ceq $profileCase.ProfileId -and
+            $caseProfile.configuration.managedStrippingLevel -ceq $profileCase.ManagedStrippingLevel -and
+            -not [bool]$caseProfile.buildOptions.includeTestAssemblies
+        )
+        & $validatorPath -ProfilePath $caseProfilePath -ProfileOnly
+
+        $mismatchedProfile = Copy-JsonValue -Value $caseProfile
+        $mismatchedProfile.configuration.managedStrippingLevel = if (
+            $profileCase.ManagedStrippingLevel -ceq 'High'
+        ) {
+            'Medium'
+        } else {
+            'High'
+        }
+        $mismatchedProfilePath = Join-Path $fixtureRoot (
+            "mismatched-$($profileCase.ManagedStrippingLevel.ToLowerInvariant())-profile.json"
+        )
+        [System.IO.File]::WriteAllText(
+            $mismatchedProfilePath,
+            ($mismatchedProfile | ConvertTo-Json -Depth 10)
+        )
+        Assert-Fails "$($profileCase.ManagedStrippingLevel) profile rejects a different level" {
+            & $validatorPath -ProfilePath $mismatchedProfilePath -ProfileOnly
+        } 'differs'
+
+        $caseName = $profileCase.ManagedStrippingLevel.ToLowerInvariant()
+        $caseProjectPath = Join-Path $fixtureRoot "profile-$caseName-project"
+        & $runnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath (Join-Path $fixtureRoot "profile-$caseName-artifacts") `
+            -RepoRoot $repoRoot `
+            -ProjectPath $caseProjectPath `
+            -CachePath (Join-Path $fixtureRoot "profile-$caseName-cache") `
+            -CanonicalProfilePath $caseProfilePath `
+            -GenerateOnly
+        $caseConfiguratorText = Get-Content -LiteralPath (
+            Join-Path $caseProjectPath 'Assets/Editor/DxmCiTestConfigurator.cs'
+        ) -Raw
+        $caseBuilderText = Get-Content -LiteralPath (
+            Join-Path $caseProjectPath 'Assets/Editor/DxmShippingFidelityBuilder.cs'
+        ) -Raw
+        $expectedLevelCall = "ManagedStrippingLevel.$($profileCase.ManagedStrippingLevel));"
+        Assert-That "$($profileCase.ManagedStrippingLevel) profile reaches generated configuration" (
+            $caseConfiguratorText.Contains($expectedLevelCall) -and
+            $caseBuilderText.Contains($expectedLevelCall) -and
+            $caseBuilderText.Contains($profileCase.ProfileId) -and
+            $caseConfiguratorText.Contains('PlayerSettings.stripEngineCode = false;')
+        )
     }
 
     $projectPath = Join-Path $fixtureRoot 'project'
@@ -362,8 +443,7 @@ try {
         )
     )
     Assert-That 'shipping configuration defers engine stripping until the builder assembly has loaded' (
-        $configuratorText.Contains('PlayerSettings.stripEngineCode = !string.Equals(') -and
-        $configuratorText.Contains('"shipping-fidelity-il2cpp-player-v1"')
+        $configuratorText.Contains('PlayerSettings.stripEngineCode = false;')
     )
     Assert-That 'shipping builder invokes BuildPipeline directly' (
         $builderText.Contains('BuildPipeline.BuildPlayer(options)')

@@ -469,11 +469,11 @@ jobs:
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
-      # Run the shipping-fidelity slice on the oldest and newest supported
-      # editors. Keep it last because it builds a second IL2CPP player, and the
-      # central cleanup action below returns the final activation before the
-      # editor-scoped organization lock is released.
-      - name: Run stripped shipping-fidelity player
+      # Run all shipping-fidelity stripping levels on the oldest and newest
+      # supported editors. Keep the group last because each cell builds another
+      # IL2CPP player, and the central cleanup action below returns the final
+      # activation before the editor-scoped organization lock is released.
+      - name: Run stripped shipping-fidelity players
         id: run_shipping
         if: >-
           ${{
@@ -490,22 +490,30 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
         run: |
-          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-shipping'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
-          ./scripts/unity/run-ci-tests.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -TestMode shipping `
-            -AssemblyNames '' `
-            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping' `
-            -ProjectPath $projectPath `
-            -CachePath $cachePath `
-            -CanonicalProfilePath '.github/perf/shipping-fidelity-il2cpp-profile.v1.json' `
-            -LicenseReturnOwner Central `
-            -ReleaseCodeOptimization `
-            -ReleasePlayerBuild
+          $shippingProfiles = @(
+            @{ Level = 'minimal'; Path = '.github/perf/shipping-fidelity-il2cpp-minimal-profile.v1.json' },
+            @{ Level = 'low'; Path = '.github/perf/shipping-fidelity-il2cpp-low-profile.v1.json' },
+            @{ Level = 'medium'; Path = '.github/perf/shipping-fidelity-il2cpp-medium-profile.v1.json' },
+            @{ Level = 'high'; Path = '.github/perf/shipping-fidelity-il2cpp-profile.v1.json' }
+          )
+          foreach ($shippingProfile in $shippingProfiles) {
+            $projectPath = Join-Path $env:RUNNER_WORKSPACE "dxm-u\t\${{ matrix.unity-version }}-shipping-$($shippingProfile.Level)"
+            ./scripts/unity/run-ci-tests.ps1 `
+              -UnityVersion '${{ matrix.unity-version }}' `
+              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+              -TestMode shipping `
+              -AssemblyNames '' `
+              -ArtifactsPath ".artifacts/unity/${{ matrix.unity-version }}-shipping/$($shippingProfile.Level)" `
+              -ProjectPath $projectPath `
+              -CachePath $cachePath `
+              -CanonicalProfilePath $shippingProfile.Path `
+              -LicenseReturnOwner Central `
+              -ReleaseCodeOptimization `
+              -ReleasePlayerBuild
+          }
 
-      # A mode failure is tolerated until the test modes and shipping slice have
+      # A mode failure is tolerated until the test modes and shipping group have
       # had a chance to run. Preserve diagnostics and result verification, then fail
       # the editor-scoped job from one summary gate before central cleanup.
       - name: Dump EditMode log tail on failure or cancellation

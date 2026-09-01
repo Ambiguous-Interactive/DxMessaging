@@ -95,20 +95,23 @@ execute and write results. The runner's `StandaloneScriptingBackend` parameter
 defaults to `IL2CPP` and accepts `Mono2x`, so the same script can build either
 backend; the published leg pins IL2CPP.
 
-The separate shipping-fidelity player uses High managed stripping and excludes
-test assemblies. It builds through `BuildPipeline.BuildPlayer` instead of Unity
-Test Framework, then runs positive generated-root coverage and an expected
-missing-root control from the same binary.
+The separate shipping-fidelity cells use Minimal, Low, Medium, and High managed
+stripping and exclude test assemblies. Each cell builds through
+`BuildPipeline.BuildPlayer` instead of Unity Test Framework, then runs positive
+generated-root coverage and an expected missing-root control from the same
+binary.
 
 ## Canonical profile
 
 `.github/perf/canonical-il2cpp-profile.v1.json` is the reviewed source of truth
 for the published standalone IL2CPP leg.
-`.github/perf/shipping-fidelity-il2cpp-profile.v1.json` is the reviewed source
-of truth for the stripped correctness player. Each workflow passes its selected
-file through `-CanonicalProfilePath`. The runner copies the exact bytes under
-the source filename and writes a SHA-256 file to the run artifacts, then embeds
-the profile ID and hash in generated editor and player code.
+The four shipping-fidelity profiles under `.github/perf/` are the reviewed
+sources of truth for the stripped correctness players. The existing
+`.github/perf/shipping-fidelity-il2cpp-profile.v1.json` remains the High profile.
+Each workflow passes its selected file through `-CanonicalProfilePath`. The
+runner copies the exact bytes under the source filename and writes a SHA-256
+file to the run artifacts, then embeds the profile ID and hash in generated
+editor and player code.
 
 The profile also pins `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC,
 engine-code stripping, and the final `BuildOptions` flags. Keep these values in
@@ -158,8 +161,9 @@ manually dispatched `unity-benchmarks.yml` runs the EditMode and PlayMode
 benchmark tests across Unity versions with `-ReleaseCodeOptimization` for
 coverage only.
 
-The Unity Tests workflow runs the shipping-fidelity profile on the oldest and
-newest supported editors. Its evidence is correctness-only and never enters the
+The Unity Tests workflow runs all four shipping-fidelity profiles on the oldest
+and newest supported editors. Each profile uses an isolated project and
+artifact directory. Its evidence is correctness-only and never enters the
 published benchmark baseline.
 
 ## Common Pitfalls

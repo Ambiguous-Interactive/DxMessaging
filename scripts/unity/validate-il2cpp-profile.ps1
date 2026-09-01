@@ -187,6 +187,18 @@ $profileVariants = [ordered]@{
         managedStrippingLevel = 'Disabled'
         includeTestAssemblies = $true
     }
+    'shipping-fidelity-il2cpp-minimal-player-v1' = [ordered]@{
+        managedStrippingLevel = 'Minimal'
+        includeTestAssemblies = $false
+    }
+    'shipping-fidelity-il2cpp-low-player-v1' = [ordered]@{
+        managedStrippingLevel = 'Low'
+        includeTestAssemblies = $false
+    }
+    'shipping-fidelity-il2cpp-medium-player-v1' = [ordered]@{
+        managedStrippingLevel = 'Medium'
+        includeTestAssemblies = $false
+    }
     'shipping-fidelity-il2cpp-player-v1' = [ordered]@{
         managedStrippingLevel = 'High'
         includeTestAssemblies = $false

@@ -1423,6 +1423,12 @@ function New-ConfiguratorSource {
         [string]$CanonicalProfileSha256 = ''
     )
 
+    $stripEngineCodeDuringConfigure = if ($ManagedStrippingLevel -ceq 'Disabled') {
+        'true'
+    } else {
+        'false'
+    }
+
     # NOTE: this is a DOUBLE-quoted here-string so $Backend interpolates into the
     # generated C#. Every LITERAL C# dollar sign (the Debug.Log interpolated
     # string) is therefore backtick-escaped (`$). The LIVE code uses the
@@ -1507,7 +1513,8 @@ public static class DxmCiTestConfigurator
         // member are intentionally NOT used.
         PlayerSettings.SetApiCompatibilityLevel(standalone, ApiCompatibilityLevel.NET_Standard);
         // Apply the reviewed profile's stripping level. Test players select
-        // Disabled so their callbacks survive; shipping fidelity selects High.
+        // Disabled so their callbacks survive; shipping-fidelity cells select a
+        // non-Disabled level.
         PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.$ManagedStrippingLevel);
         // Pin the IL2CPP C++ compiler configuration to Release explicitly. An
         // ephemeral CI project has no committed default for this setting, and
@@ -1524,10 +1531,7 @@ public static class DxmCiTestConfigurator
             // editor-only package code when engine stripping is already enabled.
             // Keep it disabled while the shipping builder assembly loads; that
             // builder applies the reviewed value immediately before BuildPlayer.
-            PlayerSettings.stripEngineCode = !string.Equals(
-                "$CanonicalProfileId",
-                "shipping-fidelity-il2cpp-player-v1",
-                StringComparison.Ordinal);
+            PlayerSettings.stripEngineCode = $stripEngineCodeDuringConfigure;
 #if UNITY_2022_1_OR_NEWER
             PlayerSettings.SetIl2CppCodeGeneration(standalone, Il2CppCodeGeneration.OptimizeSpeed);
 #else
@@ -2591,7 +2595,10 @@ public sealed partial class DxmShippingFidelityPlayer
 function New-ShippingFidelityBuilderSource {
     param(
         [Parameter(Mandatory = $true)][string]$CanonicalProfileId,
-        [Parameter(Mandatory = $true)][string]$CanonicalProfileSha256
+        [Parameter(Mandatory = $true)][string]$CanonicalProfileSha256,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Minimal', 'Low', 'Medium', 'High')]
+        [string]$ManagedStrippingLevel
     )
 
     @"
@@ -2688,7 +2695,7 @@ public static class DxmShippingFidelityBuilder
             UnityEditor.Compilation.CodeOptimization.Release;
         PlayerSettings.SetScriptingBackend(standalone, ScriptingImplementation.IL2CPP);
         PlayerSettings.SetApiCompatibilityLevel(standalone, ApiCompatibilityLevel.NET_Standard);
-        PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.High);
+        PlayerSettings.SetManagedStrippingLevel(standalone, ManagedStrippingLevel.$ManagedStrippingLevel);
         PlayerSettings.SetIl2CppCompilerConfiguration(
             standalone,
             Il2CppCompilerConfiguration.Release);
@@ -3141,7 +3148,7 @@ EditorSettings:
             throw 'Shipping-fidelity generation requires a validated IL2CPP profile identity.'
         }
         $shippingFiles = @(
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmShippingFidelityBuilder.cs')); Content = (New-ShippingFidelityBuilderSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmShippingFidelityBuilder.cs')); Content = (New-ShippingFidelityBuilderSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 -ManagedStrippingLevel $ManagedStrippingLevel) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmShippingFidelityPlayer.cs')); Content = (New-ShippingFidelityPlayerSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) }
         )
         foreach ($file in $shippingFiles) {
@@ -5424,12 +5431,18 @@ if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
     $managedStrippingLevel = [string]$canonicalProfile.configuration.managedStrippingLevel
     $includeTestAssemblies = [bool]$canonicalProfile.buildOptions.includeTestAssemblies
     if ($isShippingFidelity) {
+        $shippingProfileLevels = [ordered]@{
+            'shipping-fidelity-il2cpp-minimal-player-v1' = 'Minimal'
+            'shipping-fidelity-il2cpp-low-player-v1' = 'Low'
+            'shipping-fidelity-il2cpp-medium-player-v1' = 'Medium'
+            'shipping-fidelity-il2cpp-player-v1' = 'High'
+        }
         if (
-            $canonicalProfileId -cne 'shipping-fidelity-il2cpp-player-v1' -or
-            $managedStrippingLevel -cne 'High' -or
+            -not $shippingProfileLevels.Contains($canonicalProfileId) -or
+            $managedStrippingLevel -cne $shippingProfileLevels[$canonicalProfileId] -or
             $includeTestAssemblies
         ) {
-            throw 'Shipping fidelity requires its reviewed profile with High stripping and includeTestAssemblies=false.'
+            throw 'Shipping fidelity requires a reviewed Minimal, Low, Medium, or High profile with includeTestAssemblies=false.'
         }
     } elseif (
         $canonicalProfileId -cne 'canonical-il2cpp-verdict-player-v1' -or

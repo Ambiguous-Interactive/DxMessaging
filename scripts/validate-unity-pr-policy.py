@@ -2605,7 +2605,7 @@ def validate_grouped_unity_correctness() -> None:
         )
     require(run_positions == sorted(run_positions), "grouped Unity modes must run in order")
 
-    shipping = step_block(job, "Run stripped shipping-fidelity player")
+    shipping = step_block(job, "Run stripped shipping-fidelity players")
     run_positions.append(job.index(shipping))
     for fragment in (
         "id: run_shipping",
@@ -2615,9 +2615,16 @@ def validate_grouped_unity_correctness() -> None:
         "matrix.unity-version == '6000.5.2f1'",
         "continue-on-error: true",
         "timeout-minutes: 150",
+        "$shippingProfiles = @(",
+        "Level = 'minimal'; Path = '.github/perf/shipping-fidelity-il2cpp-minimal-profile.v1.json'",
+        "Level = 'low'; Path = '.github/perf/shipping-fidelity-il2cpp-low-profile.v1.json'",
+        "Level = 'medium'; Path = '.github/perf/shipping-fidelity-il2cpp-medium-profile.v1.json'",
+        "Level = 'high'; Path = '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'",
+        "foreach ($shippingProfile in $shippingProfiles)",
         "-TestMode shipping",
         "-AssemblyNames ''",
-        "-CanonicalProfilePath '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'",
+        "-ArtifactsPath \".artifacts/unity/${{ matrix.unity-version }}-shipping/$($shippingProfile.Level)\"",
+        "-CanonicalProfilePath $shippingProfile.Path",
         "-LicenseReturnOwner Central",
     ):
         require(fragment in shipping, f"shipping: grouped run missing {fragment!r}")
