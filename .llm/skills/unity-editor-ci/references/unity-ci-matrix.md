@@ -29,8 +29,11 @@ on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP test player
 The oldest and current endpoint jobs also build and run Minimal, Low, Medium,
 and High `StandaloneWindows64` IL2CPP shipping-fidelity players. Each level
 keeps its own result evidence and runner-local project inside the grouped
-shipping step and artifact. The direct runner
-generates a package host project under
+shipping step and artifact. A failed level is recorded while the later levels
+continue only when the wrapper catches its terminating failure, then the group
+fails after the remaining levels run. Workflow cancellation or the 150-minute
+step timeout still aborts the group. The direct runner generates a package host
+project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, imports the repo package with a
 `file:` dependency, and configures IL2CPP before either player build. Test hosts
 set `testables`; the shipping host omits test packages and `testables`. Dispatch

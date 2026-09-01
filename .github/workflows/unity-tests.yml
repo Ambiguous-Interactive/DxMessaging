@@ -490,28 +490,14 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
         run: |
+          $projectPathRoot = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
-          $shippingProfiles = @(
-            @{ Level = 'minimal'; Path = '.github/perf/shipping-fidelity-il2cpp-minimal-profile.v1.json' },
-            @{ Level = 'low'; Path = '.github/perf/shipping-fidelity-il2cpp-low-profile.v1.json' },
-            @{ Level = 'medium'; Path = '.github/perf/shipping-fidelity-il2cpp-medium-profile.v1.json' },
-            @{ Level = 'high'; Path = '.github/perf/shipping-fidelity-il2cpp-profile.v1.json' }
-          )
-          foreach ($shippingProfile in $shippingProfiles) {
-            $projectPath = Join-Path $env:RUNNER_WORKSPACE "dxm-u\t\${{ matrix.unity-version }}-shipping-$($shippingProfile.Level)"
-            ./scripts/unity/run-ci-tests.ps1 `
-              -UnityVersion '${{ matrix.unity-version }}' `
-              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-              -TestMode shipping `
-              -AssemblyNames '' `
-              -ArtifactsPath ".artifacts/unity/${{ matrix.unity-version }}-shipping/$($shippingProfile.Level)" `
-              -ProjectPath $projectPath `
-              -CachePath $cachePath `
-              -CanonicalProfilePath $shippingProfile.Path `
-              -LicenseReturnOwner Central `
-              -ReleaseCodeOptimization `
-              -ReleasePlayerBuild
-          }
+          ./scripts/unity/run-shipping-fidelity-matrix.ps1 `
+            -UnityVersion '${{ matrix.unity-version }}' `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping' `
+            -ProjectPathRoot $projectPathRoot `
+            -CachePath $cachePath
 
       # A mode failure is tolerated until the test modes and shipping group have
       # had a chance to run. Preserve diagnostics and result verification, then fail

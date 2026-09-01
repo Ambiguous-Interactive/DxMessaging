@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 $unityScriptsRoot = Split-Path -Parent $PSScriptRoot
 $runnerPath = Join-Path $unityScriptsRoot 'run-ci-tests.ps1'
+$matrixRunnerPath = Join-Path $unityScriptsRoot 'run-shipping-fidelity-matrix.ps1'
 $validatorPath = Join-Path $unityScriptsRoot 'validate-il2cpp-profile.ps1'
 $profilePath = Join-Path $repoRoot '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'
 $profileCases = @(
@@ -70,6 +71,108 @@ function Copy-JsonValue {
 
 try {
     New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+
+    $matrixInvocationLogPath = Join-Path $fixtureRoot 'matrix-invocations.txt'
+    $mockRunnerPath = Join-Path $fixtureRoot 'mock-run-ci-tests.ps1'
+    $escapedMatrixInvocationLogPath = $matrixInvocationLogPath.Replace("'", "''")
+    [System.IO.File]::WriteAllText(
+        $mockRunnerPath,
+        @"
+param(
+    [string]`$UnityVersion,
+    [string]`$UnityInstallRoot,
+    [string]`$TestMode,
+    [string]`$AssemblyNames,
+    [string]`$ArtifactsPath,
+    [string]`$RepoRoot,
+    [string]`$ProjectPath,
+    [string]`$CachePath,
+    [string]`$CanonicalProfilePath,
+    [string]`$LicenseReturnOwner,
+    [switch]`$ReleaseCodeOptimization,
+    [switch]`$ReleasePlayerBuild
+)
+
+Add-Content -LiteralPath '$escapedMatrixInvocationLogPath' -Value (([ordered]@{
+    unityVersion = `$UnityVersion
+    unityInstallRoot = `$UnityInstallRoot
+    testMode = `$TestMode
+    assemblyNames = `$AssemblyNames
+    artifactsPath = `$ArtifactsPath
+    repoRoot = `$RepoRoot
+    projectPath = `$ProjectPath
+    cachePath = `$CachePath
+    canonicalProfilePath = `$CanonicalProfilePath
+    licenseReturnOwner = `$LicenseReturnOwner
+    releaseCodeOptimization = `$ReleaseCodeOptimization.IsPresent
+    releasePlayerBuild = `$ReleasePlayerBuild.IsPresent
+} | ConvertTo-Json -Compress))
+if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
+    throw 'synthetic Minimal failure'
+}
+"@
+    )
+    Assert-Fails 'shipping matrix aggregates a first-cell failure after every profile runs' {
+        & $matrixRunnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -UnityInstallRoot (Join-Path $fixtureRoot 'unity') `
+            -ArtifactsPath (Join-Path $fixtureRoot 'matrix-artifacts') `
+            -ProjectPathRoot (Join-Path $fixtureRoot 'matrix-projects') `
+            -CachePath (Join-Path $fixtureRoot 'matrix-cache') `
+            -RepoRoot $repoRoot `
+            -RunnerPath $mockRunnerPath
+    } 'Shipping-fidelity profile failures: minimal'
+    $matrixInvocations = @(
+        Get-Content -LiteralPath $matrixInvocationLogPath | ConvertFrom-Json
+    )
+    $expectedMatrixCases = @(
+        [ordered]@{
+            Level = 'minimal'
+            Profile = 'shipping-fidelity-il2cpp-minimal-profile.v1.json'
+        },
+        [ordered]@{
+            Level = 'low'
+            Profile = 'shipping-fidelity-il2cpp-low-profile.v1.json'
+        },
+        [ordered]@{
+            Level = 'medium'
+            Profile = 'shipping-fidelity-il2cpp-medium-profile.v1.json'
+        },
+        [ordered]@{
+            Level = 'high'
+            Profile = 'shipping-fidelity-il2cpp-profile.v1.json'
+        }
+    )
+    Assert-That 'shipping matrix continues through every profile after an early failure' (
+        $matrixInvocations.Count -eq $expectedMatrixCases.Count
+    )
+    for ($matrixIndex = 0; $matrixIndex -lt $expectedMatrixCases.Count; $matrixIndex++) {
+        $matrixInvocation = $matrixInvocations[$matrixIndex]
+        $expectedMatrixCase = $expectedMatrixCases[$matrixIndex]
+        Assert-That "$($expectedMatrixCase.Level) shipping matrix delegates the exact runner contract" (
+            $matrixInvocation.unityVersion -ceq '6000.3.16f1' -and
+            $matrixInvocation.unityInstallRoot -ceq (Join-Path $fixtureRoot 'unity') -and
+            $matrixInvocation.testMode -ceq 'shipping' -and
+            $matrixInvocation.assemblyNames -ceq '' -and
+            $matrixInvocation.artifactsPath -ceq (
+                Join-Path (Join-Path $fixtureRoot 'matrix-artifacts') $expectedMatrixCase.Level
+            ) -and
+            $matrixInvocation.repoRoot -ceq $repoRoot -and
+            $matrixInvocation.projectPath -ceq (
+                Join-Path (Join-Path $fixtureRoot 'matrix-projects') (
+                    "6000.3.16f1-shipping-$($expectedMatrixCase.Level)"
+                )
+            ) -and
+            $matrixInvocation.cachePath -ceq (Join-Path $fixtureRoot 'matrix-cache') -and
+            $matrixInvocation.canonicalProfilePath -ceq (
+                Join-Path $repoRoot ".github/perf/$($expectedMatrixCase.Profile)"
+            ) -and
+            $matrixInvocation.licenseReturnOwner -ceq 'Central' -and
+            $matrixInvocation.releaseCodeOptimization -eq $true -and
+            $matrixInvocation.releasePlayerBuild -eq $true
+        )
+    }
+
     $tokens = $null
     $parseErrors = $null
     $runnerAst = [System.Management.Automation.Language.Parser]::ParseFile(

@@ -16,6 +16,7 @@ from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
+SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
     ".github/actions/validate-unity-license/action.yml",
@@ -2615,23 +2616,58 @@ def validate_grouped_unity_correctness() -> None:
         "matrix.unity-version == '6000.5.2f1'",
         "continue-on-error: true",
         "timeout-minutes: 150",
-        "$shippingProfiles = @(",
-        "Level = 'minimal'; Path = '.github/perf/shipping-fidelity-il2cpp-minimal-profile.v1.json'",
-        "Level = 'low'; Path = '.github/perf/shipping-fidelity-il2cpp-low-profile.v1.json'",
-        "Level = 'medium'; Path = '.github/perf/shipping-fidelity-il2cpp-medium-profile.v1.json'",
-        "Level = 'high'; Path = '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'",
-        "foreach ($shippingProfile in $shippingProfiles)",
-        "-TestMode shipping",
-        "-AssemblyNames ''",
-        "-ArtifactsPath \".artifacts/unity/${{ matrix.unity-version }}-shipping/$($shippingProfile.Level)\"",
-        "-CanonicalProfilePath $shippingProfile.Path",
-        "-LicenseReturnOwner Central",
+        "./scripts/unity/run-shipping-fidelity-matrix.ps1",
+        "-UnityVersion '${{ matrix.unity-version }}'",
+        "-UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3')",
+        "-ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping'",
+        "-ProjectPathRoot $projectPathRoot",
+        "-CachePath $cachePath",
     ):
         require(fragment in shipping, f"shipping: grouped run missing {fragment!r}")
     require(
         run_positions == sorted(run_positions),
         "shipping fidelity must run after the grouped Unity test modes",
     )
+    shipping_matrix = SHIPPING_MATRIX.read_text(encoding="utf-8")
+    for fragment in (
+        "shipping-fidelity-il2cpp-minimal-profile.v1.json",
+        "shipping-fidelity-il2cpp-low-profile.v1.json",
+        "shipping-fidelity-il2cpp-medium-profile.v1.json",
+        "shipping-fidelity-il2cpp-profile.v1.json",
+        "foreach ($shippingProfile in $shippingProfiles)",
+        "catch {",
+        "$failures.Add($failure)",
+        'throw "Shipping-fidelity profile failures:',
+    ):
+        require(
+            fragment in shipping_matrix,
+            f"shipping matrix: missing {fragment!r}",
+        )
+    runner_start = shipping_matrix.find("& $RunnerPath")
+    runner_end = shipping_matrix.find("    } catch {", runner_start)
+    require(
+        runner_start >= 0 and runner_end > runner_start,
+        "shipping matrix: could not isolate the delegated Unity runner invocation",
+    )
+    runner_invocation = shipping_matrix[runner_start:runner_end]
+    for fragment in (
+        "-UnityVersion $UnityVersion",
+        "-UnityInstallRoot $UnityInstallRoot",
+        "-TestMode shipping",
+        "-AssemblyNames ''",
+        "-ArtifactsPath (Join-Path $ArtifactsPath $shippingProfile.Level)",
+        "-RepoRoot $RepoRoot",
+        '-ProjectPath (Join-Path $ProjectPathRoot "$UnityVersion-shipping-$($shippingProfile.Level)")',
+        "-CachePath $CachePath",
+        "-CanonicalProfilePath (Join-Path $RepoRoot $shippingProfile.Path)",
+        "-LicenseReturnOwner Central",
+        "-ReleaseCodeOptimization",
+        "-ReleasePlayerBuild",
+    ):
+        require(
+            fragment in runner_invocation,
+            f"shipping matrix runner invocation: missing {fragment!r}",
+        )
     shipping_upload = step_block(job, "Upload shipping-fidelity artifacts")
     require(
         "if-no-files-found: error" in shipping_upload
@@ -2641,7 +2677,10 @@ def validate_grouped_unity_correctness() -> None:
         and ".artifacts/unity/${{ matrix.unity-version }}-shipping" in shipping_upload,
         "shipping fidelity must upload isolated evidence after lock acquisition, skip cancellation, and fail when it is absent",
     )
-    require(job.count("-LicenseReturnOwner Central") == 4, "every grouped mode needs central cleanup")
+    require(
+        job.count("-LicenseReturnOwner Central") == 3,
+        "each directly invoked grouped test mode needs central cleanup",
+    )
 
     gate = step_block(job, "Require every Unity mode to pass")
     require(
