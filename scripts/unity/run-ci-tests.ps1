@@ -39,6 +39,12 @@ param(
 
     [string]$CanonicalProfilePath,
 
+    [ValidateSet('semantic', 'cardinality')]
+    [string]$ShippingTopology = 'semantic',
+
+    [ValidateSet(1, 16, 18, 256, 1000)]
+    [int]$ShippingMessageTypeCount = 18,
+
     [ValidateRange(1, 10)]
     [int]$StandalonePlayerRunCount = 1,
 
@@ -1959,8 +1965,12 @@ function New-StandaloneTestCallbackAsmdef {
 function New-ShippingFidelityPlayerSource {
     param(
         [Parameter(Mandatory = $true)][string]$CanonicalProfileId,
-        [Parameter(Mandatory = $true)][string]$CanonicalProfileSha256
+        [Parameter(Mandatory = $true)][string]$CanonicalProfileSha256,
+        [Parameter(Mandatory = $true)][ValidateSet('semantic', 'cardinality')][string]$ShippingTopology,
+        [Parameter(Mandatory = $true)][ValidateSet(1, 16, 18, 256, 1000)][int]$ShippingMessageTypeCount
     )
+
+    $shippingTopologyId = "$ShippingTopology-$ShippingMessageTypeCount-v1"
 
     @"
 using System;
@@ -1974,6 +1984,7 @@ using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Messages;
 using UnityEngine;
 
+#if DXM_SHIPPING_SEMANTIC_TOPOLOGY
 [DxUntargetedMessage]
 public sealed partial class DxmShippingPublicUntargetedClass
 {
@@ -2003,6 +2014,7 @@ public sealed partial class DxmShippingPublicBroadcastClass
 public readonly partial struct DxmShippingPublicBroadcastStruct
 {
 }
+#endif
 
 public sealed partial class DxmShippingFidelityPlayer
 {
@@ -2010,6 +2022,7 @@ public sealed partial class DxmShippingFidelityPlayer
     private const string MissingRootMode = "missing-root-mutant";
     private const string MissingRootMessageFragment = "no rooted dispatch bridge was registered";
 
+#if DXM_SHIPPING_SEMANTIC_TOPOLOGY
     [DxUntargetedMessage]
     private readonly partial struct NestedUntargetedStruct
     {
@@ -2069,6 +2082,7 @@ public sealed partial class DxmShippingFidelityPlayer
     public readonly partial struct PublicNestedBroadcastStruct
     {
     }
+#endif
 
     private sealed class MissingRootUntargetedMessage : IUntargetedMessage
     {
@@ -2078,9 +2092,11 @@ public sealed partial class DxmShippingFidelityPlayer
     [Serializable]
     private sealed class ShippingResult
     {
-        public int schemaVersion = 1;
+        public int schemaVersion = 2;
         public string profileId = "$CanonicalProfileId";
         public string profileSha256 = "$CanonicalProfileSha256";
+        public string topologyId = "$shippingTopologyId";
+        public int messageTypeCount = $ShippingMessageTypeCount;
         public string unityVersion = Application.unityVersion;
         public string mode = string.Empty;
         public bool success;
@@ -2117,8 +2133,8 @@ public sealed partial class DxmShippingFidelityPlayer
     private static int s_TypedDispatchCount;
     private static int s_UntypedDispatchCount;
     private static bool s_UntypedPhase;
-    private static readonly List<string> TypedDispatchShapes = new List<string>(18);
-    private static readonly List<string> UntypedDispatchShapes = new List<string>(18);
+    private static readonly List<string> TypedDispatchShapes = new List<string>($ShippingMessageTypeCount);
+    private static readonly List<string> UntypedDispatchShapes = new List<string>($ShippingMessageTypeCount);
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Run()
@@ -2183,6 +2199,7 @@ public sealed partial class DxmShippingFidelityPlayer
         Application.Quit(result.success ? 0 : 1);
     }
 
+#if DXM_SHIPPING_SEMANTIC_TOPOLOGY
     private static void RunPositiveSmoke(ShippingResult result)
     {
         MessageBus bus = new MessageBus();
@@ -2327,6 +2344,7 @@ public sealed partial class DxmShippingFidelityPlayer
             handler.active = false;
         }
     }
+#endif
 
     private static void ProbeUntargetedRoot(
         MessageBus bus,
@@ -2379,6 +2397,7 @@ public sealed partial class DxmShippingFidelityPlayer
             "The missing-root mutant dispatched without the required AOT bridge failure.");
     }
 
+#if DXM_SHIPPING_SEMANTIC_TOPOLOGY
     private static void HandlePublicUntargetedClass(in DxmShippingPublicUntargetedClass message) => Count("DxmShippingPublicUntargetedClass");
     private static void HandlePublicUntargetedStruct(in DxmShippingPublicUntargetedStruct message) => Count("DxmShippingPublicUntargetedStruct");
     private static void HandlePublicTargetedClass(in DxmShippingPublicTargetedClass message) => Count("DxmShippingPublicTargetedClass");
@@ -2397,6 +2416,7 @@ public sealed partial class DxmShippingFidelityPlayer
     private static void HandlePublicNestedTargetedStruct(in PublicNestedTargetedStruct message) => Count("PublicNestedTargetedStruct");
     private static void HandlePublicNestedBroadcastClass(in PublicNestedBroadcastClass message) => Count("PublicNestedBroadcastClass");
     private static void HandlePublicNestedBroadcastStruct(in PublicNestedBroadcastStruct message) => Count("PublicNestedBroadcastStruct");
+#endif
 
     private static void Count(string shape)
     {
@@ -2472,6 +2492,8 @@ public sealed partial class DxmShippingFidelityPlayer
         AppendProperty(json, "schemaVersion", value.schemaVersion.ToString(CultureInfo.InvariantCulture), false);
         AppendProperty(json, "profileId", QuoteJson(value.profileId), true);
         AppendProperty(json, "profileSha256", QuoteJson(value.profileSha256), true);
+        AppendProperty(json, "topologyId", QuoteJson(value.topologyId), true);
+        AppendProperty(json, "messageTypeCount", value.messageTypeCount.ToString(CultureInfo.InvariantCulture), true);
         AppendProperty(json, "unityVersion", QuoteJson(value.unityVersion), true);
         AppendProperty(json, "mode", QuoteJson(value.mode), true);
         AppendProperty(json, "success", JsonBoolean(value.success), true);
@@ -2585,6 +2607,163 @@ public sealed partial class DxmShippingFidelityPlayer
         File.WriteAllText(path, json);
     }
 }
+"@
+}
+
+# SHIPPING CARDINALITY ONLY. Generates exact closed public readonly-struct
+# message inventories without changing the semantic 18-shape proof. Methods are
+# split into deterministic batches so the 1,000-type cell does not depend on one
+# oversized C# or IL2CPP method body.
+function New-ShippingCardinalityTopologySource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet(1, 16, 256, 1000)]
+        [int]$MessageTypeCount
+    )
+
+    $batchSize = 64
+    $declarations = [System.Text.StringBuilder]::new()
+    $probeCalls = [System.Collections.Generic.List[string]]::new()
+    $registrationCalls = [System.Collections.Generic.List[string]]::new()
+    $typedCalls = [System.Collections.Generic.List[string]]::new()
+    $untypedCalls = [System.Collections.Generic.List[string]]::new()
+    $batchMethods = [System.Text.StringBuilder]::new()
+    $handlers = [System.Text.StringBuilder]::new()
+
+    for ($messageIndex = 1; $messageIndex -le $MessageTypeCount; $messageIndex++) {
+        $typeName = 'DxmShippingCardinalityMessage{0:D4}' -f $messageIndex
+        $null = $declarations.AppendLine('[DxUntargetedMessage]')
+        $null = $declarations.AppendLine("public readonly partial struct $typeName")
+        $null = $declarations.AppendLine('{')
+        $null = $declarations.AppendLine('}')
+        $null = $declarations.AppendLine()
+        $null = $handlers.AppendLine(
+            "    private static void Handle$typeName(in $typeName message) => Count(`"$typeName`");"
+        )
+    }
+
+    $batchCount = [int][Math]::Ceiling($MessageTypeCount / [double]$batchSize)
+    for ($batchIndex = 0; $batchIndex -lt $batchCount; $batchIndex++) {
+        $batchSuffix = '{0:D3}' -f $batchIndex
+        $batchStart = ($batchIndex * $batchSize) + 1
+        $batchEnd = [Math]::Min($batchStart + $batchSize - 1, $MessageTypeCount)
+        $probeCalls.Add("        ProbeBatch$batchSuffix(bus, rootedUntypedShapes);")
+        $registrationCalls.Add("        RegisterBatch$batchSuffix(token);")
+        $typedCalls.Add("        TypedBatch$batchSuffix(bus);")
+        $untypedCalls.Add("        UntypedBatch$batchSuffix(bus);")
+
+        $null = $batchMethods.AppendLine(
+            "    private static void ProbeBatch$batchSuffix(MessageBus bus, List<string> observedShapes)"
+        )
+        $null = $batchMethods.AppendLine('    {')
+        for ($messageIndex = $batchStart; $messageIndex -le $batchEnd; $messageIndex++) {
+            $typeName = 'DxmShippingCardinalityMessage{0:D4}' -f $messageIndex
+            $variableName = 'message{0:D4}' -f $messageIndex
+            $null = $batchMethods.AppendLine("        $typeName $variableName = default;")
+            $null = $batchMethods.AppendLine(
+                "        ProbeUntargetedRoot(bus, $variableName, observedShapes);"
+            )
+        }
+        $null = $batchMethods.AppendLine('    }')
+        $null = $batchMethods.AppendLine()
+
+        $null = $batchMethods.AppendLine(
+            "    private static void RegisterBatch$batchSuffix(MessageRegistrationToken token)"
+        )
+        $null = $batchMethods.AppendLine('    {')
+        for ($messageIndex = $batchStart; $messageIndex -le $batchEnd; $messageIndex++) {
+            $typeName = 'DxmShippingCardinalityMessage{0:D4}' -f $messageIndex
+            $null = $batchMethods.AppendLine(
+                "        _ = token.RegisterUntargeted<$typeName>(Handle$typeName);"
+            )
+        }
+        $null = $batchMethods.AppendLine('    }')
+        $null = $batchMethods.AppendLine()
+
+        $null = $batchMethods.AppendLine("    private static void TypedBatch$batchSuffix(MessageBus bus)")
+        $null = $batchMethods.AppendLine('    {')
+        for ($messageIndex = $batchStart; $messageIndex -le $batchEnd; $messageIndex++) {
+            $typeName = 'DxmShippingCardinalityMessage{0:D4}' -f $messageIndex
+            $variableName = 'message{0:D4}' -f $messageIndex
+            $null = $batchMethods.AppendLine("        $typeName $variableName = default;")
+            $null = $batchMethods.AppendLine("        bus.UntargetedBroadcast(ref $variableName);")
+        }
+        $null = $batchMethods.AppendLine('    }')
+        $null = $batchMethods.AppendLine()
+
+        $null = $batchMethods.AppendLine("    private static void UntypedBatch$batchSuffix(MessageBus bus)")
+        $null = $batchMethods.AppendLine('    {')
+        for ($messageIndex = $batchStart; $messageIndex -le $batchEnd; $messageIndex++) {
+            $typeName = 'DxmShippingCardinalityMessage{0:D4}' -f $messageIndex
+            $variableName = 'message{0:D4}' -f $messageIndex
+            $null = $batchMethods.AppendLine("        $typeName $variableName = default;")
+            $null = $batchMethods.AppendLine("        bus.UntypedUntargetedBroadcast($variableName);")
+        }
+        $null = $batchMethods.AppendLine('    }')
+        $null = $batchMethods.AppendLine()
+    }
+
+    @"
+using System;
+using System.Collections.Generic;
+using DxMessaging.Core;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.MessageBus;
+
+$($declarations.ToString())public sealed partial class DxmShippingFidelityPlayer
+{
+    private static void RunPositiveSmoke(ShippingResult result)
+    {
+        MessageBus bus = new MessageBus();
+        long emissionIdBeforeRootProbe = bus.EmissionId;
+        List<string> rootedUntypedShapes = new List<string>($MessageTypeCount);
+$($probeCalls -join "`n")
+        long rootedUntypedProbeCount = bus.EmissionId - emissionIdBeforeRootProbe;
+        if (rootedUntypedProbeCount != $MessageTypeCount || rootedUntypedShapes.Count != $MessageTypeCount)
+        {
+            throw new InvalidOperationException(
+                "Shipping cardinality root probe did not execute all $MessageTypeCount first-untyped dispatches.");
+        }
+        result.rootedUntypedProbeCount = (int)rootedUntypedProbeCount;
+        result.rootedUntypedShapes = rootedUntypedShapes.ToArray();
+
+        InstanceId route = new InstanceId(0x5348_4950);
+        MessageHandler handler = new MessageHandler(route, bus) { active = true };
+        MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+        try
+        {
+$($registrationCalls -join "`n")
+            token.Enable();
+            s_TypedDispatchCount = 0;
+            s_UntypedDispatchCount = 0;
+            TypedDispatchShapes.Clear();
+            UntypedDispatchShapes.Clear();
+            s_UntypedPhase = false;
+$($typedCalls -join "`n")
+            s_UntypedPhase = true;
+$($untypedCalls -join "`n")
+            result.typedDispatchCount = s_TypedDispatchCount;
+            result.untypedDispatchCount = s_UntypedDispatchCount;
+            result.typedDispatchShapes = TypedDispatchShapes.ToArray();
+            result.untypedDispatchShapes = UntypedDispatchShapes.ToArray();
+            if (s_TypedDispatchCount != $MessageTypeCount || s_UntypedDispatchCount != $MessageTypeCount)
+            {
+                throw new InvalidOperationException(
+                    string.Format(
+                        "Shipping cardinality dispatch counts differ (typed={0}, untyped={1}).",
+                        s_TypedDispatchCount,
+                        s_UntypedDispatchCount));
+            }
+        }
+        finally
+        {
+            token.UnregisterAll();
+            token.Dispose();
+            handler.active = false;
+        }
+    }
+
+$($batchMethods.ToString())$($handlers.ToString())}
 "@
 }
 
@@ -2951,6 +3130,10 @@ function Initialize-EphemeralProject {
         [bool]$DevelopmentBuild = $false,
         [string]$CanonicalProfileId = '',
         [string]$CanonicalProfileSha256 = '',
+        [ValidateSet('semantic', 'cardinality')]
+        [string]$ShippingTopology = 'semantic',
+        [ValidateSet(1, 16, 18, 256, 1000)]
+        [int]$ShippingMessageTypeCount = 18,
         [string]$RepoRoot,
         [Parameter(Mandatory = $true)][string]$ArtifactsPath
     )
@@ -3051,6 +3234,9 @@ function Initialize-EphemeralProject {
             'ProjectSettings/EditorSettings.asset',
             'ProjectSettings/ProjectVersion.txt'
         )
+        if ($ShippingTopology -ceq 'cardinality') {
+            $shippingProjectInputRelativePaths += 'Assets/DxmShippingCardinalityTopology.cs'
+        }
     }
     New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -ShippingFidelity:$isShippingFidelity -RepoRoot $RepoRoot |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
@@ -3081,6 +3267,14 @@ EditorSettings:
   m_EnterPlayModeOptions: 3
 '@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
     $cscOptions = @('-warnaserror', '-warn:9999')
+    if ($isShippingFidelity) {
+        $shippingDefine = if ($ShippingTopology -ceq 'semantic') {
+            'DXM_SHIPPING_SEMANTIC_TOPOLOGY'
+        } else {
+            'DXM_SHIPPING_CARDINALITY_TOPOLOGY'
+        }
+        $cscOptions += "-define:$shippingDefine"
+    }
     if ($includeIntegrations) {
         $ciAnalyzerPaths = @(Install-CiRoslynatorAnalyzer -Root $Root -Project $project)
         foreach ($ciAnalyzerPath in $ciAnalyzerPaths) {
@@ -3149,8 +3343,14 @@ EditorSettings:
         }
         $shippingFiles = @(
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmShippingFidelityBuilder.cs')); Content = (New-ShippingFidelityBuilderSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 -ManagedStrippingLevel $ManagedStrippingLevel) },
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmShippingFidelityPlayer.cs')); Content = (New-ShippingFidelityPlayerSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) }
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmShippingFidelityPlayer.cs')); Content = (New-ShippingFidelityPlayerSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 -ShippingTopology $ShippingTopology -ShippingMessageTypeCount $ShippingMessageTypeCount) }
         )
+        if ($ShippingTopology -ceq 'cardinality') {
+            $shippingFiles += @{
+                Path = [System.IO.Path]::Combine($project, 'Assets', 'DxmShippingCardinalityTopology.cs')
+                Content = New-ShippingCardinalityTopologySource -MessageTypeCount $ShippingMessageTypeCount
+            }
+        }
         foreach ($file in $shippingFiles) {
             $dir = Split-Path -Parent $file.Path
             if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
@@ -3211,7 +3411,15 @@ EditorSettings:
         Write-JsonArtifact `
             -Path (Join-Path $ArtifactsPath 'shipping-project-inputs.json') `
             -Value ([ordered]@{
-                schemaVersion = 1
+                schemaVersion = 2
+                topologyId = "$ShippingTopology-$ShippingMessageTypeCount-v1"
+                topologyKind = $ShippingTopology
+                messageTypeCount = $ShippingMessageTypeCount
+                expectedShapes = @(
+                    Get-ExpectedShippingShapeNames `
+                        -Topology $ShippingTopology `
+                        -MessageTypeCount $ShippingMessageTypeCount
+                )
                 files = @($projectInputEntries.ToArray())
             })
     }
@@ -4914,6 +5122,21 @@ function Assert-JsonValueType {
 }
 
 function Get-ExpectedShippingShapeNames {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('semantic', 'cardinality')][string]$Topology,
+        [Parameter(Mandatory = $true)][ValidateSet(1, 16, 18, 256, 1000)][int]$MessageTypeCount
+    )
+
+    if ($Topology -ceq 'cardinality') {
+        return [string[]]@(
+            for ($messageIndex = 1; $messageIndex -le $MessageTypeCount; $messageIndex++) {
+                'DxmShippingCardinalityMessage{0:D4}' -f $messageIndex
+            }
+        )
+    }
+    if ($MessageTypeCount -ne 18) {
+        throw 'The semantic shipping topology requires exactly 18 message types.'
+    }
     return [string[]]@(
         'DxmShippingPublicUntargetedClass',
         'DxmShippingPublicUntargetedStruct',
@@ -5025,6 +5248,112 @@ function Test-ShippingAssemblyEvidence {
     $expectedAssemblyNames = @('Assembly-CSharp', 'WallstopStudios.DxMessaging')
     if (($assemblyNames -join "`n") -cne ($expectedAssemblyNames -join "`n")) {
         throw 'Shipping build assembly inventory differs from the exact two expected consumer assemblies.'
+    }
+}
+
+function Assert-ShippingPlayerDirectoryManifest {
+    param(
+        [Parameter(Mandatory = $true)][object]$Value,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    if ($Value -isnot [pscustomobject]) {
+        throw "$Label must be a JSON object."
+    }
+    Assert-ExactJsonPropertyNames `
+        -Value $Value `
+        -Expected @('schemaVersion', 'fileCount', 'files') `
+        -Label $Label
+    Assert-JsonValueType -Value $Value.schemaVersion -ExpectedKind integer -Path "$Label.schemaVersion"
+    Assert-JsonValueType -Value $Value.fileCount -ExpectedKind integer -Path "$Label.fileCount"
+    Assert-JsonValueType -Value $Value.files -ExpectedKind array -Path "$Label.files"
+    $files = @($Value.files)
+    if ([int]$Value.schemaVersion -ne 1 -or [int]$Value.fileCount -ne $files.Count -or $files.Count -eq 0) {
+        throw "$Label does not contain a non-empty schema-version-1 file inventory."
+    }
+    $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($file in $files) {
+        if ($file -isnot [pscustomobject]) {
+            throw "$Label.files[] must be a JSON object."
+        }
+        Assert-ExactJsonPropertyNames `
+            -Value $file `
+            -Expected @('path', 'length', 'sha256') `
+            -Label "$Label.files[]"
+        Assert-JsonValueType -Value $file.path -ExpectedKind string -Path "$Label.files[].path"
+        Assert-JsonValueType -Value $file.length -ExpectedKind integer -Path "$Label.files[].length"
+        Assert-JsonValueType -Value $file.sha256 -ExpectedKind string -Path "$Label.files[].sha256"
+        if (
+            [string]::IsNullOrWhiteSpace([string]$file.path) -or
+            [long]$file.length -lt 0 -or
+            [string]$file.sha256 -cnotmatch '^[0-9A-F]{64}$'
+        ) {
+            throw "$Label.files[] contains an invalid path, length, or SHA-256."
+        }
+        $paths.Add([string]$file.path)
+    }
+    $sortedPaths = [string[]]@($paths.ToArray())
+    [Array]::Sort($sortedPaths, [System.StringComparer]::Ordinal)
+    $uniquePaths = @($paths | Sort-Object -Unique)
+    if (
+        ($paths -join "`n") -cne ($sortedPaths -join "`n") -or
+        $uniquePaths.Count -ne $paths.Count
+    ) {
+        throw "$Label file paths must be unique and ordinally sorted."
+    }
+}
+
+function Test-ShippingPlayerManifestEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][ValidateSet('semantic', 'cardinality')][string]$ExpectedTopology,
+        [Parameter(Mandatory = $true)][ValidateSet(1, 16, 18, 256, 1000)][int]$ExpectedMessageTypeCount
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Shipping player manifest was not written at $Path."
+    }
+    $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ($manifest -isnot [pscustomobject]) {
+        throw 'Shipping player manifest must be a JSON object.'
+    }
+    Assert-ExactJsonPropertyNames -Value $manifest -Expected @(
+        'schemaVersion',
+        'topologyId',
+        'messageTypeCount',
+        'playerDirectoryManifestMatches',
+        'playerDirectoryManifestBefore',
+        'playerDirectoryManifestAfter',
+        'runs'
+    ) -Label 'Shipping player manifest'
+    Assert-JsonValueType -Value $manifest.schemaVersion -ExpectedKind integer -Path 'shippingPlayerManifest.schemaVersion'
+    Assert-JsonValueType -Value $manifest.topologyId -ExpectedKind string -Path 'shippingPlayerManifest.topologyId'
+    Assert-JsonValueType -Value $manifest.messageTypeCount -ExpectedKind integer -Path 'shippingPlayerManifest.messageTypeCount'
+    Assert-JsonValueType -Value $manifest.playerDirectoryManifestMatches -ExpectedKind bool -Path 'shippingPlayerManifest.playerDirectoryManifestMatches'
+    Assert-JsonValueType -Value $manifest.runs -ExpectedKind array -Path 'shippingPlayerManifest.runs'
+    Assert-ShippingPlayerDirectoryManifest `
+        -Value $manifest.playerDirectoryManifestBefore `
+        -Label 'shippingPlayerManifest.playerDirectoryManifestBefore'
+    Assert-ShippingPlayerDirectoryManifest `
+        -Value $manifest.playerDirectoryManifestAfter `
+        -Label 'shippingPlayerManifest.playerDirectoryManifestAfter'
+    foreach ($run in @($manifest.runs)) {
+        Assert-JsonValueType -Value $run -ExpectedKind string -Path 'shippingPlayerManifest.runs[]'
+    }
+    $expectedRuns = @('positive', 'missing-root-mutant')
+    $manifestsMatch = (
+        ($manifest.playerDirectoryManifestBefore | ConvertTo-Json -Depth 10 -Compress) -ceq
+        ($manifest.playerDirectoryManifestAfter | ConvertTo-Json -Depth 10 -Compress)
+    )
+    if (
+        [int]$manifest.schemaVersion -ne 2 -or
+        [string]$manifest.topologyId -cne "$ExpectedTopology-$ExpectedMessageTypeCount-v1" -or
+        [int]$manifest.messageTypeCount -ne $ExpectedMessageTypeCount -or
+        -not [bool]$manifest.playerDirectoryManifestMatches -or
+        -not $manifestsMatch -or
+        (@($manifest.runs) -join "`n") -cne ($expectedRuns -join "`n")
+    ) {
+        throw 'Shipping player manifest does not satisfy the exact unchanged-binary contract.'
     }
 }
 
@@ -5161,7 +5490,9 @@ function Test-ShippingFidelityResult {
         [Parameter(Mandatory = $true)][ValidateSet('positive', 'missing-root-mutant')][string]$ExpectedMode,
         [Parameter(Mandatory = $true)][string]$ExpectedProfileId,
         [Parameter(Mandatory = $true)][string]$ExpectedProfileSha256,
-        [Parameter(Mandatory = $true)][string]$ExpectedUnityVersion
+        [Parameter(Mandatory = $true)][string]$ExpectedUnityVersion,
+        [Parameter(Mandatory = $true)][ValidateSet('semantic', 'cardinality')][string]$ExpectedTopology,
+        [Parameter(Mandatory = $true)][ValidateSet(1, 16, 18, 256, 1000)][int]$ExpectedMessageTypeCount
     )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -5172,6 +5503,8 @@ function Test-ShippingFidelityResult {
         'schemaVersion',
         'profileId',
         'profileSha256',
+        'topologyId',
+        'messageTypeCount',
         'unityVersion',
         'mode',
         'success',
@@ -5190,6 +5523,7 @@ function Test-ShippingFidelityResult {
     foreach ($stringProperty in @(
         'profileId',
         'profileSha256',
+        'topologyId',
         'unityVersion',
         'mode',
         'failureType',
@@ -5208,6 +5542,7 @@ function Test-ShippingFidelityResult {
     }
     foreach ($integerProperty in @(
         'schemaVersion',
+        'messageTypeCount',
         'rootedUntypedProbeCount',
         'typedDispatchCount',
         'untypedDispatchCount'
@@ -5226,9 +5561,11 @@ function Test-ShippingFidelityResult {
         Assert-JsonValueType -Value $result.$arrayProperty -ExpectedKind array -Path "shippingResult.$arrayProperty"
     }
     if (
-        [int]$result.schemaVersion -ne 1 -or
+        [int]$result.schemaVersion -ne 2 -or
         [string]$result.profileId -cne $ExpectedProfileId -or
         [string]$result.profileSha256 -cne $ExpectedProfileSha256 -or
+        [string]$result.topologyId -cne "$ExpectedTopology-$ExpectedMessageTypeCount-v1" -or
+        [int]$result.messageTypeCount -ne $ExpectedMessageTypeCount -or
         [string]$result.unityVersion -cne $ExpectedUnityVersion -or
         [string]$result.mode -cne $ExpectedMode -or
         -not [bool]$result.success -or
@@ -5240,7 +5577,11 @@ function Test-ShippingFidelityResult {
     }
     [string[]]$expectedShapes = @()
     if ($ExpectedMode -ceq 'positive') {
-        $expectedShapes = @(Get-ExpectedShippingShapeNames)
+        $expectedShapes = @(
+            Get-ExpectedShippingShapeNames `
+                -Topology $ExpectedTopology `
+                -MessageTypeCount $ExpectedMessageTypeCount
+        )
     }
     foreach ($shapeProperty in @(
         'rootedUntypedShapes',
@@ -5254,12 +5595,12 @@ function Test-ShippingFidelityResult {
     }
     if ($ExpectedMode -ceq 'positive') {
         if (
-            [int]$result.rootedUntypedProbeCount -ne 18 -or
-            [int]$result.typedDispatchCount -ne 18 -or
-            [int]$result.untypedDispatchCount -ne 18 -or
+            [int]$result.rootedUntypedProbeCount -ne $ExpectedMessageTypeCount -or
+            [int]$result.typedDispatchCount -ne $ExpectedMessageTypeCount -or
+            [int]$result.untypedDispatchCount -ne $ExpectedMessageTypeCount -or
             [bool]$result.missingRootFailureObserved
         ) {
-            throw 'Shipping positive result does not contain the required 18 typed and 18 untyped dispatches.'
+            throw "Shipping positive result does not contain the required $ExpectedMessageTypeCount rooted, typed, and untyped dispatches."
         }
     } elseif (
         [int]$result.rootedUntypedProbeCount -ne 0 -or
@@ -5404,6 +5745,12 @@ if ($isShippingFidelity) {
     if ($StandalonePlayerRunCount -ne 1) {
         throw 'StandalonePlayerRunCount is not valid for a shipping-fidelity player.'
     }
+    if (
+        ($ShippingTopology -ceq 'semantic' -and $ShippingMessageTypeCount -ne 18) -or
+        ($ShippingTopology -ceq 'cardinality' -and $ShippingMessageTypeCount -notin @(1, 16, 256, 1000))
+    ) {
+        throw 'Shipping fidelity requires semantic topology with 18 message types or cardinality topology with 1, 16, 256, or 1000 message types.'
+    }
 } elseif ([string]::IsNullOrWhiteSpace($AssemblyNames)) {
     throw "AssemblyNames must be non-empty for TestMode '$TestMode'."
 }
@@ -5481,6 +5828,8 @@ $ProjectPath = Initialize-EphemeralProject `
     -DevelopmentBuild:(-not $UseReleasePlayerBuild) `
     -CanonicalProfileId $canonicalProfileId `
     -CanonicalProfileSha256 $canonicalProfileSha256 `
+    -ShippingTopology $ShippingTopology `
+    -ShippingMessageTypeCount $ShippingMessageTypeCount `
     -RepoRoot $RepoRoot `
     -ArtifactsPath $ArtifactsPath
 $shippingPreResolutionManifestSha256 = ''
@@ -5511,6 +5860,10 @@ Write-Host "StandaloneScriptingBackend: $StandaloneScriptingBackend"
 Write-Host "StandalonePlayerRunCount: $StandalonePlayerRunCount"
 Write-Host "ManagedStrippingLevel: $managedStrippingLevel"
 Write-Host "IncludeTestAssemblies: $includeTestAssemblies"
+if ($isShippingFidelity) {
+    Write-Host "ShippingTopology: $ShippingTopology"
+    Write-Host "ShippingMessageTypeCount: $ShippingMessageTypeCount"
+}
 Write-Host "ReleasePlayerBuild: $UseReleasePlayerBuild"
 Write-Host "ReleaseCodeOptimization: $UseReleaseCodeOptimization"
 Write-Host "Manifest:"
@@ -5894,7 +6247,9 @@ try {
                 -ExpectedMode $shippingRun.Mode `
                 -ExpectedProfileId $canonicalProfileId `
                 -ExpectedProfileSha256 $canonicalProfileSha256 `
-                -ExpectedUnityVersion $UnityVersion
+                -ExpectedUnityVersion $UnityVersion `
+                -ExpectedTopology $ShippingTopology `
+                -ExpectedMessageTypeCount $ShippingMessageTypeCount
             & $profileValidatorPath `
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $shippingRun.RuntimePath `
@@ -5915,15 +6270,18 @@ try {
             ($shippingManifestAfter | ConvertTo-Json -Depth 10 -Compress)
         )
         Write-JsonArtifact -Path $shippingManifestPath -Value ([ordered]@{
-                schemaVersion = 1
+                schemaVersion = 2
+                topologyId = "$ShippingTopology-$ShippingMessageTypeCount-v1"
+                messageTypeCount = $ShippingMessageTypeCount
                 playerDirectoryManifestMatches = $shippingManifestMatches
                 playerDirectoryManifestBefore = $shippingManifestBefore
                 playerDirectoryManifestAfter = $shippingManifestAfter
                 runs = @('positive', 'missing-root-mutant')
             })
-        if (-not $shippingManifestMatches) {
-            throw 'Shipping player directory manifest changed between the positive and missing-root-mutant runs.'
-        }
+        Test-ShippingPlayerManifestEvidence `
+            -Path $shippingManifestPath `
+            -ExpectedTopology $ShippingTopology `
+            -ExpectedMessageTypeCount $ShippingMessageTypeCount
         Write-CiNotice 'Shipping-fidelity player passed positive AOT dispatch and the missing-root mutant with an unchanged stripped binary.'
     } elseif ($TestMode -eq 'standalone') {
         # STANDALONE SPLIT BUILD + FILE-BASED RESULTS (zero PlayerConnection
