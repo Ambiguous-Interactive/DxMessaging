@@ -2623,7 +2623,10 @@ function New-ShippingCardinalityTopologySource {
 
     $batchSize = 64
     $declarations = [System.Text.StringBuilder]::new()
-    $phaseCalls = [System.Text.StringBuilder]::new()
+    $probeCalls = [System.Collections.Generic.List[string]]::new()
+    $registrationCalls = [System.Collections.Generic.List[string]]::new()
+    $typedCalls = [System.Collections.Generic.List[string]]::new()
+    $untypedCalls = [System.Collections.Generic.List[string]]::new()
     $batchMethods = [System.Text.StringBuilder]::new()
     $handlers = [System.Text.StringBuilder]::new()
 
@@ -2644,10 +2647,10 @@ function New-ShippingCardinalityTopologySource {
         $batchSuffix = '{0:D3}' -f $batchIndex
         $batchStart = ($batchIndex * $batchSize) + 1
         $batchEnd = [Math]::Min($batchStart + $batchSize - 1, $MessageTypeCount)
-        $null = $phaseCalls.AppendLine("        ProbeBatch$batchSuffix(bus, rootedUntypedShapes);")
-        $null = $phaseCalls.AppendLine("        RegisterBatch$batchSuffix(token);")
-        $null = $phaseCalls.AppendLine("        TypedBatch$batchSuffix(bus);")
-        $null = $phaseCalls.AppendLine("        UntypedBatch$batchSuffix(bus);")
+        $probeCalls.Add("        ProbeBatch$batchSuffix(bus, rootedUntypedShapes);")
+        $registrationCalls.Add("        RegisterBatch$batchSuffix(token);")
+        $typedCalls.Add("        TypedBatch$batchSuffix(bus);")
+        $untypedCalls.Add("        UntypedBatch$batchSuffix(bus);")
 
         $null = $batchMethods.AppendLine(
             "    private static void ProbeBatch$batchSuffix(MessageBus bus, List<string> observedShapes)"
@@ -2700,27 +2703,6 @@ function New-ShippingCardinalityTopologySource {
         $null = $batchMethods.AppendLine()
     }
 
-    $probeCalls = [regex]::Matches(
-        $phaseCalls.ToString(),
-        '^[ ]{8}ProbeBatch[^;]+;$',
-        [System.Text.RegularExpressions.RegexOptions]::Multiline
-    ).Value -join "`n"
-    $registrationCalls = [regex]::Matches(
-        $phaseCalls.ToString(),
-        '^[ ]{8}RegisterBatch[^;]+;$',
-        [System.Text.RegularExpressions.RegexOptions]::Multiline
-    ).Value -join "`n"
-    $typedCalls = [regex]::Matches(
-        $phaseCalls.ToString(),
-        '^[ ]{8}TypedBatch[^;]+;$',
-        [System.Text.RegularExpressions.RegexOptions]::Multiline
-    ).Value -join "`n"
-    $untypedCalls = [regex]::Matches(
-        $phaseCalls.ToString(),
-        '^[ ]{8}UntypedBatch[^;]+;$',
-        [System.Text.RegularExpressions.RegexOptions]::Multiline
-    ).Value -join "`n"
-
     @"
 using System;
 using System.Collections.Generic;
@@ -2735,7 +2717,7 @@ $($declarations.ToString())public sealed partial class DxmShippingFidelityPlayer
         MessageBus bus = new MessageBus();
         long emissionIdBeforeRootProbe = bus.EmissionId;
         List<string> rootedUntypedShapes = new List<string>($MessageTypeCount);
-$probeCalls
+$($probeCalls -join "`n")
         long rootedUntypedProbeCount = bus.EmissionId - emissionIdBeforeRootProbe;
         if (rootedUntypedProbeCount != $MessageTypeCount || rootedUntypedShapes.Count != $MessageTypeCount)
         {
@@ -2750,16 +2732,16 @@ $probeCalls
         MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
         try
         {
-$registrationCalls
+$($registrationCalls -join "`n")
             token.Enable();
             s_TypedDispatchCount = 0;
             s_UntypedDispatchCount = 0;
             TypedDispatchShapes.Clear();
             UntypedDispatchShapes.Clear();
             s_UntypedPhase = false;
-$typedCalls
+$($typedCalls -join "`n")
             s_UntypedPhase = true;
-$untypedCalls
+$($untypedCalls -join "`n")
             result.typedDispatchCount = s_TypedDispatchCount;
             result.untypedDispatchCount = s_UntypedDispatchCount;
             result.typedDispatchShapes = TypedDispatchShapes.ToArray();

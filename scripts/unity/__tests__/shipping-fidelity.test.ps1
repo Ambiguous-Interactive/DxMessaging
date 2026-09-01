@@ -181,6 +181,14 @@ if (
         )
     }
 
+    $runnerText = Get-Content -LiteralPath $runnerPath -Raw
+    Assert-That 'cardinality generation uses PowerShell 5.1-safe typed phase call lists' (
+        $runnerText.Contains('$probeCalls = [System.Collections.Generic.List[string]]::new()') -and
+        $runnerText.Contains('$registrationCalls = [System.Collections.Generic.List[string]]::new()') -and
+        $runnerText.Contains('$typedCalls = [System.Collections.Generic.List[string]]::new()') -and
+        $runnerText.Contains('$untypedCalls = [System.Collections.Generic.List[string]]::new()') -and
+        -not [regex]::IsMatch($runnerText, '\[regex\]::Matches\([\s\S]*?\)\.Value\s+-join')
+    )
     $tokens = $null
     $parseErrors = $null
     $runnerAst = [System.Management.Automation.Language.Parser]::ParseFile(
