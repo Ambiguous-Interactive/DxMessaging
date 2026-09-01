@@ -576,6 +576,9 @@ jobs:
               StandalonePlayerPriorityClass = $env:DXM_PERF_PRIORITY_CLASS
               StandaloneScriptingBackend = 'IL2CPP'
           }
+          if ('${{ matrix.test-mode }}' -eq 'standalone') {
+            $extra.CanonicalProfilePath = '.github/perf/canonical-il2cpp-profile.v1.json'
+          }
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
@@ -1400,10 +1403,11 @@ jobs:
             --jq '.[] | [.filename, .previous_filename] | .[] | select(. != null)')"
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
           methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
-          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|reduce-paired-bracket|render-perf|run-ci-tests|resolve-performance-cpu-profile)'
+          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|reduce-paired-bracket|render-perf|run-ci-tests|resolve-performance-cpu-profile|validate-il2cpp-profile)'
           methodology_pattern+='|scripts/unity/(paired-bracket-manifest|post-route-perf-scenarios)\.json$'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
+          methodology_pattern+='|\.github/perf/canonical-il2cpp-profile\.v1\.json$'
           methodology_pattern+='|\.github/unity-versions\.json$'
           methodology_pattern+='|\.github/actions/compute-unity-assemblies/)'
           # perf-numbers.yml itself is intentionally not a blanket incompatibility.

@@ -214,6 +214,7 @@ test("scenario filters keep only dispatch and DxMessaging comparison rows", () =
 
 test("PowerShell performance harness regression tests pass", () => {
   for (const script of [
+    "il2cpp-profile.test.ps1",
     "require-comparison-rows.test.ps1",
     "same-player-repeat-evidence.test.ps1"
   ]) {

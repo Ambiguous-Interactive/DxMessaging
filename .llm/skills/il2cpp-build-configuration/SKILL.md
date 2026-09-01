@@ -51,6 +51,9 @@ plus `-ReleasePlayerBuild` and `-ReleaseCodeOptimization`; Standalone tests take
 
 ### Player configuration
 
+- Pass `-CanonicalProfilePath .github/perf/canonical-il2cpp-profile.v1.json`
+  only to the published standalone IL2CPP leg. The JSON file is the reviewed
+  source of truth for configuration, build options, and runtime state.
 - `PlayerSettings.SetScriptingBackend` must select
   `ScriptingImplementation.IL2CPP` for `BuildTargetGroup.Standalone`. The
   runner's `StandaloneScriptingBackend` parameter defaults to `IL2CPP` and also
@@ -60,13 +63,24 @@ plus `-ReleasePlayerBuild` and `-ReleaseCodeOptimization`; Standalone tests take
 - `PlayerSettings.SetManagedStrippingLevel(..., ManagedStrippingLevel.Disabled)`
   is mandatory. Default stripping deletes the benchmark assemblies and the
   `[Preserve]` standalone test-run callback, and the player then runs nothing.
+- Pin `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC, and engine-code
+  stripping from the canonical profile. Do not rely on an ephemeral project's
+  defaults.
 
 ### Proving the profile
 
-- The configurator logs a `DXM perf config:` line carrying the effective
-  `backend`, `api`, `codeOpt`, and `il2cppConfig` values. A published run must
-  show `backend=IL2CPP`, `api=NET_Standard`, `codeOpt=Release`, and
-  `il2cppConfig=Release`.
+- The runner archives the exact profile as `canonical-il2cpp-profile.v1.json`
+  and writes its SHA-256 beside it. Generated editor and player code embed that
+  profile ID and hash.
+- `configured-profile.json`, `prebuild-profile.json`, and
+  `postbuild-profile.json` record settings after configuration and inside the
+  actual build process. `build-options-profile.json` records final
+  `BuildReport` options, and `runtime-profile.json` records
+  `Debug.isDebugBuild`. The runner compares every field with the archived
+  profile and fails on missing, extra, mistyped, or different values.
+- The configurator also logs a `DXM perf config:` line carrying the effective
+  `backend`, `api`, `codeOpt`, `il2cppConfig`, and `il2cppCodeGeneration`
+  values for diagnosis.
 - Each row encodes its platform string. The published leg must read
   `Standalone IL2CPP x64 Release (WindowsPlayer; ...)`. A published `x64 Debug`
   row means `Debug.isDebugBuild` was true - a configuration bug, not a code

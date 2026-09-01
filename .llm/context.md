@@ -47,6 +47,9 @@ discover it. `.llm/` is the single source of truth; the mirrors are generated po
 - When changing behavior, add or update tests in the same change.
 - Prefer small focused edits over broad refactors unless required.
 - Preserve existing naming and architectural patterns.
+- Keep ignored session artifacts local. Never force-add `progress/`, files under `progress/`, or
+  `progress.meta`; a request to create a progress record means write it locally, not commit it.
+  Track one of these paths only when the user explicitly requests that exact exception.
 - Push to remotes sparingly: every push triggers a full, expensive CI run. Aggregate work in local
   commits, run all practical local verification, and push only when the branch is ready for CI or
   review, or when the user explicitly requests it. Do not push after each commit.
