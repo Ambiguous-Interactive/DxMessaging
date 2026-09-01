@@ -88,6 +88,8 @@ param(
     [string]`$ProjectPath,
     [string]`$CachePath,
     [string]`$CanonicalProfilePath,
+    [string]`$ShippingTopology,
+    [int]`$ShippingMessageTypeCount,
     [string]`$LicenseReturnOwner,
     [switch]`$ReleaseCodeOptimization,
     [switch]`$ReleasePlayerBuild
@@ -103,11 +105,16 @@ Add-Content -LiteralPath '$escapedMatrixInvocationLogPath' -Value (([ordered]@{
     projectPath = `$ProjectPath
     cachePath = `$CachePath
     canonicalProfilePath = `$CanonicalProfilePath
+    shippingTopology = `$ShippingTopology
+    shippingMessageTypeCount = `$ShippingMessageTypeCount
     licenseReturnOwner = `$LicenseReturnOwner
     releaseCodeOptimization = `$ReleaseCodeOptimization.IsPresent
     releasePlayerBuild = `$ReleasePlayerBuild.IsPresent
 } | ConvertTo-Json -Compress))
-if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
+if (
+    `$CanonicalProfilePath -clike '*-minimal-profile.v1.json' -and
+    `$ShippingTopology -ceq 'semantic'
+) {
     throw 'synthetic Minimal failure'
 }
 "@
@@ -121,28 +128,27 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
             -CachePath (Join-Path $fixtureRoot 'matrix-cache') `
             -RepoRoot $repoRoot `
             -RunnerPath $mockRunnerPath
-    } 'Shipping-fidelity profile failures: minimal'
+    } 'Shipping-fidelity cell failures: minimal-semantic-18'
     $matrixInvocations = @(
         Get-Content -LiteralPath $matrixInvocationLogPath | ConvertFrom-Json
     )
-    $expectedMatrixCases = @(
-        [ordered]@{
-            Level = 'minimal'
-            Profile = 'shipping-fidelity-il2cpp-minimal-profile.v1.json'
-        },
-        [ordered]@{
-            Level = 'low'
-            Profile = 'shipping-fidelity-il2cpp-low-profile.v1.json'
-        },
-        [ordered]@{
-            Level = 'medium'
-            Profile = 'shipping-fidelity-il2cpp-medium-profile.v1.json'
-        },
-        [ordered]@{
-            Level = 'high'
-            Profile = 'shipping-fidelity-il2cpp-profile.v1.json'
+    $expectedMatrixCases = [System.Collections.Generic.List[object]]::new()
+    foreach ($profileCase in $profileCases) {
+        foreach ($topologyCase in @(
+            [ordered]@{ Id = 'semantic-18'; Kind = 'semantic'; MessageTypeCount = 18 },
+            [ordered]@{ Id = 'cardinality-1'; Kind = 'cardinality'; MessageTypeCount = 1 },
+            [ordered]@{ Id = 'cardinality-16'; Kind = 'cardinality'; MessageTypeCount = 16 },
+            [ordered]@{ Id = 'cardinality-256'; Kind = 'cardinality'; MessageTypeCount = 256 },
+            [ordered]@{ Id = 'cardinality-1000'; Kind = 'cardinality'; MessageTypeCount = 1000 }
+        )) {
+            $expectedMatrixCases.Add([ordered]@{
+                    Level = "$($profileCase.ManagedStrippingLevel.ToLowerInvariant())-$($topologyCase.Id)"
+                    Profile = $profileCase.FileName
+                    Topology = $topologyCase.Kind
+                    MessageTypeCount = $topologyCase.MessageTypeCount
+                })
         }
-    )
+    }
     Assert-That 'shipping matrix continues through every profile after an early failure' (
         $matrixInvocations.Count -eq $expectedMatrixCases.Count
     )
@@ -167,6 +173,8 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
             $matrixInvocation.canonicalProfilePath -ceq (
                 Join-Path $repoRoot ".github/perf/$($expectedMatrixCase.Profile)"
             ) -and
+            $matrixInvocation.shippingTopology -ceq $expectedMatrixCase.Topology -and
+            [int]$matrixInvocation.shippingMessageTypeCount -eq $expectedMatrixCase.MessageTypeCount -and
             $matrixInvocation.licenseReturnOwner -ceq 'Central' -and
             $matrixInvocation.releaseCodeOptimization -eq $true -and
             $matrixInvocation.releasePlayerBuild -eq $true
@@ -194,6 +202,8 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
         'Assert-ExactJsonStringArray',
         'Assert-NoShippingTestAssemblies',
         'Test-ShippingAssemblyEvidence',
+        'Assert-ShippingPlayerDirectoryManifest',
+        'Test-ShippingPlayerManifestEvidence',
         'Write-ShippingPackageResolutionEvidence',
         'Test-ShippingFidelityResult'
     )) {
@@ -270,6 +280,118 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
         )
     }
 
+    foreach ($cardinality in @(1, 16, 256, 1000)) {
+        $cardinalityProjectPath = Join-Path $fixtureRoot "cardinality-$cardinality-project"
+        $cardinalityArtifactsPath = Join-Path $fixtureRoot "cardinality-$cardinality-artifacts"
+        & $runnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath $cardinalityArtifactsPath `
+            -RepoRoot $repoRoot `
+            -ProjectPath $cardinalityProjectPath `
+            -CachePath (Join-Path $fixtureRoot "cardinality-$cardinality-cache") `
+            -CanonicalProfilePath $profilePath `
+            -ShippingTopology cardinality `
+            -ShippingMessageTypeCount $cardinality `
+            -GenerateOnly
+
+        $cardinalitySourcePath = Join-Path (
+            Join-Path $cardinalityProjectPath 'Assets'
+        ) 'DxmShippingCardinalityTopology.cs'
+        $cardinalitySource = Get-Content -LiteralPath $cardinalitySourcePath -Raw
+        $expectedCardinalityShapes = @(
+            Get-ExpectedShippingShapeNames `
+                -Topology cardinality `
+                -MessageTypeCount $cardinality
+        )
+        Assert-That "cardinality $cardinality emits the exact ordered inventory" (
+            $expectedCardinalityShapes.Count -eq $cardinality -and
+            $expectedCardinalityShapes[0] -ceq 'DxmShippingCardinalityMessage0001' -and
+            $expectedCardinalityShapes[-1] -ceq ('DxmShippingCardinalityMessage{0:D4}' -f $cardinality)
+        )
+        Assert-That "cardinality $cardinality generates every closed message and exercise phase" (
+            [regex]::Matches(
+                $cardinalitySource,
+                '\[DxUntargetedMessage\]\s+public readonly partial struct DxmShippingCardinalityMessage\d{4}'
+            ).Count -eq $cardinality -and
+            [regex]::Matches(
+                $cardinalitySource,
+                'token\.RegisterUntargeted<DxmShippingCardinalityMessage\d{4}>'
+            ).Count -eq $cardinality -and
+            [regex]::Matches(
+                $cardinalitySource,
+                'bus\.UntargetedBroadcast\(ref message\d{4}\);'
+            ).Count -eq $cardinality -and
+            [regex]::Matches(
+                $cardinalitySource,
+                'bus\.UntypedUntargetedBroadcast\(message\d{4}\);'
+            ).Count -eq $cardinality -and
+            [regex]::Matches(
+                $cardinalitySource,
+                'private static void HandleDxmShippingCardinalityMessage\d{4}'
+            ).Count -eq $cardinality
+        )
+        $cardinalityCompilerOptions = @(
+            Get-Content -LiteralPath (Join-Path $cardinalityProjectPath 'Assets/csc.rsp')
+        )
+        Assert-That "cardinality $cardinality selects only the cardinality topology" (
+            $cardinalityCompilerOptions -ccontains '-define:DXM_SHIPPING_CARDINALITY_TOPOLOGY' -and
+            $cardinalityCompilerOptions -cnotcontains '-define:DXM_SHIPPING_SEMANTIC_TOPOLOGY'
+        )
+        $cardinalityPlayerSource = Get-Content -LiteralPath (
+            Join-Path $cardinalityProjectPath 'Assets/DxmShippingFidelityPlayer.cs'
+        ) -Raw
+        Assert-That "cardinality $cardinality binds its result evidence to the topology" (
+            $cardinalityPlayerSource.Contains("public string topologyId = `"cardinality-$cardinality-v1`";") -and
+            $cardinalityPlayerSource.Contains("public int messageTypeCount = $cardinality;")
+        )
+        $cardinalityInputManifest = Get-Content -LiteralPath (
+            Join-Path $cardinalityArtifactsPath 'shipping-project-inputs.json'
+        ) -Raw | ConvertFrom-Json
+        $cardinalityInputPaths = @($cardinalityInputManifest.files.path)
+        Assert-That "cardinality $cardinality provenance includes the exact topology source" (
+            [int]$cardinalityInputManifest.schemaVersion -eq 2 -and
+            $cardinalityInputManifest.topologyId -ceq "cardinality-$cardinality-v1" -and
+            $cardinalityInputManifest.topologyKind -ceq 'cardinality' -and
+            [int]$cardinalityInputManifest.messageTypeCount -eq $cardinality -and
+            (@($cardinalityInputManifest.expectedShapes) -join "`n") -ceq (
+                $expectedCardinalityShapes -join "`n"
+            ) -and
+            $cardinalityInputPaths.Count -eq 8 -and
+            $cardinalityInputPaths -ccontains 'Assets/DxmShippingCardinalityTopology.cs'
+        )
+    }
+
+    Assert-Fails 'semantic topology rejects a cardinality count' {
+        & $runnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath (Join-Path $fixtureRoot 'bad-semantic-count-artifacts') `
+            -RepoRoot $repoRoot `
+            -ProjectPath (Join-Path $fixtureRoot 'bad-semantic-count-project') `
+            -CachePath (Join-Path $fixtureRoot 'bad-semantic-count-cache') `
+            -CanonicalProfilePath $profilePath `
+            -ShippingTopology semantic `
+            -ShippingMessageTypeCount 16 `
+            -GenerateOnly
+    } 'semantic topology with 18 message types'
+    Assert-Fails 'cardinality topology rejects the semantic count' {
+        & $runnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath (Join-Path $fixtureRoot 'bad-cardinality-count-artifacts') `
+            -RepoRoot $repoRoot `
+            -ProjectPath (Join-Path $fixtureRoot 'bad-cardinality-count-project') `
+            -CachePath (Join-Path $fixtureRoot 'bad-cardinality-count-cache') `
+            -CanonicalProfilePath $profilePath `
+            -ShippingTopology cardinality `
+            -ShippingMessageTypeCount 18 `
+            -GenerateOnly
+    } 'cardinality topology with 1, 16, 256, or 1000 message types'
+
     $projectPath = Join-Path $fixtureRoot 'project'
     $artifactsPath = Join-Path $fixtureRoot 'artifacts'
     $cachePath = Join-Path $fixtureRoot 'cache'
@@ -315,7 +437,15 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
     $projectInputManifestPath = Join-Path $artifactsPath 'shipping-project-inputs.json'
     $projectInputManifest = Get-Content -LiteralPath $projectInputManifestPath -Raw | ConvertFrom-Json
     $projectInputPaths = @($projectInputManifest.files.path)
+    $expectedShapeNames = @(
+        Get-ExpectedShippingShapeNames -Topology semantic -MessageTypeCount 18
+    )
     Assert-That 'shipping project-input evidence contains the exact seven generated inputs' (
+        [int]$projectInputManifest.schemaVersion -eq 2 -and
+        $projectInputManifest.topologyId -ceq 'semantic-18-v1' -and
+        $projectInputManifest.topologyKind -ceq 'semantic' -and
+        [int]$projectInputManifest.messageTypeCount -eq 18 -and
+        (@($projectInputManifest.expectedShapes) -join "`n") -ceq ($expectedShapeNames -join "`n") -and
         $projectInputPaths.Count -eq 7 -and
         $projectInputPaths -ccontains 'Assets/csc.rsp' -and
         $projectInputPaths -ccontains 'Assets/DxmShippingFidelityPlayer.cs' -and
@@ -759,12 +889,182 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
         } $expectedAssemblyFailure
     }
 
-    $resultPath = Join-Path $fixtureRoot 'shipping-result.json'
-    $expectedShapeNames = @(Get-ExpectedShippingShapeNames)
-    $positiveResult = [ordered]@{
+    $playerManifestPath = Join-Path $fixtureRoot 'shipping-player-manifest.json'
+    $hashA = 'A'.PadRight(64, 'A')
+    $hashB = 'B'.PadRight(64, 'B')
+    $playerDirectoryManifest = [ordered]@{
         schemaVersion = 1
+        fileCount = 2
+        files = @(
+            [ordered]@{ path = 'DxmShippingPlayer.exe'; length = 1024; sha256 = $hashA },
+            [ordered]@{ path = 'DxmShippingPlayer_Data/globalgamemanagers'; length = 2048; sha256 = $hashB }
+        )
+    }
+    $playerManifest = [ordered]@{
+        schemaVersion = 2
+        topologyId = 'semantic-18-v1'
+        messageTypeCount = 18
+        playerDirectoryManifestMatches = $true
+        playerDirectoryManifestBefore = $playerDirectoryManifest
+        playerDirectoryManifestAfter = Copy-JsonValue -Value $playerDirectoryManifest
+        runs = @('positive', 'missing-root-mutant')
+    }
+    [System.IO.File]::WriteAllText($playerManifestPath, ($playerManifest | ConvertTo-Json -Depth 10))
+    Test-ShippingPlayerManifestEvidence `
+        -Path $playerManifestPath `
+        -ExpectedTopology semantic `
+        -ExpectedMessageTypeCount 18
+    $oneFileDirectoryManifest = [ordered]@{
+        schemaVersion = 1
+        fileCount = 1
+        files = @(
+            [ordered]@{ path = 'DxmShippingPlayer.exe'; length = 1024; sha256 = $hashA }
+        )
+    }
+    $oneFilePlayerManifest = Copy-JsonValue -Value $playerManifest
+    $oneFilePlayerManifest.playerDirectoryManifestBefore = $oneFileDirectoryManifest
+    $oneFilePlayerManifest.playerDirectoryManifestAfter = Copy-JsonValue -Value $oneFileDirectoryManifest
+    [System.IO.File]::WriteAllText(
+        $playerManifestPath,
+        ($oneFilePlayerManifest | ConvertTo-Json -Depth 10)
+    )
+    Test-ShippingPlayerManifestEvidence `
+        -Path $playerManifestPath `
+        -ExpectedTopology semantic `
+        -ExpectedMessageTypeCount 18
+    foreach ($property in $playerManifest.GetEnumerator()) {
+        $mistypedManifest = Copy-JsonValue -Value $playerManifest
+        $mistypedManifest.($property.Key) = if ($property.Value -is [bool]) {
+            $property.Value.ToString().ToLowerInvariant()
+        } elseif ($property.Value -is [int] -or $property.Value -is [long]) {
+            $property.Value.ToString()
+        } elseif ($property.Value -is [string]) {
+            $false
+        } elseif ($property.Key -ceq 'runs') {
+            'positive'
+        } else {
+            $false
+        }
+        [System.IO.File]::WriteAllText(
+            $playerManifestPath,
+            ($mistypedManifest | ConvertTo-Json -Depth 10)
+        )
+        Assert-Fails "shipping player manifest $($property.Key) type" {
+            Test-ShippingPlayerManifestEvidence `
+                -Path $playerManifestPath `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18
+        } 'must be a JSON'
+    }
+    foreach ($manifestMutation in @(
+        'missing-property',
+        'extra-property',
+        'wrong-topology',
+        'wrong-count',
+        'false-match',
+        'changed-after-manifest',
+        'wrong-runs'
+    )) {
+        $mutatedManifest = Copy-JsonValue -Value $playerManifest
+        if ($manifestMutation -ceq 'missing-property') {
+            $mutatedManifest.PSObject.Properties.Remove('runs')
+        } elseif ($manifestMutation -ceq 'extra-property') {
+            $mutatedManifest | Add-Member -NotePropertyName unexpected -NotePropertyValue $true
+        } elseif ($manifestMutation -ceq 'wrong-topology') {
+            $mutatedManifest.topologyId = 'cardinality-18-v1'
+        } elseif ($manifestMutation -ceq 'wrong-count') {
+            $mutatedManifest.messageTypeCount = 16
+        } elseif ($manifestMutation -ceq 'false-match') {
+            $mutatedManifest.playerDirectoryManifestMatches = $false
+        } elseif ($manifestMutation -ceq 'changed-after-manifest') {
+            $mutatedManifest.playerDirectoryManifestAfter.files[0].sha256 = $hashB
+        } else {
+            $mutatedManifest.runs = @('missing-root-mutant', 'positive')
+        }
+        [System.IO.File]::WriteAllText(
+            $playerManifestPath,
+            ($mutatedManifest | ConvertTo-Json -Depth 10)
+        )
+        Assert-Fails "shipping player manifest $manifestMutation" {
+            Test-ShippingPlayerManifestEvidence `
+                -Path $playerManifestPath `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18
+        } 'Shipping player manifest'
+    }
+    foreach ($nestedMutation in @(
+        'missing-property',
+        'extra-property',
+        'wrong-schema',
+        'wrong-file-count',
+        'empty-files',
+        'file-not-object',
+        'file-extra-property',
+        'path-type',
+        'length-type',
+        'hash-type',
+        'blank-path',
+        'negative-length',
+        'malformed-hash',
+        'duplicate-path',
+        'unsorted-path'
+    )) {
+        $mutatedManifest = Copy-JsonValue -Value $playerManifest
+        $nestedManifest = $mutatedManifest.playerDirectoryManifestBefore
+        if ($nestedMutation -ceq 'missing-property') {
+            $nestedManifest.PSObject.Properties.Remove('files')
+        } elseif ($nestedMutation -ceq 'extra-property') {
+            $nestedManifest | Add-Member -NotePropertyName unexpected -NotePropertyValue $true
+        } elseif ($nestedMutation -ceq 'wrong-schema') {
+            $nestedManifest.schemaVersion = 2
+        } elseif ($nestedMutation -ceq 'wrong-file-count') {
+            $nestedManifest.fileCount = 1
+        } elseif ($nestedMutation -ceq 'empty-files') {
+            $nestedManifest.fileCount = 0
+            $nestedManifest.files = @()
+        } elseif ($nestedMutation -ceq 'file-not-object') {
+            $nestedManifest.files = @('DxmShippingPlayer.exe')
+            $nestedManifest.fileCount = 1
+        } elseif ($nestedMutation -ceq 'file-extra-property') {
+            $nestedManifest.files[0] | Add-Member -NotePropertyName unexpected -NotePropertyValue $true
+        } elseif ($nestedMutation -ceq 'path-type') {
+            $nestedManifest.files[0].path = $false
+        } elseif ($nestedMutation -ceq 'length-type') {
+            $nestedManifest.files[0].length = '1024'
+        } elseif ($nestedMutation -ceq 'hash-type') {
+            $nestedManifest.files[0].sha256 = $false
+        } elseif ($nestedMutation -ceq 'blank-path') {
+            $nestedManifest.files[0].path = ''
+        } elseif ($nestedMutation -ceq 'negative-length') {
+            $nestedManifest.files[0].length = -1
+        } elseif ($nestedMutation -ceq 'malformed-hash') {
+            $nestedManifest.files[0].sha256 = 'not-a-sha256'
+        } elseif ($nestedMutation -ceq 'duplicate-path') {
+            $nestedManifest.files[1].path = $nestedManifest.files[0].path
+        } else {
+            $firstFile = $nestedManifest.files[0]
+            $nestedManifest.files[0] = $nestedManifest.files[1]
+            $nestedManifest.files[1] = $firstFile
+        }
+        [System.IO.File]::WriteAllText(
+            $playerManifestPath,
+            ($mutatedManifest | ConvertTo-Json -Depth 10)
+        )
+        Assert-Fails "shipping player nested manifest $nestedMutation" {
+            Test-ShippingPlayerManifestEvidence `
+                -Path $playerManifestPath `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18
+        } 'shippingPlayerManifest.playerDirectoryManifestBefore'
+    }
+
+    $resultPath = Join-Path $fixtureRoot 'shipping-result.json'
+    $positiveResult = [ordered]@{
+        schemaVersion = 2
         profileId = $profile.profileId
         profileSha256 = $profileSha256
+        topologyId = 'semantic-18-v1'
+        messageTypeCount = 18
         unityVersion = '6000.3.16f1'
         mode = 'positive'
         success = $true
@@ -786,7 +1086,34 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
         -ExpectedMode positive `
         -ExpectedProfileId $profile.profileId `
         -ExpectedProfileSha256 $profileSha256 `
-        -ExpectedUnityVersion '6000.3.16f1'
+        -ExpectedUnityVersion '6000.3.16f1' `
+        -ExpectedTopology semantic `
+        -ExpectedMessageTypeCount 18
+
+    foreach ($cardinality in @(1, 16, 256, 1000)) {
+        $cardinalityResult = Copy-JsonValue -Value $positiveResult
+        $cardinalityShapeNames = @(
+            Get-ExpectedShippingShapeNames -Topology cardinality -MessageTypeCount $cardinality
+        )
+        $cardinalityResult.topologyId = "cardinality-$cardinality-v1"
+        $cardinalityResult.messageTypeCount = $cardinality
+        $cardinalityResult.rootedUntypedProbeCount = $cardinality
+        $cardinalityResult.typedDispatchCount = $cardinality
+        $cardinalityResult.untypedDispatchCount = $cardinality
+        $cardinalityResult.rootedUntypedShapes = @($cardinalityShapeNames)
+        $cardinalityResult.typedDispatchShapes = @($cardinalityShapeNames)
+        $cardinalityResult.untypedDispatchShapes = @($cardinalityShapeNames)
+        [System.IO.File]::WriteAllText($resultPath, ($cardinalityResult | ConvertTo-Json -Depth 10))
+        Test-ShippingFidelityResult `
+            -Path $resultPath `
+            -ExpectedMode positive `
+            -ExpectedProfileId $profile.profileId `
+            -ExpectedProfileSha256 $profileSha256 `
+            -ExpectedUnityVersion '6000.3.16f1' `
+            -ExpectedTopology cardinality `
+            -ExpectedMessageTypeCount $cardinality
+    }
+
     foreach ($property in $positiveResult.GetEnumerator()) {
         $mistypedResult = Copy-JsonValue -Value $positiveResult
         $mistypedResult.($property.Key) = if ($property.Value -is [bool]) {
@@ -805,7 +1132,9 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
                 -ExpectedMode positive `
                 -ExpectedProfileId $profile.profileId `
                 -ExpectedProfileSha256 $profileSha256 `
-                -ExpectedUnityVersion '6000.3.16f1'
+                -ExpectedUnityVersion '6000.3.16f1' `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18
         } 'must be a JSON'
     }
     foreach ($badResultMutation in @(
@@ -854,7 +1183,9 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
                 -ExpectedMode positive `
                 -ExpectedProfileId $profile.profileId `
                 -ExpectedProfileSha256 $profileSha256 `
-                -ExpectedUnityVersion '6000.3.16f1'
+                -ExpectedUnityVersion '6000.3.16f1' `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18
         } $expectedResultFailure
     }
     $mutantResult = Copy-JsonValue -Value $positiveResult
@@ -872,7 +1203,9 @@ if (`$CanonicalProfilePath -clike '*-minimal-profile.v1.json') {
         -ExpectedMode missing-root-mutant `
         -ExpectedProfileId $profile.profileId `
         -ExpectedProfileSha256 $profileSha256 `
-        -ExpectedUnityVersion '6000.3.16f1'
+        -ExpectedUnityVersion '6000.3.16f1' `
+        -ExpectedTopology semantic `
+        -ExpectedMessageTypeCount 18
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly
     foreach ($mutation in @(

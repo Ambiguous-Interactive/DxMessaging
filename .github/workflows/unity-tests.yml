@@ -469,10 +469,11 @@ jobs:
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
-      # Run all shipping-fidelity stripping levels on the oldest and newest
-      # supported editors. Keep the group last because each cell builds another
-      # IL2CPP player, and the central cleanup action below returns the final
-      # activation before the editor-scoped organization lock is released.
+      # Run the semantic and 1/16/256/1000-message shipping topologies at every
+      # stripping level on the oldest and newest supported editors. Keep the
+      # group last because each cell builds another IL2CPP player, and the
+      # central cleanup action below returns the final activation before the
+      # editor-scoped organization lock is released.
       - name: Run stripped shipping-fidelity players
         id: run_shipping
         if: >-

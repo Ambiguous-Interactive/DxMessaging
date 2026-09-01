@@ -291,18 +291,22 @@ metrics because the Release player strips the required profiler recorder (see
   existing `shipping-fidelity-il2cpp-profile.v1.json` remains the High profile.
   The harness calls `BuildPipeline.BuildPlayer` directly, without Unity Test
   Framework or a PlayerConnection. The oldest and newest supported Unity
-  editors build each level in an isolated project and artifact directory, then
-  run each built binary twice. The positive run checks generated AOT roots across
-  every public top-level, public nested, and private nested class and readonly
-  struct message shape across all three message kinds, while the
-  missing-root run checks the expected failure for a private manual message.
-  Evidence records the exact ordered shape inventory for the first untyped,
-  typed, and registered untyped phases. The runner clears and hashes every
-  generated project input before reuse. It also archives a privacy-safe hash
-  and semantic summary of the resolved package lock, the exact two-assembly
-  player inventory, loaded assembly inventory, profile evidence, and
-  before/after binary manifests. This correctness slice does not contribute
-  benchmark rows or change the published performance profile.
+  editors build five topologies at every stripping level in isolated project and
+  artifact directories: the 18-shape semantic topology plus exact closed sets of
+  1, 16, 256, and 1,000 public readonly struct messages. This produces 20 builds
+  per editor. Each built binary runs twice. The positive run checks generated AOT
+  roots, typed dispatch, and registered untyped dispatch for every expected type.
+  The semantic topology covers public top-level, public nested, and private
+  nested class and readonly struct messages across all three message kinds. The
+  cardinality topologies expose source-generation and IL2CPP scaling failures.
+  The missing-root run checks the expected failure for a private manual message.
+  Evidence binds the topology ID and exact message count to the ordered type
+  inventory, generated project inputs, runtime results, and unchanged-binary
+  manifest. The runner clears and hashes every generated project input before
+  reuse. It also archives a privacy-safe hash and semantic summary of the
+  resolved package lock, the exact two-assembly player inventory, loaded
+  assembly inventory, and profile evidence. This correctness slice does not
+  contribute benchmark rows or change the published performance profile.
 
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
