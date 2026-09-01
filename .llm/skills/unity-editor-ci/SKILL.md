@@ -12,8 +12,8 @@ The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self
 Windows runners. `unity-tests.yml` is a four-version matrix. Each editor-scoped
 job runs `editmode`, `playmode`, and `standalone` as separate invocations under
 one lock and cleanup window. The oldest and current endpoint jobs also run the
-stripped shipping-fidelity player. Both player modes build `StandaloneWindows64`
-IL2CPP players from runner-local projects under
+Minimal, Low, Medium, and High shipping-fidelity cells. All player modes build
+`StandaloneWindows64` IL2CPP players from runner-local projects under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`.
 
 ## When to use
@@ -54,7 +54,7 @@ IL2CPP players from runner-local projects under
 - Timeout invariant: every step before and including the cleanup gate has an explicit positive
   timeout. Editor validation is capped at `10`, and the acquire step cap (`305`) exceeds its
   internal wait (`300`). Grouped correctness invocations use `90`/`90`/`150` caps, and the
-  endpoint-only shipping invocation uses `150`. Cleanup uses `5`/`2`/`5`/`2` for
+  endpoint-only shipping group uses `150`. Cleanup uses `5`/`2`/`5`/`2` for
   return/classify/release/gate. `unity-tests.yml` uses a `1050`-minute job cap. Other licensed
   jobs retain their `900`-minute cap. Each cap must retain at least 60 minutes beyond the sum
   of its enforced step caps.
@@ -77,7 +77,7 @@ IL2CPP players from runner-local projects under
 
 - CI must pass `-CiManagedOnly -RequireHealthyExisting` plus `-ProvisioningProfile`
   explicitly. The grouped correctness job validates `StandaloneWindowsIl2Cpp` once because
-  that superset serves all test modes and the endpoint-only shipping invocation. Other jobs use
+  that superset serves all test modes and the endpoint-only shipping cells. Other jobs use
   `EditorOnly` for editmode, playmode, benchmarks, and release checks, or
   `StandaloneWindowsIl2Cpp` for standalone (verifies `windows-il2cpp`); `Android` and `Full`
   remain manual-maintenance profiles.

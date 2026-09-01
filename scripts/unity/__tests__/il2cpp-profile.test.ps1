@@ -297,8 +297,11 @@ try {
     $badProfile = Copy-JsonValue -Value $profile
     $badProfile.profileId = 'unsupported-il2cpp-profile-v1'
     Write-TestJson -Path $badProfilePath -Value $badProfile
-    Assert-Fails 'unsupported profile ID lists both accepted profiles' -ExpectedMessage (
+    Assert-Fails 'unsupported profile ID lists every accepted profile' -ExpectedMessage (
         "Supported profileIds: 'canonical-il2cpp-verdict-player-v1', " +
+        "'shipping-fidelity-il2cpp-minimal-player-v1', " +
+        "'shipping-fidelity-il2cpp-low-player-v1', " +
+        "'shipping-fidelity-il2cpp-medium-player-v1', " +
         "'shipping-fidelity-il2cpp-player-v1'."
     ) {
         & $validatorPath -ProfilePath $badProfilePath -ProfileOnly

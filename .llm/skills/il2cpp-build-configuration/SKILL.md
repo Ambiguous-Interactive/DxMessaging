@@ -65,9 +65,11 @@ fidelity leg additionally takes `-TestMode shipping` and the shipping profile.
   is mandatory for test players. Default stripping deletes the benchmark
   assemblies and the `[Preserve]` standalone test-run callback, and the player
   then runs nothing.
-- `.github/perf/shipping-fidelity-il2cpp-profile.v1.json` pins High stripping
-  and `includeTestAssemblies=false` for the separate shipping consumer. That
-  player builds through `BuildPipeline` and must not use Unity Test Framework.
+- The four shipping-fidelity profiles under `.github/perf/` pin Minimal, Low,
+  Medium, and High stripping with `includeTestAssemblies=false`. The existing
+  `shipping-fidelity-il2cpp-profile.v1.json` is the High profile. Each separate
+  shipping consumer builds through `BuildPipeline` and must not use Unity Test
+  Framework.
 - Pin `Il2CppCodeGeneration.OptimizeSpeed`, incremental GC, and engine-code
   stripping from the canonical profile. Do not rely on an ephemeral project's
   defaults.
@@ -93,9 +95,10 @@ fidelity leg additionally takes `-TestMode shipping` and the shipping profile.
 - Never publish a Debug number. `perf-numbers.yml` publishes only the Standalone
   IL2CPP Release leg; manually dispatched `unity-benchmarks.yml` supplies
   per-version editor coverage and allocation evidence.
-- The Unity Tests workflow runs the shipping-fidelity player on the oldest and
-  newest supported editors. Its positive and missing-root runs use the same
-  binary and publish correctness evidence only, never throughput rows.
+- The Unity Tests workflow builds every shipping-fidelity stripping level on
+  the oldest and newest supported editors. Each level's positive and
+  missing-root runs use the same binary and publish correctness evidence only,
+  never throughput rows.
 
 ### Backend split
 

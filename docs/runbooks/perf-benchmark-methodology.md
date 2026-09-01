@@ -285,12 +285,14 @@ metrics because the Release player strips the required profiler recorder (see
   renderer omits the all-unmeasured memory columns from the Standalone table and
   the all-unmeasured memory matrices entirely.
 
-- **Shipping-fidelity leg (not published)** builds a separate IL2CPP Release
-  player with High managed stripping and no test assemblies. It uses
-  `.github/perf/shipping-fidelity-il2cpp-profile.v1.json` and calls
-  `BuildPipeline.BuildPlayer` directly, without Unity Test Framework or a
-  PlayerConnection. The oldest and newest supported Unity editors each run the
-  same built binary twice: the positive run checks generated AOT roots across
+- **Shipping-fidelity leg (not published)** builds separate IL2CPP Release
+  players with Minimal, Low, Medium, and High managed stripping and no test
+  assemblies. Each level has a reviewed profile under `.github/perf/`; the
+  existing `shipping-fidelity-il2cpp-profile.v1.json` remains the High profile.
+  The harness calls `BuildPipeline.BuildPlayer` directly, without Unity Test
+  Framework or a PlayerConnection. The oldest and newest supported Unity
+  editors build each level in an isolated project and artifact directory, then
+  run each built binary twice. The positive run checks generated AOT roots across
   every public top-level, public nested, and private nested class and readonly
   struct message shape across all three message kinds, while the
   missing-root run checks the expected failure for a private manual message.

@@ -26,10 +26,14 @@
 
 Four jobs each run three independent test modes. `editmode`/`playmode` run in-editor
 on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP test player.
-The oldest and current endpoint jobs also build and run the stripped
-`StandaloneWindows64` IL2CPP shipping-fidelity player. Each invocation keeps its
-own result verification, artifact, timeout, and runner-local project. The direct runner
-generates a package host project under
+The oldest and current endpoint jobs also build and run Minimal, Low, Medium,
+and High `StandaloneWindows64` IL2CPP shipping-fidelity players. Each level
+keeps its own result evidence and runner-local project inside the grouped
+shipping step and artifact. A failed level is recorded while the later levels
+continue only when the wrapper catches its terminating failure, then the group
+fails after the remaining levels run. Workflow cancellation or the 150-minute
+step timeout still aborts the group. The direct runner generates a package host
+project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, imports the repo package with a
 `file:` dependency, and configures IL2CPP before either player build. Test hosts
 set `testables`; the shipping host omits test packages and `testables`. Dispatch
@@ -70,13 +74,13 @@ With both controls, a run consumes at most one seat while another repository can
 job timeout-minutes >= sum(all capped steps through cleanup gate) + 60
 ```
 
-Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Grouped correctness test modes use 90/90/150-minute caps, and the endpoint-only shipping invocation uses 150 minutes. Return/classify/release/gate use 5/2/5/2 minutes. `unity-tests.yml` uses `timeout-minutes: 1050`; other licensed jobs retain `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
+Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Grouped correctness test modes use 90/90/150-minute caps, and the endpoint-only shipping group uses 150 minutes. Return/classify/release/gate use 5/2/5/2 minutes. `unity-tests.yml` uses `timeout-minutes: 1050`; other licensed jobs retain `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
 
 The step-level caps protect the in-use seat from a hung editor or ancillary action. They must remain strictly below the job timeout so the step fails first and the cleanup chain still runs. This matters because `stuck-job-watchdog.yml` ignores any `in_progress` job; without step caps, a wedged action can squat the seat until the whole job is cancelled.
 
 Runner administrators manually install every exact editor and required module under `RUNNER_TOOL_CACHE/u6-v3`. Workflows validate that root with `-CiManagedOnly -RequireHealthyExisting` before acquiring the organization lock; they never install or repair editors. Release the lock only after the always-run return and cleanup-classification steps.
 
-**Operator note (standalone IL2CPP):** the grouped correctness jobs require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. They validate the `StandaloneWindowsIl2Cpp` profile once before the lock, then reuse that editor for all test modes and the endpoint-only shipping invocation. Other workflows still select `EditorOnly` or `StandaloneWindowsIl2Cpp` according to their one mode. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for manual maintenance details.
+**Operator note (standalone IL2CPP):** the grouped correctness jobs require the Windows IL2CPP Unity module and the host build toolchain needed by Unity for Windows players. They validate the `StandaloneWindowsIl2Cpp` profile once before the lock, then reuse that editor for all test modes and the endpoint-only shipping cells. Other workflows still select `EditorOnly` or `StandaloneWindowsIl2Cpp` according to their one mode. See [unity-editor-cli-bootstrap](./unity-editor-cli-bootstrap.md) for manual maintenance details.
 
 `unity-benchmarks.yml` (active; manual-only, NEVER on PRs):
 
@@ -89,7 +93,7 @@ The active `unity-benchmarks.yml` explicitly omits `pull_request` and `push` per
 
 ## compute-unity-assemblies is-empty Gate
 
-Every workflow that consumes `./.github/actions/compute-unity-assemblies` gives each Unity test invocation a stable compute id. Grouped correctness uses `compute`, `compute_playmode`, and `compute_standalone`; each test run receives only its matching assembly output through an environment variable. Test work skips when its selection is empty. The endpoint-only shipping invocation is not test-assembly-discovery gated. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
+Every workflow that consumes `./.github/actions/compute-unity-assemblies` gives each Unity test invocation a stable compute id. Grouped correctness uses `compute`, `compute_playmode`, and `compute_standalone`; each test run receives only its matching assembly output through an environment variable. Test work skips when its selection is empty. The endpoint-only shipping group is not test-assembly-discovery gated. Lock acquisition remains unconditional because the static matrix is structurally non-empty and the organization analyzer must prove each acquisition. When asmdef discovery resolves no owned assemblies, verification treats the empty selection as an intentional skip while the terminal return/classify/release/gate chain still proves cleanup.
 
 The `Verify tests actually ran` step keeps a cancellation-safe gate and must also require `steps.compute.outcome == 'success'` plus either `steps.compute.outputs.is-empty == 'true'` or a non-skipped Unity run step (never an is-empty gate alone). It receives `expected-empty: ${{ steps.compute.outputs.is-empty }}`, so an intentional skip reads as success rather than a "tests did not run" failure, while checkout/cache/setup/editor-validation/lock failures that prevent Unity from launching are not obscured by a generic missing-results annotation. The skip path does not fire for the current asmdef set; it is the robustness path for a target whose assemblies are all filtered out, such as a runtime-only standalone run when every DxMessaging test asmdef is editor-only.
 
