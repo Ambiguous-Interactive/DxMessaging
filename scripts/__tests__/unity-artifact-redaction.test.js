@@ -88,19 +88,30 @@ function covers(redactionPaths, uploadedPath) {
 }
 
 /**
- * A redaction step only counts when it actually runs. `if: false`, or a condition that skips on
- * failure, would satisfy a step-shape check while leaving credentials in place on the runs that
- * matter most. Uploads here are `always()`, so their redaction must be too.
+ * A redaction step only counts when it actually runs on the runs that matter.
+ *
+ * A missing `if` is not the same as `always()`. GitHub Actions defaults a step to `success()`, so a
+ * redaction step with no condition is skipped exactly when an earlier step failed, which is when
+ * the `always()` uploads still fire and publish the logs. Only an explicit `always()` qualifies.
  */
 function alwaysRuns(step) {
   if (step.if === undefined) {
-    return true;
+    return false;
   }
-  return (
-    String(step.if)
-      .replace(/\$\{\{|\}\}/g, "")
-      .trim() === "always()"
-  );
+  return String(step.if)
+    .replace(/\$\{\{|\}\}/g, "")
+    .trim()
+    .split("&&")
+    .some((clause) => clause.trim() === "always()");
+}
+
+/**
+ * An upload is only protected when it refuses to run after a failed scrub. The redaction action
+ * fails the job when it cannot finish, but `always()` on the upload would publish the tree anyway,
+ * so each upload must also require its covering redaction step to have succeeded.
+ */
+function requiresRedactionSuccess(step, redactionId) {
+  return String(step.if ?? "").includes(`steps.${redactionId}.outcome == 'success'`);
 }
 
 function jobSteps(job) {
@@ -128,11 +139,13 @@ function unityUploads() {
   for (const { name, document } of readWorkflows()) {
     for (const [jobId, job] of Object.entries(document?.jobs ?? {})) {
       let inForce = [];
+      let redactionId;
       for (const step of jobSteps(job)) {
         const uses = typeof step?.uses === "string" ? step.uses : "";
         if (isRedaction(uses)) {
           if (alwaysRuns(step)) {
             inForce = [...inForce, ...toPathList(step?.with?.paths)];
+            redactionId = step.id;
           }
           continue;
         }
@@ -152,7 +165,9 @@ function unityUploads() {
             jobId,
             stepName: step.name ?? uses,
             uploadedPath,
-            inForce: [...inForce]
+            inForce: [...inForce],
+            redactionId,
+            gated: redactionId !== undefined && requiresRedactionSuccess(step, redactionId)
           });
         }
       }
@@ -177,6 +192,16 @@ test("every Unity artifact upload is preceded by credential redaction in the sam
     "these steps upload Unity output that still contains the license serial; add a " +
       `"${REDACTION_ACTION}" step covering the uploaded path immediately before the upload, ` +
       "with no Unity-producing step in between"
+  );
+});
+
+test("every Unity artifact upload refuses to run after a failed scrub", () => {
+  const ungated = unityUploads().filter((upload) => !upload.gated);
+  assert.deepEqual(
+    ungated.map((upload) => `${upload.workflow} ${upload.jobId} "${upload.stepName}"`),
+    [],
+    "these steps upload Unity output under always(), so a failed redaction step still publishes " +
+      "the tree; add steps.<redaction step id>.outcome == 'success' to the upload condition"
   );
 });
 
@@ -303,11 +328,15 @@ test("normalizePath keeps distinct workflow expressions distinct", () => {
  * the failing runs whose logs get downloaded.
  */
 const ALWAYS_RUNS_CASES = Object.freeze([
-  ["no condition at all", undefined, true],
+  // A missing condition is not the same as always(). GitHub Actions defaults a step to success(),
+  // so an unconditioned redaction step is skipped on exactly the failing runs whose logs get
+  // downloaded, while the always() uploads still fire.
+  ["no condition at all", undefined, false],
+  ["an explicit success()", "${{ success() }}", false],
   ["a bare always()", "always()", true],
   ["a wrapped always()", "${{ always() }}", true],
-  ["a hard false", "false", false],
-  ["success()", "${{ success() }}", false]
+  ["always() combined with another clause", "${{ always() && !cancelled() }}", true],
+  ["a hard false", "false", false]
 ]);
 
 for (const [label, condition, expected] of ALWAYS_RUNS_CASES) {

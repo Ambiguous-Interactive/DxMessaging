@@ -225,6 +225,7 @@ jobs:
         run: exit 1
 
       - name: Redact credentials from Unity benchmark artifacts
+        id: redact_validation
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -234,7 +235,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -316,6 +317,7 @@ jobs:
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Redact credentials from benchmark artifacts
+        id: redact_benchmarks
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -325,7 +327,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload benchmark artifacts
-        if: always()
+        if: ${{ always() && steps.redact_benchmarks.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

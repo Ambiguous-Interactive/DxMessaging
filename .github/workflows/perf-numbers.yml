@@ -467,6 +467,7 @@ jobs:
         run: exit 1
 
       - name: Redact credentials from Unity perf artifacts
+        id: redact_validation
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -476,7 +477,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -523,6 +524,7 @@ jobs:
           label: Comparison contracts ${{ matrix.unity-version }}
 
       - name: Redact credentials from comparison contract artifacts
+        id: redact_contracts
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -532,7 +534,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload comparison contract artifacts
-        if: ${{ always() && matrix.benchmark-suite == 'comparisons' }}
+        if: ${{ always() && matrix.benchmark-suite == 'comparisons' && steps.redact_contracts.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1221,6 +1223,7 @@ jobs:
             -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Redact credentials from perf benchmark artifacts
+        id: redact_perf
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -1230,7 +1233,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload perf benchmark artifacts
-        if: always()
+        if: ${{ always() && steps.redact_perf.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

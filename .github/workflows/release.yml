@@ -342,6 +342,7 @@ jobs:
         run: exit 1
 
       - name: Redact credentials from Unity release artifacts
+        id: redact_validation
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -351,7 +352,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -418,6 +419,7 @@ jobs:
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Redact credentials from release Unity artifacts
+        id: redact_release
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -427,7 +429,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload release Unity artifacts
-        if: always()
+        if: ${{ always() && steps.redact_release.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -662,6 +664,7 @@ jobs:
         run: exit 1
 
       - name: Redact credentials from Unity unitypackage artifacts
+        id: redact_validation
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -671,7 +674,7 @@ jobs:
             .artifacts/unity
 
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -713,6 +716,7 @@ jobs:
           label: Unity release unitypackage export
 
       - name: Redact credentials from unitypackage artifacts
+        id: redact_unitypackage
         if: always()
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
@@ -722,6 +726,9 @@ jobs:
             .artifacts/unity
 
       - name: Upload the .unitypackage artifact
+        # This step had no condition, which implies success(). Naming any condition removes that
+        # implicit guard, so success() has to be restated alongside the redaction gate.
+        if: ${{ success() && steps.redact_unitypackage.outcome == 'success' }}
         timeout-minutes: 20
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -732,7 +739,7 @@ jobs:
           overwrite: true
 
       - name: Upload export diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_unitypackage.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
