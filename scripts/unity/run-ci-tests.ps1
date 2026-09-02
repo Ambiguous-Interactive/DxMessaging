@@ -92,9 +92,29 @@ $RequiredDxMessagingAnalyzerDllNames = @(
     'WallstopStudios.DxMessaging.Analyzer.dll'
 )
 # Typed emissions the shipping player repeats after its correctness phases to
-# record a diagnostic warm ns/op. The generated player embeds this constant and
-# Test-ShippingStartupTimings requires the exact delivered count.
-$ShippingWarmDispatchIterations = 1000000
+# record a diagnostic ns/op. The generated player embeds these constants and
+# Test-ShippingStartupTimings requires the exact delivered count. The warm-up
+# batch is discarded before the clock is sampled.
+$ShippingDispatchLoopIterations = 1000000
+$ShippingDispatchLoopWarmupIterations = 10000
+
+function Get-ShippingDispatchLoopShape {
+    # The one message type the timed loop emits. Both the generated player and
+    # the result validator read it from here, so neither can drift from the
+    # other or from the ordering of the expected-shape inventory.
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('semantic', 'cardinality')][string]$Topology,
+        [Parameter(Mandatory = $true)][ValidateSet(1, 16, 18, 256, 1000)][int]$MessageTypeCount
+    )
+
+    if ($Topology -ceq 'cardinality') {
+        return 'DxmShippingCardinalityMessage0001'
+    }
+    if ($MessageTypeCount -ne 18) {
+        throw 'The semantic shipping topology requires exactly 18 message types.'
+    }
+    return 'DxmShippingPublicUntargetedClass'
+}
 $CiRoslynatorAnalyzerFiles = @(
     @{ Name = 'Roslynator.CSharp.Analyzers.dll'; Sha256 = '3f104ae829826e063b36ea4c11df2fd595ae482ddf76c58c09530486e1ebf853'; Guid = '3661e954d1b7490b944b35cdb72a3665' }
     @{ Name = 'Roslynator_Analyzers_Roslynator.Common.dll'; Sha256 = '4b3133ce1d4f52e17e6b488a1b7e7eb3d768e4d705c50d3482f8ca65e91cc834'; Guid = '8ccb09443b614abbb68b8e4bc48fed63' }
@@ -1975,6 +1995,9 @@ function New-ShippingFidelityPlayerSource {
     )
 
     $shippingTopologyId = "$ShippingTopology-$ShippingMessageTypeCount-v1"
+    # The block guarded by DXM_SHIPPING_SEMANTIC_TOPOLOGY only ever compiles
+    # for the semantic topology, so it always names the semantic loop shape.
+    $dispatchLoopShape = Get-ShippingDispatchLoopShape -Topology semantic -MessageTypeCount 18
 
     @"
 using System;
@@ -2098,24 +2121,28 @@ public sealed partial class DxmShippingFidelityPlayer
     // enter the published benchmark baseline. Microsecond phases come from
     // Stopwatch.GetTimestamp deltas; engineStartToRunMs is the engine clock at
     // the first script entry point.
+    //
+    // Every phase starts at NotMeasured. The missing-root mutant runs none of
+    // them, and reporting a real zero for work that never happened would be a
+    // fabricated measurement. A measured phase is never negative.
     [Serializable]
     private sealed class StartupTimings
     {
-        public double engineStartToRunMs;
+        public double engineStartToRunMs = NotMeasured;
         public long stopwatchFrequency;
         public bool stopwatchIsHighResolution;
-        public double busConstructionUs;
-        public double rootProbePhaseUs;
-        public double registrationPhaseUs;
-        public double firstTypedDispatchUs;
-        public int firstTypedDispatchCount;
-        public double typedPhaseUs;
-        public double untypedPhaseUs;
-        public string warmDispatchShape = string.Empty;
-        public int warmDispatchCount;
-        public double warmDispatchNsPerOp;
-        public double trimUs;
-        public double teardownUs;
+        public double busConstructionUs = NotMeasured;
+        public double rootProbePhaseUs = NotMeasured;
+        public double registrationPhaseUs = NotMeasured;
+        public double firstTypedDispatchUs = NotMeasured;
+        public int firstTypedDispatchCount = NotMeasuredCount;
+        public double typedPhaseUs = NotMeasured;
+        public double untypedPhaseUs = NotMeasured;
+        public string dispatchLoopShape = string.Empty;
+        public int dispatchLoopCount = NotMeasuredCount;
+        public double dispatchLoopNsPerOp = NotMeasured;
+        public double trimUs = NotMeasured;
+        public double teardownUs = NotMeasured;
     }
 
     [Serializable]
@@ -2160,16 +2187,19 @@ public sealed partial class DxmShippingFidelityPlayer
         public bool debugBuild;
     }
 
+    private const double NotMeasured = -1.0;
+    private const int NotMeasuredCount = -1;
     private const int PhaseTyped = 0;
     private const int PhaseUntyped = 1;
     private const int PhaseFirstTyped = 2;
-    private const int PhaseWarm = 3;
-    private const int WarmDispatchIterations = $ShippingWarmDispatchIterations;
+    private const int PhaseLoop = 3;
+    private const int DispatchLoopIterations = $ShippingDispatchLoopIterations;
+    private const int DispatchLoopWarmupIterations = $ShippingDispatchLoopWarmupIterations;
 
     private static int s_TypedDispatchCount;
     private static int s_UntypedDispatchCount;
     private static int s_FirstTypedDispatchCount;
-    private static int s_WarmDispatchCount;
+    private static int s_LoopDispatchCount;
     private static int s_Phase;
     private static readonly List<string> TypedDispatchShapes = new List<string>($ShippingMessageTypeCount);
     private static readonly List<string> UntypedDispatchShapes = new List<string>($ShippingMessageTypeCount);
@@ -2332,7 +2362,7 @@ public sealed partial class DxmShippingFidelityPlayer
             s_TypedDispatchCount = 0;
             s_UntypedDispatchCount = 0;
             s_FirstTypedDispatchCount = 0;
-            s_WarmDispatchCount = 0;
+            s_LoopDispatchCount = 0;
             TypedDispatchShapes.Clear();
             UntypedDispatchShapes.Clear();
             s_Phase = PhaseFirstTyped;
@@ -2397,15 +2427,20 @@ public sealed partial class DxmShippingFidelityPlayer
                         s_UntypedDispatchCount));
             }
 
-            s_Phase = PhaseWarm;
-            phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            for (int i = 0; i < WarmDispatchIterations; i++)
+            s_Phase = PhaseLoop;
+            for (int i = 0; i < DispatchLoopWarmupIterations; i++)
             {
                 bus.UntargetedBroadcast(ref publicUntargetedClass);
             }
-            double warmMicroseconds = ElapsedMicroseconds(phaseStart);
+            s_LoopDispatchCount = 0;
+            phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int i = 0; i < DispatchLoopIterations; i++)
+            {
+                bus.UntargetedBroadcast(ref publicUntargetedClass);
+            }
+            double loopMicroseconds = ElapsedMicroseconds(phaseStart);
             s_Phase = PhaseTyped;
-            RecordWarmDispatch(timings, "DxmShippingPublicUntargetedClass", warmMicroseconds);
+            RecordDispatchLoop(timings, "$dispatchLoopShape", loopMicroseconds);
             phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
             _ = bus.Trim(true);
             timings.trimUs = ElapsedMicroseconds(phaseStart);
@@ -2504,8 +2539,8 @@ public sealed partial class DxmShippingFidelityPlayer
             case PhaseFirstTyped:
                 s_FirstTypedDispatchCount++;
                 break;
-            case PhaseWarm:
-                s_WarmDispatchCount++;
+            case PhaseLoop:
+                s_LoopDispatchCount++;
                 break;
             default:
                 s_TypedDispatchCount++;
@@ -2520,20 +2555,20 @@ public sealed partial class DxmShippingFidelityPlayer
         return elapsedTicks * 1000000.0 / System.Diagnostics.Stopwatch.Frequency;
     }
 
-    private static void RecordWarmDispatch(StartupTimings timings, string shape, double warmMicroseconds)
+    private static void RecordDispatchLoop(StartupTimings timings, string shape, double loopMicroseconds)
     {
-        if (s_WarmDispatchCount != WarmDispatchIterations)
+        if (s_LoopDispatchCount != DispatchLoopIterations)
         {
             throw new InvalidOperationException(
                 string.Format(
                     "Shipping warm dispatch delivered {0} of {1} emissions.",
-                    s_WarmDispatchCount,
-                    WarmDispatchIterations));
+                    s_LoopDispatchCount,
+                    DispatchLoopIterations));
         }
         timings.firstTypedDispatchCount = s_FirstTypedDispatchCount;
-        timings.warmDispatchShape = shape;
-        timings.warmDispatchCount = s_WarmDispatchCount;
-        timings.warmDispatchNsPerOp = warmMicroseconds * 1000.0 / WarmDispatchIterations;
+        timings.dispatchLoopShape = shape;
+        timings.dispatchLoopCount = s_LoopDispatchCount;
+        timings.dispatchLoopNsPerOp = loopMicroseconds * 1000.0 / DispatchLoopIterations;
     }
 
     private static string[] GetLoadedAssemblyNames()
@@ -2624,9 +2659,9 @@ public sealed partial class DxmShippingFidelityPlayer
         AppendProperty(json, "firstTypedDispatchCount", timings.firstTypedDispatchCount.ToString(CultureInfo.InvariantCulture), true);
         AppendProperty(json, "typedPhaseUs", JsonNumber(timings.typedPhaseUs), true);
         AppendProperty(json, "untypedPhaseUs", JsonNumber(timings.untypedPhaseUs), true);
-        AppendProperty(json, "warmDispatchShape", QuoteJson(timings.warmDispatchShape), true);
-        AppendProperty(json, "warmDispatchCount", timings.warmDispatchCount.ToString(CultureInfo.InvariantCulture), true);
-        AppendProperty(json, "warmDispatchNsPerOp", JsonNumber(timings.warmDispatchNsPerOp), true);
+        AppendProperty(json, "dispatchLoopShape", QuoteJson(timings.dispatchLoopShape), true);
+        AppendProperty(json, "dispatchLoopCount", timings.dispatchLoopCount.ToString(CultureInfo.InvariantCulture), true);
+        AppendProperty(json, "dispatchLoopNsPerOp", JsonNumber(timings.dispatchLoopNsPerOp), true);
         AppendProperty(json, "trimUs", JsonNumber(timings.trimUs), true);
         AppendProperty(json, "teardownUs", JsonNumber(timings.teardownUs), true);
         json.Append('}');
@@ -2752,6 +2787,9 @@ function New-ShippingCardinalityTopologySource {
         [int]$MessageTypeCount
     )
 
+    $dispatchLoopShape = Get-ShippingDispatchLoopShape `
+        -Topology cardinality `
+        -MessageTypeCount $MessageTypeCount
     $batchSize = 64
     $declarations = [System.Text.StringBuilder]::new()
     $probeCalls = [System.Collections.Generic.List[string]]::new()
@@ -2875,7 +2913,7 @@ $($registrationCalls -join "`n")
             s_TypedDispatchCount = 0;
             s_UntypedDispatchCount = 0;
             s_FirstTypedDispatchCount = 0;
-            s_WarmDispatchCount = 0;
+            s_LoopDispatchCount = 0;
             TypedDispatchShapes.Clear();
             UntypedDispatchShapes.Clear();
             DxmShippingCardinalityMessage0001 firstMessage = default;
@@ -2904,15 +2942,20 @@ $($untypedCalls -join "`n")
                         s_TypedDispatchCount,
                         s_UntypedDispatchCount));
             }
-            s_Phase = PhaseWarm;
-            phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            for (int i = 0; i < WarmDispatchIterations; i++)
+            s_Phase = PhaseLoop;
+            for (int i = 0; i < DispatchLoopWarmupIterations; i++)
             {
                 bus.UntargetedBroadcast(ref firstMessage);
             }
-            double warmMicroseconds = ElapsedMicroseconds(phaseStart);
+            s_LoopDispatchCount = 0;
+            phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int i = 0; i < DispatchLoopIterations; i++)
+            {
+                bus.UntargetedBroadcast(ref firstMessage);
+            }
+            double loopMicroseconds = ElapsedMicroseconds(phaseStart);
             s_Phase = PhaseTyped;
-            RecordWarmDispatch(timings, "DxmShippingCardinalityMessage0001", warmMicroseconds);
+            RecordDispatchLoop(timings, "$dispatchLoopShape", loopMicroseconds);
             phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
             _ = bus.Trim(true);
             timings.trimUs = ElapsedMicroseconds(phaseStart);
@@ -5619,15 +5662,20 @@ function Test-ShippingBuildReport {
 }
 
 function Test-ShippingStartupTimings {
-    # Cold-start diagnostics written by the shipping player. Every value must be
-    # a finite non-negative number of the declared type. The positive run must
-    # deliver exactly one first typed dispatch and the full warm loop; the
-    # missing-root mutant performs no dispatch phase, so its phases stay zero.
+    # SYNC: $cellTimingPropertyNames does not exist; the matrix wrapper copies
+    # whatever the player wrote, so this list is the only declaration of the
+    # timing contract.
+    #
+    # Cold-start diagnostics written by the shipping player. A measured phase is
+    # a non-negative number; -1 means the mode never ran that phase. The
+    # missing-root mutant measures nothing, so all of its phases must be exactly
+    # -1. Accepting 0 there would let a fabricated zero pass for work that did
+    # happen, such as constructing the bus.
     param(
         [Parameter(Mandatory = $true)][AllowNull()][object]$Value,
         [Parameter(Mandatory = $true)][ValidateSet('positive', 'missing-root-mutant')][string]$ExpectedMode,
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ExpectedWarmDispatchShape,
-        [Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ExpectedWarmDispatchCount,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ExpectedDispatchLoopShape,
+        [Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ExpectedDispatchLoopCount,
         [Parameter(Mandatory = $true)][string]$Path
     )
 
@@ -5641,7 +5689,7 @@ function Test-ShippingStartupTimings {
         'firstTypedDispatchUs',
         'typedPhaseUs',
         'untypedPhaseUs',
-        'warmDispatchNsPerOp',
+        'dispatchLoopNsPerOp',
         'trimUs',
         'teardownUs'
     )
@@ -5650,42 +5698,50 @@ function Test-ShippingStartupTimings {
         'stopwatchFrequency',
         'stopwatchIsHighResolution',
         'firstTypedDispatchCount',
-        'warmDispatchShape',
-        'warmDispatchCount'
+        'dispatchLoopShape',
+        'dispatchLoopCount'
     ) + $phaseProperties) -Label $Path
     foreach ($numberProperty in @('engineStartToRunMs') + $phaseProperties) {
         Assert-JsonValueType -Value $Value.$numberProperty -ExpectedKind number -Path "$Path.$numberProperty"
-        if ([double]$Value.$numberProperty -lt 0) {
-            throw "$Path.$numberProperty must not be negative."
+        if ([double]$Value.$numberProperty -lt 0 -and [double]$Value.$numberProperty -ne -1) {
+            throw "$Path.$numberProperty must be a measured value or the -1 not-measured marker."
         }
     }
-    foreach ($integerProperty in @('stopwatchFrequency', 'firstTypedDispatchCount', 'warmDispatchCount')) {
+    foreach ($integerProperty in @('stopwatchFrequency', 'firstTypedDispatchCount', 'dispatchLoopCount')) {
         Assert-JsonValueType -Value $Value.$integerProperty -ExpectedKind integer -Path "$Path.$integerProperty"
     }
     Assert-JsonValueType -Value $Value.stopwatchIsHighResolution -ExpectedKind bool -Path "$Path.stopwatchIsHighResolution"
-    Assert-JsonValueType -Value $Value.warmDispatchShape -ExpectedKind string -Path "$Path.warmDispatchShape"
-    if ([double]$Value.engineStartToRunMs -le 0 -or [long]$Value.stopwatchFrequency -le 0) {
-        throw "$Path must record a positive engine start time and Stopwatch frequency."
+    Assert-JsonValueType -Value $Value.dispatchLoopShape -ExpectedKind string -Path "$Path.dispatchLoopShape"
+    # engineStartToRunMs only has to be a real reading. A batchmode player that
+    # reaches the first script before the engine clock advances would report 0,
+    # and failing 40 cells over that would cost far more than it proves. The
+    # Stopwatch frequency is a platform constant, so it must be positive.
+    if ([double]$Value.engineStartToRunMs -lt 0 -or [long]$Value.stopwatchFrequency -le 0) {
+        throw "$Path must record a non-negative engine start time and a positive Stopwatch frequency."
     }
     if ($ExpectedMode -ceq 'positive') {
+        $unmeasuredPhases = @($phaseProperties | Where-Object { [double]$Value.$_ -lt 0 })
+        if ($unmeasuredPhases.Count -gt 0) {
+            throw "$Path is missing measurements for: $($unmeasuredPhases -join ', ')."
+        }
         if (
             [int]$Value.firstTypedDispatchCount -ne 1 -or
-            [int]$Value.warmDispatchCount -ne $ExpectedWarmDispatchCount -or
-            [double]$Value.warmDispatchNsPerOp -le 0 -or
-            [string]$Value.warmDispatchShape -cne $ExpectedWarmDispatchShape
+            [int]$Value.dispatchLoopCount -ne $ExpectedDispatchLoopCount -or
+            [double]$Value.dispatchLoopNsPerOp -le 0 -or
+            [string]$Value.dispatchLoopShape -cne $ExpectedDispatchLoopShape
         ) {
-            throw "$Path must record one first typed dispatch and $ExpectedWarmDispatchCount warm dispatches of $ExpectedWarmDispatchShape with a positive ns/op."
+            throw "$Path must record one first typed dispatch and $ExpectedDispatchLoopCount timed dispatches of $ExpectedDispatchLoopShape with a positive ns/op."
         }
         return
     }
-    $activePhases = @($phaseProperties | Where-Object { [double]$Value.$_ -ne 0 })
+    $measuredPhases = @($phaseProperties | Where-Object { [double]$Value.$_ -ne -1 })
     if (
-        $activePhases.Count -gt 0 -or
-        [int]$Value.firstTypedDispatchCount -ne 0 -or
-        [int]$Value.warmDispatchCount -ne 0 -or
-        [string]$Value.warmDispatchShape -cne ''
+        $measuredPhases.Count -gt 0 -or
+        [int]$Value.firstTypedDispatchCount -ne -1 -or
+        [int]$Value.dispatchLoopCount -ne -1 -or
+        [string]$Value.dispatchLoopShape -cne ''
     ) {
-        throw "$Path must stay idle for the missing-root mutant."
+        throw "$Path must mark every phase not measured for the missing-root mutant."
     }
 }
 
@@ -5693,14 +5749,15 @@ function Write-ShippingCellEvidence {
     # One row of #506 build-time, size, and cold-start evidence for one clean
     # IL2CPP build and its player. Every input was validated before this call;
     # the manifest entries are the in-process ordered dictionaries produced by
-    # Get-StandalonePlayerManifest.
-    # SYNC: run-shipping-fidelity-matrix.ps1 reads this file and requires the
-    # exact property list below; update both together.
+    # Get-StandalonePlayerManifest. run-shipping-fidelity-matrix.ps1 copies
+    # whatever this writes, so there is no second copy of the shape to keep in
+    # step.
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$BuildReportPath,
         [Parameter(Mandatory = $true)][string]$PositiveResultPath,
         [Parameter(Mandatory = $true)][object]$PlayerDirectoryManifest,
+        [Parameter(Mandatory = $true)][string]$PlayerExecutableName,
         [Parameter(Mandatory = $true)][string]$ProfileId,
         [Parameter(Mandatory = $true)][string]$ProfileSha256,
         [Parameter(Mandatory = $true)][string]$ManagedStrippingLevel,
@@ -5723,7 +5780,7 @@ function Write-ShippingCellEvidence {
     foreach ($playerFile in $playerFiles) {
         $playerFilePath = [string]$playerFile['path']
         $playerTotalBytes += [long]$playerFile['length']
-        if ($playerFilePath -ieq 'DxmShippingPlayer.exe') {
+        if ($playerFilePath -ieq $PlayerExecutableName) {
             $playerExecutableBytes = [long]$playerFile['length']
         }
         # Locate the IL2CPP native output the way capture-dispatch-codegen.ps1
@@ -5736,10 +5793,11 @@ function Write-ShippingCellEvidence {
         }
     }
     if ($playerExecutableBytes -lt 0 -or $gameAssemblyMatches -ne 1) {
-        throw 'Shipping player directory must contain DxmShippingPlayer.exe and exactly one IL2CPP GameAssembly.dll.'
+        throw "Shipping player directory must contain $PlayerExecutableName and exactly one IL2CPP GameAssembly.dll."
     }
     Write-JsonArtifact -Path $Path -Value ([ordered]@{
             schemaVersion = 1
+            measurementClass = 'characterization'
             profileId = $ProfileId
             profileSha256 = $ProfileSha256
             managedStrippingLevel = $ManagedStrippingLevel
@@ -5761,7 +5819,7 @@ function Write-ShippingCellEvidence {
             timings = $positiveResult.timings
         })
     Write-CiNotice (
-        "Shipping cell {0} x {1}: build {2:F0} ms in BuildPipeline ({3:F0} ms editor wall clock), player {4} bytes, GameAssembly {5} bytes, engine start to script {6:F0} ms, first typed dispatch {7:F1} us, warm {8:F1} ns/op." -f
+        "Characterization (not a benchmark row) for shipping cell {0} x {1}: build {2:F0} ms in BuildPipeline ({3:F0} ms editor wall clock), player {4} bytes, GameAssembly {5} bytes, engine start to script {6:F0} ms, first typed dispatch {7:F1} us, dispatch loop {8:F1} ns/op over {9}." -f
         $ManagedStrippingLevel,
         "$Topology-$MessageTypeCount",
         [double]$buildReport.buildDurationMs,
@@ -5770,7 +5828,8 @@ function Write-ShippingCellEvidence {
         $gameAssemblyBytes,
         [double]$positiveResult.timings.engineStartToRunMs,
         [double]$positiveResult.timings.firstTypedDispatchUs,
-        [double]$positiveResult.timings.warmDispatchNsPerOp
+        [double]$positiveResult.timings.dispatchLoopNsPerOp,
+        [string]$positiveResult.timings.dispatchLoopShape
     )
 }
 
@@ -6016,7 +6075,7 @@ function Test-ShippingFidelityResult {
         [Parameter(Mandatory = $true)][string]$ExpectedUnityVersion,
         [Parameter(Mandatory = $true)][ValidateSet('semantic', 'cardinality')][string]$ExpectedTopology,
         [Parameter(Mandatory = $true)][ValidateSet(1, 16, 18, 256, 1000)][int]$ExpectedMessageTypeCount,
-        [Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ExpectedWarmDispatchCount
+        [Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ExpectedDispatchLoopCount
     )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -6108,12 +6167,19 @@ function Test-ShippingFidelityResult {
                 -MessageTypeCount $ExpectedMessageTypeCount
         )
     }
-    $expectedWarmShape = if ($ExpectedMode -ceq 'positive') { $expectedShapes[0] } else { '' }
+    # Read the loop shape from the shared helper, not from the ordering of the
+    # expected-shape inventory. Those two lists answer different questions and
+    # coupling them would fail the leg if the probe order ever changed.
+    $expectedDispatchLoopShape = if ($ExpectedMode -ceq 'positive') {
+        Get-ShippingDispatchLoopShape -Topology $ExpectedTopology -MessageTypeCount $ExpectedMessageTypeCount
+    } else {
+        ''
+    }
     Test-ShippingStartupTimings `
         -Value $result.timings `
         -ExpectedMode $ExpectedMode `
-        -ExpectedWarmDispatchShape $expectedWarmShape `
-        -ExpectedWarmDispatchCount $ExpectedWarmDispatchCount `
+        -ExpectedDispatchLoopShape $expectedDispatchLoopShape `
+        -ExpectedDispatchLoopCount $ExpectedDispatchLoopCount `
         -Path 'shippingResult.timings'
     foreach ($shapeProperty in @(
         'rootedUntypedShapes',
@@ -6805,7 +6871,7 @@ try {
                 -ExpectedUnityVersion $UnityVersion `
                 -ExpectedTopology $ShippingTopology `
                 -ExpectedMessageTypeCount $ShippingMessageTypeCount `
-                -ExpectedWarmDispatchCount $ShippingWarmDispatchIterations
+                -ExpectedDispatchLoopCount $ShippingDispatchLoopIterations
             & $profileValidatorPath `
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $shippingRun.RuntimePath `
@@ -6843,6 +6909,7 @@ try {
             -BuildReportPath $shippingBuildReportPath `
             -PositiveResultPath $shippingPositiveResultPath `
             -PlayerDirectoryManifest $shippingManifestBefore `
+            -PlayerExecutableName ([System.IO.Path]::GetFileName($standaloneExe)) `
             -ProfileId $canonicalProfileId `
             -ProfileSha256 $canonicalProfileSha256 `
             -ManagedStrippingLevel $managedStrippingLevel `

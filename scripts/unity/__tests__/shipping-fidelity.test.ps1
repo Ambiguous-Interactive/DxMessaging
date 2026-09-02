@@ -118,20 +118,22 @@ if (
     throw 'synthetic Minimal failure'
 }
 # Emit the same cell evidence shape the real runner writes so the matrix
-# wrapper's summary contract is exercised end to end. The low-Low semantic cell
-# writes a truncated file to prove one unusable cell fails without discarding
-# the remaining evidence.
+# wrapper's summary contract is exercised end to end. The Low semantic cell
+# writes a truncated file: its shipping proof passed, so it must be reported as
+# unusable evidence rather than as a stripping failure, and the remaining cells
+# must still be summarized.
 New-Item -ItemType Directory -Force -Path `$ArtifactsPath | Out-Null
 `$cellEvidencePath = Join-Path `$ArtifactsPath 'shipping-cell-evidence.json'
 if (
     `$CanonicalProfilePath -clike '*-low-profile.v1.json' -and
     `$ShippingTopology -ceq 'semantic'
 ) {
-    [System.IO.File]::WriteAllText(`$cellEvidencePath, '{"schemaVersion":1}')
+    [System.IO.File]::WriteAllText(`$cellEvidencePath, '{"schemaVersion":')
     return
 }
 `$cellEvidence = [ordered]@{
     schemaVersion = 1
+    measurementClass = 'characterization'
     profileId = 'mock-profile'
     profileSha256 = ('a' * 64)
     managedStrippingLevel = 'High'
@@ -161,9 +163,9 @@ if (
         firstTypedDispatchCount = 1
         typedPhaseUs = 90.5
         untypedPhaseUs = 130.25
-        warmDispatchShape = 'DxmShippingCardinalityMessage0001'
-        warmDispatchCount = 1000000
-        warmDispatchNsPerOp = 21.5
+        dispatchLoopShape = 'DxmShippingCardinalityMessage0001'
+        dispatchLoopCount = 1000000
+        dispatchLoopNsPerOp = 21.5
         trimUs = 60.5
         teardownUs = 40.25
     }
@@ -241,22 +243,30 @@ if (
     ) -Raw | ConvertFrom-Json
     $matrixEvidenceCells = @($matrixEvidence.cells)
     $matrixFailedCells = @($matrixEvidence.failedCells)
-    $expectedFailedCells = @('minimal-semantic-18', 'low-semantic-18')
-    Assert-That 'shipping matrix summarizes every completed cell and names the failed cells' (
+    $matrixUnreadableCells = @($matrixEvidence.unreadableEvidenceCells)
+    # A cell whose runner threw and a cell that passed but wrote unusable
+    # evidence are different failures and must not be reported as one class.
+    $expectedFailedCells = @('minimal-semantic-18')
+    $expectedUnreadableCells = @('low-semantic-18')
+    $expectedIncompleteCount = $expectedFailedCells.Count + $expectedUnreadableCells.Count
+    Assert-That 'shipping matrix separates failed cells from unusable evidence' (
         [int]$matrixEvidence.schemaVersion -eq 1 -and
+        $matrixEvidence.measurementClass -ceq 'characterization' -and
         $matrixEvidence.unityVersion -ceq '6000.3.16f1' -and
         [int]$matrixEvidence.cellCount -eq $expectedMatrixCases.Count -and
-        [int]$matrixEvidence.completedCellCount -eq ($expectedMatrixCases.Count - $expectedFailedCells.Count) -and
-        $matrixEvidenceCells.Count -eq ($expectedMatrixCases.Count - $expectedFailedCells.Count) -and
-        ($matrixFailedCells -join "`n") -ceq ($expectedFailedCells -join "`n")
+        [int]$matrixEvidence.completedCellCount -eq ($expectedMatrixCases.Count - $expectedIncompleteCount) -and
+        $matrixEvidenceCells.Count -eq ($expectedMatrixCases.Count - $expectedIncompleteCount) -and
+        ($matrixFailedCells -join "`n") -ceq ($expectedFailedCells -join "`n") -and
+        ($matrixUnreadableCells -join "`n") -ceq ($expectedUnreadableCells -join "`n")
     )
     $matrixEvidenceCellIds = @($matrixEvidenceCells | ForEach-Object { $_.cellId })
+    $incompleteCellIds = @($expectedFailedCells) + @($expectedUnreadableCells)
     $expectedMatrixEvidenceCellIds = @(
         $expectedMatrixCases |
             ForEach-Object { $_.Level } |
-            Where-Object { $expectedFailedCells -cnotcontains $_ }
+            Where-Object { $incompleteCellIds -cnotcontains $_ }
     )
-    Assert-That 'shipping matrix keeps completed cells in dependency order' (
+    Assert-That 'shipping matrix keeps completed cells in invocation order' (
         ($matrixEvidenceCellIds -join "`n") -ceq ($expectedMatrixEvidenceCellIds -join "`n")
     )
     $firstMatrixCell = $matrixEvidenceCells[0]
@@ -270,7 +280,8 @@ if (
         [long]$firstMatrixCell.playerTotalBytes -eq 34000000 -and
         [long]$firstMatrixCell.gameAssemblyBytes -eq 22000000 -and
         [double]$firstMatrixCell.timings.engineStartToRunMs -eq 210.5 -and
-        [double]$firstMatrixCell.timings.warmDispatchNsPerOp -eq 21.5
+        [double]$firstMatrixCell.timings.dispatchLoopNsPerOp -eq 21.5 -and
+        $firstMatrixCell.measurementClass -ceq 'characterization'
     )
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
@@ -300,6 +311,7 @@ if (
         'Assert-ExactJsonPropertyNames',
         'Assert-JsonValueType',
         'Get-ExpectedShippingShapeNames',
+        'Get-ShippingDispatchLoopShape',
         'Assert-ExactJsonStringArray',
         'Assert-NoShippingTestAssemblies',
         'Get-StandalonePlayerManifest',
@@ -497,9 +509,9 @@ if (
         Assert-That "cardinality $cardinality warms and times the first generated message" (
             $cardinalitySource.Contains('DxmShippingCardinalityMessage0001 firstMessage = default;') -and
             $cardinalitySource.Contains('bus.UntargetedBroadcast(ref firstMessage);') -and
-            $cardinalitySource.Contains('for (int i = 0; i < WarmDispatchIterations; i++)') -and
+            $cardinalitySource.Contains('for (int i = 0; i < DispatchLoopIterations; i++)') -and
             $cardinalitySource.Contains(
-                'RecordWarmDispatch(timings, "DxmShippingCardinalityMessage0001", warmMicroseconds);'
+                'RecordDispatchLoop(timings, "DxmShippingCardinalityMessage0001", loopMicroseconds);'
             ) -and
             $cardinalitySource.Contains('timings.trimUs = ElapsedMicroseconds(phaseStart);') -and
             $cardinalitySource.Contains('timings.teardownUs = ElapsedMicroseconds(phaseStart);')
@@ -986,7 +998,9 @@ if (
         $playerText.Contains('File.WriteAllText(path, json);')
     )
     Assert-That 'shipping player records every cold-start phase with Stopwatch' (
-        $playerText.Contains('private const int WarmDispatchIterations = 1000000;') -and
+        $playerText.Contains('private const int DispatchLoopIterations = 1000000;') -and
+        $playerText.Contains('private const int DispatchLoopWarmupIterations = 10000;') -and
+        $playerText.Contains('private const double NotMeasured = -1.0;') -and
         $playerText.Contains('timings.busConstructionUs = ElapsedMicroseconds(phaseStart);') -and
         $playerText.Contains('timings.rootProbePhaseUs = ElapsedMicroseconds(phaseStart);') -and
         $playerText.Contains('timings.registrationPhaseUs = ElapsedMicroseconds(phaseStart);') -and
@@ -998,10 +1012,23 @@ if (
         $playerText.Contains('_ = bus.Trim(true);') -and
         $playerText.Contains('result.timings.engineStartToRunMs = engineStartToRunMs;')
     )
+    Assert-That 'shipping player discards a warm-up batch before sampling the clock' (
+        [regex]::IsMatch(
+            $playerText,
+            'for \(int i = 0; i < DispatchLoopWarmupIterations; i\+\+\)[\s\S]{0,200}?s_LoopDispatchCount = 0;[\s\S]{0,200}?phaseStart = System\.Diagnostics\.Stopwatch\.GetTimestamp\(\);[\s\S]{0,200}?for \(int i = 0; i < DispatchLoopIterations; i\+\+\)'
+        )
+    )
+    Assert-That 'shipping player marks unmeasured phases instead of reporting zero' (
+        $playerText.Contains('public double busConstructionUs = NotMeasured;') -and
+        $playerText.Contains('public double trimUs = NotMeasured;') -and
+        $playerText.Contains('public double teardownUs = NotMeasured;') -and
+        $playerText.Contains('public int firstTypedDispatchCount = NotMeasuredCount;') -and
+        $playerText.Contains('public int dispatchLoopCount = NotMeasuredCount;')
+    )
     Assert-That 'shipping player counts the first and warm dispatch phases separately' (
         $playerText.Contains('public int schemaVersion = 3;') -and
         $playerText.Contains('s_Phase = PhaseFirstTyped;') -and
-        $playerText.Contains('s_Phase = PhaseWarm;') -and
+        $playerText.Contains('s_Phase = PhaseLoop;') -and
         -not $playerText.Contains('s_UntypedPhase') -and
         $playerText.Contains('if (s_FirstTypedDispatchCount != 1 || s_TypedDispatchCount != 18') -and
         $playerText.Contains('throw new InvalidOperationException("Shipping timing values must be finite numbers.");')
@@ -1091,9 +1118,9 @@ if (
         firstTypedDispatchCount = 1
         typedPhaseUs = 90.5
         untypedPhaseUs = 130.25
-        warmDispatchShape = 'DxmShippingPublicUntargetedClass'
-        warmDispatchCount = 1000000
-        warmDispatchNsPerOp = 21.5
+        dispatchLoopShape = 'DxmShippingPublicUntargetedClass'
+        dispatchLoopCount = 1000000
+        dispatchLoopNsPerOp = 21.5
         trimUs = 60.5
         teardownUs = 40.25
     }
@@ -1139,34 +1166,37 @@ if (
     $integralBuildReport.steps[0].durationMs = 0
     [System.IO.File]::WriteAllText($buildReportPath, ($integralBuildReport | ConvertTo-Json -Depth 10))
     Test-ShippingBuildReport @buildReportArguments
-    foreach ($buildReportMutation in @(
-        'missing-property',
-        'extra-property',
-        'wrong-schema',
-        'wrong-profile',
-        'wrong-topology',
-        'wrong-count',
-        'wrong-unity',
-        'failed-result',
-        'start-type',
-        'end-type',
-        'stale-start',
-        'inverted-range',
-        'zero-duration',
-        'negative-reported-time',
-        'negative-size',
-        'empty-steps',
-        'step-not-object',
-        'step-extra-property',
-        'step-missing-property',
-        'step-name-type',
-        'step-depth-type',
-        'step-duration-type',
-        'negative-step-depth',
-        'negative-step-duration',
-        'duration-type',
-        'size-type'
-    )) {
+    # Each mutation names the exact message its own check must produce, so a
+    # mutation cannot pass on an unrelated failure.
+    $buildReportFailureByMutation = [ordered]@{
+        'missing-property' = 'Shipping build report has unexpected JSON properties'
+        'extra-property' = 'Shipping build report has unexpected JSON properties'
+        'wrong-schema' = 'Shipping build report does not match'
+        'wrong-profile' = 'Shipping build report does not match'
+        'wrong-topology' = 'Shipping build report does not match'
+        'wrong-count' = 'Shipping build report does not match'
+        'wrong-unity' = 'Shipping build report does not match'
+        'failed-result' = 'Shipping build report does not match'
+        'start-type' = 'shippingBuildReport.buildStartedUnixMs must be a JSON integer'
+        'end-type' = 'shippingBuildReport.buildEndedUnixMs must be a JSON integer'
+        'stale-start' = 'Shipping build report timing or size values'
+        'inverted-range' = 'Shipping build report timing or size values'
+        'zero-duration' = 'Shipping build report timing or size values'
+        'negative-reported-time' = 'Shipping build report timing or size values'
+        'negative-size' = 'Shipping build report timing or size values'
+        'empty-steps' = 'Shipping build report must contain at least one build step'
+        'step-not-object' = 'Shipping build report steps[] must be a JSON object'
+        'step-extra-property' = 'Shipping build report steps[] has unexpected JSON properties'
+        'step-missing-property' = 'Shipping build report steps[] has unexpected JSON properties'
+        'step-name-type' = 'shippingBuildReport.steps[].name must be a JSON string'
+        'step-depth-type' = 'shippingBuildReport.steps[].depth must be a JSON integer'
+        'step-duration-type' = 'shippingBuildReport.steps[].durationMs must be a JSON number'
+        'negative-step-depth' = 'Shipping build report steps[] contains a negative'
+        'negative-step-duration' = 'Shipping build report steps[] contains a negative'
+        'duration-type' = 'shippingBuildReport.buildDurationMs must be a JSON number'
+        'size-type' = 'shippingBuildReport.reportedTotalSizeBytes must be a JSON integer'
+    }
+    foreach ($buildReportMutation in $buildReportFailureByMutation.Keys) {
         $mutatedBuildReport = Copy-JsonValue -Value $buildReport
         switch ($buildReportMutation) {
             'missing-property' { $mutatedBuildReport.PSObject.Properties.Remove('steps') }
@@ -1191,8 +1221,8 @@ if (
             'negative-reported-time' { $mutatedBuildReport.reportedTotalTimeMs = -1.0 }
             'negative-size' { $mutatedBuildReport.reportedTotalSizeBytes = -1 }
             'empty-steps' { $mutatedBuildReport.steps = @() }
-            # Two elements keep this an array on both PowerShell hosts, so the
-            # per-step object check is what fails rather than the array check.
+            # Two elements keep this an array rather than an unwrapped scalar, so
+            # the per-step object check is what fails, not the array type check.
             'step-not-object' { $mutatedBuildReport.steps = @('Build player', 'Compile scripts') }
             'step-extra-property' {
                 $mutatedBuildReport.steps[0] |
@@ -1205,26 +1235,18 @@ if (
             'negative-step-depth' { $mutatedBuildReport.steps[0].depth = -1 }
             'negative-step-duration' { $mutatedBuildReport.steps[0].durationMs = -1.0 }
             'duration-type' { $mutatedBuildReport.buildDurationMs = '63000.5' }
-            default { $mutatedBuildReport.reportedTotalSizeBytes = '33000000' }
+            'size-type' { $mutatedBuildReport.reportedTotalSizeBytes = '33000000' }
+            default { throw "unhandled build report mutation $buildReportMutation" }
         }
-        $mutatedBuildReportJson = $mutatedBuildReport | ConvertTo-Json -Depth 10
-        if ($buildReportMutation -ceq 'empty-steps') {
-            # Windows PowerShell 5.1 and PowerShell 7 disagree on how an empty
-            # array property round-trips, so write the empty array literally.
-            # Step objects contain no ']', making the character-class match exact.
-            $mutatedBuildReportJson = $mutatedBuildReportJson -replace '"steps":\s*\[[^\]]*\]', '"steps": []'
-        }
-        [System.IO.File]::WriteAllText($buildReportPath, $mutatedBuildReportJson)
-        # Type mutations report the JSON path; every other mutation reports the
-        # named contract. Both categories must fail closed.
-        $expectedBuildReportFailure = if ($buildReportMutation -clike '*-type') {
-            'must be a JSON'
-        } else {
-            'Shipping build report'
-        }
+        [System.IO.File]::WriteAllText(
+            $buildReportPath,
+            ($mutatedBuildReport | ConvertTo-Json -Depth 10)
+        )
+        # A type mutation must be rejected at its own JSON path, not merely
+        # somewhere. Every other mutation reports the named contract.
         Assert-Fails "shipping build report $buildReportMutation" {
             Test-ShippingBuildReport @buildReportArguments
-        } $expectedBuildReportFailure
+        } $buildReportFailureByMutation[$buildReportMutation]
     }
     Remove-Item -LiteralPath $buildReportPath -Force
     Assert-Fails 'shipping build report must exist' {
@@ -1259,6 +1281,7 @@ if (
         BuildReportPath = $buildReportPath
         PositiveResultPath = $cellPositiveResultPath
         PlayerDirectoryManifest = $cellPlayerManifest
+        PlayerExecutableName = 'DxmShippingPlayer.exe'
         ProfileId = $profile.profileId
         ProfileSha256 = $profileSha256
         ManagedStrippingLevel = 'High'
@@ -1294,46 +1317,15 @@ if (
         [long]$cellEvidence.gameAssemblyBytes -eq 22000000 -and
         [double]$cellEvidence.positivePlayerWallClockMs -eq 1500.0 -and
         [double]$cellEvidence.mutantPlayerWallClockMs -eq 900.0 -and
-        [double]$cellEvidence.timings.warmDispatchNsPerOp -eq 21.5
+        [double]$cellEvidence.timings.dispatchLoopNsPerOp -eq 21.5
     )
-    # The matrix wrapper declares the cell contract independently of the runner
-    # that writes it. Compare the wrapper's declared names with what the real
-    # writer just produced so the SYNC note cannot rot into a silent mismatch.
-    $matrixAst = [System.Management.Automation.Language.Parser]::ParseFile(
-        $matrixRunnerPath,
-        [ref]$tokens,
-        [ref]$parseErrors
-    )
-    if (@($parseErrors).Count -gt 0) {
-        throw "run-shipping-fidelity-matrix.ps1 has parse errors: $($parseErrors.Message -join '; ')"
-    }
-    foreach ($contractVariableName in @('cellEvidencePropertyNames', 'cellTimingPropertyNames')) {
-        $assignment = $matrixAst.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-                    $node.Left.Extent.Text -ceq "`$$contractVariableName"
-            },
-            $true
-        ) | Select-Object -First 1
-        if (-not $assignment) {
-            throw "Variable '$contractVariableName' was not found in run-shipping-fidelity-matrix.ps1."
-        }
-        Invoke-Expression $assignment.Extent.Text
-    }
-    $writtenCellNames = [string[]]@($cellEvidence.PSObject.Properties.Name)
-    $declaredCellNames = [string[]]@($cellEvidencePropertyNames)
-    [Array]::Sort($writtenCellNames, [System.StringComparer]::Ordinal)
-    [Array]::Sort($declaredCellNames, [System.StringComparer]::Ordinal)
-    $writtenTimingNames = [string[]]@($cellEvidence.timings.PSObject.Properties.Name)
-    $declaredTimingNames = [string[]]@($cellTimingPropertyNames)
-    [Array]::Sort($writtenTimingNames, [System.StringComparer]::Ordinal)
-    [Array]::Sort($declaredTimingNames, [System.StringComparer]::Ordinal)
-    Assert-That 'shipping matrix declares exactly the cell contract the runner writes' (
-        ($writtenCellNames -join "`n") -ceq ($declaredCellNames -join "`n")
-    )
-    Assert-That 'shipping matrix declares exactly the timing contract the player writes' (
-        ($writtenTimingNames -join "`n") -ceq ($declaredTimingNames -join "`n")
+    # The matrix wrapper copies whatever this writer produced, so there is no
+    # second declaration of the shape that could drift from it.
+    $matrixRunnerText = Get-Content -LiteralPath $matrixRunnerPath -Raw
+    Assert-That 'shipping matrix copies the cell shape instead of redeclaring it' (
+        $matrixRunnerText.Contains('foreach ($property in $evidence.PSObject.Properties)') -and
+        -not $matrixRunnerText.Contains('cellEvidencePropertyNames') -and
+        -not $matrixRunnerText.Contains('cellTimingPropertyNames')
     )
 
     foreach ($missingPlayerFile in @('DxmShippingPlayer.exe', 'GameAssembly.dll')) {
@@ -1588,7 +1580,7 @@ if (
         -ExpectedUnityVersion '6000.3.16f1' `
         -ExpectedTopology semantic `
         -ExpectedMessageTypeCount 18 `
-        -ExpectedWarmDispatchCount 1000000
+        -ExpectedDispatchLoopCount 1000000
 
     foreach ($cardinality in @(1, 16, 256, 1000)) {
         $cardinalityResult = Copy-JsonValue -Value $positiveResult
@@ -1603,7 +1595,7 @@ if (
         $cardinalityResult.rootedUntypedShapes = @($cardinalityShapeNames)
         $cardinalityResult.typedDispatchShapes = @($cardinalityShapeNames)
         $cardinalityResult.untypedDispatchShapes = @($cardinalityShapeNames)
-        $cardinalityResult.timings.warmDispatchShape = $cardinalityShapeNames[0]
+        $cardinalityResult.timings.dispatchLoopShape = $cardinalityShapeNames[0]
         [System.IO.File]::WriteAllText($resultPath, ($cardinalityResult | ConvertTo-Json -Depth 10))
         Test-ShippingFidelityResult `
             -Path $resultPath `
@@ -1613,7 +1605,7 @@ if (
             -ExpectedUnityVersion '6000.3.16f1' `
             -ExpectedTopology cardinality `
             -ExpectedMessageTypeCount $cardinality `
-            -ExpectedWarmDispatchCount 1000000
+            -ExpectedDispatchLoopCount 1000000
     }
 
     foreach ($property in $positiveResult.GetEnumerator()) {
@@ -1644,7 +1636,7 @@ if (
                 -ExpectedUnityVersion '6000.3.16f1' `
                 -ExpectedTopology semantic `
                 -ExpectedMessageTypeCount 18 `
-                -ExpectedWarmDispatchCount 1000000
+                -ExpectedDispatchLoopCount 1000000
         } $expectedMistypeFailure
     }
     foreach ($badResultMutation in @(
@@ -1696,7 +1688,7 @@ if (
                 -ExpectedUnityVersion '6000.3.16f1' `
                 -ExpectedTopology semantic `
                 -ExpectedMessageTypeCount 18 `
-                -ExpectedWarmDispatchCount 1000000
+                -ExpectedDispatchLoopCount 1000000
         } $expectedResultFailure
     }
     $mutantResult = Copy-JsonValue -Value $positiveResult
@@ -1708,6 +1700,8 @@ if (
     $mutantResult.typedDispatchShapes = @()
     $mutantResult.untypedDispatchShapes = @()
     $mutantResult.missingRootFailureObserved = $true
+    # The mutant measures nothing, so every phase carries the -1 not-measured
+    # marker. A real 0 would claim a measurement for work that never ran.
     foreach ($idleTimingProperty in @(
         'busConstructionUs',
         'rootProbePhaseUs',
@@ -1715,15 +1709,15 @@ if (
         'firstTypedDispatchUs',
         'typedPhaseUs',
         'untypedPhaseUs',
-        'warmDispatchNsPerOp',
+        'dispatchLoopNsPerOp',
         'trimUs',
         'teardownUs'
     )) {
-        $mutantResult.timings.$idleTimingProperty = 0
+        $mutantResult.timings.$idleTimingProperty = -1
     }
-    $mutantResult.timings.firstTypedDispatchCount = 0
-    $mutantResult.timings.warmDispatchCount = 0
-    $mutantResult.timings.warmDispatchShape = ''
+    $mutantResult.timings.firstTypedDispatchCount = -1
+    $mutantResult.timings.dispatchLoopCount = -1
+    $mutantResult.timings.dispatchLoopShape = ''
     [System.IO.File]::WriteAllText($resultPath, ($mutantResult | ConvertTo-Json -Depth 10))
     Test-ShippingFidelityResult `
         -Path $resultPath `
@@ -1733,40 +1727,59 @@ if (
         -ExpectedUnityVersion '6000.3.16f1' `
         -ExpectedTopology semantic `
         -ExpectedMessageTypeCount 18 `
-        -ExpectedWarmDispatchCount 1000000
+        -ExpectedDispatchLoopCount 1000000
 
-    # A mutant that quietly performed a dispatch phase, or a positive run whose
-    # warm loop, first-dispatch count, or warm shape drifted, must fail closed.
-    $busyMutant = Copy-JsonValue -Value $mutantResult
-    $busyMutant.timings.registrationPhaseUs = 5.5
-    [System.IO.File]::WriteAllText($resultPath, ($busyMutant | ConvertTo-Json -Depth 10))
-    Assert-Fails 'shipping missing-root mutant timings must stay idle' {
+    # A mutant that reported a measurement, including a fabricated zero for a
+    # phase it never ran, must fail closed.
+    foreach ($busyMutantValue in @(5.5, 0)) {
+        $busyMutant = Copy-JsonValue -Value $mutantResult
+        $busyMutant.timings.registrationPhaseUs = $busyMutantValue
+        [System.IO.File]::WriteAllText($resultPath, ($busyMutant | ConvertTo-Json -Depth 10))
+        Assert-Fails "shipping missing-root mutant rejects a $busyMutantValue phase" {
+            Test-ShippingFidelityResult `
+                -Path $resultPath `
+                -ExpectedMode missing-root-mutant `
+                -ExpectedProfileId $profile.profileId `
+                -ExpectedProfileSha256 $profileSha256 `
+                -ExpectedUnityVersion '6000.3.16f1' `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18 `
+                -ExpectedDispatchLoopCount 1000000
+        } 'must mark every phase not measured for the missing-root mutant'
+    }
+
+    # A positive run that left a phase unmeasured must also fail closed.
+    $unmeasuredPositive = Copy-JsonValue -Value $positiveResult
+    $unmeasuredPositive.timings.trimUs = -1
+    [System.IO.File]::WriteAllText($resultPath, ($unmeasuredPositive | ConvertTo-Json -Depth 10))
+    Assert-Fails 'shipping positive result rejects an unmeasured phase' {
         Test-ShippingFidelityResult `
             -Path $resultPath `
-            -ExpectedMode missing-root-mutant `
+            -ExpectedMode positive `
             -ExpectedProfileId $profile.profileId `
             -ExpectedProfileSha256 $profileSha256 `
             -ExpectedUnityVersion '6000.3.16f1' `
             -ExpectedTopology semantic `
             -ExpectedMessageTypeCount 18 `
-            -ExpectedWarmDispatchCount 1000000
-    } 'must stay idle for the missing-root mutant'
+            -ExpectedDispatchLoopCount 1000000
+    } 'is missing measurements for: trimUs'
 
-    foreach ($timingMutation in @(
-        'missing-property',
-        'extra-property',
-        'negative-phase',
-        'zero-engine-start',
-        'zero-frequency',
-        'wrong-first-dispatch-count',
-        'wrong-warm-count',
-        'zero-warm-rate',
-        'wrong-warm-shape',
-        'phase-type',
-        'count-type',
-        'shape-type',
-        'resolution-type'
-    )) {
+    $timingFailureByMutation = [ordered]@{
+        'missing-property' = 'shippingResult.timings has unexpected JSON properties'
+        'extra-property' = 'shippingResult.timings has unexpected JSON properties'
+        'negative-phase' = 'shippingResult.timings.registrationPhaseUs must be a measured value'
+        'unmeasured-engine-start' = 'must record a non-negative engine start time'
+        'zero-frequency' = 'must record a non-negative engine start time'
+        'wrong-first-dispatch-count' = 'must record one first typed dispatch'
+        'wrong-loop-count' = 'must record one first typed dispatch'
+        'zero-loop-rate' = 'must record one first typed dispatch'
+        'wrong-loop-shape' = 'must record one first typed dispatch'
+        'phase-type' = 'shippingResult.timings.registrationPhaseUs must be a JSON number'
+        'count-type' = 'shippingResult.timings.dispatchLoopCount must be a JSON integer'
+        'shape-type' = 'shippingResult.timings.dispatchLoopShape must be a JSON string'
+        'resolution-type' = 'shippingResult.timings.stopwatchIsHighResolution must be a JSON bool'
+    }
+    foreach ($timingMutation in $timingFailureByMutation.Keys) {
         $mutatedTimingResult = Copy-JsonValue -Value $positiveResult
         $mutatedTimings = $mutatedTimingResult.timings
         if ($timingMutation -ceq 'missing-property') {
@@ -1774,27 +1787,31 @@ if (
         } elseif ($timingMutation -ceq 'extra-property') {
             $mutatedTimings | Add-Member -NotePropertyName unexpected -NotePropertyValue 1.0
         } elseif ($timingMutation -ceq 'negative-phase') {
-            $mutatedTimings.registrationPhaseUs = -1.0
-        } elseif ($timingMutation -ceq 'zero-engine-start') {
-            $mutatedTimings.engineStartToRunMs = 0
+            $mutatedTimings.registrationPhaseUs = -2.5
+        } elseif ($timingMutation -ceq 'unmeasured-engine-start') {
+            # -1 passes the shared not-measured check, so only the engine-start
+            # rule can reject it. A positive run must always read that clock.
+            $mutatedTimings.engineStartToRunMs = -1
         } elseif ($timingMutation -ceq 'zero-frequency') {
             $mutatedTimings.stopwatchFrequency = 0
         } elseif ($timingMutation -ceq 'wrong-first-dispatch-count') {
             $mutatedTimings.firstTypedDispatchCount = 2
-        } elseif ($timingMutation -ceq 'wrong-warm-count') {
-            $mutatedTimings.warmDispatchCount = 999999
-        } elseif ($timingMutation -ceq 'zero-warm-rate') {
-            $mutatedTimings.warmDispatchNsPerOp = 0
-        } elseif ($timingMutation -ceq 'wrong-warm-shape') {
-            $mutatedTimings.warmDispatchShape = 'DxmShippingPublicUntargetedStruct'
+        } elseif ($timingMutation -ceq 'wrong-loop-count') {
+            $mutatedTimings.dispatchLoopCount = 999999
+        } elseif ($timingMutation -ceq 'zero-loop-rate') {
+            $mutatedTimings.dispatchLoopNsPerOp = 0
+        } elseif ($timingMutation -ceq 'wrong-loop-shape') {
+            $mutatedTimings.dispatchLoopShape = 'DxmShippingPublicUntargetedStruct'
         } elseif ($timingMutation -ceq 'phase-type') {
             $mutatedTimings.registrationPhaseUs = '320.75'
         } elseif ($timingMutation -ceq 'count-type') {
-            $mutatedTimings.warmDispatchCount = '1000000'
+            $mutatedTimings.dispatchLoopCount = '1000000'
         } elseif ($timingMutation -ceq 'shape-type') {
-            $mutatedTimings.warmDispatchShape = $false
-        } else {
+            $mutatedTimings.dispatchLoopShape = $false
+        } elseif ($timingMutation -ceq 'resolution-type') {
             $mutatedTimings.stopwatchIsHighResolution = 'true'
+        } else {
+            throw "unhandled timing mutation $timingMutation"
         }
         [System.IO.File]::WriteAllText($resultPath, ($mutatedTimingResult | ConvertTo-Json -Depth 10))
         Assert-Fails "shipping result timings $timingMutation" {
@@ -1806,8 +1823,8 @@ if (
                 -ExpectedUnityVersion '6000.3.16f1' `
                 -ExpectedTopology semantic `
                 -ExpectedMessageTypeCount 18 `
-                -ExpectedWarmDispatchCount 1000000
-        } 'shippingResult.timings'
+                -ExpectedDispatchLoopCount 1000000
+        } $timingFailureByMutation[$timingMutation]
     }
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly

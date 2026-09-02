@@ -2649,16 +2649,14 @@ def validate_grouped_unity_correctness() -> None:
         # written before the aggregate throw so a partial matrix still uploads
         # readable evidence.
         "'shipping-cell-evidence.json'",
-        "$matrixEvidencePath = Join-Path $ArtifactsPath 'shipping-matrix-evidence.json'",
-        "failedCells = @($failedCellIds.ToArray())",
-        "cells = @($cellRows.ToArray())",
+        "'shipping-matrix-evidence.json'",
     ):
         require(
             fragment in shipping_matrix,
             f"shipping matrix: missing {fragment!r}",
         )
     require(
-        shipping_matrix.index("$matrixEvidencePath = Join-Path")
+        shipping_matrix.index("'shipping-matrix-evidence.json'")
         < shipping_matrix.index('throw "Shipping-fidelity cell failures:'),
         "shipping matrix: the evidence summary must be written before the aggregate failure",
     )
