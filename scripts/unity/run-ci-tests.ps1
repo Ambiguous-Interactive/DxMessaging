@@ -2977,9 +2977,10 @@ public static class DxmShippingFidelityBuilder
     // options. buildDurationMs is a Stopwatch around BuildPipeline.BuildPlayer;
     // reportedTotalTimeMs and the step list come from Unity's own report. The
     // start and end stamps are Unix epoch milliseconds rather than ISO 8601
-    // text: PowerShell's ConvertFrom-Json silently rehydrates ISO 8601 strings
-    // into DateTime on 7 but not on Windows PowerShell 5.1, so an integer keeps
-    // the validated type identical on both hosts.
+    // text. ConvertFrom-Json rehydrates an ISO 8601 string into a DateTime, so
+    // the reader cannot validate a text stamp as a string, and the conversion
+    // is not consistent across PowerShell versions. An integer reads back as an
+    // integer on every host.
     [Serializable]
     private sealed class BuildStepEvidence
     {
