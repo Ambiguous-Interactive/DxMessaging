@@ -245,9 +245,18 @@ if (
         )
     }
 
-    $matrixEvidence = Get-Content -LiteralPath (
+    $matrixEvidenceRaw = Get-Content -LiteralPath (
         Join-Path (Join-Path $fixtureRoot 'matrix-artifacts') 'shipping-matrix-evidence.json'
-    ) -Raw | ConvertFrom-Json
+    ) -Raw
+    # The uploaded artifact must keep list-shaped fields as JSON arrays even when
+    # one entry is present, which is the common partial-run case. A serializer
+    # that unwraps a single element would hand consumers a bare string.
+    foreach ($matrixListField in @('failedCells', 'unreadableEvidenceCells', 'cells')) {
+        Assert-That "shipping matrix serializes $matrixListField as a JSON array" (
+            [regex]::IsMatch($matrixEvidenceRaw, "`"$matrixListField`"\s*:\s*\[")
+        )
+    }
+    $matrixEvidence = $matrixEvidenceRaw | ConvertFrom-Json
     $matrixEvidenceCells = @($matrixEvidence.cells)
     $matrixFailedCells = @($matrixEvidence.failedCells)
     $matrixUnreadableCells = @($matrixEvidence.unreadableEvidenceCells)
@@ -1245,10 +1254,16 @@ if (
             'size-type' { $mutatedBuildReport.reportedTotalSizeBytes = '33000000' }
             default { throw "unhandled build report mutation $buildReportMutation" }
         }
-        [System.IO.File]::WriteAllText(
-            $buildReportPath,
-            ($mutatedBuildReport | ConvertTo-Json -Depth 10)
-        )
+        $mutatedBuildReportJson = $mutatedBuildReport | ConvertTo-Json -Depth 10
+        if (
+            $buildReportMutation -ceq 'empty-steps' -and
+            -not [regex]::IsMatch($mutatedBuildReportJson, '"steps"\s*:\s*\[\s*\]')
+        ) {
+            # Fail loudly rather than assert the wrong failure: without a real
+            # empty array this case would exercise the type check instead.
+            throw 'The empty-steps fixture did not serialize an empty JSON array.'
+        }
+        [System.IO.File]::WriteAllText($buildReportPath, $mutatedBuildReportJson)
         # A type mutation must be rejected at its own JSON path, not merely
         # somewhere. Every other mutation reports the named contract.
         Assert-Fails "shipping build report $buildReportMutation" {
