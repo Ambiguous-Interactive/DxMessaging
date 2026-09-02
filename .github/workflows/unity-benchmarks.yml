@@ -226,7 +226,10 @@ jobs:
 
       - name: Redact credentials from Unity benchmark artifacts
         id: redact_validation
-        if: always()
+        # `always()` also fires when the job aborted before checkout, where the scrubber does not
+        # exist yet. Skipping there is safe: the uploads below require this step to have succeeded,
+        # so a skip stops them too, and a run that never checked out has nothing to publish.
+        if: ${{ always() && hashFiles('scripts/unity/redact-unity-artifacts.js') != '' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -318,7 +321,10 @@ jobs:
 
       - name: Redact credentials from benchmark artifacts
         id: redact_benchmarks
-        if: always()
+        # `always()` also fires when the job aborted before checkout, where the scrubber does not
+        # exist yet. Skipping there is safe: the uploads below require this step to have succeeded,
+        # so a skip stops them too, and a run that never checked out has nothing to publish.
+        if: ${{ always() && hashFiles('scripts/unity/redact-unity-artifacts.js') != '' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
