@@ -1077,6 +1077,26 @@ if (
         } $expectedAssemblyFailure
     }
 
+    # One complete timing block shared by the cell-evidence and player-result
+    # fixtures, so both exercise the full contract rather than a subset.
+    $positiveTimings = [ordered]@{
+        engineStartToRunMs = 210.5
+        stopwatchFrequency = 10000000
+        stopwatchIsHighResolution = $true
+        busConstructionUs = 12.5
+        rootProbePhaseUs = 800.25
+        registrationPhaseUs = 320.75
+        firstTypedDispatchUs = 45.5
+        firstTypedDispatchCount = 1
+        typedPhaseUs = 90.5
+        untypedPhaseUs = 130.25
+        warmDispatchShape = 'DxmShippingPublicUntargetedClass'
+        warmDispatchCount = 1000000
+        warmDispatchNsPerOp = 21.5
+        trimUs = 60.5
+        teardownUs = 40.25
+    }
+
     $buildReportPath = Join-Path $fixtureRoot 'shipping-build-report.json'
     $buildReportStartedUtc = [datetime]::UtcNow
     $unixEpochUtc = [datetime]::new(1970, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)
@@ -1244,13 +1264,7 @@ if (
     }
     [System.IO.File]::WriteAllText(
         $cellPositiveResultPath,
-        ([ordered]@{
-            timings = [ordered]@{
-                engineStartToRunMs = 210.5
-                firstTypedDispatchUs = 45.5
-                warmDispatchNsPerOp = 21.5
-            }
-        } | ConvertTo-Json -Depth 10)
+        ([ordered]@{ timings = $positiveTimings } | ConvertTo-Json -Depth 10)
     )
     Write-ShippingCellEvidence @cellEvidenceArguments
     $cellEvidence = Get-Content -LiteralPath $cellEvidencePath -Raw | ConvertFrom-Json
@@ -1274,6 +1288,46 @@ if (
         [double]$cellEvidence.mutantPlayerWallClockMs -eq 900.0 -and
         [double]$cellEvidence.timings.warmDispatchNsPerOp -eq 21.5
     )
+    # The matrix wrapper declares the cell contract independently of the runner
+    # that writes it. Compare the wrapper's declared names with what the real
+    # writer just produced so the SYNC note cannot rot into a silent mismatch.
+    $matrixAst = [System.Management.Automation.Language.Parser]::ParseFile(
+        $matrixRunnerPath,
+        [ref]$tokens,
+        [ref]$parseErrors
+    )
+    if (@($parseErrors).Count -gt 0) {
+        throw "run-shipping-fidelity-matrix.ps1 has parse errors: $($parseErrors.Message -join '; ')"
+    }
+    foreach ($contractVariableName in @('cellEvidencePropertyNames', 'cellTimingPropertyNames')) {
+        $assignment = $matrixAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left.Extent.Text -ceq "`$$contractVariableName"
+            },
+            $true
+        ) | Select-Object -First 1
+        if (-not $assignment) {
+            throw "Variable '$contractVariableName' was not found in run-shipping-fidelity-matrix.ps1."
+        }
+        Invoke-Expression $assignment.Extent.Text
+    }
+    $writtenCellNames = [string[]]@($cellEvidence.PSObject.Properties.Name)
+    $declaredCellNames = [string[]]@($cellEvidencePropertyNames)
+    [Array]::Sort($writtenCellNames, [System.StringComparer]::Ordinal)
+    [Array]::Sort($declaredCellNames, [System.StringComparer]::Ordinal)
+    $writtenTimingNames = [string[]]@($cellEvidence.timings.PSObject.Properties.Name)
+    $declaredTimingNames = [string[]]@($cellTimingPropertyNames)
+    [Array]::Sort($writtenTimingNames, [System.StringComparer]::Ordinal)
+    [Array]::Sort($declaredTimingNames, [System.StringComparer]::Ordinal)
+    Assert-That 'shipping matrix declares exactly the cell contract the runner writes' (
+        ($writtenCellNames -join "`n") -ceq ($declaredCellNames -join "`n")
+    )
+    Assert-That 'shipping matrix declares exactly the timing contract the player writes' (
+        ($writtenTimingNames -join "`n") -ceq ($declaredTimingNames -join "`n")
+    )
+
     foreach ($missingPlayerFile in @('DxmShippingPlayer.exe', 'GameAssembly.dll')) {
         $incompleteManifest = [ordered]@{
             schemaVersion = 1
@@ -1457,23 +1511,6 @@ if (
     }
 
     $resultPath = Join-Path $fixtureRoot 'shipping-result.json'
-    $positiveTimings = [ordered]@{
-        engineStartToRunMs = 210.5
-        stopwatchFrequency = 10000000
-        stopwatchIsHighResolution = $true
-        busConstructionUs = 12.5
-        rootProbePhaseUs = 800.25
-        registrationPhaseUs = 320.75
-        firstTypedDispatchUs = 45.5
-        firstTypedDispatchCount = 1
-        typedPhaseUs = 90.5
-        untypedPhaseUs = 130.25
-        warmDispatchShape = 'DxmShippingPublicUntargetedClass'
-        warmDispatchCount = 1000000
-        warmDispatchNsPerOp = 21.5
-        trimUs = 60.5
-        teardownUs = 40.25
-    }
     $positiveResult = [ordered]@{
         schemaVersion = 3
         profileId = $profile.profileId
