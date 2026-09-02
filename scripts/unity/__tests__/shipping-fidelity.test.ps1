@@ -302,6 +302,7 @@ if (
         'Get-ExpectedShippingShapeNames',
         'Assert-ExactJsonStringArray',
         'Assert-NoShippingTestAssemblies',
+        'Get-StandalonePlayerManifest',
         'Test-ShippingAssemblyEvidence',
         'Test-ShippingBuildReport',
         'Test-ShippingStartupTimings',
@@ -1233,19 +1234,26 @@ if (
 
     $cellEvidencePath = Join-Path $fixtureRoot 'shipping-cell-evidence.json'
     $cellPositiveResultPath = Join-Path $fixtureRoot 'cell-positive-result.json'
-    $cellPlayerManifest = [ordered]@{
-        schemaVersion = 1
-        fileCount = 3
-        files = @(
-            [ordered]@{ path = 'DxmShippingPlayer.exe'; length = 640000; sha256 = ('A' * 64) },
-            [ordered]@{ path = 'GameAssembly.dll'; length = 22000000; sha256 = ('B' * 64) },
-            [ordered]@{
-                path = 'DxmShippingPlayer_Data/globalgamemanagers'
-                length = 2048
-                sha256 = ('C' * 64)
-            }
-        )
-    }
+    # Build a real player directory and hash it with the production manifest
+    # function, so the cell writer consumes the exact shape CI hands it rather
+    # than a hand-written copy that could drift.
+    $cellPlayerDirectory = Join-Path $fixtureRoot 'cell-player'
+    $cellPlayerDataDirectory = Join-Path $cellPlayerDirectory 'DxmShippingPlayer_Data'
+    New-Item -ItemType Directory -Force -Path $cellPlayerDataDirectory | Out-Null
+    $cellPlayerExePath = Join-Path $cellPlayerDirectory 'DxmShippingPlayer.exe'
+    [System.IO.File]::WriteAllBytes($cellPlayerExePath, [byte[]]::new(640000))
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $cellPlayerDirectory 'GameAssembly.dll'),
+        [byte[]]::new(22000000)
+    )
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $cellPlayerDataDirectory 'globalgamemanagers'),
+        [byte[]]::new(2048)
+    )
+    $cellPlayerManifest = Get-StandalonePlayerManifest -ExecutablePath $cellPlayerExePath
+    Assert-That 'shipping cell fixture hashes a real three-file player directory' (
+        [int]$cellPlayerManifest['fileCount'] -eq 3
+    )
     $cellEvidenceArguments = @{
         Path = $cellEvidencePath
         BuildReportPath = $buildReportPath
