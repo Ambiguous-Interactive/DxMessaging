@@ -166,6 +166,26 @@ and newest supported editors. Each profile uses an isolated project and
 artifact directory. Its evidence is correctness-only and never enters the
 published benchmark baseline.
 
+Each shipping cell also writes three diagnostic evidence files that the runner
+validates fail-closed:
+
+- `shipping-build-report.json` comes from the generated builder and the same
+  `BuildReport` as `build-options-profile.json`: build result, UTC start and
+  end, a Stopwatch duration, Unity's reported total time and size, and every
+  build step with its duration.
+- `shipping-positive.json` (schema 3) adds a `timings` object with engine start
+  to first script, bus construction, root probes, registration, first typed
+  dispatch, typed and untyped phases, a 1,000,000-emit warm loop, forced trim,
+  and teardown, all measured with `Stopwatch` inside the stripped player.
+- `shipping-cell-evidence.json` joins those with the Library cache state, the
+  editor wall clock, player byte count, and `GameAssembly.dll` size. The matrix
+  wrapper copies every cell row into `shipping-matrix-evidence.json` at the
+  artifact root and prints one table per endpoint editor.
+
+Treat these values as characterization of one clean build and one fresh player
+launch. They are not throughput rows and do not use the paired bracket
+protocol.
+
 ## Common Pitfalls
 
 - "I will publish the Debug EditMode number; it is close enough." Debug changes

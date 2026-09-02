@@ -2645,11 +2645,23 @@ def validate_grouped_unity_correctness() -> None:
         "catch {",
         "$failures.Add($failure)",
         'throw "Shipping-fidelity cell failures:',
+        # The per-endpoint build-time, size, and cold-start summary must be
+        # written before the aggregate throw so a partial matrix still uploads
+        # readable evidence.
+        "'shipping-cell-evidence.json'",
+        "$matrixEvidencePath = Join-Path $ArtifactsPath 'shipping-matrix-evidence.json'",
+        "failedCells = @($failedCellIds.ToArray())",
+        "cells = @($cellRows.ToArray())",
     ):
         require(
             fragment in shipping_matrix,
             f"shipping matrix: missing {fragment!r}",
         )
+    require(
+        shipping_matrix.index("$matrixEvidencePath = Join-Path")
+        < shipping_matrix.index('throw "Shipping-fidelity cell failures:'),
+        "shipping matrix: the evidence summary must be written before the aggregate failure",
+    )
     runner_start = shipping_matrix.find("& $RunnerPath")
     runner_end = shipping_matrix.find("    } catch {", runner_start)
     require(

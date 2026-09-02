@@ -305,7 +305,23 @@ metrics because the Release player strips the required profiler recorder (see
   manifest. The runner clears and hashes every generated project input before
   reuse. It also archives a privacy-safe hash and semantic summary of the
   resolved package lock, the exact two-assembly player inventory, loaded
-  assembly inventory, and profile evidence. This correctness slice does not
+  assembly inventory, and profile evidence. Each cell also records build-time,
+  size, and cold-start evidence. The builder writes `shipping-build-report.json`
+  from the same `BuildReport` that proves the final options: a Stopwatch
+  duration around `BuildPipeline.BuildPlayer`, Unity's reported total time and
+  size, and every build step with its duration. The positive player run records
+  engine start to first script, bus construction, the root-probe phase,
+  registration, the first typed dispatch, the typed and untyped phases, a
+  1,000,000-emit warm loop on the first message, a forced trim, and teardown.
+  The runner joins those with the Library cache state, the editor wall clock,
+  the player byte count, and the `GameAssembly.dll` size in
+  `shipping-cell-evidence.json`, and the matrix wrapper collects every cell into
+  one `shipping-matrix-evidence.json` per endpoint editor. These values are
+  characterization for the #506 protocol: they show size and build-time cliffs
+  across 1, 16, 256, and 1,000 message types, and they are never published as
+  throughput rows. Every IL2CPP build in this leg is a clean build because each
+  profile pins `cleanBuildCache`; only the editor Library cache state varies
+  between runs, and the evidence records it. This correctness slice does not
   contribute benchmark rows or change the published performance profile.
 
 - **EditMode leg (not published)** also runs in-editor under Mono with

@@ -117,6 +117,61 @@ if (
 ) {
     throw 'synthetic Minimal failure'
 }
+# Emit the same cell evidence shape the real runner writes so the matrix
+# wrapper's summary contract is exercised end to end. The low-Low semantic cell
+# writes a truncated file to prove one unusable cell fails without discarding
+# the remaining evidence.
+New-Item -ItemType Directory -Force -Path `$ArtifactsPath | Out-Null
+`$cellEvidencePath = Join-Path `$ArtifactsPath 'shipping-cell-evidence.json'
+if (
+    `$CanonicalProfilePath -clike '*-low-profile.v1.json' -and
+    `$ShippingTopology -ceq 'semantic'
+) {
+    [System.IO.File]::WriteAllText(`$cellEvidencePath, '{"schemaVersion":1}')
+    return
+}
+`$cellEvidence = [ordered]@{
+    schemaVersion = 1
+    profileId = 'mock-profile'
+    profileSha256 = ('a' * 64)
+    managedStrippingLevel = 'High'
+    topologyId = "`$ShippingTopology-`$ShippingMessageTypeCount-v1"
+    messageTypeCount = `$ShippingMessageTypeCount
+    unityVersion = `$UnityVersion
+    libraryState = 'cold'
+    editorBuildWallClockMs = 90000.0
+    buildDurationMs = 60000.0
+    reportedTotalTimeMs = 59000.0
+    reportedTotalSizeBytes = 33000000
+    buildStepCount = 12
+    playerFileCount = 40
+    playerTotalBytes = 34000000
+    playerExecutableBytes = 640000
+    gameAssemblyBytes = 22000000
+    positivePlayerWallClockMs = 1500.0
+    mutantPlayerWallClockMs = 900.0
+    timings = [ordered]@{
+        engineStartToRunMs = 210.5
+        stopwatchFrequency = 10000000
+        stopwatchIsHighResolution = `$true
+        busConstructionUs = 12.5
+        rootProbePhaseUs = 800.25
+        registrationPhaseUs = 320.75
+        firstTypedDispatchUs = 45.5
+        firstTypedDispatchCount = 1
+        typedPhaseUs = 90.5
+        untypedPhaseUs = 130.25
+        warmDispatchShape = 'DxmShippingCardinalityMessage0001'
+        warmDispatchCount = 1000000
+        warmDispatchNsPerOp = 21.5
+        trimUs = 60.5
+        teardownUs = 40.25
+    }
+}
+[System.IO.File]::WriteAllText(
+    `$cellEvidencePath,
+    ((`$cellEvidence | ConvertTo-Json -Depth 10) + "``n")
+)
 "@
     )
     Assert-Fails 'shipping matrix aggregates a first-cell failure after every profile runs' {
@@ -181,6 +236,43 @@ if (
         )
     }
 
+    $matrixEvidence = Get-Content -LiteralPath (
+        Join-Path (Join-Path $fixtureRoot 'matrix-artifacts') 'shipping-matrix-evidence.json'
+    ) -Raw | ConvertFrom-Json
+    $matrixEvidenceCells = @($matrixEvidence.cells)
+    $matrixFailedCells = @($matrixEvidence.failedCells)
+    $expectedFailedCells = @('minimal-semantic-18', 'low-semantic-18')
+    Assert-That 'shipping matrix summarizes every completed cell and names the failed cells' (
+        [int]$matrixEvidence.schemaVersion -eq 1 -and
+        $matrixEvidence.unityVersion -ceq '6000.3.16f1' -and
+        [int]$matrixEvidence.cellCount -eq $expectedMatrixCases.Count -and
+        [int]$matrixEvidence.completedCellCount -eq ($expectedMatrixCases.Count - $expectedFailedCells.Count) -and
+        $matrixEvidenceCells.Count -eq ($expectedMatrixCases.Count - $expectedFailedCells.Count) -and
+        ($matrixFailedCells -join "`n") -ceq ($expectedFailedCells -join "`n")
+    )
+    $matrixEvidenceCellIds = @($matrixEvidenceCells | ForEach-Object { $_.cellId })
+    $expectedMatrixEvidenceCellIds = @(
+        $expectedMatrixCases |
+            ForEach-Object { $_.Level } |
+            Where-Object { $expectedFailedCells -cnotcontains $_ }
+    )
+    Assert-That 'shipping matrix keeps completed cells in dependency order' (
+        ($matrixEvidenceCellIds -join "`n") -ceq ($expectedMatrixEvidenceCellIds -join "`n")
+    )
+    $firstMatrixCell = $matrixEvidenceCells[0]
+    Assert-That 'shipping matrix copies each cell build, size, and cold-start row verbatim' (
+        $firstMatrixCell.cellId -ceq 'minimal-cardinality-1' -and
+        [int]$firstMatrixCell.messageTypeCount -eq 1 -and
+        $firstMatrixCell.topologyId -ceq 'cardinality-1-v1' -and
+        $firstMatrixCell.libraryState -ceq 'cold' -and
+        [double]$firstMatrixCell.buildDurationMs -eq 60000.0 -and
+        [double]$firstMatrixCell.editorBuildWallClockMs -eq 90000.0 -and
+        [long]$firstMatrixCell.playerTotalBytes -eq 34000000 -and
+        [long]$firstMatrixCell.gameAssemblyBytes -eq 22000000 -and
+        [double]$firstMatrixCell.timings.engineStartToRunMs -eq 210.5 -and
+        [double]$firstMatrixCell.timings.warmDispatchNsPerOp -eq 21.5
+    )
+
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
     Assert-That 'cardinality generation uses PowerShell 5.1-safe typed phase call lists' (
         $runnerText.Contains('$probeCalls = [System.Collections.Generic.List[string]]::new()') -and
@@ -203,6 +295,7 @@ if (
         'Resolve-FullPath',
         'ConvertTo-UnityFileUriPath',
         'Test-IsReparsePoint',
+        'Write-CiNotice',
         'Write-JsonArtifact',
         'Assert-ExactJsonPropertyNames',
         'Assert-JsonValueType',
@@ -210,6 +303,9 @@ if (
         'Assert-ExactJsonStringArray',
         'Assert-NoShippingTestAssemblies',
         'Test-ShippingAssemblyEvidence',
+        'Test-ShippingBuildReport',
+        'Test-ShippingStartupTimings',
+        'Write-ShippingCellEvidence',
         'Assert-ShippingPlayerDirectoryManifest',
         'Test-ShippingPlayerManifestEvidence',
         'Write-ShippingPackageResolutionEvidence',
@@ -288,6 +384,49 @@ if (
         )
     }
 
+    $builderSourceText = Get-Content -LiteralPath (
+        Join-Path (Join-Path $fixtureRoot 'profile-high-project') 'Assets/Editor/DxmShippingFidelityBuilder.cs'
+    ) -Raw
+    $stopwatchStartIndex = $builderSourceText.IndexOf(
+        'System.Diagnostics.Stopwatch buildStopwatch = System.Diagnostics.Stopwatch.StartNew();',
+        [StringComparison]::Ordinal
+    )
+    $builderBuildPlayerIndex = $builderSourceText.IndexOf(
+        'BuildPipeline.BuildPlayer(options)',
+        [StringComparison]::Ordinal
+    )
+    $stopwatchStopIndex = $builderSourceText.IndexOf(
+        'buildStopwatch.Stop();',
+        [StringComparison]::Ordinal
+    )
+    $writeReportIndex = $builderSourceText.IndexOf(
+        'WriteBuildReportEvidence(',
+        [StringComparison]::Ordinal
+    )
+    $builderResultCheckIndex = $builderSourceText.IndexOf(
+        'if (report.summary.result != BuildResult.Succeeded)',
+        [StringComparison]::Ordinal
+    )
+    Assert-That 'shipping builder times only BuildPipeline and writes its report before the result check' (
+        $stopwatchStartIndex -ge 0 -and
+        $builderBuildPlayerIndex -gt $stopwatchStartIndex -and
+        $stopwatchStopIndex -gt $builderBuildPlayerIndex -and
+        $writeReportIndex -gt $stopwatchStopIndex -and
+        $builderResultCheckIndex -gt $writeReportIndex -and
+        $builderSourceText.Contains('RequireEnvironmentVariable("DXM_SHIPPING_BUILD_REPORT_PATH")') -and
+        $builderSourceText.Contains('public string topologyId = "semantic-18-v1";') -and
+        $builderSourceText.Contains('public int messageTypeCount = 18;') -and
+        $builderSourceText.Contains('reportedTotalSizeBytes = (long)report.summary.totalSize') -and
+        $builderSourceText.Contains('reportedTotalTimeMs = report.summary.totalTime.TotalMilliseconds')
+    )
+    Assert-That 'shipping runner passes the build report path and clears it afterwards' (
+        [regex]::Matches(
+            $runnerText,
+            '\$env:DXM_SHIPPING_BUILD_REPORT_PATH = \$shippingBuildReportPath'
+        ).Count -eq 1 -and
+        [regex]::Matches($runnerText, "'DXM_SHIPPING_BUILD_REPORT_PATH'").Count -eq 2
+    )
+
     foreach ($cardinality in @(1, 16, 256, 1000)) {
         $cardinalityProjectPath = Join-Path $fixtureRoot "cardinality-$cardinality-project"
         $cardinalityArtifactsPath = Join-Path $fixtureRoot "cardinality-$cardinality-artifacts"
@@ -353,6 +492,16 @@ if (
         Assert-That "cardinality $cardinality binds its result evidence to the topology" (
             $cardinalityPlayerSource.Contains("public string topologyId = `"cardinality-$cardinality-v1`";") -and
             $cardinalityPlayerSource.Contains("public int messageTypeCount = $cardinality;")
+        )
+        Assert-That "cardinality $cardinality warms and times the first generated message" (
+            $cardinalitySource.Contains('DxmShippingCardinalityMessage0001 firstMessage = default;') -and
+            $cardinalitySource.Contains('bus.UntargetedBroadcast(ref firstMessage);') -and
+            $cardinalitySource.Contains('for (int i = 0; i < WarmDispatchIterations; i++)') -and
+            $cardinalitySource.Contains(
+                'RecordWarmDispatch(timings, "DxmShippingCardinalityMessage0001", warmMicroseconds);'
+            ) -and
+            $cardinalitySource.Contains('timings.trimUs = ElapsedMicroseconds(phaseStart);') -and
+            $cardinalitySource.Contains('timings.teardownUs = ElapsedMicroseconds(phaseStart);')
         )
         $cardinalityInputManifest = Get-Content -LiteralPath (
             Join-Path $cardinalityArtifactsPath 'shipping-project-inputs.json'
@@ -738,16 +887,26 @@ if (
     )
     $rootStart = $playerText.IndexOf('List<string> rootedUntypedShapes', [StringComparison]::Ordinal)
     $rootEnd = $playerText.IndexOf('long rootedUntypedProbeCount', $rootStart, [StringComparison]::Ordinal)
-    $typedStart = $playerText.IndexOf('s_UntypedPhase = false;', $rootEnd, [StringComparison]::Ordinal)
-    $typedEnd = $playerText.IndexOf('s_UntypedPhase = true;', $typedStart, [StringComparison]::Ordinal)
+    $firstTypedStart = $playerText.IndexOf('s_Phase = PhaseFirstTyped;', $rootEnd, [StringComparison]::Ordinal)
+    $typedStart = $playerText.IndexOf('s_Phase = PhaseTyped;', $firstTypedStart, [StringComparison]::Ordinal)
+    $typedEnd = $playerText.IndexOf('s_Phase = PhaseUntyped;', $typedStart, [StringComparison]::Ordinal)
     $untypedEnd = $playerText.IndexOf('result.typedDispatchCount', $typedEnd, [StringComparison]::Ordinal)
     Assert-That 'shipping player exposes ordered source segments for every dispatch phase' (
         $rootStart -ge 0 -and $rootEnd -gt $rootStart -and
-        $typedStart -gt $rootEnd -and $typedEnd -gt $typedStart -and $untypedEnd -gt $typedEnd
+        $firstTypedStart -gt $rootEnd -and $typedStart -gt $firstTypedStart -and
+        $typedEnd -gt $typedStart -and $untypedEnd -gt $typedEnd
     )
     $rootSegment = $playerText.Substring($rootStart, $rootEnd - $rootStart)
+    $firstTypedSegment = $playerText.Substring($firstTypedStart, $typedStart - $firstTypedStart)
     $typedSegment = $playerText.Substring($typedStart, $typedEnd - $typedStart)
     $untypedSegment = $playerText.Substring($typedEnd, $untypedEnd - $typedEnd)
+    Assert-That 'shipping player measures exactly one first typed dispatch before the typed phase' (
+        [regex]::Matches(
+            $firstTypedSegment,
+            [regex]::Escape('bus.UntargetedBroadcast(ref publicUntargetedClass);')
+        ).Count -eq 1 -and
+        $firstTypedSegment.Contains('timings.firstTypedDispatchUs = ElapsedMicroseconds(phaseStart);')
+    )
     foreach ($shapeCase in $shapeCases) {
         $type = $shapeCase.Type
         $variable = $shapeCase.Variable
@@ -825,6 +984,27 @@ if (
         $playerText.Contains('private static string SerializeStringArray(string[] values)') -and
         $playerText.Contains('File.WriteAllText(path, json);')
     )
+    Assert-That 'shipping player records every cold-start phase with Stopwatch' (
+        $playerText.Contains('private const int WarmDispatchIterations = 1000000;') -and
+        $playerText.Contains('timings.busConstructionUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.rootProbePhaseUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.registrationPhaseUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.firstTypedDispatchUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.typedPhaseUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.untypedPhaseUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.trimUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('timings.teardownUs = ElapsedMicroseconds(phaseStart);') -and
+        $playerText.Contains('_ = bus.Trim(true);') -and
+        $playerText.Contains('result.timings.engineStartToRunMs = engineStartToRunMs;')
+    )
+    Assert-That 'shipping player counts the first and warm dispatch phases separately' (
+        $playerText.Contains('public int schemaVersion = 3;') -and
+        $playerText.Contains('s_Phase = PhaseFirstTyped;') -and
+        $playerText.Contains('s_Phase = PhaseWarm;') -and
+        -not $playerText.Contains('s_UntypedPhase') -and
+        $playerText.Contains('if (s_FirstTypedDispatchCount != 1 || s_TypedDispatchCount != 18') -and
+        $playerText.Contains('throw new InvalidOperationException("Shipping timing values must be finite numbers.");')
+    )
 
     $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
     $profileSha256 = (Get-FileHash -LiteralPath $profilePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -895,6 +1075,216 @@ if (
                 -ExpectedProfileSha256 $profileSha256 `
                 -ExpectedUnityVersion '6000.3.16f1'
         } $expectedAssemblyFailure
+    }
+
+    $buildReportPath = Join-Path $fixtureRoot 'shipping-build-report.json'
+    $buildReportStartedUtc = [datetime]::UtcNow
+    $unixEpochUtc = [datetime]::new(1970, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)
+    $buildReportStartedUnixMs = [long](($buildReportStartedUtc.ToUniversalTime()) - $unixEpochUtc).TotalMilliseconds
+    $buildReport = [ordered]@{
+        schemaVersion = 1
+        profileId = $profile.profileId
+        profileSha256 = $profileSha256
+        topologyId = 'semantic-18-v1'
+        messageTypeCount = 18
+        unityVersion = '6000.3.16f1'
+        buildResult = 'Succeeded'
+        buildStartedUnixMs = $buildReportStartedUnixMs + 2000
+        buildEndedUnixMs = $buildReportStartedUnixMs + 65000
+        buildDurationMs = 63000.5
+        reportedTotalTimeMs = 62000.25
+        reportedTotalSizeBytes = 33000000
+        steps = @(
+            [ordered]@{ name = 'Build player'; depth = 0; durationMs = 60000.5 },
+            [ordered]@{ name = 'Compile scripts'; depth = 1; durationMs = 2000.25 }
+        )
+    }
+    $buildReportArguments = @{
+        Path = $buildReportPath
+        ExpectedProfileId = $profile.profileId
+        ExpectedProfileSha256 = $profileSha256
+        ExpectedUnityVersion = '6000.3.16f1'
+        ExpectedTopology = 'semantic'
+        ExpectedMessageTypeCount = 18
+        BuildStartedUtc = $buildReportStartedUtc
+    }
+    [System.IO.File]::WriteAllText($buildReportPath, ($buildReport | ConvertTo-Json -Depth 10))
+    Test-ShippingBuildReport @buildReportArguments
+    # An integral JSON duration must still validate: ConvertFrom-Json types 63000
+    # as [long] and 63000.5 as [double], and both are numbers.
+    $integralBuildReport = Copy-JsonValue -Value $buildReport
+    $integralBuildReport.buildDurationMs = 63000
+    $integralBuildReport.reportedTotalTimeMs = 0
+    $integralBuildReport.steps[0].durationMs = 0
+    [System.IO.File]::WriteAllText($buildReportPath, ($integralBuildReport | ConvertTo-Json -Depth 10))
+    Test-ShippingBuildReport @buildReportArguments
+    foreach ($buildReportMutation in @(
+        'missing-property',
+        'extra-property',
+        'wrong-schema',
+        'wrong-profile',
+        'wrong-topology',
+        'wrong-count',
+        'wrong-unity',
+        'failed-result',
+        'start-type',
+        'end-type',
+        'stale-start',
+        'inverted-range',
+        'zero-duration',
+        'negative-reported-time',
+        'negative-size',
+        'empty-steps',
+        'step-not-object',
+        'step-extra-property',
+        'step-missing-property',
+        'step-name-type',
+        'step-depth-type',
+        'step-duration-type',
+        'negative-step-depth',
+        'negative-step-duration',
+        'duration-type',
+        'size-type'
+    )) {
+        $mutatedBuildReport = Copy-JsonValue -Value $buildReport
+        switch ($buildReportMutation) {
+            'missing-property' { $mutatedBuildReport.PSObject.Properties.Remove('steps') }
+            'extra-property' {
+                $mutatedBuildReport | Add-Member -NotePropertyName unexpected -NotePropertyValue $true
+            }
+            'wrong-schema' { $mutatedBuildReport.schemaVersion = 2 }
+            'wrong-profile' { $mutatedBuildReport.profileId = 'canonical-il2cpp-verdict-player-v1' }
+            'wrong-topology' { $mutatedBuildReport.topologyId = 'cardinality-18-v1' }
+            'wrong-count' { $mutatedBuildReport.messageTypeCount = 16 }
+            'wrong-unity' { $mutatedBuildReport.unityVersion = '2021.3.45f1' }
+            'failed-result' { $mutatedBuildReport.buildResult = 'Failed' }
+            'start-type' { $mutatedBuildReport.buildStartedUnixMs = '1756000000000' }
+            'end-type' { $mutatedBuildReport.buildEndedUnixMs = 1.5 }
+            'stale-start' {
+                $mutatedBuildReport.buildStartedUnixMs = $buildReportStartedUnixMs - 600000
+            }
+            'inverted-range' {
+                $mutatedBuildReport.buildEndedUnixMs = $buildReportStartedUnixMs + 1000
+            }
+            'zero-duration' { $mutatedBuildReport.buildDurationMs = 0 }
+            'negative-reported-time' { $mutatedBuildReport.reportedTotalTimeMs = -1.0 }
+            'negative-size' { $mutatedBuildReport.reportedTotalSizeBytes = -1 }
+            'empty-steps' { $mutatedBuildReport.steps = @() }
+            # Two elements keep this an array on both PowerShell hosts, so the
+            # per-step object check is what fails rather than the array check.
+            'step-not-object' { $mutatedBuildReport.steps = @('Build player', 'Compile scripts') }
+            'step-extra-property' {
+                $mutatedBuildReport.steps[0] |
+                    Add-Member -NotePropertyName unexpected -NotePropertyValue $true
+            }
+            'step-missing-property' { $mutatedBuildReport.steps[0].PSObject.Properties.Remove('depth') }
+            'step-name-type' { $mutatedBuildReport.steps[0].name = $false }
+            'step-depth-type' { $mutatedBuildReport.steps[0].depth = '0' }
+            'step-duration-type' { $mutatedBuildReport.steps[0].durationMs = '60000.5' }
+            'negative-step-depth' { $mutatedBuildReport.steps[0].depth = -1 }
+            'negative-step-duration' { $mutatedBuildReport.steps[0].durationMs = -1.0 }
+            'duration-type' { $mutatedBuildReport.buildDurationMs = '63000.5' }
+            default { $mutatedBuildReport.reportedTotalSizeBytes = '33000000' }
+        }
+        $mutatedBuildReportJson = $mutatedBuildReport | ConvertTo-Json -Depth 10
+        if ($buildReportMutation -ceq 'empty-steps') {
+            # Windows PowerShell 5.1 and PowerShell 7 disagree on how an empty
+            # array property round-trips, so write the empty array literally.
+            # Step objects contain no ']', making the character-class match exact.
+            $mutatedBuildReportJson = $mutatedBuildReportJson -replace '"steps":\s*\[[^\]]*\]', '"steps": []'
+        }
+        [System.IO.File]::WriteAllText($buildReportPath, $mutatedBuildReportJson)
+        # Type mutations report the JSON path; every other mutation reports the
+        # named contract. Both categories must fail closed.
+        $expectedBuildReportFailure = if ($buildReportMutation -clike '*-type') {
+            'must be a JSON'
+        } else {
+            'Shipping build report'
+        }
+        Assert-Fails "shipping build report $buildReportMutation" {
+            Test-ShippingBuildReport @buildReportArguments
+        } $expectedBuildReportFailure
+    }
+    Remove-Item -LiteralPath $buildReportPath -Force
+    Assert-Fails 'shipping build report must exist' {
+        Test-ShippingBuildReport @buildReportArguments
+    } 'did not write a build report'
+    [System.IO.File]::WriteAllText($buildReportPath, ($buildReport | ConvertTo-Json -Depth 10))
+
+    $cellEvidencePath = Join-Path $fixtureRoot 'shipping-cell-evidence.json'
+    $cellPositiveResultPath = Join-Path $fixtureRoot 'cell-positive-result.json'
+    $cellPlayerManifest = [ordered]@{
+        schemaVersion = 1
+        fileCount = 3
+        files = @(
+            [ordered]@{ path = 'DxmShippingPlayer.exe'; length = 640000; sha256 = ('A' * 64) },
+            [ordered]@{ path = 'GameAssembly.dll'; length = 22000000; sha256 = ('B' * 64) },
+            [ordered]@{
+                path = 'DxmShippingPlayer_Data/globalgamemanagers'
+                length = 2048
+                sha256 = ('C' * 64)
+            }
+        )
+    }
+    $cellEvidenceArguments = @{
+        Path = $cellEvidencePath
+        BuildReportPath = $buildReportPath
+        PositiveResultPath = $cellPositiveResultPath
+        PlayerDirectoryManifest = $cellPlayerManifest
+        ProfileId = $profile.profileId
+        ProfileSha256 = $profileSha256
+        ManagedStrippingLevel = 'High'
+        Topology = 'semantic'
+        MessageTypeCount = 18
+        UnityVersion = '6000.3.16f1'
+        LibraryState = 'cold'
+        EditorBuildWallClockMs = 90000.0
+        PositivePlayerWallClockMs = 1500.0
+        MutantPlayerWallClockMs = 900.0
+    }
+    [System.IO.File]::WriteAllText(
+        $cellPositiveResultPath,
+        ([ordered]@{
+            timings = [ordered]@{
+                engineStartToRunMs = 210.5
+                firstTypedDispatchUs = 45.5
+                warmDispatchNsPerOp = 21.5
+            }
+        } | ConvertTo-Json -Depth 10)
+    )
+    Write-ShippingCellEvidence @cellEvidenceArguments
+    $cellEvidence = Get-Content -LiteralPath $cellEvidencePath -Raw | ConvertFrom-Json
+    Assert-That 'shipping cell evidence joins build, size, and cold-start observations' (
+        [int]$cellEvidence.schemaVersion -eq 1 -and
+        $cellEvidence.profileId -ceq $profile.profileId -and
+        $cellEvidence.managedStrippingLevel -ceq 'High' -and
+        $cellEvidence.topologyId -ceq 'semantic-18-v1' -and
+        [int]$cellEvidence.messageTypeCount -eq 18 -and
+        $cellEvidence.libraryState -ceq 'cold' -and
+        [double]$cellEvidence.editorBuildWallClockMs -eq 90000.0 -and
+        [double]$cellEvidence.buildDurationMs -eq 63000.5 -and
+        [double]$cellEvidence.reportedTotalTimeMs -eq 62000.25 -and
+        [long]$cellEvidence.reportedTotalSizeBytes -eq 33000000 -and
+        [int]$cellEvidence.buildStepCount -eq 2 -and
+        [int]$cellEvidence.playerFileCount -eq 3 -and
+        [long]$cellEvidence.playerTotalBytes -eq 22642048 -and
+        [long]$cellEvidence.playerExecutableBytes -eq 640000 -and
+        [long]$cellEvidence.gameAssemblyBytes -eq 22000000 -and
+        [double]$cellEvidence.positivePlayerWallClockMs -eq 1500.0 -and
+        [double]$cellEvidence.mutantPlayerWallClockMs -eq 900.0 -and
+        [double]$cellEvidence.timings.warmDispatchNsPerOp -eq 21.5
+    )
+    foreach ($missingPlayerFile in @('DxmShippingPlayer.exe', 'GameAssembly.dll')) {
+        $incompleteManifest = [ordered]@{
+            schemaVersion = 1
+            fileCount = 2
+            files = @($cellPlayerManifest['files'] | Where-Object { $_['path'] -cne $missingPlayerFile })
+        }
+        $incompleteArguments = $cellEvidenceArguments.Clone()
+        $incompleteArguments.PlayerDirectoryManifest = $incompleteManifest
+        Assert-Fails "shipping cell evidence rejects a player without $missingPlayerFile" {
+            Write-ShippingCellEvidence @incompleteArguments
+        } 'must contain DxmShippingPlayer.exe and the IL2CPP GameAssembly.dll'
     }
 
     $playerManifestPath = Join-Path $fixtureRoot 'shipping-player-manifest.json'
@@ -1067,8 +1457,25 @@ if (
     }
 
     $resultPath = Join-Path $fixtureRoot 'shipping-result.json'
+    $positiveTimings = [ordered]@{
+        engineStartToRunMs = 210.5
+        stopwatchFrequency = 10000000
+        stopwatchIsHighResolution = $true
+        busConstructionUs = 12.5
+        rootProbePhaseUs = 800.25
+        registrationPhaseUs = 320.75
+        firstTypedDispatchUs = 45.5
+        firstTypedDispatchCount = 1
+        typedPhaseUs = 90.5
+        untypedPhaseUs = 130.25
+        warmDispatchShape = 'DxmShippingPublicUntargetedClass'
+        warmDispatchCount = 1000000
+        warmDispatchNsPerOp = 21.5
+        trimUs = 60.5
+        teardownUs = 40.25
+    }
     $positiveResult = [ordered]@{
-        schemaVersion = 2
+        schemaVersion = 3
         profileId = $profile.profileId
         profileSha256 = $profileSha256
         topologyId = 'semantic-18-v1'
@@ -1087,6 +1494,7 @@ if (
         failureType = ''
         failureMessage = ''
         loadedAssemblies = @('Assembly-CSharp', 'WallstopStudios.DxMessaging')
+        timings = $positiveTimings
     }
     [System.IO.File]::WriteAllText($resultPath, ($positiveResult | ConvertTo-Json -Depth 10))
     Test-ShippingFidelityResult `
@@ -1096,7 +1504,8 @@ if (
         -ExpectedProfileSha256 $profileSha256 `
         -ExpectedUnityVersion '6000.3.16f1' `
         -ExpectedTopology semantic `
-        -ExpectedMessageTypeCount 18
+        -ExpectedMessageTypeCount 18 `
+        -ExpectedWarmDispatchCount 1000000
 
     foreach ($cardinality in @(1, 16, 256, 1000)) {
         $cardinalityResult = Copy-JsonValue -Value $positiveResult
@@ -1111,6 +1520,7 @@ if (
         $cardinalityResult.rootedUntypedShapes = @($cardinalityShapeNames)
         $cardinalityResult.typedDispatchShapes = @($cardinalityShapeNames)
         $cardinalityResult.untypedDispatchShapes = @($cardinalityShapeNames)
+        $cardinalityResult.timings.warmDispatchShape = $cardinalityShapeNames[0]
         [System.IO.File]::WriteAllText($resultPath, ($cardinalityResult | ConvertTo-Json -Depth 10))
         Test-ShippingFidelityResult `
             -Path $resultPath `
@@ -1119,7 +1529,8 @@ if (
             -ExpectedProfileSha256 $profileSha256 `
             -ExpectedUnityVersion '6000.3.16f1' `
             -ExpectedTopology cardinality `
-            -ExpectedMessageTypeCount $cardinality
+            -ExpectedMessageTypeCount $cardinality `
+            -ExpectedWarmDispatchCount 1000000
     }
 
     foreach ($property in $positiveResult.GetEnumerator()) {
@@ -1130,10 +1541,17 @@ if (
             $property.Value.ToString()
         } elseif ($property.Value -is [string]) {
             $false
+        } elseif ($property.Key -ceq 'timings') {
+            'not-an-object'
         } else {
             [string]$property.Value[0]
         }
         [System.IO.File]::WriteAllText($resultPath, ($mistypedResult | ConvertTo-Json -Depth 10))
+        $expectedMistypeFailure = if ($property.Key -ceq 'timings') {
+            'must be a JSON object'
+        } else {
+            'must be a JSON'
+        }
         Assert-Fails "shipping result $($property.Key) type" {
             Test-ShippingFidelityResult `
                 -Path $resultPath `
@@ -1142,8 +1560,9 @@ if (
                 -ExpectedProfileSha256 $profileSha256 `
                 -ExpectedUnityVersion '6000.3.16f1' `
                 -ExpectedTopology semantic `
-                -ExpectedMessageTypeCount 18
-        } 'must be a JSON'
+                -ExpectedMessageTypeCount 18 `
+                -ExpectedWarmDispatchCount 1000000
+        } $expectedMistypeFailure
     }
     foreach ($badResultMutation in @(
         'failed',
@@ -1193,7 +1612,8 @@ if (
                 -ExpectedProfileSha256 $profileSha256 `
                 -ExpectedUnityVersion '6000.3.16f1' `
                 -ExpectedTopology semantic `
-                -ExpectedMessageTypeCount 18
+                -ExpectedMessageTypeCount 18 `
+                -ExpectedWarmDispatchCount 1000000
         } $expectedResultFailure
     }
     $mutantResult = Copy-JsonValue -Value $positiveResult
@@ -1205,6 +1625,22 @@ if (
     $mutantResult.typedDispatchShapes = @()
     $mutantResult.untypedDispatchShapes = @()
     $mutantResult.missingRootFailureObserved = $true
+    foreach ($idleTimingProperty in @(
+        'busConstructionUs',
+        'rootProbePhaseUs',
+        'registrationPhaseUs',
+        'firstTypedDispatchUs',
+        'typedPhaseUs',
+        'untypedPhaseUs',
+        'warmDispatchNsPerOp',
+        'trimUs',
+        'teardownUs'
+    )) {
+        $mutantResult.timings.$idleTimingProperty = 0
+    }
+    $mutantResult.timings.firstTypedDispatchCount = 0
+    $mutantResult.timings.warmDispatchCount = 0
+    $mutantResult.timings.warmDispatchShape = ''
     [System.IO.File]::WriteAllText($resultPath, ($mutantResult | ConvertTo-Json -Depth 10))
     Test-ShippingFidelityResult `
         -Path $resultPath `
@@ -1213,7 +1649,83 @@ if (
         -ExpectedProfileSha256 $profileSha256 `
         -ExpectedUnityVersion '6000.3.16f1' `
         -ExpectedTopology semantic `
-        -ExpectedMessageTypeCount 18
+        -ExpectedMessageTypeCount 18 `
+        -ExpectedWarmDispatchCount 1000000
+
+    # A mutant that quietly performed a dispatch phase, or a positive run whose
+    # warm loop, first-dispatch count, or warm shape drifted, must fail closed.
+    $busyMutant = Copy-JsonValue -Value $mutantResult
+    $busyMutant.timings.registrationPhaseUs = 5.5
+    [System.IO.File]::WriteAllText($resultPath, ($busyMutant | ConvertTo-Json -Depth 10))
+    Assert-Fails 'shipping missing-root mutant timings must stay idle' {
+        Test-ShippingFidelityResult `
+            -Path $resultPath `
+            -ExpectedMode missing-root-mutant `
+            -ExpectedProfileId $profile.profileId `
+            -ExpectedProfileSha256 $profileSha256 `
+            -ExpectedUnityVersion '6000.3.16f1' `
+            -ExpectedTopology semantic `
+            -ExpectedMessageTypeCount 18 `
+            -ExpectedWarmDispatchCount 1000000
+    } 'must stay idle for the missing-root mutant'
+
+    foreach ($timingMutation in @(
+        'missing-property',
+        'extra-property',
+        'negative-phase',
+        'zero-engine-start',
+        'zero-frequency',
+        'wrong-first-dispatch-count',
+        'wrong-warm-count',
+        'zero-warm-rate',
+        'wrong-warm-shape',
+        'phase-type',
+        'count-type',
+        'shape-type',
+        'resolution-type'
+    )) {
+        $mutatedTimingResult = Copy-JsonValue -Value $positiveResult
+        $mutatedTimings = $mutatedTimingResult.timings
+        if ($timingMutation -ceq 'missing-property') {
+            $mutatedTimings.PSObject.Properties.Remove('trimUs')
+        } elseif ($timingMutation -ceq 'extra-property') {
+            $mutatedTimings | Add-Member -NotePropertyName unexpected -NotePropertyValue 1.0
+        } elseif ($timingMutation -ceq 'negative-phase') {
+            $mutatedTimings.registrationPhaseUs = -1.0
+        } elseif ($timingMutation -ceq 'zero-engine-start') {
+            $mutatedTimings.engineStartToRunMs = 0
+        } elseif ($timingMutation -ceq 'zero-frequency') {
+            $mutatedTimings.stopwatchFrequency = 0
+        } elseif ($timingMutation -ceq 'wrong-first-dispatch-count') {
+            $mutatedTimings.firstTypedDispatchCount = 2
+        } elseif ($timingMutation -ceq 'wrong-warm-count') {
+            $mutatedTimings.warmDispatchCount = 999999
+        } elseif ($timingMutation -ceq 'zero-warm-rate') {
+            $mutatedTimings.warmDispatchNsPerOp = 0
+        } elseif ($timingMutation -ceq 'wrong-warm-shape') {
+            $mutatedTimings.warmDispatchShape = 'DxmShippingPublicUntargetedStruct'
+        } elseif ($timingMutation -ceq 'phase-type') {
+            $mutatedTimings.registrationPhaseUs = '320.75'
+        } elseif ($timingMutation -ceq 'count-type') {
+            $mutatedTimings.warmDispatchCount = '1000000'
+        } elseif ($timingMutation -ceq 'shape-type') {
+            $mutatedTimings.warmDispatchShape = $false
+        } else {
+            $mutatedTimings.stopwatchIsHighResolution = 'true'
+        }
+        [System.IO.File]::WriteAllText($resultPath, ($mutatedTimingResult | ConvertTo-Json -Depth 10))
+        Assert-Fails "shipping result timings $timingMutation" {
+            Test-ShippingFidelityResult `
+                -Path $resultPath `
+                -ExpectedMode positive `
+                -ExpectedProfileId $profile.profileId `
+                -ExpectedProfileSha256 $profileSha256 `
+                -ExpectedUnityVersion '6000.3.16f1' `
+                -ExpectedTopology semantic `
+                -ExpectedMessageTypeCount 18 `
+                -ExpectedWarmDispatchCount 1000000
+        } 'shippingResult.timings'
+    }
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly
     foreach ($mutation in @(
