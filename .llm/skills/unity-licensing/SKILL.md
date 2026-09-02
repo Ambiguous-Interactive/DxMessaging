@@ -53,7 +53,9 @@ Anti-patterns: returning the license only on the success path; dropping the `if:
 
 ### Security
 
-Never echo or log the serial or password. They are passed as Unity CLI arguments only - not printed, not written to an artifact, not added to a shell trace. License activation and return logs go to `RUNNER_TEMP`, never into uploaded artifacts, so a credential cannot leak through a downloadable log.
+Never echo or log the serial or password. They are passed as Unity CLI arguments only - not printed, not written to an artifact, not added to a shell trace. License activation and return logs go to `RUNNER_TEMP`, never into uploaded artifacts.
+
+Keeping activation logs out of the artifact tree is necessary but not sufficient. Unity also writes its license identity into the ordinary run logs, `unity.log` and `configure.log`, which every Unity job uploads. GitHub masks a registered secret in a rendered job log but never in the bytes of an uploaded artifact, so on a public repository those logs published the serial to any downloader until run 33581438234. Every Unity artifact upload must therefore be preceded, in the same job, by the `./.github/actions/redact-unity-artifacts` step covering the uploaded path. `scripts/__tests__/unity-artifact-redaction.test.js` asserts that invariant, and `scripts/unity/credential-patterns.js` is the one list of shapes both the redactor and the evidence-bundle sealer use. Do not add a Unity artifact upload without a redaction step in front of it.
 
 ### The seat-limit tradeoff, stated honestly
 
