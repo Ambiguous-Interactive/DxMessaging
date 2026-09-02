@@ -14,7 +14,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { looksBinary, redactCredentials } = require("./credential-patterns.js");
+const { decodeText, encodeText, redactCredentials } = require("./credential-patterns.js");
 
 /** Larger than any Unity log this repository produces, and small enough to read into memory. */
 const MAXIMUM_FILE_BYTES = 256 * 1024 * 1024;
@@ -54,6 +54,7 @@ function redactDirectory(root) {
   const changed = [];
   const skipped = [];
   const totals = new Map();
+  let binaryCount = 0;
   for (const absolute of listFiles(root)) {
     const relative = toPosixPath(path.relative(root, absolute));
     const size = fs.statSync(absolute).size;
@@ -71,16 +72,17 @@ function redactDirectory(root) {
       skipped.push({ path: relative, reason: `could not be read: ${error.message}` });
       continue;
     }
-    if (looksBinary(bytes)) {
+    const decoded = decodeText(bytes);
+    if (decoded === undefined) {
+      binaryCount += 1;
       continue;
     }
-    const text = bytes.toString("utf8");
-    const { redacted, counts } = redactCredentials(text);
+    const { redacted, counts } = redactCredentials(decoded.text);
     if (counts.size === 0) {
       continue;
     }
     try {
-      fs.writeFileSync(absolute, redacted, "utf8");
+      fs.writeFileSync(absolute, encodeText(redacted, decoded.encoding));
     } catch (error) {
       fail(`${relative} contains credential material but could not be rewritten: ${error.message}`);
     }
@@ -89,7 +91,7 @@ function redactDirectory(root) {
     }
     changed.push({ path: relative, counts: [...counts.keys()].sort() });
   }
-  return { changed, skipped, totals };
+  return { changed, skipped, totals, binaryCount };
 }
 
 function formatSummary(root, result) {
@@ -105,6 +107,11 @@ function formatSummary(root, result) {
     for (const file of result.changed) {
       lines.push(`  ${file.path}: ${file.counts.join(", ")}`);
     }
+  }
+  // Binary files are not scanned. Report the count so "nothing found" can never be confused with
+  // "nothing looked at", without listing every DLL and PDB in a player directory.
+  if (result.binaryCount > 0) {
+    lines.push(`  ${result.binaryCount} binary file(s) were not scanned.`);
   }
   for (const file of result.skipped) {
     lines.push(`  WARNING: ${file.path} was not scanned because it ${file.reason}.`);

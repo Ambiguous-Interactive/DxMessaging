@@ -13,7 +13,7 @@
  *
  * "Preceded by a redaction step" is too weak a rule, and a real run proved it. A redaction step
  * placed early in a job scrubs a tree Unity has not written yet; Unity then runs and writes fresh
- * logs, and the upload publishes them unscrubbed. Perf artifacts leaked exactly that way while the
+ * logs, and the upload publishes them with the credential still in place. Perf artifacts leaked exactly that way while the
  * first version of this guard passed. So coverage is invalidated by any step that could write into
  * the tree: only uploads, other redaction steps, and one explicitly named post-processing step may
  * sit between a redaction step and the upload it protects.
@@ -48,10 +48,14 @@ function readWorkflows() {
     }));
 }
 
-/** Normalize a workflow expression to plain text so a prefix comparison is meaningful. */
+/**
+ * Normalize a path for comparison. A workflow expression collapses to a token built from its own
+ * text rather than to nothing: erasing them made `${{ runner.temp }}/x` and
+ * `${{ github.workspace }}/x` compare equal, so two different runtime roots read as covered.
+ */
 function normalizePath(value) {
   return String(value)
-    .replace(/\$\{\{[^}]*\}\}/g, "")
+    .replace(/\$\{\{([^}]*)\}\}/g, (_match, expression) => `<${expression.trim()}>`)
     .split("\\")
     .join("/")
     .trim();
@@ -71,10 +75,31 @@ function isUnityOutput(candidate) {
   return UNITY_OUTPUT_PREFIXES.some((prefix) => candidate.includes(prefix));
 }
 
-/** A redaction step covers an upload when one of its paths is a prefix of the uploaded path. */
+/**
+ * A redaction step covers an upload when one of its paths is the uploaded path or a parent
+ * directory of it. The comparison stops on a path separator: a raw `startsWith` would let
+ * `.artifacts/unity/a` claim to cover the unrelated `.artifacts/unity/ab`.
+ */
 function covers(redactionPaths, uploadedPath) {
-  return redactionPaths.some(
-    (declared) => declared.length > 0 && uploadedPath.startsWith(declared)
+  return redactionPaths.some((declared) => {
+    const root = declared.replace(/\/+$/, "");
+    return root.length > 0 && (uploadedPath === root || uploadedPath.startsWith(`${root}/`));
+  });
+}
+
+/**
+ * A redaction step only counts when it actually runs. `if: false`, or a condition that skips on
+ * failure, would satisfy a step-shape check while leaving credentials in place on the runs that
+ * matter most. Uploads here are `always()`, so their redaction must be too.
+ */
+function alwaysRuns(step) {
+  if (step.if === undefined) {
+    return true;
+  }
+  return (
+    String(step.if)
+      .replace(/\$\{\{|\}\}/g, "")
+      .trim() === "always()"
   );
 }
 
@@ -106,7 +131,9 @@ function unityUploads() {
       for (const step of jobSteps(job)) {
         const uses = typeof step?.uses === "string" ? step.uses : "";
         if (isRedaction(uses)) {
-          inForce = [...inForce, ...toPathList(step?.with?.paths)];
+          if (alwaysRuns(step)) {
+            inForce = [...inForce, ...toPathList(step?.with?.paths)];
+          }
           continue;
         }
         if (!isUpload(uses)) {
@@ -136,9 +163,12 @@ function unityUploads() {
 
 test("every Unity artifact upload is preceded by credential redaction in the same job", () => {
   const uploads = unityUploads();
-  assert.ok(
-    uploads.length >= 9,
-    `expected the known Unity uploads to be discovered, found ${uploads.length}`
+  // Pinned to the real count so the guard cannot quietly stop discovering uploads and pass on an
+  // empty set. Update it deliberately when a Unity artifact upload is added or removed.
+  assert.equal(
+    uploads.length,
+    15,
+    "the number of Unity-log-bearing uploads changed; confirm each one is still redacted"
   );
   const unprotected = uploads.filter((upload) => !covers(upload.inForce, upload.uploadedPath));
   assert.deepEqual(
@@ -203,3 +233,90 @@ test("the shipping evidence bundle is sealed only after redaction has run", () =
     "the shipping upload must follow sealing so the manifest ships with the evidence"
   );
 });
+
+/**
+ * `[label, declaredPath, uploadedPath, covered]` for the guard's own path comparison. Every false
+ * row here was a real false pass: the guard reported an left unredacted Unity upload as protected.
+ */
+const COVERAGE_CASES = Object.freeze([
+  [
+    "different runtime roots",
+    "<github.workspace>/.artifacts/unity",
+    "<runner.temp>/.artifacts/unity/logs",
+    false
+  ],
+  [
+    "a string prefix in a different directory",
+    ".artifacts/unity/a",
+    ".artifacts/unity/ab/unity.log",
+    false
+  ],
+  ["a sibling directory", ".artifacts/unity", ".artifacts/unity-secrets/unity.log", false],
+  ["a genuine parent directory", ".artifacts/unity", ".artifacts/unity/6000-shipping", true],
+  [
+    "an exact match",
+    "<runner.temp>/dx-unity-editor-validation",
+    "<runner.temp>/dx-unity-editor-validation",
+    true
+  ],
+  ["a trailing slash on the upload", ".artifacts/unity", ".artifacts/unity/release-dist/", true]
+]);
+
+for (const [label, declared, uploaded, expected] of COVERAGE_CASES) {
+  test(`covers reports ${expected} for ${label}`, () => {
+    assert.equal(
+      covers([declared], uploaded),
+      expected,
+      `${label}: the guard is only as strong as this comparison, so a wrong answer here lets an ` +
+        "left unredacted Unity upload satisfy it"
+    );
+  });
+}
+
+test("normalizePath keeps distinct workflow expressions distinct", () => {
+  assert.equal(
+    normalizePath("${{ runner.temp }}/x"),
+    "<runner.temp>/x",
+    "an expression collapses to a token built from its own text"
+  );
+  assert.equal(
+    normalizePath("${{ github.workspace }}/x"),
+    "<github.workspace>/x",
+    "a different expression collapses to a different token"
+  );
+  assert.notEqual(
+    normalizePath("${{ runner.temp }}/x"),
+    normalizePath("${{ github.workspace }}/x"),
+    "erasing expressions made two different runtime roots compare equal, so an upload from one " +
+      "root read as covered by a redaction of the other"
+  );
+  assert.equal(
+    normalizePath(" ${{ runner.temp }}\\logs\\unity.log "),
+    "<runner.temp>/logs/unity.log",
+    "backslashes and surrounding whitespace are normalized away"
+  );
+});
+
+/**
+ * `[label, condition, counts]`. A redaction step only protects an upload when it actually runs, and
+ * the uploads here are `always()`, so anything narrower leaves the artifact left unredacted on exactly
+ * the failing runs whose logs get downloaded.
+ */
+const ALWAYS_RUNS_CASES = Object.freeze([
+  ["no condition at all", undefined, true],
+  ["a bare always()", "always()", true],
+  ["a wrapped always()", "${{ always() }}", true],
+  ["a hard false", "false", false],
+  ["success()", "${{ success() }}", false]
+]);
+
+for (const [label, condition, expected] of ALWAYS_RUNS_CASES) {
+  test(`alwaysRuns reports ${expected} for ${label}`, () => {
+    const step = condition === undefined ? {} : { if: condition };
+    assert.equal(
+      alwaysRuns(step),
+      expected,
+      `${label}: a redaction step that skips must not be counted as coverage`
+    );
+  });
+}

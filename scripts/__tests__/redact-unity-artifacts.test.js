@@ -9,7 +9,8 @@ const { test } = require("node:test");
 const {
   CREDENTIAL_PATTERNS,
   findCredentials,
-  looksBinary,
+  decodeText,
+  encodeText,
   redactCredentials
 } = require("../unity/credential-patterns.js");
 const {
@@ -74,6 +75,74 @@ function writeArtifactTree() {
   fs.writeFileSync(path.join(root, "logs", "GameAssembly.bin"), BINARY_BLOB);
   return root;
 }
+
+/** A 16-character synthetic value, long enough to satisfy the assignment pattern's length rule. */
+const FAKE_ASSIGNMENT_VALUE = "FAKEfake00000000";
+
+/** A Unity log that picked up one stray NUL from native subprocess output, and still leaks. */
+const STRAY_NUL_LOG = Buffer.concat([
+  Buffer.from("Refreshing native plugins\n", "latin1"),
+  Buffer.alloc(1),
+  Buffer.from(`\nActivated with serial ${FAKE_SERIAL}\n`, "latin1")
+]);
+
+/** Roughly four kilobytes of log text carrying eight scattered NUL bytes. */
+const SPARSE_NUL_LOG = Buffer.concat(
+  Array.from({ length: 8 }, () =>
+    Buffer.concat([Buffer.from("a".repeat(512), "latin1"), Buffer.alloc(1)])
+  )
+);
+
+/** The opening of a managed DLL: a short header, a long NUL run, then dense payload bytes. */
+const DLL_LIKE_BLOB = Buffer.concat([
+  Buffer.from("MZ", "latin1"),
+  Buffer.alloc(4000),
+  Buffer.from("x".repeat(4000), "latin1")
+]);
+
+/** UTF-16 text with no byte-order mark, which is genuinely unreadable without one. */
+const BOMLESS_UTF16_LOG = Buffer.from("Unity build log line\n".repeat(8), "utf16le");
+
+/** What Windows PowerShell writes by default: UTF-16LE behind a byte-order mark. */
+const UTF16LE_BOM_LOG = Buffer.concat([
+  Buffer.from([0xff, 0xfe]),
+  Buffer.from(`Activated with serial ${FAKE_SERIAL}\n`, "utf16le")
+]);
+
+/** Bytes that are not valid UTF-8, as a Unity log holding raw native output can be. */
+const INVALID_UTF8_BYTES = Buffer.from([0x80, 0xfe, 0x41, 0x0a]);
+
+/**
+ * `[label, bytes, expectedEncoding]`, where `undefined` means the bytes are genuinely binary and
+ * are left unscanned.
+ *
+ * "Contains a NUL" is the usual binary test and it is the wrong rule here. A Unity log picks up
+ * stray NUL bytes from native subprocess output, and treating one such byte as proof of a binary
+ * silently disabled redaction for the whole file and published the serial in the uploaded
+ * artifact. A real binary is dense with NULs; a log with a handful is still a log and must stay on
+ * the text side where the redactor can reach it.
+ */
+const DECODE_CASES = Object.freeze([
+  ["a short log with one stray NUL", STRAY_NUL_LOG, "latin1"],
+  ["a four-kilobyte log with eight stray NULs", SPARSE_NUL_LOG, "latin1"],
+  ["a DLL-like blob", DLL_LIKE_BLOB, undefined],
+  ["UTF-16 with no byte-order mark", BOMLESS_UTF16_LOG, undefined],
+  ["a UTF-16LE log behind a byte-order mark", UTF16LE_BOM_LOG, "utf16le"],
+  ["a plain ASCII log", Buffer.from(CLEAN_LOG, "latin1"), "latin1"]
+]);
+
+/**
+ * Assignment keywords written with no vendor prefix. The pattern's prefix class accepts an empty
+ * prefix, so a bare `TOKEN=` is as much a credential assignment as `UNITY_SERIAL=`, and CI shells
+ * and Unity build scripts write both shapes.
+ */
+const BARE_KEYWORDS = Object.freeze([
+  "TOKEN",
+  "SECRET",
+  "PASSWORD",
+  "API_KEY",
+  "AWS_SECRET_ACCESS_KEY"
+]);
 
 for (const [id, text, secret] of LEAK_CASES) {
   test(`${id} is found and its value is destroyed`, () => {
@@ -165,6 +234,9 @@ test("a redacted Unity license id is not mistaken for a live one", () => {
 for (const [label, text] of [
   ["a masked GitHub token", "GITHUB_TOKEN=***\n"],
   ["a masked Unity serial", "UNITY_SERIAL=***\n"],
+  // Paired with the bare-keyword tests below. `API_KEY=` now matches the keyword class, so
+  // this row proves the twelve-character minimum rejects the value rather than passing
+  // because the keyword itself went unrecognized.
   ["a value too short to be a key", "API_KEY=short\n"],
   ["a bearer header with a short value", "Authorization: Bearer short\n"],
   ["ordinary prose", "The build uploaded a token to the store without a password.\n"],
@@ -206,9 +278,10 @@ test("redactDirectory rewrites only the leaking text files under the tree", () =
     CLEAN_LOG,
     "tree: a clean file must not be touched"
   );
-  assert.ok(
-    looksBinary(BINARY_BLOB),
-    "tree: the blob must actually look binary or the skip below proves nothing"
+  assert.equal(
+    decodeText(BINARY_BLOB),
+    undefined,
+    "tree: the blob must actually decode as binary or the skip below proves nothing"
   );
   assert.deepEqual(
     fs.readFileSync(path.join(root, "logs", "GameAssembly.bin")),
@@ -339,5 +412,144 @@ test("formatSummary renders a clean tree, a redacted tree, and a skipped file", 
     "No credential material found under artifacts.\n" +
       "  WARNING: locked.log was not scanned because it could not be read: EACCES.\n",
     "summary: a file that was not scanned is a warning, not a silent omission"
+  );
+});
+
+for (const [label, bytes, expectedEncoding] of DECODE_CASES) {
+  test(`decodeText classifies ${label}`, () => {
+    const decoded = decodeText(bytes);
+    if (expectedEncoding === undefined) {
+      assert.equal(decoded, undefined, `${label}: dense NUL bytes must be judged binary`);
+      return;
+    }
+    assert.notEqual(decoded, undefined, `${label}: text must stay scannable, not be skipped`);
+    assert.equal(
+      decoded.encoding,
+      expectedEncoding,
+      `${label}: the decoder must report the encoding it used`
+    );
+    assert.deepEqual(
+      encodeText(decoded.text, decoded.encoding),
+      bytes,
+      `${label}: decoding then re-encoding must be byte-exact`
+    );
+  });
+}
+
+test("a log carrying a stray NUL is redacted and keeps that byte", () => {
+  const root = temporaryDirectory();
+  const target = path.join(root, "unity.log");
+  fs.writeFileSync(target, STRAY_NUL_LOG);
+  const result = redactDirectory(root);
+  assert.deepEqual(
+    result.changed.map((file) => file.path),
+    ["unity.log"],
+    "stray NUL: one NUL byte must not take a whole Unity log out of the scan"
+  );
+  const rewritten = fs.readFileSync(target);
+  assert.ok(!rewritten.includes(FAKE_SERIAL), "stray NUL: the serial must be gone");
+  assert.ok(
+    rewritten.includes("<redacted:unity-serial>"),
+    "stray NUL: the placeholder must name the kind that was removed"
+  );
+  assert.ok(rewritten.includes(0), "stray NUL: the byte itself must survive the rewrite");
+});
+
+test("a UTF-16LE log behind a byte-order mark is redacted and re-encoded as UTF-16LE", () => {
+  const root = temporaryDirectory();
+  const target = path.join(root, "configure.log");
+  fs.writeFileSync(target, UTF16LE_BOM_LOG);
+  const result = redactDirectory(root);
+  assert.deepEqual(
+    result.changed.map((file) => file.path),
+    ["configure.log"],
+    "utf16le: a PowerShell-written log is text and must be scanned"
+  );
+  const rewritten = fs.readFileSync(target);
+  assert.deepEqual(
+    rewritten.subarray(0, 2),
+    Buffer.from([0xff, 0xfe]),
+    "utf16le: the byte-order mark must survive so the file still reads as UTF-16LE"
+  );
+  const text = rewritten.toString("utf16le");
+  assert.ok(!text.includes(FAKE_SERIAL), "utf16le: the serial must be gone");
+  assert.ok(
+    text.includes("<redacted:unity-serial>"),
+    "utf16le: the rewrite must be re-encoded in the encoding it was read from"
+  );
+});
+
+test("bytes that are not valid UTF-8 round-trip byte for byte", () => {
+  const decoded = decodeText(INVALID_UTF8_BYTES);
+  assert.equal(decoded.encoding, "latin1", "invalid UTF-8: the decode maps bytes one to one");
+  assert.deepEqual(
+    encodeText(decoded.text, decoded.encoding),
+    INVALID_UTF8_BYTES,
+    "invalid UTF-8: a UTF-8 decode would substitute U+FFFD and corrupt the file on write"
+  );
+  const root = temporaryDirectory();
+  const target = path.join(root, "player.log");
+  fs.writeFileSync(target, INVALID_UTF8_BYTES);
+  const result = redactDirectory(root);
+  assert.deepEqual(result.changed, [], "invalid UTF-8: a file with no credential is not rewritten");
+  assert.deepEqual(
+    fs.readFileSync(target),
+    INVALID_UTF8_BYTES,
+    "invalid UTF-8: every byte of an untouched file must survive the walk"
+  );
+});
+
+for (const keyword of BARE_KEYWORDS) {
+  test(`${keyword}= is a credential assignment even with no vendor prefix`, () => {
+    const text = `${keyword}=${FAKE_ASSIGNMENT_VALUE}\n`;
+    assert.deepEqual(
+      findCredentials(text).map((entry) => entry.id),
+      ["credential-assignment"],
+      `${keyword}: a bare keyword assignment must be reported as a leak`
+    );
+    assert.equal(
+      redactCredentials(text).redacted,
+      `${keyword}=<redacted:credential-assignment>\n`,
+      `${keyword}: only the value may be destroyed, the keyword must survive`
+    );
+  });
+}
+
+test("a short assignment value is rejected by the length rule, not by an unmatched keyword", () => {
+  // The review found the `API_KEY=short` case passing for the wrong reason: the old pattern never
+  // matched a bare `API_KEY=` at all, so the twelve-character minimum it claimed to prove was never
+  // reached. The long value below is what makes the short one mean anything.
+  assert.deepEqual(
+    findCredentials(`API_KEY=${FAKE_ASSIGNMENT_VALUE}\n`).map((entry) => entry.id),
+    ["credential-assignment"],
+    "short value: the keyword must match, or the length rule is never exercised"
+  );
+  assert.deepEqual(
+    findCredentials("API_KEY=short\n"),
+    [],
+    "short value: a value too short to be a key is not a leak"
+  );
+  assert.deepEqual(
+    findCredentials("GITHUB_TOKEN=***\n"),
+    [],
+    "masked value: a masked assignment is not a leak"
+  );
+});
+
+test("redactDirectory counts the binary files it never scanned", () => {
+  // "Nothing found" must never be confusable with "nothing looked at". A binary file is a file
+  // whose bytes were never checked, so the count is reported rather than dropped on the floor.
+  const root = writeArtifactTree();
+  const result = redactDirectory(root);
+  assert.equal(result.binaryCount, 1, "binary: the skipped blob must be counted, not forgotten");
+  assert.match(
+    formatSummary("artifacts", result),
+    /^ {2}1 binary file\(s\) were not scanned\.$/m,
+    "binary: the summary must say how many files were never scanned"
+  );
+  assert.match(
+    formatSummary("artifacts", { changed: [], skipped: [], totals: new Map(), binaryCount: 4 }),
+    /^No credential material found under artifacts\.\n {2}4 binary file\(s\) were not scanned\.\n$/,
+    "binary: a tree with no findings still reports what it could not read"
   );
 });

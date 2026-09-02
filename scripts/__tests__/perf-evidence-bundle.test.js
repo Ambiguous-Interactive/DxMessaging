@@ -25,6 +25,9 @@ const SEAL_OPTIONS = Object.freeze({
   sourceCommit: "98b47536a0eb1445fcd2a9700899aab0be24897f"
 });
 
+/** Synthetic throughout: this shape matches no serial this project has ever held. */
+const FAKE_SERIAL = "SC-FAKE-FAKE-FAKE-FAKE-FAKE";
+
 const STRIPPING_LEVELS = ["High", "Minimal"];
 const TOPOLOGIES = [
   ["semantic-18", 18],
@@ -258,7 +261,7 @@ test("replay rejects a bundle whose sealed bytes no longer produce the published
 
 for (const [label, relativePath, content] of [
   ["a GitHub token", "leak.log", `token: ghp_${"a".repeat(36)}\n`],
-  ["a Unity serial", "leak.log", "UNITY_SERIAL resolved to SC-FAKE-FAKE-FAKE-FAKE-FAKE\n"],
+  ["a Unity serial", "leak.log", `UNITY_SERIAL resolved to ${FAKE_SERIAL}\n`],
   ["a PEM private key", "leak.pem", "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODY\n"],
   ["a bearer header", "leak.log", `Authorization: Bearer ${"x".repeat(40)}\n`],
   ["a credential assignment", "leak.env", "UNITY_PASSWORD=correct-horse-battery\n"]
@@ -441,4 +444,116 @@ test("the CLI seals, verifies, and replays a bundle end to end", (t) => {
   );
   assert.match(written.join(""), /the normalized result matches the sealed manifest/);
   assert.throws(() => runCli(argv("nonsense", "x")), /Unknown command nonsense/);
+});
+
+/**
+ * `[label, injectedPath]`. The bundle digest joins one field per line as `name:value`, so a
+ * declared path carrying the field separator or the line separator could stand in for a whole extra
+ * entry and let two different evidence sets share one digest.
+ */
+for (const [label, injectedPath] of [
+  ["a colon", "aa:4:deadbeef"],
+  ["a newline", "aa\nfile:bb"]
+]) {
+  test(`verification rejects a declared file path containing ${label}`, () => {
+    const { manifest, manifestPath } = sealedBundle();
+    manifest.files[0].path = injectedPath;
+    manifest.bundleDigest = bundleDigest(manifest);
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    assert.throws(
+      () => verifyBundle(manifestPath),
+      /must not contain control characters or a colon/,
+      `${label}: a path that carries digest structure lets one entry impersonate several`
+    );
+  });
+}
+
+/**
+ * `[field, value]`. Identity fields feed the same digest lines, so the same impersonation works
+ * through them. Seal time is not enough: a manifest is re-read by reviewers long after sealing, and
+ * whoever hands over the file is not necessarily whoever sealed it.
+ */
+for (const [field, value] of [
+  ["experimentId", "shipping\nmatrix"],
+  ["artifactClass", "c\nreducer:shipping-fidelity-matrix-v1"],
+  ["sourceCommit", "98b47536\nfile:smuggled.json"]
+]) {
+  test(`verification rejects a control character in ${field}`, () => {
+    const { manifest, manifestPath } = sealedBundle();
+    manifest[field] = value;
+    manifest.bundleDigest = bundleDigest(manifest);
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    assert.throws(
+      () => verifyBundle(manifestPath),
+      new RegExp(`^Error: ${field} must not contain control characters\\.$`),
+      `${field}: a sealed manifest must be re-checked at verify time, not only at seal time`
+    );
+  });
+}
+
+test("replacing a sealed manifest with an empty object does not bypass the append-only check", () => {
+  const { root } = sealedBundle();
+  fs.writeFileSync(path.join(root, MANIFEST_NAME), "{}\n");
+  fs.writeFileSync(path.join(root, "high-semantic-18", "player.log"), "different bytes\n");
+  const reSealed = sealBundle(root, SEAL_OPTIONS);
+  assert.throws(
+    () => writeBundleManifest(root, reSealed),
+    /^Error: Unsupported manifest schemaVersion undefined; expected 1\.$/,
+    "an unusable manifest must fail closed; reading it as a plain object waves the write through"
+  );
+});
+
+test("adding a file the reducer never reads still trips the append-only check", () => {
+  // `player.log` is invisible to the reducer, so the normalized result is unchanged and the
+  // reducer's own cross-checks stay silent. Only the append-only comparison can refuse this.
+  const { root, manifest } = sealedBundle();
+  fs.writeFileSync(path.join(root, "high-semantic-18", "player.log"), "different bytes\n");
+  const reSealed = sealBundle(root, SEAL_OPTIONS);
+  assert.deepEqual(
+    reSealed.normalized,
+    manifest.normalized,
+    "reducer: the added file must not change the normalized result, or this proves nothing"
+  );
+  assert.notEqual(
+    reSealed.bundleDigest,
+    manifest.bundleDigest,
+    "digest: the file inventory changed, so the digest must change"
+  );
+  assert.throws(
+    () => writeBundleManifest(root, reSealed),
+    /is already sealed as [0-9a-f]{64} but these bytes seal as [0-9a-f]{64}/,
+    "an overwrite of sealed evidence must fail closed even when the reducer sees no difference"
+  );
+});
+
+test("sealing refuses a credential past the first four mebibytes of a file", () => {
+  // An earlier version scanned only the first 4 MiB of each file, so a serial written after a long
+  // build log sealed cleanly. A credential past an arbitrary window is still a credential.
+  const root = writeMatrixBundle(temporaryDirectory(), {
+    extraFiles: { "player.log": `${"x".repeat(4 * 1024 * 1024 + 64)}\nserial ${FAKE_SERIAL}\n` }
+  });
+  assert.throws(
+    () => sealBundle(root, SEAL_OPTIONS),
+    /^Error: player\.log looks like it contains a Unity serial; scrub it before sealing\.$/,
+    "a credential beyond the old scan window must still block publication"
+  );
+});
+
+test("sealing refuses a credential in a log carrying a stray NUL", () => {
+  // One stray NUL from native subprocess output used to make the whole log read as binary, which
+  // skipped the scan entirely and sealed the serial into an immutable release asset.
+  const root = writeMatrixBundle(temporaryDirectory(), {
+    extraFiles: {
+      "unity.log": Buffer.concat([
+        Buffer.from("boot\n", "latin1"),
+        Buffer.alloc(1),
+        Buffer.from(`\nserial ${FAKE_SERIAL}\n`, "latin1")
+      ])
+    }
+  });
+  assert.throws(
+    () => sealBundle(root, SEAL_OPTIONS),
+    /^Error: unity\.log looks like it contains a Unity serial; scrub it before sealing\.$/,
+    "a stray NUL must not disable the sealing backstop for a whole log"
+  );
 });

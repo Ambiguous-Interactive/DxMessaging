@@ -17,6 +17,20 @@ const { test } = require("node:test");
 const CAN_RUN_SHELL = process.platform !== "win32";
 
 const ROOT = path.resolve(__dirname, "..", "..");
+
+/**
+ * The only system tools the installer calls. The sandbox links exactly these and nothing else, so
+ * a real agent CLI installed on the image can never satisfy the script under test. Putting
+ * `/usr/bin:/bin` on the sandbox PATH looked hermetic and was not: the devcontainer image installs
+ * all three CLIs globally, so the "fresh container" and "CLI absent" cases silently found real
+ * binaries and asserted against the wrong world.
+ */
+const SYSTEM_TOOLS = ["bash", "sh", "mkdir", "grep", "head", "tr", "cat", "rm", "chmod", "flock"];
+
+function resolveTool(name) {
+  const found = childProcess.spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" });
+  return found.status === 0 ? found.stdout.trim() : undefined;
+}
 const dev = (name) => path.join(ROOT, ".devcontainer", name);
 const read = (name) => fs.readFileSync(dev(name), "utf8");
 const PACKAGES = [
@@ -75,12 +89,35 @@ function runInstaller(t, setup) {
       );
     }
   }
+  const systemBin = path.join(temp, "system-bin");
+  fs.mkdirSync(systemBin, { recursive: true });
+  for (const tool of SYSTEM_TOOLS) {
+    const resolved = resolveTool(tool);
+    if (resolved) {
+      fs.symlinkSync(resolved, path.join(systemBin, tool));
+    }
+  }
+  const sandboxPath = `${prefixBin}:${stubBin}:${systemBin}`;
+  if (!setup.installed) {
+    for (const [, command] of PACKAGES) {
+      // Probe with the real environment so the shell itself resolves, overriding PATH only for
+      // the lookup under test.
+      // `command -v` reports "not found" as 1 in bash and 127 in dash, so assert on success only.
+      assert.notEqual(
+        childProcess.spawnSync("sh", ["-c", `PATH="${sandboxPath}" command -v ${command}`], {
+          encoding: "utf8"
+        }).status,
+        0,
+        `sandbox leak: ${command} is visible on the sandbox PATH, so this case proves nothing`
+      );
+    }
+  }
   const callLog = path.join(temp, "npm-calls.log");
   fs.writeFileSync(callLog, "");
-  const result = childProcess.spawnSync("bash", [dev("install-agent-clis.sh")], {
+  const result = childProcess.spawnSync(resolveTool("bash"), [dev("install-agent-clis.sh")], {
     encoding: "utf8",
     env: {
-      PATH: `${prefixBin}:${stubBin}:/usr/bin:/bin`,
+      PATH: sandboxPath,
       HOME: temp,
       TMPDIR: temp,
       NPM_CONFIG_PREFIX: path.join(temp, "prefix"),

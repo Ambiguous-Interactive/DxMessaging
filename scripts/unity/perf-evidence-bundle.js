@@ -16,14 +16,15 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { findCredentials, looksBinary } = require("./credential-patterns.js");
+const { decodeText, findCredentials } = require("./credential-patterns.js");
 const { reduceShippingFidelityMatrix } = require("./perf-evidence-reducers.js");
 
 const SCHEMA_VERSION = 1;
 const MANIFEST_NAME = "evidence-manifest.json";
 const EXPERIMENT_ID_PATTERN = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-const MAXIMUM_SCANNED_BYTES = 4 * 1024 * 1024;
+// Matches the redaction step's per-file cap so the two consumers never disagree about a file.
+const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 
 /** Reducers are keyed by name so a manifest declares which one produced its normalized result. */
 const REDUCERS = Object.freeze({
@@ -57,6 +58,10 @@ function requirePortablePath(relativePath, label) {
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
     fail(`${label} "${relativePath}" must not contain empty, "." or ".." segments.`);
   }
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what is rejected.
+  if (/[\u0000-\u001f\u007f:]/.test(relativePath)) {
+    fail(`${label} "${relativePath}" must not contain control characters or a colon.`);
+  }
   return relativePath;
 }
 
@@ -85,34 +90,43 @@ function listBundleFiles(root, manifestName) {
 }
 
 /**
- * Refuse to seal a file that carries credential material. Binary files are skipped by a NUL-byte
- * probe, and only the first few megabytes of a text file are scanned so a large trace stays cheap.
+ * Refuse to seal a file that carries credential material. This shares one decoder and one pattern
+ * list with the redaction step, so a file the redactor scrubs cannot be judged by a different rule
+ * here. The whole file is scanned: a credential past an arbitrary window is still a credential.
  */
 function assertNoSecrets(relativePath, bytes) {
-  const window = bytes.subarray(0, MAXIMUM_SCANNED_BYTES);
-  if (looksBinary(window)) {
+  if (bytes.length > MAXIMUM_SCANNED_BYTES) {
+    fail(`${relativePath} is ${bytes.length} bytes, too large to prove free of credentials.`);
+  }
+  const decoded = decodeText(bytes);
+  if (decoded === undefined) {
     return;
   }
-  for (const entry of findCredentials(window.toString("utf8"))) {
+  for (const entry of findCredentials(decoded.text)) {
     fail(`${relativePath} looks like it contains ${entry.description}; scrub it before sealing.`);
   }
 }
 
 /**
  * The bundle digest covers identity, the reducer name, the complete file inventory, and the
- * normalized result. It is computed over a canonical string rather than over `JSON.stringify` of
- * the manifest so that adding a descriptive field later cannot silently change an existing digest.
+ * normalized result.
+ *
+ * Every component is JSON-encoded before it is joined. Concatenating raw values would let one field
+ * impersonate several: a file path containing the separator could stand in for a whole extra entry,
+ * so two different evidence sets would share one digest. JSON quoting escapes the separators, and
+ * `requirePortablePath` rejects them in paths as well, so the encoding is unambiguous either way.
  */
 function bundleDigest(manifest) {
+  const field = (name, value) => `${name}:${JSON.stringify(value)}`;
   const lines = [
-    `schemaVersion:${manifest.schemaVersion}`,
-    `experimentId:${manifest.experimentId}`,
-    `revision:${manifest.revision}`,
-    `artifactClass:${manifest.artifactClass}`,
-    `reducer:${manifest.reducer}`,
-    `sourceCommit:${manifest.sourceCommit}`,
-    ...manifest.files.map((file) => `file:${file.path}:${file.length}:${file.sha256}`),
-    `normalized:${JSON.stringify(manifest.normalized)}`
+    field("schemaVersion", manifest.schemaVersion),
+    field("experimentId", manifest.experimentId),
+    field("revision", manifest.revision),
+    field("artifactClass", manifest.artifactClass),
+    field("reducer", manifest.reducer),
+    field("sourceCommit", manifest.sourceCommit),
+    ...manifest.files.map((file) => field("file", [file.path, file.length, file.sha256])),
+    field("normalized", manifest.normalized)
   ];
   return sha256(Buffer.from(`${lines.join("\n")}\n`, "utf8"));
 }
@@ -127,6 +141,24 @@ function requireInteger(value, label, minimum) {
 function requireString(value, label) {
   if (typeof value !== "string" || value.length === 0) {
     fail(`${label} must be a non-empty string.`);
+  }
+  return value;
+}
+
+/** Identity text must be printable and single-line so it cannot carry digest structure. */
+function requireIdentityText(value, label) {
+  requireString(value, label);
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what is rejected.
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    fail(`${label} must not contain control characters.`);
+  }
+  return value;
+}
+
+function requireExperimentId(value) {
+  requireIdentityText(value, "experimentId");
+  if (!EXPERIMENT_ID_PATTERN.test(value)) {
+    fail(`experimentId "${value}" must be lowercase alphanumeric with dots or dashes.`);
   }
   return value;
 }
@@ -156,10 +188,7 @@ function readDeclaredFiles(root, files) {
 }
 
 function sealBundle(root, options) {
-  const experimentId = requireString(options.experimentId, "experimentId");
-  if (!EXPERIMENT_ID_PATTERN.test(experimentId)) {
-    fail(`experimentId "${experimentId}" must be lowercase alphanumeric with dots or dashes.`);
-  }
+  const experimentId = requireExperimentId(options.experimentId);
   const reducerName = requireString(options.reducer, "reducer");
   const reducer = requireReducer(reducerName);
   const revision = requireInteger(options.revision ?? 1, "revision", 1);
@@ -181,9 +210,9 @@ function sealBundle(root, options) {
     schemaVersion: SCHEMA_VERSION,
     experimentId,
     revision,
-    artifactClass: requireString(options.artifactClass, "artifactClass"),
+    artifactClass: requireIdentityText(options.artifactClass, "artifactClass"),
     reducer: reducerName,
-    sourceCommit: requireString(options.sourceCommit, "sourceCommit"),
+    sourceCommit: requireIdentityText(options.sourceCommit, "sourceCommit"),
     files,
     normalized: reducer(contents),
     bundleDigest: ""
@@ -216,7 +245,9 @@ function assertAppendOnly(existingManifest, manifest) {
 function writeBundleManifest(root, manifest, manifestName = MANIFEST_NAME) {
   const manifestPath = path.join(root, manifestName);
   if (fs.existsSync(manifestPath)) {
-    assertAppendOnly(readManifest(manifestPath), manifest);
+    // Shape-validate first. Reading an unusable manifest as a plain object would leave every
+    // identity field undefined, and the append-only comparison below would wave the write through.
+    assertAppendOnly(validateManifestShape(readManifest(manifestPath)), manifest);
   }
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   return manifestPath;
@@ -241,10 +272,10 @@ function validateManifestShape(manifest) {
       `Unsupported manifest schemaVersion ${manifest.schemaVersion}; expected ${SCHEMA_VERSION}.`
     );
   }
-  requireString(manifest.experimentId, "experimentId");
+  requireExperimentId(manifest.experimentId);
   requireInteger(manifest.revision, "revision", 1);
-  requireString(manifest.artifactClass, "artifactClass");
-  requireString(manifest.sourceCommit, "sourceCommit");
+  requireIdentityText(manifest.artifactClass, "artifactClass");
+  requireIdentityText(manifest.sourceCommit, "sourceCommit");
   requireReducer(requireString(manifest.reducer, "reducer"));
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
     fail("The manifest must declare at least one file.");
