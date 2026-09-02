@@ -320,8 +320,11 @@ metrics because the Release player strips the required profiler recorder (see
   cache state, the editor wall clock, the player byte count, and the
   `GameAssembly.dll` size in `shipping-cell-evidence.json`, and the matrix
   wrapper collects every completed cell into one `shipping-matrix-evidence.json`
-  per endpoint editor. Every file carries `measurementClass:
-"characterization"`. These values show size and build-time cliffs across 1,
+  per endpoint editor. Those two joined files carry
+  `measurementClass: "characterization"`; the build report and the two player
+  results do not, because their exact property lists are validated fail-closed
+  and an extra field would be rejected. These values show size and build-time
+  cliffs across 1,
   16, 256, and 1,000 message types for the
   [#506](https://github.com/Ambiguous-Interactive/DxMessaging/issues/506)
   protocol, and they are never published as throughput rows. The dispatch-loop

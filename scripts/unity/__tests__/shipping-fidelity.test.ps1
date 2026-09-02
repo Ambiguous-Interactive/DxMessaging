@@ -128,6 +128,13 @@ if (
     `$CanonicalProfilePath -clike '*-low-profile.v1.json' -and
     `$ShippingTopology -ceq 'semantic'
 ) {
+    [System.IO.File]::WriteAllText(`$cellEvidencePath, '{"schemaVersion":1}')
+    return
+}
+if (
+    `$CanonicalProfilePath -clike '*-medium-profile.v1.json' -and
+    `$ShippingTopology -ceq 'semantic'
+) {
     [System.IO.File]::WriteAllText(`$cellEvidencePath, '{"schemaVersion":')
     return
 }
@@ -247,7 +254,7 @@ if (
     # A cell whose runner threw and a cell that passed but wrote unusable
     # evidence are different failures and must not be reported as one class.
     $expectedFailedCells = @('minimal-semantic-18')
-    $expectedUnreadableCells = @('low-semantic-18')
+    $expectedUnreadableCells = @('low-semantic-18', 'medium-semantic-18')
     $expectedIncompleteCount = $expectedFailedCells.Count + $expectedUnreadableCells.Count
     Assert-That 'shipping matrix separates failed cells from unusable evidence' (
         [int]$matrixEvidence.schemaVersion -eq 1 -and
@@ -1319,14 +1326,132 @@ if (
         [double]$cellEvidence.mutantPlayerWallClockMs -eq 900.0 -and
         [double]$cellEvidence.timings.dispatchLoopNsPerOp -eq 21.5
     )
-    # The matrix wrapper copies whatever this writer produced, so there is no
-    # second declaration of the shape that could drift from it.
+    # The matrix wrapper copies whatever this writer produced instead of
+    # redeclaring the full shape, but it must still refuse evidence it cannot
+    # render. Drive its reader directly so each guard is covered on its own
+    # rather than only through whichever guard happens to fire first.
     $matrixRunnerText = Get-Content -LiteralPath $matrixRunnerPath -Raw
     Assert-That 'shipping matrix copies the cell shape instead of redeclaring it' (
         $matrixRunnerText.Contains('foreach ($property in $evidence.PSObject.Properties)') -and
         -not $matrixRunnerText.Contains('cellEvidencePropertyNames') -and
         -not $matrixRunnerText.Contains('cellTimingPropertyNames')
     )
+    $matrixAst = [System.Management.Automation.Language.Parser]::ParseFile(
+        $matrixRunnerPath,
+        [ref]$tokens,
+        [ref]$parseErrors
+    )
+    if (@($parseErrors).Count -gt 0) {
+        throw "run-shipping-fidelity-matrix.ps1 has parse errors: $($parseErrors.Message -join '; ')"
+    }
+    foreach ($matrixVariableName in @('renderedCellFields', 'renderedTimingFields')) {
+        $matrixAssignment = $matrixAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left.Extent.Text -ceq "`$$matrixVariableName"
+            },
+            $true
+        ) | Select-Object -First 1
+        if (-not $matrixAssignment) {
+            throw "Variable '$matrixVariableName' was not found in run-shipping-fidelity-matrix.ps1."
+        }
+        Invoke-Expression $matrixAssignment.Extent.Text
+    }
+    $readerDefinition = $matrixAst.FindAll(
+        {
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Read-ShippingCellEvidence'
+        },
+        $true
+    ) | Select-Object -First 1
+    if (-not $readerDefinition) {
+        throw "Function 'Read-ShippingCellEvidence' was not found in run-shipping-fidelity-matrix.ps1."
+    }
+    Invoke-Expression $readerDefinition.Extent.Text
+
+    $readerFixturePath = Join-Path $fixtureRoot 'reader-cell-evidence.json'
+    $readableCell = Copy-JsonValue -Value $cellEvidence
+    [System.IO.File]::WriteAllText($readerFixturePath, ($readableCell | ConvertTo-Json -Depth 10))
+    $readerRow = Read-ShippingCellEvidence -Path $readerFixturePath -CellId 'high-semantic-18'
+    Assert-That 'shipping matrix reader copies a complete cell and owns the cell id' (
+        $readerRow['cellId'] -ceq 'high-semantic-18' -and
+        [long]$readerRow['gameAssemblyBytes'] -eq 22000000 -and
+        [double]$readerRow['timings'].dispatchLoopNsPerOp -eq 21.5
+    )
+    # A file that claims its own cellId must not override the producing cell.
+    $spoofedCell = Copy-JsonValue -Value $cellEvidence
+    $spoofedCell | Add-Member -NotePropertyName cellId -NotePropertyValue 'someone-else'
+    [System.IO.File]::WriteAllText($readerFixturePath, ($spoofedCell | ConvertTo-Json -Depth 10))
+    Assert-That 'shipping matrix reader ignores a cell id claimed by the file' (
+        (Read-ShippingCellEvidence -Path $readerFixturePath -CellId 'high-semantic-18')['cellId'] -ceq 'high-semantic-18'
+    )
+    foreach ($readerMutation in @(
+        'wrong-schema',
+        'missing-schema',
+        'missing-rendered-field',
+        'missing-timings',
+        'timings-not-object',
+        'missing-rendered-timing',
+        'not-an-object'
+    )) {
+        $mutatedCell = Copy-JsonValue -Value $cellEvidence
+        $readerFailure = 'cell evidence at'
+        switch ($readerMutation) {
+            'wrong-schema' { $mutatedCell.schemaVersion = 2 }
+            'missing-schema' { $mutatedCell.PSObject.Properties.Remove('schemaVersion') }
+            'missing-rendered-field' { $mutatedCell.PSObject.Properties.Remove('gameAssemblyBytes') }
+            'missing-timings' { $mutatedCell.PSObject.Properties.Remove('timings') }
+            'timings-not-object' { $mutatedCell.timings = 'not-an-object' }
+            'missing-rendered-timing' {
+                $mutatedCell.timings.PSObject.Properties.Remove('dispatchLoopNsPerOp')
+            }
+            default { $mutatedCell = 'not-an-object' }
+        }
+        [System.IO.File]::WriteAllText($readerFixturePath, ($mutatedCell | ConvertTo-Json -Depth 10))
+        Assert-Fails "shipping matrix reader rejects $readerMutation" {
+            Read-ShippingCellEvidence -Path $readerFixturePath -CellId 'high-semantic-18'
+        } $readerFailure
+    }
+    Remove-Item -LiteralPath $readerFixturePath -Force
+    Assert-Fails 'shipping matrix reader rejects missing evidence' {
+        Read-ShippingCellEvidence -Path $readerFixturePath -CellId 'high-semantic-18'
+    } 'cell evidence missing at'
+
+    Assert-That 'shipping runner names the cell executable from the built player path' (
+        $runnerText.Contains(
+            '-PlayerExecutableName ([System.IO.Path]::GetFileName($standaloneExe))'
+        )
+    )
+    # The parameter must select the executable, not a hardcoded literal.
+    $renamedManifest = [ordered]@{
+        schemaVersion = 1
+        fileCount = 3
+        files = @(
+            $cellPlayerManifest['files'] | ForEach-Object {
+                if ([string]$_['path'] -ceq 'DxmShippingPlayer.exe') {
+                    [ordered]@{ path = 'RenamedPlayer.exe'; length = 777; sha256 = $_['sha256'] }
+                } else {
+                    $_
+                }
+            }
+        )
+    }
+    $renamedArguments = $cellEvidenceArguments.Clone()
+    $renamedArguments.PlayerDirectoryManifest = $renamedManifest
+    $renamedArguments.PlayerExecutableName = 'RenamedPlayer.exe'
+    $renamedArguments.Path = Join-Path $fixtureRoot 'shipping-cell-evidence-renamed.json'
+    Write-ShippingCellEvidence @renamedArguments
+    $renamedEvidence = Get-Content -LiteralPath $renamedArguments.Path -Raw | ConvertFrom-Json
+    Assert-That 'shipping cell evidence measures the named executable' (
+        [long]$renamedEvidence.playerExecutableBytes -eq 777
+    )
+    $wrongNameArguments = $cellEvidenceArguments.Clone()
+    $wrongNameArguments.PlayerExecutableName = 'NotThePlayer.exe'
+    Assert-Fails 'shipping cell evidence rejects a player missing the named executable' {
+        Write-ShippingCellEvidence @wrongNameArguments
+    } 'must contain NotThePlayer.exe'
 
     foreach ($missingPlayerFile in @('DxmShippingPlayer.exe', 'GameAssembly.dll')) {
         $incompleteManifest = [ordered]@{
@@ -1747,6 +1872,21 @@ if (
                 -ExpectedDispatchLoopCount 1000000
         } 'must mark every phase not measured for the missing-root mutant'
     }
+
+    # A batchmode player can reach the first script before the engine clock
+    # advances. Zero must be accepted, or all 40 cells fail on a real reading.
+    $zeroClockPositive = Copy-JsonValue -Value $positiveResult
+    $zeroClockPositive.timings.engineStartToRunMs = 0
+    [System.IO.File]::WriteAllText($resultPath, ($zeroClockPositive | ConvertTo-Json -Depth 10))
+    Test-ShippingFidelityResult `
+        -Path $resultPath `
+        -ExpectedMode positive `
+        -ExpectedProfileId $profile.profileId `
+        -ExpectedProfileSha256 $profileSha256 `
+        -ExpectedUnityVersion '6000.3.16f1' `
+        -ExpectedTopology semantic `
+        -ExpectedMessageTypeCount 18 `
+        -ExpectedDispatchLoopCount 1000000
 
     # A positive run that left a phase unmeasured must also fail closed.
     $unmeasuredPositive = Copy-JsonValue -Value $positiveResult

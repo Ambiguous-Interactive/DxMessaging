@@ -43,10 +43,30 @@ $shippingTopologies = @(
     [ordered]@{ Id = 'cardinality-1000'; Kind = 'cardinality'; MessageTypeCount = 1000 }
 )
 
+# Fields this summary renders. Requiring them is the consumer's own contract,
+# not a second copy of the writer's full shape: a cell that cannot supply a
+# column cannot be summarized, and must be reported rather than counted as
+# complete with a hole in it.
+$renderedCellFields = @(
+    'libraryState',
+    'messageTypeCount',
+    'buildDurationMs',
+    'editorBuildWallClockMs',
+    'playerTotalBytes',
+    'gameAssemblyBytes',
+    'timings'
+)
+$renderedTimingFields = @(
+    'engineStartToRunMs',
+    'firstTypedDispatchUs',
+    'dispatchLoopNsPerOp',
+    'dispatchLoopShape'
+)
+
 function Read-ShippingCellEvidence {
-    # Copy whatever the runner wrote. Every field was validated before it was
-    # written, so re-declaring the shape here would only add a second copy of the
-    # contract that could drift from the writer.
+    # Copy whatever the runner wrote, after proving the summary can render it.
+    # Every field was validated before it was written, so the full shape is not
+    # re-declared here.
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$CellId
@@ -65,10 +85,26 @@ function Read-ShippingCellEvidence {
     ) {
         throw "cell evidence at $Path is not schema version 1"
     }
-    $row = [ordered]@{ cellId = $CellId }
+    $missingFields = @($renderedCellFields | Where-Object { -not $evidence.PSObject.Properties[$_] })
+    if ($missingFields.Count -gt 0) {
+        throw "cell evidence at $Path is missing rendered fields: $($missingFields -join ', ')"
+    }
+    if ($evidence.timings -isnot [pscustomobject]) {
+        throw "cell evidence at $Path has no timings object"
+    }
+    $missingTimings = @(
+        $renderedTimingFields | Where-Object { -not $evidence.timings.PSObject.Properties[$_] }
+    )
+    if ($missingTimings.Count -gt 0) {
+        throw "cell evidence at $Path is missing rendered timings: $($missingTimings -join ', ')"
+    }
+    $row = [ordered]@{}
     foreach ($property in $evidence.PSObject.Properties) {
         $row[$property.Name] = $property.Value
     }
+    # Seeded last so a stray cellId in the file cannot override the id of the
+    # cell that actually produced it.
+    $row['cellId'] = $CellId
     return $row
 }
 
@@ -128,12 +164,13 @@ foreach ($shippingProfile in $shippingProfiles) {
 }
 
 # One summary per endpoint editor. Everything here is characterization of one
-# clean build and one fresh player launch, never a published benchmark row. The
-# whole block is best-effort so a summary write cannot swallow the cell failures
-# reported below it.
+# clean build and one fresh player launch, never a published benchmark row.
+# Only the file write is best-effort: a full disk must not hide the cell
+# failures reported below, but it must not invent a passing leg either, so the
+# write is the only thing allowed to fail quietly.
+$matrixEvidencePath = Join-Path $ArtifactsPath 'shipping-matrix-evidence.json'
 try {
     New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
-    $matrixEvidencePath = Join-Path $ArtifactsPath 'shipping-matrix-evidence.json'
     $matrixEvidence = [ordered]@{
         schemaVersion = 1
         measurementClass = 'characterization'
@@ -150,12 +187,18 @@ try {
         (($matrixEvidence | ConvertTo-Json -Depth 10) + "`n"),
         $utf8NoBom
     )
+} catch {
+    Write-Warning "Could not write the shipping-fidelity matrix summary: $($_.Exception.Message)"
+}
 
-    # dispatch shape is printed because the semantic cell loops a class message
-    # and the cardinality cells loop a struct. Only rows sharing a shape are
-    # comparable with each other.
-    $tableFormat = '{0,-26} {1,-7} {2,5} {3,9} {4,9} {5,12} {6,12} {7,9} {8,9} {9,9} {10,-34}'
-    Write-Host "::group::Shipping-fidelity matrix characterization (Unity $UnityVersion)"
+# The dispatch shape is printed because the semantic cell loops a class message
+# and the cardinality cells loop a struct. Only rows sharing a shape are
+# comparable with each other. Read-ShippingCellEvidence already proved every
+# rendered field exists, so this loop cannot fail on a missing column; the
+# finally still closes the log group if anything else does.
+$tableFormat = '{0,-26} {1,-7} {2,5} {3,9} {4,9} {5,12} {6,12} {7,9} {8,9} {9,9} {10,-34}'
+Write-Host "::group::Shipping-fidelity matrix characterization (Unity $UnityVersion)"
+try {
     Write-Host (
         $tableFormat -f 'cell', 'library', 'types', 'build s', 'editor s', 'player B',
         'GameAssembly', 'start ms', 'first us', 'loop ns', 'dispatch loop shape'
@@ -183,9 +226,8 @@ try {
         Write-Host ('{0,-26} EVIDENCE UNUSABLE' -f $unreadableCellId)
     }
     Write-Host "Matrix evidence: $matrixEvidencePath"
+} finally {
     Write-Host '::endgroup::'
-} catch {
-    Write-Warning "Could not write the shipping-fidelity matrix summary: $($_.Exception.Message)"
 }
 
 if ($failures.Count -gt 0) {

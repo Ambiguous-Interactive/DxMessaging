@@ -2128,7 +2128,7 @@ public sealed partial class DxmShippingFidelityPlayer
     [Serializable]
     private sealed class StartupTimings
     {
-        public double engineStartToRunMs = NotMeasured;
+        public double engineStartToRunMs;
         public long stopwatchFrequency;
         public bool stopwatchIsHighResolution;
         public double busConstructionUs = NotMeasured;
@@ -5701,7 +5701,8 @@ function Test-ShippingStartupTimings {
         'dispatchLoopShape',
         'dispatchLoopCount'
     ) + $phaseProperties) -Label $Path
-    foreach ($numberProperty in @('engineStartToRunMs') + $phaseProperties) {
+    Assert-JsonValueType -Value $Value.engineStartToRunMs -ExpectedKind number -Path "$Path.engineStartToRunMs"
+    foreach ($numberProperty in $phaseProperties) {
         Assert-JsonValueType -Value $Value.$numberProperty -ExpectedKind number -Path "$Path.$numberProperty"
         if ([double]$Value.$numberProperty -lt 0 -and [double]$Value.$numberProperty -ne -1) {
             throw "$Path.$numberProperty must be a measured value or the -1 not-measured marker."
@@ -5712,8 +5713,9 @@ function Test-ShippingStartupTimings {
     }
     Assert-JsonValueType -Value $Value.stopwatchIsHighResolution -ExpectedKind bool -Path "$Path.stopwatchIsHighResolution"
     Assert-JsonValueType -Value $Value.dispatchLoopShape -ExpectedKind string -Path "$Path.dispatchLoopShape"
-    # engineStartToRunMs only has to be a real reading. A batchmode player that
-    # reaches the first script before the engine clock advances would report 0,
+    # Both modes read the engine clock before dispatching on mode, so it carries
+    # no not-measured marker. It only has to be a real reading: a batchmode
+    # player that reaches the first script before that clock advances reports 0,
     # and failing 40 cells over that would cost far more than it proves. The
     # Stopwatch frequency is a platform constant, so it must be positive.
     if ([double]$Value.engineStartToRunMs -lt 0 -or [long]$Value.stopwatchFrequency -le 0) {

@@ -166,9 +166,9 @@ and newest supported editors. Each profile uses an isolated project and
 artifact directory. Its evidence is correctness-only and never enters the
 published benchmark baseline.
 
-Each shipping cell also writes three diagnostic evidence files. The runner
-validates the first two fail-closed before it writes the third, which is a
-summary of values those checks already accepted:
+Each shipping cell also writes four diagnostic evidence files. The runner
+validates the build report and both player results fail-closed before it writes
+the cell summary, which only joins values those checks already accepted:
 
 - `shipping-build-report.json` comes from the generated builder and the same
   `BuildReport` as `build-options-profile.json`: build result, Unix epoch start
@@ -190,7 +190,10 @@ summary of values those checks already accepted:
   cannot drift.
 
 Treat these values as characterization of one clean build and one fresh player
-launch. Every file carries `measurementClass: "characterization"`. They are not
+launch. The two joined files, `shipping-cell-evidence.json` and
+`shipping-matrix-evidence.json`, carry `measurementClass: "characterization"`;
+the three files above do not, because their exact property lists are validated
+fail-closed and an extra field would be rejected. They are not
 throughput rows and do not use the paired bracket protocol. The dispatch-loop
 rate is a fixed-count average that includes the harness counting each delivery,
 and the semantic cell loops a class message while the cardinality cells loop a
