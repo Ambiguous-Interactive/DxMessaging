@@ -224,6 +224,15 @@ jobs:
         shell: pwsh
         run: exit 1
 
+      - name: Redact credentials from Unity benchmark artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5

@@ -148,7 +148,22 @@ const path = require("path");
 //     CLI exit states, malformed evidence, non-finite arithmetic, and the exact
 //     PR #468 ratios. Workflow and PowerShell tests pin manifest and source-tree
 //     provenance into each authoritative summary: 19780.
-const TOTAL_BUDGET = 19780;
+// 084 Close a confirmed credential leak and add content-addressed evidence.
+//     Unity writes its license serial into unity.log and configure.log, and
+//     this repository is public, so every Unity artifact published the serial
+//     for 14 days. credential-patterns.js (77) is the one pattern list;
+//     redact-unity-artifacts.js (140) scrubs each artifact tree before upload
+//     and its suite (350) mutation-proves all seven patterns, idempotence, and
+//     the binary and false-positive paths; unity-artifact-redaction.test.js
+//     (181) asserts the invariant, so a future workflow cannot upload a
+//     Unity directory that was never scrubbed. perf-evidence-bundle.js (398) plus
+//     perf-evidence-reducers.js (178) and their suite (388) seal, verify, and
+//     replay #508 evidence bundles and refuse to seal credential material as a
+//     backstop. Verified against a real 441-file CI artifact: 256 leaked
+//     occurrences removed, then sealed and replayed. The devcontainer agent-CLI
+//     suite also moved from grepping shell source to executing the installer
+//     against a stub registry (+181): 20080.
+const TOTAL_BUDGET = 20080;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

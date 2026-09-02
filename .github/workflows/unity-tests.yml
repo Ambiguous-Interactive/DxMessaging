@@ -375,6 +375,15 @@ jobs:
         shell: pwsh
         run: exit 1
 
+      - name: Redact credentials from Unity editor validation diagnostics
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload Unity editor validation diagnostics
         if: always()
         timeout-minutes: 5
@@ -592,6 +601,36 @@ jobs:
           results-dir: .artifacts/unity/${{ matrix.unity-version }}-standalone
           label: Unity ${{ matrix.unity-version }} standalone
           expected-empty: ${{ steps.compute_standalone.outputs.is-empty }}
+
+      - name: Redact credentials from Unity test artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
+      # Content-addressed retention for issue #508. The manifest names every evidence
+      # file with its SHA-256 and embeds the normalized matrix result, so the uploaded
+      # artifact stays verifiable and replayable after the raw CI artifact expires.
+      # Redaction runs first so no credential material can be sealed into a bundle.
+      - name: Seal shipping-fidelity evidence bundle
+        id: seal_shipping
+        if: ${{ steps.run_shipping.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = '.artifacts/unity/${{ matrix.unity-version }}-shipping'
+          node scripts/unity/perf-evidence-bundle.js seal $root `
+            --experiment-id 'shipping-fidelity-matrix-${{ matrix.unity-version }}' `
+            --artifact-class 'shipping-fidelity-matrix' `
+            --reducer 'shipping-fidelity-matrix-v1' `
+            --source-commit '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw "Sealing the shipping evidence bundle failed ($LASTEXITCODE)." }
+          node scripts/unity/perf-evidence-bundle.js replay (Join-Path $root 'evidence-manifest.json') > $null
+          if ($LASTEXITCODE -ne 0) { throw "Replaying the shipping evidence bundle failed ($LASTEXITCODE)." }
 
       - name: Upload EditMode test artifacts
         if: always()
