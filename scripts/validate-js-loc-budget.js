@@ -151,19 +151,21 @@ const path = require("path");
 // 084 Close a confirmed credential leak and add content-addressed evidence.
 //     Unity writes its license serial into unity.log and configure.log, and
 //     this repository is public, so every Unity artifact published the serial
-//     for 14 days. credential-patterns.js (77) is the one pattern list;
-//     redact-unity-artifacts.js (140) scrubs each artifact tree before upload
-//     and its suite (350) mutation-proves all seven patterns, idempotence, and
+//     for 14 days. credential-patterns.js (107) is the one pattern list;
+//     redact-unity-artifacts.js (164) scrubs each artifact tree before upload
+//     and its suite (343) mutation-proves all seven patterns, idempotence, and
 //     the binary and false-positive paths; unity-artifact-redaction.test.js
-//     (181) asserts the invariant, so a future workflow cannot upload a
-//     Unity directory that was never scrubbed. perf-evidence-bundle.js (398) plus
-//     perf-evidence-reducers.js (178) and their suite (388) seal, verify, and
+//     (181) asserts the invariant, so a future workflow cannot upload a Unity
+//     directory that was never scrubbed. perf-evidence-bundle.js (435) plus
+//     perf-evidence-reducers.js (183) and their suite (444) seal, verify, and
 //     replay #508 evidence bundles and refuse to seal credential material as a
 //     backstop. Verified against a real 441-file CI artifact: 256 leaked
 //     occurrences removed, then sealed and replayed. The devcontainer agent-CLI
 //     suite also moved from grepping shell source to executing the installer
-//     against a stub registry (+181): 20080.
-const TOTAL_BUDGET = 20080;
+//     against a stub registry (+188). That is 1857 lines of new tested tooling
+//     for a leak that had no detection at all, plus 46 lines across the mcp
+//     configurator and its suite: 21980.
+const TOTAL_BUDGET = 21980;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -8,7 +8,7 @@ hand-copied winner.
 
 This runbook covers issue #508. It documents the tool, not the campaign protocol. For the
 measurement rules themselves see
-[perf-benchmark-methodology.md](./perf-benchmark-methodology.md).
+[the performance benchmark methodology runbook](./perf-benchmark-methodology.md).
 
 ## What a bundle is
 

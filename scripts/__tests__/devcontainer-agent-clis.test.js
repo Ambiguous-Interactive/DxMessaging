@@ -11,6 +11,11 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 
+// The installer is the Linux devcontainer bootstrap script. Windows runners have no
+// bash and no POSIX PATH, so the executing cases are skipped there; the static wiring
+// assertions below still run on every platform.
+const CAN_RUN_SHELL = process.platform !== "win32";
+
 const ROOT = path.resolve(__dirname, "..", "..");
 const dev = (name) => path.join(ROOT, ".devcontainer", name);
 const read = (name) => fs.readFileSync(dev(name), "utf8");
@@ -59,6 +64,9 @@ function runInstaller(t, setup) {
   fs.mkdirSync(stubBin, { recursive: true });
   writeExecutable(path.join(stubBin, "npm"), NPM_STUB);
   writeExecutable(path.join(stubBin, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
+  // macOS ships no `timeout`, so without this stub every bounded call in the
+  // installer would fail as "command not found" and look like an offline registry.
+  writeExecutable(path.join(stubBin, "timeout"), '#!/usr/bin/env bash\nshift\nexec "$@"\n');
   if (setup.installed) {
     for (const [, command] of PACKAGES) {
       writeExecutable(
@@ -144,7 +152,7 @@ const CASES = [
 ];
 
 for (const testCase of CASES) {
-  test(`install-agent-clis.sh handles ${testCase.name}`, (t) => {
+  test(`install-agent-clis.sh handles ${testCase.name}`, { skip: !CAN_RUN_SHELL }, (t) => {
     const { result, prefixBin, calls } = runInstaller(t, testCase.setup);
     assert.equal(
       result.status,
@@ -180,7 +188,7 @@ for (const testCase of CASES) {
   });
 }
 
-test("devcontainer agent scripts have valid bash syntax", () => {
+test("devcontainer agent scripts have valid bash syntax", { skip: !CAN_RUN_SHELL }, () => {
   for (const name of ["install-agent-clis.sh", "post-create.sh", "post-start.sh"]) {
     childProcess.execFileSync("bash", ["-n", dev(name)], { cwd: ROOT });
   }

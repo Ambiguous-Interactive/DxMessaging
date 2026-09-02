@@ -1071,12 +1071,15 @@ test("configure writes every client config and is idempotent", () => {
   const codex = fs.readFileSync(paths.codex, "utf8");
   assert.equal(codex.match(/\[mcp_servers\.(?:unity-mcp|github)\]/g)?.length, 2);
   assert.match(codex, /url = "https:\/\/api\.githubcopilot\.com\/mcp\/"/);
-  for (const filePath of Object.values(paths)) {
-    assert.equal(
-      fs.statSync(filePath).mode & 0o777,
-      0o600,
-      `${path.relative(repoRoot, filePath)} must protect MCP bearer tokens`
-    );
+  // Windows has no POSIX permission bits, so chmod is a no-op there and the mode reads 0666.
+  if (process.platform !== "win32") {
+    for (const filePath of Object.values(paths)) {
+      assert.equal(
+        fs.statSync(filePath).mode & 0o777,
+        0o600,
+        `${path.relative(repoRoot, filePath)} must protect MCP bearer tokens`
+      );
+    }
   }
   assert.deepEqual(configure(options, endpoint).written, [], "a second run changes nothing");
 });
