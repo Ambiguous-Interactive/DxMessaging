@@ -138,6 +138,7 @@
     "entrancy",
     "EPERM",
     "esult",
+    "EUSAGE",
     "eventvwr",
     "extenject",
     "Extenject",

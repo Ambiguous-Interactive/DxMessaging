@@ -188,6 +188,29 @@ for (const testCase of CASES) {
   });
 }
 
+// `npm ci` refuses to run without a lockfile, and this repository gitignores package-lock.json,
+// so a fresh clone has none. A devcontainer lifecycle script that reaches for `npm ci` installs
+// nothing and takes every later step that needs node_modules down with it.
+test("devcontainer bootstrap never uses npm ci while the lockfile is gitignored", () => {
+  const ignored = childProcess.spawnSync("git", ["check-ignore", "package-lock.json"], {
+    cwd: ROOT,
+    encoding: "utf8"
+  }).status;
+  assert.equal(ignored, 0, "this guard assumes package-lock.json is gitignored; it no longer is");
+  for (const name of ["post-create.sh", "post-start.sh"]) {
+    // Comment lines may name `npm ci` to explain why it is not used; only a real call counts.
+    const code = read(name)
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    assert.doesNotMatch(
+      code,
+      /\bnpm\s+ci\b/,
+      `${name} must use "npm install"; "npm ci" fails with EUSAGE when no lockfile is tracked`
+    );
+  }
+});
+
 test("devcontainer agent scripts have valid bash syntax", { skip: !CAN_RUN_SHELL }, () => {
   for (const name of ["install-agent-clis.sh", "post-create.sh", "post-start.sh"]) {
     childProcess.execFileSync("bash", ["-n", dev(name)], { cwd: ROOT });

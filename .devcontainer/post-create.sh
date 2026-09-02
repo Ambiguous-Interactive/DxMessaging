@@ -388,7 +388,9 @@ main() {
     cd "${WORKSPACE_DIR}"
 
     run_optional "Restoring .NET local tools" dotnet tool restore
-    run_optional "Installing workspace npm dependencies" npm ci --prefer-offline --no-audit --no-fund
+    # `npm ci` cannot be used here: package-lock.json is gitignored, so a fresh clone has no
+    # lockfile and `npm ci` fails with EUSAGE before installing anything.
+    run_optional "Installing workspace npm dependencies" npm install --prefer-offline --no-audit --no-fund
     run_optional "Configuring GitHub and Unity MCP for every agent" configure_agent_mcps
     run_optional "Pulling Git LFS content" git lfs pull
     run_optional "Configuring git safe.directory" git config --global --add safe.directory "$workspace_dir"
