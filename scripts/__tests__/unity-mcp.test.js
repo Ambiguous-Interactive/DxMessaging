@@ -24,7 +24,7 @@ let main;
 let mergeCodexToml;
 let parseArgs;
 let parseDotEnv;
-let prepareJsonServer;
+let prepareJsonServers;
 let probeEndpoint;
 let procNetRouteGateways;
 let readLocalEnv;
@@ -55,7 +55,7 @@ before(async () => {
     mergeCodexToml,
     parseArgs,
     parseDotEnv,
-    prepareJsonServer,
+    prepareJsonServers,
     probeEndpoint,
     procNetRouteGateways,
     readLocalEnv,
@@ -292,13 +292,20 @@ test("endpointUrl brackets IPv6 literals", () => {
   );
 });
 test("resolveOptions prefers args over env over .env.local over defaults", () => {
-  const local = { UNITY_MCP_BRIDGE_HOST: "local.example", UNITY_MCP_BRIDGE_PORT: "9001" };
-  const environment = { UNITY_MCP_BRIDGE_HOST: "env.example" };
+  const local = {
+    UNITY_MCP_BRIDGE_HOST: "local.example",
+    UNITY_MCP_BRIDGE_PORT: "9001",
+    GITHUB_TOKEN: "local-token"
+  };
+  const environment = { UNITY_MCP_BRIDGE_HOST: "env.example", GH_TOKEN: "env-token" };
   const fromArgs = resolveOptions({ host: "arg.example" }, environment, local, "/repo");
   assert.equal(fromArgs.host, "arg.example");
   assert.equal(fromArgs.port, 9001, "port still falls through to .env.local");
+  assert.equal(fromArgs.githubToken, "env-token");
   const fromEnv = resolveOptions({}, environment, local, "/repo");
   assert.equal(fromEnv.host, "env.example");
+  assert.equal(fromEnv.githubToken, "env-token");
+  assert.equal(resolveOptions({}, {}, local, "/repo").githubToken, "local-token");
   const fromDefaults = resolveOptions({}, {}, {}, "/repo");
   assert.equal(fromDefaults.host, DEFAULTS.host);
   assert.equal(fromDefaults.port, DEFAULTS.port);
@@ -753,28 +760,28 @@ test("describeAttempts surfaces classified failures ahead of plain unreachabilit
     "noise from dead ports is dropped when a real failure exists"
   );
 });
-test("prepareJsonServer creates, merges, and rejects malformed documents", () => {
+test("prepareJsonServers creates, merges, and rejects malformed documents", () => {
   const directory = temporaryDirectory();
   const filePath = path.join(directory, "mcp.json");
-  const server = { type: "http", url: "http://h:1/mcp" };
+  const server = { "unity-mcp": { type: "http", url: "http://h:1/mcp" } };
   assert.equal(
-    JSON.parse(prepareJsonServer(filePath, "mcpServers", server)).mcpServers["unity-mcp"].url,
+    JSON.parse(prepareJsonServers(filePath, "mcpServers", server)).mcpServers["unity-mcp"].url,
     "http://h:1/mcp"
   );
   fs.writeFileSync(
     filePath,
     JSON.stringify({ mcpServers: { other: { url: "keep" } }, unrelated: 1 })
   );
-  const merged = JSON.parse(prepareJsonServer(filePath, "mcpServers", server));
+  const merged = JSON.parse(prepareJsonServers(filePath, "mcpServers", server));
   assert.equal(merged.mcpServers.other.url, "keep", "sibling servers survive");
   assert.equal(merged.unrelated, 1, "unrelated keys survive");
   fs.writeFileSync(filePath, JSON.stringify({ mcpServers: [] }));
   assert.throws(
-    () => prepareJsonServer(filePath, "mcpServers", server),
+    () => prepareJsonServers(filePath, "mcpServers", server),
     /Expected mcpServers to be an object/
   );
   fs.writeFileSync(filePath, "{ not json");
-  assert.throws(() => prepareJsonServer(filePath, "mcpServers", server), /Invalid JSON/);
+  assert.throws(() => prepareJsonServers(filePath, "mcpServers", server), /Invalid JSON/);
 });
 for (const [label, raw, expected] of [
   ["a line comment", '{\n  // hint\n  "a": 1\n}', { a: 1 }],
@@ -805,14 +812,16 @@ test("stripJsonComments stays linear in the number of closing brackets", () => {
   assert.equal(stripped, document, "comment-free JSON must round-trip unchanged");
   assert.ok(elapsedMs < 2_000, `took ${elapsedMs.toFixed(0)}ms; expected well under 2000ms`);
 });
-test("prepareJsonServer merges into a JSONC document", () => {
+test("prepareJsonServers merges into a JSONC document", () => {
   const filePath = path.join(temporaryDirectory(), "mcp.json");
   fs.writeFileSync(
     filePath,
     ["{", "  // Inputs are prompted on first server start.", '  "servers": {},', "}"].join("\n")
   );
   const merged = JSON.parse(
-    prepareJsonServer(filePath, "servers", { type: "http", url: "http://h:1/mcp" })
+    prepareJsonServers(filePath, "servers", {
+      "unity-mcp": { type: "http", url: "http://h:1/mcp" }
+    })
   );
   assert.equal(merged.servers["unity-mcp"].url, "http://h:1/mcp");
 });
@@ -1040,26 +1049,35 @@ test(
 );
 test("configure writes every client config and is idempotent", () => {
   const repoRoot = temporaryDirectory();
-  const options = { repoRoot, bearerToken: "a".repeat(32) };
+  const options = { repoRoot, bearerToken: "a".repeat(32), githubToken: "g".repeat(40) };
   const endpoint = { host: "10.0.0.5", port: 9020, endpointPath: "/mcp" };
   const firstRun = configure(options, endpoint);
   assert.equal(firstRun.url, "http://10.0.0.5:9020/mcp");
   const paths = clientConfigPaths(repoRoot);
   assert.deepEqual(firstRun.written.sort(), Object.values(paths).sort());
-  assert.equal(
-    JSON.parse(fs.readFileSync(paths.claudeCode, "utf8")).mcpServers["unity-mcp"].headers
-      .Authorization,
-    `Bearer ${"a".repeat(32)}`
-  );
-  assert.equal(
-    JSON.parse(fs.readFileSync(paths.vscode, "utf8")).servers["unity-mcp"].url,
-    firstRun.url
-  );
-  assert.equal(
-    JSON.parse(fs.readFileSync(paths.cursor, "utf8")).mcpServers["unity-mcp"].url,
-    firstRun.url
-  );
-  assert.match(fs.readFileSync(paths.codex, "utf8"), /\[mcp_servers\.unity-mcp\]/);
+  for (const [filePath, collection, transport, kind] of [
+    [paths.claudeCode, "mcpServers", "type", "http"],
+    [paths.cursor, "mcpServers", "type", "http"],
+    [paths.vscode, "servers", "type", "http"],
+    [paths.openCode, "mcp", "type", "remote"],
+    [paths.nanocoder, "mcpServers", "transport", "http"]
+  ]) {
+    const servers = JSON.parse(fs.readFileSync(filePath, "utf8"))[collection];
+    assert.equal(servers["unity-mcp"].url, firstRun.url);
+    assert.equal(servers["unity-mcp"][transport], kind);
+    assert.equal(servers.github.url, "https://api.githubcopilot.com/mcp/");
+    assert.match(servers.github.headers.Authorization, /^Bearer g+$/);
+  }
+  const codex = fs.readFileSync(paths.codex, "utf8");
+  assert.equal(codex.match(/\[mcp_servers\.(?:unity-mcp|github)\]/g)?.length, 2);
+  assert.match(codex, /url = "https:\/\/api\.githubcopilot\.com\/mcp\/"/);
+  for (const filePath of Object.values(paths)) {
+    assert.equal(
+      fs.statSync(filePath).mode & 0o777,
+      0o600,
+      `${path.relative(repoRoot, filePath)} must protect MCP bearer tokens`
+    );
+  }
   assert.deepEqual(configure(options, endpoint).written, [], "a second run changes nothing");
 });
 test("configure generates and persists a bearer token when none is supplied", () => {
@@ -1067,6 +1085,9 @@ test("configure generates and persists a bearer token when none is supplied", ()
   configure({ repoRoot, bearerToken: undefined }, { host: "h", port: 1, endpointPath: "/mcp" });
   const envLocal = fs.readFileSync(path.join(repoRoot, ".env.local"), "utf8");
   assert.match(envLocal, /^UNITY_MCP_BEARER_TOKEN=[0-9a-f]{64}$/m);
+  const paths = clientConfigPaths(repoRoot);
+  assert.equal(JSON.parse(fs.readFileSync(paths.claudeCode)).mcpServers.github.headers, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(paths.openCode)).mcp.github.oauth, undefined);
 });
 test("relayCandidates is platform specific", () => {
   const windows = relayCandidates({ platform: "win32", home: "/home/u" });

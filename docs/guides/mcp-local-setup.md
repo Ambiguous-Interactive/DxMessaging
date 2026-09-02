@@ -11,9 +11,17 @@ These files hold machine-specific host, port, and token values and are gitignore
 - `.cursor/mcp.json`
 - `.vscode/mcp.json`
 - `.codex/config.toml`
+- `opencode.jsonc`
+- `.nanocoder/mcp.json`
 - `.env.local`
 
 Do not commit them.
+
+The devcontainer runs configuration during creation and again in the background on every start.
+Codex, Claude Code, Copilot CLI, Copilot Chat, VS Code, OpenCode, Nanocoder, and Cursor therefore
+share the same Unity endpoint without manual client setup. The configurator also adds GitHub's hosted
+MCP server. It preserves unrelated servers and sets every generated config to mode `0600` because
+the files can contain bearer tokens.
 
 ## 1. Start the bridge on the Windows host
 
@@ -46,6 +54,32 @@ Neither command needs a host or port supplied. Discovery tries `host.docker.inte
 the `/etc/resolv.conf` nameserver (the Windows host under WSL2), and the default-route gateway,
 against ports `9020` and `9003`.
 
+`configure` writes the native schema for each client:
+
+| Client                      | Machine-local file    |
+| --------------------------- | --------------------- |
+| Claude Code and Copilot CLI | `.mcp.json`           |
+| Cursor                      | `.cursor/mcp.json`    |
+| VS Code and Copilot Chat    | `.vscode/mcp.json`    |
+| Codex                       | `.codex/config.toml`  |
+| OpenCode                    | `opencode.jsonc`      |
+| Nanocoder                   | `.nanocoder/mcp.json` |
+
+The devcontainer sets `NANOCODER_MCPSERVERS_FILE` to the Nanocoder file. This avoids making
+Nanocoder consume Claude's different HTTP schema.
+
+## GitHub MCP authentication
+
+The generated `github` entry points to GitHub's hosted MCP server. The devcontainer forwards the
+first available value from `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PERSONAL_ACCESS_TOKEN`, or
+`GITHUB_PAT`. The configurator writes that value as the bearer token for clients that need explicit
+headers. Clients with GitHub OAuth support can authenticate interactively when no token is present.
+
+Keep tokens outside tracked files. A token used with GitHub MCP should have only the permissions
+needed for the intended tools. See the
+[GitHub MCP server documentation](https://github.com/github/github-mcp-server) for authentication
+and toolset options.
+
 ## 3. Override when discovery is not enough
 
 Set values in `.env.local` at the repository root:
@@ -63,6 +97,42 @@ ahead of it, so discovery never reaches past a deliberate setting. `--host X` pr
 Windows paths need no special quoting, and a quoted one may end in a backslash
 (`UNITY_PROJECT_PATH="D:\Program Files\Proj\"`). A line these commands cannot parse is warned about
 and skipped, so unrelated entries in a shared `.env.local` cannot break them.
+
+## Multiple editors and devcontainers
+
+Give each host project and devcontainer pair its own port, token, and `.env.local`. For example:
+
+```text
+Project A: port 9020, token A, host path D:\Work\ProjectA
+Project B: port 9021, token B, host path D:\Work\ProjectB
+```
+
+Start one bridge from each host checkout:
+
+```powershell
+# Project A checkout
+npm run unity:mcp:bridge -- --project 'D:\Work\ProjectA' --port 9020
+
+# Project B checkout
+npm run unity:mcp:bridge -- --project 'D:\Work\ProjectB' --port 9021
+```
+
+Set the matching port and token in each checkout's `.env.local`. Each devcontainer then configures
+only its own explicit endpoint. Do not share one `.env.local` across projects. The bridge rejects a
+port already in use, which catches accidental cross-project reuse before a client is configured.
+
+## Unity CLI compatibility
+
+Keep the repository's Node bridge as the default for this topology. Unity CLI is currently beta,
+its live Editor/MCP pipeline requires Unity 6.0 or newer, and its client configurator does not cover
+OpenCode or Nanocoder. This package supports Unity 2021.3, while the current relay also handles the
+Windows-host-to-Linux-container boundary and explicit per-project port and token routing.
+
+Unity CLI can still be installed and run on the Windows host for Unity 6 projects or project
+management. A future pilot should run it host-side, retain one authenticated endpoint per editor,
+and prove all six generated client configurations before replacing this bridge. See Unity's
+[Unity CLI skill documentation](https://github.com/Unity-Technologies/skills/blob/main/skills/unity-cli/SKILL.md)
+for the current requirements and supported clients.
 
 ## Troubleshooting
 
