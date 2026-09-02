@@ -305,8 +305,38 @@ metrics because the Release player strips the required profiler recorder (see
   manifest. The runner clears and hashes every generated project input before
   reuse. It also archives a privacy-safe hash and semantic summary of the
   resolved package lock, the exact two-assembly player inventory, loaded
-  assembly inventory, and profile evidence. This correctness slice does not
-  contribute benchmark rows or change the published performance profile.
+  assembly inventory, and profile evidence. Each cell also records build-time,
+  size, and cold-start evidence. The builder writes `shipping-build-report.json`
+  from the same `BuildReport` that proves the final options: a Stopwatch
+  duration around `BuildPipeline.BuildPlayer`, Unity's reported total time and
+  size, and every build step with its duration. Both player runs write a
+  `timings` block. The positive run measures bus construction, the root-probe
+  phase, registration, the first typed dispatch, the typed and untyped phases, a
+  1,000,000-emit dispatch loop after a discarded warm-up, a forced trim, and
+  teardown. Every phase uses `Stopwatch`, except engine start to first script,
+  which reads `Time.realtimeSinceStartupAsDouble`. The missing-root run measures
+  none of them and marks each phase `-1`, because reporting `0` would claim a
+  measurement for work that never ran. The runner joins those with the Library
+  cache state, the editor wall clock, the player byte count, and the
+  `GameAssembly.dll` size in `shipping-cell-evidence.json`, and the matrix
+  wrapper collects every completed cell into one `shipping-matrix-evidence.json`
+  per endpoint editor. Those two joined files carry
+  `measurementClass: "characterization"`; the build report and the two player
+  results do not, because their exact property lists are validated fail-closed
+  and an extra field would be rejected. These values show size and build-time
+  cliffs across 1,
+  16, 256, and 1,000 message types for the
+  [#506](https://github.com/Ambiguous-Interactive/DxMessaging/issues/506)
+  protocol, and they are never published as throughput rows. The dispatch-loop
+  rate is a fixed-count average that includes the harness counting each
+  delivery, so compare it only across cells that loop the same message shape.
+  The semantic cell loops a class message and the cardinality cells loop a
+  struct, so the table prints the shape beside the rate. Every IL2CPP build in
+  this leg is a clean build: the builder always sets
+  `BuildOptions.CleanBuildCache`, and each profile pins `cleanBuildCache` so a
+  build that drops it fails validation. Only the editor Library cache state
+  varies between runs, and the evidence records it. This correctness slice does
+  not contribute benchmark rows or change the published performance profile.
 
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and

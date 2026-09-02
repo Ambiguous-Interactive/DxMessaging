@@ -166,6 +166,39 @@ and newest supported editors. Each profile uses an isolated project and
 artifact directory. Its evidence is correctness-only and never enters the
 published benchmark baseline.
 
+Each shipping cell also writes four diagnostic evidence files. The runner
+validates the build report and both player results fail-closed before it writes
+the cell summary, which only joins values those checks already accepted:
+
+- `shipping-build-report.json` comes from the generated builder and the same
+  `BuildReport` as `build-options-profile.json`: build result, Unix epoch start
+  and end, a Stopwatch duration, Unity's reported total time and size, and every
+  build step with its duration. The stamps are integers because
+  `ConvertFrom-Json` rehydrates an ISO 8601 string into a `DateTime`.
+- Both `shipping-positive.json` and `shipping-missing-root-mutant.json` (schema 3) carry a `timings` object. The positive run measures bus construction, root
+  probes, registration, first typed dispatch, the typed and untyped phases, a
+  1,000,000-emit dispatch loop after a discarded warm-up, a forced trim, and
+  teardown. Every phase uses `Stopwatch`; engine start to first script reads
+  `Time.realtimeSinceStartupAsDouble`. The mutant measures none of them and
+  marks each phase `-1`, so a fabricated `0` cannot stand in for work that never
+  ran.
+- `shipping-cell-evidence.json` joins those with the Library cache state, the
+  editor wall clock, player byte count, and `GameAssembly.dll` size. The matrix
+  wrapper copies every completed cell row into `shipping-matrix-evidence.json`
+  at the artifact root and prints one table per endpoint editor. It copies
+  whatever the runner wrote rather than redeclaring the shape, so the two files
+  cannot drift.
+
+Treat these values as characterization of one clean build and one fresh player
+launch. The two joined files, `shipping-cell-evidence.json` and
+`shipping-matrix-evidence.json`, carry `measurementClass: "characterization"`;
+the three files above do not, because their exact property lists are validated
+fail-closed and an extra field would be rejected. They are not
+throughput rows and do not use the paired bracket protocol. The dispatch-loop
+rate is a fixed-count average that includes the harness counting each delivery,
+and the semantic cell loops a class message while the cardinality cells loop a
+struct, so only cells sharing a shape are comparable.
+
 ## Common Pitfalls
 
 - "I will publish the Debug EditMode number; it is close enough." Debug changes
