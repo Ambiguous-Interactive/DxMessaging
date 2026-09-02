@@ -1346,8 +1346,46 @@ if (
         $incompleteArguments.PlayerDirectoryManifest = $incompleteManifest
         Assert-Fails "shipping cell evidence rejects a player without $missingPlayerFile" {
             Write-ShippingCellEvidence @incompleteArguments
-        } 'must contain DxmShippingPlayer.exe and the IL2CPP GameAssembly.dll'
+        } 'exactly one IL2CPP GameAssembly.dll'
     }
+    $duplicateNativeManifest = [ordered]@{
+        schemaVersion = 1
+        fileCount = 4
+        files = @($cellPlayerManifest['files']) + @(
+            [ordered]@{
+                path = 'DxmShippingPlayer_Data/GameAssembly.dll'
+                length = 999
+                sha256 = ('D' * 64)
+            }
+        )
+    }
+    $duplicateNativeArguments = $cellEvidenceArguments.Clone()
+    $duplicateNativeArguments.PlayerDirectoryManifest = $duplicateNativeManifest
+    Assert-Fails 'shipping cell evidence rejects two IL2CPP native outputs' {
+        Write-ShippingCellEvidence @duplicateNativeArguments
+    } 'exactly one IL2CPP GameAssembly.dll'
+    # A nested, differently cased native output is still the one measurement.
+    $nestedNativeManifest = [ordered]@{
+        schemaVersion = 1
+        fileCount = 3
+        files = @(
+            @($cellPlayerManifest['files'] | Where-Object { $_['path'] -cne 'GameAssembly.dll' }) + @(
+                [ordered]@{
+                    path = 'Nested/gameassembly.DLL'
+                    length = 22000000
+                    sha256 = ('E' * 64)
+                }
+            )
+        )
+    }
+    $nestedNativeArguments = $cellEvidenceArguments.Clone()
+    $nestedNativeArguments.PlayerDirectoryManifest = $nestedNativeManifest
+    $nestedNativeArguments.Path = Join-Path $fixtureRoot 'shipping-cell-evidence-nested.json'
+    Write-ShippingCellEvidence @nestedNativeArguments
+    $nestedNativeEvidence = Get-Content -LiteralPath $nestedNativeArguments.Path -Raw | ConvertFrom-Json
+    Assert-That 'shipping cell evidence finds a nested, differently cased native output' (
+        [long]$nestedNativeEvidence.gameAssemblyBytes -eq 22000000
+    )
 
     $playerManifestPath = Join-Path $fixtureRoot 'shipping-player-manifest.json'
     $hashA = 'A'.PadRight(64, 'A')

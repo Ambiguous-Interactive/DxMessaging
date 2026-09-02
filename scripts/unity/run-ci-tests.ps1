@@ -5718,16 +5718,24 @@ function Write-ShippingCellEvidence {
     $playerTotalBytes = [long]0
     $playerExecutableBytes = [long]-1
     $gameAssemblyBytes = [long]-1
+    $gameAssemblyMatches = 0
     foreach ($playerFile in $playerFiles) {
+        $playerFilePath = [string]$playerFile['path']
         $playerTotalBytes += [long]$playerFile['length']
-        if ([string]$playerFile['path'] -ceq 'DxmShippingPlayer.exe') {
+        if ($playerFilePath -ieq 'DxmShippingPlayer.exe') {
             $playerExecutableBytes = [long]$playerFile['length']
-        } elseif ([string]$playerFile['path'] -ceq 'GameAssembly.dll') {
+        }
+        # Locate the IL2CPP native output the way capture-dispatch-codegen.ps1
+        # already does: by leaf name, at any depth, ignoring case. Requiring one
+        # exact root-relative spelling would fail every cell over a layout
+        # detail that carries no evidence.
+        if ([System.IO.Path]::GetFileName($playerFilePath) -ieq 'GameAssembly.dll') {
             $gameAssemblyBytes = [long]$playerFile['length']
+            $gameAssemblyMatches++
         }
     }
-    if ($playerExecutableBytes -lt 0 -or $gameAssemblyBytes -lt 0) {
-        throw 'Shipping player directory must contain DxmShippingPlayer.exe and the IL2CPP GameAssembly.dll.'
+    if ($playerExecutableBytes -lt 0 -or $gameAssemblyMatches -ne 1) {
+        throw 'Shipping player directory must contain DxmShippingPlayer.exe and exactly one IL2CPP GameAssembly.dll.'
     }
     Write-JsonArtifact -Path $Path -Value ([ordered]@{
             schemaVersion = 1
