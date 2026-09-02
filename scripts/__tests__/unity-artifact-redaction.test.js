@@ -8,9 +8,15 @@
  * uploading a Unity output directory on a public repository publishes the serial to anyone who can
  * download the artifact.
  *
- * Removing the six known leaks is not enough: the next workflow that uploads a Unity directory
- * would reintroduce the whole failure mode. This asserts the invariant instead. Every upload of a
- * Unity-log-bearing path must be preceded, in the same job, by a redaction step that covers it.
+ * Removing the known leaks is not enough: the next workflow that uploads a Unity directory would
+ * reintroduce the whole failure mode. This asserts the invariant instead.
+ *
+ * "Preceded by a redaction step" is too weak a rule, and a real run proved it. A redaction step
+ * placed early in a job scrubs a tree Unity has not written yet; Unity then runs and writes fresh
+ * logs, and the upload publishes them unscrubbed. Perf artifacts leaked exactly that way while the
+ * first version of this guard passed. So coverage is invalidated by any step that could write into
+ * the tree: only uploads, other redaction steps, and one explicitly named post-processing step may
+ * sit between a redaction step and the upload it protects.
  */
 
 const assert = require("node:assert/strict");
@@ -76,19 +82,38 @@ function jobSteps(job) {
   return Array.isArray(job?.steps) ? job.steps : [];
 }
 
-/** Every Unity-log-bearing upload in the repository, with the redaction state that precedes it. */
+/**
+ * Steps allowed between a redaction step and the upload it protects. Everything else is assumed to
+ * be able to write Unity output, which invalidates the scrub that came before it. Adding to this
+ * list is a deliberate claim that the step writes nothing into an uploaded Unity path.
+ */
+const NON_PRODUCING_STEP_IDS = new Set(["seal_shipping"]);
+
+function isUpload(uses) {
+  return uses.startsWith(UPLOAD_ACTION);
+}
+
+function isRedaction(uses) {
+  return uses.startsWith(REDACTION_ACTION);
+}
+
+/** Every Unity-log-bearing upload in the repository, with the redaction still in force at it. */
 function unityUploads() {
   const uploads = [];
   for (const { name, document } of readWorkflows()) {
     for (const [jobId, job] of Object.entries(document?.jobs ?? {})) {
-      const redactedSoFar = [];
+      let inForce = [];
       for (const step of jobSteps(job)) {
         const uses = typeof step?.uses === "string" ? step.uses : "";
-        if (uses.startsWith(REDACTION_ACTION)) {
-          redactedSoFar.push(...toPathList(step?.with?.paths));
+        if (isRedaction(uses)) {
+          inForce = [...inForce, ...toPathList(step?.with?.paths)];
           continue;
         }
-        if (!uses.startsWith(UPLOAD_ACTION)) {
+        if (!isUpload(uses)) {
+          if (!NON_PRODUCING_STEP_IDS.has(step?.id)) {
+            // This step may have written new Unity output, so anything scrubbed before it is stale.
+            inForce = [];
+          }
           continue;
         }
         for (const uploadedPath of toPathList(step?.with?.path)) {
@@ -100,7 +125,7 @@ function unityUploads() {
             jobId,
             stepName: step.name ?? uses,
             uploadedPath,
-            redactedSoFar: [...redactedSoFar]
+            inForce: [...inForce]
           });
         }
       }
@@ -115,14 +140,13 @@ test("every Unity artifact upload is preceded by credential redaction in the sam
     uploads.length >= 9,
     `expected the known Unity uploads to be discovered, found ${uploads.length}`
   );
-  const unprotected = uploads.filter(
-    (upload) => !covers(upload.redactedSoFar, upload.uploadedPath)
-  );
+  const unprotected = uploads.filter((upload) => !covers(upload.inForce, upload.uploadedPath));
   assert.deepEqual(
     unprotected.map((upload) => `${upload.workflow} ${upload.jobId} "${upload.stepName}"`),
     [],
     "these steps upload Unity output that still contains the license serial; add a " +
-      `"${REDACTION_ACTION}" step earlier in the same job whose paths cover the uploaded path`
+      `"${REDACTION_ACTION}" step covering the uploaded path immediately before the upload, ` +
+      "with no Unity-producing step in between"
   );
 });
 

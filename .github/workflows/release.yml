@@ -417,6 +417,15 @@ jobs:
           label: Unity release editmode
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
+      - name: Redact credentials from release Unity artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload release Unity artifacts
         if: always()
         timeout-minutes: 10
@@ -702,6 +711,15 @@ jobs:
         with:
           results-dir: .artifacts/unity/release-unitypackage
           label: Unity release unitypackage export
+
+      - name: Redact credentials from unitypackage artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
 
       - name: Upload the .unitypackage artifact
         timeout-minutes: 20

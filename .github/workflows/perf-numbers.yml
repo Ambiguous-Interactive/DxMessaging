@@ -522,6 +522,15 @@ jobs:
           results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
           label: Comparison contracts ${{ matrix.unity-version }}
 
+      - name: Redact credentials from comparison contract artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload comparison contract artifacts
         if: ${{ always() && matrix.benchmark-suite == 'comparisons' }}
         timeout-minutes: 10
@@ -1210,6 +1219,15 @@ jobs:
           Get-Content `
             -LiteralPath (Join-Path $artifactsPath 'paired-comparison-summary.md') `
             -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Redact credentials from perf benchmark artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
 
       - name: Upload perf benchmark artifacts
         if: always()

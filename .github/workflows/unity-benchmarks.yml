@@ -315,6 +315,15 @@ jobs:
           label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
+      - name: Redact credentials from benchmark artifacts
+        if: always()
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload benchmark artifacts
         if: always()
         timeout-minutes: 10
