@@ -380,24 +380,35 @@ test("the CLI redacts a real tree and summarizes what it removed", () => {
   assert.ok(!written.join("").includes(FAKE_SERIAL), "cli: output must never echo a credential");
 });
 
-test("the CLI refuses to report success when a file could not be examined", (t) => {
-  // The uploads now require this step to have succeeded, so exiting 0 after a skip would publish a
-  // file nobody looked at. A binary file is not a skip: it was examined and judged not to be text.
+test("the CLI never reports success when a file could not be scrubbed", (t) => {
+  // The uploads now require this step to have succeeded, so any file the scrubber could not clear
+  // must stop the run. How the file resists differs by platform, and both outcomes are refusals.
   if (process.getuid && process.getuid() === 0) {
-    t.skip("root can read any file, so the unreadable case cannot be staged");
+    t.skip("root can open any file, so neither refusal can be staged");
     return;
   }
   const root = temporaryDirectory();
   fs.writeFileSync(path.join(root, "clean.log"), "nothing here\n");
   fs.writeFileSync(path.join(root, "GameAssembly.bin"), BINARY_BLOB);
-  const unreadable = path.join(root, "locked.log");
-  fs.writeFileSync(unreadable, `serial ${FAKE_SERIAL}\n`);
-  fs.chmodSync(unreadable, 0o000);
-  t.after(() => fs.chmodSync(unreadable, 0o644));
+  const resistant = path.join(root, "locked.log");
+  fs.writeFileSync(resistant, `serial ${FAKE_SERIAL}\n`);
+  fs.chmodSync(resistant, 0o000);
+  t.after(() => fs.chmodSync(resistant, 0o644));
 
   const written = [];
+  const write = (text) => written.push(text);
+  if (process.platform === "win32") {
+    // Windows maps mode 0 to read-only rather than unreadable, so the file is scanned, the
+    // credential is found, and the rewrite fails. A different path to the same refusal.
+    assert.throws(
+      () => runCli(["node", "cli", root], write),
+      /locked\.log contains credential material but could not be rewritten/,
+      "cli: a file that cannot be rewritten must stop the run"
+    );
+    return;
+  }
   assert.equal(
-    runCli(["node", "cli", root], (text) => written.push(text)),
+    runCli(["node", "cli", root], write),
     2,
     "cli: a file that was not examined must not exit 0, or the gated upload publishes it"
   );
@@ -405,6 +416,32 @@ test("the CLI refuses to report success when a file could not be examined", (t) 
   assert.match(output, /Refusing to report success: 1 file\(s\) could not be examined/);
   assert.match(output, /locked\.log/, "cli: the refusal must name the file to scrub");
   assert.ok(!output.includes(FAKE_SERIAL), "cli: the refusal must not echo the credential");
+});
+
+// This is the case the sibling repository hit in production: a root-owned Unity license cache
+// inside the artifact tree, readable but not writable. It runs on every platform, unlike mode 0,
+// whose meaning differs between POSIX and Windows.
+test("a readable file that cannot be rewritten stops the run on every platform", (t) => {
+  if (process.getuid && process.getuid() === 0) {
+    t.skip("root can write any file, so the unwritable case cannot be staged");
+    return;
+  }
+  const root = temporaryDirectory();
+  const unwritable = path.join(root, "Unity.Entitlements.Audit.log");
+  fs.writeFileSync(unwritable, `serial ${FAKE_SERIAL}\n`);
+  fs.chmodSync(unwritable, 0o444);
+  t.after(() => fs.chmodSync(unwritable, 0o644));
+
+  assert.throws(
+    () => runCli(["node", "cli", root], () => {}),
+    /Unity\.Entitlements\.Audit\.log contains credential material but could not be rewritten/,
+    "a credential that cannot be removed must fail the step, never be reported as clean"
+  );
+  assert.match(
+    fs.readFileSync(unwritable, "utf8"),
+    new RegExp(FAKE_SERIAL),
+    "the file is left untouched; the run fails rather than half-scrubbing it"
+  );
 });
 
 test("the CLI still exits 0 when the only unscanned files are binary", () => {
