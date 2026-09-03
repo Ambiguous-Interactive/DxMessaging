@@ -53,7 +53,15 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
   a session-bearing HTTP 404 restarts initialization once without resetting that deadline.
 - A session-bearing probe always attempts bounded `DELETE` cleanup and releases its response. HTTP
   405 is allowed; other cleanup failures warn without changing the readiness result.
-- `configure` writes `.mcp.json` (`mcpServers`), `.cursor/mcp.json` (`mcpServers`), `.vscode/mcp.json` (`servers`), and `.codex/config.toml` (`mcp_servers`) in one transaction with rollback. All four are machine-local and gitignored; only the `unity-mcp` entry is rewritten and other servers are preserved.
+- `configure` writes `.mcp.json` (`mcpServers`), `.cursor/mcp.json` (`mcpServers`),
+  `.vscode/mcp.json` (`servers`), `.codex/config.toml` (`mcp_servers`), `opencode.jsonc`
+  (`mcp`), and `.nanocoder/mcp.json` (`mcpServers`) in one transaction with rollback. All six are
+  machine-local, mode `0600`, and gitignored. The `unity-mcp` and hosted `github` entries are
+  rewritten; other servers are preserved. The devcontainer points `NANOCODER_MCPSERVERS_FILE` at
+  the Nanocoder-specific schema.
+- The devcontainer runs `configure --no-discover` on create and in the background on each start.
+  Put a distinct `UNITY_MCP_BRIDGE_PORT` and bearer token in each checkout's `.env.local` when
+  pairing several host editors and devcontainers.
 - Local overrides go in `.env.local` or the matching flag: `UNITY_MCP_BRIDGE_HOST`, `UNITY_MCP_BRIDGE_PORT`, `UNITY_MCP_BRIDGE_PATH`, `UNITY_MCP_BEARER_TOKEN`, `UNITY_PROJECT_PATH`. `node scripts/mcp/unity-mcp.mjs --help` lists every flag.
 
 ### Topology

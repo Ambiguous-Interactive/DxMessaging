@@ -9,7 +9,8 @@
 #   2. dxm-dotnet-tools         -> Global dotnet tools (csharpier, etc.)
 #   3. dxm-powershell-modules   -> PowerShell module cache
 #   4. dxm-python-cache         -> pip wheel/download cache
-#   5. dxm-node-modules         -> Linux devcontainer node_modules tree
+#   5. dxm-npm-cache            -> npm download cache
+#   6. dxm-node-modules         -> Linux devcontainer node_modules tree
 #
 # This container runs no local Unity build. Local Unity verification goes
 # through the unity-mcp-remote MCP server (the host editor), which owns its own
@@ -55,6 +56,7 @@ readonly CACHE_MOUNT_SOURCES=(
     "dxm-dotnet-tools"
     "dxm-powershell-modules"
     "dxm-python-cache"
+    "dxm-npm-cache"
     "dxm-node-modules"
 )
 
@@ -63,6 +65,7 @@ readonly CACHE_MOUNT_TARGETS=(
     "/home/vscode/.dotnet/tools"
     "/home/vscode/.local/share/powershell"
     "/home/vscode/.cache/pip"
+    "/home/vscode/.npm"
     "${CACHE_WORKSPACE_ROOT}/node_modules"
 )
 

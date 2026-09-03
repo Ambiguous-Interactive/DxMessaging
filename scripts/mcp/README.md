@@ -107,25 +107,34 @@ found. Copy `UNITY_MCP_BEARER_TOKEN` from the host's `.env.local` or pass `--tok
 
 ## Generated client configs
 
-`configure` writes all four in one transaction. Every file is staged before any is committed and a
+`configure` writes all six in one transaction. Every file is staged before any is committed and a
 mid-write failure rolls back, so no agent is ever left pointing at a stale endpoint:
 
-| Client            | File                 | Schema key    |
-| ----------------- | -------------------- | ------------- |
-| Claude Code       | `.mcp.json`          | `mcpServers`  |
-| Cursor            | `.cursor/mcp.json`   | `mcpServers`  |
-| VS Code / Copilot | `.vscode/mcp.json`   | `servers`     |
-| Codex             | `.codex/config.toml` | `mcp_servers` |
+| Client                      | File                  | Schema key    |
+| --------------------------- | --------------------- | ------------- |
+| Claude Code and Copilot CLI | `.mcp.json`           | `mcpServers`  |
+| Cursor                      | `.cursor/mcp.json`    | `mcpServers`  |
+| VS Code and Copilot Chat    | `.vscode/mcp.json`    | `servers`     |
+| Codex                       | `.codex/config.toml`  | `mcp_servers` |
+| OpenCode                    | `opencode.jsonc`      | `mcp`         |
+| Nanocoder                   | `.nanocoder/mcp.json` | `mcpServers`  |
 
-All four are machine-local and gitignored. Existing entries for other servers are preserved; only
-the `unity-mcp` entry is rewritten.
+All six are machine-local and gitignored. The devcontainer points `NANOCODER_MCPSERVERS_FILE` at
+its dedicated file because Nanocoder uses `transport: "http"` while Claude and Copilot use
+`type: "http"`. Existing unrelated servers are preserved. The configurator owns the `unity-mcp`
+and `github` entries.
+
+The `github` entry uses GitHub's hosted server. If `GITHUB_TOKEN`, `GH_TOKEN`,
+`GITHUB_PERSONAL_ACCESS_TOKEN`, or `GITHUB_PAT` is available, the generated files include its
+bearer header. Without a token, clients that support GitHub OAuth can authenticate on first use.
+Generated files use mode `0600` because they can contain bearer tokens.
 
 ### What `configure` owns
 
 The `unity-mcp` entry is regenerated wholesale, not merged key by key:
 
-- In the three JSON files, `unity-mcp` inside `mcpServers` / `servers` is replaced. Sibling servers
-  and every unrelated top-level key survive.
+- In each JSON file, `unity-mcp` and `github` inside the client-specific server collection are
+  replaced. Sibling servers and every unrelated top-level key survive.
 - In `.codex/config.toml`, the whole `[mcp_servers.unity-mcp]` table is replaced. **Keys you add
   inside that table are dropped on the next run**, so a hand-raised `startup_timeout_sec` reverts.
   Put per-machine Codex overrides in a different table, or re-apply them after `configure`.

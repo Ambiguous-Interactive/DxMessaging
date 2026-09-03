@@ -2,7 +2,7 @@
 
 # Devcontainer Cache Contract
 
-> **One-line summary**: `.devcontainer/cache-contract.sh` is the single source of truth for the five non-Unity devcontainer named-volume mounts (nuget, dotnet-tools, powershell, pip, node_modules); the same file is sourced by `post-create.sh`, `post-start.sh`, and `validate-caching.sh` so the four surfaces (Dockerfile, devcontainer.json, lifecycle scripts, validator) cannot drift.
+> **One-line summary**: `.devcontainer/cache-contract.sh` is the single source of truth for the six non-Unity devcontainer named-volume mounts (NuGet, .NET tools, PowerShell, pip, npm, and node_modules); the same file is sourced by `post-create.sh`, `post-start.sh`, and `validate-caching.sh` so the four surfaces (Dockerfile, devcontainer.json, lifecycle scripts, validator) cannot drift.
 
 ## When to Use
 
@@ -34,7 +34,7 @@ the host editor owns its own `Library/` cache outside any container volume.
 
 ## The Contract
 
-Five entries, sources and targets aligned by array index:
+Six entries, sources and targets aligned by array index:
 
 | Index | Source (volume name)     | Target (in-container path)             | Purpose                                  |
 | ----- | ------------------------ | -------------------------------------- | ---------------------------------------- |
@@ -42,7 +42,8 @@ Five entries, sources and targets aligned by array index:
 | 1     | `dxm-dotnet-tools`       | `/home/vscode/.dotnet/tools`           | Global dotnet tools (csharpier, etc.)    |
 | 2     | `dxm-powershell-modules` | `/home/vscode/.local/share/powershell` | PowerShell module cache                  |
 | 3     | `dxm-python-cache`       | `/home/vscode/.cache/pip`              | pip wheel/download cache                 |
-| 4     | `dxm-node-modules`       | `${CACHE_WORKSPACE_ROOT}/node_modules` | Linux devcontainer `node_modules` tree   |
+| 4     | `dxm-npm-cache`          | `/home/vscode/.npm`                    | npm download cache                       |
+| 5     | `dxm-node-modules`       | `${CACHE_WORKSPACE_ROOT}/node_modules` | Linux devcontainer `node_modules` tree   |
 
 Source (verbatim) lives in `.devcontainer/cache-contract.sh`:
 
@@ -52,6 +53,7 @@ readonly CACHE_MOUNT_SOURCES=(
     "dxm-dotnet-tools"
     "dxm-powershell-modules"
     "dxm-python-cache"
+    "dxm-npm-cache"
     "dxm-node-modules"
 )
 
@@ -60,6 +62,7 @@ readonly CACHE_MOUNT_TARGETS=(
     "/home/vscode/.dotnet/tools"
     "/home/vscode/.local/share/powershell"
     "/home/vscode/.cache/pip"
+    "/home/vscode/.npm"
     "${CACHE_WORKSPACE_ROOT}/node_modules"
 )
 ```

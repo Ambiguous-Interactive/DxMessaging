@@ -350,6 +350,7 @@ jobs:
           requested-labels: "self-hosted, Windows, RAM-64GB, fast"
 
       - name: Setup Node.js
+        id: setup_node
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -466,8 +467,22 @@ jobs:
         shell: pwsh
         run: exit 1
 
+      - name: Redact credentials from Unity perf artifacts
+        id: redact_validation
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -513,8 +528,22 @@ jobs:
           results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
           label: Comparison contracts ${{ matrix.unity-version }}
 
+      - name: Redact credentials from comparison contract artifacts
+        id: redact_contracts
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload comparison contract artifacts
-        if: ${{ always() && matrix.benchmark-suite == 'comparisons' }}
+        if: ${{ always() && matrix.benchmark-suite == 'comparisons' && steps.redact_contracts.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1202,8 +1231,22 @@ jobs:
             -LiteralPath (Join-Path $artifactsPath 'paired-comparison-summary.md') `
             -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
+      - name: Redact credentials from perf benchmark artifacts
+        id: redact_perf
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload perf benchmark artifacts
-        if: always()
+        if: ${{ always() && steps.redact_perf.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

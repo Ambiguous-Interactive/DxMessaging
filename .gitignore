@@ -415,10 +415,11 @@ progress.meta
 .mcp.json
 .cursor/mcp.json
 .codex/config.toml
+.nanocoder/
 .env.local
 
-# Hand-written opencode CLI config carries the relay bearer token, so it is
-# never tracked. Unity still generates its .meta on import; ignore both at
+# The generated OpenCode config carries the relay bearer token, so it is never
+# tracked. Unity still generates its .meta on import; ignore both at
 # the repository root, because a tracked .meta whose sibling stays untracked
 # fails the meta pairing validator.
 /opencode.jsonc

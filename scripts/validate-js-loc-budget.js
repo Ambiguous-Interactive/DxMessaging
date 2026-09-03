@@ -148,7 +148,37 @@ const path = require("path");
 //     CLI exit states, malformed evidence, non-finite arithmetic, and the exact
 //     PR #468 ratios. Workflow and PowerShell tests pin manifest and source-tree
 //     provenance into each authoritative summary: 19780.
-const TOTAL_BUDGET = 19780;
+// 084 Close a confirmed credential leak and add content-addressed evidence.
+//     Unity writes its license serial into unity.log and configure.log, and
+//     this repository is public, so every Unity artifact published the serial
+//     for 14 days. credential-patterns.js is the one pattern list and owns the
+//     text/binary decision both consumers share; redact-unity-artifacts.js
+//     scrubs each artifact tree before upload; perf-evidence-bundle.js and
+//     perf-evidence-reducers.js seal, verify, and replay #508 evidence bundles
+//     and refuse to seal credential material as a backstop.
+//
+//     The suites are larger than the code they cover, which is the intended
+//     ratio here: this is security code with no other verification, and an
+//     adversarial review found four defects that only tests can hold closed.
+//     A NUL byte anywhere in a log silently disabled redaction for the whole
+//     file, so a stray byte from a native subprocess would have republished
+//     the serial. UTF-16 logs were dismissed as binary. The bundle digest was
+//     forgeable by embedding its own separators in a file path. The workflow
+//     guard passed on a redaction step that ran before Unity wrote anything,
+//     which is exactly how the perf artifacts leaked while it was green.
+//     Every one of those is now pinned by a test that fails when the fix is
+//     reverted: 15 of 15 mutations killed, plus 4 on the installer suite.
+//
+//     Verified against a real 441-file CI artifact and against real CI output:
+//     256 leaked occurrences removed, then sealed and replayed on a different
+//     operating system than the one that sealed it. Reviewer feedback then closed
+//     two more holes: the scrubber reported success after skipping a file it
+//     could not examine, which the newly gated uploads would have published, and
+//     the two devcontainer lifecycle hooks could overlap and mint two different
+//     MCP bearer tokens. A third round pinned the gate that keeps redaction
+//     from firing on a run that never set up node, which the first attempt got
+//     wrong because a self-hosted runner reuses its workspace: 22800.
+const TOTAL_BUDGET = 22800;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

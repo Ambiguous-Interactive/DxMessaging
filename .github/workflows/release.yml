@@ -295,6 +295,7 @@ jobs:
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
 
       - name: Setup Node.js
+        id: setup_node
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -341,8 +342,22 @@ jobs:
         shell: pwsh
         run: exit 1
 
+      - name: Redact credentials from Unity release artifacts
+        id: redact_validation
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -408,8 +423,22 @@ jobs:
           label: Unity release editmode
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
+      - name: Redact credentials from release Unity artifacts
+        id: redact_release
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload release Unity artifacts
-        if: always()
+        if: ${{ always() && steps.redact_release.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -608,6 +637,7 @@ jobs:
         uses: ./.github/actions/print-self-hosted-runner-diagnostics
 
       - name: Setup Node.js
+        id: setup_node
         timeout-minutes: 5
         # export-unitypackage.ps1 stages the payload with `npm pack`, so the
         # shipped bytes are identical to the npm/UPM artifact.
@@ -643,8 +673,22 @@ jobs:
         shell: pwsh
         run: exit 1
 
+      - name: Redact credentials from Unity unitypackage artifacts
+        id: redact_validation
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -685,7 +729,24 @@ jobs:
           results-dir: .artifacts/unity/release-unitypackage
           label: Unity release unitypackage export
 
+      - name: Redact credentials from unitypackage artifacts
+        id: redact_unitypackage
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload the .unitypackage artifact
+        # This step had no condition, which implies success(). Naming any condition removes that
+        # implicit guard, so success() has to be restated alongside the redaction gate.
+        if: ${{ success() && steps.redact_unitypackage.outcome == 'success' }}
         timeout-minutes: 20
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -696,7 +757,7 @@ jobs:
           overwrite: true
 
       - name: Upload export diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_unitypackage.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

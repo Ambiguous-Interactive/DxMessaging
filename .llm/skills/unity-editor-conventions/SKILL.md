@@ -123,11 +123,8 @@ devcontainer cache mount contract.
 
 ### Devcontainer cache contract
 
-- `.devcontainer/cache-contract.sh` is the single source of truth for five named volumes,
-  aligned by array index: `dxm-nuget-cache` to `/home/vscode/.nuget`, `dxm-dotnet-tools` to
-  `/home/vscode/.dotnet/tools`, `dxm-powershell-modules` to
-  `/home/vscode/.local/share/powershell`, `dxm-python-cache` to `/home/vscode/.cache/pip`, and
-  `dxm-node-modules` to `${CACHE_WORKSPACE_ROOT}/node_modules`.
+- `.devcontainer/cache-contract.sh` is the single source of truth for six index-aligned named
+  volumes: NuGet, .NET tools, PowerShell, pip, npm, and workspace `node_modules`.
 - Docker stamps the target's owner UID/GID onto an empty volume on first attach, so the
   Dockerfile pre-creates each target as `vscode:vscode` and `post-start.sh` re-runs `chown`
   on every start.
@@ -143,8 +140,8 @@ devcontainer cache mount contract.
 
 ## References
 
-| Document                                                                      | Purpose                                                                                                                    |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| [base-call-contract.md](./references/base-call-contract.md)                   | Guarded methods and their runtime consequences, the five enforcement layers, opt-outs, and how to add a guarded method     |
-| [devcontainer-cache-contract.md](./references/devcontainer-cache-contract.md) | The five named-volume mounts, volume ownership rule, workspace-root derivation, validator blocks, and add/remove procedure |
-| [editor-design-system.md](./references/editor-design-system.md)               | Theme loader and shared class rules, editor tool constraints, and editor-window test and screenshot-capture rules          |
+| Document                                                                      | Purpose                                                                                                                   |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [base-call-contract.md](./references/base-call-contract.md)                   | Guarded methods and their runtime consequences, the five enforcement layers, opt-outs, and how to add a guarded method    |
+| [devcontainer-cache-contract.md](./references/devcontainer-cache-contract.md) | The six named-volume mounts, volume ownership rule, workspace-root derivation, validator blocks, and add/remove procedure |
+| [editor-design-system.md](./references/editor-design-system.md)               | Theme loader and shared class rules, editor tool constraints, and editor-window test and screenshot-capture rules         |

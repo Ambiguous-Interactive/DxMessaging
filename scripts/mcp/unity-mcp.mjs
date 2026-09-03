@@ -30,6 +30,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { parse as parseToml } from "smol-toml";
 export const REPO_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+export const GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
 export const DEFAULTS = Object.freeze({
   bindHost: "0.0.0.0",
   host: "host.docker.internal",
@@ -246,6 +247,14 @@ function validateToken(value) {
   }
   return value;
 }
+function githubToken(environment, local) {
+  const keys = ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN", "GITHUB_PAT"];
+  const value = first(...keys.map((key) => environment[key]), ...keys.map((key) => local[key]));
+  if (value?.length > 1_024) {
+    fail("GitHub token must not exceed 1024 characters");
+  }
+  return value === undefined ? value : validateText(value, "GitHub token");
+}
 // Option resolution
 
 /**
@@ -307,6 +316,7 @@ export function resolveOptions(args, environment = process.env, localValues, rep
     ),
     logLevel: get("log-level", "logLevel", "info"),
     bearerToken: validateToken(get("token", "bearerToken", undefined)),
+    githubToken: githubToken(environment, local),
     discover: args["no-discover"] !== true
   };
 
@@ -815,7 +825,7 @@ function readJsonObject(filePath) {
   return parsed;
 }
 
-export function prepareJsonServer(filePath, collection, server) {
+export function prepareJsonServers(filePath, collection, servers) {
   const document = readJsonObject(filePath);
   const existing = document[collection];
   if (
@@ -824,7 +834,7 @@ export function prepareJsonServer(filePath, collection, server) {
   ) {
     fail(`Expected ${collection} to be an object in ${filePath}`);
   }
-  document[collection] = { ...(existing ?? {}), "unity-mcp": server };
+  document[collection] = { ...(existing ?? {}), ...servers };
   return `${JSON.stringify(document, null, 2)}\n`;
 }
 
@@ -837,57 +847,57 @@ function tomlString(value) {
  * sentinel key is how a `[mcp_servers.unity-mcp]` header is told apart from any other header without
  * hand-writing a TOML grammar.
  */
-function classifyTomlHeader(line) {
+function classifyTomlHeader(line, serverName = "unity-mcp") {
   if (!line.trimStart().startsWith("[")) {
     return undefined;
   }
   const marker = "__dxm_mcp_table_marker_7d0f__";
   try {
     const parsed = parseToml(`${line}\n${marker} = true\n`);
-    const owned = parsed.mcp_servers?.["unity-mcp"]?.[marker] === true;
+    const owned = parsed.mcp_servers?.[serverName]?.[marker] === true;
     const hasMarker = JSON.stringify(parsed).includes(`"${marker}":true`);
     return hasMarker ? { owned } : undefined;
   } catch {
     return undefined;
   }
 }
-
-const CODEX_AMBIGUOUS_MESSAGE = (reason) =>
+const CODEX_AMBIGUOUS_MESSAGE = (reason, serverName = "unity-mcp") =>
   `${reason} in .codex/config.toml, so this tool cannot tell which lines it owns. ` +
-  "Delete the [mcp_servers.unity-mcp] table from .codex/config.toml (or move it to the end of the " +
+  `Delete the [mcp_servers.${serverName}] table from .codex/config.toml (or move it to the end of the ` +
   "file, after every multi-line value) and re-run configure.";
-
-export function mergeCodexToml(raw, url, bearerToken) {
+export function mergeCodexToml(raw, url, bearerToken, serverName = "unity-mcp") {
+  const ambiguous = (reason) => CODEX_AMBIGUOUS_MESSAGE(reason, serverName);
+  const block = [
+    `[mcp_servers.${serverName}]`,
+    `url = ${tomlString(url)}`,
+    ...(bearerToken
+      ? [`http_headers = { Authorization = ${tomlString(`Bearer ${bearerToken}`)} }`]
+      : []),
+    "startup_timeout_sec = 20",
+    "tool_timeout_sec = 120",
+    "enabled = true",
+    ""
+  ].join("\n");
   let parsed;
   try {
     parsed = raw.trim() ? parseToml(raw) : {};
   } catch (error) {
     fail(`Invalid TOML in Codex config: ${error.message}`);
   }
-  const block = [
-    "[mcp_servers.unity-mcp]",
-    `url = ${tomlString(url)}`,
-    `http_headers = { Authorization = ${tomlString(`Bearer ${bearerToken}`)} }`,
-    "startup_timeout_sec = 20",
-    "tool_timeout_sec = 120",
-    "enabled = true",
-    ""
-  ].join("\n");
-
   // Normalize line endings once so both the append and the replace path emit LF only; mixing CRLF
   // input with an LF block would otherwise leave the file churning on every run under Windows.
   const normalized = raw.replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
   const owned = lines
-    .map((line, index) => ({ index, header: classifyTomlHeader(line) }))
+    .map((line, index) => ({ index, header: classifyTomlHeader(line, serverName) }))
     .filter((item) => item.header?.owned)
     .map((item) => item.index);
   if (owned.length > 1) {
-    fail(CODEX_AMBIGUOUS_MESSAGE("Duplicate unity-mcp table"));
+    fail(ambiguous(`Duplicate ${serverName} table`));
   }
   if (owned.length === 0) {
-    if (parsed.mcp_servers?.["unity-mcp"] !== undefined) {
-      fail("Unsupported inline or dotted unity-mcp definition in Codex config");
+    if (parsed.mcp_servers?.[serverName] !== undefined) {
+      fail(`Unsupported inline or dotted ${serverName} definition in Codex config`);
     }
     return `${normalized.trimEnd()}${normalized.trim() ? "\n\n" : ""}${block}`;
   }
@@ -899,11 +909,11 @@ export function mergeCodexToml(raw, url, bearerToken) {
   try {
     parseToml(lines.slice(0, start).join("\n"));
   } catch {
-    fail(CODEX_AMBIGUOUS_MESSAGE("A unity-mcp header line appears inside a multi-line value"));
+    fail(ambiguous(`A ${serverName} header line appears inside a multi-line value`));
   }
   let end = lines.length;
   for (let index = start + 1; index < lines.length; index += 1) {
-    if (classifyTomlHeader(lines[index])) {
+    if (classifyTomlHeader(lines[index], serverName)) {
       end = index;
       break;
     }
@@ -913,7 +923,7 @@ export function mergeCodexToml(raw, url, bearerToken) {
   try {
     parseToml(result);
   } catch {
-    fail(CODEX_AMBIGUOUS_MESSAGE("Rewriting the unity-mcp table produced invalid TOML"));
+    fail(ambiguous(`Rewriting the ${serverName} table produced invalid TOML`));
   }
   return result;
 }
@@ -924,26 +934,80 @@ export function clientConfigPaths(repoRoot) {
     claudeCode: path.join(repoRoot, ".mcp.json"),
     cursor: path.join(repoRoot, ".cursor", "mcp.json"),
     vscode: path.join(repoRoot, ".vscode", "mcp.json"),
-    codex: path.join(repoRoot, ".codex", "config.toml")
+    codex: path.join(repoRoot, ".codex", "config.toml"),
+    openCode: path.join(repoRoot, "opencode.jsonc"),
+    nanocoder: path.join(repoRoot, ".nanocoder", "mcp.json")
   };
 }
+/** The Unity bridge is on the LAN; the hosted GitHub server is across the internet. */
+const REQUEST_TIMEOUT_MS = Object.freeze({ "unity-mcp": 20_000, github: 30_000 });
 
+function authorizationHeaders(token) {
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+}
+
+/**
+ * Build the `unity-mcp` and `github` entries in one client's own schema. The three shapes are not
+ * interchangeable: Nanocoder's loader reads `transport` where Claude Code, Cursor, and VS Code read
+ * `type`; OpenCode names the same transport `remote`; and OpenCode publishes `McpRemoteConfig` with
+ * `additionalProperties: false`, so a key that schema does not declare rejects the whole config.
+ * `oauth: false` suppresses OpenCode's OAuth auto-detection once an explicit bearer token exists.
+ * Omitting it leaves interactive GitHub OAuth available to a user who has no token.
+ */
+function clientServers(kind, unityUrl, unityToken, githubToken) {
+  const server = (name, url, token) => {
+    const timeout = REQUEST_TIMEOUT_MS[name];
+    switch (kind) {
+      case "standard":
+        return { type: "http", url, ...authorizationHeaders(token) };
+      case "openCode":
+        return {
+          type: "remote",
+          url,
+          enabled: true,
+          timeout,
+          ...(token ? { oauth: false } : {}),
+          ...authorizationHeaders(token)
+        };
+      case "nanocoder":
+        return { transport: "http", url, timeout, ...authorizationHeaders(token) };
+      default:
+        return fail(`Unknown MCP client kind ${kind}`);
+    }
+  };
+  return {
+    "unity-mcp": server("unity-mcp", unityUrl, unityToken),
+    github: server("github", GITHUB_MCP_URL, githubToken)
+  };
+}
 export function configure(inputOptions, endpoint, beforeCommit) {
   const options = ensureBearerToken(inputOptions);
   const url = endpointUrl(endpoint);
-  const server = { type: "http", url, headers: { Authorization: `Bearer ${options.bearerToken}` } };
+  const standardServers = clientServers("standard", url, options.bearerToken, options.githubToken);
+  const openCodeServers = clientServers("openCode", url, options.bearerToken, options.githubToken);
+  const nanocoderServers = clientServers(
+    "nanocoder",
+    url,
+    options.bearerToken,
+    options.githubToken
+  );
   const paths = clientConfigPaths(options.repoRoot);
   const codexRaw = fs.existsSync(paths.codex) ? fs.readFileSync(paths.codex, "utf8") : "";
-
+  const codexWithUnity = mergeCodexToml(codexRaw, url, options.bearerToken);
   const written = transactionalWrite(
     [
-      [paths.claudeCode, prepareJsonServer(paths.claudeCode, "mcpServers", server)],
-      [paths.cursor, prepareJsonServer(paths.cursor, "mcpServers", server)],
-      [paths.vscode, prepareJsonServer(paths.vscode, "servers", server)],
-      [paths.codex, mergeCodexToml(codexRaw, url, options.bearerToken)]
+      [paths.claudeCode, prepareJsonServers(paths.claudeCode, "mcpServers", standardServers)],
+      [paths.cursor, prepareJsonServers(paths.cursor, "mcpServers", standardServers)],
+      [paths.vscode, prepareJsonServers(paths.vscode, "servers", standardServers)],
+      [paths.codex, mergeCodexToml(codexWithUnity, GITHUB_MCP_URL, options.githubToken, "github")],
+      [paths.openCode, prepareJsonServers(paths.openCode, "mcp", openCodeServers)],
+      [paths.nanocoder, prepareJsonServers(paths.nanocoder, "mcpServers", nanocoderServers)]
     ],
     beforeCommit
   );
+  for (const filePath of Object.values(paths)) {
+    fs.chmodSync(filePath, 0o600);
+  }
   return { url, written };
 }
 
@@ -1438,7 +1502,7 @@ export async function runConfigure(options, runtime = {}) {
   const { endpoint, attempts, found } = await resolveEndpoint(options, runtime);
   // `unauthorized` means a bridge IS running there and only the token is wrong. Falling back to the
   // default endpoint and minting a fresh token would guarantee a 401 and persist the bogus token
-  // into .env.local and all four configs, so this refuses to write anything.
+  // into .env.local and every client config, so this refuses to write anything.
   const unauthorized = found ? undefined : attempts.find((a) => a.status === "unauthorized");
   if (unauthorized) {
     fail(
@@ -1462,7 +1526,7 @@ export async function runConfigure(options, runtime = {}) {
   const summary = written.length
     ? written.map((filePath) => path.relative(options.repoRoot, filePath)).join(", ")
     : "no changes";
-  console.log(`Configured Unity MCP endpoint ${url} (${summary}).`);
+  console.log(`Configured GitHub MCP and Unity MCP endpoint ${url} (${summary}).`);
   return url;
 }
 
@@ -1487,7 +1551,7 @@ function usage() {
     "Usage: node scripts/mcp/unity-mcp.mjs <probe|configure|bridge> [options]",
     "",
     "  probe      Discover an endpoint that advertises Unity_RunCommand.",
-    "  configure  Discover, then write .mcp.json, .cursor/mcp.json, .vscode/mcp.json, .codex/config.toml.",
+    "  configure  Discover Unity, then configure GitHub and Unity for every supported agent.",
     "  bridge     Serve the Unity relay over authenticated streamable HTTP (run next to Unity).",
     "",
     "Options:",

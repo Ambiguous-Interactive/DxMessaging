@@ -166,6 +166,7 @@ jobs:
           matrix-note: "default (organization lock wraps the Unity section)"
 
       - name: Setup Node.js
+        id: setup_node
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -224,8 +225,22 @@ jobs:
         shell: pwsh
         run: exit 1
 
+      - name: Redact credentials from Unity benchmark artifacts
+        id: redact_validation
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload Unity editor validation diagnostics
-        if: always()
+        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -306,8 +321,22 @@ jobs:
           label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
+      - name: Redact credentials from benchmark artifacts
+        id: redact_benchmarks
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: |
+            ${{ runner.temp }}/dx-unity-editor-validation
+            .artifacts/unity
+
       - name: Upload benchmark artifacts
-        if: always()
+        if: ${{ always() && steps.redact_benchmarks.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

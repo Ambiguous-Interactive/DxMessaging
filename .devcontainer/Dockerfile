@@ -21,6 +21,7 @@ LABEL unity.note="Local Unity verification runs via the unity-mcp-remote MCP ser
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
+ENV PATH="/home/vscode/.local/bin:${PATH}"
 
 # ------------------------------------------------------------------------------
 # Fix expired Yarn GPG key issue
@@ -384,6 +385,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     npm --version
 
 # ------------------------------------------------------------------------------
+# Install agent CLIs into the image
+# ------------------------------------------------------------------------------
+# A rebuild resolves npm's latest tags. The user-scoped launch updater can then
+# refresh them without sudo while keeping these copies as the offline fallback.
+RUN npm install --global \
+        @openai/codex@latest \
+        opencode-ai@latest \
+        @nanocollective/nanocoder@latest \
+        --no-fund \
+        --no-audit \
+    && codex --version \
+    && opencode --version \
+    && nanocoder --version
+
+# ------------------------------------------------------------------------------
 # Install yamllint via pip
 # --break-system-packages is required on Debian 12+ (PEP 668) to install
 # Python packages system-wide outside of a virtual environment
@@ -426,17 +442,19 @@ RUN git config --system core.longpaths true \
 # correct ownership ensures the vscode user owns them on first run; rebuilds
 # of an existing volume are repaired by post-create.sh / post-start.sh.
 #
-# Targets here MUST stay aligned with cache-contract.sh (5 entries).
+# Targets here MUST stay aligned with cache-contract.sh (6 entries).
 # ------------------------------------------------------------------------------
 RUN mkdir -p /home/vscode/.nuget \
     && mkdir -p /home/vscode/.dotnet/tools \
     && mkdir -p /home/vscode/.local/share/powershell \
     && mkdir -p /home/vscode/.cache/pip \
+    && mkdir -p /home/vscode/.npm \
     && mkdir -p /workspaces/com.wallstop-studios.dxmessaging/node_modules \
     && chown -R vscode:vscode /home/vscode/.nuget \
     && chown -R vscode:vscode /home/vscode/.dotnet \
     && chown -R vscode:vscode /home/vscode/.local \
     && chown -R vscode:vscode /home/vscode/.cache \
+    && chown -R vscode:vscode /home/vscode/.npm \
     && chown -R vscode:vscode /workspaces
 
 # ------------------------------------------------------------------------------

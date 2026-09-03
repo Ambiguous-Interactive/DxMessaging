@@ -154,7 +154,9 @@ check_tool "csharpier" "dotnet-csharpier" "--version"
 
 echo ""
 echo -e "${BLUE}=== AI / Agent CLIs ===${NC}"
-check_optional "codex (@openai)" "codex" "--version" || true
+check_tool "codex (@openai)" "codex" "--version"
+check_tool "OpenCode" "opencode" "--version"
+check_tool "Nanocoder" "nanocoder" "--version"
 
 echo ""
 echo -e "${BLUE}=== npm Configuration ===${NC}"
@@ -165,6 +167,17 @@ if [ "$npm_prefix" = "$HOME/.local" ]; then
     ((++PASS))
 else
     echo -e "${RED}✗${NC} $npm_prefix (expected $HOME/.local)"
+    ((++FAIL))
+fi
+
+printf "%-20s" "npm write access"
+npm_probe="${npm_prefix}/.dxm-write-probe-$$"
+if touch "$npm_probe" 2>/dev/null; then
+    rm -f "$npm_probe"
+    echo -e "${GREEN}✓${NC} user-writable"
+    ((++PASS))
+else
+    echo -e "${RED}✗${NC} not writable without sudo"
     ((++FAIL))
 fi
 
