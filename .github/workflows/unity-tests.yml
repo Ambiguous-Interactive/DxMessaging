@@ -281,6 +281,7 @@ jobs:
           matrix-note: "default (organization lock wraps the Unity section)"
 
       - name: Setup Node.js
+        id: setup_node
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -377,10 +378,11 @@ jobs:
 
       - name: Redact credentials from Unity editor validation diagnostics
         id: redact_validation
-        # `always()` also fires when the job aborted before checkout, where the scrubber does not
-        # exist yet. Skipping there is safe: the uploads below require this step to have succeeded,
-        # so a skip stops them too, and a run that never checked out has nothing to publish.
-        if: ${{ always() && hashFiles('scripts/unity/redact-unity-artifacts.js') != '' }}
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -608,10 +610,11 @@ jobs:
 
       - name: Redact credentials from Unity test artifacts
         id: redact_tests
-        # `always()` also fires when the job aborted before checkout, where the scrubber does not
-        # exist yet. Skipping there is safe: the uploads below require this step to have succeeded,
-        # so a skip stops them too, and a run that never checked out has nothing to publish.
-        if: ${{ always() && hashFiles('scripts/unity/redact-unity-artifacts.js') != '' }}
+        # `always()` also fires when the job aborted before setup, where node does not exist yet.
+        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
+        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
+        # Skipping is safe because the uploads below require this step to have succeeded.
+        if: ${{ always() && steps.setup_node.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:

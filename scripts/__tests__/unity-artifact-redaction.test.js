@@ -205,6 +205,41 @@ test("every Unity artifact upload refuses to run after a failed scrub", () => {
   );
 });
 
+// A first attempt gated redaction on the scrubber file existing. That looked right and was not:
+// a self-hosted runner reuses its workspace, so the file survives from an earlier run and the step
+// fired on a run that had never set up node, reporting a redaction failure on a job that failed for
+// an unrelated reason. Requiring this run's own Setup Node.js step is the signal that holds.
+test("every redaction step requires this run's own node setup", () => {
+  const offenders = [];
+  for (const { name, document } of readWorkflows()) {
+    for (const [jobId, job] of Object.entries(document?.jobs ?? {})) {
+      const steps = jobSteps(job);
+      const nodeIndex = steps.findIndex(
+        (step) => typeof step.uses === "string" && step.uses.includes("actions/setup-node")
+      );
+      steps.forEach((step, index) => {
+        if (!isRedaction(typeof step.uses === "string" ? step.uses : "")) {
+          return;
+        }
+        const nodeId = nodeIndex >= 0 ? steps[nodeIndex].id : undefined;
+        const gated =
+          nodeId !== undefined &&
+          nodeIndex < index &&
+          String(step.if ?? "").includes(`steps.${nodeId}.outcome == 'success'`);
+        if (!gated) {
+          offenders.push(`${name} ${jobId} "${step.name ?? step.uses}"`);
+        }
+      });
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "these redaction steps can fire on a run that never set up node; gate each one on the " +
+      "outcome of a Setup Node.js step that precedes it in the same job"
+  );
+});
+
 test("the redaction action exists and runs the shared redactor", () => {
   const actionPath = path.join(
     REPO_ROOT,
