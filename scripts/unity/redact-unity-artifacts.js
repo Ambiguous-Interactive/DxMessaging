@@ -142,19 +142,35 @@ function parseArgs(argv) {
   return { roots, help: false };
 }
 
+/**
+ * A file this could not examine is a file whose contents were never checked, so the run cannot
+ * claim the tree is clean. Returning zero after a skip would let the uploads, which now require
+ * this step to have succeeded, publish a file nobody looked at. Binary files are different: those
+ * were examined and judged not to be text, so they do not count as skipped.
+ */
 function runCli(argv, write = (text) => process.stdout.write(text)) {
   const { roots, help } = parseArgs(argv);
   if (help || roots.length === 0) {
     write(usage());
     return help ? 0 : 1;
   }
+  const unexamined = [];
   for (const root of roots) {
     const resolved = path.resolve(root);
     if (!fs.existsSync(resolved)) {
       write(`Skipping ${root}; it does not exist.\n`);
       continue;
     }
-    write(formatSummary(root, redactDirectory(resolved)));
+    const result = redactDirectory(resolved);
+    write(formatSummary(root, result));
+    unexamined.push(...result.skipped.map((file) => `${root}/${file.path}`));
+  }
+  if (unexamined.length > 0) {
+    write(
+      `Refusing to report success: ${unexamined.length} file(s) could not be examined, so they ` +
+        `cannot be shown to be free of credentials.\n  ${unexamined.join("\n  ")}\n`
+    );
+    return 2;
   }
   return 0;
 }

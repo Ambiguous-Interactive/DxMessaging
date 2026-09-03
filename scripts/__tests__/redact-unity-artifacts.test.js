@@ -380,6 +380,46 @@ test("the CLI redacts a real tree and summarizes what it removed", () => {
   assert.ok(!written.join("").includes(FAKE_SERIAL), "cli: output must never echo a credential");
 });
 
+test("the CLI refuses to report success when a file could not be examined", (t) => {
+  // The uploads now require this step to have succeeded, so exiting 0 after a skip would publish a
+  // file nobody looked at. A binary file is not a skip: it was examined and judged not to be text.
+  if (process.getuid && process.getuid() === 0) {
+    t.skip("root can read any file, so the unreadable case cannot be staged");
+    return;
+  }
+  const root = temporaryDirectory();
+  fs.writeFileSync(path.join(root, "clean.log"), "nothing here\n");
+  fs.writeFileSync(path.join(root, "GameAssembly.bin"), BINARY_BLOB);
+  const unreadable = path.join(root, "locked.log");
+  fs.writeFileSync(unreadable, `serial ${FAKE_SERIAL}\n`);
+  fs.chmodSync(unreadable, 0o000);
+  t.after(() => fs.chmodSync(unreadable, 0o644));
+
+  const written = [];
+  assert.equal(
+    runCli(["node", "cli", root], (text) => written.push(text)),
+    2,
+    "cli: a file that was not examined must not exit 0, or the gated upload publishes it"
+  );
+  const output = written.join("");
+  assert.match(output, /Refusing to report success: 1 file\(s\) could not be examined/);
+  assert.match(output, /locked\.log/, "cli: the refusal must name the file to scrub");
+  assert.ok(!output.includes(FAKE_SERIAL), "cli: the refusal must not echo the credential");
+});
+
+test("the CLI still exits 0 when the only unscanned files are binary", () => {
+  const root = temporaryDirectory();
+  fs.writeFileSync(path.join(root, "clean.log"), "nothing here\n");
+  fs.writeFileSync(path.join(root, "GameAssembly.bin"), BINARY_BLOB);
+  const written = [];
+  assert.equal(
+    runCli(["node", "cli", root], (text) => written.push(text)),
+    0,
+    "cli: a binary file was examined and judged not text, so it is not an unexamined file"
+  );
+  assert.match(written.join(""), /1 binary file\(s\) were not scanned\./);
+});
+
 test("formatSummary renders a clean tree, a redacted tree, and a skipped file", () => {
   assert.equal(
     formatSummary("artifacts", { changed: [], skipped: [], totals: new Map() }),

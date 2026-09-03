@@ -91,8 +91,22 @@ install_agent_clis() {
     return 1
 }
 
+# `waitFor: updateContentCommand` lets post-create and post-start overlap, and both configure the
+# MCP clients. Without a lock, two runs starting from an .env.local with no bearer token would each
+# mint one and write different values into the six generated client configs. The second waiter sees
+# the token the first wrote and is a no-op.
+MCP_CONFIGURE_LOCK="${TMPDIR:-/tmp}/dxm-mcp-configure.lock"
+
 configure_agent_mcps() {
-    node "${WORKSPACE_DIR}/scripts/mcp/unity-mcp.mjs" configure --no-discover --timeout 750
+    local configure=(node "${WORKSPACE_DIR}/scripts/mcp/unity-mcp.mjs" configure --no-discover --timeout 750)
+
+    if command -v flock >/dev/null 2>&1; then
+        flock -w 180 "${MCP_CONFIGURE_LOCK}" "${configure[@]}"
+        return
+    fi
+
+    log_warning "flock is unavailable; configuring without an overlap lock"
+    "${configure[@]}"
 }
 
 ensure_path_line() {

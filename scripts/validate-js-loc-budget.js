@@ -171,8 +171,12 @@ const path = require("path");
 //
 //     Verified against a real 441-file CI artifact and against real CI output:
 //     256 leaked occurrences removed, then sealed and replayed on a different
-//     operating system than the one that sealed it: 22600.
-const TOTAL_BUDGET = 22600;
+//     operating system than the one that sealed it. Reviewer feedback then closed
+//     two more holes: the scrubber reported success after skipping a file it
+//     could not examine, which the newly gated uploads would have published, and
+//     the two devcontainer lifecycle hooks could overlap and mint two different
+//     MCP bearer tokens: 22700.
+const TOTAL_BUDGET = 22700;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

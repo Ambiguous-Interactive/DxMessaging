@@ -228,6 +228,31 @@ for (const testCase of CASES) {
 // `npm ci` refuses to run without a lockfile, and this repository gitignores package-lock.json,
 // so a fresh clone has none. A devcontainer lifecycle script that reaches for `npm ci` installs
 // nothing and takes every later step that needs node_modules down with it.
+// `waitFor: updateContentCommand` lets post-create and post-start overlap, and both configure the
+// MCP clients. Two unlocked runs starting with no bearer token would each mint one and leave the
+// six generated client configs disagreeing about which token is real.
+test("both lifecycle scripts serialize MCP configuration on one lock", () => {
+  const lock = "dxm-mcp-configure.lock";
+  for (const name of ["post-create.sh", "post-start.sh"]) {
+    const source = read(name);
+    assert.match(
+      source,
+      new RegExp(`\\$\\{TMPDIR:-/tmp\\}/${lock.replace(/\./g, "\\.")}`),
+      `${name} must use the shared MCP configure lock path`
+    );
+    assert.match(
+      source,
+      /flock -w \d+ "\$\{(MCP_CONFIGURE_LOCK|mcp_lock)\}"/,
+      `${name} must take the lock with a bounded wait before configuring`
+    );
+    assert.match(
+      source,
+      /command -v flock/,
+      `${name} must degrade rather than fail when flock is unavailable`
+    );
+  }
+});
+
 test("devcontainer bootstrap never uses npm ci while the lockfile is gitignored", () => {
   const ignored = childProcess.spawnSync("git", ["check-ignore", "package-lock.json"], {
     cwd: ROOT,

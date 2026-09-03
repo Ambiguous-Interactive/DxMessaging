@@ -65,8 +65,17 @@ fi
 
 mcp_script="${SCRIPT_DIR}/../scripts/mcp/unity-mcp.mjs"
 if [[ -f "${mcp_script}" ]] && [[ -d "${SCRIPT_DIR}/../node_modules/@modelcontextprotocol" ]]; then
-    nohup node "${mcp_script}" configure --no-discover --timeout 750 </dev/null \
-        >"${TMPDIR:-/tmp}/dxm-mcp-configure.log" 2>&1 &
+    # Share one lock with post-create: the two can overlap, and both mint a bearer token when
+    # .env.local has none, which would leave the generated client configs disagreeing.
+    mcp_lock="${TMPDIR:-/tmp}/dxm-mcp-configure.lock"
+    if command -v flock >/dev/null 2>&1; then
+        nohup flock -w 180 "${mcp_lock}" \
+            node "${mcp_script}" configure --no-discover --timeout 750 </dev/null \
+            >"${TMPDIR:-/tmp}/dxm-mcp-configure.log" 2>&1 &
+    else
+        nohup node "${mcp_script}" configure --no-discover --timeout 750 </dev/null \
+            >"${TMPDIR:-/tmp}/dxm-mcp-configure.log" 2>&1 &
+    fi
 else
     echo "[post-start] WARN: Unity MCP configurator dependencies are not ready; post-create will configure them"
 fi
