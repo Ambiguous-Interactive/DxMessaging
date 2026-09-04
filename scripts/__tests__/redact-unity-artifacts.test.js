@@ -917,19 +917,14 @@ test("a hard-linked artifact cannot rewrite bytes outside the tree", () => {
   );
   assert.equal(fs.readFileSync(outside, "utf8"), `UNITY_PASSWORD=${FAKE_PASSWORD}\n`);
 });
-test("a hostile skipped filename cannot inject a workflow command into output", () => {
-  const root = temporaryDirectory();
-  fs.writeFileSync(
-    path.join(root, "bad\n::error::forged.env"),
-    `UNITY_PASSWORD=${FAKE_PASSWORD}\n`
-  );
-  const written = [];
-  assert.equal(
-    runCli(["node", "cli", root], (text) => written.push(text)),
-    2
-  );
-  assert.doesNotMatch(written.join(""), /\n::error::forged/);
-  assert.match(written.join(""), /\[redacted:unsafe-path\]/);
+test("formatSummary safely renders a hostile filename on every platform", () => {
+  const summary = formatSummary("artifacts", {
+    changed: [],
+    skipped: [{ path: "bad\n::error::forged.env", reason: "could not be read" }],
+    totals: new Map()
+  });
+  assert.doesNotMatch(summary, /\n::error::forged/);
+  assert.match(summary, /\[redacted:unsafe-path\]/);
 });
 test("redactDirectory refuses symbolic links instead of silently skipping them", () => {
   const holder = temporaryDirectory();
