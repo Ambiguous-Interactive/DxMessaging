@@ -28,16 +28,16 @@ const fail = (message) => { console.error(message); process.exitCode = 1; };
 const output = (value) => process.stdout.write(JSON.stringify(value));
 const endpoint = args.find((arg) => arg.startsWith('repos/')) || '';
 if (args[0] === 'api' && endpoint.includes('?per_page=')) {
-  if (state.failure === 'lookup') fail('lookup failed');
+  if (state.failure === 'lookup' || !args.includes('--paginate') || !args.includes('--slurp')) { output([[]]); fail('incomplete lookup'); }
   else output([[{tag_name:'v0.0.1'}], state.release ? [state.release] : []]);
-} else if (args[0] === 'api' && endpoint.includes('/tags/')) output(state.release);
+} else if (args[0] === 'api' && endpoint.endsWith('/releases/7')) output(state.release);
 else if (args[0] === 'api' && endpoint.includes('/assets/')) {
   const asset = state.release.assets.find((asset) => asset.id === Number(endpoint.split('/').pop()));
   if (state.failure === 'download') fail('download failed');
   else process.stdout.write(asset.content);
 } else if (args[0] === 'release' && args[1] === 'create') {
   if (!args.includes('--draft') || !args.includes('--verify-tag')) fail('unsafe create');
-  else state.release = {tag_name:'v1.2.3', draft:true, assets:[]};
+  else state.release = {id:7, tag_name:'v1.2.3', draft:true, assets:[]};
 } else if (args[0] === 'release' && args[1] === 'upload') {
   if (state.release.draft !== true) fail('published assets overwritten');
   else if (state.failure === 'upload') fail('upload failed');
@@ -57,6 +57,7 @@ for (const scenario of [
   "upload",
   "download",
   "invalid-draft",
+  "invalid-id",
   ...[0, 1, 2, 3].flatMap((index) => [`missing-${index}`, `corrupt-${index}`, `duplicate-${index}`])
 ]) {
   test(`release publication verifies bytes before publishing: ${scenario}`, (t) => {
@@ -81,6 +82,7 @@ for (const scenario of [
         failure: scenario,
         release: { tag_name: "v1.2.3", draft: false, immutable: scenario === "immutable", assets }
       };
+      state.release.id = scenario === "invalid-id" ? null : 7;
       if (scenario === "new") state.release = null;
       if (scenario === "draft" || scenario === "upload") state.release.draft = true;
       if (scenario === "invalid-draft") state.release.draft = "false";

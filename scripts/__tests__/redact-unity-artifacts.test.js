@@ -74,16 +74,13 @@ const BINARY_BLOB = Buffer.concat([
 function writeArtifactTree() {
   const root = temporaryDirectory();
   fs.mkdirSync(path.join(root, "logs", "deep"), { recursive: true });
-  fs.writeFileSync(path.join(root, "clean.log"), CLEAN_LOG);
-  fs.writeFileSync(
-    path.join(root, "logs", "unity.log"),
-    `serial ${FAKE_SERIAL} accepted\nreactivated with ${FAKE_SERIAL}\n`
-  );
-  fs.writeFileSync(
-    path.join(root, "logs", "deep", "configure.log"),
-    `Authorization: Bearer ${FAKE_BEARER}\nserial ${FAKE_SERIAL}\n`
-  );
-  fs.writeFileSync(path.join(root, "logs", "GameAssembly.bin"), BINARY_BLOB);
+  for (const [relative, contents] of [
+    ["clean.log", CLEAN_LOG],
+    ["logs/unity.log", `serial ${FAKE_SERIAL} accepted\nreactivated with ${FAKE_SERIAL}\n`],
+    ["logs/deep/configure.log", `Authorization: Bearer ${FAKE_BEARER}\nserial ${FAKE_SERIAL}\n`],
+    ["logs/GameAssembly.bin", BINARY_BLOB]
+  ])
+    fs.writeFileSync(path.join(root, relative), contents);
   return root;
 }
 const FAKE_ASSIGNMENT_VALUE = "FAKEfake00000000";
@@ -92,11 +89,7 @@ const STRAY_NUL_LOG = Buffer.concat([
   Buffer.alloc(1),
   Buffer.from(`\nActivated with serial ${FAKE_SERIAL}\n`, "latin1")
 ]);
-const SPARSE_NUL_LOG = Buffer.concat(
-  Array.from({ length: 8 }, () =>
-    Buffer.concat([Buffer.from("a".repeat(512), "latin1"), Buffer.alloc(1)])
-  )
-);
+const SPARSE_NUL_LOG = Buffer.from(("a".repeat(512) + "\0").repeat(8), "latin1");
 const DLL_LIKE_BLOB = Buffer.concat([
   Buffer.from("MZ", "latin1"),
   Buffer.alloc(4000),
@@ -348,19 +341,14 @@ test("redactDirectory rewrites only the leaking text files under the tree", () =
   assert.deepEqual(second.changed, [], "tree: a second pass must rewrite nothing");
   assert.deepEqual([...second.totals], [], "tree: a second pass must report nothing removed");
 });
-test("redactDirectory refuses a path that is not a directory", () => {
-  const root = writeArtifactTree();
-  assert.throws(
-    () => redactDirectory(path.join(root, "clean.log")),
-    /Artifact root is not a directory\./,
-    "a file target must fail rather than be walked"
-  );
-  assert.throws(
-    () => redactDirectory(path.join(root, "absent")),
-    /Artifact root is not a directory\./,
-    "a missing target must fail rather than report a clean tree"
-  );
-});
+for (const target of ["clean.log", "absent"]) {
+  test(`redactDirectory refuses a non-directory target: ${target}`, () => {
+    assert.throws(
+      () => redactDirectory(path.join(writeArtifactTree(), target)),
+      /Artifact root is not a directory\./
+    );
+  });
+}
 test("redactDirectory reports a file it cannot read instead of ignoring it", (t) => {
   if (!process.getuid || process.getuid() === 0) {
     t.skip("root can read any file, so an unreadable file cannot be staged");
@@ -518,12 +506,15 @@ test("entity-heavy account input cannot exhaust the scrubber", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
 });
-for (const unique of [false, true]) {
+for (const unique of [false, true, "alternating"]) {
   test(`large escaped logs stay within a bounded heap (unique records: ${unique})`, () => {
     const row = String.raw`{"message":"C:\\runner said \"hello\" &amp; done"}` + "\n";
-    const prefix = unique ? Array.from({ length: 4097 }, (_, i) => `row ${i}\n`).join("") : "";
+    // 2026-09-04: Generate the cold prefix in the child to stay below Windows argv limits.
+    const prefix = unique ? "Array.from({length:4097},(_,i)=>'row '+i+'\\n').join('')" : "''";
     const suffix = unique ? "Bearer\\n\n\\u0061" + "a".repeat(24) + "\n" : "";
-    const script = `const f=require(${JSON.stringify(CREDENTIAL_PATTERNS_PATH)}).findSensitiveData,r=${JSON.stringify(row)},n=16*1024*1024,t=${JSON.stringify(prefix)}+r.repeat(Math.ceil(n/r.length)).slice(0,n)+${JSON.stringify(suffix)},v=f(t);if(${unique}?!v.some(x=>x.id==='http-bearer-token'):v.length)process.exit(2)`;
+    const rows = unique === "alternating" ? row + row.replace("hello", "world") : row;
+    const script = `const f=require(${JSON.stringify(CREDENTIAL_PATTERNS_PATH)}).findSensitiveData,r=${JSON.stringify(rows)},n=16*1024*1024,t=${prefix}+r.repeat(Math.ceil(n/r.length)).slice(0,n)+${JSON.stringify(suffix)},v=f(t);if(${Boolean(unique)}?!v.some(x=>x.id==='http-bearer-token'):v.length)process.exit(2)`;
+    assert.ok(script.length < 4096, "the child program must not embed the large log payload");
     const result = spawnSync(process.execPath, ["--max-old-space-size=192", "-e", script], {
       timeout: 30000
     });
@@ -611,40 +602,42 @@ test("displayed roots never echo an account home or network address", () => {
   );
   assert.equal(safeDisplayPath("clean\n::error::forged"), "[redacted:unsafe-path]");
 });
-test("formatSummary renders a clean tree, a redacted tree, and a skipped file", () => {
-  assert.equal(
-    formatSummary("artifacts", { changed: [], skipped: [], totals: new Map() }),
-    "No files were rewritten under artifacts.\n",
-    "summary: a result without scan totals makes no clean claim"
-  );
-  assert.equal(
-    formatSummary("artifacts", {
+for (const [label, result, expected] of [
+  [
+    "a result without scan totals makes no clean claim",
+    {},
+    "No files were rewritten under artifacts.\n"
+  ],
+  [
+    "per-kind totals are sorted by id and each file lists its kinds",
+    {
       changed: [
         { path: "logs/deep/configure.log", counts: ["http-bearer-token", "unity-serial"] },
         { path: "logs/unity.log", counts: ["unity-serial"] }
       ],
-      skipped: [],
       totals: new Map([
         ["unity-serial", 3],
         ["http-bearer-token", 1]
       ])
-    }),
+    },
     "Redacted 2 file(s) under artifacts: http-bearer-token x1, unity-serial x3.\n" +
       "  logs/deep/configure.log: http-bearer-token, unity-serial\n" +
-      "  logs/unity.log: unity-serial\n",
-    "summary: per-kind totals are sorted by id and each file lists its kinds"
-  );
-  assert.equal(
-    formatSummary("artifacts", {
-      changed: [],
-      skipped: [{ path: "locked.log", reason: "could not be read: EACCES" }],
-      totals: new Map()
-    }),
+      "  logs/unity.log: unity-serial\n"
+  ],
+  [
+    "a file that was not prepared is a warning, not a false clean result",
+    { skipped: [{ path: "locked.log", reason: "could not be read: EACCES" }] },
     "No files were rewritten under artifacts.\n" +
-      "  WARNING: locked.log could not be safely prepared because it could not be read: EACCES.\n",
-    "summary: a file that was not prepared is a warning, not a false clean result"
-  );
-});
+      "  WARNING: locked.log could not be safely prepared because it could not be read: EACCES.\n"
+  ]
+]) {
+  test(`formatSummary: ${label}`, () => {
+    assert.equal(
+      formatSummary("artifacts", { changed: [], skipped: [], totals: new Map(), ...result }),
+      expected
+    );
+  });
+}
 for (const [label, bytes, expectedEncoding] of DECODE_CASES) {
   test(`decodeText classifies ${label}`, () => {
     const decoded = decodeText(bytes);

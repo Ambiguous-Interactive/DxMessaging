@@ -1025,24 +1025,34 @@ jobs:
           assets=("${PACKAGE_FILE}" "${CHECKSUM_FILE}" "${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
           # A failed lookup is not proof that a release is absent. Listing all
           # pages also includes drafts visible to this contents-write token.
-          releases="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")"
-          release="$(jq -c --arg tag "${tag}" '
-            [.[][] | select(.tag_name == $tag)] |
-            if length > 1 then error("Multiple releases for tag") else .[0] end
-          ' <<< "${releases}")"
+          load_release() {
+            local releases
+            releases="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")" || return
+            jq -c --arg tag "${tag}" '
+              [.[][] | select(.tag_name == $tag)] |
+              if length > 1 then error("Multiple releases for tag") else .[0] end
+            ' <<< "${releases}"
+          }
+          release="$(load_release)"
           if [ "${release}" = null ]; then
             gh release create "${tag}" \
               --draft \
               --title "${tag}" \
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag
-            release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
+            release="$(load_release)"
+          fi
+          release_id="$(jq -er '.id | select(type == "number" and . > 0 and . == floor)' <<< "${release}")"
+          if [[ ! "${release_id}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Release lookup did not return a positive integer ID."
+            exit 1
           fi
           is_draft="$(jq -er '.draft | if type == "boolean" then tostring else error("Missing draft state") end' <<< "${release}")"
           if [ "${is_draft}" = true ]; then
             # Only unpublished drafts may replace assets on a partial rerun.
             gh release upload "${tag}" "${assets[@]}" --clobber
-            release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
+            # Refresh drafts by ID; tag lookup is documented for published releases.
+            release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
           fi
           release_verify_dir="$(mktemp -d)"
           trap 'rm -rf -- "${release_verify_dir}"' EXIT

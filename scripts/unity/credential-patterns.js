@@ -346,14 +346,19 @@ function decodedCandidate(text, modes, runs, seen) {
       if (record.length > SERIALIZED_WINDOW_CHARACTERS && SERIALIZED_ESCAPE.test(record))
         return undefined;
       for (const mode of modes) decoded = decodeSerialized(decoded, mode);
-      if (cache.size < 4096 && retained + record.length + decoded.length <= 2 ** 20) {
+      const size = record.length + decoded.length;
+      if (size <= 2 ** 20) {
+        // Renew admission after a cold prefix; never pin its records for the whole file.
+        if (cache.size >= 4096 || retained + size > 2 ** 20) {
+          cache.clear();
+          retained = 0;
+        }
         cache.set(record, decoded);
-        retained += record.length + decoded.length;
+        retained += size;
       }
     }
     parts.push(runs ? [decoded, count] : decoded);
-    if (runs) continue;
-    if (parts.length >= 1024) {
+    if (!runs && parts.length >= 1024) {
       chunks.push(parts.join(""));
       parts.length = 0;
     }
