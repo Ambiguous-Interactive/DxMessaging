@@ -1,9 +1,9 @@
 # Runtime Performance Campaign Decisions
 
-<!-- cspell:ignore gshared -->
+<!-- cspell:ignore gshared RGCTX xperf -->
 
 > **One-line summary**: Keep the measured physical-two handler-entry map,
-> holder-local flat-dispatch count read, same-trial deregistration diagnostic,
+> holder-local flat-dispatch count read, detached cache spare, same-trial deregistration diagnostic,
 > and controlled one-process comparison profile. Reject performance attribution
 > when causally untouched sentinels move with the target.
 
@@ -15,7 +15,36 @@ the Unity/C# 9 floor, checked against committed contracts, and reverted when
 they failed a campaign gate. Observations that were not implemented are labeled
 separately.
 
-## Accepted candidate
+The 3% brackets below are historical screening decisions, not calibrated
+confirmatory inference. [Foundation issue #500](https://github.com/Ambiguous-Interactive/DxMessaging/issues/500)
+requires the profile, exact twins, replayable evidence, oracle, and calibration
+gates before new performance confirmation. [Calibration issue #510](https://github.com/Ambiguous-Interactive/DxMessaging/issues/510)
+owns independent build replication, intervals, controls, and stopping rules.
+
+## Accepted correctness change
+
+- Keep the null-handler preflight from [PR #420](https://github.com/Ambiguous-Interactive/DxMessaging/pull/420).
+  Enabled registration validates before allocating token metadata or mutating
+  bus storage. Disabled-token replay validates before bus mutation and preserves
+  retry/removal recovery. This prevents inaccessible partial registrations after
+  a null callback throws. It is a correctness fix, not a dispatch speed claim.
+  The originating typed-slot and callback null-check-elision experiments were
+  removed; their rejected results remain in the
+  [session 216 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5300262416).
+
+## Accepted candidates
+
+- Keep the single detached empty priority-cache spare from
+  [PR #432](https://github.com/Ambiguous-Interactive/DxMessaging/pull/432).
+  The warmed 10,000-cycle Mono probe removed six allocation calls per direct-bus
+  or direct-handler cycle; active-token calls fell from eight to two per cycle.
+  Retention is bounded to one spare, disabled at a zero cap, and drained by
+  forced trim/reset or a cap below its retained high-water mark. The
+  [recorded IL2CPP screen](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5362113430)
+  measured 1,262,467 SubUnsub operations/sec at `d1d88e20`, versus the historical
+  942,479/s baseline. That +34.0% is a manual historical comparison supported
+  by a separate local Mono bracket, not a calibrated IL2CPP causal estimate.
+  Same-run MessagePipe measured 2,140,992/s; no parity claim follows.
 
 - Keep the physical-two `HandlerActionCache` entry map. Fresh Mono construction
   improved from 2.129M to 3.541M caches/sec (+66.3%) by removing two eager
@@ -74,6 +103,33 @@ separately.
 
 ## Rejected runtime candidates
 
+- Passing the already-resolved typed slot into handler registration left the
+  fresh Mono direct-handler/direct-bus ratio at 1.620 control versus 1.619
+  candidate. Token callback null-check elision reached only +0.43% over the
+  stronger same-code IL2CPP control, while controls reversed the direct/token
+  ordering. Both candidates were removed in the
+  [PR #420 investigation](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5300262416).
+- The typed-cache deregistration specialization from
+  [PR #421](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5302928511)
+  improved mean handler excess by only 1.99% across all three controls and
+  three byte-identical candidates. An initially favorable pair reversed on a
+  later identical candidate. The runtime specialization was removed.
+- Token-local registration-object recycling reduced allocation calls by 25%,
+  but the fresh Mono end-to-end SubUnsub screen improved only 2.0%. The
+  [recycle decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5352035658)
+  rejected the retained-object and snapshot-safety complexity and removed the
+  prototype. Allocation reduction alone did not satisfy its throughput gate.
+- The raw token-dispatch candidate in
+  [PR #476](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5459660210)
+  was uninterpretable: Filtered moved +3.6063% and FilteredPostProcess -3.7539%
+  outside the sentinel band. The +9.4297% GlobalToOne and +3.9638% StructNoBox
+  normalized effects are diagnostic only. Both candidate trees matched; the
+  implementation and candidate-only tests were removed.
+- The borrowed untargeted-interceptor view from
+  [session 244](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5434491863)
+  removed one native EnsureFlat call, but four unreachable sentinels moved
+  outside the band. The +25.335% raw and +9.329% normalized Filtered effects
+  do not establish a gain. The candidate was removed.
 - Do not omit the `snapshotEmissionId` refresh from the cached untargeted route.
   The local Mono candidate/control/candidate screen used byte-identical outer
   trees and the committed seven-row causal manifest. Sentinel-normalized target
@@ -226,6 +282,44 @@ separately.
   fresh-map creator, prebuilds keys and values outside the window, and observes
   one map's allocations, bytes, and topology from the same selected attempt.
 
+## Measurement-blocked candidates
+
+- Exact-`MessageBus` deregistration remains blocked, not mechanistically
+  rejected. [PR #422 evidence](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5303491474)
+  at `8678a2ca`, run `31900934703`, artifact `9251194997`, identifies a
+  `GenericInterfaceActionInvoker1` call through RGCTX. Its final palindrome
+  failed all three 3% stability gates: 10.38% handler drift, 5.37% bus drift,
+  and 14.66% handler-excess spread. Require interpretable repeated IL2CPP
+  controls and a separately preregistered end-to-end candidate bracket before
+  implementing the specialization; generated source proves shape, not cost.
+- `DispatchLease.Dispose` has a surviving native call, but no accepted
+  replicated cost interval. The
+  [native-call observation](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5463639213)
+  and [runner-tool inventory](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5464701655)
+  do not establish materiality. Require #511's resolved interval and unresolved
+  sample bound, plus unaffected controls, before a runtime candidate.
+
+## Historical evidence index
+
+These GitHub records preserve decisions and available commit/run/artifact IDs.
+They are not immutable content-addressed bundles, and this update does not
+assert that an expiring Actions artifact remains retrievable. #508/#521 still
+own independent restoration and immutable retention. Missing historical bundles
+remain evidence gaps; do not fabricate digests or reinterpret summaries as raw data.
+
+| Decision                                                    | Durable decision record                                                                                         | Evidence limit                                                                 |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Null preflight accepted; originating optimizations rejected | [PR #420](https://github.com/Ambiguous-Interactive/DxMessaging/pull/420)                                        | Correctness acceptance is separate from performance rejection.                 |
+| Detached spare accepted                                     | [PR #432 result](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5362113430)       | Historical IL2CPP comparison, not calibrated confirmation.                     |
+| EnsureFlat inline hint reverted                             | [PR #469 correction](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5422279014)   | Artifacts 9589689175 / 9590470473 / 9591342545; sentinel failure.              |
+| Cached-route count elision reverted                         | [PR #470 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5430405546)     | Commits ef7e5b79 / 4fdd1df3 / fc038a1d; sentinel failure.                      |
+| Borrowed post route reverted                                | [PR #471 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5432013543)     | Commits 3d44378f / 47f7ed6b / 26f31474 and manifest digest retained in record. |
+| Borrowed interceptor view reverted                          | [Session 244 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5434491863) | Native call removal established; throughput not attributable.                  |
+| Raw token-dispatch representation reverted                  | [PR #476 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5459660210)     | Full commit/tree and manifest digests retained in record; sentinel failure.    |
+| Final-entry reset peel reverted                             | [Session 248 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5460572709) | Local Mono screen only; no candidate IL2CPP run.                               |
+| Snapshot emission-stamp removal reverted                    | [PR #479 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5463384963)     | Local Mono screen only; no candidate IL2CPP run.                               |
+| Exact-bus specialization blocked                            | [PR #422 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5303491474)     | Code-generation mechanism established; measurement failed.                     |
+
 ## Backend and first-touch observations
 
 - The final exact-head campaign used five verified 408-test/70-row artifacts per
@@ -254,17 +348,20 @@ separately.
 - Leave `RegistrationMethodAxes`' one-time `Enum.GetValues` initialization alone
   until a first-touch benchmark attributes material cost to it. It is outside
   steady-state dispatch, and existing coverage already pins exhaustiveness.
-- The published perf artifacts retain results and player logs, not generated
-  IL2CPP C++. Three retained player artifacts and the active editor project's
-  Bee cache contained zero generated C++ candidates. Do not claim source-level
-  C++ inspection from these artifacts; arrange deliberate generated-source
-  capture before a future code-generation experiment.
-- No CPU-sampling or Intel Top-Down capture was available: the retained artifacts
-  contain no CPU profile, the workflows collect none, and VTune/perf tooling was
-  absent from the audit environment. Outcome-based timing, allocation, storage,
-  and player-size gates remain valid, but do not attribute a result to branch,
-  code-size, cache, or memory stalls without a matched profile. Provision capture
-  on the measured runner before a future experiment that needs such attribution.
+- Early artifact audits lacked generated C++, but that is not the current
+  evidence limit. [PR #458](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5390151897)
+  captured exact generated bodies; PR #459 captured PDB-backed disassembly;
+  [PR #460](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5400169008)
+  resolved five source targets to five native addresses and bounded ranges.
+  Those records distinguish surviving snapshot/interceptor calls from inlined
+  handle/post phase bodies. They establish code shape, not sampled cost or
+  durable availability of every native artifact.
+- [PR #485](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5464701655)
+  found WPR, WPAExporter, and xperf on the non-elevated runner. Tool discovery
+  does not prove capture, PDB resolution, observer-effect control, or PMU
+  attribution. #511 still owns those proofs. Do not attribute throughput
+  movement to branch, cache, code-size, or memory stalls without matched
+  resolved profiles and controls.
 
 ## See also
 

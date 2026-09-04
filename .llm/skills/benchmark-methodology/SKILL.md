@@ -121,9 +121,7 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
   classifies separately because it needs external packages. Default runs exclude both.
 - Opt in with `includePerf` / `--include-perf` or `includeComparisons` /
   `-IncludeComparisons`; resolve assemblies through `compute-unity-assemblies`.
-- A perf asmdef in the `core` bucket almost always means its `name` field is
-  missing the magic substring. Verify with
-  `node scripts/unity/lib/asmdef-discovery.js`.
+- Check misclassified perf asmdef names with `node scripts/unity/lib/asmdef-discovery.js`.
 - `perf-numbers.yml` isolates internal and comparison entries. External package versions
   come only from `.github/comparison-packages.json`.
 
@@ -131,14 +129,16 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
 
 - Do not repeat a rejected candidate without new evidence or a materially different
   representation. The campaign decision reference records accepted and rejected work.
-- Claims need a fresh A/B/A bracket, an interpretable paired result, and an effect
+- Legacy screening needs a fresh A/B/A bracket, an interpretable paired result, and an effect
   strictly greater than 3%, as accepted by `reduce-paired-bracket.js` from the immutable manifest
   and all three retained summaries.
+- Confirmation requires #500's foundations and #510's independent-build replication,
+  intervals, controls, and stopping rule; a legacy screening pass alone is insufficient.
 - Do not read `MessageBusConstruction_1000` or cold teardown rows as dispatch
   regressions - they are wall-time first-touch rows and move independently.
-- Do not attribute a result to branch, cache, or memory stalls: no CPU-sampling
-  or Top-Down capture exists on the measured runners, and the published artifacts
-  retain results and player logs, not generated IL2CPP C++.
+- Do not attribute a result to branch, cache, or memory stalls without resolved
+  profiles and matching controls. Generated C++ and PDB-backed native ranges
+  establish code shape, not sampled cost; #511 owns the attribution gate.
 
 ## References
 
