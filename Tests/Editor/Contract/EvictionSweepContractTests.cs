@@ -82,6 +82,11 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
+        /// <remarks>
+        /// 2026-09-04: Non-forced trim requires touch age greater than the zero idle budget.
+        /// Repeating trim at the deregistration tick must retain deferred contexts; an unrelated
+        /// emission ages them without touching or rescheduling this handler.
+        /// </remarks>
         [TestCase(false)]
         [TestCase(true)]
         public void ContextPruningPreservesFrozenCallbacksAndStaleDeregistration(bool force)
@@ -142,7 +147,34 @@ namespace DxMessaging.Tests.Editor.Contract
                     Is.EqualTo(2),
                     $"force={force}: in-flight cleanup must defer context removal."
                 );
+                long deregistrationTick = bus.TickCounter;
                 bus.Trim(force);
+                Assert.That(
+                    bus.TickCounter,
+                    Is.EqualTo(deregistrationTick),
+                    $"force={force}: trim must not advance the idle-age counter."
+                );
+                if (!force)
+                {
+                    Assert.That(
+                        slot.byContext.Count,
+                        Is.EqualTo(2),
+                        "A non-forced trim at touch age zero must retain the deferred context."
+                    );
+                    Assert.That(
+                        slot.pendingContextCleanup,
+                        Does.Contain(transient),
+                        "The fresh context must remain scheduled after a same-tick idle trim."
+                    );
+                    OtherProbeMessage tick = new OtherProbeMessage();
+                    bus.UntargetedBroadcast(ref tick);
+                    Assert.That(
+                        bus.TickCounter,
+                        Is.EqualTo(unchecked(deregistrationTick + 1)),
+                        "An unrelated emission must advance the touch age without re-registering the handler."
+                    );
+                    bus.Trim(force: false);
+                }
                 Assert.That(
                     slot.byContext.Count,
                     Is.EqualTo(1),
