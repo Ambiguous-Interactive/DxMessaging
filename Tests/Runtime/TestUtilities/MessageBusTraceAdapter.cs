@@ -13,6 +13,8 @@ namespace DxMessaging.Tests.Runtime
         private readonly MessageScenario _scenario;
         private readonly IMessageBus _bus;
         private readonly IMessageBus _emitter;
+        private readonly Action _reset;
+        private int _resetOnCallbackToken = -1;
         private readonly MessageRegistrationToken[] _tokens = new MessageRegistrationToken[
             BusTraceSequence.TokenCount
         ];
@@ -25,13 +27,15 @@ namespace DxMessaging.Tests.Runtime
         internal MessageBusTraceAdapter(
             MessageScenario scenario,
             IMessageBus bus,
-            IMessageBus emitter = null
+            IMessageBus emitter = null,
+            Action reset = null
         )
         {
             _scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
             _bus = bus ?? throw new ArgumentNullException(nameof(bus));
             // Keep token storage keyed by the real implementation, even when a mutant intercepts emission.
             _emitter = emitter ?? bus;
+            _reset = reset;
             _leaks = new LeakWatcher(bus: bus, label: "Differential replay " + scenario.Kind);
             try
             {
@@ -87,6 +91,24 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.Emit:
                         Emit(operation);
+                        break;
+                    case BusTraceOperationKind.EmitWithReset:
+                        if (_reset == null)
+                        {
+                            throw new NotSupportedException(
+                                "This adapter has no local reset action."
+                            );
+                        }
+                        _resetOnCallbackToken = operation.Token;
+                        try
+                        {
+                            Emit(operation);
+                        }
+                        finally
+                        {
+                            // A disabled or differently routed trigger may never receive a callback.
+                            _resetOnCallbackToken = -1;
+                        }
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(operation));
@@ -196,7 +218,15 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private void Record(int token, int value) => _callbacks.Add($"token={token},value={value}");
+        private void Record(int token, int value)
+        {
+            _callbacks.Add($"token={token},value={value}");
+            if (token == _resetOnCallbackToken)
+            {
+                _resetOnCallbackToken = -1;
+                _reset();
+            }
+        }
 
         private readonly struct UntargetedPayload : IUntargetedMessage<UntargetedPayload>
         {

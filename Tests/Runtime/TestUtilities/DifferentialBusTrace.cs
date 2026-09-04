@@ -6,7 +6,7 @@ namespace DxMessaging.Tests.Runtime
     using System.Collections.ObjectModel;
     using System.Text;
 
-    /// <summary>The first oracle increment's supported operations; lifecycle operations remain separate work.</summary>
+    /// <summary>Supported replay operations, including callback-time reset of an isolated bus.</summary>
     internal enum BusTraceOperationKind
     {
         Register,
@@ -14,6 +14,7 @@ namespace DxMessaging.Tests.Runtime
         Enable,
         Disable,
         Emit,
+        EmitWithReset,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -47,18 +48,24 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 1;
+        internal const int GeneratorVersion = 2;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
         internal BusTraceSequence(
             MessageScenario scenario,
             uint seed,
-            IEnumerable<BusTraceOperation> operations
+            IEnumerable<BusTraceOperation> operations,
+            int generatorVersion = GeneratorVersion
         )
         {
             Scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
             Seed = seed;
+            if (generatorVersion < 1 || generatorVersion > GeneratorVersion)
+            {
+                throw new ArgumentOutOfRangeException(nameof(generatorVersion));
+            }
+            Version = generatorVersion;
             if (operations == null)
             {
                 throw new ArgumentNullException(nameof(operations));
@@ -80,6 +87,7 @@ namespace DxMessaging.Tests.Runtime
 
         internal MessageScenario Scenario { get; }
         internal uint Seed { get; }
+        internal int Version { get; }
         internal ReadOnlyCollection<BusTraceOperation> Operations { get; }
     }
 
@@ -132,7 +140,7 @@ namespace DxMessaging.Tests.Runtime
         {
             StringBuilder report = new();
             report.Append(
-                $"generator={BusTraceSequence.GeneratorVersion}, seed={sequence.Seed}, kind={sequence.Scenario.Kind}, firstMismatch={Index}, category={Category}\noperation={sequence.Operations[Index]}\ncontrol: {Control}\ncandidate: {Candidate}\nsequenceLength={sequence.Operations.Count}"
+                $"generator={sequence.Version}, seed={sequence.Seed}, kind={sequence.Scenario.Kind}, firstMismatch={Index}, category={Category}\noperation={sequence.Operations[Index]}\ncontrol: {Control}\ncandidate: {Candidate}\nsequenceLength={sequence.Operations.Count}"
             );
             // The immutable sequence caps this complete replay input at MaxOperations.
             // A minimized or hand-written trace cannot be reconstructed from its seed alone.
@@ -148,7 +156,12 @@ namespace DxMessaging.Tests.Runtime
     internal static class DifferentialBusTrace
     {
         /// <summary>Generates a stable xorshift sequence independent of System.Random implementation changes.</summary>
-        internal static BusTraceSequence Generate(MessageScenario scenario, uint seed, int length)
+        internal static BusTraceSequence Generate(
+            MessageScenario scenario,
+            uint seed,
+            int length,
+            int generatorVersion = BusTraceSequence.GeneratorVersion
+        )
         {
             if (length < 0 || length > BusTraceSequence.MaxOperations)
             {
@@ -160,7 +173,9 @@ namespace DxMessaging.Tests.Runtime
             for (int index = 0; index < length; ++index)
             {
                 int token = (int)(Next(ref state) % BusTraceSequence.TokenCount);
-                BusTraceOperationKind kind = (BusTraceOperationKind)(Next(ref state) % 5);
+                BusTraceOperationKind kind = (BusTraceOperationKind)(
+                    Next(ref state) % (generatorVersion == 1 ? 5U : 6U)
+                );
                 if (index == 0)
                 {
                     kind = BusTraceOperationKind.Register;
@@ -178,6 +193,10 @@ namespace DxMessaging.Tests.Runtime
                 if (kind == BusTraceOperationKind.Remove && !registered[token])
                 {
                     kind = BusTraceOperationKind.Register;
+                }
+                if (kind == BusTraceOperationKind.EmitWithReset && !registered[token])
+                {
+                    kind = BusTraceOperationKind.Emit;
                 }
                 int context = index < 2 ? 0 : (int)(Next(ref state) % 2);
                 operations.Add(
@@ -198,7 +217,7 @@ namespace DxMessaging.Tests.Runtime
                     registered[token] = false;
                 }
             }
-            return new BusTraceSequence(scenario, seed, operations);
+            return new BusTraceSequence(scenario, seed, operations, generatorVersion);
         }
 
         /// <summary>Checks handle existence and input bounds only; never predicts which callbacks should execute.</summary>
@@ -255,6 +274,14 @@ namespace DxMessaging.Tests.Runtime
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:
                     case BusTraceOperationKind.Emit:
+                        break;
+                    case BusTraceOperationKind.EmitWithReset:
+                        if (sequence.Version < 2 || !registered[operation.Token])
+                        {
+                            return false;
+                        }
+                        // A bus reset does not remove token-owned staged registrations.
+                        // Leave handle dependencies intact for stale cleanup and re-enable.
                         break;
                     default:
                         return false;
@@ -388,7 +415,12 @@ namespace DxMessaging.Tests.Runtime
             {
                 List<BusTraceOperation> remaining = new(current.Operations);
                 remaining.RemoveAt(index);
-                BusTraceSequence candidate = new(current.Scenario, current.Seed, remaining);
+                BusTraceSequence candidate = new(
+                    current.Scenario,
+                    current.Seed,
+                    remaining,
+                    current.Version
+                );
                 BusTraceMismatch mismatch = IsValid(candidate) ? evaluate(candidate) : null;
                 if (mismatch != null && mismatch.Category == initial.Category)
                 {
