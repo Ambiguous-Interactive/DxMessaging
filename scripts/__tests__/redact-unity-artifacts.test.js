@@ -39,6 +39,7 @@ const FAKE_MAC = "02:00:5E:10:00:00";
 const FAKE_MACHINE_ID = "FAKEmachineID000000000000=";
 const FAKE_HOST = "fake-runner-host";
 const FAKE_ACCOUNT = "Fake Runner Account";
+const CREDENTIAL_PATTERNS_PATH = path.resolve(__dirname, "../unity/credential-patterns.js");
 const LEAK_CASES = Object.freeze([
   ["pem-private-key", `key follows\n${FAKE_PEM}\ndone\n`, FAKE_KEY_BODY],
   ["unity-license-id", `<License id="${FAKE_LICENSE_ID}" version="1.0">\n`, FAKE_LICENSE_ID],
@@ -554,11 +555,18 @@ for (const [contents, privatePart] of VECTORS.entityIdentifiers) {
   });
 }
 test("entity-heavy account input cannot exhaust the scrubber", () => {
-  const modulePath = path.resolve(__dirname, "../unity/credential-patterns.js");
-  const script = `require(${JSON.stringify(modulePath)}).findIdentifiers('/home/'+'&amp;'.repeat(256)+'!')`;
+  const script = `require(${JSON.stringify(CREDENTIAL_PATTERNS_PATH)}).findIdentifiers('/home/'+'&amp;'.repeat(256)+'!')`;
   const result = spawnSync(process.execPath, ["-e", script], { timeout: 1000 });
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
+});
+test("large escaped logs stay within a bounded heap", () => {
+  const row = String.raw`{"message":"C:\\runner said \"hello\" &amp; done"}` + "\n";
+  const script = `const f=require(${JSON.stringify(CREDENTIAL_PATTERNS_PATH)}).findSensitiveData,r=${JSON.stringify(row)},n=16*1024*1024,t=r.repeat(Math.ceil(n/r.length)).slice(0,n);if(f(t).length)process.exit(2)`;
+  const result = spawnSync(process.execPath, ["--max-old-space-size=192", "-e", script], {
+    timeout: 30000
+  });
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr.toString());
 });
 for (const contents of VECTORS.mappableSensitive) {
   test(`the CLI maps direct sensitive data despite an unrelated escape: ${contents}`, () => {
@@ -917,11 +925,25 @@ test("a hard-linked artifact cannot rewrite bytes outside the tree", () => {
   );
   assert.equal(fs.readFileSync(outside, "utf8"), `UNITY_PASSWORD=${FAKE_PASSWORD}\n`);
 });
+test("the CLI rejects a cross-window authority without echoing a hostile root", () => {
+  const root = path.join(temporaryDirectory(), "artifact-\u202e-private");
+  const contents = `${"x".repeat(4 * 1024 * 1024 - 64 * 1024 - 101)}\npath=\\\\&#${"0".repeat(66000)}114;${"runner-private".slice(1)}&#92;share\n`;
+  const target = path.join(root, "encoded.log");
+  fs.mkdirSync(root);
+  fs.writeFileSync(target, contents);
+  const written = [];
+  assert.equal(
+    runCli(["node", "cli", root], (text) => written.push(text)),
+    2
+  );
+  assert.doesNotMatch(written.join(""), /\u202e-private/);
+  assert.match(written.join(""), /\[redacted:unsafe-path\]/);
+  assert.equal(fs.readFileSync(target, "utf8"), contents);
+});
 test("formatSummary safely renders a hostile filename on every platform", () => {
   const summary = formatSummary("artifacts", {
     changed: [],
-    skipped: [{ path: "bad\n::error::forged.env", reason: "could not be read" }],
-    totals: new Map()
+    skipped: [{ path: "bad\n::error::forged.env", reason: "could not be read" }]
   });
   assert.doesNotMatch(summary, /\n::error::forged/);
   assert.match(summary, /\[redacted:unsafe-path\]/);

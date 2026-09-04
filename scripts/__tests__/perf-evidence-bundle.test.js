@@ -691,15 +691,15 @@ test("adding a file the reducer never reads still trips the append-only check", 
     "an overwrite of sealed evidence must fail closed even when the reducer sees no difference"
   );
 });
-test("sealing refuses a credential past the first four mebibytes of a file", () => {
+test("sealing refuses an encoded UNC authority that straddles the old scan window", () => {
   const root = bundleWithFile(
     "player.log",
-    `${"x".repeat(4 * 1024 * 1024 + 64)}\nserial ${FAKE_SERIAL}\n`
+    `${"x".repeat(4 * 1024 * 1024 - 64 * 1024 - 101)}\npath=\\\\&#${"0".repeat(66000)}114;${"runner-private".slice(1)}&#92;share\n`
   );
   assert.throws(
     () => sealBundle(root, SEAL_OPTIONS),
-    /^Error: player\.log looks like it contains a Unity serial; scrub it before sealing\.$/,
-    "a credential beyond the old scan window must still block publication"
+    /^Error: player\.log looks like it contains a UNC host name; scrub it before sealing\.$/,
+    "the encoded authority crosses the old overlap boundary but must still block publication"
   );
 });
 test("sealing refuses a credential in a log carrying a stray NUL", () => {
@@ -726,8 +726,8 @@ test("sealing accepts a clean Unity log carrying one stray NUL", () => {
     "the known sparse-NUL Unity output shape must remain sealable after scanning"
   );
 });
-test("sealing accepts a large clean log with ordinary slashes and ampersands", () => {
-  const content = `${"x".repeat(4 * 1024 * 1024 + 1)} C:\\runner A & B\n`;
+test("sealing accepts a large clean log with ordinary serialization escapes", () => {
+  const content = `${"x".repeat(4 * 1024 * 1024 + 1)}\nC:\\\\runner said \\\"hello\\\" & done\n`;
   assert.doesNotThrow(() => sealBundle(bundleWithFile("unity.log", content), SEAL_OPTIONS));
 });
 for (const [label, text] of [

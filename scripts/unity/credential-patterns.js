@@ -18,6 +18,13 @@ const REVIEWED_TEXT_EXTENSIONS = Object.freeze([
   ".xml"
 ]);
 const MAXIMUM_STRAY_NUL_BYTES = 8;
+const SERIALIZED_WINDOW_CHARACTERS = 4 * 1024 * 1024;
+const SERIALIZED_ESCAPE =
+  /\\(?=u[0-9A-Fa-f]{4}|["\\/])|&(?=#(?:x[0-9A-Fa-f]|[0-9])|(?:amp|apos|gt|lt|quot);)/;
+const ENCODED_LIMIT_FINDING = Object.freeze({
+  id: "encoded-sensitive-data",
+  description: "data encoded beyond the inspection limit"
+});
 function canonicalWebHostname(raw) {
   try {
     return new URL(`http://${raw}/`).hostname.replace(/\.+$/, "").toLowerCase();
@@ -82,12 +89,8 @@ const CREDENTIAL_PATTERNS = Object.freeze([
     },
     replacement: (match) => {
       const placeholder = "[redacted:credential-assignment]";
-      if (match[2] !== undefined) {
-        return `${match[1]}"${placeholder}"`;
-      }
-      if (match[3] !== undefined) {
-        return `${match[1]}'${placeholder}'`;
-      }
+      if (match[2] !== undefined) return `${match[1]}"${placeholder}"`;
+      if (match[3] !== undefined) return `${match[1]}'${placeholder}'`;
       return `${match[1]}${placeholder}`;
     }
   }
@@ -121,9 +124,7 @@ const IDENTIFIER_PATTERNS = Object.freeze([
     suffix: (match) => {
       if (/\/home\/$/i.test(match[1]) && match[4] !== undefined) {
         const whitespace = match[4].search(/\s/);
-        if (whitespace >= 0) {
-          return match[4].slice(whitespace);
-        }
+        if (whitespace >= 0) return match[4].slice(whitespace);
       }
       return "";
     }
@@ -148,12 +149,8 @@ const IDENTIFIER_PATTERNS = Object.freeze([
     accept: (match) => !isRedactionPlaceholder(match[2] ?? match[3] ?? match[4]),
     replacement: (match) => {
       const placeholder = "[redacted:named-account-or-host]";
-      if (match[2] !== undefined) {
-        return `${match[1]}"${placeholder}"`;
-      }
-      if (match[3] !== undefined) {
-        return `${match[1]}'${placeholder}'`;
-      }
+      if (match[2] !== undefined) return `${match[1]}"${placeholder}"`;
+      if (match[3] !== undefined) return `${match[1]}'${placeholder}'`;
       return `${match[1]}${placeholder}${match[5]}`;
     }
   },
@@ -174,14 +171,11 @@ function parseIPv6Candidate(raw) {
   }
   const withoutZone = candidate.replace(/%.*/, "");
   const macShape = /^(?:[0-9A-Fa-f]{2}:){5,7}[0-9A-Fa-f]{2}$/;
-  if (!macShape.test(withoutZone) && net.isIP(withoutZone) === 6) {
-    return { suffix };
-  }
+  if (!macShape.test(withoutZone) && net.isIP(withoutZone) === 6) return { suffix };
   if (!bracketed && suffix.length === 0 && candidate.endsWith(":")) {
     const withoutPunctuation = candidate.slice(0, -1).replace(/%.*/, "");
-    if (!macShape.test(withoutPunctuation) && net.isIP(withoutPunctuation) === 6) {
+    if (!macShape.test(withoutPunctuation) && net.isIP(withoutPunctuation) === 6)
       return { suffix: ":" };
-    }
   }
   return undefined;
 }
@@ -251,9 +245,7 @@ function decodeText(bytes) {
       return undefined;
     }
   }
-  if (hasBinaryMagic(bytes)) {
-    return undefined;
-  }
+  if (hasBinaryMagic(bytes)) return undefined;
   try {
     const encoding = bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))
       ? "utf8bom"
@@ -266,12 +258,8 @@ function encodeText(text, encoding) {
   if (encoding === "utf8bom") {
     return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]);
   }
-  if (encoding === "utf16le") {
-    return Buffer.from(text, "utf16le");
-  }
-  if (encoding === "utf16be") {
-    return Buffer.from(text, "utf16le").swap16();
-  }
+  if (encoding === "utf16le") return Buffer.from(text, "utf16le");
+  if (encoding === "utf16be") return Buffer.from(text, "utf16le").swap16();
   return Buffer.from(text, encoding);
 }
 function globalRegExp(entry) {
@@ -279,9 +267,7 @@ function globalRegExp(entry) {
 }
 function matchesPattern(text, entry) {
   for (const match of text.matchAll(globalRegExp(entry))) {
-    if (!entry.accept || entry.accept(match)) {
-      return true;
-    }
+    if (!entry.accept || entry.accept(match)) return true;
   }
   return false;
 }
@@ -315,11 +301,7 @@ function serializedShadows(text) {
         ? String.fromCodePoint(code)
         : (xmlNames[name] ?? entity);
     });
-  if (
-    !/\\(?:u[0-9A-Fa-f]{4}|["\\/])|&#(?:x[0-9A-Fa-f]+|[0-9]+);|&(amp|apos|gt|lt|quot);/.test(text)
-  )
-    return { values: [text], truncated: false };
-  if (text.length > 4 * 1024 * 1024) return { values: [text], truncated: true };
+  if (!SERIALIZED_ESCAPE.test(text)) return { values: [text], truncated: false };
   const values = new Set([text]);
   const pending = [{ value: text, depth: 0 }];
   let retainedCharacters = text.length;
@@ -343,23 +325,50 @@ function serializedShadows(text) {
   }
   return { values: [...values], truncated };
 }
-function findSensitiveDataIn(shadows) {
-  const found = new Map();
+function addSensitiveData(found, shadows) {
   for (const shadow of shadows) {
     for (const entry of [...findCredentials(shadow), ...findIdentifiers(shadow)])
       found.set(entry.id, entry);
   }
-  return [...found.values()];
 }
 function findSensitiveData(text) {
-  const shadows = serializedShadows(text);
-  const found = findSensitiveDataIn(shadows.values);
-  if (shadows.truncated)
-    found.push({
-      id: "encoded-sensitive-data",
-      description: "data encoded beyond the inspection limit"
-    });
-  return found;
+  const found = new Map();
+  let truncated = false;
+  if (text.length <= SERIALIZED_WINDOW_CHARACTERS) {
+    const shadows = serializedShadows(text);
+    addSensitiveData(found, shadows.values);
+    truncated = shadows.truncated;
+  } else {
+    addSensitiveData(found, [text]);
+    if (!SERIALIZED_ESCAPE.test(text)) return [...found.values()];
+    let batch = "";
+    let retained = 0;
+    const seen = new Set();
+    for (const [record] of text.matchAll(/[^\r\n]*(?:\r\n?|\n)|[^\r\n]+$/g)) {
+      if (!SERIALIZED_ESCAPE.test(record)) continue;
+      truncated ||= record.length > SERIALIZED_WINDOW_CHARACTERS;
+      if (truncated) break;
+      if (seen.has(record)) continue;
+      if (seen.size < 4096 && retained + record.length <= 2 ** 20) {
+        seen.add(record);
+        retained += record.length;
+      }
+      const shadows = serializedShadows(record);
+      truncated ||= shadows.truncated;
+      if (truncated) break;
+      for (const shadow of shadows.values.slice(1)) {
+        if (batch.length > 0 && batch.length + shadow.length > SERIALIZED_WINDOW_CHARACTERS / 4) {
+          addSensitiveData(found, [batch]);
+          batch = "";
+        }
+        if (shadow.length > SERIALIZED_WINDOW_CHARACTERS / 4) addSensitiveData(found, [shadow]);
+        else batch += `${shadow}\n`;
+      }
+    }
+    if (batch.length > 0) addSensitiveData(found, [batch]);
+  }
+  if (truncated) found.set(ENCODED_LIMIT_FINDING.id, ENCODED_LIMIT_FINDING);
+  return [...found.values()];
 }
 function findCredentials(text) {
   return CREDENTIAL_PATTERNS.filter((entry) => matchesPattern(text, entry));
@@ -378,20 +387,14 @@ function redactPatterns(text, patterns) {
   for (const entry of patterns) {
     let replaced = 0;
     redacted = redacted.replace(globalRegExp(entry), (...match) => {
-      if (entry.accept && !entry.accept(match)) {
-        return match[0];
-      }
+      if (entry.accept && !entry.accept(match)) return match[0];
       replaced += 1;
-      if (entry.replacement) {
-        return entry.replacement(match);
-      }
+      if (entry.replacement) return entry.replacement(match);
       const prefix = entry.prefixGroup ? match[entry.prefixGroup] : "";
       const suffix = entry.suffix ? entry.suffix(match) : "";
       return `${prefix}[redacted:${entry.id}]${suffix}`;
     });
-    if (replaced > 0) {
-      counts.set(entry.id, (counts.get(entry.id) || 0) + replaced);
-    }
+    if (replaced > 0) counts.set(entry.id, (counts.get(entry.id) || 0) + replaced);
   }
   return { redacted, counts };
 }
@@ -401,23 +404,33 @@ function redactCredentials(text) {
 function redactSensitiveData(text) {
   return redactPatterns(text, SENSITIVE_PATTERNS);
 }
+function hasBrokenRedaction(text) {
+  return (
+    /\[redacted:account-home-path\](?:\\["'`|]|[^"'`|\\/\r\n])+(?=["'`|\])}])/.test(text) ||
+    /\[redacted:file-uri-hostname\](?=[^/\s"'`|)\]}>},;])/u.test(text) ||
+    /\[redacted:account-home-path\][>;"`|](?=[\p{L}\p{N}])/u.test(text)
+  );
+}
 function isSerializedRedactionSafe(text, redacted) {
+  const large =
+    text.length > SERIALIZED_WINDOW_CHARACTERS || redacted.length > SERIALIZED_WINDOW_CHARACTERS;
+  if (large) {
+    return (
+      !findSensitiveData(text).includes(ENCODED_LIMIT_FINDING) &&
+      findSensitiveData(redacted).length === 0 &&
+      !hasBrokenRedaction(redacted)
+    );
+  }
   const source = serializedShadows(text);
   const result = serializedShadows(redacted);
   if (source.truncated || result.truncated) return false;
   try {
     JSON.parse(text);
     JSON.parse(redacted);
-    if (
-      redactSensitiveData(text).counts.size > 0 &&
-      findSensitiveDataIn(result.values).length === 0
-    )
+    if (redactSensitiveData(text).counts.size > 0 && findSensitiveData(redacted).length === 0)
       return true;
   } catch {}
-  if (/\[redacted:account-home-path\](?:\\["'`|]|[^"'`|\\/\r\n])+(?=["'`|\])}])/.test(redacted))
-    return false;
-  if (/\[redacted:file-uri-hostname\](?=[^/\s"'`|)\]}>},;])/u.test(redacted)) return false;
-  if (/\[redacted:account-home-path\][>;"`|](?=[\p{L}\p{N}])/u.test(redacted)) return false;
+  if (hasBrokenRedaction(redacted)) return false;
   const redactedShadows = new Set(result.values);
   return source.values.every((shadow) => {
     const expected = redactSensitiveData(shadow);
