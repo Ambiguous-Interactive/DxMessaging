@@ -803,12 +803,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <remarks>
+        /// 2026-09-04: Forced trim also counts the bus-owned reflexive scratch state.
+        /// Drain the empty bus before registering the measured priority leaf so the exact
+        /// eviction count excludes unrelated initial storage and shared pooled collections.
+        /// </remarks>
         [Test]
         public void ForcedTrimCountsPriorityLeafOnceAndThenIsIdempotent()
         {
-            _ = DxPools.TrimAll(force: true);
             MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
             MessageHandler handler = CreateActiveHandler(bus);
+            _ = bus.Trim(force: true);
             MessageBusRegistration registration = bus.RegisterUntargeted<UntargetedOne>(
                 handler,
                 priority: 0

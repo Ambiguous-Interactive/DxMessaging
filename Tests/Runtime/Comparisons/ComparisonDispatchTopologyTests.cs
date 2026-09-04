@@ -256,6 +256,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
         }
 
+        /// <remarks>
+        /// Investigation (2026-09-04): RegisteredUntargeted counts message-type/priority
+        /// buckets, not subscribers. Both twins use one priority-zero bucket; token metadata
+        /// and callback counts independently verify every subscriber in that shared bucket.
+        /// </remarks>
         [TestCaseSource(nameof(TrueTwinCases))]
         public void TrueTwinsObserveMatchingRegistrationsDispatchAndCleanup(
             ComparisonScenario scenario,
@@ -294,6 +299,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 topology.Count(row => row.StartsWith("token:", StringComparison.Ordinal)),
                 $"{label} Each subscriber needs one token, with no unused token."
             );
+            Assert.AreEqual(
+                subscribers,
+                topology.Count(row => row.StartsWith("registration:", StringComparison.Ordinal)),
+                $"{label} Each subscriber needs exactly one registration, with no extra registration."
+            );
             for (int index = 0; index < subscribers; index++)
             {
                 CollectionAssert.Contains(
@@ -308,9 +318,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 );
             }
             Assert.AreEqual(
-                subscribers,
+                1,
                 bus.RegisteredUntargeted,
-                $"{label} Every subscriber must be registered independently."
+                $"{label} All subscribers must share one message-type/priority-zero bucket."
             );
             Assert.AreEqual(
                 typeof(SimpleUntargetedMessage),
