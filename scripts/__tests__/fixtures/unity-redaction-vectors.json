@@ -1,4 +1,30 @@
 {
+  "summaries": [
+    [
+      "a result without scan totals makes no clean claim",
+      {},
+      "No files were rewritten under artifacts.\n"
+    ],
+    [
+      "per-kind totals are sorted by id and each file lists its kinds",
+      {
+        "changed": [
+          { "path": "logs/deep/configure.log", "counts": ["http-bearer-token", "unity-serial"] },
+          { "path": "logs/unity.log", "counts": ["unity-serial"] }
+        ],
+        "totals": [
+          ["unity-serial", 3],
+          ["http-bearer-token", 1]
+        ]
+      },
+      "Redacted 2 file(s) under artifacts: http-bearer-token x1, unity-serial x3.\n  logs/deep/configure.log: http-bearer-token, unity-serial\n  logs/unity.log: unity-serial\n"
+    ],
+    [
+      "a file that was not prepared is a warning, not a false clean result",
+      { "skipped": [{ "path": "locked.log", "reason": "could not be read: EACCES" }] },
+      "No files were rewritten under artifacts.\n  WARNING: locked.log could not be safely prepared because it could not be read: EACCES.\n"
+    ]
+  ],
   "identifierCases": [
     ["web-hostname", "endpoint https://private-runner:8080/api\n", "private-runner"],
     [

@@ -155,6 +155,13 @@ const IDENTIFIER_PATTERNS = Object.freeze([
   { id: "unity-connect-host", description: "a Unity connection host", pattern: /("connectToHost"[ \t]*:[ \t]*")(?!\[redacted:)(?:\\.|[^"\\])+/, prefixGroup: 1 }
 ]);
 const SENSITIVE_PATTERNS = Object.freeze([...CREDENTIAL_PATTERNS, ...IDENTIFIER_PATTERNS]);
+// Necessary literals only: test each complete candidate with Unicode case folding intact.
+const IDENTIFIER_ANCHORS = Object.freeze({
+  "account-home-path": /Users|home|Documents and Settings/iu,
+  "web-hostname": /https?:/iu,
+  "file-uri-hostname": /file:/iu,
+  "unity-machine-id": /Machine I/iu
+});
 function parseIPv6Candidate(raw) {
   const bracketed = raw.startsWith("[");
   if (bracketed && !raw.endsWith("]")) return undefined;
@@ -410,7 +417,10 @@ function findCredentials(text) {
   return CREDENTIAL_PATTERNS.filter((entry) => matchesPattern(text, entry));
 }
 function findIdentifiers(text) {
-  const matches = IDENTIFIER_PATTERNS.filter((entry) => matchesPattern(text, entry));
+  const absent = Object.keys(IDENTIFIER_ANCHORS).filter((id) => !IDENTIFIER_ANCHORS[id].test(text));
+  const matches = IDENTIFIER_PATTERNS.filter(
+    (entry) => !absent.includes(entry.id) && matchesPattern(text, entry)
+  );
   return [...new Map(matches.map((entry) => [entry.id, entry])).values()];
 }
 /**
@@ -487,6 +497,7 @@ module.exports = {
   hasBinaryMagic,
   hasTooManyNuls,
   isSerializedRedactionSafe,
+  matchesPattern,
   redactCredentials,
   redactSensitiveData
 };

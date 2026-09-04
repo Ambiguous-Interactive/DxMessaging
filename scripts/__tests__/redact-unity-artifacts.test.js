@@ -1,5 +1,5 @@
 "use strict";
-// cspell:ignore Brien bfnrt nner earer
+// cspell:ignore Brien bfnrt nner earer ttps
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -13,6 +13,7 @@ const {
   findCredentials,
   findIdentifiers,
   findSensitiveData,
+  matchesPattern,
   decodeText,
   encodeText,
   redactCredentials,
@@ -56,6 +57,28 @@ const LEAK_CASES = Object.freeze([
   ["credential-assignment", `TOKEN=${FAKE_PASSWORD}\n`, FAKE_PASSWORD]
 ]);
 const IDENTIFIER_CASES = VECTORS.identifierCases;
+test("identifier anchor gates preserve unfiltered production matches", () => {
+  for (const text of Object.values(VECTORS)
+    .flat(Infinity)
+    .filter((value) => typeof value === "string")) {
+    for (const input of [
+      text,
+      text.toUpperCase(),
+      text.toLowerCase(),
+      text.replace(/s/gi, "ſ"),
+      text.replace(/Users|home|Documents and Settings|https?|file|Machine I/giu, "missing"),
+      JSON.stringify(text),
+      `${redactSensitiveData(text).redacted}\n${text}`
+    ]) {
+      const expected = IDENTIFIER_PATTERNS.filter((entry) => matchesPattern(input, entry));
+      assert.deepEqual(
+        new Set(findIdentifiers(input).map((entry) => entry.id)),
+        new Set(expected.map((entry) => entry.id)),
+        input
+      );
+    }
+  }
+});
 function temporaryDirectory() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "redact-unity-artifacts-test-"));
 }
@@ -84,32 +107,18 @@ function writeArtifactTree() {
   return root;
 }
 const FAKE_ASSIGNMENT_VALUE = "FAKEfake00000000";
-const STRAY_NUL_LOG = Buffer.concat([
-  Buffer.from("Refreshing native plugins\n", "latin1"),
-  Buffer.alloc(1),
-  Buffer.from(`\nActivated with serial ${FAKE_SERIAL}\n`, "latin1")
-]);
+const STRAY_NUL_LOG = Buffer.from(
+  `Refreshing native plugins\n\0\nActivated with serial ${FAKE_SERIAL}\n`,
+  "latin1"
+);
 const SPARSE_NUL_LOG = Buffer.from(("a".repeat(512) + "\0").repeat(8), "latin1");
-const DLL_LIKE_BLOB = Buffer.concat([
-  Buffer.from("MZ", "latin1"),
-  Buffer.alloc(4000),
-  Buffer.from("x".repeat(4000), "latin1")
-]);
+const DLL_LIKE_BLOB = Buffer.from("MZ" + "\0".repeat(4000) + "x".repeat(4000), "latin1");
 const BOMLESS_UTF16_LOG = Buffer.from("Unity build log line\n".repeat(8), "utf16le");
 /** What Windows PowerShell writes by default: UTF-16LE behind a byte-order mark. */
-const UTF16LE_BOM_LOG = Buffer.concat([
-  Buffer.from([0xff, 0xfe]),
-  Buffer.from(`Activated with serial ${FAKE_SERIAL}\n`, "utf16le")
-]);
+const UTF16LE_BOM_LOG = Buffer.from(`\ufeffActivated with serial ${FAKE_SERIAL}\n`, "utf16le");
 const INVALID_UTF8_BYTES = Buffer.from([0x80, 0xfe, 0x41, 0x0a]);
-const UTF8_BOM_PDF = Buffer.concat([
-  Buffer.from([0xef, 0xbb, 0xbf]),
-  Buffer.from(`%PDF-1.7\n${FAKE_SERIAL}`)
-]);
-const UTF8_BOM_LOG = Buffer.concat([
-  Buffer.from([0xef, 0xbb, 0xbf]),
-  Buffer.from(`URL https://${FAKE_HOST}/path`, "utf8")
-]);
+const UTF8_BOM_PDF = Buffer.from(`\ufeff%PDF-1.7\n${FAKE_SERIAL}`);
+const UTF8_BOM_LOG = Buffer.from(`\ufeffURL https://${FAKE_HOST}/path`, "utf8");
 const PREFIXED_PDF = Buffer.from(` \r\n\t%PDF-1.7\n${FAKE_SERIAL}`);
 const DECODE_CASES = Object.freeze([
   ["a short log with one stray NUL", STRAY_NUL_LOG, "utf8"],
@@ -522,6 +531,8 @@ for (const unique of [false, true, "alternating"]) {
   });
 }
 for (const [label, prefix, separator, value, kind] of [
+  ["home", "/\\u0068ome/", "", "alice/project", "account-home-path"],
+  ["web", "\\u0068ttps://", "\n", "private.local/path", "web-hostname"],
   ["password", "\\u002dpassword", "\n", FAKE_PASSWORD, "unity-password-assignment"],
   ["account", "&#45;username", "\r\n", FAKE_ACCOUNT, "unity-email-assignment"],
   ["endpoint", "\\u002dcacheServerEndpoint", "\n", FAKE_HOST, "unity-cache-server-endpoint"],
@@ -602,38 +613,15 @@ test("displayed roots never echo an account home or network address", () => {
   );
   assert.equal(safeDisplayPath("clean\n::error::forged"), "[redacted:unsafe-path]");
 });
-for (const [label, result, expected] of [
-  [
-    "a result without scan totals makes no clean claim",
-    {},
-    "No files were rewritten under artifacts.\n"
-  ],
-  [
-    "per-kind totals are sorted by id and each file lists its kinds",
-    {
-      changed: [
-        { path: "logs/deep/configure.log", counts: ["http-bearer-token", "unity-serial"] },
-        { path: "logs/unity.log", counts: ["unity-serial"] }
-      ],
-      totals: new Map([
-        ["unity-serial", 3],
-        ["http-bearer-token", 1]
-      ])
-    },
-    "Redacted 2 file(s) under artifacts: http-bearer-token x1, unity-serial x3.\n" +
-      "  logs/deep/configure.log: http-bearer-token, unity-serial\n" +
-      "  logs/unity.log: unity-serial\n"
-  ],
-  [
-    "a file that was not prepared is a warning, not a false clean result",
-    { skipped: [{ path: "locked.log", reason: "could not be read: EACCES" }] },
-    "No files were rewritten under artifacts.\n" +
-      "  WARNING: locked.log could not be safely prepared because it could not be read: EACCES.\n"
-  ]
-]) {
+for (const [label, result, expected] of VECTORS.summaries) {
   test(`formatSummary: ${label}`, () => {
     assert.equal(
-      formatSummary("artifacts", { changed: [], skipped: [], totals: new Map(), ...result }),
+      formatSummary("artifacts", {
+        changed: [],
+        skipped: [],
+        ...result,
+        totals: new Map(result.totals)
+      }),
       expected
     );
   });
