@@ -11,6 +11,7 @@ namespace DxMessaging.Tests.Editor.Contract
     using NUnit.Framework;
 #if UNITY_2021_3_OR_NEWER
     using DxMessaging.Core.Configuration;
+    using DxMessaging.Tests.Runtime;
     using UnityEngine;
     using UnityEngine.LowLevel;
     using UnityEngine.PlayerLoop;
@@ -30,55 +31,141 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private readonly struct BroadcastProbeMessage : IBroadcastMessage<BroadcastProbeMessage> { }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        public void LiveHandlerReclaimsTransientContexts(bool force)
+        /// <remarks>
+        /// 2026-09-04: A live slot must return each retired context's priority dictionary.
+        /// Warmed churn must increase pool hits without new misses when retention is enabled.
+        /// Cap zero deliberately allocates a fresh dictionary per context; neither case proves
+        /// zero total registration allocations. No trim runs inside the measured window.
+        /// </remarks>
+        [TestCase(false, 0)]
+        [TestCase(false, 1)]
+        [TestCase(true, 0)]
+        [TestCase(true, 1)]
+        public void LiveHandlerReclaimsTransientContexts(bool force, int retentionCapacity)
         {
+            const int warmupContexts = 8;
+            const int measuredContexts = 32;
+            int previousCapacity = DxPools.TypedHandlerPriorityDicts.MaxRetained;
+            bool previousUseLru = DxPools.TypedHandlerPriorityDicts.UseLru;
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new ManualClock(),
                 idleEvictionTicks: 1
             );
             MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
-            Action<TargetedProbeMessage> callback = _ => { };
-            Action keep = handler.RegisterTargetedMessageHandler(
-                new InstanceId(1),
-                callback,
-                callback,
-                messageBus: bus
+#if UNITY_2021_3_OR_NEWER
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
+                bus,
+                label: $"force={force}, retentionCapacity={retentionCapacity}",
+                handler: handler
             );
+#endif
+            Action<TargetedProbeMessage> callback = _ => { };
+            Action keep = null;
             try
             {
-                for (int i = 2; i < 34; ++i)
-                {
-                    Action remove = handler.RegisterTargetedMessageHandler(
-                        new InstanceId(i),
-                        callback,
-                        callback,
-                        messageBus: bus
-                    );
-                    remove();
-                }
-                OtherProbeMessage tick = new OtherProbeMessage();
-                bus.UntargetedBroadcast(ref tick);
-                bus.UntargetedBroadcast(ref tick);
-                bus.Trim(force);
+                DxPools.TypedHandlerPriorityDicts.MaxRetained = 0;
+                DxPools.TypedHandlerPriorityDicts.UseLru = true;
+                DxPools.TypedHandlerPriorityDicts.MaxRetained = retentionCapacity;
+                keep = handler.RegisterTargetedMessageHandler(
+                    new InstanceId(1),
+                    callback,
+                    callback,
+                    messageBus: bus
+                );
                 MessageHandler.TypedHandler<TargetedProbeMessage> typed =
                     (MessageHandler.TypedHandler<TargetedProbeMessage>)
                         ReadTypedHandler<TargetedProbeMessage>(handler, bus);
                 TypedSlot<TargetedProbeMessage> slot = typed._slots[
                     TypedSlotIndex.TargetedHandleDefault
                 ];
+                Churn(2, warmupContexts, "warmup");
+                CollectionPoolDiagnostics afterWarmup =
+                    DxPools.TypedHandlerPriorityDicts.Snapshot();
+                Churn(2 + warmupContexts, measuredContexts, "measured");
+                CollectionPoolDiagnostics afterChurn = DxPools.TypedHandlerPriorityDicts.Snapshot();
+                long expectedMisses = retentionCapacity == 0 ? measuredContexts : 0;
+                long expectedHits = retentionCapacity == 0 ? 0 : measuredContexts;
+                Assert.That(
+                    afterChurn.Misses - afterWarmup.Misses,
+                    Is.EqualTo(expectedMisses),
+                    $"force={force}, retentionCapacity={retentionCapacity}: {measuredContexts} distinct contexts must add {expectedMisses} priority-pool misses after warmup."
+                );
+                Assert.That(
+                    afterChurn.Hits - afterWarmup.Hits,
+                    Is.EqualTo(expectedHits),
+                    $"force={force}, retentionCapacity={retentionCapacity}: {measuredContexts} distinct contexts must add {expectedHits} actual priority-dictionary reuse hits."
+                );
+                Assert.That(
+                    afterChurn.Cached,
+                    Is.EqualTo(afterWarmup.Cached),
+                    $"force={force}, retentionCapacity={retentionCapacity}: churn must leave the warmed retained-dictionary count unchanged."
+                );
+                Assert.That(
+                    afterWarmup.Cached,
+                    Is.EqualTo(retentionCapacity),
+                    $"force={force}, retentionCapacity={retentionCapacity}: warmup must retain exactly the configured zero-or-one spare."
+                );
+                OtherProbeMessage tick = new OtherProbeMessage();
+                bus.UntargetedBroadcast(ref tick);
+                bus.UntargetedBroadcast(ref tick);
+                bus.Trim(force);
                 Assert.That(
                     slot.byContext.Count,
                     Is.EqualTo(1),
-                    $"force={force}: a live listener must retain only its live context after churn and trim."
+                    $"force={force}, retentionCapacity={retentionCapacity}: a live listener must retain only its live context after churn and trim."
                 );
+
+                void Churn(int firstContext, int count, string phase)
+                {
+                    for (int i = 0; i < count; ++i)
+                    {
+                        InstanceId context = new InstanceId(firstContext + i);
+                        string diagnostic =
+                            $"force={force}, retentionCapacity={retentionCapacity}, phase={phase}, context={context.Id}";
+                        Action remove = handler.RegisterTargetedMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            messageBus: bus
+                        );
+                        try
+                        {
+                            Assert.That(
+                                slot.byContext.Count,
+                                Is.EqualTo(2),
+                                $"{diagnostic}: registration must retain only the anchor and current transient context."
+                            );
+                            Assert.That(
+                                slot.byContext[context].Count,
+                                Is.EqualTo(1),
+                                $"{diagnostic}: the transient context must own exactly one priority leaf."
+                            );
+                        }
+                        finally
+                        {
+                            remove();
+                        }
+                        Assert.That(
+                            slot.byContext.Count,
+                            Is.EqualTo(1),
+                            $"{diagnostic}: deregistration must immediately remove the retired context from the live slot."
+                        );
+                    }
+                }
             }
             finally
             {
-                keep();
-                bus.Trim(force: true);
-                handler.active = false;
+                try
+                {
+                    keep?.Invoke();
+                    bus.Trim(force: true);
+                }
+                finally
+                {
+                    handler.active = false;
+                    DxPools.TypedHandlerPriorityDicts.MaxRetained = previousCapacity;
+                    DxPools.TypedHandlerPriorityDicts.UseLru = previousUseLru;
+                }
             }
         }
 
