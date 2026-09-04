@@ -225,7 +225,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity benchmark artifacts
+      - name: Redact sensitive data from Unity benchmark artifacts
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -321,7 +321,7 @@ jobs:
           label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
-      - name: Redact credentials from benchmark artifacts
+      - name: Redact sensitive data from benchmark artifacts
         id: redact_benchmarks
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner

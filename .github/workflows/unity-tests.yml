@@ -376,7 +376,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity editor validation diagnostics
+      - name: Redact sensitive data from Unity editor validation diagnostics
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -608,7 +608,7 @@ jobs:
           label: Unity ${{ matrix.unity-version }} standalone
           expected-empty: ${{ steps.compute_standalone.outputs.is-empty }}
 
-      - name: Redact credentials from Unity test artifacts
+      - name: Redact sensitive data from Unity test artifacts
         id: redact_tests
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -624,8 +624,8 @@ jobs:
 
       # Content-addressed retention for issue #508. The manifest names every evidence
       # file with its SHA-256 and embeds the normalized matrix result, so the uploaded
-      # artifact stays verifiable and replayable after the raw CI artifact expires.
-      # Redaction runs first so no credential material can be sealed into a bundle.
+      # artifact stays verifiable and replayable while the uploaded artifact is retained.
+      # Redaction runs first so no sensitive data can be sealed into a bundle.
       - name: Seal shipping-fidelity evidence bundle
         id: seal_shipping
         if: ${{ steps.run_shipping.outcome == 'success' }}
@@ -677,6 +677,7 @@ jobs:
         if: >-
           ${{
             steps.redact_tests.outcome == 'success' &&
+            steps.seal_shipping.outcome == 'success' &&
             always() &&
             !cancelled() &&
             steps.acquire_lock.outputs.acquired == 'true' &&
@@ -687,6 +688,7 @@ jobs:
         with:
           name: unity-${{ matrix.unity-version }}-shipping
           path: .artifacts/unity/${{ matrix.unity-version }}-shipping
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 

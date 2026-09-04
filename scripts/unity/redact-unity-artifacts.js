@@ -1,32 +1,33 @@
 "use strict";
-
-/**
- * Remove credential material from Unity build output before it is uploaded as a CI artifact.
- *
- * Unity writes its license identity into `unity.log` and `configure.log` during activation. GitHub
- * masks registered secrets in rendered job logs, but it does not touch the bytes of an uploaded
- * artifact, so on a public repository those logs publish the serial to anyone who can download the
- * artifact. This rewrites every credential value in place and reports what it removed by kind.
- *
- * Run it over the artifact root before every upload step. It is idempotent: no placeholder it
- * writes can match a credential pattern, so a second pass over redacted output changes nothing.
- */
-
 const fs = require("fs");
 const path = require("path");
-const { decodeText, encodeText, redactCredentials } = require("./credential-patterns.js");
-
-/** Larger than any Unity log this repository produces, and small enough to read into memory. */
+const { TextDecoder } = require("node:util");
+const { isDirectDirectory } = require("../lib/path-classifier.js");
+const {
+  REVIEWED_TEXT_EXTENSIONS,
+  decodeText,
+  encodeText,
+  findSensitiveData,
+  hasBinaryMagic,
+  isSerializedRedactionSafe,
+  redactSensitiveData
+} = require("./credential-patterns.js");
 const MAXIMUM_FILE_BYTES = 256 * 1024 * 1024;
-
 function fail(message) {
   throw new Error(message);
 }
-
 function toPosixPath(value) {
   return value.split(path.sep).join("/");
 }
-
+function safeDisplayPath(value) {
+  const source = String(value);
+  if (/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(source) || source.startsWith("::"))
+    return "[redacted:unsafe-path]";
+  const redacted = redactSensitiveData(source).redacted;
+  return !isSerializedRedactionSafe(source, redacted) || findSensitiveData(redacted).length > 0
+    ? "[redacted:encoded-sensitive-data]"
+    : redacted;
+}
 function listFiles(root) {
   const found = [];
   const walk = (directory) => {
@@ -36,20 +37,30 @@ function listFiles(root) {
         walk(absolute);
       } else if (entry.isFile()) {
         found.push(absolute);
+      } else {
+        fail("Artifact tree contains a symbolic link or non-regular entry.");
       }
     }
   };
   walk(root);
   return found.sort();
 }
-
-/**
- * Redact every file under `root`. Skipped files are reported rather than silently ignored, because
- * a file this cannot read is a file whose contents were never checked.
- */
+function decodeStrictText(bytes) {
+  const encoding =
+    bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : "utf-8";
+  try {
+    return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
 function redactDirectory(root) {
-  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
-    fail(`${root} is not a directory.`);
+  if (!isDirectDirectory(root)) {
+    fail("Artifact root is not a directory.");
   }
   const changed = [];
   const skipped = [];
@@ -57,7 +68,23 @@ function redactDirectory(root) {
   let binaryCount = 0;
   for (const absolute of listFiles(root)) {
     const relative = toPosixPath(path.relative(root, absolute));
-    const size = fs.statSync(absolute).size;
+    const pathFindings = findSensitiveData(relative);
+    if (pathFindings.length > 0 || /\p{Cf}/u.test(relative)) {
+      skipped.push({
+        path: "[redacted:sensitive-file-name]",
+        reason: "has a sensitive file name that cannot be rewritten"
+      });
+      continue;
+    }
+    const stats = fs.statSync(absolute);
+    if (stats.nlink !== 1) {
+      skipped.push({
+        path: relative,
+        reason: "has multiple hard links and cannot be rewritten safely"
+      });
+      continue;
+    }
+    const size = stats.size;
     if (size > MAXIMUM_FILE_BYTES) {
       skipped.push({
         path: relative,
@@ -69,22 +96,77 @@ function redactDirectory(root) {
     try {
       bytes = fs.readFileSync(absolute);
     } catch (error) {
-      skipped.push({ path: relative, reason: `could not be read: ${error.message}` });
+      skipped.push({
+        path: relative,
+        reason: `could not be read: ${safeDisplayPath(error.message)}`
+      });
+      continue;
+    }
+    const extension = path.extname(relative).toLowerCase();
+    if (!REVIEWED_TEXT_EXTENSIONS.includes(extension)) {
+      const strictText = decodeStrictText(bytes)?.replaceAll("\0", "");
+      if (strictText !== undefined && findSensitiveData(strictText).length > 0) {
+        skipped.push({
+          path: relative,
+          reason: "uses an unreviewed extension and contains sensitive data"
+        });
+      } else {
+        binaryCount += 1;
+      }
       continue;
     }
     const decoded = decodeText(bytes);
     if (decoded === undefined) {
+      const strictText = decodeStrictText(bytes)?.replaceAll("\0", "");
+      if (strictText !== undefined && findSensitiveData(strictText).length > 0) {
+        skipped.push({ path: relative, reason: "is opaque but contains sensitive text" });
+        continue;
+      }
       binaryCount += 1;
       continue;
     }
-    const { redacted, counts } = redactCredentials(decoded.text);
+    const nulCount = decoded.text.split("\0").length - 1;
+    const normalized = nulCount === 0 ? decoded.text : decoded.text.replaceAll("\0", "");
+    const lossyUtf8 = bytes.toString("utf8").replaceAll("\0", "");
+    if (
+      decoded.encoding === "latin1" &&
+      findSensitiveData(lossyUtf8).length > 0 &&
+      findSensitiveData(normalized).length === 0
+    ) {
+      skipped.push({ path: relative, reason: "is opaque but contains sensitive text" });
+      continue;
+    }
+    if (hasBinaryMagic(encodeText(normalized, decoded.encoding))) {
+      if (findSensitiveData(normalized).length > 0) {
+        skipped.push({ path: relative, reason: "is opaque but contains sensitive text" });
+      } else binaryCount += 1;
+      continue;
+    }
+    const { redacted, counts } = redactSensitiveData(normalized);
+    if (
+      !isSerializedRedactionSafe(normalized, redacted) ||
+      findSensitiveData(redacted).length > 0 ||
+      /\p{Cf}/u.test(redacted.slice(decoded.encoding.startsWith("utf16") ? 1 : 0))
+    ) {
+      skipped.push({
+        path: relative,
+        reason: "contains encoded sensitive data or format controls that cannot be safely rewritten"
+      });
+      continue;
+    }
+    if (nulCount > 0) {
+      counts.set("stray-nul-byte", nulCount);
+    }
     if (counts.size === 0) {
       continue;
     }
     try {
       fs.writeFileSync(absolute, encodeText(redacted, decoded.encoding));
     } catch (error) {
-      fail(`${relative} contains credential material but could not be rewritten: ${error.message}`);
+      fail(
+        `${relative} contains sensitive data but could not be rewritten: ` +
+          safeDisplayPath(error.message)
+      );
     }
     for (const [id, count] of counts) {
       totals.set(id, (totals.get(id) ?? 0) + count);
@@ -93,40 +175,44 @@ function redactDirectory(root) {
   }
   return { changed, skipped, totals, binaryCount };
 }
-
 function formatSummary(root, result) {
+  const displayRoot = safeDisplayPath(root);
   const lines = [];
   if (result.changed.length === 0) {
-    lines.push(`No credential material found under ${root}.`);
+    lines.push(
+      result.skipped.length === 0 && result.binaryCount === 0
+        ? `No credential or private identifier material found under ${displayRoot}.`
+        : `No files were rewritten under ${displayRoot}.`
+    );
   } else {
     const byKind = [...result.totals.entries()]
       .sort((left, right) => (left[0] < right[0] ? -1 : 1))
       .map(([id, count]) => `${id} x${count}`)
       .join(", ");
-    lines.push(`Redacted ${result.changed.length} file(s) under ${root}: ${byKind}.`);
+    lines.push(`Redacted ${result.changed.length} file(s) under ${displayRoot}: ${byKind}.`);
     for (const file of result.changed) {
-      lines.push(`  ${file.path}: ${file.counts.join(", ")}`);
+      lines.push(`  ${safeDisplayPath(file.path)}: ${file.counts.join(", ")}`);
     }
   }
-  // Binary files are not scanned. Report the count so "nothing found" can never be confused with
-  // "nothing looked at", without listing every DLL and PDB in a player directory.
+  // Report opaque files so "nothing found" cannot be mistaken for "nothing looked at."
   if (result.binaryCount > 0) {
-    lines.push(`  ${result.binaryCount} binary file(s) were not scanned.`);
+    lines.push(`  ${result.binaryCount} opaque or binary file(s) were not scanned.`);
   }
   for (const file of result.skipped) {
-    lines.push(`  WARNING: ${file.path} was not scanned because it ${file.reason}.`);
+    lines.push(
+      `  WARNING: ${safeDisplayPath(file.path)} could not be safely prepared because it ` +
+        `${safeDisplayPath(file.reason)}.`
+    );
   }
   return `${lines.join("\n")}\n`;
 }
-
 function usage() {
   return `Usage: node scripts/unity/redact-unity-artifacts.js <directory> [<directory>...]
-
-Rewrites credential values in every text file under each directory before the tree is uploaded as a
-CI artifact. Missing directories are skipped so one call can cover every test mode of a run.
+Rewrites credential and private identifier values in every text file under each directory before
+the tree is uploaded as a CI artifact. Missing directories are skipped so one call can cover every
+test mode of a run.
 `;
 }
-
 function parseArgs(argv) {
   const roots = [];
   for (let index = 2; index < argv.length; index++) {
@@ -141,47 +227,43 @@ function parseArgs(argv) {
   }
   return { roots, help: false };
 }
-
-/**
- * A file this could not examine is a file whose contents were never checked, so the run cannot
- * claim the tree is clean. Returning zero after a skip would let the uploads, which now require
- * this step to have succeeded, publish a file nobody looked at. Binary files are different: those
- * were examined and judged not to be text, so they do not count as skipped.
- */
 function runCli(argv, write = (text) => process.stdout.write(text)) {
   const { roots, help } = parseArgs(argv);
   if (help || roots.length === 0) {
     write(usage());
     return help ? 0 : 1;
   }
-  const unexamined = [];
+  const blocked = [];
   for (const root of roots) {
     const resolved = path.resolve(root);
-    if (!fs.existsSync(resolved)) {
-      write(`Skipping ${root}; it does not exist.\n`);
-      continue;
+    try {
+      fs.lstatSync(resolved);
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        write(`Skipping ${safeDisplayPath(root)}; it does not exist.\n`);
+        continue;
+      }
+      throw error;
     }
     const result = redactDirectory(resolved);
     write(formatSummary(root, result));
-    unexamined.push(...result.skipped.map((file) => `${root}/${file.path}`));
+    blocked.push(...result.skipped.map((file) => safeDisplayPath(path.join(root, file.path))));
   }
-  if (unexamined.length > 0) {
+  if (blocked.length > 0) {
     write(
-      `Refusing to report success: ${unexamined.length} file(s) could not be examined, so they ` +
-        `cannot be shown to be free of credentials.\n  ${unexamined.join("\n  ")}\n`
+      `Refusing to report success: ${blocked.length} file(s) could not be safely prepared for ` +
+        `upload.\n  ${blocked.join("\n  ")}\n`
     );
     return 2;
   }
   return 0;
 }
-
 if (require.main === module) {
   try {
     process.exitCode = runCli(process.argv);
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(`${safeDisplayPath(error.message)}\n`);
     process.exitCode = 1;
   }
 }
-
-module.exports = { formatSummary, parseArgs, redactDirectory, runCli, usage };
+module.exports = { formatSummary, parseArgs, redactDirectory, runCli, safeDisplayPath, usage };

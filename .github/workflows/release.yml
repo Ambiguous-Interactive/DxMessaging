@@ -342,7 +342,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity release artifacts
+      - name: Redact sensitive data from Unity release artifacts
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -423,7 +423,7 @@ jobs:
           label: Unity release editmode
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
-      - name: Redact credentials from release Unity artifacts
+      - name: Redact sensitive data from release Unity artifacts
         id: redact_release
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -673,7 +673,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity unitypackage artifacts
+      - name: Redact sensitive data from Unity unitypackage artifacts
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -729,7 +729,7 @@ jobs:
           results-dir: .artifacts/unity/release-unitypackage
           label: Unity release unitypackage export
 
-      - name: Redact credentials from unitypackage artifacts
+      - name: Redact sensitive data from unitypackage artifacts
         id: redact_unitypackage
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
