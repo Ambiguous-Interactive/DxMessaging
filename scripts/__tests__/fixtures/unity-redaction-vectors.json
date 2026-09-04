@@ -71,6 +71,7 @@
     ["localhost file URI in prose", "opened file://localhost successfully\n"]
   ],
   "accountBoundaries": [
+    ["/home/alice completed in 12 ms\n", "/home/[redacted:account-home-path] completed in 12 ms\n"],
     ["C:\\Users\\O'Connor\\project\n", "C:\\Users\\[redacted:account-home-path]\\project\n"],
     ["/home/Doe, John/project\n", "/home/[redacted:account-home-path]/project\n"],
     ["profile [/home/alice] done\n", "profile [/home/[redacted:account-home-path]] done\n"],
@@ -145,6 +146,8 @@
     ]
   ],
   "identifierDelimiters": [
+    ["tool version 1.2.3.4\n", "tool version [redacted:ipv4-address]\n"],
+    ["UNC:\\\\secret-host\\share", "UNC:\\\\[redacted:unc-hostname]\\share"],
     ["(file://runner-host)", "(file://[redacted:file-uri-hostname])"],
     ["LicenseClient-runner,ok", "LicenseClient-[redacted:unity-license-client-hostname],ok"],
     ["Machine ID: abc123, next", "Machine ID: [redacted:unity-machine-id], next"],
@@ -339,6 +342,7 @@
     ["dotted EUI-64", "0200.5E10.0000.0001"]
   ],
   "credentials": [
+    ["ASIA1234567890ABCDEF", "[redacted:aws-access-key-id]"],
     ["UNITY_PASSWORD=P@ssw0rd!234\n", "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"],
     [
       "UNITY_PASSWORD=correct horse battery staple\n",
@@ -399,6 +403,10 @@
     "<License id=\"abcdefghijklmnop\nnext <tag>\n"
   ],
   "safeCredentials": [
+    [
+      "a redacted Unity license id",
+      "<License id=\"[redacted:unity-license-id]\" version=\"1.0\">\n"
+    ],
     ["a masked GitHub token", "GITHUB_TOKEN=***\n"],
     ["a masked Unity serial", "UNITY_SERIAL=***\n"],
     ["a quoted masked password", "PASSWORD=\"************\"\n"],
@@ -411,6 +419,7 @@
     ["a Unity engine banner", "Initialize engine version: 6000.5.2f1 (b9e1b8d9d3a2)\n"]
   ],
   "blockedSensitive": [
+    "Bearer\\nFAKEbearerFAKEbearerFAKEbearer",
     "ordinary﻿diagnostic",
     "{\"path\":\"\\/home\\/alice\\/work\"}",
     "{\"uri\":\"file:\\/\\/private-runner\\/share\"}",
@@ -439,6 +448,11 @@
     "{\"PASSWORD\":\"abc\\\"def\"}"
   ],
   "sealingSensitive": [
+    ["a GitHub token", "token: ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"],
+    ["a Unity serial", "UNITY_SERIAL resolved to SC-FAKE-FAKE-FAKE-FAKE-FAKE\n"],
+    ["a PEM private key", "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODY\n"],
+    ["a bearer header", "Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"],
+    ["a credential assignment", "UNITY_PASSWORD=correct-horse-battery\n"],
     ["a private network address", "Player connection [IP] 192.168.42.17 [Port] 55504\n"],
     ["a runner host", "connected to LicenseClient-fake-runner-host$\n"],
     ["a runner account path", "C:\\Users\\fake-runner-account\\AppData\\Local\n"],
@@ -460,6 +474,86 @@
     ["a multiline Unity password", "UNITY_PASSWORD=correct horse battery staple\n"],
     ["an apostrophe Unity password", "UNITY_PASSWORD=abcdefghijkl'OSECRET\n"]
   ],
+  "unsupportedArtifactClasses": [
+    "paired-throughput",
+    "allocation-heavy-subunsub",
+    "cold-latency",
+    "frame-queue-latency",
+    "wpr-pmu-native-mapping",
+    "arm64-energy"
+  ],
+  "sealingAccepted": [
+    ["masked credentials", "clean.log", "GITHUB_TOKEN=***\nUNITY_SERIAL=***\n", "utf8"],
+    ["a clean Unity log carrying one stray NUL", "unity.log", "boot\u0000\ncompleted\n", "utf8"],
+    [
+      "eight sparse stray NULs",
+      "unity.log",
+      "short\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaalog",
+      "utf8"
+    ],
+    [
+      "valid byte-order-marked UTF-16 text",
+      "powershell.log",
+      "\ufeffUnity build completed\n",
+      "utf16le"
+    ]
+  ],
+  "invalidSealMetadata": [
+    ["reducer", "not-a-reducer", "Unknown reducer"],
+    ["reducer", "constructor", "Unknown reducer"],
+    ["reducer", "toString", "Unknown reducer"],
+    ["reducer", "__proto__", "Unknown reducer"],
+    ["experimentId", "Shipping_Matrix", "must be lowercase alphanumeric with dots or dashes"],
+    ["sourceCommit", "not-a-commit", "sourceCommit must be a 40- or 64-character commit ID"]
+  ],
+  "invalidBundlePaths": [
+    ["a Windows drive-letter path", "C:/cell/evidence.json", "must be relative"],
+    ["a backslash path", "cell\\evidence.json", "must use forward slashes"],
+    ["a parent traversal", "../outside.json", "must not contain empty"],
+    ["an absolute POSIX path", "/etc/passwd", "must be relative"],
+    ["a Windows-forbidden character", "bad?.log", "forbidden"],
+    ["a private identifier", "runner-192.168.42.17.log", "IPv4"],
+    ["a reserved Windows name", "aux.txt", "not portable"],
+    ["a superscript Windows device name", "COM¹.log", "not portable"],
+    ["a trailing dot", "bad./file.log", "not portable"]
+  ],
+  "sealCli": {
+    "validFlags": [
+      "--experiment-id",
+      "shipping-fidelity-matrix-6000.5.2f1",
+      "--artifact-class",
+      "shipping-fidelity-matrix",
+      "--reducer",
+      "shipping-fidelity-matrix-v1",
+      "--source-commit",
+      "98b47536a0eb1445fcd2a9700899aab0be24897f"
+    ],
+    "argv": [
+      "node",
+      "perf-evidence-bundle.js",
+      "seal",
+      "/tmp/bundle",
+      "--experiment-id",
+      "shipping-matrix",
+      "--artifact-class",
+      "shipping-fidelity-matrix",
+      "--reducer",
+      "shipping-fidelity-matrix-v1",
+      "--source-commit",
+      "abc123",
+      "--revision",
+      "3"
+    ],
+    "expected": {
+      "command": "seal",
+      "target": "/tmp/bundle",
+      "revision": 3,
+      "experimentId": "shipping-matrix",
+      "artifactClass": "shipping-fidelity-matrix",
+      "reducer": "shipping-fidelity-matrix-v1",
+      "sourceCommit": "abc123"
+    }
+  },
   "sensitiveMetadata": [
     ["experimentId", "192.168.42.17"],
     ["artifactClass", "C:\\Users\\Private Runner\\matrix"],

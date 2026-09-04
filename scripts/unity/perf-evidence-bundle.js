@@ -20,7 +20,10 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 const REDUCERS = Object.freeze({
-  "shipping-fidelity-matrix-v1": reduceShippingFidelityMatrix
+  "shipping-fidelity-matrix-v1": {
+    artifactClass: "shipping-fidelity-matrix",
+    reduce: reduceShippingFidelityMatrix
+  }
 });
 function fail(message) {
   throw new Error(message);
@@ -224,12 +227,14 @@ function requireExperimentId(value) {
   }
   return value;
 }
-function requireReducer(name) {
-  const reducer = REDUCERS[name];
-  if (!reducer) {
+function requireReducer(name, artifactClass) {
+  if (!Object.hasOwn(REDUCERS, name)) {
     fail(`Unknown reducer "${name}". Supported reducers: ${Object.keys(REDUCERS).join(", ")}.`);
   }
-  return reducer;
+  const reducer = REDUCERS[name];
+  if (requirePrivacySafeIdentity(artifactClass, "artifactClass") !== reducer.artifactClass)
+    fail(`Reducer "${name}" does not support artifactClass "${artifactClass}".`);
+  return reducer.reduce;
 }
 function readDeclaredFiles(root, files) {
   const contents = new Map();
@@ -249,7 +254,7 @@ function readDeclaredFiles(root, files) {
 function sealBundle(root, options) {
   const experimentId = requireExperimentId(options.experimentId);
   const reducerName = requireString(options.reducer, "reducer");
-  const reducer = requireReducer(reducerName);
+  const reducer = requireReducer(reducerName, options.artifactClass);
   const revision = requireInteger(options.revision ?? 1, "revision", 1);
   const manifestName = options.manifestName ?? MANIFEST_NAME;
   const relativePaths = listBundleFiles(root, manifestName);
@@ -272,7 +277,7 @@ function sealBundle(root, options) {
     schemaVersion: SCHEMA_VERSION,
     experimentId,
     revision,
-    artifactClass: requirePrivacySafeIdentity(options.artifactClass, "artifactClass"),
+    artifactClass: options.artifactClass,
     reducer: reducerName,
     sourceCommit: requireSourceCommit(options.sourceCommit),
     files,
@@ -283,13 +288,11 @@ function sealBundle(root, options) {
   return manifest;
 }
 function assertAppendOnly(existingManifest, manifest) {
-  if (existingManifest.experimentId !== manifest.experimentId) {
-    return;
-  }
-  if (existingManifest.revision !== manifest.revision) {
-    return;
-  }
-  if (existingManifest.bundleDigest !== manifest.bundleDigest) {
+  if (
+    existingManifest.experimentId === manifest.experimentId &&
+    existingManifest.revision === manifest.revision &&
+    existingManifest.bundleDigest !== manifest.bundleDigest
+  ) {
     fail(
       `${manifest.experimentId} revision ${manifest.revision} is already sealed as ` +
         `${existingManifest.bundleDigest} but these bytes seal as ${manifest.bundleDigest}. ` +
@@ -364,9 +367,8 @@ function validateManifestShape(manifest, manifestName = MANIFEST_NAME) {
   }
   requireExperimentId(manifest.experimentId);
   requireInteger(manifest.revision, "revision", 1);
-  requirePrivacySafeIdentity(manifest.artifactClass, "artifactClass");
   requireSourceCommit(manifest.sourceCommit);
-  requireReducer(requireString(manifest.reducer, "reducer"));
+  requireReducer(requireString(manifest.reducer, "reducer"), manifest.artifactClass);
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
     fail("The manifest must declare at least one file.");
   }
@@ -429,7 +431,7 @@ function verifyBundle(manifestPath, root = path.dirname(manifestPath)) {
 }
 function replayBundle(manifestPath, root = path.dirname(manifestPath)) {
   const { manifest, contents } = verifyBundle(manifestPath, root);
-  const replayed = REDUCERS[manifest.reducer](contents);
+  const replayed = requireReducer(manifest.reducer, manifest.artifactClass)(contents);
   const replayedJson = JSON.stringify(replayed);
   const publishedJson = JSON.stringify(manifest.normalized);
   if (replayedJson !== publishedJson) {

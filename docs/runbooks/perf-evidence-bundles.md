@@ -26,6 +26,13 @@ declares:
 | `normalized`    | The machine-readable result a decision cites                                    |
 | `bundleDigest`  | SHA-256 over the identity, the file inventory, and `normalized`                 |
 
+Each reducer accepts only its registered artifact class. Schema 1 currently supports
+`shipping-fidelity-matrix` with `shipping-fidelity-matrix-v1`. Seal, verify, replay, and manifest
+writes reject a different class, even when its digest was recomputed. Paired throughput,
+allocation-heavy SubUnsub, cold latency, frame/queue latency, WPR/PMU native mapping, and ARM64
+energy still need their own complete raw-input contracts and reducers under #508. Renaming shipping
+evidence or retaining a text summary does not provide those classes or their required native files.
+
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
 Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode
 normalization and case folding. A bundle sealed on the Windows perf runner therefore verifies
@@ -160,3 +167,84 @@ inside the 14-day workflow artifact.
 
 Durable GitHub prerelease publication and independent restore remain tracked by #521. Do not cite a
 workflow artifact as durable campaign evidence until that publication and restore gate exists.
+
+## Durable publication contract
+
+The following contract defines the remaining #521 work; it is not a claim that publication is
+implemented. Repository maintainers own the evidence releases and a reviewed, tracked evidence
+index linked from #500. `PLAN.md` is a local notebook, not the durable index. Retain each published
+revision without an expiry date, including superseded revisions. A correction
+adds a revision and an index entry; it does not replace an asset, move a tag, or erase the previous
+entry. If privacy or access loss requires withdrawal, mark the entry unavailable and every dependent
+conclusion incomplete. Never substitute a local copy for a failed durable retrieval.
+
+Use `perf-evidence-<experiment-id>-r<revision>-<manifest-sha8>` for the tag. Here `manifest-sha8`
+means the first eight characters of SHA-256 over the exact manifest file bytes, not `bundleDigest`.
+The explicit revision prevents ambiguity between corrections; the short hash is a label, not an
+integrity check. Record the full manifest SHA-256, full archive SHA-256, `bundleDigest`, revision,
+source commit, verifier commit, release URL, and exact asset name in the reviewed evidence index.
+The source commit identifies the measured build; the verifier commit identifies the checked-out
+scripts used to inspect and replay it. They need not match.
+
+Before enabling publication:
+
+1. Confirm the package release workflow uploads and verifies assets while the release is a draft.
+   Its published-rerun path must verify downloaded bytes without replacing assets. Keep these
+   checks when updating the workflow; repository immutability also affects package releases.
+1. Have a repository administrator enable immutable releases. Check the authenticated repository
+   setting and require `enabled: true`; a successful HTTP response alone is not proof. Missing
+   permissions, unavailable settings, and a false value all block publication.
+1. Seal, verify, and replay the scrubbed bundle. Package only its manifest and declared files in one
+   archive, with relative paths, no links, and normalized archive ownership. Keep large evidence out
+   of Git history; `progress/` is local and ignored. If it cannot fit the chosen release asset, leave the result incomplete
+   until a reviewed storage decision supplies an equally verifiable durable location.
+1. Reject an existing experiment/revision with different manifest bytes, even if its tag has a
+   different hash suffix. An identical existing publication is reusable only after downloading and
+   verifying its assets. Never use an asset-replacement option. Local `seal` checks only the manifest
+   in its current directory; it does not enforce uniqueness across releases or preserve old folders.
+1. Create a new draft prerelease at the verifier commit, upload every asset, and download and verify
+   the draft's complete asset inventory before publishing. A failed or interrupted draft is not
+   durable evidence. Do not automatically delete, overwrite, or publish it on a retry.
+1. Publish the completed draft, then require the release response to report `draft: false`,
+   `prerelease: true`, and `immutable: true`. Check the tag commit and every asset name and digest.
+   Perform the independent restore below before recording the result as durable.
+
+GitHub locks the tag and assets only after publication. Release titles, notes, and the prerelease
+flag remain editable, so they cannot replace the reviewed digest index. See GitHub's
+[immutable release guarantees](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+and [repository immutability settings API](https://docs.github.com/en/rest/repos/repos#check-if-immutable-releases-are-enabled-for-a-repository).
+
+## Independent restore acceptance
+
+Use a reviewer environment with no runner artifact cache. Clone the repository into a new directory,
+check out the full verifier commit from the reviewed index, and require an empty
+`git status --porcelain`. Do not copy scripts or dependencies from the producing checkout. The
+bundle commands use Node.js built-ins and checked-in modules; they do not require Unity or npm
+installation.
+
+1. Retrieve the indexed release and exact asset from GitHub, using the supported authentication
+   path when needed. Require the immutable release metadata above. A 401, 403, 404, timeout,
+   missing asset, or failed download is an incomplete experiment, never an empty passing result.
+   Do not fall back to a workflow artifact, another revision, or a cached local archive.
+1. Download into a new temporary directory. Require the full archive SHA-256 to equal the reviewed
+   index before extraction. Inspect the archive inventory for absolute paths, traversal, links, or
+   special files, then extract into a separate empty directory without restoring ownership.
+1. Require the extracted manifest's full SHA-256 to equal the index. Check its experiment ID,
+   revision, source commit, and `bundleDigest` against that same index, not against release notes.
+1. Run the existing commands from the clean verifier checkout, using the restored manifest path:
+
+   ```bash
+   node scripts/unity/perf-evidence-bundle.js verify /tmp/restored-evidence/evidence-manifest.json
+   node scripts/unity/perf-evidence-bundle.js replay /tmp/restored-evidence/evidence-manifest.json
+   ```
+
+1. Require both commands to exit zero. `replay` checks exact normalized-result equality, not just
+   file availability. Record the release and asset identities, digests, verifier commit, command
+   exit codes, and clean checkout status in the evidence index.
+1. Exercise denied access to an actual required remote asset in an isolated reviewer context,
+   without deleting or changing the publication. Require retrieval to fail and the experiment to
+   remain incomplete. A fabricated URL, missing local file, or HTTP mock does not prove this gate.
+
+A local archive round trip can test packaging, byte integrity, and reducer replay. It cannot prove
+GitHub retention, immutable publication, independent remote retrieval, or denied remote access.
+Keep #521 open until those remote checks have recorded evidence.

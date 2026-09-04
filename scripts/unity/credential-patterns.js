@@ -1,5 +1,6 @@
 "use strict";
 const net = require("node:net");
+const { createHash } = require("node:crypto");
 const { TextDecoder } = require("node:util");
 const REVIEWED_TEXT_EXTENSIONS = Object.freeze([
   ".asm",
@@ -20,7 +21,7 @@ const REVIEWED_TEXT_EXTENSIONS = Object.freeze([
 const MAXIMUM_STRAY_NUL_BYTES = 8;
 const SERIALIZED_WINDOW_CHARACTERS = 4 * 1024 * 1024;
 const SERIALIZED_ESCAPE =
-  /\\(?=u[0-9A-Fa-f]{4}|["\\/])|&(?=#(?:x[0-9A-Fa-f]|[0-9])|(?:amp|apos|gt|lt|quot);)/;
+  /\\(?=u[0-9A-Fa-f]{4}|["\\/bfnrt])|&(?=#(?:x[0-9A-Fa-f]|[0-9])|(?:amp|apos|gt|lt|quot);)/;
 const ENCODED_LIMIT_FINDING = Object.freeze({
   id: "encoded-sensitive-data",
   description: "data encoded beyond the inspection limit"
@@ -87,12 +88,7 @@ const CREDENTIAL_PATTERNS = Object.freeze([
       const value = match[2] ?? match[3] ?? match[4];
       return isUnmaskedValue(value.trim()) && value.trim().length >= 12;
     },
-    replacement: (match) => {
-      const placeholder = "[redacted:credential-assignment]";
-      if (match[2] !== undefined) return `${match[1]}"${placeholder}"`;
-      if (match[3] !== undefined) return `${match[1]}'${placeholder}'`;
-      return `${match[1]}${placeholder}`;
-    }
+    replacement: quotedAssignmentReplacement("credential-assignment")
   }
 ]);
 // prettier-ignore
@@ -271,24 +267,14 @@ function matchesPattern(text, entry) {
   }
   return false;
 }
-function serializedShadows(text) {
+function decodeSerialized(value, mode) {
   // cspell:ignore bfnrt
-  const jsonEscapes = Object.freeze({
-    '"': '"',
-    "\\": "\\",
-    "/": "/",
-    b: "\b",
-    f: "\f",
-    n: "\n",
-    r: "\r",
-    t: "\t"
-  });
   const decodeJson = (value, full) => {
     const unicode = value
       .replace(/\\u([0-9A-Fa-f]{4})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
       .replaceAll("\\/", "/");
     return full
-      ? unicode.replace(/\\(["\\bfnrt])/g, (_, escaped) => jsonEscapes[escaped])
+      ? unicode.replace(/\\(["\\bfnrt])/g, (_, escaped) => JSON.parse(`"\\${escaped}"`))
       : unicode;
   };
   const xmlNames = Object.freeze({ amp: "&", apos: "'", gt: ">", lt: "<", quot: '"' });
@@ -301,6 +287,9 @@ function serializedShadows(text) {
         ? String.fromCodePoint(code)
         : (xmlNames[name] ?? entity);
     });
+  return mode === 2 ? decodeXml(value) : decodeJson(value, mode === 1);
+}
+function serializedShadows(text) {
   if (!SERIALIZED_ESCAPE.test(text)) return { values: [text], truncated: false };
   const values = new Set([text]);
   const pending = [{ value: text, depth: 0 }];
@@ -308,7 +297,8 @@ function serializedShadows(text) {
   let truncated = false;
   while (pending.length > 0 && !truncated) {
     const { value, depth } = pending.shift();
-    for (const decoded of [decodeJson(value, false), decodeJson(value, true), decodeXml(value)]) {
+    for (const mode of [0, 1, 2]) {
+      const decoded = decodeSerialized(value, mode);
       if (values.has(decoded)) continue;
       if (
         depth >= 8 ||
@@ -331,6 +321,52 @@ function addSensitiveData(found, shadows) {
       found.set(entry.id, entry);
   }
 }
+function recordRuns(text) {
+  const runs = [];
+  let retained = 0;
+  for (const [record] of text.matchAll(/[^\r\n]*(?:\r\n?|\n)|[^\r\n]+$/g)) {
+    const previous = runs.at(-1);
+    if (previous?.[0] === record) previous[1] += 1;
+    else {
+      retained += record.length;
+      if (runs.length >= 4096 || retained > 2 ** 20) return undefined;
+      runs.push([record, 1]);
+    }
+  }
+  return runs;
+}
+function decodedCandidate(text, modes, runs, seen) {
+  const chunks = [];
+  const parts = [];
+  const cache = new Map();
+  let retained = 0;
+  for (const [record, count = 1] of runs ?? text.matchAll(/[^\r\n]*(?:\r\n?|\n)|[^\r\n]+$/g)) {
+    let decoded = cache.get(record) ?? record;
+    if (!cache.has(record)) {
+      if (record.length > SERIALIZED_WINDOW_CHARACTERS && SERIALIZED_ESCAPE.test(record))
+        return undefined;
+      for (const mode of modes) decoded = decodeSerialized(decoded, mode);
+      if (cache.size < 4096 && retained + record.length + decoded.length <= 2 ** 20) {
+        cache.set(record, decoded);
+        retained += record.length + decoded.length;
+      }
+    }
+    parts.push(runs ? [decoded, count] : decoded);
+    if (runs) continue;
+    if (parts.length >= 1024) {
+      chunks.push(parts.join(""));
+      parts.length = 0;
+    }
+  }
+  const candidate = runs ? JSON.stringify(parts) : chunks.join("") + parts.join("");
+  const hash = createHash("sha256");
+  for (let offset = 0; offset < candidate.length; offset += 65536)
+    hash.update(candidate.slice(offset, offset + 65536), "utf16le");
+  const fingerprint = hash.digest("hex");
+  if (seen.has(fingerprint)) return null;
+  seen.add(fingerprint);
+  return runs ? parts.map(([record, count]) => record.repeat(count)).join("") : candidate;
+}
 function findSensitiveData(text) {
   const found = new Map();
   let truncated = false;
@@ -341,31 +377,26 @@ function findSensitiveData(text) {
   } else {
     addSensitiveData(found, [text]);
     if (!SERIALIZED_ESCAPE.test(text)) return [...found.values()];
-    let batch = "";
-    let retained = 0;
+    // Keep decoder programs and hashes, not full-file shadow sets. Each complete candidate
+    // preserves multiline matches while record-wise decoding bounds replacement allocations.
+    const runs = recordRuns(text);
     const seen = new Set();
-    for (const [record] of text.matchAll(/[^\r\n]*(?:\r\n?|\n)|[^\r\n]+$/g)) {
-      if (!SERIALIZED_ESCAPE.test(record)) continue;
-      truncated ||= record.length > SERIALIZED_WINDOW_CHARACTERS;
-      if (truncated) break;
-      if (seen.has(record)) continue;
-      if (seen.size < 4096 && retained + record.length <= 2 ** 20) {
-        seen.add(record);
-        retained += record.length;
+    const pending = [[]];
+    while (pending.length > 0) {
+      const modes = pending.shift();
+      const decoded = decodedCandidate(text, modes, runs, seen);
+      if (decoded === undefined) {
+        truncated = true;
+        break;
       }
-      const shadows = serializedShadows(record);
-      truncated ||= shadows.truncated;
-      if (truncated) break;
-      for (const shadow of shadows.values.slice(1)) {
-        if (batch.length > 0 && batch.length + shadow.length > SERIALIZED_WINDOW_CHARACTERS / 4) {
-          addSensitiveData(found, [batch]);
-          batch = "";
-        }
-        if (shadow.length > SERIALIZED_WINDOW_CHARACTERS / 4) addSensitiveData(found, [shadow]);
-        else batch += `${shadow}\n`;
+      if (decoded === null) continue;
+      if (modes.length > 8 || seen.size > 256) {
+        truncated = true;
+        break;
       }
+      if (modes.length > 0) addSensitiveData(found, [decoded]);
+      for (const mode of [0, 1, 2]) pending.push([...modes, mode]);
     }
-    if (batch.length > 0) addSensitiveData(found, [batch]);
   }
   if (truncated) found.set(ENCODED_LIMIT_FINDING.id, ENCODED_LIMIT_FINDING);
   return [...found.values()];

@@ -1,5 +1,5 @@
 "use strict";
-// cspell:ignore Brien bfnrt nner
+// cspell:ignore Brien bfnrt nner earer
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -40,6 +40,9 @@ const FAKE_MACHINE_ID = "FAKEmachineID000000000000=";
 const FAKE_HOST = "fake-runner-host";
 const FAKE_ACCOUNT = "Fake Runner Account";
 const CREDENTIAL_PATTERNS_PATH = path.resolve(__dirname, "../unity/credential-patterns.js");
+function invokeCli(root, written = []) {
+  return runCli(["node", "cli", root], (text) => written.push(text));
+}
 const LEAK_CASES = Object.freeze([
   ["pem-private-key", `key follows\n${FAKE_PEM}\ndone\n`, FAKE_KEY_BODY],
   ["unity-license-id", `<License id="${FAKE_LICENSE_ID}" version="1.0">\n`, FAKE_LICENSE_ID],
@@ -200,10 +203,6 @@ for (const [label, text] of VECTORS.safeEvidence) {
     assert.equal(redactSensitiveData(text).redacted, text);
   });
 }
-test("an account-home path at the start of prose keeps unrelated trailing evidence", () => {
-  const actual = redactSensitiveData("/home/alice completed in 12 ms\n").redacted;
-  assert.equal(actual, "/home/[redacted:account-home-path] completed in 12 ms\n");
-});
 for (const [text, expected] of VECTORS.accountBoundaries)
   test(`account boundary is preserved: ${text}`, () =>
     assert.equal(redactSensitiveData(text).redacted, expected));
@@ -224,16 +223,9 @@ test("escaped quotes do not end quoted sensitive values early", () => {
   assert.equal(JSON.parse(scrubbedIdentity).machineName, "[redacted:named-account-or-host]");
   assert.doesNotMatch(`${scrubbedCredential}${scrubbedIdentity}`, /PRIVATE_SUFFIX|private/);
 });
-test("an AWS temporary access key id is removed", () => {
-  assert.equal(redactCredentials("ASIA1234567890ABCDEF").redacted, "[redacted:aws-access-key-id]");
-});
 for (const [label, value] of VECTORS.addresses)
   test(`${label} is removed`, () =>
     assert.ok(!redactSensitiveData(value).redacted.includes(value)));
-test("a valid four-component numeric version is redacted because it is indistinguishable from IPv4", () => {
-  const actual = redactSensitiveData("tool version 1.2.3.4\n").redacted;
-  assert.equal(actual, "tool version [redacted:ipv4-address]\n");
-});
 for (const [label, text] of VECTORS.pathValues) {
   test(`${label} removes the account and is idempotent`, () => {
     const once = redactSensitiveData(text).redacted;
@@ -244,11 +236,6 @@ for (const [label, text] of VECTORS.pathValues) {
 for (const [input, expected] of VECTORS.rootPaths)
   test(`root home keeps its delimiter: ${input}`, () =>
     assert.equal(redactSensitiveData(input).redacted, expected));
-for (const input of ["UNC:\\\\secret-host\\share"]) {
-  test(`UNC after a compact label removes the host: ${input}`, () => {
-    assert.doesNotMatch(redactSensitiveData(input).redacted, /secret-host/);
-  });
-}
 for (const [label, value] of VECTORS.macs)
   test(`${label} is removed`, () =>
     assert.equal(redactSensitiveData(value).redacted, "[redacted:mac-address]"));
@@ -290,14 +277,6 @@ test("redacting already-redacted text is a no-op", () => {
       id
     );
   }
-});
-test("a redacted Unity license id is not mistaken for a live one", () => {
-  const once = redactCredentials(`<License id="${FAKE_LICENSE_ID}" version="1.0">\n`);
-  assert.equal(redactCredentials(once.redacted).counts.size, 0);
-  assert.deepEqual(
-    findCredentials(once.redacted).map((entry) => entry.id),
-    []
-  );
 });
 for (const [text, expected] of VECTORS.credentials)
   test(`credential value is removed: ${text.trim()}`, () => {
@@ -387,9 +366,7 @@ test("redactDirectory reports a file it cannot read instead of ignoring it", (t)
     t.skip("root can read any file, so an unreadable file cannot be staged");
     return;
   }
-  const root = temporaryDirectory();
-  const locked = path.join(root, "locked.log");
-  fs.writeFileSync(locked, `serial ${FAKE_SERIAL}\n`);
+  const { root, target: locked } = artifactFile(`serial ${FAKE_SERIAL}\n`, "locked.log");
   fs.chmodSync(locked, 0o000);
   t.after(() => fs.chmodSync(locked, 0o600));
   const result = redactDirectory(root);
@@ -433,11 +410,7 @@ test("the CLI skips a missing directory, demands a target, and explains itself",
 test("the CLI redacts a real tree and summarizes what it removed", () => {
   const root = writeArtifactTree();
   const written = [];
-  assert.equal(
-    runCli(["node", "cli", root], (text) => written.push(text)),
-    0,
-    "cli: a tree exits 0"
-  );
+  assert.equal(invokeCli(root, written), 0, "cli: a tree exits 0");
   assert.match(
     written.join(""),
     /^Redacted 2 file\(s\) under .*: http-bearer-token x1, unity-serial x3\./,
@@ -450,25 +423,23 @@ test("the CLI never reports success when a file could not be scrubbed", (t) => {
     t.skip("root can open any file, so neither refusal can be staged");
     return;
   }
-  const root = temporaryDirectory();
-  fs.writeFileSync(path.join(root, "clean.log"), "nothing here\n");
+  const { root } = artifactFile("nothing here\n", "clean.log");
   fs.writeFileSync(path.join(root, "GameAssembly.bin"), BINARY_BLOB);
   const resistant = path.join(root, "locked.log");
   fs.writeFileSync(resistant, `serial ${FAKE_SERIAL}\n`);
   fs.chmodSync(resistant, 0o000);
   t.after(() => fs.chmodSync(resistant, 0o644));
   const written = [];
-  const write = (text) => written.push(text);
   if (process.platform === "win32") {
     assert.throws(
-      () => runCli(["node", "cli", root], write),
+      () => invokeCli(root, written),
       /locked\.log contains sensitive data but could not be rewritten/,
       "cli: a file that cannot be rewritten must stop the run"
     );
     return;
   }
   assert.equal(
-    runCli(["node", "cli", root], write),
+    invokeCli(root, written),
     2,
     "cli: a file that was not examined must not exit 0, or the gated upload publishes it"
   );
@@ -482,14 +453,12 @@ test("a readable file that cannot be rewritten stops the run on every platform",
     t.skip("root can write any file, so the unwritable case cannot be staged");
     return;
   }
-  const root = temporaryDirectory();
-  const unwritable = path.join(root, "Unity.Entitlements.Audit.log");
-  fs.writeFileSync(unwritable, `serial ${FAKE_SERIAL}\n`);
+  const { root, target: unwritable } = artifactFile(`serial ${FAKE_SERIAL}\n`, "audit.log");
   fs.chmodSync(unwritable, 0o444);
   t.after(() => fs.chmodSync(unwritable, 0o644));
   assert.throws(
-    () => runCli(["node", "cli", root], () => {}),
-    /Unity\.Entitlements\.Audit\.log contains sensitive data but could not be rewritten/,
+    () => invokeCli(root),
+    /audit\.log contains sensitive data but could not be rewritten/,
     "a credential that cannot be removed must fail the step, never be reported as clean"
   );
   assert.match(
@@ -499,12 +468,11 @@ test("a readable file that cannot be rewritten stops the run on every platform",
   );
 });
 test("the CLI still exits 0 when the only unscanned files are binary", () => {
-  const root = temporaryDirectory();
-  fs.writeFileSync(path.join(root, "clean.log"), "nothing here\n");
+  const { root } = artifactFile("nothing here\n", "clean.log");
   fs.writeFileSync(path.join(root, "GameAssembly.bin"), BINARY_BLOB);
   const written = [];
   assert.equal(
-    runCli(["node", "cli", root], (text) => written.push(text)),
+    invokeCli(root, written),
     0,
     "cli: a binary file was examined and judged not text, so it is not an unexamined file"
   );
@@ -517,10 +485,7 @@ for (const [fileName, contents] of [
   test(`the CLI fails closed on sensitive text in unreviewed ${path.extname(fileName)}`, () => {
     const { root, target } = artifactFile(contents, fileName);
     const written = [];
-    assert.equal(
-      runCli(["node", "cli", root], (text) => written.push(text)),
-      2
-    );
+    assert.equal(invokeCli(root, written), 2);
     assert.equal(
       fs.readFileSync(target, "utf8"),
       contents,
@@ -531,24 +496,17 @@ for (const [fileName, contents] of [
 }
 for (const contents of VECTORS.blockedSensitive) {
   test(`the CLI blocks sensitive data it cannot map safely: ${contents}`, () => {
-    const root = temporaryDirectory();
-    fs.writeFileSync(path.join(root, "encoded.json"), contents);
+    const { root, target } = artifactFile(contents, "encoded.json");
     const written = [];
-    assert.equal(
-      runCli(["node", "cli", root], (text) => written.push(text)),
-      2
-    );
+    assert.equal(invokeCli(root, written), 2);
     assert.match(written.join(""), /contains encoded sensitive data/);
-    assert.equal(fs.readFileSync(path.join(root, "encoded.json"), "utf8"), contents);
+    assert.equal(fs.readFileSync(target, "utf8"), contents);
   });
 }
 for (const [contents, privatePart] of VECTORS.entityIdentifiers) {
   test(`the CLI safely rewrites an entity-bearing identifier: ${contents}`, () => {
     const { root, target } = artifactFile(contents, "encoded.xml");
-    assert.equal(
-      runCli(["node", "cli", root], () => {}),
-      0
-    );
+    assert.equal(invokeCli(root), 0);
     const actual = fs.readFileSync(target, "utf8");
     assert.ok(!actual.includes(privatePart));
     assert.deepEqual(findIdentifiers(actual), []);
@@ -560,21 +518,52 @@ test("entity-heavy account input cannot exhaust the scrubber", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
 });
-test("large escaped logs stay within a bounded heap", () => {
-  const row = String.raw`{"message":"C:\\runner said \"hello\" &amp; done"}` + "\n";
-  const script = `const f=require(${JSON.stringify(CREDENTIAL_PATTERNS_PATH)}).findSensitiveData,r=${JSON.stringify(row)},n=16*1024*1024,t=r.repeat(Math.ceil(n/r.length)).slice(0,n);if(f(t).length)process.exit(2)`;
-  const result = spawnSync(process.execPath, ["--max-old-space-size=192", "-e", script], {
-    timeout: 30000
+for (const unique of [false, true]) {
+  test(`large escaped logs stay within a bounded heap (unique records: ${unique})`, () => {
+    const row = String.raw`{"message":"C:\\runner said \"hello\" &amp; done"}` + "\n";
+    const prefix = unique ? Array.from({ length: 4097 }, (_, i) => `row ${i}\n`).join("") : "";
+    const suffix = unique ? "Bearer\\n\n\\u0061" + "a".repeat(24) + "\n" : "";
+    const script = `const f=require(${JSON.stringify(CREDENTIAL_PATTERNS_PATH)}).findSensitiveData,r=${JSON.stringify(row)},n=16*1024*1024,t=${JSON.stringify(prefix)}+r.repeat(Math.ceil(n/r.length)).slice(0,n)+${JSON.stringify(suffix)},v=f(t);if(${unique}?!v.some(x=>x.id==='http-bearer-token'):v.length)process.exit(2)`;
+    const result = spawnSync(process.execPath, ["--max-old-space-size=192", "-e", script], {
+      timeout: 30000
+    });
+    assert.equal(result.status, 0, result.error?.message ?? result.stderr.toString());
   });
-  assert.equal(result.status, 0, result.error?.message ?? result.stderr.toString());
+}
+for (const [label, prefix, separator, value, kind] of [
+  ["password", "\\u002dpassword", "\n", FAKE_PASSWORD, "unity-password-assignment"],
+  ["account", "&#45;username", "\r\n", FAKE_ACCOUNT, "unity-email-assignment"],
+  ["endpoint", "\\u002dcacheServerEndpoint", "\n", FAKE_HOST, "unity-cache-server-endpoint"],
+  ["assignment", "\\u0050ASSWORD=", "\r\n \t\r\n", FAKE_PASSWORD, "password-assignment"],
+  ["split assignment", "\\u0050ASSWORD", "\n=\n", FAKE_PASSWORD, "password-assignment"],
+  ["encoded value", "Bearer", "\n", "\\u0061" + "a".repeat(24), "http-bearer-token"],
+  ["control escape", "Bearer\\n", "\n", "\\u0061" + "a".repeat(24), "http-bearer-token"],
+  ["bearer", "\\u0042earer", "\r \t\r", FAKE_BEARER, "http-bearer-token"]
+]) {
+  test(`large encoded ${label} retains its following value`, (t) => {
+    // The same encoded prefix first appears with a masked value; caching by prefix alone
+    // must not suppress the later unmasked occurrence.
+    const contents =
+      `${"ordinary log entry\n".repeat(240000)}${prefix}${separator}[redacted:example]\n` +
+      `${prefix}${separator}${value}\n`;
+    assert.ok(
+      findSensitiveData(contents).some((entry) => entry.id === kind),
+      label
+    );
+    const { root, target } = artifactFile(contents);
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    assert.equal(invokeCli(root), 2, label);
+    assert.equal(fs.readFileSync(target, "utf8"), contents, "unsafe bytes stay unchanged");
+  });
+}
+test("large encoded assignments preserve arbitrarily long unencoded whitespace", () => {
+  const content = `\\u0050ASSWORD=\n${" ".repeat(4 * 1024 * 1024)}\n${FAKE_PASSWORD}`;
+  assert.ok(findSensitiveData(content).some((entry) => entry.id === "password-assignment"));
 });
 for (const contents of VECTORS.mappableSensitive) {
   test(`the CLI maps direct sensitive data despite an unrelated escape: ${contents}`, () => {
     const { root, target } = artifactFile(contents, "mappable.xml");
-    assert.equal(
-      runCli(["node", "cli", root], () => {}),
-      0
-    );
+    assert.equal(invokeCli(root), 0);
     assert.match(fs.readFileSync(target, "utf8"), /\[redacted:/);
   });
 }
@@ -584,13 +573,9 @@ for (const fileName of [
   "runner-﻿-private.log"
 ]) {
   test(`the CLI refuses a sensitive file name without printing it: ${fileName}`, () => {
-    const root = temporaryDirectory();
-    fs.writeFileSync(path.join(root, fileName), "clean\n");
+    const { root } = artifactFile("clean\n", fileName);
     const written = [];
-    assert.equal(
-      runCli(["node", "cli", root], (text) => written.push(text)),
-      2
-    );
+    assert.equal(invokeCli(root, written), 2);
     assert.ok(!written.join("").includes(fileName));
     assert.match(written.join(""), /\[redacted:sensitive-file-name\]/);
   });
@@ -598,10 +583,7 @@ for (const fileName of [
 test("displayed roots never echo an account home or network address", () => {
   const privateRoot = `C:\\Users\\${FAKE_ACCOUNT}\\runner-${FAKE_PRIVATE_IP}`;
   const written = [];
-  assert.equal(
-    runCli(["node", "cli", privateRoot], (text) => written.push(text)),
-    0
-  );
+  assert.equal(invokeCli(privateRoot, written), 0);
   const nativeError = `EACCES: permission denied, open '${privateRoot}\\unity.log'`;
   const summary = formatSummary(privateRoot, {
     changed: [],
@@ -766,10 +748,8 @@ for (const [label, bom, encoded] of [
   ["UTF-16BE", [0xfe, 0xff], Buffer.from(`\u0001${FAKE_SERIAL}\u0002`, "utf16le").swap16()]
 ]) {
   test(`${label} control bytes make a reviewed extension opaque`, () => {
-    const root = temporaryDirectory();
     const original = Buffer.concat([Buffer.from(bom), encoded]);
-    const target = path.join(root, "disguised.log");
-    fs.writeFileSync(target, original);
+    const { root, target } = artifactFile(original, "disguised.log");
     const result = redactDirectory(root);
     assert.deepEqual(fs.readFileSync(target), original);
     assert.equal(result.skipped.length, 1);
@@ -861,11 +841,9 @@ for (const [fileName, suffix] of [
   ["disguised.log", FAKE_SERIAL]
 ]) {
   test(`redactDirectory leaves PNG bytes byte-identical as ${fileName}`, () => {
-    const root = temporaryDirectory();
     const source = path.resolve(__dirname, "../../docs/images/dxmessaging-store-icon-320.png");
     const original = Buffer.concat([fs.readFileSync(source), Buffer.from(suffix)]);
-    const target = path.join(root, fileName);
-    fs.writeFileSync(target, original);
+    const { root, target } = artifactFile(original, fileName);
     const result = redactDirectory(root);
     assert.deepEqual(
       fs.readFileSync(target),
@@ -919,10 +897,7 @@ test("a hard-linked artifact cannot rewrite bytes outside the tree", () => {
   fs.mkdirSync(root);
   fs.writeFileSync(outside, `UNITY_PASSWORD=${FAKE_PASSWORD}\n`);
   fs.linkSync(outside, path.join(root, "linked.log"));
-  assert.equal(
-    runCli(["node", "cli", root], () => {}),
-    2
-  );
+  assert.equal(invokeCli(root), 2);
   assert.equal(fs.readFileSync(outside, "utf8"), `UNITY_PASSWORD=${FAKE_PASSWORD}\n`);
 });
 test("the CLI rejects a cross-window authority without echoing a hostile root", () => {
@@ -932,10 +907,7 @@ test("the CLI rejects a cross-window authority without echoing a hostile root", 
   fs.mkdirSync(root);
   fs.writeFileSync(target, contents);
   const written = [];
-  assert.equal(
-    runCli(["node", "cli", root], (text) => written.push(text)),
-    2
-  );
+  assert.equal(invokeCli(root, written), 2);
   assert.doesNotMatch(written.join(""), /\u202e-private/);
   assert.match(written.join(""), /\[redacted:unsafe-path\]/);
   assert.equal(fs.readFileSync(target, "utf8"), contents);

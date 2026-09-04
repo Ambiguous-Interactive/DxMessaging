@@ -9,6 +9,7 @@ const VECTORS = require("./fixtures/unity-redaction-vectors.json");
 const {
   MANIFEST_NAME,
   bundleDigest,
+  listBundleFiles,
   parseArgs,
   replayBundle,
   runCli,
@@ -33,6 +34,9 @@ const TOPOLOGIES = [
 ];
 function temporaryDirectory() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "perf-evidence-bundle-test-"));
+}
+function writeJson(file, value) {
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 function cellEvidence(level, topologyId, messageTypeCount, index) {
   return {
@@ -66,10 +70,7 @@ function writeMatrixBundle(root, { extraFiles = {} } = {}) {
       const evidence = cellEvidence(level, topologyId, messageTypeCount, index++);
       const cellDirectory = path.join(root, cellId);
       fs.mkdirSync(cellDirectory, { recursive: true });
-      fs.writeFileSync(
-        path.join(cellDirectory, "shipping-cell-evidence.json"),
-        `${JSON.stringify(evidence, null, 2)}\n`
-      );
+      writeJson(path.join(cellDirectory, "shipping-cell-evidence.json"), evidence);
       fs.writeFileSync(
         path.join(cellDirectory, "shipping-positive-player.log"),
         `cell ${cellId} completed\n`
@@ -77,23 +78,16 @@ function writeMatrixBundle(root, { extraFiles = {} } = {}) {
       cells.push({ cellId, ...evidence });
     }
   }
-  fs.writeFileSync(
-    path.join(root, "shipping-matrix-evidence.json"),
-    `${JSON.stringify(
-      {
-        schemaVersion: 1,
-        measurementClass: "characterization",
-        unityVersion: "6000.5.2f1",
-        cellCount: cells.length,
-        completedCellCount: cells.length,
-        failedCells: [],
-        unreadableEvidenceCells: [],
-        cells
-      },
-      null,
-      2
-    )}\n`
-  );
+  writeJson(path.join(root, "shipping-matrix-evidence.json"), {
+    schemaVersion: 1,
+    measurementClass: "characterization",
+    unityVersion: "6000.5.2f1",
+    cellCount: cells.length,
+    completedCellCount: cells.length,
+    failedCells: [],
+    unreadableEvidenceCells: [],
+    cells
+  });
   for (const [relativePath, content] of Object.entries(extraFiles)) {
     const absolute = path.join(root, ...relativePath.split("/"));
     fs.mkdirSync(path.dirname(absolute), { recursive: true });
@@ -111,20 +105,9 @@ function bundleWithFile(fileName, content) {
   return writeMatrixBundle(temporaryDirectory(), { extraFiles: { [fileName]: content } });
 }
 function contentsOf(root) {
-  const contents = new Map();
-  const walk = (directory) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        walk(absolute);
-      } else {
-        const relative = path.relative(root, absolute).split(path.sep).join("/");
-        contents.set(relative, fs.readFileSync(absolute));
-      }
-    }
-  };
-  walk(root);
-  return contents;
+  return new Map(
+    listBundleFiles(root).map((file) => [file, fs.readFileSync(path.join(root, file))])
+  );
 }
 test("a sealed bundle verifies and replays to the normalized result it published", () => {
   const { manifest, manifestPath } = sealedBundle();
@@ -287,22 +270,6 @@ test("replay rejects a bundle whose sealed bytes no longer produce the published
     "a summary that disagrees with its own per-cell evidence must not replay"
   );
 });
-for (const [label, relativePath, content] of [
-  ["a GitHub token", "leak.log", `token: ghp_${"a".repeat(36)}\n`],
-  ["a Unity serial", "leak.log", `UNITY_SERIAL resolved to ${FAKE_SERIAL}\n`],
-  ["a PEM private key", "leak.log", "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODY\n"],
-  ["a bearer header", "leak.log", `Authorization: Bearer ${"x".repeat(40)}\n`],
-  ["a credential assignment", "leak.log", "UNITY_PASSWORD=correct-horse-battery\n"]
-]) {
-  test(`sealing refuses ${label}`, () => {
-    const root = bundleWithFile(relativePath, content);
-    assert.throws(
-      () => sealBundle(root, SEAL_OPTIONS),
-      new RegExp(`^Error: ${relativePath.replace(".", "\\.")} looks like it contains `),
-      `${label} must block publication`
-    );
-  });
-}
 for (const [label, content] of VECTORS.sealingSensitive) {
   test(`sealing refuses ${label}`, () => {
     const root = bundleWithFile("private.log", content);
@@ -313,23 +280,20 @@ for (const [label, content] of VECTORS.sealingSensitive) {
     );
   });
 }
-test("sealing tolerates masked credentials", () => {
-  const root = bundleWithFile("clean.log", "GITHUB_TOKEN=***\nUNITY_SERIAL=***\n");
-  const manifest = sealBundle(root, SEAL_OPTIONS);
-  assert.ok(
-    manifest.files.some((file) => file.path === "clean.log"),
-    "masked values are not live credentials"
-  );
-});
-test("sealing refuses an unreviewed binary artifact", () => {
-  const root = writeMatrixBundle(temporaryDirectory(), {
-    extraFiles: {
-      "GameAssembly.pdb": Buffer.concat([
-        Buffer.alloc(256, 0),
-        Buffer.from("C:\\Users\\fake-runner\\project", "latin1")
-      ])
-    }
+for (const [label, file, text, encoding] of VECTORS.sealingAccepted) {
+  test(`sealing accepts ${label}`, () => {
+    const manifest = sealBundle(bundleWithFile(file, Buffer.from(text, encoding)), SEAL_OPTIONS);
+    assert.ok(
+      manifest.files.some((entry) => entry.path === file),
+      `${label} must remain sealable`
+    );
   });
+}
+test("sealing refuses an unreviewed binary artifact", () => {
+  const root = bundleWithFile(
+    "GameAssembly.pdb",
+    Buffer.concat([Buffer.alloc(256, 0), Buffer.from("C:\\Users\\fake-runner\\project", "latin1")])
+  );
   assert.throws(
     () => sealBundle(root, SEAL_OPTIONS),
     /GameAssembly\.pdb does not use a reviewed text evidence extension/,
@@ -423,32 +387,18 @@ test("re-sealing identical bytes at the same revision is idempotent", () => {
   assert.equal(again.bundleDigest, manifest.bundleDigest);
   assert.doesNotThrow(() => writeBundleManifest(root, again));
 });
-for (const [label, mutate, expected] of [
-  [
-    "a Windows drive-letter path",
-    (files) => (files[0].path = "C:/cell/evidence.json"),
-    /must be relative/
-  ],
-  [
-    "a backslash path",
-    (files) => (files[0].path = "cell\\evidence.json"),
-    /must use forward slashes/
-  ],
-  ["a parent traversal", (files) => (files[0].path = "../outside.json"), /must not contain empty/],
-  ["an absolute POSIX path", (files) => (files[0].path = "/etc/passwd"), /must be relative/],
-  ["a Windows-forbidden character", (files) => (files[0].path = "bad?.log"), /forbidden/],
-  ["a private identifier", (files) => (files[0].path = "runner-192.168.42.17.log"), /IPv4/],
-  ["a reserved Windows name", (files) => (files[0].path = "aux.txt"), /not portable/],
-  ["a superscript Windows device name", (files) => (files[0].path = "COM¹.log"), /not portable/],
-  ["a trailing dot", (files) => (files[0].path = "bad./file.log"), /not portable/]
-]) {
+for (const [label, declaredPath, expected] of VECTORS.invalidBundlePaths) {
   test(`verification rejects ${label} in a manifest`, () => {
     const { root, manifestPath } = sealedBundle();
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    mutate(manifest.files);
+    manifest.files[0].path = declaredPath;
     manifest.bundleDigest = bundleDigest(manifest);
     fs.writeFileSync(path.join(root, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`);
-    assert.throws(() => verifyBundle(manifestPath), expected, `${label} is not portable`);
+    assert.throws(
+      () => verifyBundle(manifestPath),
+      new RegExp(expected),
+      `${label} is not portable`
+    );
   });
 }
 for (const [label, left, right] of [
@@ -493,51 +443,37 @@ test("the reducer rejects a summary that omits a completed cell", () => {
     /does not list completed cell high-semantic-18/
   );
 });
-test("sealing rejects an unknown reducer and an unusable experiment id", () => {
-  const root = writeMatrixBundle(temporaryDirectory());
-  assert.throws(
-    () => sealBundle(root, { ...SEAL_OPTIONS, reducer: "not-a-reducer" }),
-    /Unknown reducer "not-a-reducer"/
-  );
-  assert.throws(
-    () => sealBundle(root, { ...SEAL_OPTIONS, experimentId: "Shipping_Matrix" }),
-    /must be lowercase alphanumeric with dots or dashes/
-  );
-  assert.throws(
-    () => sealBundle(root, { ...SEAL_OPTIONS, sourceCommit: "not-a-commit" }),
-    /sourceCommit must be a 40- or 64-character commit ID/
-  );
+for (const [field, value, expected] of VECTORS.invalidSealMetadata) {
+  test(`sealing rejects ${field}=${value}`, () => {
+    const root = writeMatrixBundle(temporaryDirectory());
+    assert.throws(
+      () => sealBundle(root, { ...SEAL_OPTIONS, [field]: value }),
+      new RegExp(expected)
+    );
+  });
+}
+test("sealing rejects an empty evidence directory", () => {
   assert.throws(
     () => sealBundle(temporaryDirectory(), SEAL_OPTIONS),
     /contains no evidence files to seal/
   );
 });
-test("parseArgs reads the seal contract and rejects unknown options", () => {
-  const options = parseArgs([
-    "node",
-    "perf-evidence-bundle.js",
-    "seal",
-    "/tmp/bundle",
-    "--experiment-id",
-    "shipping-matrix",
-    "--artifact-class",
-    "shipping-fidelity-matrix",
-    "--reducer",
-    "shipping-fidelity-matrix-v1",
-    "--source-commit",
-    "abc123",
-    "--revision",
-    "3"
-  ]);
-  assert.deepEqual(options, {
-    command: "seal",
-    target: "/tmp/bundle",
-    revision: 3,
-    experimentId: "shipping-matrix",
-    artifactClass: "shipping-fidelity-matrix",
-    reducer: "shipping-fidelity-matrix-v1",
-    sourceCommit: "abc123"
+for (const artifactClass of VECTORS.unsupportedArtifactClasses) {
+  test(`shipping evidence cannot impersonate ${artifactClass}`, () => {
+    const { root, manifest, manifestPath } = sealedBundle();
+    const expected = /does not support artifactClass/;
+    assert.throws(() => sealBundle(root, { ...SEAL_OPTIONS, artifactClass }), expected);
+    manifest.artifactClass = artifactClass;
+    manifest.bundleDigest = bundleDigest(manifest);
+    assert.throws(() => writeBundleManifest(root, manifest), expected);
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    for (const operation of [verifyBundle, replayBundle]) {
+      assert.throws(() => operation(manifestPath), expected, operation.name);
+    }
   });
+}
+test("parseArgs reads the seal contract and rejects unknown options", () => {
+  assert.deepEqual(parseArgs(VECTORS.sealCli.argv), VECTORS.sealCli.expected);
   assert.throws(() => parseArgs(["node", "cli", "--nope"]), /Unknown option --nope/);
   assert.throws(() => parseArgs(["node", "cli", "seal", "a", "--reducer"]), /requires a value/);
 });
@@ -558,23 +494,7 @@ test("the CLI seals, verifies, and replays a bundle end to end", (t) => {
   t.mock.method(process.stdout, "write", (chunk) => written.push(chunk));
   t.mock.method(process.stderr, "write", (chunk) => written.push(chunk));
   const argv = (...rest) => ["node", "perf-evidence-bundle.js", ...rest];
-  assert.equal(
-    runCli(
-      argv(
-        "seal",
-        root,
-        "--experiment-id",
-        SEAL_OPTIONS.experimentId,
-        "--artifact-class",
-        SEAL_OPTIONS.artifactClass,
-        "--reducer",
-        SEAL_OPTIONS.reducer,
-        "--source-commit",
-        SEAL_OPTIONS.sourceCommit
-      )
-    ),
-    0
-  );
+  assert.equal(runCli(argv("seal", root, ...VECTORS.sealCli.validFlags)), 0);
   const manifestPath = path.join(root, MANIFEST_NAME);
   assert.ok(fs.existsSync(manifestPath), "seal writes the manifest into the bundle root");
   assert.equal(runCli(argv("verify", manifestPath)), 0);
@@ -703,32 +623,29 @@ test("sealing refuses an encoded UNC authority that straddles the old scan windo
   );
 });
 test("sealing refuses a credential in a log carrying a stray NUL", () => {
-  const root = writeMatrixBundle(temporaryDirectory(), {
-    extraFiles: {
-      "unity.log": Buffer.concat([
-        Buffer.from("boot\n", "latin1"),
-        Buffer.alloc(1),
-        Buffer.from(`\nserial ${FAKE_SERIAL}\n`, "latin1")
-      ])
-    }
-  });
+  const root = bundleWithFile(
+    "unity.log",
+    Buffer.concat([
+      Buffer.from("boot\n", "latin1"),
+      Buffer.alloc(1),
+      Buffer.from(`\nserial ${FAKE_SERIAL}\n`, "latin1")
+    ])
+  );
   assert.throws(
     () => sealBundle(root, SEAL_OPTIONS),
     /^Error: unity\.log looks like it contains a Unity serial; scrub it before sealing\.$/,
     "a stray NUL must not disable the sealing backstop for a whole log"
   );
 });
-test("sealing accepts a clean Unity log carrying one stray NUL", () => {
-  const root = bundleWithFile("unity.log", Buffer.from("boot\0\ncompleted\n", "utf8"));
-  const manifest = sealBundle(root, SEAL_OPTIONS);
-  assert.ok(
-    manifest.files.some((file) => file.path === "unity.log"),
-    "the known sparse-NUL Unity output shape must remain sealable after scanning"
-  );
-});
 test("sealing accepts a large clean log with ordinary serialization escapes", () => {
   const content = `${"x".repeat(4 * 1024 * 1024 + 1)}\nC:\\\\runner said \\\"hello\\\" & done\n`;
   assert.doesNotThrow(() => sealBundle(bundleWithFile("unity.log", content), SEAL_OPTIONS));
+});
+test("sealing refuses a large encoded command whose private value is on the next line", (t) => {
+  const content = `${"ordinary log entry\n".repeat(240000)}\\u002dpassword\nfake-private-value\n`;
+  const root = bundleWithFile("unity.log", content);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.throws(() => sealBundle(root, SEAL_OPTIONS), /Unity password assignment/);
 });
 for (const [label, text] of [
   ["GitHub token", `ghp_${"a".repeat(18)}\0${"a".repeat(18)}`],
@@ -743,13 +660,6 @@ for (const [label, text] of [
     );
   });
 }
-test("sealing accepts eight sparse stray NULs", () => {
-  const root = bundleWithFile(
-    "unity.log",
-    Buffer.from(`short${"\0x".repeat(8)}${"a".repeat(32)}log`, "utf8")
-  );
-  assert.doesNotThrow(() => sealBundle(root, SEAL_OPTIONS));
-});
 test("sealing rejects more than eight stray NULs", () => {
   const root = bundleWithFile("unity.log", Buffer.from(`short${"\0".repeat(9)}log`, "utf8"));
   assert.throws(() => sealBundle(root, SEAL_OPTIONS), /contains too many NUL bytes/);
@@ -761,16 +671,4 @@ test("sealing refuses malformed byte-order-marked UTF-16", () => {
     /malformed\.log is not valid UTF-8 or byte-order-marked UTF-16 text/,
     "every byte must be decoded before the evidence can be classified as reviewed text"
   );
-});
-test("sealing accepts valid byte-order-marked UTF-16 text", () => {
-  const root = writeMatrixBundle(temporaryDirectory(), {
-    extraFiles: {
-      "powershell.log": Buffer.concat([
-        Buffer.from([0xff, 0xfe]),
-        Buffer.from("Unity build completed\n", "utf16le")
-      ])
-    }
-  });
-  const manifest = sealBundle(root, SEAL_OPTIONS);
-  assert.ok(manifest.files.some((file) => file.path === "powershell.log"));
 });
