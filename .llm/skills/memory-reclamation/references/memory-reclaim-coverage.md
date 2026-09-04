@@ -57,6 +57,15 @@ Slot deltas are compared to the watcher's starting snapshot. Tests do not need
 the whole bus to be empty; they need the watched region to return to its own
 baseline.
 
+For typed-handler storage, pass `handler: handler` to
+`LeakWatcher.WatchWithSlots(bus, ...)`. This adds retained context-key and
+priority-cache checks on that bus. `LeakedHandlerContexts` and
+`LeakedHandlerPriorityCaches` are independent of public registration and bus-slot
+deltas, and freeze on disposal. A zero registration delta does not prove an
+empty handler context was reclaimed. The internal query runs only at diagnostic
+boundaries; keep it outside dispatch and allocation measurements. See
+[optional handler storage checks](../../allocation-and-leak-coverage/references/leak-watcher-usage.md#optional-handler-storage-checks).
+
 ## MemoryReclaim Category
 
 Place direct reclamation fixtures under `Tests/Runtime/MemoryReclaim` and mark

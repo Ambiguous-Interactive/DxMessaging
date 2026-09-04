@@ -506,9 +506,11 @@ namespace DxMessaging.Tests.Editor.Contract
         private static object ReadTypedHandler<TMessage>(MessageHandler handler, IMessageBus bus)
             where TMessage : IMessage
         {
-            Assert.Less(
-                bus.RegisteredGlobalSequentialIndex,
-                handler._handlersByTypeByMessageBus.Count
+            Assert.IsTrue(
+                handler._handlersByTypeByMessageBus.ContainsKey(
+                    bus.RegisteredGlobalSequentialIndex
+                ),
+                "The handler must retain a cache for the registered bus."
             );
             bool exists = handler
                 ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]

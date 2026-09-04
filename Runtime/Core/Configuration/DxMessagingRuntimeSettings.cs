@@ -46,7 +46,7 @@ namespace DxMessaging.Core.Configuration
 
         [SerializeField]
         [Tooltip(
-            "Soft cap on distinct entries retained by shared collection pools and the per-bus empty priority-leaf spare. Zero disables retention; LRU selection does not affect the one-entry spare."
+            "Caps retained pool entries, empty priority-leaf size, successful reflexive method lookups, and each reflexive scratch buffer capacity. Zero disables retention. Reflexive method lookups always use LRU; the one-entry spare has no eviction order."
         )]
         [Min(0)]
         internal int _bufferMaxDistinctEntries = DefaultBufferMaxDistinctEntries;
@@ -83,6 +83,13 @@ namespace DxMessaging.Core.Configuration
         [Min(0)]
         internal int _messageBufferSize = IMessageBus.DefaultMessageBufferSize;
 
+        [SerializeField]
+        [Tooltip(
+            "Maximum registration-history entries per bus. Oldest entries are overwritten; zero disables storage. See RegistrationLogCapacity."
+        )]
+        [Min(0)]
+        internal int _registrationLogCapacity = RegistrationLog.DefaultCapacity;
+
         private bool _isFallbackInstance;
 
         /// <summary>Idle threshold in seconds. See <c>_idleEvictionSeconds</c>.</summary>
@@ -105,6 +112,9 @@ namespace DxMessaging.Core.Configuration
 
         /// <summary>Diagnostic message buffer size.</summary>
         public int MessageBufferSize => _messageBufferSize;
+
+        /// <summary>Maximum registration-history entries per bus; zero discards all history. Added in 4.0.</summary>
+        public int RegistrationLogCapacity => _registrationLogCapacity;
 
         internal bool IsFallbackInstance => _isFallbackInstance;
 
@@ -153,6 +163,10 @@ namespace DxMessaging.Core.Configuration
             if (_messageBufferSize < 0)
             {
                 _messageBufferSize = 0;
+            }
+            if (_registrationLogCapacity < 0)
+            {
+                _registrationLogCapacity = 0;
             }
             string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
             if (

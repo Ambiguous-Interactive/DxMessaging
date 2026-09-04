@@ -144,6 +144,16 @@ namespace DxMessaging.Core.Internal
         bool MarkedForOuterRemoval { get; }
 
         /// <summary>
+        /// Reports deferred context cleanup that must survive dirty-handler pruning.
+        /// </summary>
+        bool HasPendingContextCleanup { get; }
+
+        /// <summary>
+        /// Counts retained context keys and scalar or context-keyed priority caches for diagnostics.
+        /// </summary>
+        void GetRetainedStorageCounts(out int contextKeys, out int priorityCaches);
+
+        /// <summary>
         /// Resets every empty typed or typed-global slot and removes it from
         /// the handler's slot arrays.
         /// </summary>
@@ -320,6 +330,88 @@ namespace DxMessaging.Core.Internal
         public Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> byContext;
 
         /// <summary>
+        /// Tracks contexts emptied during dispatch until their frozen callbacks have finished.
+        /// </summary>
+        internal HashSet<InstanceId> pendingContextCleanup;
+
+        /// <summary>
+        /// Removes an empty, still-current priority cache when no dispatch can consume it.
+        /// </summary>
+        internal void PruneEmptyContextPriority(
+            InstanceId context,
+            int priority,
+            IHandlerActionCache cache
+        )
+        {
+            if (
+                !cache.IsEmpty
+                || byContext == null
+                || !byContext.TryGetValue(
+                    context,
+                    out Dictionary<int, IHandlerActionCache> priorities
+                )
+                || !priorities.TryGetValue(priority, out IHandlerActionCache current)
+                || !ReferenceEquals(cache, current)
+            )
+            {
+                return;
+            }
+            cache.Reset();
+            priorities.Remove(priority);
+            if (priorities.Count == 0)
+            {
+                byContext.Remove(context);
+                DxPools.TypedHandlerPriorityDicts.Return(priorities);
+            }
+        }
+
+        /// <summary>
+        /// Reclaims deferred empty leaves at a safe sweep boundary and returns the tracking set.
+        /// </summary>
+        internal void PrunePendingContexts()
+        {
+            if (pendingContextCleanup == null)
+            {
+                return;
+            }
+            HashSet<int> prioritiesToRemove = DxPools.IntSets.Rent();
+            try
+            {
+                foreach (InstanceId context in pendingContextCleanup)
+                {
+                    if (
+                        byContext == null
+                        || !byContext.TryGetValue(
+                            context,
+                            out Dictionary<int, IHandlerActionCache> priorities
+                        )
+                    )
+                    {
+                        continue;
+                    }
+                    prioritiesToRemove.Clear();
+                    foreach (KeyValuePair<int, IHandlerActionCache> entry in priorities)
+                    {
+                        if (entry.Value.IsEmpty)
+                        {
+                            prioritiesToRemove.Add(entry.Key);
+                        }
+                    }
+                    foreach (int priority in prioritiesToRemove)
+                    {
+                        PruneEmptyContextPriority(context, priority, priorities[priority]);
+                    }
+                }
+            }
+            finally
+            {
+                DxPools.IntSets.Return(prioritiesToRemove);
+                DxPools.InstanceIdSets.Return(pendingContextCleanup);
+                pendingContextCleanup = null;
+            }
+        }
+
+        /// <summary>
         /// Constructs a <see cref="TypedSlot{T}"/> with the supplied
         /// context-binding flag. All other fields take their default
         /// initial values.
@@ -461,6 +553,11 @@ namespace DxMessaging.Core.Internal
 
         private void ReturnContextDictionaries()
         {
+            if (pendingContextCleanup != null)
+            {
+                DxPools.InstanceIdSets.Return(pendingContextCleanup);
+                pendingContextCleanup = null;
+            }
             if (byContext == null)
             {
                 return;

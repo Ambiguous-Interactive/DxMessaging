@@ -11,6 +11,16 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         {
             InvocationCount++;
         }
+
+        public void OnAmbiguous(System.ICloneable value)
+        {
+            InvocationCount++;
+        }
+
+        public void OnAmbiguous(System.Collections.Generic.IEnumerable<char> value)
+        {
+            InvocationCount++;
+        }
     }
 }
 

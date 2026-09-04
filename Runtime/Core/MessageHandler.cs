@@ -442,7 +442,7 @@ namespace DxMessaging.Core
         /// <note>
         /// Ideally, this would be something like a Dictionary[T, Handler[T]], but that can't be done with C#s type system.
         /// </note>
-        internal readonly List<MessageCache<object>> _handlersByTypeByMessageBus;
+        internal readonly Dictionary<int, MessageCache<object>> _handlersByTypeByMessageBus;
         private IMessageBus _defaultMessageBus;
 
         /// <summary>
@@ -465,7 +465,7 @@ namespace DxMessaging.Core
         public MessageHandler(InstanceId owner, IMessageBus defaultMessageBus = null)
         {
             this.owner = owner;
-            _handlersByTypeByMessageBus = new List<MessageCache<object>>();
+            _handlersByTypeByMessageBus = new Dictionary<int, MessageCache<object>>();
             _defaultMessageBus = defaultMessageBus;
         }
 
@@ -2021,12 +2021,17 @@ namespace DxMessaging.Core
             where T : IMessage
         {
             int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
-            while (_handlersByTypeByMessageBus.Count <= messageBusIndex)
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBusIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
             {
-                _handlersByTypeByMessageBus.Add(new MessageCache<object>());
+                handlersByType = new MessageCache<object>();
+                _handlersByTypeByMessageBus.Add(messageBusIndex, handlersByType);
             }
 
-            MessageCache<object> handlersByType = _handlersByTypeByMessageBus[messageBusIndex];
             if (handlersByType.TryGetValue<T>(out object untypedHandler))
             {
                 return DxUnsafe.As<TypedHandler<T>>(untypedHandler);
@@ -2050,16 +2055,18 @@ namespace DxMessaging.Core
             where T : IMessage
         {
             int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
-            if (_handlersByTypeByMessageBus.Count <= messageBusIndex)
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBusIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
             {
                 existingTypedHandler = default;
                 return false;
             }
 
-            if (
-                _handlersByTypeByMessageBus[messageBusIndex]
-                    .TryGetValue<T>(out object untypedHandler)
-            )
+            if (handlersByType.TryGetValue<T>(out object untypedHandler))
             {
                 existingTypedHandler = DxUnsafe.As<TypedHandler<T>>(untypedHandler);
                 return true;
@@ -2171,14 +2178,19 @@ namespace DxMessaging.Core
         {
             messageBus = ResolveMessageBus(messageBus);
             int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
-            if (messageBusIndex < 0 || _handlersByTypeByMessageBus.Count <= messageBusIndex)
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBusIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
             {
                 return 0;
             }
 
             int resetCount = 0;
-            MessageCache<object> handlersByType = _handlersByTypeByMessageBus[messageBusIndex];
-            foreach (object untypedHandler in _handlersByTypeByMessageBus[messageBusIndex])
+            bool hasRemainingHandlers = false;
+            foreach (object untypedHandler in handlersByType)
             {
                 if (untypedHandler is ITypedHandlerSlotSweeper sweeper)
                 {
@@ -2187,7 +2199,20 @@ namespace DxMessaging.Core
                     {
                         handlersByType.RemoveAtIndex(sweeper.MessageTypeIndex);
                     }
+                    else
+                    {
+                        hasRemainingHandlers = true;
+                    }
                 }
+                else
+                {
+                    hasRemainingHandlers = true;
+                }
+            }
+
+            if (!hasRemainingHandlers)
+            {
+                _handlersByTypeByMessageBus.Remove(messageBusIndex);
             }
 
             return resetCount;
@@ -2197,13 +2222,18 @@ namespace DxMessaging.Core
         {
             messageBus = ResolveMessageBus(messageBus);
             int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
-            if (messageBusIndex < 0 || _handlersByTypeByMessageBus.Count <= messageBusIndex)
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBusIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
             {
                 return 0;
             }
 
             int resetCount = 0;
-            foreach (object untypedHandler in _handlersByTypeByMessageBus[messageBusIndex])
+            foreach (object untypedHandler in handlersByType)
             {
                 if (untypedHandler is ITypedHandlerSlotSweeper sweeper)
                 {
@@ -2211,6 +2241,7 @@ namespace DxMessaging.Core
                 }
             }
 
+            _handlersByTypeByMessageBus.Remove(messageBusIndex);
             return resetCount;
         }
 
@@ -2218,13 +2249,18 @@ namespace DxMessaging.Core
         {
             messageBus = ResolveMessageBus(messageBus);
             int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
-            if (messageBusIndex < 0 || _handlersByTypeByMessageBus.Count <= messageBusIndex)
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBusIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
             {
                 return 0;
             }
 
             int count = 0;
-            foreach (object untypedHandler in _handlersByTypeByMessageBus[messageBusIndex])
+            foreach (object untypedHandler in handlersByType)
             {
                 if (untypedHandler is ITypedHandlerSlotSweeper sweeper)
                 {
@@ -2235,16 +2271,86 @@ namespace DxMessaging.Core
             return count;
         }
 
-        internal bool HasTypedHandlersForBus(IMessageBus messageBus = null)
+        /// <summary>
+        /// Counts retained typed-handler context keys and priority caches for one bus without creating storage.
+        /// </summary>
+        internal void GetRetainedStorageCounts(
+            IMessageBus messageBus,
+            out int contextKeys,
+            out int priorityCaches
+        )
         {
+            contextKeys = 0;
+            priorityCaches = 0;
             messageBus = ResolveMessageBus(messageBus);
-            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
-            if (messageBusIndex < 0 || _handlersByTypeByMessageBus.Count <= messageBusIndex)
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBus.RegisteredGlobalSequentialIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
+            {
+                return;
+            }
+
+            foreach (object untypedHandler in handlersByType)
+            {
+                if (untypedHandler is ITypedHandlerSlotSweeper sweeper)
+                {
+                    sweeper.GetRetainedStorageCounts(
+                        out int retainedContexts,
+                        out int retainedPriorities
+                    );
+                    contextKeys += retainedContexts;
+                    priorityCaches += retainedPriorities;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reports whether a bus must retain this handler as a candidate for deferred context cleanup.
+        /// </summary>
+        internal bool HasPendingContextCleanup(IMessageBus messageBus)
+        {
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBus.RegisteredGlobalSequentialIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
             {
                 return false;
             }
 
-            foreach (object untypedHandler in _handlersByTypeByMessageBus[messageBusIndex])
+            foreach (object untypedHandler in handlersByType)
+            {
+                if (
+                    untypedHandler is ITypedHandlerSlotSweeper sweeper
+                    && sweeper.HasPendingContextCleanup
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        internal bool HasTypedHandlersForBus(IMessageBus messageBus = null)
+        {
+            messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
+            if (
+                !_handlersByTypeByMessageBus.TryGetValue(
+                    messageBusIndex,
+                    out MessageCache<object> handlersByType
+                )
+            )
+            {
+                return false;
+            }
+
+            foreach (object untypedHandler in handlersByType)
             {
                 if (untypedHandler != null)
                 {
@@ -3201,6 +3307,52 @@ namespace DxMessaging.Core
 
             internal bool _markedForOuterRemoval;
 
+            void ITypedHandlerSlotSweeper.GetRetainedStorageCounts(
+                out int contextKeys,
+                out int priorityCaches
+            )
+            {
+                contextKeys = 0;
+                priorityCaches = 0;
+                for (int i = 0; i < _slots.Length; ++i)
+                {
+                    TypedSlot<T> slot = _slots[i];
+                    if (slot == null)
+                    {
+                        continue;
+                    }
+
+                    priorityCaches += slot.byPriority.Count;
+                    if (slot.byContext == null)
+                    {
+                        continue;
+                    }
+
+                    contextKeys += slot.byContext.Count;
+                    foreach (
+                        Dictionary<int, IHandlerActionCache> priorities in slot.byContext.Values
+                    )
+                    {
+                        priorityCaches += priorities.Count;
+                    }
+                }
+            }
+
+            bool ITypedHandlerSlotSweeper.HasPendingContextCleanup
+            {
+                get
+                {
+                    for (int i = 0; i < _slots.Length; ++i)
+                    {
+                        if (_slots[i]?.pendingContextCleanup is { Count: > 0 })
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            }
+
             /// <summary>
             /// Reusable teardown state for the typed-handler registration path,
             /// replacing the deregistration <see cref="Action"/> closure
@@ -3237,6 +3389,7 @@ namespace DxMessaging.Core
                 private readonly object _originalHandler;
                 private readonly int _priority;
                 private readonly MessageBusRegistration _busRegistration;
+                private readonly IHandlerActionCache _registeredCache;
 
                 // Scalar constructor.
                 internal TypedHandlerDeregistrationState(
@@ -3261,6 +3414,7 @@ namespace DxMessaging.Core
                     _originalHandler = originalHandler;
                     _priority = priority;
                     _busRegistration = busRegistration;
+                    _registeredCache = handlers[priority];
                 }
 
                 // Context constructor.
@@ -3287,6 +3441,7 @@ namespace DxMessaging.Core
                     _originalHandler = originalHandler;
                     _priority = priority;
                     _busRegistration = busRegistration;
+                    _registeredCache = handlersByContext[context][priority];
                 }
 
                 internal void Deregister()
@@ -3332,7 +3487,10 @@ namespace DxMessaging.Core
                         }
                     }
 
-                    if (!cache.ContainsEntry(_originalHandler))
+                    if (
+                        !ReferenceEquals(cache, _registeredCache)
+                        || !cache.ContainsEntry(_originalHandler)
+                    )
                     {
                         return;
                     }
@@ -3353,8 +3511,21 @@ namespace DxMessaging.Core
                     {
                         _slot.liveCount--;
                     }
-                    // Deliberately keep the priority and context mappings to
-                    // preserve frozen snapshots for the current emission.
+                    if (_keyed && _slot != null && cache.IsEmpty)
+                    {
+                        if (
+                            _messageBus is global::DxMessaging.Core.MessageBus.MessageBus bus
+                            && !bus.IsDispatching
+                        )
+                        {
+                            _slot.PruneEmptyContextPriority(_context, _priority, cache);
+                        }
+                        else
+                        {
+                            _slot.pendingContextCleanup ??= DxPools.InstanceIdSets.Rent();
+                            _slot.pendingContextCleanup.Add(_context);
+                        }
+                    }
                 }
 
                 public static implicit operator HandlerDeregistration(
@@ -3556,6 +3727,10 @@ namespace DxMessaging.Core
                         slot.Reset();
                         _slots[i] = null;
                         resetCount++;
+                    }
+                    else
+                    {
+                        slot?.PrunePendingContexts();
                     }
                 }
 
@@ -5142,21 +5317,9 @@ namespace DxMessaging.Core
                 );
             }
 
-            // Context-aware variant that preserves the priority and context key
-            // mappings on deregistration so frozen dispatch snapshots remain valid
-            // for any in-flight emission. Trade-off: empty HandlerActionCache
-            // entries (and their enclosing per-priority Dictionary) are not
-            // reclaimed until either (a) a future registration at the same
-            // (context, priority) pair reuses the cache, or (b) the owning
-            // MessageHandler is destroyed. For typical Unity gameplay (a small
-            // fixed set of priorities and a bounded set of long-lived target /
-            // source InstanceIds) the residual footprint is on the order of
-            // hundreds of bytes per MessageHandler. Code that interacts with
-            // many transient InstanceIds (e.g. a global service that registers
-            // handlers per ephemeral GameObject) should prefer recycling
-            // MessageHandlers or routing through AddSourcedBroadcastWithoutSourceHandler /
-            // AddTargetedWithoutTargetingHandler to avoid the per-(context,priority)
-            // outer-dictionary growth.
+            // Context mappings survive in-flight emissions. Empty leaves are
+            // reclaimed immediately outside dispatch, or by the next eligible
+            // handler sweep after a removal during dispatch.
             // `flatInvoker` carries the pre-resolved flat-dispatch invoker for
             // default-shape registrations the bus-side flat snapshot consumes
             // (FastHandler adapter wrapping the augmented handler); see

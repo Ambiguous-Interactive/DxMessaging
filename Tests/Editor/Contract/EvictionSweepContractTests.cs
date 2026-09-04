@@ -30,6 +30,155 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private readonly struct BroadcastProbeMessage : IBroadcastMessage<BroadcastProbeMessage> { }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void LiveHandlerReclaimsTransientContexts(bool force)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new ManualClock(),
+                idleEvictionTicks: 1
+            );
+            MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
+            Action<TargetedProbeMessage> callback = _ => { };
+            Action keep = handler.RegisterTargetedMessageHandler(
+                new InstanceId(1),
+                callback,
+                callback,
+                messageBus: bus
+            );
+            try
+            {
+                for (int i = 2; i < 34; ++i)
+                {
+                    Action remove = handler.RegisterTargetedMessageHandler(
+                        new InstanceId(i),
+                        callback,
+                        callback,
+                        messageBus: bus
+                    );
+                    remove();
+                }
+                OtherProbeMessage tick = new OtherProbeMessage();
+                bus.UntargetedBroadcast(ref tick);
+                bus.UntargetedBroadcast(ref tick);
+                bus.Trim(force);
+                MessageHandler.TypedHandler<TargetedProbeMessage> typed =
+                    (MessageHandler.TypedHandler<TargetedProbeMessage>)
+                        ReadTypedHandler<TargetedProbeMessage>(handler, bus);
+                TypedSlot<TargetedProbeMessage> slot = typed._slots[
+                    TypedSlotIndex.TargetedHandleDefault
+                ];
+                Assert.That(
+                    slot.byContext.Count,
+                    Is.EqualTo(1),
+                    $"force={force}: a live listener must retain only its live context after churn and trim."
+                );
+            }
+            finally
+            {
+                keep();
+                bus.Trim(force: true);
+                handler.active = false;
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ContextPruningPreservesFrozenCallbacksAndStaleDeregistration(bool force)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new ManualClock(),
+                idleEvictionTicks: 0
+            );
+            MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
+            InstanceId live = new InstanceId(1);
+            InstanceId transient = new InstanceId(2);
+            int calls = 0;
+            Action<TargetedProbeMessage> later = _ => calls++;
+            Action keep = handler.RegisterTargetedMessageHandler(
+                live,
+                later,
+                later,
+                messageBus: bus
+            );
+            Action removeFirst = null;
+            Action removeLater = null;
+            Action<TargetedProbeMessage> first = _ =>
+            {
+                removeFirst();
+                removeLater();
+                bus.Trim(force);
+            };
+            try
+            {
+                removeFirst = handler.RegisterTargetedMessageHandler(
+                    transient,
+                    first,
+                    first,
+                    priority: -1,
+                    messageBus: bus
+                );
+                removeLater = handler.RegisterTargetedMessageHandler(
+                    transient,
+                    later,
+                    later,
+                    messageBus: bus
+                );
+                MessageHandler.TypedHandler<TargetedProbeMessage> typed =
+                    (MessageHandler.TypedHandler<TargetedProbeMessage>)
+                        ReadTypedHandler<TargetedProbeMessage>(handler, bus);
+                TypedSlot<TargetedProbeMessage> slot = typed._slots[
+                    TypedSlotIndex.TargetedHandleDefault
+                ];
+                TargetedProbeMessage message = new TargetedProbeMessage();
+                bus.TargetedBroadcast(ref transient, ref message);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    $"force={force}: a frozen callback must survive removal and in-flight trim."
+                );
+                Assert.That(
+                    slot.byContext.Count,
+                    Is.EqualTo(2),
+                    $"force={force}: in-flight cleanup must defer context removal."
+                );
+                bus.Trim(force);
+                Assert.That(
+                    slot.byContext.Count,
+                    Is.EqualTo(1),
+                    $"force={force}: deferred cleanup must remain scheduled after in-flight trim."
+                );
+                Action replacement = handler.RegisterTargetedMessageHandler(
+                    transient,
+                    later,
+                    later,
+                    messageBus: bus
+                );
+                try
+                {
+                    removeLater();
+                    bus.TargetedBroadcast(ref transient, ref message);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(2),
+                        $"force={force}: a stale deregistration must not remove a replacement context leaf."
+                    );
+                }
+                finally
+                {
+                    replacement();
+                }
+            }
+            finally
+            {
+                removeFirst?.Invoke();
+                removeLater?.Invoke();
+                keep();
+                bus.Trim(force: true);
+                handler.active = false;
+            }
+        }
+
         private sealed class ThrowingIntComparer : System.Collections.Generic.IEqualityComparer<int>
         {
             public bool Equals(int x, int y)
@@ -1134,9 +1283,11 @@ namespace DxMessaging.Tests.Editor.Contract
         private static object ReadTypedHandler<TMessage>(MessageHandler handler, IMessageBus bus)
             where TMessage : IMessage
         {
-            Assert.Less(
-                bus.RegisteredGlobalSequentialIndex,
-                handler._handlersByTypeByMessageBus.Count
+            Assert.IsTrue(
+                handler._handlersByTypeByMessageBus.ContainsKey(
+                    bus.RegisteredGlobalSequentialIndex
+                ),
+                "The handler must retain a cache for the registered bus."
             );
             bool exists = handler
                 ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]
