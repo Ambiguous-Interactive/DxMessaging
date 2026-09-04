@@ -115,18 +115,22 @@ trusted base code.
 The comparison matrix and the DxMessaging-only dispatch table answer different
 questions, so a comparison cell and its dispatch look-alike usually register a
 DIFFERENT topology and their DxMessaging numbers diverge -- often a lot.
-`GlobalToOne` is the only true topology twin of a dispatch cell
-(`UntargetedFlood_OneHandler`). `StructNoBox` has the same one-token,
+`GlobalToOne` and `GlobalToMany` have exact dispatch topology twins
+(`UntargetedFlood_OneHandler` and `UntargetedFlood_SixteenHandlers_OnePriority`).
+Both harnesses create exactly one token per subscriber and disable bus and token diagnostics.
+`StructNoBox` has the same one-token,
 one-untargeted-handler storage shape but uses the canonical
 `ComparisonStructPayload`, while the dispatch row uses `SimpleUntargetedMessage`.
 The rest differ on purpose: `PriorityOrdered` uses one token with four priorities
-where the dispatch twin uses four separate tokens; `GlobalToMany` fans out to 16
-subscribers with no dispatch equivalent; `KeyedToOne` registers 16 targets and
+where the dispatch twin uses four separate tokens; `KeyedToOne` registers 16 targets and
 dispatches to one (selectivity), unlike the single-target dispatch cell. Do NOT "fix"
 a divergence by forcing the shapes equal -- that would destroy what each scenario measures. The
 relationship is a single source of truth pinned by
-`ComparisonDispatchTopologyTests`, which fails the build if the DxMessaging
-fan-out, the referenced dispatch keys, or the scenario roster drift from the
+`ComparisonDispatchTopologyTests`, which checks the DxMessaging
+fan-out, referenced dispatch keys, scenario roster, and the true twins' actual token
+registrations, payloads, priorities, contexts, diagnostics, callback totals, and cleanup.
+Topology equivalence does not establish timing equivalence across separate players or builds.
+Keep the mapping synchronized with the
 [methodology runbook table](../../../../docs/runbooks/perf-benchmark-methodology.md#comparison-vs-dispatch-deliberately-different-topologies).
 
 ### Fresh state and process isolation

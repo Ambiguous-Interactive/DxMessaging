@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
 
 #pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
@@ -77,7 +78,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;
-            _bus = new MessageBus();
+            _bus = new MessageBus { DiagnosticsMode = false };
             _token = CreateToken();
 
             void Handle(in SimpleUntargetedMessage message)
@@ -201,10 +202,16 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             _bus = null;
         }
 
+        internal string[] CaptureTopologyForContract() =>
+            DispatchThroughputBenchmarks.CaptureTopologyForContract(_bus, _tokens);
+
+        internal MessageBus BusForContract => _bus;
+
         private MessageRegistrationToken CreateToken()
         {
             MessageHandler handler = new(new InstanceId(_nextOwner++), _bus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, _bus);
+            token.DiagnosticMode = false;
             token.Enable();
             _tokens.Add(token);
             return token;

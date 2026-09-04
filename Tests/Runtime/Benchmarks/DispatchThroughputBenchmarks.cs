@@ -11,6 +11,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Text;
     using System.Text.RegularExpressions;
     using DxMessaging.Core;
+    using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -1289,7 +1290,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.EmptyBusDispatch:
                     return;
                 case DispatchBenchmarkScenario.UntargetedFloodOneHandler:
-                    RegisterUntargeted(scope, handlerInvocations, 0);
+                    RegisterUntargeted(scope, handlerInvocations, 0, token: scope.PrimaryToken);
                     return;
                 case DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler:
                     scope.RegisterUntargetedDirect(handlerInvocations);
@@ -1319,7 +1320,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     }
                     return;
                 case DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority:
-                    for (int index = 0; index < 16; index++)
+                    RegisterUntargeted(scope, handlerInvocations, 0, token: scope.PrimaryToken);
+                    for (int index = 1; index < 16; index++)
                     {
                         RegisterUntargeted(scope, handlerInvocations, 0);
                     }
@@ -1450,10 +1452,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             BenchmarkRegistrationScope scope,
             InvocationCounter handlerInvocations,
             int priority,
-            bool active = true
+            bool active = true,
+            MessageRegistrationToken token = null
         )
         {
-            MessageRegistrationToken token = scope.CreateToken(active);
+            token ??= scope.CreateToken(active);
             _ = token.RegisterUntargeted<SimpleUntargetedMessage>(
                 (in SimpleUntargetedMessage message) => handlerInvocations.Increment(),
                 priority
@@ -1559,6 +1562,61 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
             }
+        }
+
+        public static (string[] Topology, long Invocations) ObserveTopologyForContract(
+            DispatchBenchmarkScenario scenario,
+            int emitCount
+        )
+        {
+            BenchmarkRegistrationScope scope = new();
+            using LeakWatcher watcher = new(scope.Bus);
+            try
+            {
+                InvocationCounter invocations = new();
+                ConfigureScenario(scope, scenario, invocations);
+                string[] topology = CaptureTopologyForContract(scope.Bus, scope.Tokens);
+                EmitMany(scope.Bus, scenario, emitCount);
+                return (topology, invocations.Count);
+            }
+            finally
+            {
+                scope.Dispose();
+            }
+        }
+
+        // Untimed inspection of the actual registrations, shared with the comparison bridge.
+        // Empty tokens remain visible: allocating an unused primary token is topology drift.
+        public static string[] CaptureTopologyForContract(
+            MessageBus bus,
+            IReadOnlyList<MessageRegistrationToken> tokens
+        )
+        {
+            List<string> topology = new()
+            {
+                $"bus:{bus.RegisteredUntargeted}:{bus.RegisteredTargeted}:{bus.RegisteredBroadcast}:"
+                    + $"{bus.RegisteredInterceptors}:{bus.RegisteredPostProcessors}:{bus.RegisteredGlobalAcceptAll}",
+                $"diagnostics:{bus.DiagnosticsMode}",
+            };
+            for (int index = 0; index < tokens.Count; index++)
+            {
+                MessageRegistrationToken token = tokens[index];
+                topology.Add($"token:{index}:{token.Enabled}:{token.DiagnosticMode}");
+                foreach (
+                    KeyValuePair<
+                        MessageRegistrationHandle,
+                        MessageRegistrationMetadata
+                    > pair in token._metadata
+                )
+                {
+                    MessageRegistrationMetadata metadata = pair.Value;
+                    topology.Add(
+                        $"registration:{index}:{metadata.registrationType}:{metadata.type.FullName}:"
+                            + $"{metadata.priority}:{metadata.context?.Id.ToString(CultureInfo.InvariantCulture) ?? "none"}"
+                    );
+                }
+            }
+            return topology.ToArray();
         }
 
         internal static DispatchScenarioContractObservation ConfigureAndEmitOnceForContract(
@@ -2295,6 +2353,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public MessageBus Bus { get; }
 
             public MessageRegistrationToken PrimaryToken { get; }
+
+            public IReadOnlyList<MessageRegistrationToken> Tokens => _tokens;
 
             public int TokenRegistrations
             {

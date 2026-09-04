@@ -4,6 +4,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using DxMessaging.Core;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
@@ -13,9 +15,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// DxMessaging-only dispatch-throughput table so the two families are never silently
     /// mistaken for measuring "the same" scenario when they deliberately measure different
     /// shapes. Each comparison scenario declares its nearest dispatch scenario and whether
-    /// the two are a TRUE topology twin (identical registration shape, so the DxMessaging
-    /// numbers must agree on the same run) or a deliberate divergence (different storage
-    /// topology / fan-out count, so the numbers are expected to differ). The map is the
+    /// the two have identical registration shapes or different storage topology / fan-out.
+    /// Matching topology does not establish timing equivalence across players. The map is the
     /// single source of truth documented in
     /// <c>docs/runbooks/perf-benchmark-methodology.md</c>; this suite fails the build if it
     /// drifts from the actual bridge fan-out, the dispatch scenario keys, or the scenario
@@ -32,8 +33,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         /// <see cref="NearestDispatch"/> is the closest dispatch-throughput scenario (null
         /// when no dispatch scenario measures a comparable shape).
         /// <see cref="IsTrueTopologyTwin"/> is true only when the DxMessaging registration
-        /// shape is IDENTICAL to the nearest dispatch scenario, so their measured throughput
-        /// must agree within noise on the same run.
+        /// shape is identical to the nearest dispatch scenario. Timing equivalence needs
+        /// separate measurement evidence.
         /// </summary>
         private readonly struct TopologyMapping
         {
@@ -69,11 +70,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 ),
                 [ComparisonScenario.GlobalToManySubscribers] = new TopologyMapping(
                     ComparisonScenarios.FanOutSubscribers,
-                    null,
-                    isTrueTopologyTwin: false,
-                    "16 subscribers across 16 tokens; no dispatch scenario fans untargeted "
-                        + "dispatch out to 16 handlers (the dispatch family caps untargeted "
-                        + "fan-out at four)."
+                    DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
+                    isTrueTopologyTwin: true,
+                    "Identical shape: 16 tokens, one active untargeted handler per token, "
+                        + "priority zero, and the same SimpleUntargetedMessage payload."
                 ),
                 [ComparisonScenario.KeyedToOneOfMany] = new TopologyMapping(
                     1,
@@ -194,55 +194,152 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
         }
 
-        /// <remarks>
-        /// Investigation (2026-08-13): Canonicalizing StructNoBox across technologies changed
-        /// DxMessaging's closed generic payload from SimpleUntargetedMessage to
-        /// ComparisonStructPayload. Its storage shape remains the same, but only GlobalToOne is
-        /// byte-for-byte identical to the dispatch benchmark payload and is therefore a true twin.
-        /// </remarks>
         [Test]
-        public void TrueTopologyTwinsShareTheOneHandlerUntargetedShape()
+        public void TrueTopologyTwinsIncludeBothExistingUntargetedFanOuts()
         {
-            // The only registration shape shared verbatim by both families is "one token, one
-            // untargeted handler, untargeted broadcast of SimpleUntargetedMessage". Every true
-            // twin must resolve to that shape so the "these cells must agree" promise in the
-            // runbook is anchored to something concrete; a false twin must point at a different
-            // dispatch scenario or none.
-            using IMessagingTechBridge dxMessaging = new DxMessagingBridge();
             List<ComparisonScenario> trueTwins = Map.Where(kvp => kvp.Value.IsTrueTopologyTwin)
                 .Select(kvp => kvp.Key)
                 .ToList();
 
             CollectionAssert.AreEquivalent(
-                new[] { ComparisonScenario.GlobalToOneSubscriber },
+                new[]
+                {
+                    ComparisonScenario.GlobalToOneSubscriber,
+                    ComparisonScenario.GlobalToManySubscribers,
+                },
                 trueTwins,
-                "The only true topology twin is GlobalToOne. StructNoBox uses the same storage "
-                    + "shape but a different canonical payload type. Changing this set means the "
-                    + "comparison/dispatch parity guarantee moved; update the runbook to match."
+                "GlobalToOne and GlobalToMany have existing exact internal fan-out rows. "
+                    + "StructNoBox still uses a different payload. Update the map and runbook together."
+            );
+        }
+
+        private static IEnumerable<TestCaseData> TrueTwinCases()
+        {
+            (
+                ComparisonScenario comparison,
+                DispatchBenchmarkScenario dispatch,
+                int subscribers
+            )[] twins =
+            {
+                (
+                    ComparisonScenario.GlobalToOneSubscriber,
+                    DispatchBenchmarkScenario.UntargetedFloodOneHandler,
+                    1
+                ),
+                (
+                    ComparisonScenario.GlobalToManySubscribers,
+                    DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
+                    16
+                ),
+            };
+            foreach (
+                (
+                    ComparisonScenario comparison,
+                    DispatchBenchmarkScenario dispatch,
+                    int subscribers
+                ) in twins
+            )
+            {
+                foreach (int emits in new[] { 0, 1, 17 })
+                {
+                    foreach (bool diagnostics in new[] { false, true })
+                    {
+                        yield return new TestCaseData(
+                            comparison,
+                            dispatch,
+                            subscribers,
+                            emits,
+                            diagnostics
+                        ).SetName($"TrueTwin{comparison}Emits{emits}Diagnostics{diagnostics}");
+                    }
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(TrueTwinCases))]
+        public void TrueTwinsObserveMatchingRegistrationsDispatchAndCleanup(
+            ComparisonScenario scenario,
+            DispatchBenchmarkScenario dispatch,
+            int subscribers,
+            int emits,
+            bool globalDiagnostics
+        )
+        {
+            string label =
+                $"[{scenario}, {dispatch}, subscribers={subscribers}, emits={emits}, diagnostics={globalDiagnostics}]";
+            using DiagnosticsScope diagnostics = new(
+                globalDiagnostics ? DiagnosticsTarget.All : DiagnosticsTarget.Off,
+                diagnosticsStackTraces: globalDiagnostics
+            );
+            TopologyMapping mapping = Map[scenario];
+            Assert.IsTrue(mapping.IsTrueTopologyTwin, $"{label} The existing twin must be mapped.");
+            Assert.AreEqual(
+                dispatch,
+                mapping.NearestDispatch,
+                $"{label} The mapped row must match."
             );
 
-            foreach (ComparisonScenario scenario in trueTwins)
+            (string[] topology, long invocations) =
+                DispatchThroughputBenchmarks.ObserveTopologyForContract(dispatch, emits);
+            using DxMessagingBridge bridge = new();
+            bridge.Prepare(scenario);
+            MessageBus bus = bridge.BusForContract;
+            CollectionAssert.AreEqual(
+                topology,
+                bridge.CaptureTopologyForContract(),
+                $"{label} Actual bus counters, token ownership, payload, priority, context, and diagnostics must match."
+            );
+            Assert.AreEqual(
+                subscribers,
+                topology.Count(row => row.StartsWith("token:", StringComparison.Ordinal)),
+                $"{label} Each subscriber needs one token, with no unused token."
+            );
+            for (int index = 0; index < subscribers; index++)
             {
-                TopologyMapping mapping = Map[scenario];
-                Assert.AreEqual(
-                    DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                    mapping.NearestDispatch,
-                    $"True twin '{scenario}' must point at UntargetedFloodOneHandler, the "
-                        + "one-handler untargeted dispatch shape it is supposed to agree with."
+                CollectionAssert.Contains(
+                    topology,
+                    $"token:{index}:True:False",
+                    $"{label} Token {index} must be enabled with diagnostics disabled."
                 );
-                Assert.AreEqual(
-                    1,
-                    dxMessaging.InvocationsPerOperation(scenario),
-                    $"True twin '{scenario}' must fan out to exactly one invocation to match the "
-                        + "one-handler dispatch shape."
-                );
-                Assert.AreEqual(
-                    typeof(SimpleUntargetedMessage),
-                    dxMessaging.DispatchedPayloadType(scenario),
-                    $"True twin '{scenario}' must dispatch SimpleUntargetedMessage, the same "
-                        + "payload UntargetedFlood_OneHandler broadcasts."
+                CollectionAssert.Contains(
+                    topology,
+                    $"registration:{index}:Untargeted:{typeof(SimpleUntargetedMessage).FullName}:0:none",
+                    $"{label} Token {index} must register the exact payload at priority zero without a context."
                 );
             }
+            Assert.AreEqual(
+                subscribers,
+                bus.RegisteredUntargeted,
+                $"{label} Every subscriber must be registered independently."
+            );
+            Assert.AreEqual(
+                typeof(SimpleUntargetedMessage),
+                bridge.DispatchedPayloadType(scenario),
+                $"{label} Both twins must emit the same closed message type."
+            );
+            for (int index = 0; index < emits; index++)
+            {
+                bridge.EmitOnce();
+            }
+            Assert.AreEqual(
+                (long)subscribers * emits,
+                invocations,
+                $"{label} Internal callbacks must reconcile."
+            );
+            Assert.AreEqual(
+                invocations,
+                bridge.ProgressMarker,
+                $"{label} Comparison callbacks must reconcile."
+            );
+            bridge.Dispose();
+            CollectionAssert.AreEqual(
+                new[] { "bus:0:0:0:0:0:0", "diagnostics:False" },
+                DispatchThroughputBenchmarks.CaptureTopologyForContract(
+                    bus,
+                    Array.Empty<MessageRegistrationToken>()
+                ),
+                $"{label} Disposing the real bridge must clear all six registration counters."
+            );
         }
     }
 }
