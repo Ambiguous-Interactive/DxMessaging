@@ -1013,30 +1013,57 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag }}
+          PACKAGE_FILE: ${{ steps.release_package.outputs.package-file }}
+          CHECKSUM_FILE: ${{ steps.release_package.outputs.checksum-file }}
           UNITYPACKAGE_FILE: ${{ steps.unitypackage_asset.outputs.unitypackage-file }}
           UNITYPACKAGE_CHECKSUM: ${{ steps.unitypackage_asset.outputs.unitypackage-checksum }}
         run: |
           set -euo pipefail
-          tag="${{ needs.verify-tag.outputs.tag }}"
-          package_file="${{ steps.release_package.outputs.package-file }}"
-          checksum_file="${{ steps.release_package.outputs.checksum-file }}"
+          tag="${RELEASE_TAG}"
           # The .unitypackage (+ .sha256) is guaranteed by the Stage step above.
-          assets=("${package_file}" "${checksum_file}" "${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            gh release upload "${tag}" \
-              "${assets[@]}" \
-              --clobber
-            gh release edit "${tag}" \
-              --title "${tag}" \
-              --notes-file .artifacts/release/release-notes.md \
-              --draft=false
-          else
+          assets=("${PACKAGE_FILE}" "${CHECKSUM_FILE}" "${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
+          # A failed lookup is not proof that a release is absent. Listing all
+          # pages also includes drafts visible to this contents-write token.
+          releases="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")"
+          release="$(jq -c --arg tag "${tag}" '
+            [.[][] | select(.tag_name == $tag)] |
+            if length > 1 then error("Multiple releases for tag") else .[0] end
+          ' <<< "${releases}")"
+          if [ "${release}" = null ]; then
             gh release create "${tag}" \
-              "${assets[@]}" \
+              --draft \
               --title "${tag}" \
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag
+            release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
           fi
+          is_draft="$(jq -er '.draft | if type == "boolean" then tostring else error("Missing draft state") end' <<< "${release}")"
+          if [ "${is_draft}" = true ]; then
+            # Only unpublished drafts may replace assets on a partial rerun.
+            gh release upload "${tag}" "${assets[@]}" --clobber
+            release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
+          fi
+          release_verify_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${release_verify_dir}"' EXIT
+          for file in "${assets[@]}"; do
+            name="$(basename "${file}")"
+            asset_id="$(jq -er --arg name "${name}" '
+              [.assets[] | select(.name == $name and .state == "uploaded")] |
+              if length == 1 and (.[0].id | type == "number") then .[0].id
+              else error("Missing or ambiguous uploaded asset: " + $name) end
+            ' <<< "${release}")"
+            gh api "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+              -H 'Accept: application/octet-stream' > "${release_verify_dir}/asset"
+            if ! cmp -s -- "${file}" "${release_verify_dir}/asset"; then
+              echo "::error::Release ${tag} asset ${name} differs from the staged file; published assets cannot be replaced."
+              exit 1
+            fi
+          done
+          gh release edit "${tag}" \
+            --title "${tag}" \
+            --notes-file .artifacts/release/release-notes.md \
+            --draft=false
 
       - name: Verify the published Release has every expected asset
         # Closes the v3.1.0 failure mode for good: assert the published release

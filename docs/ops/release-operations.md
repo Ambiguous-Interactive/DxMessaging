@@ -126,7 +126,10 @@ The release workflow performs these gates:
    immediately; missing or invalid store collateral fails before the
    irreversible registry action.
 1. Publish to npm with Trusted Publishing and provenance.
-1. Create or update the GitHub Release. The body is the matching `## [version]`
+1. Create or resume a draft GitHub Release. Upload all four assets, download each
+   by its asset ID, and compare its bytes with the staged file before publishing.
+   An existing published release is verified without replacing its assets.
+   The body is the matching `## [version]`
    `CHANGELOG.md` section plus an install footer, rendered by the shared
    `scripts/release/release-notes.js` extractor. Assets are the `.tgz`, its
    `.sha256`, the `.unitypackage`, and its `.sha256`; a final step asserts the
@@ -137,11 +140,16 @@ The release workflow performs these gates:
    (account onboarding: [Unity Asset Store UPM](./unity-asset-store-upm.md)).
 
 Release assets are the npm `.tgz` plus `.sha256` and the `.unitypackage` plus
-`.sha256`. The `.unitypackage` is a REQUIRED asset and the release is atomic: a
-failed export blocks the entire release (including the irreversible npm publish)
-rather than shipping an incomplete release. Recovery is to fix the export and
+`.sha256`. The `.unitypackage` is a required asset: a failed export blocks
+publication, including the irreversible npm publish. Recovery is to fix the export and
 re-run; the npm publish is idempotent (it skips a version already on the
-registry). The Unity Asset Store upload is manual; the official classic and UPM
+registry). npm and GitHub publication are separate operations; a later GitHub
+failure does not undo npm publication. Draft reruns may replace partial uploads.
+Published reruns require byte-identical assets, including checksums; a missing
+or changed asset fails instead of overwriting the release. Use the original
+staged files for a rerun, or publish changed package contents as a new version.
+The workflow supports immutable releases but does not enable the repository setting.
+The Unity Asset Store upload is manual; the official classic and UPM
 publishing tools do not document a sanctioned headless entry point.
 
 ## Public References
