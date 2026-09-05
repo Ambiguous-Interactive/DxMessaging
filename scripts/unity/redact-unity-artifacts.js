@@ -142,10 +142,10 @@ function redactDirectory(root) {
       } else binaryCount += 1;
       continue;
     }
-    const { redacted, counts } = redactSensitiveData(normalized);
+    const { redacted, counts } = redactSensitiveData(normalized, extension);
     if (
-      !isSerializedRedactionSafe(normalized, redacted) ||
-      findSensitiveData(redacted).length > 0 ||
+      !isSerializedRedactionSafe(normalized, redacted, extension) ||
+      findSensitiveData(redacted, extension).length > 0 ||
       /\p{Cf}/u.test(redacted.slice(decoded.encoding.startsWith("utf16") ? 1 : 0))
     ) {
       skipped.push({

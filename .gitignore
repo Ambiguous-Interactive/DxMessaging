@@ -378,6 +378,8 @@ node_modules.meta
 
 package-lock.json
 package-lock.json.meta
+!/package-lock.json
+!/package-lock.json.meta
 Editor/Analyzers/*.pdb
 Tests/Runtime/bin.meta
 Tests/Runtime/obj.meta

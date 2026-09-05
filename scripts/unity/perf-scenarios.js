@@ -3,57 +3,20 @@
 const COMPARISON_SCENARIO_PREFIX = "Comparison_";
 const POST_ROUTE_SCENARIO_DEFINITIONS = require("./post-route-perf-scenarios.json");
 
-// Stable rendered order, labels, and wall-clock classification; mirrors C# keys.
+// Stable labels/order mirror C# keys; attribution rows mirror both ScenarioKey methods
+// in RegistrationLifecycleBenchmarks.cs. Post-route definitions remain single-sourced.
+const {
+  DISPATCH_BEFORE_POST_ROUTES,
+  DISPATCH_AFTER_POST_ROUTES,
+  COMPARISON_SCENARIO_ORDER,
+  COMPARISON_SCENARIO_LABELS,
+  COMPARISON_TECH_ORDER,
+  COMPARISON_TECH_LABELS
+} = require("./perf-scenario-definitions.json");
 const SCENARIO_DEFINITIONS = [
-  ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
-  ["UntargetedFlood_OneHandler", "Untargeted Flood (One Handler)"],
-  ["UntargetedFlood_OneDirectHandler", "Untargeted Flood (One Direct Handler)"],
-  ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
-  ["UntargetedFlood_ThreeHandlers_OnePriority", "Untargeted Flood (Three Handlers, One Priority)"],
-  ["UntargetedFlood_FourHandlers_OnePriority", "Untargeted Flood (Four Handlers, One Priority)"],
-  [
-    "UntargetedFlood_FourHandlers_FourPriorities",
-    "Untargeted Flood (Four Handlers, Four Priorities)"
-  ],
-  [
-    "UntargetedFlood_SixteenHandlers_OnePriority",
-    "Untargeted Flood (Sixteen Handlers, One Priority)"
-  ],
-  ["UntargetedFlood_OneInactiveHandler", "Untargeted Flood (One Inactive Handler)"],
-  ["UntargetedFirstDispatch_Cold", "Untargeted First Dispatch (Cold, Distinct Types)", true],
-  ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"],
-  ["TargetedFlood_OneListener", "Targeted Flood (One Listener)"],
-  ["TargetedFlood_SixteenListeners", "Targeted Flood (Sixteen Listeners)"],
-  ["TargetedFirstDispatch_Cold", "Targeted First Dispatch (Cold, Distinct Types)", true],
-  ["BroadcastFlood_OneHandler", "Broadcast Flood (One Handler)"],
-  ["BroadcastFirstDispatch_Cold", "Broadcast First Dispatch (Cold, Distinct Types)", true],
+  ...DISPATCH_BEFORE_POST_ROUTES,
   ...POST_ROUTE_SCENARIO_DEFINITIONS,
-  ["InterceptorHeavy_FourInterceptors", "Interceptor Heavy (Four Interceptors)"],
-  ["PostProcessingHeavy_FourPostProcessors", "Post-Processing Heavy (Four Post-Processors)"],
-  ["MessageBusConstruction_1000", "Message Bus Construction (1000)", true],
-  [
-    "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
-    "Registration Token Construction (1000, Prebuilt Handler + Bus)",
-    true
-  ],
-  ["RegistrationFlood_1000Types_FromColdBus", "Registration Flood (1000 Types, Cold Bus)", true],
-  ["RegistrationFlood_1000Types_WarmJit", "Registration Flood (1000 Types, Warm JIT)", true],
-  ["UntargetedRegistration_Marginal", "Untargeted Registration (Marginal, 1000 Same-Type)", true],
-  ["TargetedRegistration_Marginal", "Targeted Registration (Marginal, 1000 Same-Type)", true],
-  ["BroadcastRegistration_Marginal", "Broadcast Registration (Marginal, 1000 Same-Type)", true],
-  ["DeregistrationFlood_1000Types_Cold", "Deregistration Flood (1000 Types, Cold)", true],
-  ["DeregistrationFlood_1000Types_WarmJit", "Deregistration Flood (1000 Types, Warm JIT)", true],
-  // SYNC: both attribution ScenarioKey methods in RegistrationLifecycleBenchmarks.cs own these keys.
-  ...["Direct Bus", "Direct Handler", "Token Stage", "Token Active"].map((label) => [
-    `RegistrationAttribution_${label.replaceAll(" ", "")}_131072`,
-    `Registration Attribution (${label}, 131072)`,
-    true
-  ]),
-  ...["Direct Bus", "Direct Handler", "Token Remove", "Token Disable"].map((label) => [
-    `DeregistrationAttribution_${label.replaceAll(" ", "")}_131072`,
-    `Deregistration Attribution (${label}, 131072)`,
-    true
-  ])
+  ...DISPATCH_AFTER_POST_ROUTES
 ];
 
 const SCENARIO_ORDER = SCENARIO_DEFINITIONS.map(([key]) => key);
@@ -65,63 +28,11 @@ const DISPATCH_DISPLAY_NAMES = Object.fromEntries(
   SCENARIO_DEFINITIONS.map(([key, displayName]) => [key, displayName])
 );
 
-// Fixed comparison-matrix columns; mirrors the ComparisonScenario enum order.
-const COMPARISON_SCENARIO_ORDER = [
-  "GlobalToOne",
-  "GlobalToMany",
-  "KeyedToOne",
-  "PriorityOrdered",
-  "Filtered",
-  "PostProcess",
-  "FilteredPostProcess",
-  "SubUnsub",
-  "StructNoBox"
-];
-
 const COMPARISON_SCENARIO_SET = new Set(COMPARISON_SCENARIO_ORDER);
-
-// Matrix column labels mirror ComparisonScenarios.DisplayName.
-const COMPARISON_SCENARIO_LABELS = {
-  GlobalToOne: "Global -> 1 subscriber",
-  GlobalToMany: "Global -> 16 subscribers",
-  KeyedToOne: "Keyed/targeted -> 1 of many",
-  PriorityOrdered: "Priority-ordered dispatch",
-  Filtered: "Filtered/intercepted dispatch",
-  PostProcess: "Post-processing dispatch",
-  FilteredPostProcess: "Intercepted + post-processed dispatch",
-  SubUnsub: "Subscribe/unsubscribe churn",
-  StructNoBox: "Struct message (no boxing)"
-};
-
-// Fixed matrix row order, mirroring each comparison bridge's TechKey.
-const COMPARISON_TECH_ORDER = [
-  "DxMessaging",
-  "MessagePipe",
-  "UniRx",
-  "ZenjectSignalBus",
-  "UnityAtoms",
-  "ScriptableObject",
-  "UnityEvent",
-  "CsEvent",
-  "UnitySendMessage"
-];
 
 const COMPARISON_TECH_SET = new Set(COMPARISON_TECH_ORDER);
 
 const COMPARISON_SUPPORTED_SCENARIOS = require("./comparison-supported-scenarios.json");
-
-// Human-readable technology labels for the first matrix column.
-const COMPARISON_TECH_LABELS = {
-  DxMessaging: "DxMessaging",
-  CsEvent: "C# event",
-  UnityEvent: "UnityEvent",
-  ScriptableObject: "ScriptableObject channel",
-  UnitySendMessage: "Unity SendMessage",
-  MessagePipe: "MessagePipe",
-  UniRx: "UniRx MessageBroker",
-  ZenjectSignalBus: "Zenject SignalBus",
-  UnityAtoms: "Unity Atoms"
-};
 
 function buildComparisonScenarioId(techKey, scenarioKey) {
   return `${COMPARISON_SCENARIO_PREFIX}${techKey}_${scenarioKey}`;

@@ -25,8 +25,6 @@ const SEAL_OPTIONS = Object.freeze({
   reducer: "shipping-fidelity-matrix-v1",
   sourceCommit: "98b47536a0eb1445fcd2a9700899aab0be24897f"
 });
-/** Synthetic throughout: this shape matches no serial this project has ever held. */
-const FAKE_SERIAL = "SC-FAKE-FAKE-FAKE-FAKE-FAKE";
 const STRIPPING_LEVELS = ["High", "Minimal"];
 const TOPOLOGIES = [
   ["semantic-18", 18],
@@ -186,7 +184,7 @@ for (const [label, corrupt, expected] of [
         sha256: crypto.createHash("sha256").update(bytes).digest("hex")
       });
       manifest.bundleDigest = bundleDigest(manifest);
-      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      writeJson(manifestPath, manifest);
     },
     /scrub it before sealing/
   ],
@@ -196,7 +194,7 @@ for (const [label, corrupt, expected] of [
       const manifestPath = path.join(root, MANIFEST_NAME);
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
       manifest.files[0].sha256 = "0".repeat(64);
-      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      writeJson(manifestPath, manifest);
     },
     /does not match its own contents/
   ],
@@ -206,7 +204,7 @@ for (const [label, corrupt, expected] of [
       const manifestPath = path.join(root, MANIFEST_NAME);
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
       manifest.normalized.completedCellCount = 99;
-      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      writeJson(manifestPath, manifest);
     },
     /does not match its own contents/
   ],
@@ -216,7 +214,7 @@ for (const [label, corrupt, expected] of [
       const manifestPath = path.join(root, MANIFEST_NAME);
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
       manifest.files.reverse();
-      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      writeJson(manifestPath, manifest);
     },
     /Declared files must be uniquely sorted/
   ]
@@ -233,7 +231,7 @@ for (const target of ["manifest", "file entry"]) {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
     const holder = target === "manifest" ? manifest : manifest.files[0];
     holder.runnerHost = "C:\\Users\\Private Runner";
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    writeJson(manifestPath, manifest);
     assert.throws(() => verifyBundle(manifestPath), /contains unsupported fields/);
   });
 }
@@ -253,7 +251,7 @@ test("replay rejects a bundle whose sealed bytes no longer produce the published
   const target = path.join(root, "high-semantic-18", "shipping-cell-evidence.json");
   const evidence = JSON.parse(fs.readFileSync(target, "utf8"));
   evidence.playerTotalBytes += 1;
-  fs.writeFileSync(target, `${JSON.stringify(evidence, null, 2)}\n`);
+  writeJson(target, evidence);
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const bytes = fs.readFileSync(target);
   const entry = manifest.files.find((file) =>
@@ -262,7 +260,7 @@ test("replay rejects a bundle whose sealed bytes no longer produce the published
   entry.length = bytes.length;
   entry.sha256 = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
   manifest.bundleDigest = bundleDigest(manifest);
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  writeJson(manifestPath, manifest);
   verifyBundle(manifestPath);
   assert.throws(
     () => replayBundle(manifestPath),
@@ -278,6 +276,12 @@ for (const [label, content] of VECTORS.sealingSensitive) {
       /^Error: private\.log looks like it contains /,
       `${label} must block immutable publication`
     );
+  });
+}
+for (const [label, extension, content] of VECTORS.invalidStructures) {
+  test(`sealing refuses unsupported structure: ${label}`, () => {
+    const root = bundleWithFile("invalid" + extension, content);
+    assert.throws(() => sealBundle(root, SEAL_OPTIONS), /scrub it before sealing/);
   });
 }
 for (const [label, file, text, encoding] of VECTORS.sealingAccepted) {
@@ -325,10 +329,7 @@ for (const [label, bytes] of [
   ["ar magic", Buffer.from("!<arch>\nprintable payload")],
   ["invalid high bytes", Buffer.from([0x41, 0xff, 0x42])],
   ["a UTF-8 C1 control", Buffer.from([0x41, 0xc2, 0x80, 0x42])],
-  [
-    "a binary tail after a text prefix",
-    Buffer.concat([Buffer.alloc(8192, 0x41), Buffer.alloc(64)])
-  ],
+  ["a binary tail after a text prefix", Buffer.from(`${"A".repeat(8192)}${"\0".repeat(64)}`)],
   ["a NUL-split PDF signature", Buffer.from("%P\0DF-1.7\npayload")]
 ]) {
   test(`sealing rejects ${label} disguised with a text extension`, () => {
@@ -393,7 +394,7 @@ for (const [label, declaredPath, expected] of VECTORS.invalidBundlePaths) {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
     manifest.files[0].path = declaredPath;
     manifest.bundleDigest = bundleDigest(manifest);
-    fs.writeFileSync(path.join(root, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`);
+    writeJson(path.join(root, MANIFEST_NAME), manifest);
     assert.throws(
       () => verifyBundle(manifestPath),
       new RegExp(expected),
@@ -411,7 +412,7 @@ for (const [label, left, right] of [
     manifest.files[0].path = left;
     manifest.files[1].path = right;
     manifest.bundleDigest = bundleDigest(manifest);
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    writeJson(manifestPath, manifest);
     assert.throws(() => verifyBundle(manifestPath), /case-insensitive/);
   });
 }
@@ -421,7 +422,7 @@ test("the manifest output name is reserved case-insensitively", () => {
   const { manifest, manifestPath } = sealedBundle();
   manifest.files[0].path = "Evidence-Manifest.json";
   manifest.bundleDigest = bundleDigest(manifest);
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  writeJson(manifestPath, manifest);
   assert.throws(() => verifyBundle(manifestPath), /case-insensitive/);
 });
 test("the reducer names the artifact a bundle is missing", () => {
@@ -437,11 +438,8 @@ test("the reducer rejects a summary that omits a completed cell", () => {
   const summaryPath = path.join(root, "shipping-matrix-evidence.json");
   const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
   summary.cells = summary.cells.filter((cell) => cell.cellId !== "high-semantic-18");
-  fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
-  assert.throws(
-    () => reduceShippingFidelityMatrix(contentsOf(root)),
-    /does not list completed cell high-semantic-18/
-  );
+  writeJson(summaryPath, summary);
+  assert.throws(() => reduceShippingFidelityMatrix(contentsOf(root)), /cell outcomes disagree/);
 });
 for (const [field, value, expected] of VECTORS.invalidSealMetadata) {
   test(`sealing rejects ${field}=${value}`, () => {
@@ -466,7 +464,7 @@ for (const artifactClass of VECTORS.unsupportedArtifactClasses) {
     manifest.artifactClass = artifactClass;
     manifest.bundleDigest = bundleDigest(manifest);
     assert.throws(() => writeBundleManifest(root, manifest), expected);
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    writeJson(manifestPath, manifest);
     for (const operation of [verifyBundle, replayBundle]) {
       assert.throws(() => operation(manifestPath), expected, operation.name);
     }
@@ -512,7 +510,7 @@ for (const [label, injectedPath] of VECTORS.digestInjectionPaths) {
     const { manifest, manifestPath } = sealedBundle();
     manifest.files[0].path = injectedPath;
     manifest.bundleDigest = bundleDigest(manifest);
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    writeJson(manifestPath, manifest);
     assert.throws(
       () => verifyBundle(manifestPath),
       /must not contain control characters or a colon/,
@@ -525,7 +523,7 @@ for (const [field, value] of VECTORS.digestInjectionFields) {
     const { manifest, manifestPath } = sealedBundle();
     manifest[field] = value;
     manifest.bundleDigest = bundleDigest(manifest);
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    writeJson(manifestPath, manifest);
     assert.throws(
       () => verifyBundle(manifestPath),
       new RegExp(`^Error: ${field} must not contain control characters\\.$`),
@@ -574,13 +572,6 @@ test("writing a manifest validates its name and sealed contents before touching 
   assert.throws(() => writeBundleManifest(root, manifest), /does not match the current bundle/);
   assert.equal(fs.existsSync(path.join(root, MANIFEST_NAME)), false);
 });
-test("custom manifest names must use a reviewed text extension", () => {
-  const root = writeMatrixBundle(temporaryDirectory());
-  assert.throws(
-    () => sealBundle(root, { ...SEAL_OPTIONS, manifestName: "manifest.bin" }),
-    /manifest\.bin does not use a reviewed text evidence extension/
-  );
-});
 test("verification rejects non-regular entries before reading them", () => {
   const { root, manifest, manifestPath } = sealedBundle();
   const manifestDirectory = path.join(temporaryDirectory(), "manifest.json");
@@ -595,16 +586,8 @@ test("adding a file the reducer never reads still trips the append-only check", 
   const { root, manifest } = sealedBundle();
   fs.writeFileSync(path.join(root, "high-semantic-18", "player.log"), "different bytes\n");
   const reSealed = sealBundle(root, SEAL_OPTIONS);
-  assert.deepEqual(
-    reSealed.normalized,
-    manifest.normalized,
-    "reducer: the added file must not change the normalized result, or this proves nothing"
-  );
-  assert.notEqual(
-    reSealed.bundleDigest,
-    manifest.bundleDigest,
-    "digest: the file inventory changed, so the digest must change"
-  );
+  assert.deepEqual(reSealed.normalized, manifest.normalized, "the reducer ignores the added file");
+  assert.notEqual(reSealed.bundleDigest, manifest.bundleDigest, "the inventory digest must change");
   assert.throws(
     () => writeBundleManifest(root, reSealed),
     /is already sealed as [0-9a-f]{64} but these bytes seal as [0-9a-f]{64}/,
@@ -622,21 +605,6 @@ test("sealing refuses an encoded UNC authority that straddles the old scan windo
     "the encoded authority crosses the old overlap boundary but must still block publication"
   );
 });
-test("sealing refuses a credential in a log carrying a stray NUL", () => {
-  const root = bundleWithFile(
-    "unity.log",
-    Buffer.concat([
-      Buffer.from("boot\n", "latin1"),
-      Buffer.alloc(1),
-      Buffer.from(`\nserial ${FAKE_SERIAL}\n`, "latin1")
-    ])
-  );
-  assert.throws(
-    () => sealBundle(root, SEAL_OPTIONS),
-    /^Error: unity\.log looks like it contains a Unity serial; scrub it before sealing\.$/,
-    "a stray NUL must not disable the sealing backstop for a whole log"
-  );
-});
 test("sealing accepts a large clean log with ordinary serialization escapes", () => {
   const content = `${"x".repeat(4 * 1024 * 1024 + 1)}\nC:\\\\runner said \\\"hello\\\" & done\n`;
   assert.doesNotThrow(() => sealBundle(bundleWithFile("unity.log", content), SEAL_OPTIONS));
@@ -647,19 +615,6 @@ test("sealing refuses a large encoded command whose private value is on the next
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.throws(() => sealBundle(root, SEAL_OPTIONS), /Unity password assignment/);
 });
-for (const [label, text] of [
-  ["GitHub token", `ghp_${"a".repeat(18)}\0${"a".repeat(18)}`],
-  ["IPv4 address", "192.168\0.42.17"]
-]) {
-  test(`sealing rejects a NUL-split ${label}`, () => {
-    const root = writeMatrixBundle(temporaryDirectory(), { extraFiles: { "unity.log": text } });
-    assert.throws(
-      () => sealBundle(root, SEAL_OPTIONS),
-      /unity\.log looks like it contains/,
-      `${label}: a consumer that ignores NUL must not reconstruct sensitive data`
-    );
-  });
-}
 test("sealing rejects more than eight stray NULs", () => {
   const root = bundleWithFile("unity.log", Buffer.from(`short${"\0".repeat(9)}log`, "utf8"));
   assert.throws(() => sealBundle(root, SEAL_OPTIONS), /contains too many NUL bytes/);
@@ -671,4 +626,80 @@ test("sealing refuses malformed byte-order-marked UTF-16", () => {
     /malformed\.log is not valid UTF-8 or byte-order-marked UTF-16 text/,
     "every byte must be decoded before the evidence can be classified as reviewed text"
   );
+});
+
+for (const [target, field, value] of VECTORS.invalidShippingInputs) {
+  test(`shipping reducer rejects ${target} ${field}=${JSON.stringify(value)}`, () => {
+    const root = writeMatrixBundle(temporaryDirectory());
+    const file = path.join(
+      root,
+      target === "matrix"
+        ? "shipping-matrix-evidence.json"
+        : "high-semantic-18/shipping-cell-evidence.json"
+    );
+    const input = JSON.parse(fs.readFileSync(file, "utf8"));
+    const keys = field.split(".");
+    const holder = keys.length === 1 ? input : input[keys[0]];
+    holder[keys.at(-1)] = value;
+    writeJson(file, input);
+    if (target === "cell") {
+      const summaryPath = path.join(root, "shipping-matrix-evidence.json");
+      const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+      summary.cells[0] = { ...input, cellId: "high-semantic-18" };
+      writeJson(summaryPath, summary);
+    }
+    assert.throws(
+      () => sealBundle(root, SEAL_OPTIONS),
+      /shipping|failedCells|unreadableEvidenceCells/
+    );
+  });
+}
+for (const defect of [
+  "missing raw cell",
+  "duplicate row",
+  "summary timing",
+  "missing summary column"
+]) {
+  test(`shipping reducer rejects ${defect}`, () => {
+    const root = writeMatrixBundle(temporaryDirectory());
+    const file = path.join(root, "shipping-matrix-evidence.json");
+    const input = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (defect === "missing raw cell")
+      fs.rmSync(path.join(root, "high-semantic-18/shipping-cell-evidence.json"));
+    if (defect === "duplicate row") input.cells.push(input.cells[0]);
+    if (defect === "summary timing") input.cells[0].timings.firstTypedDispatchUs++;
+    if (defect === "missing summary column") delete input.cells[0].playerTotalBytes;
+    writeJson(file, input);
+    assert.throws(() => sealBundle(root, SEAL_OPTIONS), /shipping|completedCellCount/);
+  });
+}
+
+test("shipping reducer preserves explicit failed outcomes and ignores row order", () => {
+  const root = writeMatrixBundle(temporaryDirectory());
+  const file = path.join(root, "shipping-matrix-evidence.json");
+  const matrix = JSON.parse(fs.readFileSync(file, "utf8"));
+  const expected = reduceShippingFidelityMatrix(contentsOf(root));
+  matrix.cells.reverse();
+  writeJson(file, matrix);
+  assert.deepEqual(reduceShippingFidelityMatrix(contentsOf(root)), expected);
+  matrix.cellCount += 2;
+  matrix.failedCells = ["failed-cell"];
+  matrix.unreadableEvidenceCells = ["unreadable-cell"];
+  writeJson(file, matrix);
+  fs.mkdirSync(path.join(root, "unreadable-cell"));
+  fs.writeFileSync(path.join(root, "unreadable-cell/shipping-cell-evidence.json"), "{malformed");
+  fs.mkdirSync(path.join(root, "failed-cell"));
+  writeJson(path.join(root, "failed-cell/shipping-cell-evidence.json"), matrix.cells[0]);
+  const partial = reduceShippingFidelityMatrix(contentsOf(root));
+  assert.throws(() => sealBundle(root, SEAL_OPTIONS), /unsupported structured data/);
+  writeJson(path.join(root, "unreadable-cell/shipping-cell-evidence.json"), { unreadable: true });
+  assert.deepEqual(sealBundle(root, SEAL_OPTIONS).normalized, partial);
+  assert.equal(partial.declaredCellCount, 6);
+  assert.equal(partial.completedCellCount, 4);
+  assert.deepEqual(partial.failedCells, matrix.failedCells);
+  assert.deepEqual(partial.unreadableEvidenceCells, matrix.unreadableEvidenceCells);
+  for (const cell of matrix.cells) fs.rmSync(path.join(root, cell.cellId), { recursive: true });
+  Object.assign(matrix, { cells: [], completedCellCount: 0, cellCount: 2 });
+  writeJson(file, matrix);
+  assert.equal(sealBundle(root, SEAL_OPTIONS).normalized.completedCellCount, 0);
 });

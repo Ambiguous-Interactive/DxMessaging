@@ -222,6 +222,93 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        [Test]
+        public void PreboxedStructDispatchIsZeroAlloc(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    UntypedAllocationMessage payload = new(173);
+                    object boxed = payload;
+                    int received = 0;
+                    void Receive(in UntypedAllocationMessage message)
+                    {
+                        received = message.value;
+                    }
+                    Action emit;
+                    InstanceId context = StableTarget;
+                    switch (scenario.Kind)
+                    {
+                        case MessageKind.Untargeted:
+                            ScenarioHarness.RegisterUntargeted<UntypedAllocationMessage>(
+                                scenario,
+                                token,
+                                Receive
+                            );
+                            bus.UntargetedBroadcast(ref payload);
+                            DxMessaging.Core.Messages.IUntargetedMessage untargeted =
+                                (DxMessaging.Core.Messages.IUntargetedMessage)boxed;
+                            emit = () => bus.UntypedUntargetedBroadcast(untargeted);
+                            break;
+                        case MessageKind.Targeted:
+                            ScenarioHarness.RegisterTargeted<UntypedAllocationMessage>(
+                                scenario,
+                                token,
+                                context,
+                                Receive
+                            );
+                            bus.TargetedBroadcast(ref context, ref payload);
+                            DxMessaging.Core.Messages.ITargetedMessage targeted =
+                                (DxMessaging.Core.Messages.ITargetedMessage)boxed;
+                            emit = () => bus.UntypedTargetedBroadcast(context, targeted);
+                            break;
+                        case MessageKind.Broadcast:
+                            ScenarioHarness.RegisterBroadcast<UntypedAllocationMessage>(
+                                scenario,
+                                token,
+                                context,
+                                Receive
+                            );
+                            bus.SourcedBroadcast(ref context, ref payload);
+                            DxMessaging.Core.Messages.IBroadcastMessage broadcast =
+                                (DxMessaging.Core.Messages.IBroadcastMessage)boxed;
+                            emit = () => bus.UntypedSourcedBroadcast(context, broadcast);
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException(nameof(scenario));
+                    }
+                    received = 0;
+                    emit();
+                    Assert.That(
+                        received,
+                        Is.EqualTo(173),
+                        "[{0}] Preboxed dispatch must preserve the payload.",
+                        scenario.Kind
+                    );
+                    AllocationAssertions.AssertNoAllocations($"Preboxed-{scenario.Kind}", emit);
+                }
+            );
+        }
+
+        private readonly struct UntypedAllocationMessage
+            : DxMessaging.Core.Messages.IUntargetedMessage,
+                DxMessaging.Core.Messages.ITargetedMessage,
+                DxMessaging.Core.Messages.IBroadcastMessage
+        {
+            public readonly int value;
+
+            public UntypedAllocationMessage(int value)
+            {
+                this.value = value;
+            }
+
+            public Type MessageType => typeof(UntypedAllocationMessage);
+        }
+
         /// <summary>
         /// The untargeted no-feature route is cached on the bus-wide dispatch
         /// plan only after its active snapshot settles. Unrelated registration

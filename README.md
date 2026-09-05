@@ -951,7 +951,8 @@ Import samples from Package Manager:
 - .NET Standard 2.1
 - Works with all render pipelines (URP, HDRP, Built-in)
 
-See [Compatibility](docs/reference/compatibility.md) for details.
+See [Compatibility](docs/reference/compatibility.md) for Unity details and the optional
+[plain .NET source build](docs/reference/compatibility.md#plain-net-runtime).
 
 ## Contributing
 

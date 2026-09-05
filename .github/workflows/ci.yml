@@ -394,6 +394,10 @@ jobs:
           WallstopStudios.DxMessaging.Docs.Tests.csproj
           --configuration Release
 
+      - name: Run plain .NET runtime tests
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        run: dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
+
       - name: Verify committed analyzer payload is current
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         run: npm run check:analyzers

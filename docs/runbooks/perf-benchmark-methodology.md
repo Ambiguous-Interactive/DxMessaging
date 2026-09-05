@@ -442,44 +442,64 @@ unsupported scenario renders `N/A` in the matrix and is **never faked**:
 | S8  | `SubUnsub`            | Subscribe/unsubscribe churn.             |
 | S9  | `StructNoBox`         | Struct message dispatch (no boxing).     |
 
-### Comparison vs dispatch: deliberately different topologies
+### Comparison vs dispatch: exact internal topology twins
 
-Each comparison scenario uses a shape every library can implement idiomatically.
-Each internal dispatch scenario exercises a specific DxMessaging path. Compare their
-registration topology before interpreting their rates: the one-subscriber and
-16-subscriber untargeted rows have exact topology twins; the other rows below differ.
+Each public comparison scenario has an independent internal topology twin. The
+one-subscriber and 16-subscriber untargeted twins use existing dispatch rows. The
+other seven use `ComparisonTopologyBenchmarks`, in the comparison assembly so the
+struct row can register the exact same closed `ComparisonStructPayload` type.
 Matching topology does not prove equal throughput across separate players or builds.
 The callback bodies and harness code still require attribution before a timing difference
 can be assigned to the bus.
 
 The map below is pinned by
-[`ComparisonDispatchTopologyTests`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs);
-that suite checks the scenario roster, referenced dispatch keys, and declared fan-out.
-For both true twins it also runs the actual registration and emission paths, compares
-the six bus counters, token ownership, message types, priorities, contexts, and diagnostics,
-and reconciles exact callback counts and cleanup. These observations run outside timed windows.
+[`ComparisonDispatchTopologyTests`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Comparisons/ComparisonDispatchTopologyTests.cs).
+It executes both workloads, compares all six bus counters and token registration
+metadata, and checks payloads, priorities, routes, diagnostics, exact fan-out, and
+cleanup against an independent manifest. Cases cover zero, one, and 17 operations
+with global diagnostics enabled and disabled. Deliberate mutations to live tokens,
+handlers, priorities, payloads, and routes must fail validation. Missing callbacks
+and retained registrations must fail accounting and teardown assertions.
 
-| Comparison cell       | DxMessaging shape                            | Nearest dispatch cell                         | True twin? | Why they differ                                                                                                                                       |
-| --------------------- | -------------------------------------------- | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GlobalToOne`         | 1 token, 1 untargeted handler                | `UntargetedFlood_OneHandler`                  | **Yes**    | Same registered payload, priority, ownership, and diagnostics state.                                                                                  |
-| `StructNoBox`         | 1 token, 1 untargeted handler                | `UntargetedFlood_OneHandler`                  | No         | Same storage shape, but the comparison uses the canonical `ComparisonStructPayload` while the dispatch row uses `SimpleUntargetedMessage`.            |
-| `GlobalToMany`        | 16 tokens, 16 untargeted handlers            | `UntargetedFlood_SixteenHandlers_OnePriority` | **Yes**    | Both configure exactly 16 tokens, each with one active untargeted handler at priority zero.                                                           |
-| `KeyedToOne`          | 16 targets registered, dispatch to 1         | `TargetedFlood_OneListener`                   | No         | Measures lookup selectivity (16 registered, 1 fires); the dispatch cell registers a single target.                                                    |
-| `PriorityOrdered`     | 1 token, 4 priorities                        | `UntargetedFlood_FourHandlers_FourPriorities` | No         | Comparison uses one MessageHandler with four handler-store entries; the dispatch cell uses four separate tokens. Same fan-out (4), different storage. |
-| `Filtered`            | 1 interceptor + 1 handler                    | `InterceptorHeavy_FourInterceptors`           | No         | Comparison runs one interceptor; the dispatch cell runs four.                                                                                         |
-| `PostProcess`         | 1 post-processor + 1 handler                 | `PostProcessingHeavy_FourPostProcessors`      | No         | Comparison runs one post-processor; the dispatch cell runs four.                                                                                      |
-| `FilteredPostProcess` | 1 interceptor + 1 post-processor + 1 handler | (none)                                        | No         | No dispatch scenario combines hook kinds. Compare this cell inside the matrix against `GlobalToOne`, `Filtered`, and `PostProcess` from the same run. |
-| `SubUnsub`            | register/unregister churn cycle              | (none)                                        | No         | The dispatch family has no subscribe/unsubscribe throughput scenario.                                                                                 |
+| Comparison cell       | DxMessaging shape                                       | Exact internal row                            |
+| --------------------- | ------------------------------------------------------- | --------------------------------------------- |
+| `GlobalToOne`         | 1 token, 1 untargeted handler                           | `UntargetedFlood_OneHandler`                  |
+| `GlobalToMany`        | 16 tokens, 16 untargeted handlers                       | `UntargetedFlood_SixteenHandlers_OnePriority` |
+| `KeyedToOne`          | 1 token, 16 distinct targets, dispatch to 1             | `InternalComparisonTwin_KeyedToOne`           |
+| `PriorityOrdered`     | 1 token, 4 priorities                                   | `InternalComparisonTwin_PriorityOrdered`      |
+| `Filtered`            | 1 token, 1 interceptor, 1 handler                       | `InternalComparisonTwin_Filtered`             |
+| `PostProcess`         | 1 token, 1 post-processor, 1 handler                    | `InternalComparisonTwin_PostProcess`          |
+| `FilteredPostProcess` | 1 token, 1 interceptor, 1 post-processor, 1 handler     | `InternalComparisonTwin_FilteredPostProcess`  |
+| `SubUnsub`            | 1 token, cached callback, register/remove per operation | `InternalComparisonTwin_SubUnsub`             |
+| `StructNoBox`         | 1 token, 1 handler of `ComparisonStructPayload`         | `InternalComparisonTwin_StructNoBox`          |
 
-Both DxMessaging harnesses explicitly disable bus and token diagnostics. Their
-contract tests also run with global diagnostics enabled to prove editor preferences
-cannot change a row's measured work. The true twins allocate exactly one token per
-subscriber; no unused primary token remains in these internal rows.
+Both workloads explicitly disable bus and token diagnostics. The contract tests run
+with global diagnostics enabled too, so editor preferences cannot change measured
+work. No unused primary token remains in the fan-out twins. `SubUnsub` retains its
+empty token and verifies the registration topology returns to empty after operations.
+An untimed registration log also requires one actual register/remove pair per operation,
+with the exact payload and reused handler owner, so an empty before/after state cannot
+hide a missing churn cycle. Its progress counts completed register/remove cycles;
+dispatch rows count handlers.
+The hook rows preserve the public comparison's allowing interceptor and empty
+post-processor bodies; only terminal handlers advance the callback marker.
 
-This covers two of the nine public comparison topologies. The remaining exact twins,
-MessagePipe fragmentation and callback-mutation characterization, and the complete
-semantic ledger remain tracked by [comparison audit #507](https://github.com/Ambiguous-Interactive/DxMessaging/issues/507).
-No normalized lower-bound row or MessagePipe parity verdict follows from this mapping.
+The fast checks use `ComparisonContract`. The seven additional timing rows require
+an explicit `PerfTopologyTwin` category selection in the comparison assembly. They
+do not carry `PerfComparison`, `PerfBench`, or `ComparisonContract`, so the normal
+comparison workflow's category filters do not add seven five-second windows. A
+contract test pins this separation. Each timing row uses `BenchmarkProtocol.Measure`,
+the public row's warm-up policy, and the separate allocation probe. It reconciles
+warm-up plus all timed and probe operations, then verifies cleanup. Results retain
+the `InternalComparisonTwin_` prefix; they cannot replace a public `Comparison_` row.
+These are exact public-topology workloads, not normalized lower bounds.
+
+This covers the nine public comparison topologies. MessagePipe fragmentation,
+callback-time mutation characterization, targeted/broadcast/without-context and
+global-accept-all sibling experiments, source pins, and the complete versioned
+semantic ledger remain tracked by
+[comparison audit #507](https://github.com/Ambiguous-Interactive/DxMessaging/issues/507).
+No MessagePipe parity verdict follows from topology coverage alone.
 
 **Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player;
 the internal benchmark player, including the 131072-cycle and teardown rows,

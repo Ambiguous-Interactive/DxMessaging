@@ -17,6 +17,79 @@ namespace DxMessaging.Tests.Runtime.Core
 
     public sealed class DiagnosticsTests : MessagingTestBase
     {
+        [TestCase(false)]
+        [TestCase(true)]
+        [Category("ComparisonContract")]
+        public void TokenDiagnosticsCountOnlySuccessfulCallbacksAfterThrow(bool diagnostics)
+        {
+            using DiagnosticsScope scope = new(messageBufferSize: 4, diagnosticsStackTraces: false);
+            MessageBus bus = new() { DiagnosticsMode = false };
+            using LeakWatcher watcher = new(bus);
+            MessageHandler handler = new(new InstanceId(49002), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.DiagnosticMode = diagnostics;
+            List<string> trace = new();
+            InvalidOperationException sentinel = new("Intentional callback failure.");
+            try
+            {
+                MessageRegistrationHandle handle =
+                    token.RegisterUntargeted<SimpleUntargetedMessage>(
+                        (in SimpleUntargetedMessage message) =>
+                        {
+                            trace.Add("A:" + bus.EmissionId);
+                            if (bus.EmissionId == 1)
+                            {
+                                throw sentinel;
+                            }
+                        }
+                    );
+                token.Enable();
+                SimpleUntargetedMessage payload = new();
+                InvalidOperationException caught = Assert.Throws<InvalidOperationException>(() =>
+                    bus.UntargetedBroadcast(ref payload)
+                );
+                Assert.AreSame(sentinel, caught);
+                Assert.AreEqual(1, bus.EmissionId);
+                Assert.AreEqual(1, bus.RegisteredUntargeted);
+                Assert.IsTrue(token.Enabled);
+                Assert.IsTrue(token._metadata.ContainsKey(handle));
+                Assert.AreEqual(0, GetCallCounts(token).Count);
+                Assert.AreEqual(0, GetEmissionBuffer(token).Count);
+                CollectionAssert.AreEqual(new[] { "A:1" }, trace);
+                bus.UntargetedBroadcast(ref payload);
+                Assert.AreEqual(2, bus.EmissionId);
+                Assert.AreEqual(1, bus.RegisteredUntargeted);
+                Assert.IsTrue(token._metadata.ContainsKey(handle));
+                CollectionAssert.AreEqual(new[] { "A:1", "A:2" }, trace);
+                Assert.AreEqual(diagnostics ? 1 : 0, GetCallCounts(token).Count);
+                Assert.AreEqual(diagnostics ? 1 : 0, GetEmissionBuffer(token).Count);
+                if (diagnostics)
+                {
+                    Assert.AreEqual(1, GetCallCounts(token)[handle]);
+                    MessageEmissionData emission = GetEmissionBuffer(token)[0];
+                    Assert.AreEqual(handle, emission.registrationHandle);
+                    Assert.AreEqual(2, emission.traceId);
+                    Assert.IsInstanceOf<SimpleUntargetedMessage>(emission.message);
+                    Assert.IsNull(emission.context);
+                    Assert.AreEqual(string.Empty, emission.stackTrace);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    token.Dispose();
+                }
+                finally
+                {
+                    bus.Trim(force: true);
+                }
+            }
+            Assert.AreEqual(0, token._metadata.Count);
+            Assert.AreEqual(0, GetCallCounts(token).Count);
+            Assert.AreEqual(0, GetEmissionBuffer(token).Count);
+        }
+
         [Test]
         public void TokenDiagnosticModeTracksEmissions()
         {

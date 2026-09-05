@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime
 {
     /// <summary>
@@ -25,4 +24,3 @@ namespace DxMessaging.Tests.Runtime
         BroadcastWithoutSource,
     }
 }
-#endif

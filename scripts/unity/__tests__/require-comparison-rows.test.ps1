@@ -199,6 +199,7 @@ try {
         'scripts/unity/require-comparison-rows.ps1',
         'scripts/unity/perf-scenarios.js',
         'scripts/unity/post-route-perf-scenarios.json',
+        'scripts/unity/perf-scenario-definitions.json',
         'scripts/unity/comparison-supported-scenarios.json'
     )) {
         $destination = Join-Path $fixtureRoot $relativePath

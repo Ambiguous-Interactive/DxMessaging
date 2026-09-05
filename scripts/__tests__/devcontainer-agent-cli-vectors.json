@@ -1,0 +1,69 @@
+[
+  {
+    "name": "fresh container with a reachable registry",
+    "setup": {
+      "latest": "1.2.3"
+    },
+    "status": 0,
+    "stdout": [
+      "installing {package}@1\\.2\\.3 \\(current: missing\\)",
+      "{package}@1\\.2\\.3 is ready\\."
+    ],
+    "stderr": [],
+    "installsPerPackage": 1,
+    "commandsPresent": true
+  },
+  {
+    "name": "every CLI already at the latest version",
+    "setup": {
+      "latest": "4.5.6",
+      "installed": "4.5.6"
+    },
+    "status": 0,
+    "stdout": ["{package}@4\\.5\\.6 is current\\."],
+    "stderr": [],
+    "installsPerPackage": 0,
+    "commandsPresent": true
+  },
+  {
+    "name": "unreachable registry with the CLI already installed",
+    "setup": {
+      "installed": "7.8.9",
+      "viewFails": true
+    },
+    "status": 0,
+    "stdout": ["registry unavailable; keeping {package}@7\\.8\\.9\\."],
+    "stderr": [],
+    "installsPerPackage": 0,
+    "commandsPresent": true
+  },
+  {
+    "name": "unreachable registry with the CLI absent",
+    "setup": {
+      "viewFails": true
+    },
+    "status": 1,
+    "stdout": [],
+    "stderr": [
+      "registry unavailable and {package} is not installed\\.",
+      "3 agent CLI installation\\(s\\) remain unavailable\\."
+    ],
+    "installsPerPackage": 0,
+    "commandsPresent": false
+  },
+  {
+    "name": "npm install that never succeeds",
+    "setup": {
+      "latest": "2.0.0",
+      "installFails": true
+    },
+    "status": 1,
+    "stdout": [],
+    "stderr": [
+      "{package} install attempt 3/3 failed\\.",
+      "3 agent CLI installation\\(s\\) remain unavailable\\."
+    ],
+    "installsPerPackage": 3,
+    "commandsPresent": false
+  }
+]

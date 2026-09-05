@@ -5,14 +5,29 @@ namespace DxMessaging.Tests.Runtime.Core
     using System.Collections.Generic;
     using System.Linq;
     using DxMessaging.Core;
+    using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
     using NUnit.Framework;
 
-    /// <summary>Actual token and callback-reset replay, dispatch-suppressing and deferred-reset mutants, and pure trace mechanics.</summary>
+    /// <summary>Production replay, independent operation mutants, versioned generation, and dependency-preserving shrinking.</summary>
     public sealed class DifferentialBusTraceTests
     {
+        private DiagnosticsScope _diagnostics;
+
+        [SetUp]
+        public void SetUp() =>
+            _diagnostics = new DiagnosticsScope(
+                DiagnosticsTarget.Off,
+                messageBufferSize: 16,
+                diagnosticsStackTraces: false
+            );
+
+        [TearDown]
+        public void TearDown() => _diagnostics.Dispose();
+
         [Test]
-        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2)] int version)
+        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2, 3, 4)] int version)
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
                 MessageScenario.Untargeted(),
@@ -22,7 +37,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 BusTraceSequence.GeneratorVersion,
-                Is.EqualTo(2),
+                Is.EqualTo(4),
                 "Changing generation requires a new version and a reviewed replay fixture."
             );
             CollectionAssert.AreEqual(
@@ -30,10 +45,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     "Register(token=0,context=0,value=1409999377,priority=1)",
                     "Emit(token=0,context=0,value=-576100708,priority=-1)",
-                    (version == 1 ? "Disable" : "Emit")
-                        + "(token=1,context=0,value=1944224582,priority=1)",
-                    (version == 1 ? "Disable" : "Register")
-                        + "(token=1,context=1,value=1180700304,priority=0)",
+                    (
+                        version == 1 ? "Disable"
+                        : version == 2 ? "Emit"
+                        : version == 3 ? "Register"
+                        : "SetDiagnostics"
+                    ) + $"(token=1,context=0,value={(version == 4 ? 0 : 1944224582)},priority=1)",
+                    (
+                        version == 1 ? "Disable"
+                        : version == 2 ? "Register"
+                        : version == 3 ? "Emit"
+                        : "Disable"
+                    ) + "(token=1,context=1,value=1180700304,priority=0)",
                 },
                 sequence.Operations.Select(operation => operation.ToString()),
                 $"Generator version {version}, seed 17 must retain its exact replay prefix across runtime profiles."
@@ -43,6 +66,284 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(version),
                 $"version={version}: replay identity must preserve the requested generator."
             );
+        }
+
+        [Test]
+        public void TrimRecoversStorageAndPreservesReuseAfterStaleRemovalAndReset(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool force
+        )
+        {
+            List<BusTraceOperation> operations = new()
+            {
+                new(BusTraceOperationKind.Register),
+                new(BusTraceOperationKind.Emit, value: 10),
+                new(BusTraceOperationKind.Remove),
+                new(BusTraceOperationKind.Trim),
+            };
+            if (!force)
+            {
+                // The real empty emit advances the bus tick without touching empty sinks.
+                // No clock or process-global settings are changed by this replay.
+                operations.Add(new BusTraceOperation(BusTraceOperationKind.Emit, value: 11));
+            }
+            int reclaimed = operations.Count;
+            operations.AddRange(
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: force ? 1 : 0),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: force ? 1 : 0),
+                    new BusTraceOperation(BusTraceOperationKind.Register, context: 1),
+                    new BusTraceOperation(BusTraceOperationKind.RemoveStale),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: force ? 1 : 0),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 12),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.EmitWithReset,
+                        context: 1,
+                        value: 13
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: force ? 1 : 0),
+                    new BusTraceOperation(BusTraceOperationKind.Disable),
+                    new BusTraceOperation(BusTraceOperationKind.Enable),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: force ? 1 : 0),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 14),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                }
+            );
+            BusTraceSequence sequence = new(scenario, 509, operations);
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report = $"force={force}\n" + DescribeReplay(sequence, control, candidate);
+            Assert.That(DifferentialBusTrace.Compare(control, candidate), Is.Null, report);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            Assert.That(control[2].OccupiedTypeSlots, Is.GreaterThan(0), report);
+            Assert.That(control[3].TrimResult.Value.TypeSlotsEvicted, Is.Zero, report);
+            Assert.That(control[3].TrimResult.Value.TargetSlotsEvicted, Is.Zero, report);
+            Assert.That(
+                control[3].OccupiedTypeSlots,
+                Is.EqualTo(control[2].OccupiedTypeSlots),
+                report
+            );
+            Assert.That(
+                control[3].OccupiedTargetSlots,
+                Is.EqualTo(control[2].OccupiedTargetSlots),
+                report
+            );
+            Assert.That(
+                control[reclaimed].TrimResult.Value.TypeSlotsEvicted,
+                Is.GreaterThan(0),
+                report
+            );
+            Assert.That(
+                control[reclaimed].TrimResult.Value.TargetSlotsEvicted,
+                scenario.Kind == MessageKind.Untargeted ? Is.Zero : Is.GreaterThan(0),
+                report
+            );
+            Assert.That(control[reclaimed + 1].TrimResult.Value.TypeSlotsEvicted, Is.Zero, report);
+            Assert.That(
+                control[reclaimed + 1].TrimResult.Value.TargetSlotsEvicted,
+                Is.Zero,
+                report
+            );
+            foreach (
+                int index in new[] { reclaimed, reclaimed + 1, reclaimed + 7, control.Count - 1 }
+            )
+            {
+                Assert.That(control[index].OccupiedTypeSlots, Is.Zero, report);
+                Assert.That(control[index].OccupiedTargetSlots, Is.Zero, report);
+            }
+            foreach (int index in new[] { reclaimed + 4, reclaimed + 10 })
+            {
+                Assert.That(control[index].OccupiedTypeSlots, Is.GreaterThan(0), report);
+                Assert.That(control[index].TrimResult.Value.TypeSlotsEvicted, Is.Zero, report);
+                Assert.That(control[index].TrimResult.Value.TargetSlotsEvicted, Is.Zero, report);
+            }
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=12" },
+                control[reclaimed + 5].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=13" },
+                control[reclaimed + 6].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=14" },
+                control[reclaimed + 11].Callbacks,
+                report
+            );
+            for (int index = 0; index < control.Count; ++index)
+            {
+                bool isTrim = operations[index].Kind == BusTraceOperationKind.Trim;
+                Assert.That(control[index].TrimResult.HasValue, Is.EqualTo(isTrim), report);
+                if (isTrim)
+                {
+                    Assert.That(
+                        control[index].TrimResult.Value.LiveTypeSlotsRemaining,
+                        Is.EqualTo(control[index].OccupiedTypeSlots),
+                        report
+                    );
+                }
+            }
+            if (!force)
+            {
+                Assert.That(control[4].Callbacks, Is.Empty, report);
+            }
+        }
+
+        [Test]
+        public void IgnoredForceTrimIsDetectedAndShrunkUsingActualReclamation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence original = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Enable, token: 3),
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 9),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 10),
+                }
+            );
+            BusTraceMismatch mismatch = EvaluateMutant(original, "trim-force");
+            Assert.That(mismatch, Is.Not.Null, "Ignoring force must change actual trim output.");
+            string report = mismatch.BuildReport(original);
+            Assert.That(mismatch.Category, Is.EqualTo("trim"), report);
+            Assert.That(mismatch.Control.Exception, Is.Null, report);
+            Assert.That(mismatch.Candidate.Exception, Is.Null, report);
+            Assert.That(mismatch.Control.OccupiedTypeSlots, Is.Zero, report);
+            Assert.That(mismatch.Candidate.OccupiedTypeSlots, Is.GreaterThan(0), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                original,
+                sequence => EvaluateMutant(sequence, "trim-force")
+            );
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.Remove,
+                    BusTraceOperationKind.Trim,
+                },
+                minimal.Operations.Select(operation => operation.Kind),
+                report
+            );
+            Assert.That(minimal.Version, Is.EqualTo(4), report);
+            Assert.That(minimal.Seed, Is.EqualTo(original.Seed), report);
+            Assert.That(
+                EvaluateMutant(minimal, "trim-force")?.Category,
+                Is.EqualTo("trim"),
+                report
+            );
+            Assert.That(Evaluate(minimal, dropEmits: false), Is.Null, report);
+        }
+
+        [Test]
+        public void TrimComparisonIncludesResultPresenceEveryResultFieldAndBothSlotCounts(
+            [Values(
+                "presence",
+                "types",
+                "targets",
+                "pools",
+                "live",
+                "occupied-types",
+                "occupied-targets"
+            )]
+                string difference
+        )
+        {
+            IMessageBus.TrimResult baseline = new(1, 2, 3, 4);
+            IMessageBus.TrimResult? changed = difference switch
+            {
+                "presence" => null,
+                "types" => new IMessageBus.TrimResult(9, 2, 3, 4),
+                "targets" => new IMessageBus.TrimResult(1, 9, 3, 4),
+                "pools" => new IMessageBus.TrimResult(1, 2, 9, 4),
+                "live" => new IMessageBus.TrimResult(1, 2, 3, 9),
+                _ => baseline,
+            };
+            // Synthetic values test only the comparator; replay adapters always observe the real bus.
+            BusTraceObservation control = new(Array.Empty<string>(), "same", null, baseline, 4, 2);
+            BusTraceObservation candidate = new(
+                Array.Empty<string>(),
+                "same",
+                null,
+                changed,
+                difference == "occupied-types" ? 9 : 4,
+                difference == "occupied-targets" ? 9 : 2
+            );
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(
+                new[] { control },
+                new[] { candidate }
+            );
+            Assert.That(mismatch, Is.Not.Null, difference);
+            Assert.That(
+                mismatch.Category,
+                Is.EqualTo(
+                    difference.StartsWith("occupied-", StringComparison.Ordinal)
+                        ? "storage"
+                        : "trim"
+                ),
+                difference
+            );
+            Assert.That(
+                DifferentialBusTrace.Compare(new[] { control }, new[] { control }),
+                Is.Null,
+                difference
+            );
+        }
+
+        [Test]
+        public void VersionFourRequiresValidTrimFlagsAndGeneratesBothModes()
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            foreach (int version in new[] { 1, 2, 3, 4 })
+            {
+                foreach (int flag in new[] { -1, 0, 1, 2 })
+                {
+                    BusTraceSequence sequence = new(
+                        scenario,
+                        509,
+                        new[] { new BusTraceOperation(BusTraceOperationKind.Trim, value: flag) },
+                        version
+                    );
+                    Assert.That(
+                        DifferentialBusTrace.IsValid(sequence),
+                        Is.EqualTo(version == 4 && (flag == 0 || flag == 1)),
+                        $"version={version}, flag={flag}"
+                    );
+                }
+            }
+            BusTraceSequence generated = DifferentialBusTrace.Generate(scenario, 17, 256, 4);
+            Assert.That(
+                DifferentialBusTrace.IsValid(generated),
+                Is.True,
+                "Generated trim dependencies must be valid."
+            );
+            foreach (int flag in new[] { 0, 1 })
+            {
+                Assert.That(
+                    generated.Operations.Any(operation =>
+                        operation.Kind == BusTraceOperationKind.Trim && operation.Value == flag
+                    ),
+                    Is.True,
+                    $"Generator v4 must exercise Trim(force={flag})."
+                );
+            }
         }
 
         [Test]
@@ -105,7 +406,12 @@ namespace DxMessaging.Tests.Runtime.Core
             [Values(0, 17)] int seed
         )
         {
-            BusTraceSequence sequence = DifferentialBusTrace.Generate(scenario, (uint)seed, 32);
+            BusTraceSequence sequence = DifferentialBusTrace.Generate(
+                scenario,
+                (uint)seed,
+                32,
+                generatorVersion: 2
+            );
             IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
                 sequence,
                 kind => CreateAdapter(kind, false)
@@ -121,6 +427,47 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.Null,
                 mismatch?.BuildReport(sequence)
                     ?? $"[{scenario.Kind}] seed={seed}: identical production implementations must match."
+            );
+        }
+
+        [Test]
+        public void GeneratedReplaysMatchWithOnlyRequestedCallbackFailures(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(17, 42)] int seed,
+            [Values(3, 4)] int version
+        )
+        {
+            BusTraceSequence sequence = DifferentialBusTrace.Generate(
+                scenario,
+                (uint)seed,
+                32,
+                version
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            for (int index = 0; index < control.Count; ++index)
+            {
+                string error = control[index].Exception;
+                Assert.That(
+                    error == null
+                        || (
+                            sequence.Operations[index].Kind == BusTraceOperationKind.EmitWithThrow
+                            && error
+                                == "System.InvalidOperationException: intentional trace callback failure"
+                        ),
+                    Is.True,
+                    $"[{scenario.Kind}] seed={seed}, index={index}, operation={sequence.Operations[index]}: {control[index]}"
+                );
+            }
+            BusTraceMismatch mismatch = Evaluate(sequence, dropEmits: false);
+            Assert.That(
+                mismatch,
+                Is.Null,
+                mismatch?.BuildReport(sequence)
+                    ?? $"[{scenario.Kind}] seed={seed}: version {version} replays must match."
             );
         }
 
@@ -277,9 +624,10 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void ResetTriggerWithoutCallbackDoesNotRemainArmed(
+        public void CallbackTriggerWithoutMatchingRegistrationDoesNotRemainArmed(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
-                MessageScenario scenario
+                MessageScenario scenario,
+            [Values(false, true)] bool throwingCallback
         )
         {
             // Untargeted dispatch has no unmatched-context case; every kind has a disabled trigger.
@@ -298,12 +646,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 BusTraceObservation untriggered = adapter.Execute(
                     new BusTraceOperation(
-                        BusTraceOperationKind.EmitWithReset,
+                        throwingCallback
+                            ? BusTraceOperationKind.EmitWithThrow
+                            : BusTraceOperationKind.EmitWithReset,
                         context: otherRoute ? 1 : 0,
                         value: 10
                     )
                 );
-                string label = $"[{scenario.Kind}] otherRoute={otherRoute}: {untriggered}";
+                string label =
+                    $"[{scenario.Kind}] throwingCallback={throwingCallback}, otherRoute={otherRoute}: {untriggered}";
                 Assert.That(untriggered.Exception, Is.Null, label);
                 CollectionAssert.AreEqual(
                     otherRoute ? Array.Empty<string>() : new[] { "token=1,value=10" },
@@ -334,7 +685,9 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new FakeClock(),
-                idleEvictionEnabled: false
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
             );
             int resetCalls = 0;
             using MessageBusTraceAdapter adapter = new(
@@ -439,7 +792,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 DifferentialBusTrace
-                    .Generate(scenario, 17, 256)
+                    .Generate(scenario, 17, 256, generatorVersion: 2)
                     .Operations.Any(operation =>
                         operation.Kind == BusTraceOperationKind.EmitWithReset
                     ),
@@ -449,13 +802,380 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(3)]
+        [TestCase(5)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
                 () => DifferentialBusTrace.Generate(MessageScenario.Untargeted(), 17, 4, version),
                 $"version={version}: unsupported provenance must be rejected."
             );
+        }
+
+        [Test]
+        public void IndependentOperationMutantsAreDetectedAndShrunk(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("order", "stale", "exception-cleanup", "diagnostics", "leak", "retention")]
+                string fault
+        )
+        {
+            List<BusTraceOperation> operations = new()
+            {
+                new(BusTraceOperationKind.Enable, token: 3),
+                new(BusTraceOperationKind.Register),
+            };
+            switch (fault)
+            {
+                case "order":
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.Register, token: 1));
+                    break;
+                case "stale":
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.Remove));
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.Register));
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.RemoveStale));
+                    break;
+                case "exception-cleanup":
+                    operations.Add(
+                        new BusTraceOperation(BusTraceOperationKind.EmitWithThrow, value: 13)
+                    );
+                    break;
+                case "diagnostics":
+                    operations.Add(
+                        new BusTraceOperation(BusTraceOperationKind.SetDiagnostics, value: 1)
+                    );
+                    break;
+                case "retention":
+                    operations.Add(
+                        new BusTraceOperation(BusTraceOperationKind.SetDiagnostics, value: 1)
+                    );
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.Emit, value: 13));
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.Remove));
+                    break;
+                case "leak":
+                    operations.Add(new BusTraceOperation(BusTraceOperationKind.Remove));
+                    break;
+            }
+            operations.Add(new BusTraceOperation(BusTraceOperationKind.Emit, value: 17));
+            BusTraceSequence original = new(scenario, 509, operations);
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                original,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                original,
+                kind => CreateMutant(kind, fault)
+            );
+            string report = $"fault={fault}\n" + DescribeReplay(original, control, candidate);
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(control, candidate);
+            Assert.That(mismatch, Is.Not.Null, report);
+            Assert.That(
+                mismatch.Category,
+                Is.EqualTo(fault == "order" ? "callbacks" : "state"),
+                report
+            );
+            CollectionAssert.AreEqual(
+                control.Select(item => item.Exception),
+                candidate.Select(item => item.Exception),
+                report
+            );
+            if (fault == "exception-cleanup")
+            {
+                Assert.That(
+                    control[2].Exception,
+                    Is.EqualTo(
+                        "System.InvalidOperationException: intentional trace callback failure"
+                    ),
+                    report
+                );
+                Assert.That(control[3].Callbacks, Is.Empty, report);
+                CollectionAssert.AreEqual(
+                    new[] { "token=0,value=17" },
+                    candidate[3].Callbacks,
+                    report
+                );
+            }
+            else
+            {
+                Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            }
+            if (fault == "order")
+            {
+                CollectionAssert.AreEqual(
+                    new[] { "token=0,value=17", "token=1,value=17" },
+                    control[3].Callbacks,
+                    report
+                );
+                CollectionAssert.AreEqual(
+                    new[] { "token=1,value=17", "token=0,value=17" },
+                    candidate[3].Callbacks,
+                    report
+                );
+                CollectionAssert.AreEqual(
+                    control.Select(item => item.State),
+                    candidate.Select(item => item.State),
+                    report
+                );
+            }
+            if (fault == "diagnostics")
+            {
+                CollectionAssert.AreEqual(control[3].Callbacks, candidate[3].Callbacks, report);
+                StringAssert.Contains("tokenMetadataCallsHistory=1/1/1,", control[3].State, report);
+                StringAssert.Contains(
+                    "tokenMetadataCallsHistory=1/2/2,",
+                    candidate[3].State,
+                    report
+                );
+            }
+            if (fault == "retention")
+            {
+                CollectionAssert.AreEqual(control[4].Callbacks, candidate[4].Callbacks, report);
+                StringAssert.Contains("tokenMetadataCallsHistory=0/0/0,", control[4].State, report);
+                StringAssert.Contains(
+                    "tokenMetadataCallsHistory=0/0/1,",
+                    candidate[4].State,
+                    report
+                );
+                StringAssert.Contains("retainedMessages=0,", control[4].State, report);
+                StringAssert.Contains("retainedMessages=1,", candidate[4].State, report);
+            }
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                original,
+                sequence => EvaluateMutant(sequence, fault)
+            );
+            BusTraceMismatch replayed = EvaluateMutant(minimal, fault);
+            report += "\nMinimized:\n" + replayed?.BuildReport(minimal);
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(replayed?.Category, Is.EqualTo(mismatch.Category), report);
+            Assert.That(minimal.Version, Is.EqualTo(original.Version), report);
+            Assert.That(minimal.Seed, Is.EqualTo(original.Seed), report);
+            BusTraceOperationKind[] expected = fault switch
+            {
+                "order" => new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.Emit,
+                },
+                "stale" => new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.Remove,
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.RemoveStale,
+                },
+                "exception-cleanup" => new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.EmitWithThrow,
+                },
+                "diagnostics" => new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.SetDiagnostics,
+                    BusTraceOperationKind.Emit,
+                },
+                "retention" => new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.SetDiagnostics,
+                    BusTraceOperationKind.Emit,
+                    BusTraceOperationKind.Remove,
+                },
+                _ => new[] { BusTraceOperationKind.Register, BusTraceOperationKind.Remove },
+            };
+            CollectionAssert.AreEqual(
+                expected,
+                minimal.Operations.Select(item => item.Kind),
+                report
+            );
+            Assert.That(Evaluate(original, dropEmits: false), Is.Null, report);
+            Assert.That(Evaluate(minimal, dropEmits: false), Is.Null, report);
+        }
+
+        [Test]
+        public void VersionThreeValidityRequiresStaleHandleAndCallbackDependencies()
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            BusTraceOperation[] operations =
+            {
+                new(BusTraceOperationKind.Register),
+                new(BusTraceOperationKind.Remove),
+                new(BusTraceOperationKind.Register),
+                new(BusTraceOperationKind.RemoveStale),
+                new(BusTraceOperationKind.SetDiagnostics, value: 1),
+                new(BusTraceOperationKind.EmitWithThrow),
+            };
+            Assert.That(
+                DifferentialBusTrace.IsValid(new BusTraceSequence(scenario, 509, operations)),
+                Is.True,
+                "Version 3 must accept stale cleanup after handle reuse and throwing callbacks."
+            );
+            foreach (int version in new[] { 1, 2 })
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(
+                        new BusTraceSequence(scenario, 509, operations, version)
+                    ),
+                    Is.False,
+                    $"version={version}: older schemas cannot claim new operation semantics."
+                );
+            }
+            BusTraceSequence generated = DifferentialBusTrace.Generate(scenario, 17, 256, 3);
+            foreach (
+                BusTraceOperationKind kind in new[]
+                {
+                    BusTraceOperationKind.RemoveStale,
+                    BusTraceOperationKind.EmitWithThrow,
+                    BusTraceOperationKind.SetDiagnostics,
+                }
+            )
+            {
+                Assert.That(
+                    generated.Operations.Any(operation => operation.Kind == kind),
+                    Is.True,
+                    $"Version 3 generation must exercise {kind}, not only hand-written fixtures."
+                );
+            }
+            foreach (
+                BusTraceOperation operation in new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.RemoveStale),
+                    new BusTraceOperation(BusTraceOperationKind.EmitWithThrow),
+                    new BusTraceOperation(BusTraceOperationKind.SetDiagnostics, value: -1),
+                    new BusTraceOperation(BusTraceOperationKind.SetDiagnostics, value: 2),
+                }
+            )
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(
+                        new BusTraceSequence(scenario, 509, new[] { operation })
+                    ),
+                    Is.False,
+                    $"{operation}: missing dependencies and invalid diagnostics settings must be rejected."
+                );
+            }
+        }
+
+        private static BusTraceMismatch EvaluateMutant(BusTraceSequence sequence, string fault) =>
+            DifferentialBusTrace.Compare(
+                DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false)),
+                DifferentialBusTrace.Replay(sequence, kind => CreateMutant(kind, fault))
+            );
+
+        private static MessageBusTraceAdapter CreateMutant(MessageScenario scenario, string fault)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            bus.DiagnosticsMode = false;
+            return fault switch
+            {
+                "order" => new EqualPriorityReorderAdapter(scenario, bus),
+                "stale" => new StaleHandleReuseAdapter(scenario, bus),
+                "exception-cleanup" => new SkippedExceptionCleanupAdapter(scenario, bus),
+                "diagnostics" => new DuplicateDiagnosticsAdapter(scenario, bus),
+                "leak" => new RegistrationLeakAdapter(scenario, bus),
+                "retention" => new RetainedDiagnosticReferenceAdapter(scenario, bus),
+                "trim-force" => new IgnoredForceTrimAdapter(scenario, bus),
+                _ => throw new ArgumentOutOfRangeException(nameof(fault)),
+            };
+        }
+
+        // Each mutant changes a real operation before the shared observer reads production state.
+        // None rewrites observations or implements message routing.
+        private sealed class IgnoredForceTrimAdapter : MessageBusTraceAdapter
+        {
+            internal IgnoredForceTrimAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override IMessageBus.TrimResult Trim(bool force) => Bus.Trim(force: false);
+        }
+
+        private sealed class EqualPriorityReorderAdapter : MessageBusTraceAdapter
+        {
+            internal EqualPriorityReorderAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Register(BusTraceOperation operation)
+            {
+                base.Register(operation);
+                if (operation.Token != 0 && Token(0).Enabled)
+                {
+                    // Reinsert the first registration behind its equal-priority peers.
+                    Token(0).Disable();
+                    Token(0).Enable();
+                }
+            }
+        }
+
+        private sealed class StaleHandleReuseAdapter : MessageBusTraceAdapter
+        {
+            internal StaleHandleReuseAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Remove(BusTraceOperation operation) =>
+                base.Remove(
+                    operation.Kind == BusTraceOperationKind.RemoveStale
+                        ? new BusTraceOperation(
+                            BusTraceOperationKind.Remove,
+                            token: operation.Token
+                        )
+                        : operation
+                );
+        }
+
+        private sealed class SkippedExceptionCleanupAdapter : MessageBusTraceAdapter
+        {
+            internal SkippedExceptionCleanupAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void CleanupThrowingCallback(int slot) { }
+        }
+
+        private sealed class DuplicateDiagnosticsAdapter : MessageBusTraceAdapter
+        {
+            internal DuplicateDiagnosticsAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void OnCallback(int slot, IMessage message)
+            {
+                if (Token(slot).DiagnosticMode)
+                {
+                    // The token also records this emission after the callback returns.
+                    Token(slot).RecordDiagnosticEmission(Handle(slot), Bus, message);
+                }
+            }
+        }
+
+        private sealed class RetainedDiagnosticReferenceAdapter : MessageBusTraceAdapter
+        {
+            internal RetainedDiagnosticReferenceAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Remove(BusTraceOperation operation)
+            {
+                MessageRegistrationToken token = Token(operation.Token);
+                bool hasEmission = token._emissionBuffer.Count > 0;
+                MessageEmissionData retained = hasEmission ? token._emissionBuffer[0] : default;
+                base.Remove(operation);
+                if (hasEmission && token._metadata.Count == 0)
+                {
+                    // Preserve the actual boxed message reference after its registration dies.
+                    // This mutates the production holder, not the recorded observation.
+                    token._emissionBuffer.Add(retained);
+                }
+            }
+        }
+
+        private sealed class RegistrationLeakAdapter : MessageBusTraceAdapter
+        {
+            internal RegistrationLeakAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Remove(BusTraceOperation operation) { }
         }
 
         private static BusTraceSequence ResetSequence(MessageScenario scenario) =>
@@ -553,7 +1273,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (
                 string expected in new[]
                 {
-                    "generator=2",
+                    "generator=4",
                     "seed=42",
                     "kind=" + scenario.Kind,
                     "firstMismatch=1",
@@ -770,7 +1490,9 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new FakeClock(),
-                idleEvictionEnabled: false
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
             );
             bus.DiagnosticsMode = false;
             DeferredResetEmitter delayed = deferReset ? new DeferredResetEmitter(bus) : null;

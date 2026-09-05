@@ -4,10 +4,14 @@ namespace DxMessaging.Core.Internal
     // Qualified with global:: because this assembly also declares a DxMessaging.Unity
     // namespace; an unqualified "using Unity.Collections..." would bind to
     // DxMessaging.Unity.Collections and fail to resolve.
+#if UNITY_2021_3_OR_NEWER
     using global::Unity.Collections.LowLevel.Unsafe;
+#else
+    using UnsafeUtility = System.Runtime.CompilerServices.Unsafe;
+#endif
 
     /// <summary>
-    /// Reinterpret-cast helpers used by the hot dispatch path. Each method wraps a Unity
+    /// Reinterpret-cast helpers used by the hot dispatch path. In Unity, each method wraps a
     /// <see cref="UnsafeUtility"/> intrinsic, which resolves in both the Editor and every
     /// player build (Mono and IL2CPP, including the .NET Standard 2.0 profile) without an
     /// external precompiled assembly.
@@ -19,6 +23,8 @@ namespace DxMessaging.Core.Internal
     /// failed standalone IL2CPP compilation. <see cref="UnsafeUtility"/> ships inside
     /// <c>UnityEngine.CoreModule</c> on every supported platform, so routing through it keeps
     /// the zero-allocation reinterpret behavior while removing the unresolved dependency.
+    /// Plain .NET builds use the explicit System.Runtime.CompilerServices.Unsafe package
+    /// dependency declared in the .NET project. Unity builds keep their built-in intrinsics.
     /// The wrapped intrinsics are pure IL (no internal-call transition), so this indirection
     /// is free once inlined.
     /// </remarks>

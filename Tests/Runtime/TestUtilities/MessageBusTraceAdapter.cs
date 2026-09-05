@@ -8,13 +8,17 @@ namespace DxMessaging.Tests.Runtime
     using DxMessaging.Core.Messages;
 
     /// <summary>Runs trace operations through production bus and token APIs; callback output is never simulated.</summary>
-    internal sealed class MessageBusTraceAdapter : IBusTraceAdapter
+    internal class MessageBusTraceAdapter : IBusTraceAdapter
     {
         private readonly MessageScenario _scenario;
         private readonly IMessageBus _bus;
         private readonly IMessageBus _emitter;
         private readonly Action _reset;
         private int _resetOnCallbackToken = -1;
+        private int _throwOnCallbackToken = -1;
+        private readonly MessageRegistrationHandle[] _staleHandles = new MessageRegistrationHandle[
+            BusTraceSequence.TokenCount
+        ];
         private readonly MessageRegistrationToken[] _tokens = new MessageRegistrationToken[
             BusTraceSequence.TokenCount
         ];
@@ -36,7 +40,10 @@ namespace DxMessaging.Tests.Runtime
             // Keep token storage keyed by the real implementation, even when a mutant intercepts emission.
             _emitter = emitter ?? bus;
             _reset = reset;
-            _leaks = new LeakWatcher(bus: bus, label: "Differential replay " + scenario.Kind);
+            // TrimResult includes process-shared retained pools. Start every isolated replay
+            // from the same real empty-pool baseline, without predicting any eviction result.
+            _bus.Trim(force: true);
+            _leaks = LeakWatcher.WatchWithSlots(bus, label: "Differential replay " + scenario.Kind);
             try
             {
                 for (int slot = 0; slot < _tokens.Length; ++slot)
@@ -68,11 +75,12 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        /// <summary>Records callbacks, exact exception outcome, six public counters, occupancy, and token activity.</summary>
+        /// <summary>Records callbacks, exceptions, counters, occupancy, token activity, diagnostics, and retained diagnostic messages.</summary>
         public BusTraceObservation Execute(BusTraceOperation operation)
         {
             _callbacks.Clear();
             string exception = null;
+            IMessageBus.TrimResult? trimResult = null;
             try
             {
                 switch (operation.Kind)
@@ -81,7 +89,8 @@ namespace DxMessaging.Tests.Runtime
                         Register(operation);
                         break;
                     case BusTraceOperationKind.Remove:
-                        _tokens[operation.Token].RemoveRegistration(_handles[operation.Token]);
+                    case BusTraceOperationKind.RemoveStale:
+                        Remove(operation);
                         break;
                     case BusTraceOperationKind.Enable:
                         _tokens[operation.Token].Enable();
@@ -91,6 +100,23 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.Emit:
                         Emit(operation);
+                        break;
+                    case BusTraceOperationKind.Trim:
+                        trimResult = Trim(operation.Value != 0);
+                        break;
+                    case BusTraceOperationKind.SetDiagnostics:
+                        _tokens[operation.Token].DiagnosticMode = operation.Value != 0;
+                        break;
+                    case BusTraceOperationKind.EmitWithThrow:
+                        _throwOnCallbackToken = operation.Token;
+                        try
+                        {
+                            Emit(operation);
+                        }
+                        finally
+                        {
+                            _throwOnCallbackToken = -1;
+                        }
                         break;
                     case BusTraceOperationKind.EmitWithReset:
                         if (_reset == null)
@@ -124,9 +150,36 @@ namespace DxMessaging.Tests.Runtime
             {
                 enabled += token.Enabled ? "1" : "0";
             }
+            string diagnostics = string.Empty;
+            string retainedMessages = string.Empty;
+            foreach (MessageRegistrationToken token in _tokens)
+            {
+                int calls = 0;
+                foreach (int count in token._callCounts.Values)
+                {
+                    calls += count;
+                }
+                diagnostics += $"{token._metadata.Count}/{calls}/{token._emissionBuffer.Count},";
+                int references = 0;
+                for (int index = 0; index < token._emissionBuffer.Count; ++index)
+                {
+                    if (token._emissionBuffer[index].message != null)
+                    {
+                        ++references;
+                    }
+                }
+                retainedMessages += $"{references},";
+            }
             string state =
-                $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; diagnostics={_bus.DiagnosticsMode}";
-            return new BusTraceObservation(_callbacks, state, exception);
+                $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}";
+            return new BusTraceObservation(
+                _callbacks,
+                state,
+                exception,
+                trimResult,
+                _bus.OccupiedTypeSlots,
+                _bus.OccupiedTargetSlots
+            );
         }
 
         /// <summary>Always attempts every token cleanup and reports cleanup or registration-leak failures.</summary>
@@ -137,12 +190,34 @@ namespace DxMessaging.Tests.Runtime
             {
                 try
                 {
-                    token?.Dispose();
+                    if (token == null)
+                    {
+                        continue;
+                    }
+                    token.Dispose();
+                    if (
+                        token._metadata.Count != 0
+                        || token._callCounts.Count != 0
+                        || token._emissionBuffer.Count != 0
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"Disposed token retained metadata={token._metadata.Count}, callCounts={token._callCounts.Count}, history={token._emissionBuffer.Count}."
+                        );
+                    }
                 }
                 catch (Exception error)
                 {
                     errors.Add(error);
                 }
+            }
+            try
+            {
+                _bus.Trim(force: true);
+            }
+            catch (Exception error)
+            {
+                errors.Add(error);
             }
             try
             {
@@ -158,7 +233,35 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private void Register(BusTraceOperation operation)
+        protected MessageRegistrationToken Token(int slot) => _tokens[slot];
+
+        protected MessageRegistrationHandle Handle(int slot) => _handles[slot];
+
+        protected IMessageBus Bus => _bus;
+
+        protected virtual IMessageBus.TrimResult Trim(bool force) => _bus.Trim(force);
+
+        protected virtual void Remove(BusTraceOperation operation)
+        {
+            int slot = operation.Token;
+            MessageRegistrationHandle handle =
+                operation.Kind == BusTraceOperationKind.RemoveStale
+                    ? _staleHandles[slot]
+                    : _handles[slot];
+            _tokens[slot].RemoveRegistration(handle);
+            if (operation.Kind == BusTraceOperationKind.Remove)
+            {
+                _staleHandles[slot] = handle;
+            }
+        }
+
+        protected virtual void CleanupThrowingCallback(int slot) =>
+            _tokens[slot].RemoveRegistration(_handles[slot]);
+
+        // Mutants change real callback behavior here; observation construction remains shared.
+        protected virtual void OnCallback(int slot, IMessage message) { }
+
+        protected virtual void Register(BusTraceOperation operation)
         {
             int slot = operation.Token;
             MessageRegistrationToken token = _tokens[slot];
@@ -169,7 +272,7 @@ namespace DxMessaging.Tests.Runtime
                     _handles[slot] = ScenarioHarness.RegisterUntargeted<UntargetedPayload>(
                         _scenario,
                         token,
-                        (in UntargetedPayload message) => Record(slot, message.Value),
+                        (in UntargetedPayload message) => Record(slot, message.Value, message),
                         operation.Priority
                     );
                     break;
@@ -178,7 +281,7 @@ namespace DxMessaging.Tests.Runtime
                         _scenario,
                         token,
                         context,
-                        (in TargetedPayload message) => Record(slot, message.Value),
+                        (in TargetedPayload message) => Record(slot, message.Value, message),
                         operation.Priority
                     );
                     break;
@@ -187,7 +290,7 @@ namespace DxMessaging.Tests.Runtime
                         _scenario,
                         token,
                         context,
-                        (in BroadcastPayload message) => Record(slot, message.Value),
+                        (in BroadcastPayload message) => Record(slot, message.Value, message),
                         operation.Priority
                     );
                     break;
@@ -218,9 +321,22 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private void Record(int token, int value)
+        private void Record(int token, int value, IMessage message)
         {
             _callbacks.Add($"token={token},value={value}");
+            OnCallback(token, message);
+            if (token == _throwOnCallbackToken)
+            {
+                _throwOnCallbackToken = -1;
+                try
+                {
+                    throw new InvalidOperationException("intentional trace callback failure");
+                }
+                finally
+                {
+                    CleanupThrowingCallback(token);
+                }
+            }
             if (token == _resetOnCallbackToken)
             {
                 _resetOnCallbackToken = -1;

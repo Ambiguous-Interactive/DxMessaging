@@ -252,29 +252,9 @@ test("the shipping evidence bundle is sealed only after redaction has run", () =
     "a failed seal or replay must block the shipping evidence upload"
   );
 });
-const COVERAGE_CASES = Object.freeze([
-  [
-    "different runtime roots",
-    "<github.workspace>/.artifacts/unity",
-    "<runner.temp>/.artifacts/unity/logs",
-    false
-  ],
-  [
-    "a string prefix in a different directory",
-    ".artifacts/unity/a",
-    ".artifacts/unity/ab/unity.log",
-    false
-  ],
-  ["a sibling directory", ".artifacts/unity", ".artifacts/unity-secrets/unity.log", false],
-  ["a genuine parent directory", ".artifacts/unity", ".artifacts/unity/6000-shipping", true],
-  [
-    "an exact match",
-    "<runner.temp>/dx-unity-editor-validation",
-    "<runner.temp>/dx-unity-editor-validation",
-    true
-  ],
-  ["a trailing slash on the upload", ".artifacts/unity", ".artifacts/unity/release-dist/", true]
-]);
+const COVERAGE_CASES = Object.freeze(
+  require("./fixtures/unity-redaction-vectors.json").workflowCoverage
+);
 for (const [label, declared, uploaded, expected] of COVERAGE_CASES) {
   test(`covers reports ${expected} for ${label}`, () => {
     assert.equal(

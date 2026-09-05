@@ -115,15 +115,17 @@ function assertNoSensitiveData(relativePath, bytes) {
   for (const entry of findSensitiveData(relativePath)) {
     fail(`Bundle file path looks like it contains ${entry.description}; rename it before sealing.`);
   }
-  if (bytes.length > MAXIMUM_SCANNED_BYTES) {
-    fail(`${relativePath} is ${bytes.length} bytes, too large to prove free of sensitive data.`);
-  }
   const extension = path.posix.extname(relativePath).toLowerCase();
   if (!REVIEWED_TEXT_EXTENSIONS.includes(extension)) {
     fail(
       `${relativePath} does not use a reviewed text evidence extension; exclude it or add a ` +
         "reviewed inspection path before sealing."
     );
+  }
+  // Manifest entries can validate their names before any file bytes are available.
+  if (bytes === undefined) return;
+  if (bytes.length > MAXIMUM_SCANNED_BYTES) {
+    fail(`${relativePath} is ${bytes.length} bytes, too large to prove free of sensitive data.`);
   }
   if (hasBinaryMagic(bytes)) {
     fail(
@@ -157,7 +159,7 @@ function assertNoSensitiveData(relativePath, bytes) {
   if (hasBinaryMagic(Buffer.from(sensitiveText, "utf8"))) {
     fail(`${relativePath} contains a NUL-split binary signature; exclude it before sealing.`);
   }
-  for (const entry of findSensitiveData(sensitiveText)) {
+  for (const entry of findSensitiveData(sensitiveText, extension)) {
     fail(`${relativePath} looks like it contains ${entry.description}; scrub it before sealing.`);
   }
   // eslint-disable-next-line no-control-regex -- control and format characters are rejected.
@@ -262,7 +264,7 @@ function sealBundle(root, options) {
     fail(`${safeDisplayPath(root)} contains no evidence files to seal.`);
   }
   requirePortablePaths([...relativePaths, manifestName], "Bundle file path");
-  assertNoSensitiveData(manifestName, Buffer.alloc(0));
+  assertNoSensitiveData(manifestName);
   const files = [];
   const contents = new Map();
   for (const relativePath of relativePaths) {
@@ -377,10 +379,10 @@ function validateManifestShape(manifest, manifestName = MANIFEST_NAME) {
     [...manifest.files.map((file) => file?.path), manifestName],
     "Declared file path"
   );
-  assertNoSensitiveData(manifestName, Buffer.alloc(0));
+  assertNoSensitiveData(manifestName);
   for (const file of manifest.files) {
     requireExactKeys(file, ["path", "length", "sha256"], "A manifest file entry");
-    assertNoSensitiveData(file.path, Buffer.alloc(0));
+    assertNoSensitiveData(file.path);
     requireInteger(file.length, `${file.path} length`, 0);
     if (!SHA256_PATTERN.test(file.sha256 ?? "")) {
       fail(`${file.path} sha256 must be 64 lowercase hex characters.`);

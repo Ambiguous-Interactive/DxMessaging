@@ -2,6 +2,8 @@
 const net = require("node:net");
 const { createHash } = require("node:crypto");
 const { TextDecoder } = require("node:util");
+const { DOMParser, XMLSerializer } = require("@xmldom/xmldom");
+const { parseDocument } = require("yaml");
 const REVIEWED_TEXT_EXTENSIONS = Object.freeze([
   ".asm",
   ".cpp",
@@ -265,8 +267,18 @@ function encodeText(text, encoding) {
   if (encoding === "utf16be") return Buffer.from(text, "utf16le").swap16();
   return Buffer.from(text, encoding);
 }
+const compiledGlobalPatterns = new WeakMap();
 function globalRegExp(entry) {
-  return new RegExp(entry.pattern.source, `${entry.pattern.flags}g`);
+  const pattern = entry.pattern;
+  const source = pattern.source;
+  const flags = pattern.flags;
+  let cached = compiledGlobalPatterns.get(pattern);
+  if (!cached || cached.source !== source || cached.flags !== flags) {
+    cached = { source, flags, expression: new RegExp(source, `${flags}g`) };
+    compiledGlobalPatterns.set(pattern, cached);
+  }
+  cached.expression.lastIndex = 0;
+  return cached.expression;
 }
 function matchesPattern(text, entry) {
   for (const match of text.matchAll(globalRegExp(entry))) {
@@ -324,6 +336,7 @@ function serializedShadows(text) {
 }
 function addSensitiveData(found, shadows) {
   for (const shadow of shadows) {
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(shadow)) found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
     for (const entry of [...findCredentials(shadow), ...findIdentifiers(shadow)])
       found.set(entry.id, entry);
   }
@@ -379,7 +392,7 @@ function decodedCandidate(text, modes, runs, seen) {
   seen.add(fingerprint);
   return runs ? parts.map(([record, count]) => record.repeat(count)).join("") : candidate;
 }
-function findSensitiveData(text) {
+function findRawSensitiveData(text) {
   const found = new Map();
   let truncated = false;
   if (text.length <= SERIALIZED_WINDOW_CHARACTERS) {
@@ -447,8 +460,220 @@ function redactPatterns(text, patterns) {
 function redactCredentials(text) {
   return redactPatterns(text, CREDENTIAL_PATTERNS);
 }
-function redactSensitiveData(text) {
-  return redactPatterns(text, SENSITIVE_PATTERNS);
+function structuredText(text, visit, format, depth = 0) {
+  const invalid = () => {
+    throw new Error("Unsupported structured artifact.");
+  };
+  if (depth > 8) invalid();
+  const scalar = (value, key, element) => {
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid();
+    if (contextualPattern(key, value, element)) return visit(value, key, element);
+    return (
+      (/^[\[\{"<]/.test(value.trimStart())
+        ? structuredText(value, visit, undefined, depth + 1)
+        : undefined) ?? visit(value, key, element)
+    );
+  };
+  const name = (value) => {
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value) || findRawSensitiveData(value).length) invalid();
+  };
+  if (format === ".jsonl")
+    return text.replace(/[^\r\n]+/g, (record) =>
+      record.trim() ? structuredText(record, visit, ".json", depth + 1) : record
+    );
+  const trimmed = text.trimStart();
+  if (format === ".xml" || trimmed.startsWith("<")) {
+    if (/<!DOCTYPE|<!ENTITY/i.test(text)) invalid();
+    // xmldom accepts out-of-range numeric references in attributes. Validate their
+    // scalar values before its decoder can wrap them into unrelated characters.
+    for (const reference of text.matchAll(/&#(x[0-9a-f]+|[0-9]+);/gi)) {
+      const code =
+        reference[1][0].toLowerCase() === "x"
+          ? Number.parseInt(reference[1].slice(1), 16)
+          : Number(reference[1]);
+      if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) invalid();
+    }
+    const xmlValue = (value) => {
+      // XML 1.0 character ranges, after parsing all references with the library.
+      // eslint-disable-next-line no-control-regex -- XML excludes these scalar values.
+      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/u.test(value)) invalid();
+      return value;
+    };
+    const parse = (source) =>
+      new DOMParser({ onError: invalid }).parseFromString(
+        source.replace(/^\ufeff/, ""),
+        "application/xml"
+      );
+    const document = parse(text);
+    // The parser validates declarations but represents them as reserved-target PIs,
+    // which the strict serializer rejects. Preserve only that validated first node.
+    const declaration = document.firstChild;
+    let prefix = text.startsWith("\ufeff") ? "\ufeff" : "";
+    if (declaration?.nodeType === 7 && declaration.target === "xml") {
+      name(declaration.data);
+      prefix += `<?xml ${declaration.data}?>`;
+      document.removeChild(declaration);
+    }
+    const pending = [document];
+    while (pending.length) {
+      const node = pending.pop();
+      if (node.nodeType === 1) {
+        const children = Array.from(node.childNodes);
+        const hasElements = children.some((child) => child.nodeType === 1);
+        if (
+          hasElements &&
+          (contextualPattern(node.localName, node.textContent) ||
+            (children.some(
+              (child) => (child.nodeType === 3 || child.nodeType === 4) && child.data.trim()
+            ) &&
+              findRawSensitiveData(node.textContent).length))
+        )
+          invalid();
+        // Reject ambiguous split character data before any leaf can be partially masked.
+        let run = [];
+        const flush = () => {
+          if (run.length > 1 && findRawSensitiveData(run.join("")).length) invalid();
+          run = [];
+        };
+        for (const child of children) {
+          if (child.nodeType === 3 || child.nodeType === 4) run.push(child.data);
+          else if (child.nodeType === 1) flush();
+        }
+        flush();
+        name(node.nodeName);
+        for (const attribute of Array.from(node.attributes)) {
+          name(attribute.name);
+          if (attribute.name === "xmlns" || attribute.prefix === "xmlns")
+            name(xmlValue(attribute.value));
+          else
+            attribute.value = scalar(
+              xmlValue(attribute.value),
+              attribute.localName,
+              node.localName
+            );
+        }
+      } else if ([3, 4, 7, 8].includes(node.nodeType)) {
+        if (node.nodeType === 7) name(node.target);
+        node.data = scalar(
+          xmlValue(node.data),
+          node.nodeType === 3 || node.nodeType === 4 ? node.parentNode.localName : ""
+        );
+      } else if (node.nodeType !== 9) invalid();
+      pending.push(...Array.from(node.childNodes ?? []));
+    }
+    const output =
+      prefix + new XMLSerializer().serializeToString(document, { requireWellFormed: true });
+    parse(output);
+    return output;
+  }
+  let value;
+  try {
+    value = JSON.parse(text.replace(/^\ufeff/, ""));
+  } catch {
+    if (format === ".json") invalid();
+    else return undefined;
+  }
+  // Native JSON parsing discards earlier duplicate keys, including hidden secrets.
+  if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length) invalid();
+  const walk = (value, key = "") => {
+    if (typeof value === "string") return scalar(value, key);
+    // Containers under sensitive keys have ambiguous ownership; scalars retain their JSON type.
+    const context = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
+    if (key && contextualPattern(key, context)) invalid();
+    if (
+      typeof value === "number" &&
+      (!Number.isFinite(value) ||
+        Object.is(value, -0) ||
+        (Number.isInteger(value) && !Number.isSafeInteger(value)))
+    )
+      invalid();
+    if (Array.isArray(value)) return value.map((item) => walk(item));
+    if (value !== null && typeof value === "object") {
+      for (const key of Object.keys(value)) {
+        name(key);
+        value[key] = walk(value[key], key);
+      }
+    }
+    return value;
+  };
+  return (text.startsWith("\ufeff") ? "\ufeff" : "") + JSON.stringify(walk(value));
+}
+function contextualPattern(key, value, element) {
+  if (!key) return undefined;
+  const source =
+    element?.toLowerCase() === "license" && key.toLowerCase() === "id"
+      ? `<License id=${JSON.stringify(value)}>`
+      : `${JSON.stringify(key)}:${JSON.stringify(value)}`;
+  return SENSITIVE_PATTERNS.find((entry) => {
+    const match = entry.pattern.exec(source);
+    return (
+      match &&
+      match.index < JSON.stringify(key).length &&
+      (!entry.accept || entry.accept(match)) &&
+      (entry.replacement || entry.prefixGroup)
+    );
+  });
+}
+const STRUCTURE_FINDING = Object.freeze({
+  id: "unsafe-structured-data",
+  description: "unsupported structured data"
+});
+function findSensitiveData(text, format) {
+  const found = new Map();
+  const inspect = (value, key, element) => {
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+    const context = contextualPattern(key, value, element);
+    for (const entry of [
+      ...findRawSensitiveData(value),
+      ...findIdentifiers(JSON.stringify(value)),
+      ...(context ? [context] : [])
+    ])
+      found.set(entry.id, entry);
+    return value;
+  };
+  try {
+    const output = structuredText(text, inspect, format);
+    if (output === undefined) return findRawSensitiveData(text.replace(/^\ufeff/, ""));
+  } catch {
+    found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+  }
+  return [...found.values()];
+}
+function redactSensitiveData(text, format) {
+  const counts = new Map();
+  try {
+    const output = structuredText(
+      text,
+      (value, key, element) => {
+        const context = contextualPattern(key, value, element);
+        let result;
+        if (context)
+          result = { redacted: `[redacted:${context.id}]`, counts: new Map([[context.id, 1]]) };
+        else {
+          // A quoted scalar gives path rules the complete account/authority boundary.
+          // Only accept a replacement that still parses as a string; credentials run
+          // on the decoded value, never on its surrounding serialization syntax.
+          const quoted = redactPatterns(JSON.stringify(value), IDENTIFIER_PATTERNS);
+          try {
+            const decoded = JSON.parse(quoted.redacted);
+            if (typeof decoded === "string") {
+              value = decoded;
+              for (const [id, count] of quoted.counts)
+                counts.set(id, (counts.get(id) ?? 0) + count);
+            }
+          } catch {}
+          result = redactPatterns(value, SENSITIVE_PATTERNS);
+        }
+        for (const [id, count] of result.counts) counts.set(id, (counts.get(id) ?? 0) + count);
+        return result.redacted;
+      },
+      format
+    );
+    if (output === undefined) return redactPatterns(text, SENSITIVE_PATTERNS);
+    return { redacted: counts.size ? output : text, counts };
+  } catch {
+    return { redacted: text, counts: new Map() };
+  }
 }
 function hasBrokenRedaction(text) {
   return (
@@ -457,7 +682,17 @@ function hasBrokenRedaction(text) {
     /\[redacted:account-home-path\][>;"`|](?=[\p{L}\p{N}])/u.test(text)
   );
 }
-function isSerializedRedactionSafe(text, redacted) {
+function isSerializedRedactionSafe(text, redacted, format) {
+  try {
+    if (structuredText(text, (value) => value, format) !== undefined) {
+      return (
+        redacted === redactSensitiveData(text, format).redacted &&
+        findSensitiveData(redacted, format).length === 0
+      );
+    }
+  } catch {
+    return false;
+  }
   const large =
     text.length > SERIALIZED_WINDOW_CHARACTERS || redacted.length > SERIALIZED_WINDOW_CHARACTERS;
   if (large) {
@@ -470,12 +705,6 @@ function isSerializedRedactionSafe(text, redacted) {
   const source = serializedShadows(text);
   const result = serializedShadows(redacted);
   if (source.truncated || result.truncated) return false;
-  try {
-    JSON.parse(text);
-    JSON.parse(redacted);
-    if (redactSensitiveData(text).counts.size > 0 && findSensitiveData(redacted).length === 0)
-      return true;
-  } catch {}
   if (hasBrokenRedaction(redacted)) return false;
   const redactedShadows = new Set(result.values);
   return source.values.every((shadow) => {

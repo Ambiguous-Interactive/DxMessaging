@@ -112,26 +112,26 @@ trusted base code.
 
 ### Comparison vs dispatch topology
 
-The comparison matrix and the DxMessaging-only dispatch table answer different
-questions, so a comparison cell and its dispatch look-alike usually register a
-DIFFERENT topology and their DxMessaging numbers diverge -- often a lot.
-`GlobalToOne` and `GlobalToMany` have exact dispatch topology twins
+The comparison matrix and the original dispatch table answer different questions.
+`GlobalToOne` and `GlobalToMany` use the exact existing dispatch twins
 (`UntargetedFlood_OneHandler` and `UntargetedFlood_SixteenHandlers_OnePriority`).
-Both harnesses create exactly one token per subscriber and disable bus and token diagnostics.
-`StructNoBox` has the same one-token,
-one-untargeted-handler storage shape but uses the canonical
-`ComparisonStructPayload`, while the dispatch row uses `SimpleUntargetedMessage`.
-The rest differ on purpose: `PriorityOrdered` uses one token with four priorities
-where the dispatch twin uses four separate tokens; `KeyedToOne` registers 16 targets and
-dispatches to one (selectivity), unlike the single-target dispatch cell. Do NOT "fix"
-a divergence by forcing the shapes equal -- that would destroy what each scenario measures. The
-relationship is a single source of truth pinned by
-`ComparisonDispatchTopologyTests`, which checks the DxMessaging
-fan-out, referenced dispatch keys, scenario roster, and the true twins' actual token
-registrations, payloads, priorities, contexts, diagnostics, callback totals, and cleanup.
-Topology equivalence does not establish timing equivalence across separate players or builds.
-Keep the mapping synchronized with the
-[methodology runbook table](../../../../docs/runbooks/perf-benchmark-methodology.md#comparison-vs-dispatch-deliberately-different-topologies).
+`ComparisonTopologyBenchmarks` adds independent internal workloads for the other
+seven public shapes, including the exact closed `ComparisonStructPayload` type,
+one token with four priorities, 16 distinct targets with one hit, hook combinations,
+and cached-callback registration churn. Keep the original dispatch rows intact;
+the added twins have separate `InternalComparisonTwin_` result keys.
+
+`ComparisonDispatchTopologyTests` executes actual registrations and dispatch on
+both sides, checks an independent shape manifest, and rejects deliberate changes
+to token count, handlers, priorities, payloads, and routes. Exact callback and cleanup
+assertions also reject missing invocations and retained registrations. Both sides
+disable bus and token diagnostics, including when global diagnostics are enabled.
+
+Run the fast checks with `ComparisonContract`. Timing the seven added rows requires
+`PerfTopologyTwin`; they do not carry `PerfComparison` or `ComparisonContract`, so
+the normal workflow does not add measurement windows. Topology equivalence does not
+establish timing or MessagePipe semantic equivalence. Keep the mapping synchronized
+with the [methodology runbook table](../../../../docs/runbooks/perf-benchmark-methodology.md#comparison-vs-dispatch-exact-internal-topology-twins).
 
 ### Fresh state and process isolation
 

@@ -5,8 +5,9 @@ namespace DxMessaging.Tests.Runtime
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
     using System.Text;
+    using DxMessaging.Core.MessageBus;
 
-    /// <summary>Supported replay operations, including callback-time reset of an isolated bus.</summary>
+    /// <summary>Versioned replay operations for isolated bus lifecycle, callbacks, stale handles, and diagnostics.</summary>
     internal enum BusTraceOperationKind
     {
         Register,
@@ -15,6 +16,10 @@ namespace DxMessaging.Tests.Runtime
         Disable,
         Emit,
         EmitWithReset,
+        EmitWithThrow,
+        RemoveStale,
+        SetDiagnostics,
+        Trim,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -48,7 +53,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 2;
+        internal const int GeneratorVersion = 4;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
@@ -94,19 +99,32 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Actual ordered callback observations and post-operation state, not a predicted routing result.</summary>
     internal sealed class BusTraceObservation
     {
-        internal BusTraceObservation(IEnumerable<string> callbacks, string state, string exception)
+        internal BusTraceObservation(
+            IEnumerable<string> callbacks,
+            string state,
+            string exception,
+            IMessageBus.TrimResult? trimResult = null,
+            int occupiedTypeSlots = 0,
+            int occupiedTargetSlots = 0
+        )
         {
             Callbacks = new List<string>(callbacks).AsReadOnly();
             State = state;
             Exception = exception;
+            TrimResult = trimResult;
+            OccupiedTypeSlots = occupiedTypeSlots;
+            OccupiedTargetSlots = occupiedTargetSlots;
         }
 
         internal ReadOnlyCollection<string> Callbacks { get; }
         internal string State { get; }
         internal string Exception { get; }
+        internal IMessageBus.TrimResult? TrimResult { get; }
+        internal int OccupiedTypeSlots { get; }
+        internal int OccupiedTargetSlots { get; }
 
         public override string ToString() =>
-            $"callbacks=[{string.Join(",", Callbacks)}]; state={State}; exception={Exception ?? "none"}";
+            $"callbacks=[{string.Join(",", Callbacks)}]; state={State}; exception={Exception ?? "none"}; trim={TrimResult?.ToString() ?? "none"}; occupiedSlots={OccupiedTypeSlots},{OccupiedTargetSlots}";
     }
 
     /// <summary>Owns isolated implementation state for one complete replay.</summary>
@@ -169,12 +187,19 @@ namespace DxMessaging.Tests.Runtime
             }
             List<BusTraceOperation> operations = new(length);
             bool[] registered = new bool[BusTraceSequence.TokenCount];
+            bool[] removed = new bool[BusTraceSequence.TokenCount];
             uint state = seed == 0 ? 0x9e3779b9u : seed;
             for (int index = 0; index < length; ++index)
             {
                 int token = (int)(Next(ref state) % BusTraceSequence.TokenCount);
                 BusTraceOperationKind kind = (BusTraceOperationKind)(
-                    Next(ref state) % (generatorVersion == 1 ? 5U : 6U)
+                    Next(ref state)
+                    % (
+                        generatorVersion == 1 ? 5U
+                        : generatorVersion == 2 ? 6U
+                        : generatorVersion == 3 ? 9U
+                        : 10U
+                    )
                 );
                 if (index == 0)
                 {
@@ -194,17 +219,34 @@ namespace DxMessaging.Tests.Runtime
                 {
                     kind = BusTraceOperationKind.Register;
                 }
-                if (kind == BusTraceOperationKind.EmitWithReset && !registered[token])
+                if (
+                    (
+                        kind == BusTraceOperationKind.EmitWithReset
+                        || kind == BusTraceOperationKind.EmitWithThrow
+                    ) && !registered[token]
+                )
+                {
+                    kind = BusTraceOperationKind.Emit;
+                }
+                if (kind == BusTraceOperationKind.RemoveStale && !removed[token])
                 {
                     kind = BusTraceOperationKind.Emit;
                 }
                 int context = index < 2 ? 0 : (int)(Next(ref state) % 2);
+                int value = unchecked((int)Next(ref state));
+                if (
+                    kind == BusTraceOperationKind.SetDiagnostics
+                    || kind == BusTraceOperationKind.Trim
+                )
+                {
+                    value &= 1;
+                }
                 operations.Add(
                     new BusTraceOperation(
                         kind,
                         token,
                         context,
-                        unchecked((int)Next(ref state)),
+                        value,
                         (int)(Next(ref state) % 3) - 1
                     )
                 );
@@ -215,6 +257,7 @@ namespace DxMessaging.Tests.Runtime
                 if (kind == BusTraceOperationKind.Remove)
                 {
                     registered[token] = false;
+                    removed[token] = true;
                 }
             }
             return new BusTraceSequence(scenario, seed, operations, generatorVersion);
@@ -244,6 +287,7 @@ namespace DxMessaging.Tests.Runtime
                 return false;
             }
             bool[] registered = new bool[BusTraceSequence.TokenCount];
+            bool[] removed = new bool[BusTraceSequence.TokenCount];
             foreach (BusTraceOperation operation in sequence.Operations)
             {
                 if (
@@ -270,10 +314,37 @@ namespace DxMessaging.Tests.Runtime
                             return false;
                         }
                         registered[operation.Token] = false;
+                        removed[operation.Token] = true;
                         break;
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:
                     case BusTraceOperationKind.Emit:
+                        break;
+                    case BusTraceOperationKind.Trim:
+                        if (sequence.Version < 4 || operation.Value < 0 || operation.Value > 1)
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.SetDiagnostics:
+                        if (sequence.Version < 3 || operation.Value < 0 || operation.Value > 1)
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.RemoveStale:
+                        if (sequence.Version < 3 || !removed[operation.Token])
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.EmitWithThrow:
+                        if (sequence.Version < 3 || !registered[operation.Token])
+                        {
+                            return false;
+                        }
+                        // A disabled or differently routed callback may not throw or remove its handle.
+                        // An explicit Remove still owns that handle, even after callback cleanup.
                         break;
                     case BusTraceOperationKind.EmitWithReset:
                         if (sequence.Version < 2 || !registered[operation.Token])
@@ -381,8 +452,12 @@ namespace DxMessaging.Tests.Runtime
                     !callbacksEqual ? "callbacks"
                     : !string.Equals(expected.Exception, actual.Exception, StringComparison.Ordinal)
                         ? "exception"
+                    : expected.TrimResult != actual.TrimResult ? "trim"
                     : !string.Equals(expected.State, actual.State, StringComparison.Ordinal)
                         ? "state"
+                    : expected.OccupiedTypeSlots != actual.OccupiedTypeSlots
+                    || expected.OccupiedTargetSlots != actual.OccupiedTargetSlots
+                        ? "storage"
                     : null;
                 if (category != null)
                 {
