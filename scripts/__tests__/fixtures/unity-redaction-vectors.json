@@ -484,7 +484,7 @@
     ["a runner account path", "C:\\Users\\fake-runner-account\\AppData\\Local\n"],
     ["a Unity machine identifier", "Machine Id: FAKEmachineID000000000000=\n"],
     ["an internal endpoint", "\"connectToHost\": \"fake-runner-host\"\n"],
-    ["a format-control host", "URL https://runner‮.local/path\n"],
+    ["a format-control host", "URL https://runner\u202e.local/path\n"],
     ["an escaped format-control host", "{\"url\":\"https://runner\\u2060.local/path\"}\n"],
     ["an escaped account path", "{\"path\":\"\\/home\\/alice\\/work\"}\n"],
     ["an escaped file URI", "{\"uri\":\"file:\\/\\/private-runner\\/share\"}\n"],
@@ -498,7 +498,13 @@
     ],
     ["a twice-encoded XML account path", "path=&amp;#47;home&amp;#47;alice&amp;#47;work\n"],
     ["a multiline Unity password", "UNITY_PASSWORD=correct horse battery staple\n"],
-    ["an apostrophe Unity password", "UNITY_PASSWORD=abcdefghijkl'OSECRET\n"]
+    ["an apostrophe Unity password", "UNITY_PASSWORD=abcdefghijkl'OSECRET\n"],
+    ["NUL-split GitHub token", "ghp_aaaaaaaaaaaaaaaaaa\u0000aaaaaaaaaaaaaaaaaa"],
+    ["NUL-split IPv4 address", "192.168\u0000.42.17"],
+    [
+      "Unity serial in a log carrying a stray NUL",
+      "boot\n\u0000\nserial SC-FAKE-FAKE-FAKE-FAKE-FAKE\n"
+    ]
   ],
   "unsupportedArtifactClasses": [
     "paired-throughput",
@@ -530,7 +536,12 @@
     ["reducer", "toString", "Unknown reducer"],
     ["reducer", "__proto__", "Unknown reducer"],
     ["experimentId", "Shipping_Matrix", "must be lowercase alphanumeric with dots or dashes"],
-    ["sourceCommit", "not-a-commit", "sourceCommit must be a 40- or 64-character commit ID"]
+    ["sourceCommit", "not-a-commit", "sourceCommit must be a 40- or 64-character commit ID"],
+    [
+      "manifestName",
+      "manifest.bin",
+      "manifest\\.bin does not use a reviewed text evidence extension"
+    ]
   ],
   "invalidBundlePaths": [
     ["a Windows drive-letter path", "C:/cell/evidence.json", "must be relative"],
@@ -601,5 +612,50 @@
     ["sourceCommit", "98b47536\u0085smuggled"],
     ["sourceCommit", "98b47536\u2029smuggled"],
     ["sourceCommit", "98b47536\u2066smuggled"]
+  ],
+  "invalidShippingInputs": [
+    ["matrix", "schemaVersion", null],
+    ["matrix", "schemaVersion", 2],
+    ["matrix", "schemaVersion", "1"],
+    ["cell", "schemaVersion", null],
+    ["cell", "schemaVersion", 2],
+    ["cell", "schemaVersion", "1"],
+    ["matrix", "measurementClass", "throughput"],
+    ["cell", "measurementClass", "throughput"],
+    ["matrix", "completedCellCount", null],
+    ["matrix", "completedCellCount", 3],
+    ["matrix", "completedCellCount", 5],
+    ["matrix", "completedCellCount", "4"],
+    ["matrix", "cellCount", null],
+    ["matrix", "cellCount", 3],
+    ["matrix", "cellCount", 5],
+    ["matrix", "cellCount", "4"],
+    ["matrix", "cellCount", -1],
+    ["matrix", "cells", null],
+    ["matrix", "cells", {}],
+    ["matrix", "cells", [null]],
+    ["matrix", "failedCells", null],
+    ["matrix", "failedCells", ["unknown"]],
+    ["matrix", "failedCells", ["bad", "bad"]],
+    ["matrix", "unreadableEvidenceCells", null],
+    ["matrix", "unreadableEvidenceCells", ["high-semantic-18"]],
+    ["cell", "unityVersion", "6000.4.0f1"],
+    ["cell", "managedStrippingLevel", null],
+    ["cell", "managedStrippingLevel", 7],
+    ["cell", "managedStrippingLevel", ""],
+    ["cell", "messageTypeCount", -1],
+    ["cell", "messageTypeCount", 1.5],
+    ["cell", "messageTypeCount", "18"],
+    ["cell", "playerTotalBytes", -1],
+    ["cell", "playerTotalBytes", 1.5],
+    ["cell", "playerTotalBytes", "40000000"],
+    ["cell", "buildDurationMs", -1],
+    ["cell", "buildDurationMs", "120000"],
+    ["cell", "timings", null],
+    ["cell", "timings", []],
+    ["cell", "timings.firstTypedDispatchUs", -1],
+    ["cell", "timings.firstTypedDispatchUs", "40"],
+    ["cell", "timings.dispatchLoopShape", ""],
+    ["cell", "timings.dispatchLoopShape", true]
   ]
 }

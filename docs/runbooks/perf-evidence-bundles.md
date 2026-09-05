@@ -148,6 +148,12 @@ IDs across 40 files. An independent inventory found ten distinct raw address, ho
 values and found none in the corrected tree. A second pass changed no files. The corrected bundle
 sealed all 441 files, verified, and replayed the same 20-cell normalized result as the original.
 
+The shipping reducer checks the matrix and cell schema, Unity version, numeric types, unique cell
+identities, declared counts, and every rendered summary column, including timings. Each completed
+row requires its raw cell file. Failed and unreadable outcomes must be explicit, unique, and
+separate from completed cells. A partial run can retain those outcomes without presenting missing
+cells as completed evidence.
+
 ## Adding a reducer
 
 A reducer must be a pure function of the bundle's bytes. Read only from the supplied content map,
