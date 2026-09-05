@@ -3,6 +3,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 {
     using System;
     using System.Collections.Generic;
+    using DxMessaging.Core;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Comparisons;
     using NUnit.Framework;
 #if MESSAGEPIPE_PRESENT
@@ -435,6 +437,143 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             Assert.AreEqual(0, probe.SubscribeCount, probe.Context);
         }
 
+        [TestCaseSource(nameof(ShapeCases))]
+        public void MessagePipeDefaultDiagnosticsTrackLifecycleWithoutStackCapture(
+            bool keyed,
+            bool structPayload
+        )
+        {
+            using PipeProbe probe = CreatePipe(keyed, structPayload, "default diagnostics");
+            probe.AssertDiagnostics(0, false);
+            probe.Add("A");
+            probe.AssertDiagnostics(1, true);
+            probe.Add("B");
+            probe.AssertDiagnostics(2, true);
+            probe.Publish(1);
+            probe.AssertTrace("A:1 B:1");
+            probe.AssertDiagnostics(2, false);
+            probe.Remove("A");
+            probe.AssertDiagnostics(1, true);
+            probe.Remove("A");
+            probe.AssertDiagnostics(1, false);
+            probe.DisposeCore();
+            probe.AssertDiagnostics(0, true);
+            probe.Remove("B");
+            probe.AssertDiagnostics(0, false);
+            probe.Publish(2);
+            probe.AssertTrace("A:1 B:1");
+            probe.AssertDiagnostics(0, false);
+        }
+
+        [TestCaseSource(nameof(ShapeCases))]
+        public void MessagePipeNestedMiddlewareThrowPreservesExceptionAndLaterPublish(
+            bool keyed,
+            bool structPayload
+        )
+        {
+            using PipeProbe probe = CreatePipe(keyed, structPayload, "nested middleware throw");
+            InvalidOperationException sentinel = new("Intentional nested callback failure.");
+            probe.AddFiltered(
+                "A",
+                value =>
+                {
+                    if (value == 1)
+                    {
+                        probe.Publish(2);
+                    }
+                    if (value == 2)
+                    {
+                        throw sentinel;
+                    }
+                }
+            );
+            probe.Add("B");
+            Assert.AreEqual(2, probe.SubscribeCount, probe.Context);
+            InvalidOperationException caught = Assert.Throws<InvalidOperationException>(
+                () => probe.Publish(1),
+                probe.Context
+            );
+            Assert.AreSame(sentinel, caught, probe.Context);
+            probe.AssertTrace("before:1 A:1 before:2 A:2");
+            Assert.AreEqual(2, probe.SubscribeCount, probe.Context);
+            probe.Publish(3);
+            probe.AssertTrace("before:1 A:1 before:2 A:2 before:3 A:3 after:3 B:3");
+            Assert.AreEqual(2, probe.SubscribeCount, probe.Context);
+            probe.RemoveAll();
+            Assert.AreEqual(0, probe.SubscribeCount, probe.Context);
+        }
+
+        [Test]
+        public void DxMessagingRegisteredInactiveOwnerCountsAsFoundWithoutCallback()
+        {
+            MessageBus bus = new() { DiagnosticsMode = false };
+            using LeakWatcher watcher = new(bus);
+            MessageHandler handler = new(new InstanceId(49001), bus) { active = true };
+            MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.DiagnosticMode = false;
+            bool savedEnabled = MessagingDebug.enabled;
+            Action<LogLevel, string> savedLog = MessagingDebug.LogFunction;
+            List<(LogLevel Level, string Message)> logs = new();
+            List<int> callbacks = new();
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (level, message) => logs.Add((level, message));
+                void Emit(int value, int registrations, bool missing)
+                {
+                    logs.Clear();
+                    ComparisonStructPayload payload = new(value);
+                    bus.UntargetedBroadcast(ref payload);
+                    Assert.AreEqual(registrations, bus.RegisteredUntargeted, $"value={value}");
+                    Assert.AreEqual(value + 1, bus.EmissionId, $"value={value}");
+                    Assert.AreEqual(missing ? 1 : 0, logs.Count, $"value={value}");
+                    if (missing)
+                    {
+                        Assert.AreEqual(LogLevel.Info, logs[0].Level);
+                        Assert.AreEqual(
+                            $"Could not find a matching untargeted broadcast handler for Message: {payload}.",
+                            logs[0].Message
+                        );
+                    }
+                }
+                Emit(0, 0, true);
+                CollectionAssert.IsEmpty(callbacks);
+                MessageRegistrationHandle handle =
+                    token.RegisterUntargeted<ComparisonStructPayload>(
+                        (in ComparisonStructPayload payload) => callbacks.Add(payload.Value)
+                    );
+                token.Enable();
+                handler.active = false;
+                Emit(1, 1, false);
+                CollectionAssert.IsEmpty(callbacks);
+                handler.active = true;
+                Emit(2, 1, false);
+                CollectionAssert.AreEqual(new[] { 2 }, callbacks);
+                token.RemoveRegistration(handle);
+                Emit(3, 0, true);
+                CollectionAssert.AreEqual(new[] { 2 }, callbacks);
+            }
+            finally
+            {
+                try
+                {
+                    try
+                    {
+                        token.Dispose();
+                    }
+                    finally
+                    {
+                        bus.Trim(force: true);
+                    }
+                }
+                finally
+                {
+                    MessagingDebug.enabled = savedEnabled;
+                    MessagingDebug.LogFunction = savedLog;
+                }
+            }
+        }
+
         private static PipeProbe CreatePipe(bool keyed, bool structPayload, string detail) =>
             structPayload
                 ? new PipeProbe<ComparisonStructPayload>(
@@ -482,6 +621,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 }
             }
 
+            protected void RecordEvent(string value) => _trace.Add(value);
+
             protected void Record(string name, int value, Action<int> callback)
             {
                 _trace.Add(name + ":" + value);
@@ -504,6 +645,22 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             protected PipeProbe(bool keyed, string detail, Type payload)
                 : base($"MessagePipe keyed={keyed}, payload={payload.Name}, {detail}") =>
                 _keyed = keyed;
+
+            internal abstract void AddFiltered(string name, Action<int> callback);
+
+            internal void AssertDiagnostics(int subscriptions, bool dirty)
+            {
+                Assert.AreEqual(subscriptions, Diagnostics.SubscribeCount, Context);
+                Assert.AreEqual(0, Diagnostics.GetCapturedStackTraces().Length, Context);
+                System.Reflection.MethodInfo method =
+                    typeof(MessagePipe.MessagePipeDiagnosticsInfo).GetMethod(
+                        "CheckAndResetDirty",
+                        System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.NonPublic
+                    );
+                Assert.IsNotNull(method, Context + " pinned dirty method missing");
+                Assert.AreEqual(dirty, (bool)method.Invoke(Diagnostics, null), Context);
+            }
 
             internal int SubscribeCount => Diagnostics.SubscribeCount;
             internal int GroupCount => _keyed ? Groups.Count : 0;
@@ -643,15 +800,45 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 }
             }
 
-            internal override void Add(string name, Action<int> callback = null, int key = 0)
+            internal override void Add(string name, Action<int> callback = null, int key = 0) =>
+                Subscribe(name, callback, key, Array.Empty<MessagePipe.MessageHandlerFilter<T>>());
+
+            internal override void AddFiltered(string name, Action<int> callback) =>
+                Subscribe(
+                    name,
+                    callback,
+                    0,
+                    new MessagePipe.MessageHandlerFilter<T>[] { new Around(this) }
+                );
+
+            private void Subscribe(
+                string name,
+                Action<int> callback,
+                int key,
+                MessagePipe.MessageHandlerFilter<T>[] filters
+            )
             {
                 Action<T> handler = payload => Record(name, _value(payload), callback);
                 Subscriptions.Add(
                     name,
                     _keyedSubscriber != null
-                        ? _keyedSubscriber.Subscribe(key, handler)
-                        : _subscriber.Subscribe(handler)
+                        ? _keyedSubscriber.Subscribe(key, handler, filters)
+                        : _subscriber.Subscribe(handler, filters)
                 );
+            }
+
+            private sealed class Around : MessagePipe.MessageHandlerFilter<T>
+            {
+                private readonly PipeProbe<T> _probe;
+
+                internal Around(PipeProbe<T> probe) => _probe = probe;
+
+                public override void Handle(T message, Action<T> next)
+                {
+                    _probe.RecordEvent("before:" + _probe._value(message));
+                    next(message);
+                    _probe.RecordEvent("after:" + _probe._value(message));
+                }
             }
 
             internal override void Publish(int value, int key = 0)
