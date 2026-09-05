@@ -9,8 +9,14 @@
       "per-kind totals are sorted by id and each file lists its kinds",
       {
         "changed": [
-          { "path": "logs/deep/configure.log", "counts": ["http-bearer-token", "unity-serial"] },
-          { "path": "logs/unity.log", "counts": ["unity-serial"] }
+          {
+            "path": "logs/deep/configure.log",
+            "counts": ["http-bearer-token", "unity-serial"]
+          },
+          {
+            "path": "logs/unity.log",
+            "counts": ["unity-serial"]
+          }
         ],
         "totals": [
           ["unity-serial", 3],
@@ -21,7 +27,14 @@
     ],
     [
       "a file that was not prepared is a warning, not a false clean result",
-      { "skipped": [{ "path": "locked.log", "reason": "could not be read: EACCES" }] },
+      {
+        "skipped": [
+          {
+            "path": "locked.log",
+            "reason": "could not be read: EACCES"
+          }
+        ]
+      },
       "No files were rewritten under artifacts.\n  WARNING: locked.log could not be safely prepared because it could not be read: EACCES.\n"
     ]
   ],
@@ -109,7 +122,7 @@
     ["C:\\Users\\Alice;Bob\\work", "C:\\Users\\[redacted:account-home-path]\\work"],
     ["C:\\Users\\CI]Çunner", "C:\\Users\\[redacted:account-home-path]"],
     ["C:\\Users\\O''Brien\\work", "C:\\Users\\[redacted:account-home-path]\\work"],
-    ["<x path='/Users/Alice\"Bob'/>", "<x path='/Users/[redacted:account-home-path]'/>"],
+    ["<x path='/Users/Alice\"Bob'/>", "<x path=\"/Users/[redacted:account-home-path]\"/>"],
     ["path `/Users/Alice, Smith` done", "path `/Users/[redacted:account-home-path]` done"],
     [
       "{\"path\":\"/Users/Alice\\\\\\\"Bob\"}",
@@ -182,10 +195,6 @@
     ["path=//runner⁠/share", "path=//[redacted:unc-hostname]/share"],
     ["path=//runner&#x202e;/share", "path=//[redacted:unc-hostname]/share"],
     ["\\\\?\\UNC\\runner‏\\share", "\\\\?\\UNC\\[redacted:extended-unc-hostname]\\share"],
-    [
-      "{\"path\":\"\\\\\\\\runner\\\\u202e\\\\share\"}",
-      "{\"path\":\"\\\\\\\\[redacted:unc-hostname]\\\\share\"}"
-    ],
     [
       "{\"path\":\"\\\\\\\\runner\\t-private\\\\share\"}",
       "{\"path\":\"\\\\\\\\[redacted:unc-hostname]\\\\share\"}"
@@ -271,16 +280,8 @@
     ["https://runner -private.local/path", "https://[redacted:web-hostname]/path"],
     ["https://runner -private.local/path", "https://[redacted:web-hostname]/path"],
     [
-      "{\"url\":\"https://runner\\u202e.local/path\"}",
-      "{\"url\":\"https://[redacted:web-hostname]/path\"}"
-    ],
-    [
       "{\"url\":\"https://alice\\t:secret@runner.local/path\"}",
       "{\"url\":\"https://[redacted:web-hostname]/path\"}"
-    ],
-    [
-      "<url>https://runner&#x2060;.local/path</url>",
-      "<url>https://[redacted:web-hostname]/path</url>"
     ],
     ["\"https://runner\"", "\"https://[redacted:web-hostname]\""],
     ["https://runner?x=1", "https://[redacted:web-hostname]?x=1"],
@@ -326,7 +327,11 @@
     ["path \"/Users/Alice\" completed", "path \"/Users/[redacted:account-home-path]\" completed"],
     ["path `file://runner` completed", "path `file://[redacted:file-uri-hostname]` completed"],
     ["\\\\?\\UNC\\runner-private\\share", "\\\\?\\UNC\\[redacted:extended-unc-hostname]\\share"],
-    ["2001:db8::192.0.2.33", "[redacted:ipv6-address]"]
+    ["2001:db8::192.0.2.33", "[redacted:ipv6-address]"],
+    [
+      "{\"path\":\"\\\\\\\\runner\\\\u202e\\\\share\"}",
+      "{\"path\":\"\\\\\\\\[redacted:unc-hostname]\\\\share\"}"
+    ]
   ],
   "addresses": [
     ["loopback IPv4", "127.0.0.1"],
@@ -447,13 +452,8 @@
   "blockedSensitive": [
     "Bearer\\nFAKEbearerFAKEbearerFAKEbearer",
     "ordinary﻿diagnostic",
-    "{\"path\":\"\\/home\\/alice\\/work\"}",
-    "{\"uri\":\"file:\\/\\/private-runner\\/share\"}",
     "{\"path\":\"\\u002fhome&#47;alice&#47;work\"}",
     "{\"path\":\"&#47;home\\u002falice\\u002fwork\"}",
-    "{\"payload\":\"{\\\"machineName\\\":\\\"private-runner\\\"}\"}",
-    "{\"payload\":\"{\\\"UNITY_PASSWORD\\\":\\\"secret123456\\\"}\"}",
-    "{\"payload\":\"{\\\"payload\\\":\\\"{\\\\\\\"UNITY_PASSWORD\\\\\\\":\\\\\\\"secret123456\\\\\\\"}\\\"}\"}",
     "path=&amp;#47;home&amp;#47;alice&amp;#47;work",
     "'/home/Alice\\\\' trailing PUBLIC 'other'",
     "(file://user(name)@runner)"
@@ -471,7 +471,12 @@
     "path=\\\\private-runner/share",
     "{\"uri\":\"file://user(name)@runner\"}",
     "\"C:\\Users\\Doe, John\"",
-    "{\"PASSWORD\":\"abc\\\"def\"}"
+    "{\"PASSWORD\":\"abc\\\"def\"}",
+    "{\"path\":\"\\/home\\/alice\\/work\"}",
+    "{\"uri\":\"file:\\/\\/private-runner\\/share\"}",
+    "{\"payload\":\"{\\\"machineName\\\":\\\"private-runner\\\"}\"}",
+    "{\"payload\":\"{\\\"UNITY_PASSWORD\\\":\\\"secret123456\\\"}\"}",
+    "{\"payload\":\"{\\\"payload\\\":\\\"{\\\\\\\"UNITY_PASSWORD\\\\\\\":\\\\\\\"secret123456\\\\\\\"}\\\"}\"}"
   ],
   "sealingSensitive": [
     ["a GitHub token", "token: ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"],
@@ -484,7 +489,7 @@
     ["a runner account path", "C:\\Users\\fake-runner-account\\AppData\\Local\n"],
     ["a Unity machine identifier", "Machine Id: FAKEmachineID000000000000=\n"],
     ["an internal endpoint", "\"connectToHost\": \"fake-runner-host\"\n"],
-    ["a format-control host", "URL https://runner\u202e.local/path\n"],
+    ["a format-control host", "URL https://runner‮.local/path\n"],
     ["an escaped format-control host", "{\"url\":\"https://runner\\u2060.local/path\"}\n"],
     ["an escaped account path", "{\"path\":\"\\/home\\/alice\\/work\"}\n"],
     ["an escaped file URI", "{\"uri\":\"file:\\/\\/private-runner\\/share\"}\n"],
@@ -523,12 +528,7 @@
       "short\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaalog",
       "utf8"
     ],
-    [
-      "valid byte-order-marked UTF-16 text",
-      "powershell.log",
-      "\ufeffUnity build completed\n",
-      "utf16le"
-    ]
+    ["valid byte-order-marked UTF-16 text", "powershell.log", "﻿Unity build completed\n", "utf16le"]
   ],
   "invalidSealMetadata": [
     ["reducer", "not-a-reducer", "Unknown reducer"],
@@ -601,17 +601,17 @@
   "digestInjectionPaths": [
     ["a colon", "aa:4:deadbeef"],
     ["a newline", "aa\nfile:bb"],
-    ["a C1 control", "aa\u0085bb"],
-    ["a Unicode line separator", "aa\u2028bb"],
-    ["a bidi override", "aa\u202ebb"]
+    ["a C1 control", "aabb"],
+    ["a Unicode line separator", "aa bb"],
+    ["a bidi override", "aa‮bb"]
   ],
   "digestInjectionFields": [
     ["experimentId", "shipping\nmatrix"],
     ["artifactClass", "c\nreducer:shipping-fidelity-matrix-v1"],
     ["sourceCommit", "98b47536\nfile:smuggled.json"],
-    ["sourceCommit", "98b47536\u0085smuggled"],
-    ["sourceCommit", "98b47536\u2029smuggled"],
-    ["sourceCommit", "98b47536\u2066smuggled"]
+    ["sourceCommit", "98b47536smuggled"],
+    ["sourceCommit", "98b47536 smuggled"],
+    ["sourceCommit", "98b47536⁦smuggled"]
   ],
   "invalidShippingInputs": [
     ["matrix", "schemaVersion", null],
@@ -657,5 +657,304 @@
     ["cell", "timings.firstTypedDispatchUs", "40"],
     ["cell", "timings.dispatchLoopShape", ""],
     ["cell", "timings.dispatchLoopShape", true]
+  ],
+  "structuredValues": [
+    [
+      "NUnit name and result attributes",
+      "<test-run total=\"1\" passed=\"1\"><test-case name=\"Case(&quot;Sample.Ping, Sample.Runtime, Version=1.2.3.4, Culture=neutral, PublicKeyToken=null&quot;)\" result=\"Passed\" /></test-run>",
+      "<test-run total=\"1\" passed=\"1\"><test-case name=\"Case(&quot;Sample.Ping, Sample.Runtime, Version=[redacted:ipv4-address], Culture=neutral, PublicKeyToken=null&quot;)\" result=\"Passed\"/></test-run>"
+    ],
+    [
+      "JSON embedded assignment",
+      "{\"message\":\"TOKEN=abcdefghijklmnop\",\"total\":1,\"passed\":true,\"next\":null,\"children\":[]}",
+      "{\"message\":\"TOKEN=[redacted:credential-assignment]\",\"total\":1,\"passed\":true,\"next\":null,\"children\":[]}"
+    ],
+    [
+      "JSON assembly name",
+      "{\"name\":\"Type, PublicKeyToken=null\",\"total\":1,\"host\":\"192.168.42.17\"}",
+      "{\"name\":\"Type, PublicKeyToken=null\",\"total\":1,\"host\":\"[redacted:ipv4-address]\"}"
+    ],
+    [
+      "XML embedded assignment",
+      "<test-case name=\"TOKEN=abcdefghijklmnop\" result=\"Passed\"/>",
+      "<test-case name=\"TOKEN=[redacted:credential-assignment]\" result=\"Passed\"/>"
+    ],
+    [
+      "XML credential attribute",
+      "<result TOKEN=\"abcdefghijklmnop\" passed=\"1\"/>",
+      "<result TOKEN=\"[redacted:credential-assignment]\" passed=\"1\"/>"
+    ],
+    [
+      "XML license attribute",
+      "<License id=\"FAKE_PRIVATE_LICENSE\" version=\"1.0\"/>",
+      "<License id=\"[redacted:unity-license-id]\" version=\"1.0\"/>"
+    ],
+    [
+      "XML text context",
+      "<result><PASSWORD>FAKE_PRIVATE_PASSWORD</PASSWORD><total>1</total></result>",
+      "<result><PASSWORD>[redacted:password-assignment]</PASSWORD><total>1</total></result>"
+    ],
+    [
+      "XML CDATA",
+      "<result><output><![CDATA[TOKEN=abcdefghijklmnop]]></output><total>1</total></result>",
+      "<result><output><![CDATA[TOKEN=[redacted:credential-assignment]]]></output><total>1</total></result>"
+    ],
+    [
+      "XML comment",
+      "<result><!--TOKEN=abcdefghijklmnop--><total>1</total></result>",
+      "<result><!--TOKEN=[redacted:credential-assignment]--><total>1</total></result>"
+    ],
+    [
+      "XML processing instruction",
+      "<?diagnostic TOKEN=abcdefghijklmnop?><result total=\"1\"/>",
+      "<?diagnostic TOKEN=[redacted:credential-assignment]?><result total=\"1\"/>"
+    ],
+    [
+      "JSON credential context",
+      "{\"TOKEN\":\"abcdefghijklmnop\",\"PASSWORD\":\"a\",\"USERNAME\":\"b\",\"connectToHost\":\"runner\",\"total\":1}",
+      "{\"TOKEN\":\"[redacted:credential-assignment]\",\"PASSWORD\":\"[redacted:password-assignment]\",\"USERNAME\":\"[redacted:named-account-or-host]\",\"connectToHost\":\"[redacted:unity-connect-host]\",\"total\":1}"
+    ],
+    [
+      "JSON array types",
+      "[\"TOKEN=abcdefghijklmnop\",1,true,null,{\"ok\":false}]",
+      "[\"TOKEN=[redacted:credential-assignment]\",1,true,null,{\"ok\":false}]"
+    ],
+    [
+      "XML entity escaped credential",
+      "<result TOKEN=\"abc&#100;efghijklmnop\" total=\"1\"/>",
+      "<result TOKEN=\"[redacted:credential-assignment]\" total=\"1\"/>"
+    ],
+    [
+      "case-insensitive license attributes",
+      "<license ID=\"FAKE_PRIVATE_LICENSE\" total=\"1\"/>",
+      "<license ID=\"[redacted:unity-license-id]\" total=\"1\"/>"
+    ],
+    [
+      "XML declaration",
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?><result TOKEN=\"abcdefghijklmnop\" total=\"1\"/>",
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?><result TOKEN=\"[redacted:credential-assignment]\" total=\"1\"/>"
+    ],
+    [
+      "nested JSON result",
+      "{\"payload\":\"{\\\"message\\\":\\\"TOKEN=abcdefghijklmnop\\\",\\\"total\\\":1,\\\"passed\\\":true}\"}",
+      "{\"payload\":\"{\\\"message\\\":\\\"TOKEN=[redacted:credential-assignment]\\\",\\\"total\\\":1,\\\"passed\\\":true}\"}"
+    ],
+    [
+      "JSON result inside XML text",
+      "<a>{\"message\":\"TOKEN=abcdefghijklmnop\",\"total\":1}</a>",
+      "<a>{\"message\":\"TOKEN=[redacted:credential-assignment]\",\"total\":1}</a>"
+    ],
+    [
+      "namespaced XML password attribute",
+      "<a xmlns:c=\"urn:cfg\" c:PASSWORD=\"FAKE_PRIVATE_PASSWORD\"/>",
+      "<a xmlns:c=\"urn:cfg\" c:PASSWORD=\"[redacted:password-assignment]\"/>"
+    ],
+    [
+      "namespaced XML password element",
+      "<c:PASSWORD xmlns:c=\"urn:cfg\">FAKE_PRIVATE_PASSWORD</c:PASSWORD>",
+      "<c:PASSWORD xmlns:c=\"urn:cfg\">[redacted:password-assignment]</c:PASSWORD>"
+    ],
+    [
+      "namespaced XML license element",
+      "<l:License xmlns:l=\"urn:license\" id=\"FAKE_PRIVATE_LICENSE\"/>",
+      "<l:License xmlns:l=\"urn:license\" id=\"[redacted:unity-license-id]\"/>"
+    ],
+    [
+      "JSON credential key suffixes",
+      "{\"build-TOKEN\":\"abcdefghijklmnop\",\"api.TOKEN\":\"abcdefghijklmnop\",\"MY PASSWORD\":\"short\",\"total\":1}",
+      "{\"build-TOKEN\":\"[redacted:credential-assignment]\",\"api.TOKEN\":\"[redacted:credential-assignment]\",\"MY PASSWORD\":\"[redacted:password-assignment]\",\"total\":1}"
+    ],
+    [
+      "JSONL record structure",
+      "{\"message\":\"TOKEN=abcdefghijklmnop\",\"total\":1}\n{\"passed\":true}\n",
+      "{\"message\":\"TOKEN=[redacted:credential-assignment]\",\"total\":1}\n{\"passed\":true}\n",
+      ".jsonl"
+    ]
+  ],
+  "invalidStructures": [
+    ["truncated XML", ".xml", "<test-run><test-case name=\"FAKE_PRIVATE"],
+    ["recoverable XML syntax", ".xml", "<a></a\nFAKE_PRIVATE>"],
+    ["external XML entity", ".xml", "<!DOCTYPE a SYSTEM \"file:///FAKE_PRIVATE\"><a/>"],
+    [
+      "internal XML entity",
+      ".xml",
+      "<!DOCTYPE a [<!ENTITY secret \"FAKE_PRIVATE\">]><a>&secret;</a>"
+    ],
+    ["undeclared XML entity", ".xml", "<a>&FAKE_PRIVATE;</a>"],
+    ["duplicate XML attributes", ".xml", "<a total=\"1\" total=\"FAKE_PRIVATE\"/>"],
+    ["private XML namespace", ".xml", "<a xmlns=\"https://FAKE_PRIVATE.local\"/>"],
+    ["private XML element name", ".xml", "<LicenseClient-FAKE_PRIVATE/>"],
+    ["private JSON property name", ".json", "{\"/Users/FAKE_PRIVATE/project\":1}"],
+    ["numeric JSON credential", ".json", "{\"TOKEN\":1234567890123456,\"name\":\"FAKE_PRIVATE\"}"],
+    ["boolean JSON password", ".json", "{\"PASSWORD\":false,\"name\":\"FAKE_PRIVATE\"}"],
+    ["unsafe JSON count", ".json", "{\"total\":9007199254740993,\"name\":\"FAKE_PRIVATE\"}"],
+    ["truncated JSON", ".json", "{\"message\":\"FAKE_PRIVATE"],
+    ["non-XML text with XML extension", ".xml", "FAKE_PRIVATE"],
+    ["non-JSON text with JSON extension", ".json", "FAKE_PRIVATE"],
+    ["duplicate JSON credential", ".json", "{\"TOKEN\":\"FAKE_PRIVATE_SECRET\",\"TOKEN\":\"***\"}"],
+    [
+      "escaped duplicate JSON credential",
+      ".json",
+      "{\"TOKEN\":\"FAKE_PRIVATE_SECRET\",\"\\u0054OKEN\":\"***\"}"
+    ],
+    ["late XML declaration", ".xml", "<a/><?xml version=\"1.0\"?>"],
+    ["uppercase XML declaration", ".xml", "<?XML version=\"1.0\"?><a/>"],
+    ["duplicate XML declaration", ".xml", "<?xml version=\"1.0\"?><?xml version=\"1.0\"?><a/>"],
+    [
+      "XML split GitHub token",
+      ".xml",
+      "<a>ghp_<![CDATA[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]]></a>"
+    ],
+    ["XML split assignment", ".xml", "<a>TOK<![CDATA[EN=abcdefghijklmnop]]></a>"],
+    ["XML split host", ".xml", "<a>https://<![CDATA[private-runner.local]]>/x</a>"],
+    [
+      "XML token interrupted by comment",
+      ".xml",
+      "<a>ghp_<!-- benign -->aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</a>"
+    ],
+    [
+      "XML ancestor password context",
+      ".xml",
+      "<PASSWORD><value>FAKE_PRIVATE_PASSWORD</value></PASSWORD>"
+    ],
+    ["escaped JSON format control", ".json", "{\"message\":\"ordinary\\u202ediagnostic\"}"],
+    ["escaped JSON key format control", ".json", "{\"PASS\\u200bWORD\":\"FAKE_PRIVATE_PASSWORD\"}"],
+    ["XML entity format control", ".xml", "<a>ordinary&#x202e;diagnostic</a>"],
+    ["XML surrogate reference", ".xml", "<a x=\"&#xD800;\"/>"],
+    ["XML out of range reference", ".xml", "<a x=\"&#x110000;\"/>"],
+    ["JSON negative zero", ".json", "{\"value\":-0,\"TOKEN\":\"FAKE_PRIVATE_SECRET\"}"],
+    ["truncated JSONL record", ".jsonl", "{\"total\":1}\n{\"name\":\"FAKE_PRIVATE"],
+    [
+      "encoded private host format control in json",
+      ".json",
+      "{\"url\":\"https://runner\\u202e.local/path\"}"
+    ],
+    [
+      "encoded private host format control in xml",
+      ".xml",
+      "<url>https://runner&#x2060;.local/path</url>"
+    ],
+    [
+      "ambiguous mixed XML assignment",
+      ".xml",
+      "<result><![CDATA[TOKEN=abcdefghijklmnop]]><total>1</total></result>"
+    ],
+    ["XML inline element token", ".xml", "<a>ghp_<b>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</b></a>"],
+    [
+      "JSON escaped leading byte order mark in value",
+      ".json",
+      "{\"message\":\"\\\\ufeffordinary\"}"
+    ],
+    ["XML nested entity byte order mark in value", ".xml", "<a>&amp;#xfeff;ordinary</a>"]
+  ],
+  "labelPreservingCredentials": [
+    [
+      "http-bearer-token",
+      "Authorization: Bearer FAKEbearerFAKEbearerFAKEbearer\n",
+      "Authorization: Bearer [redacted:http-bearer-token]\n"
+    ],
+    [
+      "unity-password-assignment",
+      "UNITY_PASSWORD=fake-password-value-0000\n",
+      "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"
+    ],
+    [
+      "unity-license-id",
+      "<License id=\"FAKE-LICENSE-0000-0000\" version=\"1.0\">\n",
+      "<License id=\"[redacted:unity-license-id]\" version=\"1.0\">\n"
+    ]
+  ],
+  "leakCases": [
+    [
+      "pem-private-key",
+      "key follows\n-----BEGIN RSA PRIVATE KEY-----\nFAKEkeybodyFAKEkeybodyFAKEkeybody\n-----END RSA PRIVATE KEY-----\ndone\n",
+      "FAKEkeybodyFAKEkeybodyFAKEkeybody"
+    ],
+    [
+      "unity-license-id",
+      "<License id=\"FAKE-LICENSE-0000-0000\" version=\"1.0\">\n",
+      "FAKE-LICENSE-0000-0000"
+    ],
+    [
+      "unity-serial",
+      "Activated with serial SC-FAKE-FAKE-FAKE-FAKE-FAKE today\n",
+      "SC-FAKE-FAKE-FAKE-FAKE-FAKE"
+    ],
+    [
+      "github-token",
+      "remote token ghp_FAKEfake0123456789FAKEfake0123456789 rejected\n",
+      "ghp_FAKEfake0123456789FAKEfake0123456789"
+    ],
+    [
+      "aws-access-key-id",
+      "uploader used AKIA0000FAKE0000FAKE for the bucket\n",
+      "AKIA0000FAKE0000FAKE"
+    ],
+    [
+      "http-bearer-token",
+      "authorization: bearer FAKEbearerFAKEbearerFAKEbearer\n",
+      "FAKEbearerFAKEbearerFAKEbearer"
+    ],
+    [
+      "unity-password-assignment",
+      "UNITY_PASSWORD=fake-password-value-0000\n",
+      "fake-password-value-0000"
+    ],
+    ["unity-email-assignment", "UNITY_EMAIL=o'connor@example.com\n", "o'connor@example.com"],
+    ["password-assignment", "PASSWORD=hunter2\n", "hunter2"],
+    ["credential-assignment", "TOKEN=fake-password-value-0000\n", "fake-password-value-0000"]
+  ],
+  "largeEncodedAssignments": [
+    ["home", "/\\u0068ome/", "", "alice/project", "account-home-path"],
+    ["web", "\\u0068ttps://", "\n", "private.local/path", "web-hostname"],
+    ["password", "\\u002dpassword", "\n", "fake-password-value-0000", "unity-password-assignment"],
+    ["account", "&#45;username", "\r\n", "Fake Runner Account", "unity-email-assignment"],
+    [
+      "endpoint",
+      "\\u002dcacheServerEndpoint",
+      "\n",
+      "fake-runner-host",
+      "unity-cache-server-endpoint"
+    ],
+    [
+      "assignment",
+      "\\u0050ASSWORD=",
+      "\r\n \t\r\n",
+      "fake-password-value-0000",
+      "password-assignment"
+    ],
+    [
+      "split assignment",
+      "\\u0050ASSWORD",
+      "\n=\n",
+      "fake-password-value-0000",
+      "password-assignment"
+    ],
+    ["encoded value", "Bearer", "\n", "\\u0061aaaaaaaaaaaaaaaaaaaaaaaa", "http-bearer-token"],
+    ["control escape", "Bearer\\n", "\n", "\\u0061aaaaaaaaaaaaaaaaaaaaaaaa", "http-bearer-token"],
+    ["bearer", "\\u0042earer", "\r \t\r", "FAKEbearerFAKEbearerFAKEbearer", "http-bearer-token"]
+  ],
+  "workflowCoverage": [
+    [
+      "different runtime roots",
+      "<github.workspace>/.artifacts/unity",
+      "<runner.temp>/.artifacts/unity/logs",
+      false
+    ],
+    [
+      "a string prefix in a different directory",
+      ".artifacts/unity/a",
+      ".artifacts/unity/ab/unity.log",
+      false
+    ],
+    ["a sibling directory", ".artifacts/unity", ".artifacts/unity-secrets/unity.log", false],
+    ["a genuine parent directory", ".artifacts/unity", ".artifacts/unity/6000-shipping", true],
+    [
+      "an exact match",
+      "<runner.temp>/dx-unity-editor-validation",
+      "<runner.temp>/dx-unity-editor-validation",
+      true
+    ],
+    ["a trailing slash on the upload", ".artifacts/unity", ".artifacts/unity/release-dist/", true]
   ]
 }

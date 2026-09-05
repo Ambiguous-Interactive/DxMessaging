@@ -3684,6 +3684,28 @@ def validate_perf_pr_policy() -> None:
         require("github-token: ${{ github.token }}" in licensed_job, f"{path}:{job_id}: acquire-build-lock requires github.token")
 
 
+def validate_unity_aggregate_steps(gate: str) -> None:
+    require(gate.count("\n      - name:") == 2, "aggregate needs one gate and one diagnostic")
+    validation = step_block(gate, "Verify Unity CI result shape")
+    diagnostic = step_block(gate, "Report unsuccessful Unity legs")
+    require(gate.find(validation) < gate.find(diagnostic), "diagnostics must follow validation")
+    require(re.search(r"^        id:\s*result_shape\s*$", validation, re.MULTILINE) is not None,
+            "diagnostics must refer to the result gate")
+    require("continue-on-error:" not in validation, "aggregate validation must remain fatal")
+    require(re.search(
+        r"^        if:\s*\$\{\{\s*failure\(\)\s*&&\s*"
+        r"steps\.result_shape\.outcome\s*==\s*'failure'\s*\}\}\s*$",
+        diagnostic, re.MULTILINE) is not None, "diagnostics must run only after gate failure")
+    require(re.search(r"uses:\s*actions/github-script@[0-9a-f]{40}\b", diagnostic) is not None,
+            "diagnostics must use an immutable GitHub script action")
+    require(positive_timeout(diagnostic, 8, "Unity diagnostic") <= 2,
+            "Unity diagnostics must stay bounded to two minutes")
+    permissions = re.search(r"^    permissions:\n((?:      [^\n]+\n)+)", gate, re.MULTILINE)
+    require(permissions is not None and
+            re.findall(r"^      ([\w-]+):\s*(\w+)\s*$", permissions[1], re.MULTILINE)
+            == [("actions", "read")], "Unity aggregate needs only Actions read permission")
+
+
 def validate() -> None:
     timeout_fixture = f"""  fixture:
     timeout-minutes: 70
@@ -4534,10 +4556,19 @@ steps:
     gate = job_block(source, "unity-ci-success")
     require("if: ${{ always() }}" in gate, "aggregate must always report")
     require("re-actors/alls-green" not in gate and "allowed-skips" not in gate, "skips must be typed")
-    require(
-        gate.count("\n      - name:") == 1,
-        "aggregate must contain exactly one validation step",
-    )
+    validate_unity_aggregate_steps(gate)
+    for before, after in (
+        ("failure() && steps.result_shape.outcome == 'failure'", "always()"),
+        ("      actions: read", "      actions: write"),
+        ("        id: result_shape", "        id: result_shape\n        continue-on-error: true"),
+        ("    steps:", "    steps:\n      - name: Unexpected extra step\n        run: echo extra"),
+    ):
+        require(before in gate, "aggregate mutation target must exist")
+        try:
+            validate_unity_aggregate_steps(gate.replace(before, after, 1))
+        except AssertionError:
+            continue
+        raise AssertionError("unsafe aggregate mutation was accepted")
     aggregate_step = step_block(gate, "Verify Unity CI result shape")
     require("        shell: bash\n" in aggregate_step, "aggregate must use bash")
     expected_bindings = {
@@ -4562,7 +4593,7 @@ steps:
             f"aggregate must bind exact {variable}",
         )
 
-    script = run_script(aggregate_step)
+    script = run_script(aggregate_step).rstrip()
     expected_script = """set -euo pipefail
 test "${HEAD_CHECK_RESULT}" = success
 if [ "${SUPERSEDED}" = "true" ] || [ "${RELEVANT}" = "false" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then

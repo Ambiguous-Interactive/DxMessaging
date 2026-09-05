@@ -1,5 +1,7 @@
 "use strict";
 
+const releaseVectors = require("./release-changelog-vectors.json");
+
 // Release publication and unit coverage for the shared changelog-section extractor
 // (scripts/release/changelog.js) that release.yml, release-prepare.yml, and
 // release-drafter.yml all consume. Guards the v3.1.0 regression class: the
@@ -142,36 +144,7 @@ for (const scenario of [
   });
 }
 
-const SAMPLE = [
-  "# Changelog",
-  "",
-  "## [Unreleased]",
-  "",
-  "### Added",
-  "",
-  "- Unreleased entry one.",
-  "",
-  "## [3.1.0]",
-  "",
-  "### Added",
-  "",
-  "- Real feature for 3.1.0.",
-  "",
-  "### Fixed",
-  "",
-  "- A fix whose example embeds a fake heading:",
-  "",
-  "  ```md",
-  "  ## [9.9.9]",
-  "  ```",
-  "",
-  "## [3.0.1]",
-  "",
-  "### Changed",
-  "",
-  "- The oldest documented change.",
-  ""
-].join("\n");
+const SAMPLE = releaseVectors.sectionSample.join("\n");
 
 test("extractSection returns the trimmed body under the matching heading", () => {
   const section = extractSection(SAMPLE, "3.1.0");
@@ -197,21 +170,7 @@ test("a fenced `## [x]` with an info string is still not a boundary", () => {
   // CommonMark fences carry info strings (` ```ts {1,2} `, ` ```c-sharp `). A
   // `\w*`-only fence regex misses those and truncates the section at the inner
   // `## ` line; the section body must survive intact past such a fence.
-  const content = [
-    "## [5.0.0]",
-    "",
-    "- intro",
-    "",
-    "```ts {1,2}",
-    "## [9.9.9]",
-    "```",
-    "",
-    "- tail after the fence",
-    "",
-    "## [4.0.0]",
-    "",
-    "- older"
-  ].join("\n");
+  const content = releaseVectors.sectionWithInfoFence.join("\n");
   const section = extractSection(content, "5.0.0");
   assert.match(section, /tail after the fence/);
   assert.doesNotMatch(section, /older/);
@@ -220,17 +179,7 @@ test("a fenced `## [x]` with an info string is still not a boundary", () => {
 test("a section with only `### ` subsection headers (no entries) throws", () => {
   // Symmetric with prepare-release's hasContent guard: header-only is not
   // publishable release notes.
-  const content = [
-    "## [6.0.0]",
-    "",
-    "### Added",
-    "",
-    "### Fixed",
-    "",
-    "## [5.0.0]",
-    "",
-    "- x"
-  ].join("\n");
+  const content = releaseVectors.sectionWithoutEntries.join("\n");
   assert.throws(() => extractSection(content, "6.0.0"), /no content/);
 });
 

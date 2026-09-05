@@ -524,7 +524,7 @@ test("performance workflow publishes exact player-size and codegen evidence", ()
   );
   assert.match(
     workflow,
-    /scripts\/unity\/\(paired-bracket-manifest\|post-route-perf-scenarios\)\\\.json\$/
+    /scripts\/unity\/\(paired-bracket-manifest\|post-route-perf-scenarios\|perf-scenario-definitions\)\\\.json\$/
   );
   assert.match(
     workflow,

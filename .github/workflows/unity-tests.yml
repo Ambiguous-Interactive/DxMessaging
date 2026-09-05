@@ -300,6 +300,12 @@ jobs:
         with:
           node-version: "22.18.0"
 
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       # Single source of truth for the assembly include list: the canonical
       # asmdef-discovery.js module. Extracted into a composite action so all
       # three Unity workflows share one implementation. shell: pwsh is enforced
@@ -391,11 +397,9 @@ jobs:
 
       - name: Redact sensitive data from Unity editor validation diagnostics
         id: redact_validation
-        # `always()` also fires when the job aborted before setup, where node does not exist yet.
-        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
-        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
-        # Skipping is safe because the uploads below require this step to have succeeded.
-        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        # Require this run's Node and dependency install, not files left by a previous run.
+        # An aborted install must also skip uploads, which require successful redaction.
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -623,11 +627,9 @@ jobs:
 
       - name: Redact sensitive data from Unity test artifacts
         id: redact_tests
-        # `always()` also fires when the job aborted before setup, where node does not exist yet.
-        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
-        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
-        # Skipping is safe because the uploads below require this step to have succeeded.
-        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        # Require this run's Node and dependency install, not files left by a previous run.
+        # An aborted install must also skip uploads, which require successful redaction.
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -827,6 +829,8 @@ jobs:
   # context instead of the individual matrix and preflight contexts.
   unity-ci-success:
     name: Unity CI Success
+    permissions:
+      actions: read
     needs:
       - head-check
       - runner-preflight
@@ -849,6 +853,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Verify Unity CI result shape
+        id: result_shape
         shell: bash
         env:
           HEAD_CHECK_RESULT: ${{ needs.head-check.result }}
@@ -868,3 +873,48 @@ jobs:
             test "${RUNNER_PREFLIGHT_RESULT}" = success
             test "${UNITY_TESTS_RESULT}" = success
           fi
+
+      # The licensed runner may disappear before any always-run cleanup step.
+      # Report from this hosted job; metadata describes the boundary, not its cause.
+      - name: Report unsuccessful Unity legs
+        if: ${{ failure() && steps.result_shape.outcome == 'failure' }}
+        timeout-minutes: 2
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const messages = [];
+            const report = (message) => { core.error(message); messages.push(message); };
+            try {
+              const attempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+              if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error('Invalid run attempt');
+              const jobs = await github.paginate('GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs', {
+                ...context.repo, run_id: context.runId, attempt_number: attempt, per_page: 100
+              });
+              if (!Array.isArray(jobs) || jobs.some((job) => !job || job.run_id !== context.runId ||
+                  !Number.isSafeInteger(job.id) || job.id < 1 || typeof job.name !== 'string')) {
+                throw new Error('Invalid job metadata');
+              }
+              // Include the historical per-mode names so retained runs remain diagnosable.
+              const legs = jobs.filter((job) => /^Unity \d+\.\d+\.\d+[abfp]\d+ (all modes|editmode|playmode|standalone)$/.test(job.name) && job.conclusion !== 'success');
+              if (!legs.length) report('No unsuccessful Unity leg was returned for this attempt. Inspect the head freshness and runner preflight jobs; the result-shape gate remains failed.');
+              for (const job of legs) {
+                const steps = job.steps ?? [];
+                if (!Array.isArray(steps) || steps.some((step) => !step || typeof step.name !== 'string' ||
+                    !Number.isSafeInteger(step.number) || step.number < 1)) throw new Error('Invalid step metadata');
+                const ordered = [...steps].sort((a, b) => a.number - b.number);
+                const failed = ordered.find((step) => step.conclusion === 'failure');
+                const completed = ordered.filter((step) => step.status === 'completed' && step.conclusion && step.conclusion !== 'skipped').at(-1);
+                const unfinished = ordered.find((step) => step.conclusion === null);
+                const describe = (step) => step ? `${step.number}: ${step.name}` : 'none recorded';
+                const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/job/${job.id}`;
+                report(`${job.name}; job ${job.id}; runner ${job.runner_name || 'unassigned'}; ${job.status}/${job.conclusion || 'unknown'}. ${url}\n` +
+                  `Failed step: ${describe(failed)}. Last completed step: ${describe(completed)}.\n` +
+                  (ordered.length ? `First step without a recorded conclusion: ${describe(unfinished)}.` : 'Step metadata is unavailable; the execution boundary is unknown.') +
+                  (unfinished ? '\nSome steps have no recorded conclusion. Inspect the runner service Runner/Worker logs for this job time window; the cause is unknown.' : ''));
+              }
+            } catch {
+              report('Unity leg diagnostics are unavailable because the exact-attempt jobs API or its metadata could not be read. ' +
+                'The result-shape gate remains failed; inspect the run and runner service logs.');
+            }
+            const escape = (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+            await core.summary.addRaw(`<pre>${escape(messages.join('\n\n'))}</pre>`).write();

@@ -14,6 +14,7 @@ const {
   findIdentifiers,
   findSensitiveData,
   matchesPattern,
+  isSerializedRedactionSafe,
   decodeText,
   encodeText,
   redactCredentials,
@@ -29,8 +30,6 @@ const {
 } = require("../unity/redact-unity-artifacts.js");
 const FAKE_SERIAL = "SC-FAKE-FAKE-FAKE-FAKE-FAKE";
 const FAKE_LICENSE_ID = "FAKE-LICENSE-0000-0000";
-const FAKE_GITHUB_TOKEN = `ghp_${"FAKEfake0123456789".repeat(2)}`;
-const FAKE_AWS_KEY = "AKIA0000FAKE0000FAKE";
 const FAKE_BEARER = "FAKEbearerFAKEbearerFAKEbearer";
 const FAKE_PASSWORD = "fake-password-value-0000";
 const FAKE_KEY_BODY = "FAKEkeybodyFAKEkeybodyFAKEkeybody";
@@ -44,18 +43,7 @@ const CREDENTIAL_PATTERNS_PATH = path.resolve(__dirname, "../unity/credential-pa
 function invokeCli(root, written = []) {
   return runCli(["node", "cli", root], (text) => written.push(text));
 }
-const LEAK_CASES = Object.freeze([
-  ["pem-private-key", `key follows\n${FAKE_PEM}\ndone\n`, FAKE_KEY_BODY],
-  ["unity-license-id", `<License id="${FAKE_LICENSE_ID}" version="1.0">\n`, FAKE_LICENSE_ID],
-  ["unity-serial", `Activated with serial ${FAKE_SERIAL} today\n`, FAKE_SERIAL],
-  ["github-token", `remote token ${FAKE_GITHUB_TOKEN} rejected\n`, FAKE_GITHUB_TOKEN],
-  ["aws-access-key-id", `uploader used ${FAKE_AWS_KEY} for the bucket\n`, FAKE_AWS_KEY],
-  ["http-bearer-token", `authorization: bearer ${FAKE_BEARER}\n`, FAKE_BEARER],
-  ["unity-password-assignment", `UNITY_PASSWORD=${FAKE_PASSWORD}\n`, FAKE_PASSWORD],
-  ["unity-email-assignment", "UNITY_EMAIL=o'connor@example.com\n", "o'connor@example.com"],
-  ["password-assignment", "PASSWORD=hunter2\n", "hunter2"],
-  ["credential-assignment", `TOKEN=${FAKE_PASSWORD}\n`, FAKE_PASSWORD]
-]);
+const LEAK_CASES = VECTORS.leakCases;
 const IDENTIFIER_CASES = VECTORS.identifierCases;
 test("identifier anchor gates preserve unfiltered production matches", () => {
   for (const text of Object.values(VECTORS)
@@ -196,7 +184,7 @@ test("identifier placeholders preserve JSON strings and XML attributes", () => {
   assert.equal(JSON.parse(redactedJson).path, "C:\\Users\\[redacted:account-home-path]\\project");
   const xml = `<test-case host="${FAKE_PRIVATE_IP}" />`;
   const redactedXml = redactSensitiveData(xml).redacted;
-  assert.equal(redactedXml, '<test-case host="[redacted:ipv4-address]" />');
+  assert.equal(redactedXml, '<test-case host="[redacted:ipv4-address]"/>');
   assert.doesNotMatch(redactedXml, /host="[^"\r\n]*[<>][^"\r\n]*"/);
 });
 for (const [label, text] of VECTORS.safeEvidence) {
@@ -241,23 +229,7 @@ for (const [input, expected] of VECTORS.rootPaths)
 for (const [label, value] of VECTORS.macs)
   test(`${label} is removed`, () =>
     assert.equal(redactSensitiveData(value).redacted, "[redacted:mac-address]"));
-for (const [id, text, expected] of [
-  [
-    "http-bearer-token",
-    `Authorization: Bearer ${FAKE_BEARER}\n`,
-    "Authorization: Bearer [redacted:http-bearer-token]\n"
-  ],
-  [
-    "unity-password-assignment",
-    `UNITY_PASSWORD=${FAKE_PASSWORD}\n`,
-    "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"
-  ],
-  [
-    "unity-license-id",
-    `<License id="${FAKE_LICENSE_ID}" version="1.0">\n`,
-    '<License id="[redacted:unity-license-id]" version="1.0">\n'
-  ]
-]) {
+for (const [id, text, expected] of VECTORS.labelPreservingCredentials) {
   test(`${id} keeps the label that says which credential was removed`, () => {
     assert.equal(redactCredentials(text).redacted, expected, id);
   });
@@ -502,7 +474,7 @@ for (const contents of VECTORS.blockedSensitive) {
 }
 for (const [contents, privatePart] of VECTORS.entityIdentifiers) {
   test(`the CLI safely rewrites an entity-bearing identifier: ${contents}`, () => {
-    const { root, target } = artifactFile(contents, "encoded.xml");
+    const { root, target } = artifactFile(contents, "encoded.log");
     assert.equal(invokeCli(root), 0);
     const actual = fs.readFileSync(target, "utf8");
     assert.ok(!actual.includes(privatePart));
@@ -530,18 +502,7 @@ for (const unique of [false, true, "alternating"]) {
     assert.equal(result.status, 0, result.error?.message ?? result.stderr.toString());
   });
 }
-for (const [label, prefix, separator, value, kind] of [
-  ["home", "/\\u0068ome/", "", "alice/project", "account-home-path"],
-  ["web", "\\u0068ttps://", "\n", "private.local/path", "web-hostname"],
-  ["password", "\\u002dpassword", "\n", FAKE_PASSWORD, "unity-password-assignment"],
-  ["account", "&#45;username", "\r\n", FAKE_ACCOUNT, "unity-email-assignment"],
-  ["endpoint", "\\u002dcacheServerEndpoint", "\n", FAKE_HOST, "unity-cache-server-endpoint"],
-  ["assignment", "\\u0050ASSWORD=", "\r\n \t\r\n", FAKE_PASSWORD, "password-assignment"],
-  ["split assignment", "\\u0050ASSWORD", "\n=\n", FAKE_PASSWORD, "password-assignment"],
-  ["encoded value", "Bearer", "\n", "\\u0061" + "a".repeat(24), "http-bearer-token"],
-  ["control escape", "Bearer\\n", "\n", "\\u0061" + "a".repeat(24), "http-bearer-token"],
-  ["bearer", "\\u0042earer", "\r \t\r", FAKE_BEARER, "http-bearer-token"]
-]) {
+for (const [label, prefix, separator, value, kind] of VECTORS.largeEncodedAssignments) {
   test(`large encoded ${label} retains its following value`, (t) => {
     // The same encoded prefix first appears with a masked value; caching by prefix alone
     // must not suppress the later unmasked occurrence.
@@ -564,7 +525,7 @@ test("large encoded assignments preserve arbitrarily long unencoded whitespace",
 });
 for (const contents of VECTORS.mappableSensitive) {
   test(`the CLI maps direct sensitive data despite an unrelated escape: ${contents}`, () => {
-    const { root, target } = artifactFile(contents, "mappable.xml");
+    const { root, target } = artifactFile(contents, "mappable.log");
     assert.equal(invokeCli(root), 0);
     assert.match(fs.readFileSync(target, "utf8"), /\[redacted:/);
   });
@@ -936,4 +897,52 @@ for (const [label, bom, encoded] of [
     assert.equal(result.changed.length, 0);
     assert.equal(result.binaryCount, 1, "the malformed file must be reported as opaque");
   });
+}
+for (const [
+  label,
+  source,
+  expected,
+  extension = source.startsWith("<") ? ".xml" : ".json"
+] of VECTORS.structuredValues) {
+  test(`structured redaction preserves ${label}`, (t) => {
+    const { root, target } = artifactFile(source, `results${extension}`);
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    assert.ok(findSensitiveData(source, extension).length > 0, "the original must be detected");
+    assert.equal(invokeCli(root), 0);
+    assert.equal(fs.readFileSync(target, "utf8"), expected);
+    assert.deepEqual(findSensitiveData(expected, extension), []);
+    assert.equal(invokeCli(root), 0);
+    assert.equal(fs.readFileSync(target, "utf8"), expected, "a second pass must preserve bytes");
+    assert.equal(isSerializedRedactionSafe(source, expected.slice(0, -1), extension), false);
+  });
+}
+for (const [label, extension, source] of VECTORS.invalidStructures) {
+  test(`structured redaction refuses ${label}`, (t) => {
+    const { root, target } = artifactFile(source, `results${extension}`);
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const written = [];
+    assert.equal(invokeCli(root, written), 2);
+    assert.equal(fs.readFileSync(target, "utf8"), source);
+    assert.doesNotMatch(written.join(""), /FAKE_PRIVATE/);
+    assert.equal(isSerializedRedactionSafe(source, source, extension), false);
+  });
+}
+for (const encoding of ["utf16le", "utf16be"]) {
+  for (const [extension, source] of [
+    [".xml", '<?xml version="1.0" encoding="utf-16"?><a TOKEN="abcdefghijklmnop"/>'],
+    [".json", '{"TOKEN":"abcdefghijklmnop","total":1}']
+  ]) {
+    test(`structured ${extension} retains its ${encoding} byte order mark`, (t) => {
+      const { root, target } = artifactFile(
+        encodeText(`\ufeff${source}`, encoding),
+        `result${extension}`
+      );
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      assert.equal(invokeCli(root), 0);
+      const decoded = decodeText(fs.readFileSync(target));
+      assert.equal(decoded.encoding, encoding);
+      assert.ok(decoded.text.startsWith("\ufeff"));
+      assert.match(decoded.text, /\[redacted:credential-assignment\]/);
+    });
+  }
 }

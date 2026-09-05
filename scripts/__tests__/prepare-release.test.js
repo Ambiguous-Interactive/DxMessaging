@@ -1,5 +1,7 @@
 "use strict";
 
+const releaseVectors = require("./release-changelog-vectors.json");
+
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -14,32 +16,7 @@ const {
   parseArgs
 } = require("../release/prepare-release.js");
 
-const FULL_CHANGELOG = [
-  "# Changelog",
-  "",
-  "Header prose.",
-  "",
-  "## [Unreleased]",
-  "",
-  "### Added",
-  "",
-  "- A new thing.",
-  "",
-  "### Changed",
-  "",
-  "- A changed thing.",
-  "",
-  "### Fixed",
-  "",
-  "- A fixed thing.",
-  "",
-  "## [3.0.1]",
-  "",
-  "### Fixed",
-  "",
-  "- An old fix.",
-  ""
-].join("\n");
+const FULL_CHANGELOG = releaseVectors.prepareFullChangelog.join("\n");
 
 function makeFixture(t, { packageJson, changelog }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-prepare-release-"));
@@ -155,32 +132,9 @@ test("rotateChangelog moves the Unreleased block under the new heading", () => {
 });
 
 test("rotateChangelog handles a subset of subsections and no later headings", () => {
-  const changelog = [
-    "# Changelog",
-    "",
-    "## [Unreleased]",
-    "",
-    "### Fixed",
-    "",
-    "- Only a fix.",
-    ""
-  ].join("\n");
+  const changelog = releaseVectors.prepareOnlyFix.join("\n");
   const rotated = rotateChangelog(changelog, "1.2.3");
-  assert.equal(
-    rotated,
-    [
-      "# Changelog",
-      "",
-      "## [Unreleased]",
-      "",
-      "## [1.2.3]",
-      "",
-      "### Fixed",
-      "",
-      "- Only a fix.",
-      ""
-    ].join("\n")
-  );
+  assert.equal(rotated, releaseVectors.prepareOnlyFixExpected.join("\n"));
 });
 
 test("rotateChangelog normalizes CRLF input to LF output", () => {
@@ -194,18 +148,7 @@ test("rotateChangelog refuses an Unreleased section with no content", () => {
     "\n"
   );
   assert.throws(() => rotateChangelog(empty, "3.0.2"), /no content/);
-  const onlyHeadings = [
-    "# Changelog",
-    "",
-    "## [Unreleased]",
-    "",
-    "### Added",
-    "",
-    "### Fixed",
-    "",
-    "## [3.0.1]",
-    ""
-  ].join("\n");
+  const onlyHeadings = releaseVectors.prepareOnlyHeadings.join("\n");
   assert.throws(() => rotateChangelog(onlyHeadings, "3.0.2"), /no content/);
 });
 

@@ -356,6 +356,12 @@ jobs:
         with:
           node-version: "22.18.0"
 
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Validate the predeclared paired bracket manifest
         if: ${{ hashFiles('scripts/unity/paired-bracket-manifest.json') != '' }}
         timeout-minutes: 2
@@ -469,11 +475,9 @@ jobs:
 
       - name: Redact sensitive data from Unity perf artifacts
         id: redact_validation
-        # `always()` also fires when the job aborted before setup, where node does not exist yet.
-        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
-        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
-        # Skipping is safe because the uploads below require this step to have succeeded.
-        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        # Require this run's Node and dependency install, not files left by a previous run.
+        # An aborted install must also skip uploads, which require successful redaction.
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -530,11 +534,9 @@ jobs:
 
       - name: Redact sensitive data from comparison contract artifacts
         id: redact_contracts
-        # `always()` also fires when the job aborted before setup, where node does not exist yet.
-        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
-        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
-        # Skipping is safe because the uploads below require this step to have succeeded.
-        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        # Require this run's Node and dependency install, not files left by a previous run.
+        # An aborted install must also skip uploads, which require successful redaction.
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -1233,11 +1235,9 @@ jobs:
 
       - name: Redact sensitive data from perf benchmark artifacts
         id: redact_perf
-        # `always()` also fires when the job aborted before setup, where node does not exist yet.
-        # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
-        # reuses its workspace, so testing for the scrubber file finds one left by an earlier run.
-        # Skipping is safe because the uploads below require this step to have succeeded.
-        if: ${{ always() && steps.setup_node.outcome == 'success' }}
+        # Require this run's Node and dependency install, not files left by a previous run.
+        # An aborted install must also skip uploads, which require successful redaction.
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -1447,7 +1447,7 @@ jobs:
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
           methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
           methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|reduce-paired-bracket|render-perf|run-ci-tests|resolve-performance-cpu-profile|validate-il2cpp-profile)'
-          methodology_pattern+='|scripts/unity/(paired-bracket-manifest|post-route-perf-scenarios)\.json$'
+          methodology_pattern+='|scripts/unity/(paired-bracket-manifest|post-route-perf-scenarios|perf-scenario-definitions)\.json$'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
           methodology_pattern+='|\.github/perf/canonical-il2cpp-profile\.v1\.json$'

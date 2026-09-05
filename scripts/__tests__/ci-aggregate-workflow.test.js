@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const YAML = require("yaml");
+const { spawnSync } = require("node:child_process");
 const { walkFiles } = require("../lib/repo-files.js");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -107,25 +108,13 @@ function extractShellPatternVariable(source, variableName) {
   );
 
   const pieces = [];
-  let collecting = false;
   for (const line of source.split(/\r?\n/)) {
-    const initial = initialPattern.exec(line);
-    if (initial) {
-      pieces.push(initial[1]);
-      collecting = true;
-      continue;
-    }
-
-    if (!collecting) {
-      continue;
-    }
-
-    const append = appendPattern.exec(line);
-    if (!append) {
+    const match = initialPattern.exec(line) || (pieces.length && appendPattern.exec(line));
+    if (match) {
+      pieces.push(match[1]);
+    } else if (pieces.length) {
       break;
     }
-
-    pieces.push(append[1]);
   }
 
   assert.ok(pieces.length > 0, `ci.yml must build ${variableName}`);
@@ -553,6 +542,13 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const label = `${file}:${jobId}`;
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
+    const install = getStepBlock(job, "Install artifact tooling dependencies");
+    assert.match(install, /id: install_dependencies\n[\s\S]*shell: pwsh\n        run: npm ci --ignore-scripts --no-audit --no-fund\n/);
+    assert.doesNotMatch(install, /continue-on-error:|\n        if:/);
+    assert.ok(job.indexOf("id: setup_node") < job.indexOf(install) && job.indexOf(install) < job.indexOf(acquire), `${label}: install before acquiring a license`);
+    for (const step of YAML.parse(job)[jobId].steps.filter((step) => step.uses === "./.github/actions/redact-unity-artifacts")) {
+      assert.match(step.if, /steps\.install_dependencies\.outcome == 'success'/, `${label}: failed installs cannot authorize redaction or uploads`);
+    }
     const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : 900;
     // prettier-ignore
     assert.match(job, new RegExp(`\\n    timeout-minutes: ${expectedJobTimeout}\\n`), `${label}: lifecycle budget`);
@@ -698,6 +694,91 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
   // prettier-ignore
   assert.doesNotMatch(aggregate, /github\.actor == 'dependabot\[bot\]'/); assert.match(getStepBlock(getJobBlock(unity, "unity-tests", "unity-tests.yml"), "Upload shipping-fidelity artifacts"), /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/);
 });
+// prettier-ignore
+test("Unity failure diagnostics preserve the executable result gate and cost nothing on success", () => {
+  const job = readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-ci-success"];
+  const [gate, diagnostic] = job.steps;
+  assert.equal(job.if, "${{ always() }}");
+  assert.deepEqual(job.permissions, { actions: "read" });
+  assert.equal(gate.id, "result_shape");
+  assert.equal(gate["continue-on-error"], undefined);
+  assert.equal(diagnostic.if, "${{ failure() && steps.result_shape.outcome == 'failure' }}");
+  assert.equal(diagnostic.uses, "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3");
+  assert.equal(diagnostic["timeout-minutes"], 2);
+  assert.equal(job.steps.length, 2, "successful runs only execute the original shell gate");
+  const baseline = { HEAD_CHECK_RESULT: "success", RUNNER_PREFLIGHT_RESULT: "success", UNITY_TESTS_RESULT: "success" };
+  assert.equal(readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-tests"].name, "Unity ${{ matrix.unity-version }} all modes");
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe") : "bash";
+  const run = (env) => spawnSync(bash, ["-c", gate.run], { env: { ...process.env, ...Object.fromEntries(Object.keys(gate.env).map((key) => [key, "false"])), ...baseline, RELEVANT: "true", ...env } });
+  for (const flag of [null, "RELEVANT", "SUPERSEDED", "FORK_PR", "DEPENDABOT_PR"]) {
+    const env = flag ? { [flag]: flag === "RELEVANT" ? "false" : "true", RUNNER_PREFLIGHT_RESULT: "skipped", UNITY_TESTS_RESULT: "skipped" } : { RELEVANT: "true" };
+    assert.equal(run(env).status, 0, `${flag}: intended successful shape`);
+    for (const key of Object.keys(baseline)) {
+      for (const value of ["failure", "cancelled", "", "skipped", "success"].filter((value) => value !== (env[key] || baseline[key]))) {
+        assert.equal(run({ ...env, [key]: value }).status, 1, `${flag}/${key}/${value}: failed shape`);
+      }
+    }
+  }
+});
+
+async function runUnityFailureDiagnostic(pages, { apiError = false, attempt = "1" } = {}) {
+  const job = readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-ci-success"];
+  const script = job.steps.find((step) => step.name === "Report unsuccessful Unity legs").with.script;
+  const messages = [];
+  let summary;
+  const github = { paginate: async (route, options) => {
+    assert.equal(route, "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs");
+    assert.deepEqual(options, { owner: "Ambiguous-Interactive", repo: "DxMessaging", run_id: 30926223438, attempt_number: Number(attempt), per_page: 100 });
+    if (apiError) throw new Error("request denied");
+    return Array.isArray(pages) ? pages.flat() : pages;
+  } };
+  const core = { error: (message) => messages.push(message), summary: { addRaw: (text) => ({ write: async () => { summary = text; } }) } };
+  const context = { repo: { owner: "Ambiguous-Interactive", repo: "DxMessaging" }, runId: 30926223438, serverUrl: "https://github.com" };
+  await new Function("github", "context", "core", "process", `return (async () => {${script}})();`)(github, context, core, { env: { GITHUB_RUN_ATTEMPT: attempt } });
+  assert.equal(typeof summary, "string");
+  assert.ok(messages.length, "a failed shape always produces an operator diagnostic");
+  return { messages, summary };
+}
+
+// Identity and empty steps copied from GET /actions/jobs/92049196223 on 2026-09-05.
+// GitHub no longer retains its step list. This case must keep an unknown boundary.
+const historicalUnityJob = { id: 92049196223, run_id: 30926223438, name: "Unity 2021.3.45f1 editmode", runner_name: "DAD-MACHINE", status: "completed", conclusion: "failure", steps: [] };
+const unityStep = (number, name, conclusion, status = "completed") => ({ number, name, conclusion, status });
+
+test("Unity diagnostic reports the issue-documented historical boundary without inventing a host cause", async () => {
+  // Reconstructed from #356 body/comment5182886089, not a downloaded full step list.
+  const steps = [unityStep(16, "Acquire organization Unity lock", "success"), unityStep(17, "Require acquired Unity lock", "skipped"), unityStep(18, "Upload Unity editor validation diagnostics", "success"), unityStep(19, "Run Unity Test Runner", null, "queued"), unityStep(23, "Return Unity license", null, "queued")];
+  const result = await runUnityFailureDiagnostic([[{ ...historicalUnityJob, id: 2, conclusion: "success" }], [{ ...historicalUnityJob, steps: steps.reverse() }]], { attempt: "2" });
+  assert.equal(result.messages.length, 1, "successful first page does not hide a failed later page");
+  for (const pattern of [/job 92049196223/, /runner DAD-MACHINE/, /\/actions\/runs\/30926223438\/job\/92049196223/, /Last completed step: 18:/, /First step without a recorded conclusion: 19:/, /Runner\/Worker logs/, /cause is unknown/]) assert.match(result.summary, pattern);
+  assert.doesNotMatch(result.summary, /Failed step: 17:|Last completed step: 23:|OOM|killed|leaked/);
+});
+
+test("Unity diagnostic handles retained metadata, normal failures, and unavailable evidence", async () => {
+  const cases = [
+    ["retained historical metadata", [[historicalUnityJob]], {}, /boundary is unknown/],
+    ["missing steps", [[{ ...historicalUnityJob, steps: undefined }]], {}, /boundary is unknown/],
+    ["cancelled", [[{ ...historicalUnityJob, conclusion: "cancelled" }]], {}, /completed\/cancelled/],
+    ["unexpected skip", [[{ ...historicalUnityJob, conclusion: "skipped", runner_name: "" }]], {}, /runner unassigned; completed\/skipped/],
+    ["ordinary failure", [[{ ...historicalUnityJob, steps: [unityStep(19, "Run Unity Test Runner", "failure"), unityStep(23, "Return Unity license", "success")] }]], {}, /Failed step: 19:.*Last completed step: 23:/s],
+    ["other jobs", [[{ ...historicalUnityJob, name: "Unity CI Success" }]], {}, /No unsuccessful Unity leg/],
+    ["API denied", [], { apiError: true }, /diagnostics are unavailable/],
+    ["invalid attempt", [], { attempt: "0" }, /diagnostics are unavailable/],
+    ["malformed list", {}, {}, /diagnostics are unavailable/],
+    ["wrong run", [[{ ...historicalUnityJob, run_id: 1 }]], {}, /diagnostics are unavailable/],
+    ["malformed steps", [[{ ...historicalUnityJob, steps: [null] }]], {}, /diagnostics are unavailable/]
+  ];
+  for (const [label, pages, options, pattern] of cases) {
+    const result = await runUnityFailureDiagnostic(pages, options);
+    assert.match(result.summary, pattern, label);
+    assert.doesNotMatch(result.summary, /Runner\/Worker logs/, `${label}: no invented incomplete boundary`);
+  }
+  const result = await runUnityFailureDiagnostic([[{ ...historicalUnityJob, name: "Unity 6000.5.2f1 all modes", runner_name: "<runner>&", steps: [unityStep(19, "<script>bad</script>", "failure")] }]]);
+  assert.match(result.summary, /&lt;runner&gt;&amp;/);
+  assert.match(result.summary, /&lt;script&gt;bad&lt;\/script&gt;/);
+  assert.doesNotMatch(result.summary, /<script>/);
+});
+
 // prettier-ignore
 test("active workflows pin external actions and scope licensed credentials", () => {
   for (const filePath of [WORKFLOW_DIR, path.join(REPO_ROOT, ".github", "actions")].flatMap((root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) }))) {

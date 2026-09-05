@@ -278,6 +278,12 @@ for (const [label, content] of VECTORS.sealingSensitive) {
     );
   });
 }
+for (const [label, extension, content] of VECTORS.invalidStructures) {
+  test(`sealing refuses unsupported structure: ${label}`, () => {
+    const root = bundleWithFile("invalid" + extension, content);
+    assert.throws(() => sealBundle(root, SEAL_OPTIONS), /scrub it before sealing/);
+  });
+}
 for (const [label, file, text, encoding] of VECTORS.sealingAccepted) {
   test(`sealing accepts ${label}`, () => {
     const manifest = sealBundle(bundleWithFile(file, Buffer.from(text, encoding)), SEAL_OPTIONS);
@@ -684,7 +690,10 @@ test("shipping reducer preserves explicit failed outcomes and ignores row order"
   fs.writeFileSync(path.join(root, "unreadable-cell/shipping-cell-evidence.json"), "{malformed");
   fs.mkdirSync(path.join(root, "failed-cell"));
   writeJson(path.join(root, "failed-cell/shipping-cell-evidence.json"), matrix.cells[0]);
-  const partial = sealBundle(root, SEAL_OPTIONS).normalized;
+  const partial = reduceShippingFidelityMatrix(contentsOf(root));
+  assert.throws(() => sealBundle(root, SEAL_OPTIONS), /unsupported structured data/);
+  writeJson(path.join(root, "unreadable-cell/shipping-cell-evidence.json"), { unreadable: true });
+  assert.deepEqual(sealBundle(root, SEAL_OPTIONS).normalized, partial);
   assert.equal(partial.declaredCellCount, 6);
   assert.equal(partial.completedCellCount, 4);
   assert.deepEqual(partial.failedCells, matrix.failedCells);

@@ -131,62 +131,7 @@ function runInstaller(t, setup) {
   return { result, prefixBin, calls };
 }
 
-const CASES = [
-  {
-    name: "fresh container with a reachable registry",
-    setup: { latest: "1.2.3" },
-    status: 0,
-    stdout: [
-      "installing {package}@1\\.2\\.3 \\(current: missing\\)",
-      "{package}@1\\.2\\.3 is ready\\."
-    ],
-    stderr: [],
-    installsPerPackage: 1,
-    commandsPresent: true
-  },
-  {
-    name: "every CLI already at the latest version",
-    setup: { latest: "4.5.6", installed: "4.5.6" },
-    status: 0,
-    stdout: ["{package}@4\\.5\\.6 is current\\."],
-    stderr: [],
-    installsPerPackage: 0,
-    commandsPresent: true
-  },
-  {
-    name: "unreachable registry with the CLI already installed",
-    setup: { installed: "7.8.9", viewFails: true },
-    status: 0,
-    stdout: ["registry unavailable; keeping {package}@7\\.8\\.9\\."],
-    stderr: [],
-    installsPerPackage: 0,
-    commandsPresent: true
-  },
-  {
-    name: "unreachable registry with the CLI absent",
-    setup: { viewFails: true },
-    status: 1,
-    stdout: [],
-    stderr: [
-      "registry unavailable and {package} is not installed\\.",
-      "3 agent CLI installation\\(s\\) remain unavailable\\."
-    ],
-    installsPerPackage: 0,
-    commandsPresent: false
-  },
-  {
-    name: "npm install that never succeeds",
-    setup: { latest: "2.0.0", installFails: true },
-    status: 1,
-    stdout: [],
-    stderr: [
-      "{package} install attempt 3/3 failed\\.",
-      "3 agent CLI installation\\(s\\) remain unavailable\\."
-    ],
-    installsPerPackage: 3,
-    commandsPresent: false
-  }
-];
+const CASES = require("./devcontainer-agent-cli-vectors.json");
 
 for (const testCase of CASES) {
   test(`install-agent-clis.sh handles ${testCase.name}`, { skip: !CAN_RUN_SHELL }, (t) => {
@@ -225,9 +170,6 @@ for (const testCase of CASES) {
   });
 }
 
-// `npm ci` refuses to run without a lockfile, and this repository gitignores package-lock.json,
-// so a fresh clone has none. A devcontainer lifecycle script that reaches for `npm ci` installs
-// nothing and takes every later step that needs node_modules down with it.
 // `waitFor: updateContentCommand` lets post-create and post-start overlap, and both configure the
 // MCP clients. Two unlocked runs starting with no bearer token would each mint one and leave the
 // six generated client configs disagreeing about which token is real.
@@ -253,24 +195,14 @@ test("both lifecycle scripts serialize MCP configuration on one lock", () => {
   }
 });
 
-test("devcontainer bootstrap never uses npm ci while the lockfile is gitignored", () => {
+test("the root tooling lock is available to clean checkouts", () => {
   const ignored = childProcess.spawnSync("git", ["check-ignore", "package-lock.json"], {
     cwd: ROOT,
     encoding: "utf8"
   }).status;
-  assert.equal(ignored, 0, "this guard assumes package-lock.json is gitignored; it no longer is");
-  for (const name of ["post-create.sh", "post-start.sh"]) {
-    // Comment lines may name `npm ci` to explain why it is not used; only a real call counts.
-    const code = read(name)
-      .split("\n")
-      .filter((line) => !line.trimStart().startsWith("#"))
-      .join("\n");
-    assert.doesNotMatch(
-      code,
-      /\bnpm\s+ci\b/,
-      `${name} must use "npm install"; "npm ci" fails with EUSAGE when no lockfile is tracked`
-    );
-  }
+  assert.equal(ignored, 1, "the root lock must remain eligible for source control");
+  assert.ok(fs.existsSync(path.join(ROOT, "package-lock.json")));
+  assert.ok(fs.existsSync(path.join(ROOT, "package-lock.json.meta")));
 });
 
 test("devcontainer agent scripts have valid bash syntax", { skip: !CAN_RUN_SHELL }, () => {

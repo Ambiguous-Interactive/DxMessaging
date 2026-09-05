@@ -1,5 +1,7 @@
 "use strict";
 
+const releaseVectors = require("./release-changelog-vectors.json");
+
 // Coverage for the package.json `_upm.changelog` sync
 // (scripts/release/sync-upm-changelog.js). The Unity Package Manager renders
 // that string in the Version History tab, reading it from the resolved
@@ -23,28 +25,7 @@ const {
 
 const SCRIPT = path.resolve(__dirname, "..", "release", "sync-upm-changelog.js");
 
-const CHANGELOG = [
-  "# Changelog",
-  "",
-  "## [Unreleased]",
-  "",
-  "### Added",
-  "",
-  "- Not shipped yet.",
-  "",
-  "## [3.2.2]",
-  "",
-  "### Fixed",
-  "",
-  "- Fix the thing consumers hit.",
-  "",
-  "## [3.2.1]",
-  "",
-  "### Added",
-  "",
-  "- Older entry.",
-  ""
-].join("\n");
+const CHANGELOG = releaseVectors.upmChangelog.join("\n");
 
 const MANIFEST = { name: "com.example.package", version: "3.2.2", unity: "2021.3" };
 
@@ -174,8 +155,5 @@ test("the repository package.json carries the section for its own version", () =
   const root = path.resolve(__dirname, "..", "..");
   const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
-  assert.equal(
-    manifest._upm.changelog,
-    applyUpmChangelog(manifest, changelog)._upm.changelog
-  );
+  assert.equal(manifest._upm.changelog, applyUpmChangelog(manifest, changelog)._upm.changelog);
 });
