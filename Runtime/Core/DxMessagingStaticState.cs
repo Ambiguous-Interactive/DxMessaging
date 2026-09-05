@@ -48,7 +48,9 @@ namespace DxMessaging.Core
                 IMessageBus.GlobalDiagnosticsStackTraces = Baseline.GlobalDiagnosticsStackTraces;
                 IMessageBus.GlobalMessageBufferSize = Baseline.GlobalMessageBufferSize;
                 IMessageBus.GlobalSequentialIndex = Baseline.GlobalSequentialIndex;
+#if UNITY_2021_3_OR_NEWER
                 DxMessagingRuntimeSettingsProvider.ResetForTests();
+#endif
 
                 MessageRegistrationBuilder.SetSyntheticOwnerCounter(Baseline.SyntheticOwnerCounter);
 

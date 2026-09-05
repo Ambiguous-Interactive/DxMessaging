@@ -595,6 +595,7 @@ namespace DxMessaging.Core.MessageBus
         /// Broadcasts an Untargeted message to all listeners registered to this bus.
         /// </summary>
         /// <param name="typedMessage">Message to broadcast.</param>
+        /// <remarks>Boxed structs dispatch as local copies; interceptor changes do not update the original box. Class messages retain their identity.</remarks>
         void UntypedUntargetedBroadcast(IUntargetedMessage typedMessage);
 
         /// <summary>
@@ -609,6 +610,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         /// <param name="target">Target to send the message to.</param>
         /// <param name="typedMessage">Message to broadcast.</param>
+        /// <remarks>Boxed structs dispatch as local copies; interceptor changes do not update the original box. Class messages retain their identity.</remarks>
         void UntypedTargetedBroadcast(InstanceId target, ITargetedMessage typedMessage);
 
         /// <summary>
@@ -624,6 +626,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         /// <param name="source">Source of the message.</param>
         /// <param name="typedMessage">Message to broadcast.</param>
+        /// <remarks>Boxed structs dispatch as local copies; interceptor changes do not update the original box. Class messages retain their identity.</remarks>
         void UntypedSourcedBroadcast(InstanceId source, IBroadcastMessage typedMessage);
 
         /// <summary>

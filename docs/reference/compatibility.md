@@ -43,3 +43,37 @@ DI and DxMessaging complement each other: DI manages dependencies/services, DxMe
 ### Other Unity Frameworks
 
 For comparisons with other messaging/event frameworks (UniRx, MessagePipe, Zenject Signals, etc.), see [Framework Comparisons](../architecture/comparisons.md).
+
+## Plain .NET runtime
+
+The source checkout also builds the core runtime for .NET Standard 2.1, with C# 9 and
+an explicit `System.Runtime.CompilerServices.Unsafe` 6.0.0 dependency. Build it with:
+
+```bash
+dotnet build .net/DxMessaging.csproj --configuration Release
+dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
+```
+
+Reference `.net/DxMessaging.csproj` from a .NET application. This source-build target
+is separate from UPM installation; the repository does not publish a NuGet package.
+The runtime project compiles `Runtime/` without Unity symbols or Unity assemblies.
+The tests run on .NET 9 and share the message-kind scenarios and leak watcher used by
+Unity tests. The checked-in analyzer payload supplies runtime message generation. A project reference
+does not forward analyzers: consumer projects using `[Dx*Message]` attributes must also
+reference `Runtime/Analyzers/*.dll` as MSBuild `Analyzer` items. Implement the message
+interfaces directly when consumer source generation is unnecessary.
+
+Core bus, handler, token, typed/untyped dispatch, numeric `InstanceId`, diagnostic history,
+and explicit trim APIs are available. `MonoBehaviour` components, GameObject routing,
+reflexive GameObject messages, PlayerLoop integration, and `ScriptableObject` settings are
+Unity-only. The settings provider type is absent outside Unity; buses use built-in defaults.
+Call `DxMessagingStaticState.Reset()` when a host needs to reset shared static state.
+
+Keep all bus activity, including trims and registration changes, on one owning thread.
+There is no background sweep outside Unity. Host activity advances idle counters; force
+trim at a maintenance boundary when an inactive bus needs immediate reclamation.
+
+Untyped dispatch accepts a message interface. A boxed struct is copied into a typed local;
+interceptors can change that emission's local value, but the original box stays unchanged.
+Class messages preserve object identity. Reuse a preboxed message when repeated untyped
+emissions must avoid boxing allocations; normal typed struct dispatch needs no box.

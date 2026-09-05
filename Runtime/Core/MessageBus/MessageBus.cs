@@ -2080,8 +2080,7 @@ namespace DxMessaging.Core.MessageBus
         private double _evictionTickIntervalSeconds = DefaultEvictionTickIntervalSeconds;
         private bool _idleEvictionEnabled = true;
         private bool _trimApiEnabled = true;
-        private int _handlerCacheRetentionLimit =
-            DxMessagingRuntimeSettings.DefaultBufferMaxDistinctEntries;
+        private int _handlerCacheRetentionLimit = DxPools.DefaultMaxRetained;
         private HandlerCache _recycledEmptyHandlerCache;
         private double _lastSweepSeconds;
         private readonly List<int> _dirtyTypes = new();
@@ -7986,14 +7985,6 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IUntargetedMessage
         {
-            if (typeof(T).IsValueType)
-            {
-                object box = message;
-                ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
-                messageBus.UntargetedBroadcast(ref typedRef);
-                return;
-            }
-
             T typedMessage = (T)message;
             messageBus.UntargetedBroadcast(ref typedMessage);
         }
@@ -8005,14 +7996,6 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : ITargetedMessage
         {
-            if (typeof(T).IsValueType)
-            {
-                object box = message;
-                ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
-                messageBus.TargetedBroadcast(ref target, ref typedRef);
-                return;
-            }
-
             T typedMessage = (T)message;
             messageBus.TargetedBroadcast(ref target, ref typedMessage);
         }
@@ -8024,14 +8007,6 @@ namespace DxMessaging.Core.MessageBus
         )
             where T : IBroadcastMessage
         {
-            if (typeof(T).IsValueType)
-            {
-                object box = message;
-                ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
-                messageBus.SourcedBroadcast(ref source, ref typedRef);
-                return;
-            }
-
             T typedMessage = (T)message;
             messageBus.SourcedBroadcast(ref source, ref typedMessage);
         }
@@ -8120,14 +8095,6 @@ namespace DxMessaging.Core.MessageBus
 
             void UntypedBroadcast(IUntargetedMessage message)
             {
-                if (typeof(T).IsValueType)
-                {
-                    object box = message;
-                    ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
-                    untargetedBroadcast(ref typedRef);
-                    return;
-                }
-
                 T typedMessage = (T)message;
                 untargetedBroadcast(ref typedMessage);
             }
@@ -8151,14 +8118,6 @@ namespace DxMessaging.Core.MessageBus
 
             void UntypedBroadcast(InstanceId target, ITargetedMessage message)
             {
-                if (typeof(T).IsValueType)
-                {
-                    object box = message;
-                    ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
-                    targetedBroadcast(ref target, ref typedRef);
-                    return;
-                }
-
                 T typedMessage = (T)message;
                 targetedBroadcast(ref target, ref typedMessage);
             }
@@ -8182,14 +8141,6 @@ namespace DxMessaging.Core.MessageBus
 
             void UntypedBroadcast(InstanceId target, IBroadcastMessage message)
             {
-                if (typeof(T).IsValueType)
-                {
-                    object box = message;
-                    ref T typedRef = ref DxUnsafe.As<object, T>(ref box);
-                    sourcedBroadcast(ref target, ref typedRef);
-                    return;
-                }
-
                 T typedMessage = (T)message;
                 sourcedBroadcast(ref target, ref typedMessage);
             }
@@ -8234,7 +8185,6 @@ namespace DxMessaging.Core.MessageBus
 
             return lambda.Compile();
         }
-#endif
 
         /// <summary>Invokes one GameObject while preserving native single-argument compatibility.</summary>
         private bool SendMessage(
@@ -8429,5 +8379,6 @@ namespace DxMessaging.Core.MessageBus
             }
             return true;
         }
+#endif
     }
 }

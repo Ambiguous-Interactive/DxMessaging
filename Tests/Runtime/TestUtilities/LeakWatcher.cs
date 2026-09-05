@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime
 {
     using System;
@@ -533,4 +532,3 @@ namespace DxMessaging.Tests.Runtime
         }
     }
 }
-#endif

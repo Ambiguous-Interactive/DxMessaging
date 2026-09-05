@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix corrupted boxed struct payloads in untyped dispatch and preserve class-message identity
+  ([#527](https://github.com/Ambiguous-Interactive/DxMessaging/issues/527)).
+
 - Fix persistent listeners retaining former targets, unused bus storage after scene changes,
   unbounded registration history, and oversized reflexive caches
   ([#523](https://github.com/Ambiguous-Interactive/DxMessaging/issues/523)).

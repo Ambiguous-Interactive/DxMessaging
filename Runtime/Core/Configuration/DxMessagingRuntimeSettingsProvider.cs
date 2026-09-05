@@ -34,9 +34,8 @@ namespace DxMessaging.Core.Configuration
         /// <see cref="Override"/> is active).
         /// </summary>
         /// <remarks>
-        /// In non-Unity builds (where <c>UNITY_2021_3_OR_NEWER</c> is not defined)
-        /// this property returns <c>null</c> because <c>ScriptableObject</c> is
-        /// unavailable. Callers must tolerate a <c>null</c> result outside Unity.
+        /// This provider and its ScriptableObject settings type are available only in Unity.
+        /// Plain .NET builds use the bus defaults and do not expose this property.
         /// </remarks>
         public static DxMessagingRuntimeSettings Current
         {

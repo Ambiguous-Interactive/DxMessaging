@@ -327,9 +327,11 @@ Three settings gate idle sweeps:
   slot, the slot is repeatedly reset and never ages out. Lower the threshold
   or call `Trim(force: true)` for a deterministic reclaim.
 
-In non-Unity hosts, the PlayerLoop hook is unavailable. Either drive sweeps
-by continuing to emit messages periodically or call `Trim` from a maintenance
-thread.
+In the [plain .NET runtime build](../reference/compatibility.md#plain-net-runtime),
+the PlayerLoop hook and settings asset are unavailable. Buses use the built-in defaults.
+Continue bus activity to drive idle sweeps, or call `Trim(force: true)` at a maintenance
+boundary on the same thread that owns the bus. Concurrent dispatch and maintenance are
+unsupported.
 
 ---
 

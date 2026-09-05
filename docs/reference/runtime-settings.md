@@ -30,9 +30,10 @@ package always has a usable settings object. Field changes raise
 without recreation. The asset is hot-reloadable: edits saved to disk while
 Play mode is running take effect on the next sweep boundary.
 
-In non-Unity builds (where `UNITY_2021_3_OR_NEWER` is not defined) the
-provider returns `null` because `ScriptableObject` is unavailable. Callers
-must tolerate a null result outside Unity.
+The plain [.NET runtime build](compatibility.md#plain-net-runtime) does not include
+this provider or its `ScriptableObject` settings type. Buses use the built-in defaults;
+there is no `Current` property to call outside Unity. Use the bus diagnostics properties,
+registration-log capacity, and explicit `Trim` APIs for per-bus control.
 
 ---
 
