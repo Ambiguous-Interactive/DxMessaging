@@ -11,344 +11,433 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using NUnit.Framework;
 
     /// <summary>
-    /// Pins the relationship between the cross-library comparison matrix and the
-    /// DxMessaging-only dispatch-throughput table so the two families are never silently
-    /// mistaken for measuring "the same" scenario when they deliberately measure different
-    /// shapes. Each comparison scenario declares its nearest dispatch scenario and whether
-    /// the two have identical registration shapes or different storage topology / fan-out.
-    /// Matching topology does not establish timing equivalence across players. The map is the
-    /// single source of truth documented in
-    /// <c>docs/runbooks/perf-benchmark-methodology.md</c>; this suite fails the build if it
-    /// drifts from the actual bridge fan-out, the dispatch scenario keys, or the scenario
-    /// roster, so a future topology change cannot quietly desync the two tables.
+    /// Executes each public comparison's exact internal registration and emission path.
+    /// Topology equivalence does not establish MessagePipe semantic or timing parity.
+    /// Keep the mapping in sync with docs/runbooks/perf-benchmark-methodology.md.
     /// </summary>
     [Category("ComparisonContract")]
     public sealed class ComparisonDispatchTopologyTests
     {
-        /// <summary>
-        /// One row of the comparison-to-dispatch topology map. <see cref="DxFanOut"/> is the
-        /// number of handler invocations a single DxMessaging EmitOnce produces for the
-        /// comparison scenario; it must equal <see cref="DxMessagingBridge"/>'s declared
-        /// <see cref="IMessagingTechBridge.InvocationsPerOperation"/>.
-        /// <see cref="NearestDispatch"/> is the closest dispatch-throughput scenario (null
-        /// when no dispatch scenario measures a comparable shape).
-        /// <see cref="IsTrueTopologyTwin"/> is true only when the DxMessaging registration
-        /// shape is identical to the nearest dispatch scenario. Timing equivalence needs
-        /// separate measurement evidence.
-        /// </summary>
-        private readonly struct TopologyMapping
+        // Null dispatch means the independent ComparisonTopologyBenchmarks workload.
+        private static readonly IReadOnlyDictionary<
+            ComparisonScenario,
+            DispatchBenchmarkScenario?
+        > Map = new Dictionary<ComparisonScenario, DispatchBenchmarkScenario?>
         {
-            public readonly long DxFanOut;
-            public readonly DispatchBenchmarkScenario? NearestDispatch;
-            public readonly bool IsTrueTopologyTwin;
-            public readonly string Note;
+            [ComparisonScenario.GlobalToOneSubscriber] =
+                DispatchBenchmarkScenario.UntargetedFloodOneHandler,
+            [ComparisonScenario.GlobalToManySubscribers] =
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
+            [ComparisonScenario.KeyedToOneOfMany] = null,
+            [ComparisonScenario.PriorityOrderedDispatch] = null,
+            [ComparisonScenario.FilteredDispatch] = null,
+            [ComparisonScenario.PostProcessingDispatch] = null,
+            [ComparisonScenario.InterceptedPostProcessingDispatch] = null,
+            [ComparisonScenario.SubscribeUnsubscribeChurn] = null,
+            [ComparisonScenario.StructMessageNoBoxing] = null,
+        };
 
-            public TopologyMapping(
-                long dxFanOut,
-                DispatchBenchmarkScenario? nearestDispatch,
-                bool isTrueTopologyTwin,
-                string note
-            )
+        [Test]
+        public void EveryPublicComparisonHasExactlyOneExecutableTwin()
+        {
+            CollectionAssert.AreEquivalent(
+                ComparisonScenarios.All,
+                Map.Keys,
+                "Every public row must map to exactly one internal topology twin."
+            );
+            CollectionAssert.AreEquivalent(
+                Map.Where(pair => pair.Value == null).Select(pair => pair.Key),
+                ComparisonTopologyBenchmarks.Scenarios,
+                "Every missing dispatch-table shape must have an independently executable benchmark."
+            );
+            Assert.AreEqual(
+                DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
+                Map[ComparisonScenario.GlobalToManySubscribers],
+                "GlobalToMany must never regress to the stale four-handler mapping."
+            );
+            foreach (KeyValuePair<ComparisonScenario, DispatchBenchmarkScenario?> pair in Map)
             {
-                DxFanOut = dxFanOut;
-                NearestDispatch = nearestDispatch;
-                IsTrueTopologyTwin = isTrueTopologyTwin;
-                Note = note;
+                string key = pair.Value.HasValue
+                    ? DispatchBenchmarkScenarios.Key(pair.Value.Value)
+                    : ComparisonTopologyBenchmarks.RowKey(pair.Key);
+                Assert.IsNotEmpty(key, $"[{pair.Key}] The mapped internal row needs a stable key.");
+                Assert.IsFalse(
+                    key.StartsWith("Comparison_", StringComparison.Ordinal),
+                    $"[{pair.Key}] An internal result must not overwrite a public comparison row."
+                );
             }
         }
 
-        // SINGLE SOURCE OF TRUTH for the comparison <-> dispatch topology relationship.
-        // Keep this in lockstep with the table in docs/runbooks/perf-benchmark-methodology.md.
-        private static readonly IReadOnlyDictionary<ComparisonScenario, TopologyMapping> Map =
-            new Dictionary<ComparisonScenario, TopologyMapping>
-            {
-                [ComparisonScenario.GlobalToOneSubscriber] = new TopologyMapping(
-                    1,
-                    DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                    isTrueTopologyTwin: true,
-                    "Identical shape: one token, one untargeted handler, untargeted broadcast."
-                ),
-                [ComparisonScenario.GlobalToManySubscribers] = new TopologyMapping(
-                    ComparisonScenarios.FanOutSubscribers,
-                    DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
-                    isTrueTopologyTwin: true,
-                    "Identical shape: 16 tokens, one active untargeted handler per token, "
-                        + "priority zero, and the same SimpleUntargetedMessage payload."
-                ),
-                [ComparisonScenario.KeyedToOneOfMany] = new TopologyMapping(
-                    1,
-                    DispatchBenchmarkScenario.TargetedFloodOneListener,
-                    isTrueTopologyTwin: false,
-                    "Registers 16 distinct targets and dispatches to ONE, measuring lookup "
-                        + "selectivity; TargetedFlood_OneListener registers a single target, so "
-                        + "the registration shape differs even though both fan out to one."
-                ),
-                [ComparisonScenario.PriorityOrderedDispatch] = new TopologyMapping(
-                    4,
-                    DispatchBenchmarkScenario.UntargetedFloodFourHandlersFourPriorities,
-                    isTrueTopologyTwin: false,
-                    "Comparison uses ONE token with four priorities (one MessageHandler, four "
-                        + "handler-store entries); the dispatch twin uses FOUR tokens with one "
-                        + "priority each. Same fan-out (4), different handler-store topology."
-                ),
-                [ComparisonScenario.FilteredDispatch] = new TopologyMapping(
-                    1,
-                    DispatchBenchmarkScenario.InterceptorHeavyFourInterceptors,
-                    isTrueTopologyTwin: false,
-                    "Comparison runs one interceptor plus one handler; the dispatch twin runs "
-                        + "four interceptors plus one handler."
-                ),
-                [ComparisonScenario.PostProcessingDispatch] = new TopologyMapping(
-                    1,
-                    DispatchBenchmarkScenario.PostProcessingHeavyFourPostProcessors,
-                    isTrueTopologyTwin: false,
-                    "Comparison runs one post-processor plus one handler; the dispatch twin "
-                        + "runs four post-processors plus one handler."
-                ),
-                [ComparisonScenario.InterceptedPostProcessingDispatch] = new TopologyMapping(
-                    1,
-                    null,
-                    isTrueTopologyTwin: false,
-                    "One interceptor plus one post-processor plus one handler; no dispatch "
-                        + "scenario combines hook kinds, so this row only supports within-matrix "
-                        + "comparison against GlobalToOne, Filtered, and PostProcess."
-                ),
-                [ComparisonScenario.SubscribeUnsubscribeChurn] = new TopologyMapping(
-                    1,
-                    null,
-                    isTrueTopologyTwin: false,
-                    "Register/unregister churn cycle; the dispatch family has no "
-                        + "subscribe/unsubscribe-throughput scenario."
-                ),
-                [ComparisonScenario.StructMessageNoBoxing] = new TopologyMapping(
-                    1,
-                    DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                    isTrueTopologyTwin: false,
-                    "Uses one token and one handler, but dispatches the canonical "
-                        + "ComparisonStructPayload required across every technology instead of "
-                        + "the dispatch row's SimpleUntargetedMessage. The storage topology "
-                        + "matches while the closed generic payload path differs."
-                ),
-            };
-
-        [Test]
-        public void EveryComparisonScenarioDeclaresATopologyRelationship()
+        private static IEnumerable<TestCaseData> TwinCases()
         {
             foreach (ComparisonScenario scenario in ComparisonScenarios.All)
-            {
-                Assert.IsTrue(
-                    Map.ContainsKey(scenario),
-                    $"Comparison scenario '{scenario}' has no entry in the dispatch-topology map. "
-                        + "Adding a comparison scenario must declare whether it has a dispatch "
-                        + "twin (and whether that twin is a true topology match) so the two perf "
-                        + "tables never silently diverge. Update Map and the methodology runbook."
-                );
-            }
-
-            Assert.AreEqual(
-                ComparisonScenarios.All.Length,
-                Map.Count,
-                "The dispatch-topology map must have exactly one entry per comparison scenario; "
-                    + "a stale entry means a comparison scenario was removed without updating the map."
-            );
-        }
-
-        // ComparisonContractTests already asserts the bridge's runtime fan-out via
-        // AssertEmitOnceAccounting; this test instead pins the MAP (the documented
-        // single source of truth) against that same fan-out, so the runbook table and
-        // the bridge cannot drift apart. The two are complementary, not redundant.
-        [Test]
-        public void DeclaredDxFanOutMatchesTheBridge()
-        {
-            using IMessagingTechBridge dxMessaging = new DxMessagingBridge();
-            foreach ((ComparisonScenario scenario, TopologyMapping mapping) in Map)
-            {
-                Assert.AreEqual(
-                    mapping.DxFanOut,
-                    dxMessaging.InvocationsPerOperation(scenario),
-                    $"DxMessaging fan-out for '{scenario}' drifted from the topology map. The map "
-                        + "(and the methodology runbook) claim "
-                        + $"{mapping.DxFanOut} invocation(s) per operation but the bridge declares "
-                        + $"{dxMessaging.InvocationsPerOperation(scenario)}. Reconcile the two."
-                );
-            }
-        }
-
-        [Test]
-        public void NearestDispatchScenarioKeysResolve()
-        {
-            foreach ((ComparisonScenario scenario, TopologyMapping mapping) in Map)
-            {
-                if (mapping.NearestDispatch is not DispatchBenchmarkScenario dispatch)
-                {
-                    continue;
-                }
-
-                // Referencing the dispatch Key here means renaming or removing a dispatch
-                // scenario this map points at fails the build instead of silently rotting.
-                Assert.IsNotEmpty(
-                    DispatchBenchmarkScenarios.Key(dispatch),
-                    $"Comparison scenario '{scenario}' points at dispatch scenario '{dispatch}', "
-                        + "which must expose a stable non-empty Key."
-                );
-            }
-        }
-
-        [Test]
-        public void TrueTopologyTwinsIncludeBothExistingUntargetedFanOuts()
-        {
-            List<ComparisonScenario> trueTwins = Map.Where(kvp => kvp.Value.IsTrueTopologyTwin)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            CollectionAssert.AreEquivalent(
-                new[]
-                {
-                    ComparisonScenario.GlobalToOneSubscriber,
-                    ComparisonScenario.GlobalToManySubscribers,
-                },
-                trueTwins,
-                "GlobalToOne and GlobalToMany have existing exact internal fan-out rows. "
-                    + "StructNoBox still uses a different payload. Update the map and runbook together."
-            );
-        }
-
-        private static IEnumerable<TestCaseData> TrueTwinCases()
-        {
-            (
-                ComparisonScenario comparison,
-                DispatchBenchmarkScenario dispatch,
-                int subscribers
-            )[] twins =
-            {
-                (
-                    ComparisonScenario.GlobalToOneSubscriber,
-                    DispatchBenchmarkScenario.UntargetedFloodOneHandler,
-                    1
-                ),
-                (
-                    ComparisonScenario.GlobalToManySubscribers,
-                    DispatchBenchmarkScenario.UntargetedFloodSixteenHandlersOnePriority,
-                    16
-                ),
-            };
-            foreach (
-                (
-                    ComparisonScenario comparison,
-                    DispatchBenchmarkScenario dispatch,
-                    int subscribers
-                ) in twins
-            )
             {
                 foreach (int emits in new[] { 0, 1, 17 })
                 {
                     foreach (bool diagnostics in new[] { false, true })
                     {
-                        yield return new TestCaseData(
-                            comparison,
-                            dispatch,
-                            subscribers,
-                            emits,
-                            diagnostics
-                        ).SetName($"TrueTwin{comparison}Emits{emits}Diagnostics{diagnostics}");
+                        yield return new TestCaseData(scenario, emits, diagnostics).SetName(
+                            $"TrueTwin{scenario}Emits{emits}Diagnostics{diagnostics}"
+                        );
                     }
                 }
             }
         }
 
-        /// <remarks>
-        /// Investigation (2026-09-04): RegisteredUntargeted counts message-type/priority
-        /// buckets, not subscribers. Both twins use one priority-zero bucket; token metadata
-        /// and callback counts independently verify every subscriber in that shared bucket.
-        /// </remarks>
-        [TestCaseSource(nameof(TrueTwinCases))]
+        [TestCaseSource(nameof(TwinCases))]
         public void TrueTwinsObserveMatchingRegistrationsDispatchAndCleanup(
             ComparisonScenario scenario,
-            DispatchBenchmarkScenario dispatch,
-            int subscribers,
             int emits,
             bool globalDiagnostics
         )
         {
-            string label =
-                $"[{scenario}, {dispatch}, subscribers={subscribers}, emits={emits}, diagnostics={globalDiagnostics}]";
+            string label = $"[{scenario}, emits={emits}, diagnostics={globalDiagnostics}]";
             using DiagnosticsScope diagnostics = new(
                 globalDiagnostics ? DiagnosticsTarget.All : DiagnosticsTarget.Off,
                 diagnosticsStackTraces: globalDiagnostics
             );
-            TopologyMapping mapping = Map[scenario];
-            Assert.IsTrue(mapping.IsTrueTopologyTwin, $"{label} The existing twin must be mapped.");
-            Assert.AreEqual(
-                dispatch,
-                mapping.NearestDispatch,
-                $"{label} The mapped row must match."
-            );
-
-            (string[] topology, long invocations) =
-                DispatchThroughputBenchmarks.ObserveTopologyForContract(dispatch, emits);
+            (string[] topology, long invocations) = ObserveInternal(scenario, emits);
             using DxMessagingBridge bridge = new();
             bridge.Prepare(scenario);
             MessageBus bus = bridge.BusForContract;
-            CollectionAssert.AreEqual(
+            AssertTopology(topology, bridge.CaptureTopologyForContract(), label);
+            AssertDeclaredShape(scenario, topology, label);
+            Assert.AreEqual(
+                ExpectedPayload(scenario),
+                bridge.DispatchedPayloadType(scenario),
+                $"{label} The closed generic payload path must match the manifest."
+            );
+            EnableChurnLog(scenario, bus, emits);
+            for (int index = 0; index < emits; index++)
+            {
+                bridge.EmitOnce();
+            }
+            AssertChurnLog(scenario, bus, emits);
+            ComparisonTopologyBenchmarks.AssertAccounting(scenario, emits, invocations);
+            ComparisonTopologyBenchmarks.AssertAccounting(scenario, emits, bridge.ProgressMarker);
+            AssertTopology(
                 topology,
                 bridge.CaptureTopologyForContract(),
-                $"{label} Actual bus counters, token ownership, payload, priority, context, and diagnostics must match."
+                label + " after operations"
             );
+            bridge.Dispose();
+            ComparisonTopologyBenchmarks.AssertClean(bus, label);
+        }
+
+        private static (string[] Topology, long Invocations) ObserveInternal(
+            ComparisonScenario scenario,
+            int emits
+        )
+        {
+            if (Map[scenario] is DispatchBenchmarkScenario dispatch)
+            {
+                return DispatchThroughputBenchmarks.ObserveTopologyForContract(dispatch, emits);
+            }
+            using ComparisonTopologyBenchmarks.Workload workload = new(scenario);
+            string[] topology = workload.CaptureTopology();
+            EnableChurnLog(scenario, workload.Bus, emits);
+            workload.EmitMany(emits);
+            AssertChurnLog(scenario, workload.Bus, emits);
+            AssertTopology(
+                topology,
+                workload.CaptureTopology(),
+                $"{scenario} internal after operations"
+            );
+            workload.Dispose();
+            ComparisonTopologyBenchmarks.AssertClean(workload.Bus, scenario.ToString());
+            return (topology, workload.Progress);
+        }
+
+        private static void EnableChurnLog(ComparisonScenario scenario, MessageBus bus, int emits)
+        {
+            if (scenario == ComparisonScenario.SubscribeUnsubscribeChurn)
+            {
+                DispatchThroughputBenchmarks.EnableRegistrationLogForContract(
+                    bus,
+                    Math.Max(1, emits * 2)
+                );
+            }
+        }
+
+        private static void AssertChurnLog(ComparisonScenario scenario, MessageBus bus, int emits)
+        {
+            if (scenario != ComparisonScenario.SubscribeUnsubscribeChurn)
+            {
+                return;
+            }
+            IReadOnlyList<MessagingRegistration> log = bus.Log.Registrations;
             Assert.AreEqual(
-                subscribers,
+                emits * 2,
+                log.Count,
+                "SubUnsub must perform one actual register/remove pair per operation; a progress increment alone is insufficient."
+            );
+            for (int index = 0; index < log.Count; index++)
+            {
+                MessagingRegistration entry = log[index];
+                string label = $"[SubUnsub operation={index / 2}, event={index}]";
+                Assert.AreEqual(
+                    index % 2 == 0 ? RegistrationType.Register : RegistrationType.Deregister,
+                    entry.registrationType,
+                    $"{label} Registration must precede removal in each cycle."
+                );
+                Assert.AreEqual(
+                    RegistrationMethod.Untargeted,
+                    entry.registrationMethod,
+                    $"{label} Each operation must use the untargeted registration path."
+                );
+                Assert.AreEqual(
+                    typeof(SimpleUntargetedMessage),
+                    entry.type,
+                    $"{label} Each operation must register the canonical payload."
+                );
+                Assert.AreEqual(
+                    log[0].id,
+                    entry.id,
+                    $"{label} Every operation must reuse the same handler owner."
+                );
+            }
+        }
+
+        private static Type ExpectedPayload(ComparisonScenario scenario) =>
+            scenario switch
+            {
+                ComparisonScenario.KeyedToOneOfMany => typeof(SimpleTargetedMessage),
+                ComparisonScenario.StructMessageNoBoxing => typeof(ComparisonStructPayload),
+                _ => typeof(SimpleUntargetedMessage),
+            };
+
+        // Independent manifest: do not derive expected counts from either workload builder.
+        private static void AssertDeclaredShape(
+            ComparisonScenario scenario,
+            string[] topology,
+            string label
+        )
+        {
+            int tokens = scenario == ComparisonScenario.GlobalToManySubscribers ? 16 : 1;
+            int registrations = scenario switch
+            {
+                ComparisonScenario.GlobalToManySubscribers => 16,
+                ComparisonScenario.KeyedToOneOfMany => 16,
+                ComparisonScenario.PriorityOrderedDispatch => 4,
+                ComparisonScenario.FilteredDispatch => 2,
+                ComparisonScenario.PostProcessingDispatch => 2,
+                ComparisonScenario.InterceptedPostProcessingDispatch => 3,
+                ComparisonScenario.SubscribeUnsubscribeChurn => 0,
+                _ => 1,
+            };
+            Assert.AreEqual(
+                tokens,
                 topology.Count(row => row.StartsWith("token:", StringComparison.Ordinal)),
-                $"{label} Each subscriber needs one token, with no unused token."
+                $"{label} Each handler owner must have exactly one enabled token, including the empty churn token."
             );
+            string[] actual = topology
+                .Where(row => row.StartsWith("registration:", StringComparison.Ordinal))
+                .ToArray();
             Assert.AreEqual(
-                subscribers,
-                topology.Count(row => row.StartsWith("registration:", StringComparison.Ordinal)),
-                $"{label} Each subscriber needs exactly one registration, with no extra registration."
+                registrations,
+                actual.Length,
+                $"{label} Registration cardinality must match."
             );
-            for (int index = 0; index < subscribers; index++)
+            for (int index = 0; index < tokens; index++)
             {
                 CollectionAssert.Contains(
                     topology,
                     $"token:{index}:True:False",
                     $"{label} Token {index} must be enabled with diagnostics disabled."
                 );
-                CollectionAssert.Contains(
-                    topology,
-                    $"registration:{index}:Untargeted:{typeof(SimpleUntargetedMessage).FullName}:0:none",
-                    $"{label} Token {index} must register the exact payload at priority zero without a context."
+            }
+            string payload = ExpectedPayload(scenario).FullName;
+            List<string> expected = new();
+            if (scenario == ComparisonScenario.KeyedToOneOfMany)
+            {
+                for (int index = 0; index < 16; index++)
+                {
+                    expected.Add($"registration:0:Targeted:{payload}:0:{41000 + index}");
+                }
+            }
+            else if (scenario != ComparisonScenario.SubscribeUnsubscribeChurn)
+            {
+                if (
+                    scenario == ComparisonScenario.FilteredDispatch
+                    || scenario == ComparisonScenario.InterceptedPostProcessingDispatch
+                )
+                {
+                    expected.Add($"registration:0:UntargetedInterceptor:{payload}:0:none");
+                }
+                if (
+                    scenario == ComparisonScenario.PostProcessingDispatch
+                    || scenario == ComparisonScenario.InterceptedPostProcessingDispatch
+                )
+                {
+                    expected.Add($"registration:0:UntargetedPostProcessor:{payload}:0:none");
+                }
+                int handlers = scenario == ComparisonScenario.PriorityOrderedDispatch ? 4 : tokens;
+                for (int index = 0; index < handlers; index++)
+                {
+                    int token = tokens == 16 ? index : 0;
+                    int priority =
+                        scenario == ComparisonScenario.PriorityOrderedDispatch ? index : 0;
+                    expected.Add($"registration:{token}:Untargeted:{payload}:{priority}:none");
+                }
+            }
+            CollectionAssert.AreEquivalent(
+                expected,
+                actual,
+                $"{label} Actual payloads, handler ownership, priorities, hooks, and distinct routes must match the independent manifest."
+            );
+        }
+
+        private static void AssertTopology(string[] expected, string[] actual, string label) =>
+            CollectionAssert.AreEqual(
+                expected,
+                actual,
+                $"[{label}] Actual bus counters, token ownership, payloads, priorities, routes, and diagnostics must match."
+            );
+
+        [TestCase("token")]
+        [TestCase("handler")]
+        [TestCase("priority")]
+        [TestCase("payload")]
+        [TestCase("route")]
+        public void ActualTopologyDriftFailsValidation(string dimension)
+        {
+            ComparisonScenario scenario =
+                dimension == "route"
+                    ? ComparisonScenario.KeyedToOneOfMany
+                    : ComparisonScenario.PriorityOrderedDispatch;
+            using DxMessagingBridge bridge = new();
+            bridge.Prepare(scenario);
+            using ComparisonTopologyBenchmarks.Workload workload = new(scenario);
+            string[] expected = bridge.CaptureTopologyForContract();
+            AssertTopology(expected, workload.CaptureTopology(), dimension + " before mutation");
+            switch (dimension)
+            {
+                case "token":
+                    _ = workload.AddToken();
+                    break;
+                case "handler":
+                    _ = workload.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                        (in SimpleUntargetedMessage message) => { }
+                    );
+                    break;
+                case "priority":
+                case "payload":
+                    workload.Token.UnregisterAll();
+                    for (int priority = 0; priority < 4; priority++)
+                    {
+                        if (dimension == "payload" && priority == 3)
+                        {
+                            _ = workload.Token.RegisterUntargeted<ComparisonStructPayload>(
+                                (in ComparisonStructPayload message) => { },
+                                priority
+                            );
+                        }
+                        else
+                        {
+                            _ = workload.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                                (in SimpleUntargetedMessage message) => { },
+                                dimension == "priority" && priority == 3 ? 7 : priority
+                            );
+                        }
+                    }
+                    break;
+                case "route":
+                    workload.Token.UnregisterAll();
+                    for (int index = 0; index < 16; index++)
+                    {
+                        _ = workload.Token.RegisterTargeted<SimpleTargetedMessage>(
+                            new InstanceId(index == 15 ? 41999 : 41000 + index),
+                            (in SimpleTargetedMessage message) => { }
+                        );
+                    }
+                    break;
+            }
+            if (dimension == "priority" || dimension == "payload" || dimension == "route")
+            {
+                workload.Token.Enable();
+                Assert.AreEqual(
+                    expected.Length,
+                    workload.CaptureTopology().Length,
+                    $"The {dimension} mutation must preserve token and registration cardinality."
+                );
+                Assert.AreEqual(
+                    1,
+                    expected
+                        .Zip(workload.CaptureTopology(), (before, after) => before != after)
+                        .Count(changed => changed),
+                    $"The {dimension} mutation must change exactly one registration row, with bus and token state preserved."
                 );
             }
-            Assert.AreEqual(
-                1,
-                bus.RegisteredUntargeted,
-                $"{label} All subscribers must share one message-type/priority-zero bucket."
+            Assert.Throws<AssertionException>(
+                () => AssertTopology(expected, workload.CaptureTopology(), dimension),
+                $"Changing an actual {dimension} must fail exact topology validation."
             );
-            Assert.AreEqual(
-                typeof(SimpleUntargetedMessage),
-                bridge.DispatchedPayloadType(scenario),
-                $"{label} Both twins must emit the same closed message type."
+        }
+
+        [Test]
+        public void MissingTransientChurnWorkFailsEvenWithEmptyFinalTopology()
+        {
+            const ComparisonScenario scenario = ComparisonScenario.SubscribeUnsubscribeChurn;
+            using ComparisonTopologyBenchmarks.Workload workload = new(scenario);
+            EnableChurnLog(scenario, workload.Bus, 1);
+            ComparisonTopologyBenchmarks.AssertClean(workload.Bus, "empty churn state");
+            Assert.Throws<AssertionException>(
+                () => AssertChurnLog(scenario, workload.Bus, 1),
+                "An empty bus with no register/remove events cannot stand in for a completed cycle."
             );
-            for (int index = 0; index < emits; index++)
-            {
-                bridge.EmitOnce();
-            }
-            Assert.AreEqual(
-                (long)subscribers * emits,
-                invocations,
-                $"{label} Internal callbacks must reconcile."
+            workload.EmitMany(1);
+            AssertChurnLog(scenario, workload.Bus, 1);
+            ComparisonTopologyBenchmarks.AssertClean(workload.Bus, "completed churn state");
+        }
+
+        [Test]
+        public void LostFanOutAndIncompleteTeardownFailReconciliation()
+        {
+            const ComparisonScenario scenario = ComparisonScenario.PriorityOrderedDispatch;
+            using ComparisonTopologyBenchmarks.Workload workload = new(scenario);
+            Assert.Throws<AssertionException>(
+                () =>
+                    ComparisonTopologyBenchmarks.AssertClean(
+                        workload.Bus,
+                        "intentional live registrations"
+                    ),
+                "Live registrations must fail teardown validation."
             );
-            Assert.AreEqual(
-                invocations,
-                bridge.ProgressMarker,
-                $"{label} Comparison callbacks must reconcile."
+            workload.Token.Disable();
+            workload.EmitMany(1);
+            Assert.Throws<AssertionException>(
+                () => ComparisonTopologyBenchmarks.AssertAccounting(scenario, 1, workload.Progress),
+                "Disabling actual callbacks must fail exact fan-out reconciliation."
             );
-            bridge.Dispose();
-            CollectionAssert.AreEqual(
-                new[] { "bus:0:0:0:0:0:0", "diagnostics:False" },
-                DispatchThroughputBenchmarks.CaptureTopologyForContract(
-                    bus,
-                    Array.Empty<MessageRegistrationToken>()
-                ),
-                $"{label} Disposing the real bridge must clear all six registration counters."
+            workload.Dispose();
+            ComparisonTopologyBenchmarks.AssertClean(workload.Bus, "after disposal");
+        }
+
+        [Test]
+        public void TwinTimingRequiresItsOwnExplicitCategory()
+        {
+            object[] categories = typeof(ComparisonTopologyBenchmarks).GetCustomAttributes(
+                typeof(CategoryAttribute),
+                true
+            );
+            string[] names = categories
+                .Cast<CategoryAttribute>()
+                .Select(category => category.Name)
+                .ToArray();
+            CollectionAssert.Contains(
+                names,
+                "PerfTopologyTwin",
+                "Twin timing must be explicitly selectable."
+            );
+            CollectionAssert.DoesNotContain(
+                names,
+                "PerfComparison",
+                "Ordinary comparison timing must not gain seven windows."
+            );
+            CollectionAssert.DoesNotContain(
+                names,
+                "ComparisonContract",
+                "Fast contract checks must never execute timing windows."
             );
         }
     }

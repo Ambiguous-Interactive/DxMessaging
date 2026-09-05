@@ -75,6 +75,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             };
         }
 
+        // SYNC: ComparisonTopologyBenchmarks.Workload independently builds these exact shapes.
+        // ComparisonDispatchTopologyTests rejects drift between the two actual workloads.
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;

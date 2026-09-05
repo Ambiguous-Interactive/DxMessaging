@@ -1585,6 +1585,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
         }
 
+        // Keep transient lifecycle observations outside every benchmark measurement window.
+        public static void EnableRegistrationLogForContract(MessageBus bus, int capacity)
+        {
+            bus.Log.Resize(capacity);
+            bus.Log.Enabled = true;
+        }
+
         // Untimed inspection of the actual registrations, shared with the comparison bridge.
         // Empty tokens remain visible: allocating an unused primary token is topology drift.
         public static string[] CaptureTopologyForContract(
