@@ -194,8 +194,8 @@ namespace DxMessaging.Tests.Editor
             Assert.That(registrations, Is.Empty);
             Assert.That(
                 finalizedRegistrations.GetValue(log),
-                Is.SameAs(registrations),
-                "The first Registrations read must materialize the stable live list."
+                Is.Null,
+                "Reading empty history must not allocate registration storage."
             );
         }
 

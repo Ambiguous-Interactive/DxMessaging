@@ -14,7 +14,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// <see cref="InstanceId"/> preserving insertion order, and
     /// <see cref="RegistrationLog.ToString(System.Func{MessagingRegistration, string})"/>
     /// applies the supplied formatter (falling back to the default when null).
-    /// Every test uses a standalone log instance, so global bus state is untouched.
+    /// Standalone logs isolate history behavior. The settings integration test restores
+    /// its scoped provider override before destroying the temporary settings asset.
     /// </summary>
     [TestFixture]
     public sealed class RegistrationLogTests
@@ -22,6 +23,221 @@ namespace DxMessaging.Tests.Runtime.Core
         private static readonly InstanceId FirstOwner = new(101);
         private static readonly InstanceId SecondOwner = new(202);
         private static readonly InstanceId UnknownOwner = new(303);
+
+        [Test]
+        public void CapturedEmptyViewRemainsLiveThroughWrapResizeAndClear()
+        {
+            RegistrationLog log = new RegistrationLog(false, 3);
+            IReadOnlyList<MessagingRegistration> view = log.Registrations;
+            Assert.That(view, Is.Empty, "A newly captured view must start empty.");
+            Assert.That(
+                log.Registrations,
+                Is.SameAs(view),
+                "Repeated reads must return the same live view."
+            );
+            log.Enabled = true;
+            for (int index = 0; index < 4; index++)
+            {
+                log.Log(CreateRegistration(new InstanceId(index), typeof(SimpleUntargetedMessage)));
+            }
+            CollectionAssert.AreEqual(
+                new[] { 1, 2, 3 },
+                view.Select(entry => entry.id.Id),
+                "A view captured before the first entry must observe the wrapped history."
+            );
+            Assert.That(
+                view[0].id.Id,
+                Is.EqualTo(1),
+                "Index zero must return the oldest retained entry."
+            );
+            Assert.That(
+                view[2].id.Id,
+                Is.EqualTo(3),
+                "The final index must return the newest retained entry."
+            );
+            log.Resize(2);
+            CollectionAssert.AreEqual(
+                new[] { 2, 3 },
+                view.Select(entry => entry.id.Id),
+                "The captured view must observe the newest entries after shrinking."
+            );
+            log.Resize(0);
+            Assert.That(view, Is.Empty, "The captured view must observe zero capacity.");
+            log.Resize(3);
+            log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
+            Assert.That(
+                view.Single().id,
+                Is.EqualTo(FirstOwner),
+                "The captured view must observe recording after capacity grows."
+            );
+            log.Clear();
+            Assert.That(view, Is.Empty, "The captured view must observe clearing.");
+        }
+
+        [TestCase(0, -1)]
+        [TestCase(0, 0)]
+        [TestCase(1, -1)]
+        [TestCase(1, 1)]
+        [TestCase(3, 3)]
+        [TestCase(3, int.MaxValue)]
+        public void LiveViewRejectsIndicesOutsideCurrentHistory(int count, int index)
+        {
+            RegistrationLog log = new RegistrationLog(true, 3);
+            IReadOnlyList<MessagingRegistration> view = log.Registrations;
+            for (int entry = 0; entry < count; entry++)
+            {
+                log.Log(CreateRegistration(new InstanceId(entry), typeof(SimpleUntargetedMessage)));
+            }
+            Assert.Throws<System.ArgumentOutOfRangeException>(
+                () => _ = view[index],
+                $"count={count}, index={index}: invalid list indices must preserve the public exception contract."
+            );
+        }
+
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(3)]
+        public void LogRetainsOnlyNewestEntriesInChronologicalOrder(int capacity)
+        {
+            RegistrationLog log = new RegistrationLog(true, capacity);
+            for (int i = 0; i < 10; ++i)
+            {
+                log.Log(CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage)));
+            }
+            Assert.That(
+                log.Registrations.Count,
+                Is.EqualTo(capacity),
+                $"capacity={capacity}: history must remain bounded."
+            );
+            CollectionAssert.AreEqual(
+                Enumerable.Range(10 - capacity, capacity),
+                log.Registrations.Select(entry => entry.id.Id),
+                $"capacity={capacity}: wrapping must preserve the newest chronological window."
+            );
+        }
+
+        [Test]
+        public void ResizingAndFilteringWrappedLogPreservesChronologicalHistory()
+        {
+            RegistrationLog log = new RegistrationLog(true, 3);
+            for (int i = 0; i < 6; ++i)
+            {
+                log.Log(CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage)));
+            }
+            log.Resize(2);
+            Assert.That(
+                log.ToString(entry => entry.id.Id.ToString()),
+                Is.EqualTo("[4, 5]"),
+                "Shrinking must keep the newest entries."
+            );
+            Assert.That(
+                log.Clear(entry => entry.id.Id % 2 == 0),
+                Is.EqualTo(1),
+                "Filtering must remove only the matching retained entry."
+            );
+            Assert.That(
+                log.Registrations.Single().id.Id,
+                Is.EqualTo(5),
+                "Filtering a wrapped log must preserve its survivor."
+            );
+            Assert.That(log.Clear(), Is.EqualTo(1), "Full clear must report the retained count.");
+            log.Resize(0);
+            log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
+            Assert.That(log.Registrations, Is.Empty, "Zero capacity must discard history.");
+            log.Resize(2);
+            log.Log(CreateRegistration(SecondOwner, typeof(SimpleUntargetedMessage)));
+            Assert.That(
+                log.Registrations.Single().id,
+                Is.EqualTo(SecondOwner),
+                "Growing from zero must resume recording without restoring discarded entries."
+            );
+        }
+
+        [Test]
+        public void RegistrationMetadataKeepsIdentityWithoutRetainingUnityObject()
+        {
+#if UNITY_EDITOR
+            UnityEngine.GameObject owner = UnityEditor.EditorUtility.CreateGameObjectWithHideFlags(
+                "RegistrationHistoryOwner",
+                UnityEngine.HideFlags.HideAndDontSave
+            );
+#else
+            UnityEngine.GameObject owner = new UnityEngine.GameObject("RegistrationHistoryOwner");
+#endif
+            try
+            {
+                InstanceId id = owner;
+                MessagingRegistration entry = CreateRegistration(
+                    id,
+                    typeof(SimpleUntargetedMessage)
+                );
+                Assert.That(
+                    entry.id,
+                    Is.EqualTo(id),
+                    "Removing the object reference must preserve numeric identity."
+                );
+                Assert.That(
+                    ReferenceEquals(entry.id.Object, null),
+                    Is.True,
+                    "Diagnostic history must not root a Unity object wrapper."
+                );
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(owner);
+            }
+        }
+
+        [Test]
+        public void RuntimeSettingsResizeExistingAndNewRegistrationLogs()
+        {
+            DxMessaging.Core.Configuration.DxMessagingRuntimeSettings settings =
+                UnityEngine.ScriptableObject.CreateInstance<DxMessaging.Core.Configuration.DxMessagingRuntimeSettings>();
+            System.IDisposable settingsOverride = null;
+            try
+            {
+                MessageBus existing = new MessageBus();
+                existing.Log.Enabled = true;
+                settings._registrationLogCapacity = 2;
+                settingsOverride =
+                    DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider.Override(
+                        settings
+                    );
+                MessageBus later = new MessageBus();
+                later.Log.Enabled = true;
+                foreach (MessageBus bus in new[] { existing, later })
+                {
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        bus.Log.Log(
+                            CreateRegistration(new InstanceId(i), typeof(SimpleUntargetedMessage))
+                        );
+                    }
+                    Assert.That(
+                        bus.Log.Registrations.Count,
+                        Is.EqualTo(2),
+                        "Both existing and newly created buses must use the configured bound."
+                    );
+                }
+                settings._registrationLogCapacity = 1;
+                DxMessaging.Core.Configuration.DxMessagingRuntimeSettings.RaiseSettingsChanged(
+                    settings
+                );
+                foreach (MessageBus bus in new[] { existing, later })
+                {
+                    Assert.That(
+                        bus.Log.Registrations.Single().id.Id,
+                        Is.EqualTo(3),
+                        "A live capacity reduction must preserve only the newest entry."
+                    );
+                }
+            }
+            finally
+            {
+                settingsOverride?.Dispose();
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
 
         [Test]
         public void LogIsDisabledByDefaultAndIgnoresEntries()

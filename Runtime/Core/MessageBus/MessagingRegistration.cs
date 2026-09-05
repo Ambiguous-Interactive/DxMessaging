@@ -93,7 +93,7 @@ namespace DxMessaging.Core.MessageBus
     public readonly struct MessagingRegistration
     {
         /// <summary>
-        /// Id of the MessageHandler that was registered.
+        /// Numeric identity of the MessageHandler that was registered, without retaining its Unity object.
         /// </summary>
         public readonly InstanceId id;
 
@@ -133,7 +133,7 @@ namespace DxMessaging.Core.MessageBus
             RegistrationMethod registrationMethod
         )
         {
-            this.id = id;
+            this.id = new InstanceId(id.Id);
             this.type = type;
             this.registrationType = registrationType;
             this.registrationMethod = registrationMethod;

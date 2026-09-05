@@ -2524,9 +2524,116 @@ def validate_msvc_gate_is_reachable() -> None:
         )
 
 
+def validate_shipping_event_policy(source: str) -> None:
+    """Require one weekly/manual predicate for every shipping action and verdict."""
+    result = subprocess.run(
+        ["node", "-e", """
+const fs = require('fs');
+const YAML = require('yaml');
+const workflow = YAML.parse(fs.readFileSync(0, 'utf8'));
+const job = workflow.jobs['unity-tests'];
+process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.steps}));
+"""],
+        input=source, capture_output=True, text=True, check=False,
+    )
+    require(result.returncode == 0, f"shipping policy YAML must parse: {result.stderr}")
+    workflow = json.loads(result.stdout)
+    triggers = workflow["on"]
+    require(triggers.get("schedule") == [{"cron": "17 4 * * 0"}],
+            "shipping fidelity must run weekly on Sunday at 04:17 UTC")
+    dispatch = triggers.get("workflow_dispatch") or {}
+    option = (dispatch.get("inputs") or {}).get("shipping_fidelity") or {}
+    require(option.get("type") == "boolean" and option.get("default") is False,
+            "manual shipping fidelity must be a boolean opt-in defaulting to false")
+    predicate = (
+        "${{ (github.event_name == 'schedule' || "
+        "(github.event_name == 'workflow_dispatch' && inputs.shipping_fidelity)) && "
+        "(matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1') }}"
+    )
+    require((workflow.get("env") or {}).get("DXM_RUN_SHIPPING") == predicate,
+            "shipping must use the shared weekly/manual endpoint predicate")
+    conditions = {
+        "Run stripped shipping-fidelity players":
+            "!cancelled() && steps.acquire_lock.outputs.acquired == 'true' && env.DXM_RUN_SHIPPING == 'true'",
+        "Dump shipping-fidelity log tail on failure or cancellation":
+            "env.DXM_RUN_SHIPPING == 'true' && (steps.run_shipping.outcome == 'failure' || cancelled())",
+        "Seal shipping-fidelity evidence bundle":
+            "env.DXM_RUN_SHIPPING == 'true' && steps.run_shipping.outcome == 'success'",
+        "Upload shipping-fidelity artifacts":
+            "steps.redact_tests.outcome == 'success' && steps.seal_shipping.outcome == 'success' && "
+            "always() && !cancelled() && "
+            "steps.acquire_lock.outputs.acquired == 'true' && env.DXM_RUN_SHIPPING == 'true'",
+    }
+    for name, condition in conditions.items():
+        matches = [step for step in workflow["steps"] if step.get("name") == name]
+        require(len(matches) == 1, f"shipping policy requires exactly one {name!r} step")
+        actual = " ".join(str(matches[0].get("if", "")).split())
+        require(actual == "${{ " + condition + " }}",
+                f"{name}: shipping condition must preserve event, outcome, and cleanup gates")
+    for step in workflow["steps"]:
+        require("DXM_RUN_SHIPPING" not in (step.get("env") or {}),
+                "steps must not shadow the shared shipping predicate")
+    gate = next(step for step in workflow["steps"] if step.get("name") == "Require every Unity mode to pass")
+    require(gate.get("env", {}).get("SHIPPING_REQUIRED") == "${{ env.DXM_RUN_SHIPPING }}",
+            "terminal shipping requirement must use the same event predicate as execution")
+
+    # Execute the actual, structurally restricted workflow expression. Missing inputs
+    # are falsy; typed workflow_dispatch booleans must not become truthy strings.
+    expression = workflow["env"]["DXM_RUN_SHIPPING"][3:-2].replace("github.event_name", "event").replace(
+        "inputs.shipping_fidelity", "input"
+    ).replace("matrix.unity-version", "version")
+    events = ("pull_request", "pull_request_target", "push", "schedule", "workflow_dispatch", "repository_dispatch")
+    versions = ("2021.3.45f1", "2022.3.45f1", "6000.3.16f1", "6000.5.2f1")
+    rows = [(event, option, version) for event in events for option in (None, False, True) for version in versions]
+    evaluated = subprocess.run(
+        ["node", "-e", "const x=JSON.parse(require('fs').readFileSync(0,'utf8'));"
+         "const f=new Function('event','input','version','return '+x.expression);"
+         "process.stdout.write(JSON.stringify(x.rows.map(row=>Boolean(f(...row)))));"],
+        input=json.dumps({"expression": expression, "rows": rows}),
+        capture_output=True, text=True, check=False,
+    )
+    require(evaluated.returncode == 0, f"shipping event predicate must execute: {evaluated.stderr}")
+    outcomes = json.loads(evaluated.stdout)
+    require(len(outcomes) == len(rows), "shipping event truth table must evaluate every row")
+    for (event, option, version), actual in zip(rows, outcomes):
+        expected = version in (versions[0], versions[-1]) and (
+            event == "schedule" or (event == "workflow_dispatch" and option is True)
+        )
+        require(actual is expected,
+                f"shipping event={event}, input={option}, version={version}: expected {expected}, got {actual}")
+
+
 def validate_grouped_unity_correctness() -> None:
     """Pin per-editor mode isolation and execute the terminal result truth table."""
     source = WORKFLOW.read_text(encoding="utf-8")
+    validate_shipping_event_policy(source)
+    mutations = [
+        ("weekly schedule removed", '    - cron: "17 4 * * 0"', ""),
+        ("daily shipping schedule", 'cron: "17 4 * * 0"', 'cron: "17 4 * * *"'),
+        ("manual shipping enabled by default", "default: false", "default: true"),
+        ("manual input loses boolean typing", "type: boolean", "type: string"),
+        ("push enables shipping", "github.event_name == 'schedule'", "github.event_name == 'push'"),
+        ("manual shipping ignores opt-in", "&& inputs.shipping_fidelity", "&& true"),
+        ("endpoint admission broadens", "matrix.unity-version == '2021.3.45f1'", "true"),
+        ("terminal shipping gate drifts", "SHIPPING_REQUIRED: ${{ env.DXM_RUN_SHIPPING }}",
+         "SHIPPING_REQUIRED: true"),
+    ]
+    for name in (
+        "Run stripped shipping-fidelity players",
+        "Dump shipping-fidelity log tail on failure or cancellation",
+        "Seal shipping-fidelity evidence bundle",
+        "Upload shipping-fidelity artifacts",
+    ):
+        original = step_block(job_block(source, "unity-tests"), name)
+        mutations.append((f"{name} bypasses event policy", original,
+                          original.replace("env.DXM_RUN_SHIPPING == 'true'", "true")))
+    for name, before, after in mutations:
+        require(before in source and before != after, f"{name}: mutation target missing")
+        try:
+            validate_shipping_event_policy(source.replace(before, after, 1))
+        except AssertionError:
+            continue
+        raise AssertionError(f"{name}: unsafe shipping policy was accepted")
     job = job_block(source, "unity-tests")
     require(
         "name: Unity ${{ matrix.unity-version }} all modes" in job
@@ -2612,8 +2719,7 @@ def validate_grouped_unity_correctness() -> None:
         "id: run_shipping",
         "!cancelled()",
         "steps.acquire_lock.outputs.acquired == 'true'",
-        "matrix.unity-version == '2021.3.45f1'",
-        "matrix.unity-version == '6000.5.2f1'",
+        "env.DXM_RUN_SHIPPING == 'true'",
         "continue-on-error: true",
         "timeout-minutes: 150",
         "./scripts/unity/run-shipping-fidelity-matrix.ps1",
@@ -2725,6 +2831,8 @@ def validate_grouped_unity_correctness() -> None:
             ("empty mode runs", {"EDIT_EMPTY": "true"}, 1),
             ("verification fails", {"STANDALONE_VERIFY": "failure"}, 1),
             ("required shipping fails", {"SHIPPING_RUN": "failure"}, 1),
+            ("required shipping skips", {"SHIPPING_RUN": "skipped"}, 1),
+            ("required shipping outcome missing", {"SHIPPING_RUN": ""}, 1),
             ("non-target shipping skips", {"SHIPPING_REQUIRED": "false", "SHIPPING_RUN": "skipped"}, 0),
             ("non-target shipping runs", {"SHIPPING_REQUIRED": "false"}, 1),
         )

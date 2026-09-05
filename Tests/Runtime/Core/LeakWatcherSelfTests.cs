@@ -340,10 +340,284 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        [Test]
+        public void HandlerStorageWatcherDetectsDeferredContextAfterRegistrationsDrain(
+            [Values(false, true)] bool throwOnLeak,
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.KindsWithComponentTarget)
+            )]
+                MessageScenario scenario
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
+            MessageHandler handler = new MessageHandler(new InstanceId(701), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.Enable();
+            InstanceId anchorContext = new InstanceId(702);
+            InstanceId transientContext = new InstanceId(703);
+            MessageRegistrationHandle anchor = RegisterCountingHandler(
+                scenario,
+                token,
+                anchorContext
+            );
+            LeakWatcher watcher = new LeakWatcher(
+                bus,
+                throwOnLeak,
+                scenario.DisplayName,
+                handler: handler
+            );
+            LeakWatcher defaultWatcher = new LeakWatcher(bus);
+            try
+            {
+                MessageRegistrationHandle transient = default;
+                transient = RegisterCountingHandler(
+                    scenario,
+                    token,
+                    transientContext,
+                    () => token.RemoveRegistration(transient)
+                );
+                EmitCountingMessage(scenario, bus, transientContext);
+                Assert.AreEqual(
+                    0,
+                    watcher.LeakedRegistrations,
+                    "[{0}, throw={1}] the transient registration must be removed before checking storage.",
+                    scenario.Kind,
+                    throwOnLeak
+                );
+                Assert.AreEqual(
+                    1,
+                    watcher.LeakedHandlerContexts,
+                    "[{0}, throw={1}] the watcher must detect the retained empty context above its live baseline.",
+                    scenario.Kind,
+                    throwOnLeak
+                );
+                Assert.AreEqual(
+                    1,
+                    watcher.LeakedHandlerPriorityCaches,
+                    "[{0}, throw={1}] the watcher must detect the retained empty priority cache.",
+                    scenario.Kind,
+                    throwOnLeak
+                );
+                Assert.DoesNotThrow(
+                    defaultWatcher.Dispose,
+                    "[{0}, throw={1}] default registration-only watching must ignore retained handler storage.",
+                    scenario.Kind,
+                    throwOnLeak
+                );
+                if (throwOnLeak)
+                {
+                    AssertionException exception = Assert.Throws<AssertionException>(
+                        watcher.Dispose
+                    );
+                    StringAssert.Contains("HandlerContexts 1->2", exception.Message);
+                    StringAssert.Contains("HandlerPriorityCaches 1->2", exception.Message);
+                }
+                else
+                {
+                    Assert.DoesNotThrow(
+                        watcher.Dispose,
+                        "[{0}] non-throwing mode must record handler storage without failing.",
+                        scenario.Kind
+                    );
+                }
+
+                _ = bus.Trim(force: true);
+                Assert.AreEqual(
+                    1,
+                    watcher.LeakedHandlerContexts,
+                    "[{0}] disposal must freeze context drift before a later trim.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    1,
+                    watcher.LeakedHandlerPriorityCaches,
+                    "[{0}] disposal must freeze priority-cache drift before a later trim.",
+                    scenario.Kind
+                );
+                using LeakWatcher trimmedWatcher = LeakWatcher.WatchWithSlots(
+                    bus,
+                    handler: handler
+                );
+                MessageRegistrationHandle replacement = RegisterCountingHandler(
+                    scenario,
+                    token,
+                    transientContext
+                );
+                token.RemoveRegistration(replacement);
+                _ = bus.Trim(force: true);
+                Assert.AreEqual(
+                    0,
+                    trimmedWatcher.LeakedHandlerContexts,
+                    "[{0}] successful cleanup must restore the live context baseline.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    0,
+                    trimmedWatcher.LeakedHandlerPriorityCaches,
+                    "[{0}] successful cleanup must restore the live priority-cache baseline.",
+                    scenario.Kind
+                );
+            }
+            finally
+            {
+                token.RemoveRegistration(anchor);
+                token.UnregisterAll();
+                _ = bus.Trim(force: true);
+            }
+        }
+
+        [Test]
+        public void HandlerStorageCountsRetainedPrioritiesAndOnlyTheRequestedBus(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock(), idleEvictionTicks: 0);
+            MessageBus otherBus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0
+            );
+            MessageHandler handler = new MessageHandler(new InstanceId(710), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            using MessageRegistrationToken otherToken = MessageRegistrationToken.Create(
+                handler,
+                otherBus
+            );
+            token.Enable();
+            otherToken.Enable();
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus, handler: handler);
+            using LeakWatcher otherWatcher = LeakWatcher.WatchWithSlots(otherBus, handler: handler);
+            try
+            {
+                handler.GetRetainedStorageCounts(bus, out int contexts, out int priorities);
+                Assert.AreEqual(
+                    0,
+                    contexts + priorities,
+                    "[{0}] querying an unused bus must report no retained storage.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    0,
+                    handler._handlersByTypeByMessageBus.Count,
+                    "[{0}] the query must not create bus storage.",
+                    scenario.Kind
+                );
+                _ = RegisterCountingHandler(scenario, token, new InstanceId(711));
+                _ = RegisterCountingHandler(scenario, token, new InstanceId(711), priority: 1);
+                _ = RegisterCountingHandler(scenario, token, new InstanceId(712));
+                _ = RegisterCountingHandler(scenario, otherToken, new InstanceId(713));
+                handler.GetRetainedStorageCounts(bus, out contexts, out priorities);
+                Assert.AreEqual(
+                    scenario.Kind == MessageKind.Untargeted ? 0 : 2,
+                    contexts,
+                    "[{0}] the query must count distinct context keys only on the requested bus.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    scenario.Kind == MessageKind.Untargeted ? 2 : 3,
+                    priorities,
+                    "[{0}] the query must count priority caches, not delegates sharing one priority.",
+                    scenario.Kind
+                );
+                InstanceId sharedContext = new InstanceId(711);
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                    {
+                        _ = token.RegisterUntargeted<ComplexUntargetedMessage>(
+                            (in ComplexUntargetedMessage _) => { }
+                        );
+                        _ = token.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
+                            (in SimpleUntargetedMessage _) => { }
+                        );
+                        break;
+                    }
+                    case MessageKind.Targeted:
+                    {
+                        _ = token.RegisterTargeted<ComplexTargetedMessage>(
+                            sharedContext,
+                            (in ComplexTargetedMessage _) => { }
+                        );
+                        _ = token.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                            sharedContext,
+                            (in SimpleTargetedMessage _) => { }
+                        );
+                        break;
+                    }
+                    case MessageKind.Broadcast:
+                    {
+                        _ = token.RegisterBroadcast<ComplexBroadcastMessage>(
+                            sharedContext,
+                            (in ComplexBroadcastMessage _) => { }
+                        );
+                        _ = token.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                            sharedContext,
+                            (in SimpleBroadcastMessage _) => { }
+                        );
+                        break;
+                    }
+                }
+                handler.GetRetainedStorageCounts(bus, out contexts, out priorities);
+                Assert.AreEqual(
+                    scenario.Kind == MessageKind.Untargeted ? 0 : 4,
+                    contexts,
+                    "[{0}] context keys must sum across message types and simultaneous handle/postprocessor slots.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    scenario.Kind == MessageKind.Untargeted ? 4 : 5,
+                    priorities,
+                    "[{0}] priority caches must sum across message types and simultaneous handle/postprocessor slots.",
+                    scenario.Kind
+                );
+                handler.GetRetainedStorageCounts(otherBus, out contexts, out priorities);
+                Assert.AreEqual(
+                    scenario.Kind == MessageKind.Untargeted ? 0 : 1,
+                    contexts,
+                    "[{0}] the other bus must retain only its own context.",
+                    scenario.Kind
+                );
+                Assert.AreEqual(
+                    1,
+                    priorities,
+                    "[{0}] the other bus must retain only its own priority cache.",
+                    scenario.Kind
+                );
+            }
+            finally
+            {
+                token.UnregisterAll();
+                otherToken.UnregisterAll();
+                _ = bus.Trim(force: true);
+                _ = otherBus.Trim(force: true);
+            }
+        }
+
+        private static void EmitCountingMessage(
+            MessageScenario scenario,
+            MessageBus bus,
+            InstanceId context
+        )
+        {
+            if (scenario.Kind == MessageKind.Targeted)
+            {
+                SimpleTargetedMessage message = new SimpleTargetedMessage();
+                bus.TargetedBroadcast(ref context, ref message);
+            }
+            else
+            {
+                SimpleBroadcastMessage message = new SimpleBroadcastMessage();
+                bus.SourcedBroadcast(ref context, ref message);
+            }
+        }
+
         private static MessageRegistrationHandle RegisterCountingHandler(
             MessageScenario scenario,
             MessageRegistrationToken token,
-            InstanceId target
+            InstanceId target,
+            Action onMessage = null,
+            int priority = 0
         )
         {
             switch (scenario.Kind)
@@ -353,7 +627,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        (in SimpleUntargetedMessage _) => { }
+                        (in SimpleUntargetedMessage _) => onMessage?.Invoke(),
+                        priority
                     );
                 }
                 case MessageKind.Targeted:
@@ -362,7 +637,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (in SimpleTargetedMessage _) => { }
+                        (in SimpleTargetedMessage _) => onMessage?.Invoke(),
+                        priority
                     );
                 }
                 case MessageKind.Broadcast:
@@ -371,7 +647,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         scenario,
                         token,
                         target,
-                        (in SimpleBroadcastMessage _) => { }
+                        (in SimpleBroadcastMessage _) => onMessage?.Invoke(),
+                        priority
                     );
                 }
                 default:

@@ -1,6 +1,6 @@
 "use strict";
 
-// Unit coverage for the single shared changelog-section extractor
+// Release publication and unit coverage for the shared changelog-section extractor
 // (scripts/release/changelog.js) that release.yml, release-prepare.yml, and
 // release-drafter.yml all consume. Guards the v3.1.0 regression class: the
 // published GitHub Release body must be the matching `## [version]` CHANGELOG
@@ -13,8 +13,134 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const YAML = require("yaml");
 
 const { extractSection } = require("../release/changelog.js");
+
+// Execute the shipped shell; only GitHub transport is replaced by a local fixture.
+const RELEASE_API_STUB = `
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const state = JSON.parse(fs.readFileSync('state.json', 'utf8'));
+state.calls.push(args);
+const fail = (message) => { console.error(message); process.exitCode = 1; };
+const output = (value) => process.stdout.write(JSON.stringify(value));
+const endpoint = args.find((arg) => arg.startsWith('repos/')) || '';
+if (args[0] === 'api' && endpoint.includes('?per_page=')) {
+  if (state.failure === 'lookup' || !args.includes('--paginate') || !args.includes('--slurp')) { output([[]]); fail('incomplete lookup'); }
+  else output([[{tag_name:'v0.0.1'}], state.release ? [state.release] : []]);
+} else if (args[0] === 'api' && endpoint.endsWith('/releases/7')) output(state.release);
+else if (args[0] === 'api' && endpoint.includes('/assets/')) {
+  const asset = state.release.assets.find((asset) => asset.id === Number(endpoint.split('/').pop()));
+  if (state.failure === 'download') fail('download failed');
+  else process.stdout.write(asset.content);
+} else if (args[0] === 'release' && args[1] === 'create') {
+  if (!args.includes('--draft') || !args.includes('--verify-tag')) fail('unsafe create');
+  else state.release = {id:7, tag_name:'v1.2.3', draft:true, assets:[]};
+} else if (args[0] === 'release' && args[1] === 'upload') {
+  if (state.release.draft !== true) fail('published assets overwritten');
+  else if (state.failure === 'upload') fail('upload failed');
+  else state.release.assets = args.slice(3).filter((arg) => !arg.startsWith('--')).map((file, i) =>
+    ({id:i+1, name:path.basename(file), state:'uploaded', content:fs.readFileSync(file, 'utf8')}));
+} else if (args[0] === 'release' && args[1] === 'edit') state.release.draft = false;
+else fail('unexpected command: ' + JSON.stringify(args));
+fs.writeFileSync('state.json', JSON.stringify(state));
+`;
+
+for (const scenario of [
+  "new",
+  "draft",
+  "published",
+  "immutable",
+  "lookup",
+  "upload",
+  "download",
+  "invalid-draft",
+  "invalid-id",
+  ...[0, 1, 2, 3].flatMap((index) => [`missing-${index}`, `corrupt-${index}`, `duplicate-${index}`])
+]) {
+  test(`release publication verifies bytes before publishing: ${scenario}`, (t) => {
+    if (process.platform === "win32") return t.skip("Release publication runs on Ubuntu");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-release-publish-"));
+    try {
+      const names = [
+        "package.tgz",
+        "package.tgz.sha256",
+        "package.unitypackage",
+        "package.unitypackage.sha256"
+      ];
+      const assets = names.map((name, index) => ({
+        id: index + 1,
+        name,
+        state: "uploaded",
+        content: `bytes-${index}\n`
+      }));
+      for (const asset of assets) fs.writeFileSync(path.join(root, asset.name), asset.content);
+      const state = {
+        calls: [],
+        failure: scenario,
+        release: { tag_name: "v1.2.3", draft: false, immutable: scenario === "immutable", assets }
+      };
+      state.release.id = scenario === "invalid-id" ? null : 7;
+      if (scenario === "new") state.release = null;
+      if (scenario === "draft" || scenario === "upload") state.release.draft = true;
+      if (scenario === "invalid-draft") state.release.draft = "false";
+      const [defect, index] = scenario.split("-");
+      if (defect === "missing") assets.splice(Number(index), 1);
+      if (defect === "corrupt") assets[Number(index)].content += "corruption";
+      if (defect === "duplicate") assets.push({ ...assets[Number(index)], id: 99 });
+      fs.writeFileSync(path.join(root, "state.json"), JSON.stringify(state));
+      fs.writeFileSync(path.join(root, "github.cjs"), RELEASE_API_STUB);
+      const workflow = YAML.parse(
+        fs.readFileSync(path.join(__dirname, "../../.github/workflows/release.yml"), "utf8")
+      );
+      const steps = workflow.jobs.publish.steps;
+      const step = steps.find((step) => step.name === "Create or update GitHub Release");
+      assert.ok(steps.findIndex((item) => item.run?.includes("npm publish")) < steps.indexOf(step));
+      const result = spawnSync(
+        "bash",
+        ["-c", 'gh() { "$RELEASE_TEST_NODE" github.cjs "$@"; }\n' + step.run],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            RELEASE_TEST_NODE: process.execPath,
+            GITHUB_REPOSITORY: "test/repo",
+            RELEASE_TAG: "v1.2.3",
+            ...Object.fromEntries(
+              ["PACKAGE_FILE", "CHECKSUM_FILE", "UNITYPACKAGE_FILE", "UNITYPACKAGE_CHECKSUM"].map(
+                (key, index) => [key, names[index]]
+              )
+            )
+          }
+        }
+      );
+      const finalState = JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8"));
+      const success = ["new", "draft", "published", "immutable"].includes(scenario);
+      assert.equal(result.status === 0, success, `${scenario}: ${result.stdout}\n${result.stderr}`);
+      const edits = finalState.calls.filter((call) => call[1] === "edit");
+      assert.equal(edits.length, success ? 1 : 0, "failed verification must not publish or edit");
+      if (success) {
+        assert.equal(finalState.release.draft, false);
+        assert.equal(
+          finalState.calls.filter((call) => call.some((arg) => arg.includes("/assets/"))).length,
+          4
+        );
+        assert.equal(finalState.calls.at(-1)[1], "edit", "all downloads precede publication");
+      }
+      if (!["new", "draft", "upload"].includes(scenario)) {
+        assert.ok(
+          !finalState.calls.some((call) => ["create", "upload"].includes(call[1])),
+          "published reruns and failed lookups must not write assets"
+        );
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
 
 const SAMPLE = [
   "# Changelog",
@@ -94,9 +220,17 @@ test("a fenced `## [x]` with an info string is still not a boundary", () => {
 test("a section with only `### ` subsection headers (no entries) throws", () => {
   // Symmetric with prepare-release's hasContent guard: header-only is not
   // publishable release notes.
-  const content = ["## [6.0.0]", "", "### Added", "", "### Fixed", "", "## [5.0.0]", "", "- x"].join(
-    "\n"
-  );
+  const content = [
+    "## [6.0.0]",
+    "",
+    "### Added",
+    "",
+    "### Fixed",
+    "",
+    "## [5.0.0]",
+    "",
+    "- x"
+  ].join("\n");
   assert.throws(() => extractSection(content, "6.0.0"), /no content/);
 });
 
@@ -124,9 +258,7 @@ test("CRLF input is normalized before extraction", () => {
 test("the unbracketed `## X.Y.Z` heading form is also matched", () => {
   // verify-tag in release.yml accepts `## [x]` OR `## x`; the extractor must
   // agree so a release that passes the gate can always render its notes.
-  const unbracketed = ["# Changelog", "", "## 4.2.0", "", "- Plain heading entry.", ""].join(
-    "\n"
-  );
+  const unbracketed = ["# Changelog", "", "## 4.2.0", "", "- Plain heading entry.", ""].join("\n");
   assert.match(extractSection(unbracketed, "4.2.0"), /Plain heading entry\./);
 });
 
@@ -134,62 +266,29 @@ test("the unbracketed `## X.Y.Z` heading form is also matched", () => {
 
 const RELEASE_NOTES_CLI = path.join(__dirname, "..", "release", "release-notes.js");
 
-function runReleaseNotes(args) {
-  const result = spawnSync(process.execPath, [RELEASE_NOTES_CLI, ...args], {
-    encoding: "utf8"
+for (const mode of ["stdout", "footer-file", "missing-version"]) {
+  test(`release-notes.js CLI: ${mode}`, () => {
+    // A temporary changelog keeps these cases independent of released versions.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-notes-"));
+    try {
+      const changelog = path.join(dir, "CHANGELOG.md");
+      const out = path.join(dir, "notes.md");
+      fs.writeFileSync(changelog, SAMPLE, "utf8");
+      const version = mode === "missing-version" ? "0.0.1" : "3.1.0";
+      const args = [RELEASE_NOTES_CLI, "--version", version, "--changelog", changelog];
+      if (mode === "footer-file") args.push("--footer", "--out", out);
+      const result = spawnSync(process.execPath, args, { encoding: "utf8" });
+      assert.equal(result.status === 0, mode !== "missing-version", `${mode}: ${result.stderr}`);
+      if (mode === "missing-version") return;
+      const notes = mode === "footer-file" ? fs.readFileSync(out, "utf8") : result.stdout;
+      assert.match(notes, /Real feature for 3\.1\.0\./, mode);
+      assert.doesNotMatch(notes, /oldest documented change/, mode);
+      if (mode === "footer-file") {
+        assert.match(notes, /com\.wallstop-studios\.dxmessaging@3\.1\.0/, mode);
+        assert.match(notes, /## Install/, mode);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
-  return result;
 }
-
-test("release-notes.js prints the raw section for a real CHANGELOG version", () => {
-  // Drive the CLI against a temp CHANGELOG so the test never couples to the
-  // repo's current version set.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-notes-"));
-  try {
-    const changelog = path.join(dir, "CHANGELOG.md");
-    fs.writeFileSync(changelog, SAMPLE, "utf8");
-    const result = runReleaseNotes(["--version", "3.1.0", "--changelog", changelog]);
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Real feature for 3\.1\.0\./);
-    assert.doesNotMatch(result.stdout, /oldest documented change/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("release-notes.js --footer appends the install footer with the version", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-notes-"));
-  try {
-    const changelog = path.join(dir, "CHANGELOG.md");
-    fs.writeFileSync(changelog, SAMPLE, "utf8");
-    const out = path.join(dir, "notes.md");
-    const result = runReleaseNotes([
-      "--version",
-      "3.1.0",
-      "--changelog",
-      changelog,
-      "--footer",
-      "--out",
-      out
-    ]);
-    assert.equal(result.status, 0, result.stderr);
-    const notes = fs.readFileSync(out, "utf8");
-    assert.match(notes, /Real feature for 3\.1\.0\./);
-    assert.match(notes, /com\.wallstop-studios\.dxmessaging@3\.1\.0/);
-    assert.match(notes, /## Install/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("release-notes.js exits non-zero for a missing version", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-notes-"));
-  try {
-    const changelog = path.join(dir, "CHANGELOG.md");
-    fs.writeFileSync(changelog, SAMPLE, "utf8");
-    const result = runReleaseNotes(["--version", "0.0.1", "--changelog", changelog]);
-    assert.notEqual(result.status, 0);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});

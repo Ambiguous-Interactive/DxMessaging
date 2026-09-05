@@ -12,6 +12,13 @@ on:
       - "docs/architecture/perf-baseline.csv"
       - "docs/architecture/perf-baseline-profile.json"
   workflow_dispatch:
+    inputs:
+      shipping_fidelity:
+        description: "Run the exhaustive stripped-player matrix"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 4 * * 0"
 
 concurrency:
   # Push runs share one group per ref, so consecutive default-branch pushes stay
@@ -137,6 +144,12 @@ jobs:
 
   unity-tests:
     name: Unity ${{ matrix.unity-version }} all modes
+    env:
+      # Keep twenty additional player builds per endpoint out of ordinary CI.
+      DXM_RUN_SHIPPING: >-
+        ${{ (github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.shipping_fidelity)) &&
+        (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1') }}
     needs:
       - head-check
       - runner-preflight
@@ -376,7 +389,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity editor validation diagnostics
+      - name: Redact sensitive data from Unity editor validation diagnostics
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -484,8 +497,8 @@ jobs:
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
-      # Run the semantic and 1/16/256/1000-message shipping topologies at every
-      # stripping level on the oldest and newest supported editors. Keep the
+      # Weekly or explicitly requested runs cover semantic and 1/16/256/1000-message
+      # shipping topologies at every stripping level on the endpoint editors. Keep the
       # group last because each cell builds another IL2CPP player, and the
       # central cleanup action below returns the final activation before the
       # editor-scoped organization lock is released.
@@ -495,7 +508,7 @@ jobs:
           ${{
             !cancelled() &&
             steps.acquire_lock.outputs.acquired == 'true' &&
-            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')
+            env.DXM_RUN_SHIPPING == 'true'
           }}
         continue-on-error: true
         timeout-minutes: 150
@@ -543,7 +556,7 @@ jobs:
           label: Unity ${{ matrix.unity-version }} standalone
 
       - name: Dump shipping-fidelity log tail on failure or cancellation
-        if: ${{ steps.run_shipping.outcome == 'failure' || cancelled() }}
+        if: ${{ env.DXM_RUN_SHIPPING == 'true' && (steps.run_shipping.outcome == 'failure' || cancelled()) }}
         timeout-minutes: 5
         uses: ./.github/actions/dump-unity-log-tail
         with:
@@ -608,7 +621,7 @@ jobs:
           label: Unity ${{ matrix.unity-version }} standalone
           expected-empty: ${{ steps.compute_standalone.outputs.is-empty }}
 
-      - name: Redact credentials from Unity test artifacts
+      - name: Redact sensitive data from Unity test artifacts
         id: redact_tests
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -624,11 +637,11 @@ jobs:
 
       # Content-addressed retention for issue #508. The manifest names every evidence
       # file with its SHA-256 and embeds the normalized matrix result, so the uploaded
-      # artifact stays verifiable and replayable after the raw CI artifact expires.
-      # Redaction runs first so no credential material can be sealed into a bundle.
+      # artifact stays verifiable and replayable while the uploaded artifact is retained.
+      # Redaction runs first so no sensitive data can be sealed into a bundle.
       - name: Seal shipping-fidelity evidence bundle
         id: seal_shipping
-        if: ${{ steps.run_shipping.outcome == 'success' }}
+        if: ${{ env.DXM_RUN_SHIPPING == 'true' && steps.run_shipping.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
         run: |
@@ -677,16 +690,18 @@ jobs:
         if: >-
           ${{
             steps.redact_tests.outcome == 'success' &&
+            steps.seal_shipping.outcome == 'success' &&
             always() &&
             !cancelled() &&
             steps.acquire_lock.outputs.acquired == 'true' &&
-            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')
+            env.DXM_RUN_SHIPPING == 'true'
           }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unity-${{ matrix.unity-version }}-shipping
           path: .artifacts/unity/${{ matrix.unity-version }}-shipping
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 
@@ -707,7 +722,7 @@ jobs:
           STANDALONE_EMPTY: ${{ steps.compute_standalone.outputs.is-empty }}
           STANDALONE_RUN: ${{ steps.run_standalone.outcome }}
           STANDALONE_VERIFY: ${{ steps.verify_standalone.outcome }}
-          SHIPPING_REQUIRED: ${{ matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1' }}
+          SHIPPING_REQUIRED: ${{ env.DXM_RUN_SHIPPING }}
           SHIPPING_RUN: ${{ steps.run_shipping.outcome }}
         run: |
           $failures = @()
@@ -730,7 +745,7 @@ jobs:
           if ($env:SHIPPING_REQUIRED -eq 'true' -and $env:SHIPPING_RUN -ne 'success') {
             $failures += "shipping: fidelity run $env:SHIPPING_RUN"
           } elseif ($env:SHIPPING_REQUIRED -ne 'true' -and $env:SHIPPING_RUN -ne 'skipped') {
-            $failures += "shipping: non-target editor unexpectedly ran ($env:SHIPPING_RUN)"
+            $failures += "shipping: unrequested fidelity run ($env:SHIPPING_RUN)"
           }
           if ($failures.Count -gt 0) {
             throw "Unity mode failures: $($failures -join '; ')"

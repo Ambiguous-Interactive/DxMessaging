@@ -1,8 +1,7 @@
 "use strict";
-
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
-
 /**
  * Resolve a path for inside/outside comparisons. Missing leaves are appended
  * to the nearest existing realpath; Windows comparisons are case-insensitive.
@@ -23,7 +22,6 @@ function canonicalizePathForComparison(
   const resolved = pathImpl.resolve(targetPath);
   const missingSegments = [];
   let currentPath = resolved;
-
   while (true) {
     try {
       const realpath =
@@ -40,13 +38,11 @@ function canonicalizePathForComparison(
       if (parentPath === currentPath) {
         return caseInsensitive ? resolved.toLowerCase() : resolved;
       }
-
       missingSegments.push(pathImpl.basename(currentPath));
       currentPath = parentPath;
     }
   }
 }
-
 function isPathInsideDirectory(filePath, directoryPath, options = {}) {
   const { pathImpl = path } = options;
   const normalizedFilePath = canonicalizePathForComparison(filePath, options);
@@ -54,7 +50,6 @@ function isPathInsideDirectory(filePath, directoryPath, options = {}) {
   const relativePath = pathImpl.relative(normalizedDirectoryPath, normalizedFilePath);
   return !isOutsideRelative(relativePath, pathImpl);
 }
-
 /**
  * Cross-drive-safe outside check. Use this instead of hand-rolled
  * `path.relative(...).startsWith("..")`, which misses Windows absolute
@@ -63,7 +58,6 @@ function isPathInsideDirectory(filePath, directoryPath, options = {}) {
 function isPathOutsideDirectory(filePath, directoryPath, options = {}) {
   return !isPathInsideDirectory(filePath, directoryPath, options);
 }
-
 /**
  * Low-level predicate for a `path.relative()` result. Absolute relative values
  * are outside too; that branch is required for Windows cross-drive paths.
@@ -74,7 +68,38 @@ function isOutsideRelative(rel, pathImpl = path) {
   }
   return rel === ".." || rel.startsWith(".." + pathImpl.sep) || pathImpl.isAbsolute(rel);
 }
-
+/** Accept host aliases above trusted roots, but reject symlinks within a supplied directory path. */
+function isDirectDirectory(targetPath, options = {}) {
+  const {
+    anchors = [
+      process.cwd(),
+      os.tmpdir(),
+      ...(process.platform === "win32" ? [] : ["/tmp", "/var/tmp"])
+    ],
+    caseInsensitive = process.platform === "win32",
+    lstatSync = fs.lstatSync,
+    pathImpl = path
+  } = options;
+  try {
+    if (!lstatSync(targetPath).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  const resolved = pathImpl.resolve(targetPath);
+  const anchor =
+    anchors
+      .map((value) => pathImpl.resolve(value))
+      .filter((value) => !isOutsideRelative(pathImpl.relative(value, resolved), pathImpl))
+      .sort((left, right) => right.length - left.length)[0] ?? pathImpl.parse(resolved).root;
+  const expected = pathImpl.resolve(
+    canonicalizePathForComparison(anchor, options),
+    pathImpl.relative(anchor, resolved)
+  );
+  return (
+    canonicalizePathForComparison(resolved, options) ===
+    (caseInsensitive ? expected.toLowerCase() : expected)
+  );
+}
 /**
  * Convert path-like values to forward-slash strings for logs and assertions.
  * Nullish values become `""`; other non-strings are stringified.
@@ -88,7 +113,6 @@ function toPosixPath(value) {
   }
   return value.replace(/\\/g, "/");
 }
-
 /**
  * Return repo-relative POSIX paths when possible, otherwise POSIX absolute.
  */
@@ -102,9 +126,9 @@ function toRepoPosixRelative(absPath, repoRoot) {
   }
   return toPosixPath(rel);
 }
-
 module.exports = {
   canonicalizePathForComparison,
+  isDirectDirectory,
   isPathOutsideDirectory,
   isOutsideRelative,
   toPosixPath,

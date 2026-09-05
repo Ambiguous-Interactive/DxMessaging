@@ -29,7 +29,7 @@ is doing its job.
 
 ## Overview
 
-Reclamation targets two kinds of state:
+Reclamation targets these kinds of state:
 
 - **Empty handler and interceptor slots** kept on the bus per message type and,
   for targeted and broadcast messages, per `InstanceId`. A slot becomes empty
@@ -44,11 +44,29 @@ Reclamation targets two kinds of state:
   distinct-handler high-water must stay within `BufferMaxDistinctEntries`; a
   cap of zero disables retention. Because the spare holds one leaf,
   `BufferUseLruEviction` does not affect it.
+- **Empty contexts in live message handlers (4.0).** Deregistration removes an
+  empty context priority outside dispatch. Removal during dispatch preserves
+  frozen callbacks and defers cleanup until a later eligible sweep or trim.
+  A listener can keep its live targets without retaining every former target.
+- **Per-handler bus storage (4.0).** A handler allocates storage only for buses it
+  uses. Trimming the last empty typed slot or resetting the bus releases that
+  bus entry. Creating unrelated buses does not increase a handler's storage.
+- **Registration history (4.0).** Each bus keeps at most `RegistrationLogCapacity`
+  entries (1,024 by default). New entries overwrite the oldest. Records retain
+  numeric owner identity without retaining Unity objects. Reading history
+  before the first entry returns a live empty view without allocating storage.
+- **Reflexive lookups and scratch buffers (4.0).** All successful component-type
+  and signature lookups share one per-bus LRU cache bounded by
+  `BufferMaxDistinctEntries`. Missing or ambiguous methods are not retained.
+  The same setting caps each retained recipient, component, or transform buffer's
+  capacity. An oversized root or nested scratch state is dropped after dispatch,
+  after its references are cleared. A zero cap disables lookup and scratch retention,
+  so later sends resolve methods and create scratch storage again.
 
 Active registrations are never reclaimed. A handler that has not been
-deregistered, an interceptor that is still wired up, or a typed-handler slot
-with at least one live registration is treated as live state and left alone,
-no matter how old it is. Reclamation only resets slots that are already empty.
+deregistered or an interceptor that is still wired up is treated as live state
+and left alone, no matter how old it is. Reclamation can remove empty context
+leaves inside a live typed-handler slot; it only resets whole slots that are empty.
 
 The system exists for long-running sessions. Editor play sessions, dedicated
 servers, and shipped titles that keep the same process running across many
@@ -135,8 +153,8 @@ previous sweep.
 
 On non-Unity hosts the tick counter only advances on bus activity, so an
 inactive bus does not age out empty slots without an explicit `Trim`. Drive
-sweeps by emitting messages periodically or call `Trim` from a maintenance
-thread.
+sweeps by emitting messages periodically or call `Trim` on the bus's owning
+thread outside dispatch. The message bus does not support concurrent access.
 
 ### Explicit Trim
 
@@ -158,6 +176,13 @@ performs work; when the switch is false, both APIs become a no-op that returns
 a default `TrimResult`. `EnableTrimApi` and `EvictionEnabled` are independent.
 A shipped title can keep idle sweeps on while disabling the explicit API, or
 disable idle sweeps and reclaim only at scene boundaries.
+
+Forced trim also clears reflexive method lookups and idle scratch storage.
+Active traversal keeps its leased scratch state until it unwinds; a forced trim
+prevents that state from returning to the pool. Lowering the cap evicts excess
+method entries, shrinks their backing dictionary, drains cached nested scratch
+states, and drops an oversized idle root. Active states apply the cap on return.
+Method lookup recency always uses LRU, independent of `BufferUseLruEviction`.
 
 ---
 

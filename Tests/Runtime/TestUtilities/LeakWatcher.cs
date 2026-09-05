@@ -23,7 +23,7 @@ namespace DxMessaging.Tests.Runtime
     /// <see cref="IMessageBus.RegisteredInterceptors"/>,
     /// <see cref="IMessageBus.RegisteredPostProcessors"/>, and
     /// <see cref="IMessageBus.RegisteredGlobalAcceptAll"/>. Every counter is part of
-    /// the public surface, so the watcher does not lift any internal field. If a
+    /// the public surface, so registration accounting does not inspect internal storage. If a
     /// future API adds a seventh registration kind, <see cref="Snapshot"/> and
     /// <see cref="LeakedRegistrations"/> need to be extended in lock-step.
     /// Slot occupancy counters (<see cref="IMessageBus.OccupiedTypeSlots"/> and
@@ -31,6 +31,9 @@ namespace DxMessaging.Tests.Runtime
     /// reported. They are enforced only by <see cref="WatchWithSlots"/> so the
     /// default watcher remains suitable for registration-only leak checks that
     /// do not force a trim inside the watched region.
+    /// Pass a handler to also enforce retained context-key and priority-cache
+    /// counts for that handler on the watched bus. This optional diagnostic
+    /// reads internal storage only at snapshot boundaries or on explicit queries.
     /// </para>
     /// <para>
     /// Allocation note: the <see cref="Snapshot"/> getter and the
@@ -67,6 +70,9 @@ namespace DxMessaging.Tests.Runtime
         private readonly int _initialTypeSlotCount;
         private readonly int _initialTargetSlotCount;
         private readonly bool _watchSlots;
+        private readonly MessageHandler _handler;
+        private readonly int _initialHandlerContexts;
+        private readonly int _initialHandlerPriorityCaches;
 
         private bool _disposed;
         private int _finalUntargeted;
@@ -77,6 +83,8 @@ namespace DxMessaging.Tests.Runtime
         private int _finalGlobalAcceptAll;
         private int _finalTypeSlotCount;
         private int _finalTargetSlotCount;
+        private int _finalHandlerContexts;
+        private int _finalHandlerPriorityCaches;
 
         /// <summary>
         /// Captures the initial registration counts on the supplied
@@ -95,11 +103,14 @@ namespace DxMessaging.Tests.Runtime
         /// Optional label included in the failure message. Useful for
         /// distinguishing multiple watchers in a single test.
         /// </param>
+        /// <param name="watchSlots">Whether disposal also enforces bus slot occupancy.</param>
+        /// <param name="handler">Optional handler whose retained storage must return to baseline.</param>
         public LeakWatcher(
             IMessageBus bus = null,
             bool throwOnLeak = true,
             string label = null,
-            bool watchSlots = false
+            bool watchSlots = false,
+            MessageHandler handler = null
         )
         {
             _bus = bus ?? MessageHandler.MessageBus;
@@ -114,6 +125,7 @@ namespace DxMessaging.Tests.Runtime
             _throwOnLeak = throwOnLeak;
             _label = label;
             _watchSlots = watchSlots;
+            _handler = handler;
             _initialUntargeted = _bus.RegisteredUntargeted;
             _initialTargeted = _bus.RegisteredTargeted;
             _initialBroadcast = _bus.RegisteredBroadcast;
@@ -122,6 +134,14 @@ namespace DxMessaging.Tests.Runtime
             _initialGlobalAcceptAll = _bus.RegisteredGlobalAcceptAll;
             _initialTypeSlotCount = _bus.OccupiedTypeSlots;
             _initialTargetSlotCount = _bus.OccupiedTargetSlots;
+            if (_handler != null)
+            {
+                _handler.GetRetainedStorageCounts(
+                    _bus,
+                    out _initialHandlerContexts,
+                    out _initialHandlerPriorityCaches
+                );
+            }
         }
 
         /// <summary>
@@ -148,19 +168,26 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Convenience factory for a specific bus that also asserts
         /// per-type and per-target slot occupancy returns to the starting
-        /// counts.
+        /// counts. An optional handler also checks retained context and priority caches.
         /// </summary>
+        /// <param name="bus">Bus to watch. Null selects the global bus.</param>
+        /// <param name="throwOnLeak">Whether disposal fails the test when counts drift.</param>
+        /// <param name="label">Optional scope label for failure diagnostics.</param>
+        /// <param name="handler">Optional handler whose storage is checked on this bus.</param>
+        /// <returns>A watcher with bus slot checks and optional handler storage checks enabled.</returns>
         public static LeakWatcher WatchWithSlots(
             IMessageBus bus,
             bool throwOnLeak = true,
-            string label = null
+            string label = null,
+            MessageHandler handler = null
         )
         {
             return new LeakWatcher(
                 bus: bus,
                 throwOnLeak: throwOnLeak,
                 label: label,
-                watchSlots: true
+                watchSlots: true,
+                handler: handler
             );
         }
 
@@ -275,6 +302,30 @@ namespace DxMessaging.Tests.Runtime
         public int LeakedSlots => LeakedTypeSlots + LeakedTargetSlots;
 
         /// <summary>
+        /// Retained handler context-key drift, or zero when no handler was supplied.
+        /// </summary>
+        public int LeakedHandlerContexts
+        {
+            get
+            {
+                ReadHandlerStorageCounts(out int contexts, out _);
+                return contexts - _initialHandlerContexts;
+            }
+        }
+
+        /// <summary>
+        /// Retained scalar and context-keyed priority-cache drift, or zero when no handler was supplied.
+        /// </summary>
+        public int LeakedHandlerPriorityCaches
+        {
+            get
+            {
+                ReadHandlerStorageCounts(out _, out int priorities);
+                return priorities - _initialHandlerPriorityCaches;
+            }
+        }
+
+        /// <summary>
         /// Returns a one-line per-counter description of the delta between the
         /// initial snapshot and the current (or final, post-disposal) bus
         /// counts. Intended for inclusion in NUnit assertion messages so a
@@ -317,7 +368,7 @@ namespace DxMessaging.Tests.Runtime
                 CultureInfo.InvariantCulture,
                 "LeakWatcher{0}: delta={1} (Untargeted {2}->{3}, Targeted {4}->{5}, "
                     + "Broadcast {6}->{7}, Interceptors {8}->{9}, PostProcessors {10}->{11}, "
-                    + "GlobalAcceptAll {12}->{13}, TypeSlots {14}->{15}, TargetSlots {16}->{17}).",
+                    + "GlobalAcceptAll {12}->{13}, TypeSlots {14}->{15}, TargetSlots {16}->{17}).{18}",
                 scope,
                 delta,
                 _initialUntargeted,
@@ -335,7 +386,8 @@ namespace DxMessaging.Tests.Runtime
                 _initialTypeSlotCount,
                 currentTypeSlotCount,
                 _initialTargetSlotCount,
-                currentTargetSlotCount
+                currentTargetSlotCount,
+                DescribeHandlerStorage()
             );
         }
 
@@ -361,6 +413,14 @@ namespace DxMessaging.Tests.Runtime
             _finalGlobalAcceptAll = _bus.RegisteredGlobalAcceptAll;
             _finalTypeSlotCount = _bus.OccupiedTypeSlots;
             _finalTargetSlotCount = _bus.OccupiedTargetSlots;
+            if (_handler != null)
+            {
+                _handler.GetRetainedStorageCounts(
+                    _bus,
+                    out _finalHandlerContexts,
+                    out _finalHandlerPriorityCaches
+                );
+            }
 
             int delta = TotalDelta(
                 _finalUntargeted,
@@ -373,7 +433,10 @@ namespace DxMessaging.Tests.Runtime
             int typeSlotDelta = _finalTypeSlotCount - _initialTypeSlotCount;
             int targetSlotDelta = _finalTargetSlotCount - _initialTargetSlotCount;
             bool slotDeltaIsClean = !_watchSlots || (typeSlotDelta == 0 && targetSlotDelta == 0);
-            if (delta == 0 && slotDeltaIsClean)
+            bool handlerStorageIsClean =
+                _finalHandlerContexts == _initialHandlerContexts
+                && _finalHandlerPriorityCaches == _initialHandlerPriorityCaches;
+            if (delta == 0 && slotDeltaIsClean && handlerStorageIsClean)
             {
                 return;
             }
@@ -396,7 +459,7 @@ namespace DxMessaging.Tests.Runtime
                     + "type slot delta={14}, target slot delta={15}. "
                     + "Untargeted {2}->{3}, Targeted {4}->{5}, Broadcast {6}->{7}, "
                     + "Interceptors {8}->{9}, PostProcessors {10}->{11}, GlobalAcceptAll {12}->{13}, "
-                    + "TypeSlots {16}->{17}, TargetSlots {18}->{19}.",
+                    + "TypeSlots {16}->{17}, TargetSlots {18}->{19}.{20}",
                 scope,
                 delta,
                 _initialUntargeted,
@@ -416,7 +479,35 @@ namespace DxMessaging.Tests.Runtime
                 _initialTypeSlotCount,
                 _finalTypeSlotCount,
                 _initialTargetSlotCount,
-                _finalTargetSlotCount
+                _finalTargetSlotCount,
+                DescribeHandlerStorage()
+            );
+        }
+
+        private void ReadHandlerStorageCounts(out int contexts, out int priorities)
+        {
+            contexts = _finalHandlerContexts;
+            priorities = _finalHandlerPriorityCaches;
+            if (!_disposed && _handler != null)
+            {
+                _handler.GetRetainedStorageCounts(_bus, out contexts, out priorities);
+            }
+        }
+
+        private string DescribeHandlerStorage()
+        {
+            if (_handler == null)
+            {
+                return string.Empty;
+            }
+            ReadHandlerStorageCounts(out int contexts, out int priorities);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                " HandlerContexts {0}->{1}, HandlerPriorityCaches {2}->{3}.",
+                _initialHandlerContexts,
+                contexts,
+                _initialHandlerPriorityCaches,
+                priorities
             );
         }
 

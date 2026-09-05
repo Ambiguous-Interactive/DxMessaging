@@ -342,7 +342,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity release artifacts
+      - name: Redact sensitive data from Unity release artifacts
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -423,7 +423,7 @@ jobs:
           label: Unity release editmode
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
-      - name: Redact credentials from release Unity artifacts
+      - name: Redact sensitive data from release Unity artifacts
         id: redact_release
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -673,7 +673,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact credentials from Unity unitypackage artifacts
+      - name: Redact sensitive data from Unity unitypackage artifacts
         id: redact_validation
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -729,7 +729,7 @@ jobs:
           results-dir: .artifacts/unity/release-unitypackage
           label: Unity release unitypackage export
 
-      - name: Redact credentials from unitypackage artifacts
+      - name: Redact sensitive data from unitypackage artifacts
         id: redact_unitypackage
         # `always()` also fires when the job aborted before setup, where node does not exist yet.
         # Requiring this run's own Setup Node.js step is the reliable signal: a self-hosted runner
@@ -1013,30 +1013,67 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag }}
+          PACKAGE_FILE: ${{ steps.release_package.outputs.package-file }}
+          CHECKSUM_FILE: ${{ steps.release_package.outputs.checksum-file }}
           UNITYPACKAGE_FILE: ${{ steps.unitypackage_asset.outputs.unitypackage-file }}
           UNITYPACKAGE_CHECKSUM: ${{ steps.unitypackage_asset.outputs.unitypackage-checksum }}
         run: |
           set -euo pipefail
-          tag="${{ needs.verify-tag.outputs.tag }}"
-          package_file="${{ steps.release_package.outputs.package-file }}"
-          checksum_file="${{ steps.release_package.outputs.checksum-file }}"
+          tag="${RELEASE_TAG}"
           # The .unitypackage (+ .sha256) is guaranteed by the Stage step above.
-          assets=("${package_file}" "${checksum_file}" "${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            gh release upload "${tag}" \
-              "${assets[@]}" \
-              --clobber
-            gh release edit "${tag}" \
-              --title "${tag}" \
-              --notes-file .artifacts/release/release-notes.md \
-              --draft=false
-          else
+          assets=("${PACKAGE_FILE}" "${CHECKSUM_FILE}" "${UNITYPACKAGE_FILE}" "${UNITYPACKAGE_CHECKSUM}")
+          # A failed lookup is not proof that a release is absent. Listing all
+          # pages also includes drafts visible to this contents-write token.
+          load_release() {
+            local releases
+            releases="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")" || return
+            jq -c --arg tag "${tag}" '
+              [.[][] | select(.tag_name == $tag)] |
+              if length > 1 then error("Multiple releases for tag") else .[0] end
+            ' <<< "${releases}"
+          }
+          release="$(load_release)"
+          if [ "${release}" = null ]; then
             gh release create "${tag}" \
-              "${assets[@]}" \
+              --draft \
               --title "${tag}" \
               --notes-file .artifacts/release/release-notes.md \
               --verify-tag
+            release="$(load_release)"
           fi
+          release_id="$(jq -er '.id | select(type == "number" and . > 0 and . == floor)' <<< "${release}")"
+          if [[ ! "${release_id}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Release lookup did not return a positive integer ID."
+            exit 1
+          fi
+          is_draft="$(jq -er '.draft | if type == "boolean" then tostring else error("Missing draft state") end' <<< "${release}")"
+          if [ "${is_draft}" = true ]; then
+            # Only unpublished drafts may replace assets on a partial rerun.
+            gh release upload "${tag}" "${assets[@]}" --clobber
+            # Refresh drafts by ID; tag lookup is documented for published releases.
+            release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+          fi
+          release_verify_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${release_verify_dir}"' EXIT
+          for file in "${assets[@]}"; do
+            name="$(basename "${file}")"
+            asset_id="$(jq -er --arg name "${name}" '
+              [.assets[] | select(.name == $name and .state == "uploaded")] |
+              if length == 1 and (.[0].id | type == "number") then .[0].id
+              else error("Missing or ambiguous uploaded asset: " + $name) end
+            ' <<< "${release}")"
+            gh api "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+              -H 'Accept: application/octet-stream' > "${release_verify_dir}/asset"
+            if ! cmp -s -- "${file}" "${release_verify_dir}/asset"; then
+              echo "::error::Release ${tag} asset ${name} differs from the staged file; published assets cannot be replaced."
+              exit 1
+            fi
+          done
+          gh release edit "${tag}" \
+            --title "${tag}" \
+            --notes-file .artifacts/release/release-notes.md \
+            --draft=false
 
       - name: Verify the published Release has every expected asset
         # Closes the v3.1.0 failure mode for good: assert the published release

@@ -38,7 +38,8 @@
     "*.csproj",
     "**/*.g.cs",
     "Third Party Notices.md",
-    "cspell-output.txt"
+    "cspell-output.txt",
+    "scripts/__tests__/fixtures/unity-redaction-vectors.json"
   ],
   "words": [
     "ABBA",
@@ -64,6 +65,7 @@
     "axaml",
     "BAAB",
     "batchmode",
+    "bâtisseur",
     "behaviour",
     "Behaviour",
     "Behaviours",

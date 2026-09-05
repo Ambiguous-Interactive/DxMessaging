@@ -25,9 +25,9 @@ When any trigger file changes, update IN THE SAME CHANGE:
 
 1. `docs/guides/memory-reclamation.md` -- the narrative guide for tuning idle
    sweeps, forced trims, and pool caps.
-1. `docs/reference/runtime-settings.md` -- the per-setting reference table that
-   `validate:runtime-settings-docs` cross-references against
-   `DxMessagingRuntimeSettings`.
+1. `docs/reference/runtime-settings.md` -- the per-setting reference table.
+   Verify each row manually against `DxMessagingRuntimeSettings`; there is no
+   runtime-settings documentation validator.
 1. `CHANGELOG.md` -- the existing `## [Unreleased]` "Runtime memory-reclamation
    foundations" bullet. Mutate the existing bullet rather than stacking a new
    one; see [Changelog Management](../../changelog-management/references/changelog-management.md). When the change
@@ -44,8 +44,8 @@ There is no automated drift gate; review by hand:
 - `docs/guides/memory-reclamation.md` reflects the same change.
 - `CHANGELOG.md` is updated when the change is user-visible.
 
-If `validate:changelog:coverage` raises `W002`, rewrite the entry around user
-impact. Internal-only renames belong in developer docs, not in the changelog.
+Write changelog entries around user impact, following the changelog-management
+skill. Internal-only renames belong in developer docs, not in the changelog.
 
 ## See also
 

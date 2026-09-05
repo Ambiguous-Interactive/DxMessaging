@@ -178,7 +178,10 @@ const path = require("path");
 //     MCP bearer tokens. A third round pinned the gate that keeps redaction
 //     from firing on a run that never set up node, which the first attempt got
 //     wrong because a self-hosted runner reuses its workspace: 22800.
-const TOTAL_BUDGET = 22800;
+// 085 Refuse private runner identity in performance evidence. Data-driven cases cover runner and
+//     network identifiers; bounded record scans prevent large-log leaks and memory exhaustion. A
+//     real 441-file bundle was scrubbed, independently inventoried, sealed, and replayed: 23730.
+const TOTAL_BUDGET = 23730;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

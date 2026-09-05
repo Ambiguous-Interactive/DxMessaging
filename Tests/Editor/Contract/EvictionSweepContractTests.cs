@@ -11,6 +11,7 @@ namespace DxMessaging.Tests.Editor.Contract
     using NUnit.Framework;
 #if UNITY_2021_3_OR_NEWER
     using DxMessaging.Core.Configuration;
+    using DxMessaging.Tests.Runtime;
     using UnityEngine;
     using UnityEngine.LowLevel;
     using UnityEngine.PlayerLoop;
@@ -29,6 +30,273 @@ namespace DxMessaging.Tests.Editor.Contract
         private readonly struct TargetedProbeMessage : ITargetedMessage<TargetedProbeMessage> { }
 
         private readonly struct BroadcastProbeMessage : IBroadcastMessage<BroadcastProbeMessage> { }
+
+        /// <remarks>
+        /// 2026-09-04: A live slot must return each retired context's priority dictionary.
+        /// Warmed churn must increase pool hits without new misses when retention is enabled.
+        /// Cap zero deliberately allocates a fresh dictionary per context; neither case proves
+        /// zero total registration allocations. No trim runs inside the measured window.
+        /// </remarks>
+        [TestCase(false, 0)]
+        [TestCase(false, 1)]
+        [TestCase(true, 0)]
+        [TestCase(true, 1)]
+        public void LiveHandlerReclaimsTransientContexts(bool force, int retentionCapacity)
+        {
+            const int warmupContexts = 8;
+            const int measuredContexts = 32;
+            int previousCapacity = DxPools.TypedHandlerPriorityDicts.MaxRetained;
+            bool previousUseLru = DxPools.TypedHandlerPriorityDicts.UseLru;
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new ManualClock(),
+                idleEvictionTicks: 1
+            );
+            MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
+#if UNITY_2021_3_OR_NEWER
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
+                bus,
+                label: $"force={force}, retentionCapacity={retentionCapacity}",
+                handler: handler
+            );
+#endif
+            Action<TargetedProbeMessage> callback = _ => { };
+            Action keep = null;
+            try
+            {
+                DxPools.TypedHandlerPriorityDicts.MaxRetained = 0;
+                DxPools.TypedHandlerPriorityDicts.UseLru = true;
+                DxPools.TypedHandlerPriorityDicts.MaxRetained = retentionCapacity;
+                keep = handler.RegisterTargetedMessageHandler(
+                    new InstanceId(1),
+                    callback,
+                    callback,
+                    messageBus: bus
+                );
+                MessageHandler.TypedHandler<TargetedProbeMessage> typed =
+                    (MessageHandler.TypedHandler<TargetedProbeMessage>)
+                        ReadTypedHandler<TargetedProbeMessage>(handler, bus);
+                TypedSlot<TargetedProbeMessage> slot = typed._slots[
+                    TypedSlotIndex.TargetedHandleDefault
+                ];
+                Churn(2, warmupContexts, "warmup");
+                CollectionPoolDiagnostics afterWarmup =
+                    DxPools.TypedHandlerPriorityDicts.Snapshot();
+                Churn(2 + warmupContexts, measuredContexts, "measured");
+                CollectionPoolDiagnostics afterChurn = DxPools.TypedHandlerPriorityDicts.Snapshot();
+                long expectedMisses = retentionCapacity == 0 ? measuredContexts : 0;
+                long expectedHits = retentionCapacity == 0 ? 0 : measuredContexts;
+                Assert.That(
+                    afterChurn.Misses - afterWarmup.Misses,
+                    Is.EqualTo(expectedMisses),
+                    $"force={force}, retentionCapacity={retentionCapacity}: {measuredContexts} distinct contexts must add {expectedMisses} priority-pool misses after warmup."
+                );
+                Assert.That(
+                    afterChurn.Hits - afterWarmup.Hits,
+                    Is.EqualTo(expectedHits),
+                    $"force={force}, retentionCapacity={retentionCapacity}: {measuredContexts} distinct contexts must add {expectedHits} actual priority-dictionary reuse hits."
+                );
+                Assert.That(
+                    afterChurn.Cached,
+                    Is.EqualTo(afterWarmup.Cached),
+                    $"force={force}, retentionCapacity={retentionCapacity}: churn must leave the warmed retained-dictionary count unchanged."
+                );
+                Assert.That(
+                    afterWarmup.Cached,
+                    Is.EqualTo(retentionCapacity),
+                    $"force={force}, retentionCapacity={retentionCapacity}: warmup must retain exactly the configured zero-or-one spare."
+                );
+                OtherProbeMessage tick = new OtherProbeMessage();
+                bus.UntargetedBroadcast(ref tick);
+                bus.UntargetedBroadcast(ref tick);
+                bus.Trim(force);
+                Assert.That(
+                    slot.byContext.Count,
+                    Is.EqualTo(1),
+                    $"force={force}, retentionCapacity={retentionCapacity}: a live listener must retain only its live context after churn and trim."
+                );
+
+                void Churn(int firstContext, int count, string phase)
+                {
+                    for (int i = 0; i < count; ++i)
+                    {
+                        InstanceId context = new InstanceId(firstContext + i);
+                        string diagnostic =
+                            $"force={force}, retentionCapacity={retentionCapacity}, phase={phase}, context={context.Id}";
+                        Action remove = handler.RegisterTargetedMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            messageBus: bus
+                        );
+                        try
+                        {
+                            Assert.That(
+                                slot.byContext.Count,
+                                Is.EqualTo(2),
+                                $"{diagnostic}: registration must retain only the anchor and current transient context."
+                            );
+                            Assert.That(
+                                slot.byContext[context].Count,
+                                Is.EqualTo(1),
+                                $"{diagnostic}: the transient context must own exactly one priority leaf."
+                            );
+                        }
+                        finally
+                        {
+                            remove();
+                        }
+                        Assert.That(
+                            slot.byContext.Count,
+                            Is.EqualTo(1),
+                            $"{diagnostic}: deregistration must immediately remove the retired context from the live slot."
+                        );
+                    }
+                }
+            }
+            finally
+            {
+                try
+                {
+                    keep?.Invoke();
+                    bus.Trim(force: true);
+                }
+                finally
+                {
+                    handler.active = false;
+                    DxPools.TypedHandlerPriorityDicts.MaxRetained = previousCapacity;
+                    DxPools.TypedHandlerPriorityDicts.UseLru = previousUseLru;
+                }
+            }
+        }
+
+        /// <remarks>
+        /// 2026-09-04: Non-forced trim requires touch age greater than the zero idle budget.
+        /// Repeating trim at the deregistration tick must retain deferred contexts; an unrelated
+        /// emission ages them without touching or rescheduling this handler.
+        /// </remarks>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ContextPruningPreservesFrozenCallbacksAndStaleDeregistration(bool force)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new ManualClock(),
+                idleEvictionTicks: 0
+            );
+            MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
+            InstanceId live = new InstanceId(1);
+            InstanceId transient = new InstanceId(2);
+            int calls = 0;
+            Action<TargetedProbeMessage> later = _ => calls++;
+            Action keep = handler.RegisterTargetedMessageHandler(
+                live,
+                later,
+                later,
+                messageBus: bus
+            );
+            Action removeFirst = null;
+            Action removeLater = null;
+            Action<TargetedProbeMessage> first = _ =>
+            {
+                removeFirst();
+                removeLater();
+                bus.Trim(force);
+            };
+            try
+            {
+                removeFirst = handler.RegisterTargetedMessageHandler(
+                    transient,
+                    first,
+                    first,
+                    priority: -1,
+                    messageBus: bus
+                );
+                removeLater = handler.RegisterTargetedMessageHandler(
+                    transient,
+                    later,
+                    later,
+                    messageBus: bus
+                );
+                MessageHandler.TypedHandler<TargetedProbeMessage> typed =
+                    (MessageHandler.TypedHandler<TargetedProbeMessage>)
+                        ReadTypedHandler<TargetedProbeMessage>(handler, bus);
+                TypedSlot<TargetedProbeMessage> slot = typed._slots[
+                    TypedSlotIndex.TargetedHandleDefault
+                ];
+                TargetedProbeMessage message = new TargetedProbeMessage();
+                bus.TargetedBroadcast(ref transient, ref message);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    $"force={force}: a frozen callback must survive removal and in-flight trim."
+                );
+                Assert.That(
+                    slot.byContext.Count,
+                    Is.EqualTo(2),
+                    $"force={force}: in-flight cleanup must defer context removal."
+                );
+                long deregistrationTick = bus.TickCounter;
+                bus.Trim(force);
+                Assert.That(
+                    bus.TickCounter,
+                    Is.EqualTo(deregistrationTick),
+                    $"force={force}: trim must not advance the idle-age counter."
+                );
+                if (!force)
+                {
+                    Assert.That(
+                        slot.byContext.Count,
+                        Is.EqualTo(2),
+                        "A non-forced trim at touch age zero must retain the deferred context."
+                    );
+                    Assert.That(
+                        slot.pendingContextCleanup,
+                        Does.Contain(transient),
+                        "The fresh context must remain scheduled after a same-tick idle trim."
+                    );
+                    OtherProbeMessage tick = new OtherProbeMessage();
+                    bus.UntargetedBroadcast(ref tick);
+                    Assert.That(
+                        bus.TickCounter,
+                        Is.EqualTo(unchecked(deregistrationTick + 1)),
+                        "An unrelated emission must advance the touch age without re-registering the handler."
+                    );
+                    bus.Trim(force: false);
+                }
+                Assert.That(
+                    slot.byContext.Count,
+                    Is.EqualTo(1),
+                    $"force={force}: deferred cleanup must remain scheduled after in-flight trim."
+                );
+                Action replacement = handler.RegisterTargetedMessageHandler(
+                    transient,
+                    later,
+                    later,
+                    messageBus: bus
+                );
+                try
+                {
+                    removeLater();
+                    bus.TargetedBroadcast(ref transient, ref message);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(2),
+                        $"force={force}: a stale deregistration must not remove a replacement context leaf."
+                    );
+                }
+                finally
+                {
+                    replacement();
+                }
+            }
+            finally
+            {
+                removeFirst?.Invoke();
+                removeLater?.Invoke();
+                keep();
+                bus.Trim(force: true);
+                handler.active = false;
+            }
+        }
 
         private sealed class ThrowingIntComparer : System.Collections.Generic.IEqualityComparer<int>
         {
@@ -1134,9 +1402,11 @@ namespace DxMessaging.Tests.Editor.Contract
         private static object ReadTypedHandler<TMessage>(MessageHandler handler, IMessageBus bus)
             where TMessage : IMessage
         {
-            Assert.Less(
-                bus.RegisteredGlobalSequentialIndex,
-                handler._handlersByTypeByMessageBus.Count
+            Assert.IsTrue(
+                handler._handlersByTypeByMessageBus.ContainsKey(
+                    bus.RegisteredGlobalSequentialIndex
+                ),
+                "The handler must retain a cache for the registered bus."
             );
             bool exists = handler
                 ._handlersByTypeByMessageBus[bus.RegisteredGlobalSequentialIndex]

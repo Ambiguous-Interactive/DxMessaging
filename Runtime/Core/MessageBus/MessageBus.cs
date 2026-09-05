@@ -816,12 +816,19 @@ namespace DxMessaging.Core.MessageBus
         }
 
 #if UNITY_2021_3_OR_NEWER
-        /// <summary>Per-send component and deduplication caches for reflexive traversal.</summary>
+        /// <summary>Holds one traversal's scratch buffers until its copy-safe lease completes.</summary>
         private sealed class ReflexiveDispatchState
         {
             public readonly HashSet<MonoBehaviour> recipients = new();
             public readonly List<MonoBehaviour> components = new();
             public readonly List<Transform> transforms = new();
+
+            /// <summary>Reports the largest backing capacity, including peaks hidden by clearing.</summary>
+            public int RetainedCapacity =>
+                Math.Max(
+                    recipients.EnsureCapacity(0),
+                    Math.Max(components.Capacity, transforms.Capacity)
+                );
 
             public void Clear()
             {
@@ -840,6 +847,7 @@ namespace DxMessaging.Core.MessageBus
             private readonly ReflexiveDispatchState _previousState;
             private readonly bool _rented;
             private readonly long _resetGeneration;
+            private readonly long _retentionGeneration;
 
             public ReflexiveDispatchLease(MessageBus bus)
             {
@@ -852,9 +860,14 @@ namespace DxMessaging.Core.MessageBus
                 _previousState = bus._reflexiveDispatchState;
                 _rented = bus._reflexiveDispatchDepth > 0;
                 _resetGeneration = bus._resetGeneration;
+                _retentionGeneration = bus._reflexiveRetentionGeneration;
                 if (_rented)
                 {
                     bus._reflexiveDispatchState = bus.GetReflexiveDispatchStatePool().Rent();
+                }
+                else
+                {
+                    bus._reflexiveDispatchState ??= new ReflexiveDispatchState();
                 }
 
                 bus._reflexiveDispatchDepth++;
@@ -874,18 +887,43 @@ namespace DxMessaging.Core.MessageBus
                 // value observes that this logical lease has already ended.
                 bus._activeReflexiveDispatchLeaseId = _previousLeaseId;
                 ReflexiveDispatchState completedState = bus._reflexiveDispatchState;
+                bool retain =
+                    bus._handlerCacheRetentionLimit > 0
+                    && completedState.RetainedCapacity <= bus._handlerCacheRetentionLimit
+                    && bus._resetGeneration == _resetGeneration
+                    && bus._reflexiveRetentionGeneration == _retentionGeneration;
                 completedState.Clear();
                 bus._reflexiveDispatchDepth--;
                 if (!_rented)
                 {
+                    if (!retain)
+                    {
+                        bus._reflexiveDispatchState = null;
+                    }
                     return;
                 }
 
                 bus._reflexiveDispatchState = _previousState;
-                if (bus._resetGeneration == _resetGeneration)
+                if (retain)
                 {
                     bus.GetReflexiveDispatchStatePool().Return(completedState);
                 }
+            }
+        }
+
+        /// <summary>Pairs a successful method lookup with its global LRU key.</summary>
+        private readonly struct ReflexiveMethodEntry
+        {
+            public readonly (Type componentType, MethodSignatureKey signature) key;
+            public readonly Action<MonoBehaviour, object[]> method;
+
+            public ReflexiveMethodEntry(
+                (Type componentType, MethodSignatureKey signature) key,
+                Action<MonoBehaviour, object[]> method
+            )
+            {
+                this.key = key;
+                this.method = method;
             }
         }
 #endif
@@ -1214,7 +1252,7 @@ namespace DxMessaging.Core.MessageBus
             public static bool SourcedRegistered;
         }
 
-        public RegistrationLog Log => _log ??= new RegistrationLog();
+        public RegistrationLog Log => _log ??= new RegistrationLog(false, _registrationLogCapacity);
 
         // Storage trio for typed and global dispatch. _scalarSinks and
         // _contextSinks are SlotKey-indexed arrays of MessageCache (call sites
@@ -1791,11 +1829,31 @@ namespace DxMessaging.Core.MessageBus
             DxPools.Configure(settings);
             ContextHandlerByTargetDicts.UseLru = settings.BufferUseLruEviction;
             ContextHandlerByTargetDicts.MaxRetained = settings.BufferMaxDistinctEntries;
+            int previousRetentionLimit = _handlerCacheRetentionLimit;
             _handlerCacheRetentionLimit = Math.Max(0, settings.BufferMaxDistinctEntries);
             if (_reflexiveDispatchStatePool != null)
             {
                 _reflexiveDispatchStatePool.UseLru = settings.BufferUseLruEviction;
                 _reflexiveDispatchStatePool.MaxRetained = _handlerCacheRetentionLimit;
+                if (_handlerCacheRetentionLimit < previousRetentionLimit)
+                {
+                    _ = _reflexiveDispatchStatePool.Trim(0);
+                }
+            }
+            TrimReflexiveMethodCache(
+                _handlerCacheRetentionLimit,
+                releaseStorage: _handlerCacheRetentionLimit < previousRetentionLimit
+            );
+            if (
+                _reflexiveDispatchDepth == 0
+                && _reflexiveDispatchState != null
+                && (
+                    _handlerCacheRetentionLimit == 0
+                    || _reflexiveDispatchState.RetainedCapacity > _handlerCacheRetentionLimit
+                )
+            )
+            {
+                _reflexiveDispatchState = null;
             }
             if (
                 _recycledEmptyHandlerCache != null
@@ -1814,6 +1872,8 @@ namespace DxMessaging.Core.MessageBus
             }
             _emissionBufferCapacity = Math.Max(0, IMessageBus.GlobalMessageBufferSize);
             _emissionBufferBacking?.Resize(_emissionBufferCapacity);
+            _registrationLogCapacity = Math.Max(0, settings.RegistrationLogCapacity);
+            _log?.Resize(_registrationLogCapacity);
             _idleEvictionTicks = ComputeIdleEvictionTicks(settings.IdleEvictionSeconds);
             _evictionTickIntervalSeconds = Math.Max(0d, settings.EvictionTickIntervalSeconds);
             _idleEvictionEnabled = settings.EvictionEnabled;
@@ -1960,17 +2020,35 @@ namespace DxMessaging.Core.MessageBus
             Action<InstanceId, IBroadcastMessage>
         > _sourcedBroadcastMethodsByType = new();
 
-        private readonly Dictionary<
-            Type,
-            Dictionary<MethodSignatureKey, Action<MonoBehaviour, object[]>>
-        > _methodCache = new();
-
 #if UNITY_2021_3_OR_NEWER
+        private readonly Dictionary<
+            (Type componentType, MethodSignatureKey signature),
+            LinkedListNode<ReflexiveMethodEntry>
+        > _methodCache = new();
+        private readonly LinkedList<ReflexiveMethodEntry> _methodCacheLru = new();
         private ReflexiveDispatchState _reflexiveDispatchState = new();
         private CollectionPool<ReflexiveDispatchState> _reflexiveDispatchStatePool;
         private int _reflexiveDispatchDepth;
         private long _reflexiveDispatchLeaseSequence;
         private long _activeReflexiveDispatchLeaseId;
+        private long _reflexiveRetentionGeneration;
+
+        /// <summary>Reports retained successful lookups across all receiver types.</summary>
+        internal int ReflexiveMethodCacheCount => _methodCache.Count;
+
+        /// <summary>Reports lookup backing capacity for cold-path reclamation checks.</summary>
+        internal int ReflexiveMethodCacheCapacity => _methodCache.EnsureCapacity(0);
+
+        /// <summary>Checks retention without changing the lookup's recency.</summary>
+        internal bool IsReflexiveMethodCached(Type componentType, MethodSignatureKey signature) =>
+            _methodCache.ContainsKey((componentType, signature));
+
+        /// <summary>Reports whether this bus still owns root or active traversal scratch.</summary>
+        internal bool HasRetainedReflexiveDispatchState => _reflexiveDispatchState != null;
+
+        /// <summary>Reports the backing high-water capacity of retained or active traversal scratch.</summary>
+        internal int ReflexiveDispatchRetainedCapacity =>
+            _reflexiveDispatchState?.RetainedCapacity ?? 0;
 
         /// <summary>Diagnostics for reentrant reflexive dispatch state retained by this bus.</summary>
         internal CollectionPoolDiagnostics ReflexiveDispatchPoolDiagnostics =>
@@ -1986,6 +2064,7 @@ namespace DxMessaging.Core.MessageBus
 #endif
 
         private RegistrationLog _log;
+        private int _registrationLogCapacity = RegistrationLog.DefaultCapacity;
         private CyclicBuffer<MessageEmissionData> _emissionBufferBacking;
         private int _emissionBufferCapacity = GlobalMessageBufferSize;
         internal CyclicBuffer<MessageEmissionData> _emissionBuffer =>
@@ -2310,6 +2389,19 @@ namespace DxMessaging.Core.MessageBus
                 force ? 0 : ContextHandlerByTargetDicts.MaxRetained
             );
 #if UNITY_2021_3_OR_NEWER
+            if (force)
+            {
+                TrimReflexiveMethodCache(0, releaseStorage: true);
+                unchecked
+                {
+                    _reflexiveRetentionGeneration++;
+                }
+                if (_reflexiveDispatchDepth == 0 && _reflexiveDispatchState != null)
+                {
+                    _reflexiveDispatchState = null;
+                    pooledCollectionsEvicted++;
+                }
+            }
             if (_reflexiveDispatchStatePool != null)
             {
                 pooledCollectionsEvicted += _reflexiveDispatchStatePool.Trim(
@@ -2736,8 +2828,11 @@ namespace DxMessaging.Core.MessageBus
                     handler != null
                     && _dirtyHandlerSet.Contains(handler)
                     && _dirtyHandlerTicks.TryGetValue(handler, out long lastTouchTicks)
-                    && handler.CountEmptyTypedSlotsForSweep(this) > 0
-                    && !IsIdleForSweep(lastTouchTicks, force: false)
+                    && (
+                        handler.CountEmptyTypedSlotsForSweep(this) > 0
+                        || handler.HasPendingContextCleanup(this)
+                    )
+                    && (_dispatchDepth > 0 || !IsIdleForSweep(lastTouchTicks, force: false))
                 )
                 {
                     _dirtyHandlers[write++] = handler;
@@ -3310,7 +3405,10 @@ namespace DxMessaging.Core.MessageBus
                 if (
                     handler != null
                     && _dirtyHandlerSet.Contains(handler)
-                    && handler.CountEmptyTypedSlotsForSweep(this) > 0
+                    && (
+                        handler.CountEmptyTypedSlotsForSweep(this) > 0
+                        || handler.HasPendingContextCleanup(this)
+                    )
                 )
                 {
                     _dirtyHandlers[write++] = handler;
@@ -3406,7 +3504,6 @@ namespace DxMessaging.Core.MessageBus
             _untargetedBroadcastMethodsByType.Clear();
             _targetedBroadcastMethodsByType.Clear();
             _sourcedBroadcastMethodsByType.Clear();
-            _methodCache.Clear();
             _dirtyTypes.Clear();
             ReturnAllDirtyTargetCollections();
             _dirtyTargets.Clear();
@@ -3422,9 +3519,10 @@ namespace DxMessaging.Core.MessageBus
             _lastSweepSeconds = _clock.NowSeconds;
 
 #if UNITY_2021_3_OR_NEWER
+            TrimReflexiveMethodCache(0, releaseStorage: true);
             if (_reflexiveDispatchDepth == 0)
             {
-                _reflexiveDispatchState.Clear();
+                _reflexiveDispatchState = null;
             }
             _ = _reflexiveDispatchStatePool?.Trim(0);
 #endif
@@ -8212,21 +8310,32 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            Type componentType = recipient.GetType();
+            Action<MonoBehaviour, object[]> method = ResolveReflexiveMethod(
+                recipient.GetType(),
+                ref message
+            );
+            method?.Invoke(recipient, message.parameters);
+        }
+
+        /// <summary>Resolves a dispatcher and caches only successful lookups under a global LRU bound.</summary>
+        private Action<MonoBehaviour, object[]> ResolveReflexiveMethod(
+            Type componentType,
+            ref ReflexiveMessage message
+        )
+        {
+            (Type, MethodSignatureKey) lookupKey = (componentType, message.signatureKey);
+            Action<MonoBehaviour, object[]> method;
             if (
-                !_methodCache.TryGetValue(
-                    componentType,
-                    out Dictionary<MethodSignatureKey, Action<MonoBehaviour, object[]>> methodCache
-                )
+                _methodCache.TryGetValue(lookupKey, out LinkedListNode<ReflexiveMethodEntry> cached)
             )
             {
-                _methodCache[componentType] = methodCache =
-                    new Dictionary<MethodSignatureKey, Action<MonoBehaviour, object[]>>();
+                method = cached.Value.method;
+                _methodCacheLru.Remove(cached);
+                _methodCacheLru.AddFirst(cached);
             }
-
-            MethodSignatureKey lookupKey = message.signatureKey;
-            if (!methodCache.TryGetValue(lookupKey, out Action<MonoBehaviour, object[]> method))
+            else
             {
+                method = null;
                 MethodInfo methodInfo = null;
                 try
                 {
@@ -8274,11 +8383,34 @@ namespace DxMessaging.Core.MessageBus
                 if (methodInfo != null)
                 {
                     method = CompileMethodAction(methodInfo);
+                    if (method != null && _handlerCacheRetentionLimit > 0)
+                    {
+                        TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
+                        LinkedListNode<ReflexiveMethodEntry> entry = new(
+                            new ReflexiveMethodEntry(lookupKey, method)
+                        );
+                        _methodCache.Add(lookupKey, entry);
+                        _methodCacheLru.AddFirst(entry);
+                    }
                 }
-                methodCache[lookupKey] = method;
             }
 
-            method?.Invoke(recipient, message.parameters);
+            return method;
+        }
+
+        /// <summary>Evicts oldest lookups and optionally shrinks backing storage at a cold lifecycle boundary.</summary>
+        private void TrimReflexiveMethodCache(int capacity, bool releaseStorage = false)
+        {
+            while (_methodCache.Count > capacity)
+            {
+                LinkedListNode<ReflexiveMethodEntry> oldest = _methodCacheLru.Last;
+                _methodCache.Remove(oldest.Value.key);
+                _methodCacheLru.RemoveLast();
+            }
+            if (releaseStorage)
+            {
+                _methodCache.TrimExcess();
+            }
         }
 
         private static bool ParameterTypesMatch(ParameterInfo[] methodParams, Type[] expectedTypes)

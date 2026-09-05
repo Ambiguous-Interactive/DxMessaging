@@ -1,49 +1,57 @@
 "use strict";
-
-/**
- * Seals, verifies, and replays one content-addressed performance-evidence bundle (issue #508).
- *
- * A bundle is a directory of raw evidence plus one manifest that names every file with its byte
- * length and SHA-256. The manifest also carries the normalized result a reducer derived from those
- * files, so `replay` can re-derive it and prove the published numbers came from the retained bytes.
- * One changed byte anywhere fails verification, which is the whole point: CI artifacts expire, and
- * a screenshot or a hand-copied winner cannot establish provenance.
- *
- * Hashes are lowercase hex. Paths inside a manifest are POSIX-relative so a bundle sealed on the
- * Windows perf runner verifies unchanged on a Linux or macOS reviewer machine.
- */
-
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { decodeText, findCredentials } = require("./credential-patterns.js");
+const { TextDecoder } = require("node:util");
+const {
+  REVIEWED_TEXT_EXTENSIONS,
+  findSensitiveData,
+  hasBinaryMagic,
+  hasTooManyNuls,
+  isSerializedRedactionSafe,
+  redactSensitiveData
+} = require("./credential-patterns.js");
 const { reduceShippingFidelityMatrix } = require("./perf-evidence-reducers.js");
-
+const { isDirectDirectory } = require("../lib/path-classifier.js");
 const SCHEMA_VERSION = 1;
 const MANIFEST_NAME = "evidence-manifest.json";
 const EXPERIMENT_ID_PATTERN = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
+const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-// Matches the redaction step's per-file cap so the two consumers never disagree about a file.
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
-
-/** Reducers are keyed by name so a manifest declares which one produced its normalized result. */
 const REDUCERS = Object.freeze({
-  "shipping-fidelity-matrix-v1": reduceShippingFidelityMatrix
+  "shipping-fidelity-matrix-v1": {
+    artifactClass: "shipping-fidelity-matrix",
+    reduce: reduceShippingFidelityMatrix
+  }
 });
-
 function fail(message) {
   throw new Error(message);
 }
-
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
-
-/**
- * A bundle path must mean the same file on every operating system. Absolute paths, drive letters,
- * backslashes, `..` segments, and `.`/empty segments are all rejected rather than normalized,
- * because silently rewriting a path would change what the manifest claims to cover.
- */
+function safeDisplayPath(value) {
+  const source = String(value);
+  if (/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(source) || source.startsWith("::"))
+    return "[redacted:unsafe-path]";
+  const redacted = redactSensitiveData(source).redacted;
+  return !isSerializedRedactionSafe(source, redacted) || findSensitiveData(redacted).length > 0
+    ? "[redacted:encoded-sensitive-data]"
+    : redacted;
+}
+function requireDirectDirectory(root) {
+  if (!isDirectDirectory(root)) fail("Bundle root is not a directory or contains a symbolic link.");
+}
+function requirePrivateRegularFile(filePath, label, readContext = label) {
+  let stats;
+  try {
+    stats = fs.lstatSync(filePath);
+  } catch (error) {
+    fail(`${readContext} could not be read: ${error.message}`);
+  }
+  if (!stats.isFile() || stats.nlink !== 1) fail(`${label} is not a private regular file.`);
+}
 function requirePortablePath(relativePath, label) {
   if (typeof relativePath !== "string" || relativePath.length === 0) {
     fail(`${label} must be a non-empty string.`);
@@ -58,19 +66,34 @@ function requirePortablePath(relativePath, label) {
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
     fail(`${label} "${relativePath}" must not contain empty, "." or ".." segments.`);
   }
+  if (
+    segments.some((segment) =>
+      /[ .]$|^(?:con|prn|aux|nul|(?:com|lpt)(?:[1-9¹²³]))(?:\.|$)/i.test(segment)
+    )
+  )
+    fail(`${label} "${relativePath}" is not portable to Windows.`);
+  if (/[<>"|?*]/.test(relativePath))
+    fail(`${label} "${relativePath}" contains a character forbidden on Windows.`);
   // eslint-disable-next-line no-control-regex -- control characters are exactly what is rejected.
-  if (/[\u0000-\u001f\u007f:]/.test(relativePath)) {
+  if (/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}:]/u.test(relativePath)) {
     fail(`${label} "${relativePath}" must not contain control characters or a colon.`);
   }
   return relativePath;
 }
-
+function requirePortablePaths(paths, label) {
+  const folded = new Set();
+  for (const value of paths) {
+    requirePortablePath(value, label);
+    const key = value.normalize("NFC").toUpperCase();
+    if (folded.has(key)) fail(`${label}s must not collide on a case-insensitive file system.`);
+    folded.add(key);
+  }
+}
 function toPosixPath(value) {
   return value.split(path.sep).join("/");
 }
-
-/** Every file under `root`, POSIX-relative and ordinally sorted, excluding the manifest itself. */
 function listBundleFiles(root, manifestName) {
+  requireDirectDirectory(root);
   const found = [];
   const walk = (directory) => {
     const entries = fs.readdirSync(directory, { withFileTypes: true });
@@ -88,34 +111,63 @@ function listBundleFiles(root, manifestName) {
   walk(root);
   return found.filter((relativePath) => relativePath !== manifestName).sort();
 }
-
-/**
- * Refuse to seal a file that carries credential material. This shares one decoder and one pattern
- * list with the redaction step, so a file the redactor scrubs cannot be judged by a different rule
- * here. The whole file is scanned: a credential past an arbitrary window is still a credential.
- */
-function assertNoSecrets(relativePath, bytes) {
+function assertNoSensitiveData(relativePath, bytes) {
+  for (const entry of findSensitiveData(relativePath)) {
+    fail(`Bundle file path looks like it contains ${entry.description}; rename it before sealing.`);
+  }
   if (bytes.length > MAXIMUM_SCANNED_BYTES) {
-    fail(`${relativePath} is ${bytes.length} bytes, too large to prove free of credentials.`);
+    fail(`${relativePath} is ${bytes.length} bytes, too large to prove free of sensitive data.`);
   }
-  const decoded = decodeText(bytes);
-  if (decoded === undefined) {
-    return;
+  const extension = path.posix.extname(relativePath).toLowerCase();
+  if (!REVIEWED_TEXT_EXTENSIONS.includes(extension)) {
+    fail(
+      `${relativePath} does not use a reviewed text evidence extension; exclude it or add a ` +
+        "reviewed inspection path before sealing."
+    );
   }
-  for (const entry of findCredentials(decoded.text)) {
+  if (hasBinaryMagic(bytes)) {
+    fail(
+      `${relativePath} is binary despite its text extension; exclude it or add a reviewed binary ` +
+        "inspection path before sealing."
+    );
+  }
+  let decoded;
+  try {
+    const encoding =
+      bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe
+        ? "utf-16le"
+        : bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff
+          ? "utf-16be"
+          : "utf-8";
+    decoded = { text: new TextDecoder(encoding, { fatal: true }).decode(bytes), encoding };
+  } catch {
+    fail(
+      `${relativePath} is not valid UTF-8 or byte-order-marked UTF-16 text; exclude it or add ` +
+        "a reviewed binary inspection path before sealing."
+    );
+  }
+  const nulCount = decoded.text.split("\0").length - 1;
+  if (hasTooManyNuls(decoded.text, nulCount)) {
+    fail(
+      `${relativePath} contains too many NUL bytes to classify as reviewed text; exclude it or ` +
+        "add a reviewed binary inspection path before sealing."
+    );
+  }
+  const sensitiveText = decoded.text.replaceAll("\0", "");
+  if (hasBinaryMagic(Buffer.from(sensitiveText, "utf8"))) {
+    fail(`${relativePath} contains a NUL-split binary signature; exclude it before sealing.`);
+  }
+  for (const entry of findSensitiveData(sensitiveText)) {
     fail(`${relativePath} looks like it contains ${entry.description}; scrub it before sealing.`);
   }
+  // eslint-disable-next-line no-control-regex -- control and format characters are rejected.
+  if (/[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]|\p{Cf}/u.test(decoded.text)) {
+    fail(
+      `${relativePath} contains non-text control or format characters; exclude it or add a ` +
+        "reviewed inspection path before sealing."
+    );
+  }
 }
-
-/**
- * The bundle digest covers identity, the reducer name, the complete file inventory, and the
- * normalized result.
- *
- * Every component is JSON-encoded before it is joined. Concatenating raw values would let one field
- * impersonate several: a file path containing the separator could stand in for a whole extra entry,
- * so two different evidence sets would share one digest. JSON quoting escapes the separators, and
- * `requirePortablePath` rejects them in paths as well, so the encoding is unambiguous either way.
- */
 function bundleDigest(manifest) {
   const field = (name, value) => `${name}:${JSON.stringify(value)}`;
   const lines = [
@@ -130,52 +182,65 @@ function bundleDigest(manifest) {
   ];
   return sha256(Buffer.from(`${lines.join("\n")}\n`, "utf8"));
 }
-
 function requireInteger(value, label, minimum) {
   if (!Number.isSafeInteger(value) || value < minimum) {
     fail(`${label} must be an integer of at least ${minimum}.`);
   }
   return value;
 }
-
 function requireString(value, label) {
   if (typeof value !== "string" || value.length === 0) {
     fail(`${label} must be a non-empty string.`);
   }
   return value;
 }
-
-/** Identity text must be printable and single-line so it cannot carry digest structure. */
+function requireExactKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    fail(`${label} must be an object.`);
+  if (Object.keys(value).some((key) => !keys.includes(key)))
+    fail(`${label} contains unsupported fields.`);
+}
 function requireIdentityText(value, label) {
   requireString(value, label);
   // eslint-disable-next-line no-control-regex -- control characters are exactly what is rejected.
-  if (/[\u0000-\u001f\u007f]/.test(value)) {
+  if (/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(value)) {
     fail(`${label} must not contain control characters.`);
   }
   return value;
 }
-
+function requirePrivacySafeIdentity(value, label) {
+  requireIdentityText(value, label);
+  if (findSensitiveData(value).length > 0) {
+    fail(`${label} must not contain credential or private identifier material.`);
+  }
+  return value;
+}
+function requireSourceCommit(value) {
+  requirePrivacySafeIdentity(value, "sourceCommit");
+  if (!COMMIT_PATTERN.test(value)) fail("sourceCommit must be a 40- or 64-character commit ID.");
+  return value;
+}
 function requireExperimentId(value) {
-  requireIdentityText(value, "experimentId");
+  requirePrivacySafeIdentity(value, "experimentId");
   if (!EXPERIMENT_ID_PATTERN.test(value)) {
     fail(`experimentId "${value}" must be lowercase alphanumeric with dots or dashes.`);
   }
   return value;
 }
-
-function requireReducer(name) {
-  const reducer = REDUCERS[name];
-  if (!reducer) {
+function requireReducer(name, artifactClass) {
+  if (!Object.hasOwn(REDUCERS, name)) {
     fail(`Unknown reducer "${name}". Supported reducers: ${Object.keys(REDUCERS).join(", ")}.`);
   }
-  return reducer;
+  const reducer = REDUCERS[name];
+  if (requirePrivacySafeIdentity(artifactClass, "artifactClass") !== reducer.artifactClass)
+    fail(`Reducer "${name}" does not support artifactClass "${artifactClass}".`);
+  return reducer.reduce;
 }
-
-/** Read every declared file once, so verify and replay share one set of bytes. */
 function readDeclaredFiles(root, files) {
   const contents = new Map();
   for (const file of files) {
     const absolute = path.join(root, ...file.path.split("/"));
+    requirePrivateRegularFile(absolute, file.path, `${file.path} is declared by the manifest but`);
     let bytes;
     try {
       bytes = fs.readFileSync(absolute);
@@ -186,23 +251,25 @@ function readDeclaredFiles(root, files) {
   }
   return contents;
 }
-
 function sealBundle(root, options) {
   const experimentId = requireExperimentId(options.experimentId);
   const reducerName = requireString(options.reducer, "reducer");
-  const reducer = requireReducer(reducerName);
+  const reducer = requireReducer(reducerName, options.artifactClass);
   const revision = requireInteger(options.revision ?? 1, "revision", 1);
   const manifestName = options.manifestName ?? MANIFEST_NAME;
   const relativePaths = listBundleFiles(root, manifestName);
   if (relativePaths.length === 0) {
-    fail(`${root} contains no evidence files to seal.`);
+    fail(`${safeDisplayPath(root)} contains no evidence files to seal.`);
   }
+  requirePortablePaths([...relativePaths, manifestName], "Bundle file path");
+  assertNoSensitiveData(manifestName, Buffer.alloc(0));
   const files = [];
   const contents = new Map();
   for (const relativePath of relativePaths) {
-    requirePortablePath(relativePath, "Bundle file path");
-    const bytes = fs.readFileSync(path.join(root, ...relativePath.split("/")));
-    assertNoSecrets(relativePath, bytes);
+    const absolute = path.join(root, ...relativePath.split("/"));
+    requirePrivateRegularFile(absolute, relativePath);
+    const bytes = fs.readFileSync(absolute);
+    assertNoSensitiveData(relativePath, bytes);
     files.push({ path: relativePath, length: bytes.length, sha256: sha256(bytes) });
     contents.set(relativePath, bytes);
   }
@@ -210,9 +277,9 @@ function sealBundle(root, options) {
     schemaVersion: SCHEMA_VERSION,
     experimentId,
     revision,
-    artifactClass: requireIdentityText(options.artifactClass, "artifactClass"),
+    artifactClass: options.artifactClass,
     reducer: reducerName,
-    sourceCommit: requireIdentityText(options.sourceCommit, "sourceCommit"),
+    sourceCommit: requireSourceCommit(options.sourceCommit),
     files,
     normalized: reducer(contents),
     bundleDigest: ""
@@ -220,20 +287,12 @@ function sealBundle(root, options) {
   manifest.bundleDigest = bundleDigest(manifest);
   return manifest;
 }
-
-/**
- * Evidence is append-only. Re-sealing the same experiment ID and revision over different bytes is
- * the failure this refuses: a correction must publish a new revision so the old digest still
- * resolves to the exact bytes that produced the old conclusion.
- */
 function assertAppendOnly(existingManifest, manifest) {
-  if (existingManifest.experimentId !== manifest.experimentId) {
-    return;
-  }
-  if (existingManifest.revision !== manifest.revision) {
-    return;
-  }
-  if (existingManifest.bundleDigest !== manifest.bundleDigest) {
+  if (
+    existingManifest.experimentId === manifest.experimentId &&
+    existingManifest.revision === manifest.revision &&
+    existingManifest.bundleDigest !== manifest.bundleDigest
+  ) {
     fail(
       `${manifest.experimentId} revision ${manifest.revision} is already sealed as ` +
         `${existingManifest.bundleDigest} but these bytes seal as ${manifest.bundleDigest}. ` +
@@ -241,32 +300,66 @@ function assertAppendOnly(existingManifest, manifest) {
     );
   }
 }
-
 function writeBundleManifest(root, manifest, manifestName = MANIFEST_NAME) {
+  requireDirectDirectory(root);
+  requirePortablePath(manifestName, "Manifest name");
+  if (manifestName.includes("/")) fail("Manifest name must be one file name.");
+  validateManifestShape(manifest, manifestName);
+  const expected = sealBundle(root, {
+    experimentId: manifest.experimentId,
+    revision: manifest.revision,
+    artifactClass: manifest.artifactClass,
+    reducer: manifest.reducer,
+    sourceCommit: manifest.sourceCommit,
+    manifestName
+  });
+  if (manifest.bundleDigest !== expected.bundleDigest)
+    fail("Manifest does not match the current bundle bytes and normalized result.");
   const manifestPath = path.join(root, manifestName);
-  if (fs.existsSync(manifestPath)) {
-    // Shape-validate first. Reading an unusable manifest as a plain object would leave every
-    // identity field undefined, and the append-only comparison below would wave the write through.
-    assertAppendOnly(validateManifestShape(readManifest(manifestPath)), manifest);
+  let existing;
+  try {
+    existing = fs.lstatSync(manifestPath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (existing !== undefined) {
+    if (!existing.isFile() || existing.nlink !== 1)
+      fail("Existing bundle manifest is not a private regular file.");
+    // Shape validation keeps undefined identity fields from bypassing the append-only comparison.
+    assertAppendOnly(validateManifestShape(readManifest(manifestPath), manifestName), manifest);
   }
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   return manifestPath;
 }
-
 function readManifest(manifestPath) {
+  requirePrivateRegularFile(manifestPath, safeDisplayPath(manifestPath));
   let parsed;
   try {
     parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   } catch (error) {
-    fail(`${manifestPath} is not readable JSON: ${error.message}`);
+    fail(`${safeDisplayPath(manifestPath)} is not readable JSON: ${error.message}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    fail(`${manifestPath} must contain a JSON object.`);
+    fail(`${safeDisplayPath(manifestPath)} must contain a JSON object.`);
   }
   return parsed;
 }
-
-function validateManifestShape(manifest) {
+function validateManifestShape(manifest, manifestName = MANIFEST_NAME) {
+  requireExactKeys(
+    manifest,
+    [
+      "schemaVersion",
+      "experimentId",
+      "revision",
+      "artifactClass",
+      "reducer",
+      "sourceCommit",
+      "files",
+      "normalized",
+      "bundleDigest"
+    ],
+    "The manifest"
+  );
   if (manifest.schemaVersion !== SCHEMA_VERSION) {
     fail(
       `Unsupported manifest schemaVersion ${manifest.schemaVersion}; expected ${SCHEMA_VERSION}.`
@@ -274,15 +367,20 @@ function validateManifestShape(manifest) {
   }
   requireExperimentId(manifest.experimentId);
   requireInteger(manifest.revision, "revision", 1);
-  requireIdentityText(manifest.artifactClass, "artifactClass");
-  requireIdentityText(manifest.sourceCommit, "sourceCommit");
-  requireReducer(requireString(manifest.reducer, "reducer"));
+  requireSourceCommit(manifest.sourceCommit);
+  requireReducer(requireString(manifest.reducer, "reducer"), manifest.artifactClass);
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
     fail("The manifest must declare at least one file.");
   }
   let previousPath = "";
+  requirePortablePaths(
+    [...manifest.files.map((file) => file?.path), manifestName],
+    "Declared file path"
+  );
+  assertNoSensitiveData(manifestName, Buffer.alloc(0));
   for (const file of manifest.files) {
-    requirePortablePath(file?.path, "Declared file path");
+    requireExactKeys(file, ["path", "length", "sha256"], "A manifest file entry");
+    assertNoSensitiveData(file.path, Buffer.alloc(0));
     requireInteger(file.length, `${file.path} length`, 0);
     if (!SHA256_PATTERN.test(file.sha256 ?? "")) {
       fail(`${file.path} sha256 must be 64 lowercase hex characters.`);
@@ -295,16 +393,14 @@ function validateManifestShape(manifest) {
   if (manifest.normalized === undefined) {
     fail("The manifest must carry the normalized result its reducer produced.");
   }
+  if (!SHA256_PATTERN.test(manifest.bundleDigest ?? ""))
+    fail("The manifest bundleDigest must be 64 lowercase hex characters.");
   return manifest;
 }
-
-/**
- * Verify a sealed bundle. Returns the manifest and the verified bytes so `replay` never re-reads a
- * file that verification already proved, which is what makes replay operate on the sealed bytes
- * rather than on whatever currently sits on disk.
- */
 function verifyBundle(manifestPath, root = path.dirname(manifestPath)) {
-  const manifest = validateManifestShape(readManifest(manifestPath));
+  requireDirectDirectory(root);
+  const manifest = validateManifestShape(readManifest(manifestPath), path.basename(manifestPath));
+  assertNoSensitiveData(path.basename(manifestPath), fs.readFileSync(manifestPath));
   const expectedDigest = bundleDigest(manifest);
   if (manifest.bundleDigest !== expectedDigest) {
     fail(
@@ -315,6 +411,7 @@ function verifyBundle(manifestPath, root = path.dirname(manifestPath)) {
   const contents = readDeclaredFiles(root, manifest.files);
   for (const file of manifest.files) {
     const bytes = contents.get(file.path);
+    assertNoSensitiveData(file.path, bytes);
     if (bytes.length !== file.length) {
       fail(`${file.path} is ${bytes.length} bytes but the manifest declares ${file.length}.`);
     }
@@ -332,15 +429,9 @@ function verifyBundle(manifestPath, root = path.dirname(manifestPath)) {
   }
   return { manifest, contents };
 }
-
-/**
- * Re-derive the normalized result from the verified raw bytes and require it to match what the
- * manifest published. This is the reproduction step: a conclusion that cannot be re-derived from
- * the retained bundle is not campaign evidence.
- */
 function replayBundle(manifestPath, root = path.dirname(manifestPath)) {
   const { manifest, contents } = verifyBundle(manifestPath, root);
-  const replayed = REDUCERS[manifest.reducer](contents);
+  const replayed = requireReducer(manifest.reducer, manifest.artifactClass)(contents);
   const replayedJson = JSON.stringify(replayed);
   const publishedJson = JSON.stringify(manifest.normalized);
   if (replayedJson !== publishedJson) {
@@ -351,20 +442,17 @@ function replayBundle(manifestPath, root = path.dirname(manifestPath)) {
   }
   return { manifest, normalized: replayed };
 }
-
 function usage() {
   return `Usage:
   node scripts/unity/perf-evidence-bundle.js seal <root> --experiment-id <id> \\
       --artifact-class <class> --reducer <name> --source-commit <sha> [--revision <n>]
   node scripts/unity/perf-evidence-bundle.js verify <manifest.json>
   node scripts/unity/perf-evidence-bundle.js replay <manifest.json>
-
 Seals a directory of performance evidence into a content-addressed bundle, verifies a sealed
 bundle byte for byte, or replays its reducer to reproduce the published normalized result.
 Reducers: ${Object.keys(REDUCERS).join(", ")}.
 `;
 }
-
 const CLI_FLAGS = Object.freeze({
   "--experiment-id": "experimentId",
   "--artifact-class": "artifactClass",
@@ -372,7 +460,6 @@ const CLI_FLAGS = Object.freeze({
   "--source-commit": "sourceCommit",
   "--revision": "revision"
 });
-
 function parseArgs(argv) {
   const options = { command: "", target: "", revision: 1 };
   for (let index = 2; index < argv.length; index++) {
@@ -402,7 +489,6 @@ function parseArgs(argv) {
   }
   return options;
 }
-
 function runCli(argv) {
   const options = parseArgs(argv);
   if (options.help || !options.command) {
@@ -418,7 +504,7 @@ function runCli(argv) {
     const manifestPath = writeBundleManifest(root, manifest);
     process.stdout.write(
       `Sealed ${manifest.files.length} files as ${manifest.experimentId} revision ` +
-        `${manifest.revision} (${manifest.bundleDigest}) into ${manifestPath}\n`
+        `${manifest.revision} (${manifest.bundleDigest}) into ${safeDisplayPath(manifestPath)}\n`
     );
     return 0;
   }
@@ -441,24 +527,24 @@ function runCli(argv) {
   }
   fail(`Unknown command ${options.command}.`);
 }
-
 if (require.main === module) {
   try {
     process.exitCode = runCli(process.argv);
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(`${safeDisplayPath(error.message)}\n`);
     process.exitCode = 1;
   }
 }
-
 module.exports = {
   MANIFEST_NAME,
+  REVIEWED_TEXT_EXTENSIONS,
   SCHEMA_VERSION,
   bundleDigest,
   listBundleFiles,
   parseArgs,
   replayBundle,
   runCli,
+  safeDisplayPath,
   sealBundle,
   usage,
   verifyBundle,

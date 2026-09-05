@@ -1,0 +1,605 @@
+{
+  "summaries": [
+    [
+      "a result without scan totals makes no clean claim",
+      {},
+      "No files were rewritten under artifacts.\n"
+    ],
+    [
+      "per-kind totals are sorted by id and each file lists its kinds",
+      {
+        "changed": [
+          { "path": "logs/deep/configure.log", "counts": ["http-bearer-token", "unity-serial"] },
+          { "path": "logs/unity.log", "counts": ["unity-serial"] }
+        ],
+        "totals": [
+          ["unity-serial", 3],
+          ["http-bearer-token", 1]
+        ]
+      },
+      "Redacted 2 file(s) under artifacts: http-bearer-token x1, unity-serial x3.\n  logs/deep/configure.log: http-bearer-token, unity-serial\n  logs/unity.log: unity-serial\n"
+    ],
+    [
+      "a file that was not prepared is a warning, not a false clean result",
+      { "skipped": [{ "path": "locked.log", "reason": "could not be read: EACCES" }] },
+      "No files were rewritten under artifacts.\n  WARNING: locked.log could not be safely prepared because it could not be read: EACCES.\n"
+    ]
+  ],
+  "identifierCases": [
+    ["web-hostname", "endpoint https://private-runner:8080/api\n", "private-runner"],
+    [
+      "account-home-path",
+      "profile C:\\Users\\Fake Runner Account\\AppData\\Local\n",
+      "Fake Runner Account"
+    ],
+    ["root-home-path", "checkout /root/work/DxMessaging\n", "/root"],
+    ["file-uri-hostname", "source file://fake-runner-host/share/package\n", "fake-runner-host"],
+    [
+      "extended-unc-hostname",
+      "cache \\\\?\\UNC\\fake-runner-host\\share\\package\n",
+      "fake-runner-host"
+    ],
+    ["unc-hostname", "cache \\\\fake-runner-host\\share\\package\n", "fake-runner-host"],
+    [
+      "windows-volume-id",
+      "device \\\\?\\Volume{01234567-89ab-cdef-0123-456789abcdef}\\file\n",
+      "Volume{01234567-89ab-cdef-0123-456789abcdef}"
+    ],
+    ["mac-address", "network adapter 02:00:5E:10:00:00\n", "02:00:5E:10:00:00"],
+    ["ipv4-address", "Player connection [IP] 192.168.42.17 [Port] 55504\n", "192.168.42.17"],
+    ["ipv6-address", "Player connection [IP] fe80::1234%12 [Port] 55504\n", "fe80::1234%12"],
+    ["unity-machine-id", "Machine Id: FAKEmachineID000000000000=\n", "FAKEmachineID000000000000="],
+    [
+      "unity-editor-hostname",
+      "Player [Id] WindowsEditor(7,fake-runner-host)\n",
+      "fake-runner-host"
+    ],
+    [
+      "unity-license-client-hostname",
+      "connected to LicenseClient-fake-runner-host$\n",
+      "fake-runner-host"
+    ],
+    [
+      "unity-ipc-hostname",
+      "Waiting on \\\\.\\pipe\\Unity-LicenseClient-fake-runner-host$\n",
+      "fake-runner-host"
+    ],
+    ["named-account-or-host", "Runner Name: fake-runner-host\n", "fake-runner-host"],
+    [
+      "unity-accelerator-endpoint",
+      "AcceleratorClientConnectionCallback 0x1234 - connected - fake-runner-host:10080\n",
+      "fake-runner-host"
+    ],
+    [
+      "unity-cache-server-endpoint",
+      "-cacheServerEndpoint fake-runner-host:10080\n",
+      "fake-runner-host"
+    ],
+    ["unity-connect-host", "\"connectToHost\": \"fake-runner-host\"\n", "fake-runner-host"]
+  ],
+  "safeEvidence": [
+    ["public Unity URL", "endpoint https://api.unity.com/v1/status\n"],
+    ["localhost URL", "endpoint http://localhost:8080/status\n"],
+    ["relative path", "Library/Bee/artifacts/WebGL/build.dag.json\n"],
+    ["invalid dotted quad", "version 192.168.999.999\n"],
+    ["public URL whose host starts with root", "https://root.example.com/path\n"],
+    ["public URL with an account-like path", "https://api.example.com/Users/alice/profile\n"],
+    ["percent-encoded public URL", "https://%65xample.com/path\n"],
+    ["Unicode public URL", "https://münchen.example/path\n"],
+    ["relative root segment", "../root/project\n"],
+    ["protocol-relative Unity URL", "//api.unity.com/v1/status\n"],
+    ["quoted protocol-relative URL", "href=\"//cdn.example.com/package.tgz\"\n"],
+    ["source comment with URL", "comment //example.com/path\n"],
+    ["single-label protocol-relative URL", "//cdn/assets\n"],
+    ["protocol-relative profile URL", "//cdn/Users/Alice/avatar\n"],
+    ["regex backslash pair", "regex \\\\d+\\w+\n"],
+    ["terminal localhost file URI", "{\"uri\":\"file://localhost\"}"],
+    ["localhost file URI in prose", "opened file://localhost successfully\n"]
+  ],
+  "accountBoundaries": [
+    ["/home/alice completed in 12 ms\n", "/home/[redacted:account-home-path] completed in 12 ms\n"],
+    ["C:\\Users\\O'Connor\\project\n", "C:\\Users\\[redacted:account-home-path]\\project\n"],
+    ["/home/Doe, John/project\n", "/home/[redacted:account-home-path]/project\n"],
+    ["profile [/home/alice] done\n", "profile [/home/[redacted:account-home-path]] done\n"],
+    ["path `/Users/Alice Smith` done", "path `/Users/[redacted:account-home-path]` done"],
+    ["path |/home/alice| done", "path |/home/[redacted:account-home-path]| done"],
+    ["{\"path\":\"/Users/O'Connor\"}", "{\"path\":\"/Users/[redacted:account-home-path]\"}"],
+    ["C:\\Users\\CI)Runner\\work\n", "C:\\Users\\[redacted:account-home-path]\\work\n"],
+    ["C:\\Users\\CI) Runner\\work\n", "C:\\Users\\[redacted:account-home-path]\\work\n"],
+    ["C:\\Users\\Alice;Bob\\work", "C:\\Users\\[redacted:account-home-path]\\work"],
+    ["C:\\Users\\CI]Çunner", "C:\\Users\\[redacted:account-home-path]"],
+    ["C:\\Users\\O''Brien\\work", "C:\\Users\\[redacted:account-home-path]\\work"],
+    ["<x path='/Users/Alice\"Bob'/>", "<x path='/Users/[redacted:account-home-path]'/>"],
+    ["path `/Users/Alice, Smith` done", "path `/Users/[redacted:account-home-path]` done"],
+    [
+      "{\"path\":\"/Users/Alice\\\\\\\"Bob\"}",
+      "{\"path\":\"/Users/[redacted:account-home-path]\"}"
+    ],
+    ["'/home/O''Brien'", "'/home/[redacted:account-home-path]'"],
+    [
+      "'/home/Alice\\\\' trailing PUBLIC 'other'",
+      "'/home/[redacted:account-home-path]' trailing PUBLIC 'other'"
+    ],
+    ["\"C:\\Users\\O\"\"Brien\"", "\"C:\\Users\\[redacted:account-home-path]\""],
+    [
+      "{\"path\":\"C:\\\\Users\\\\J\\u00f6rg\\\\work\"}",
+      "{\"path\":\"C:\\\\Users\\\\[redacted:account-home-path]\\\\work\"}"
+    ],
+    ["/home/O' Connor/work", "/home/[redacted:account-home-path]/work"],
+    [
+      "<x path=\"/Users/J&#246;rg/work\"/>",
+      "<x path=\"/Users/[redacted:account-home-path]/work\"/>"
+    ],
+    [
+      "\\\\server\\Users\\O'Brien\\project",
+      "\\\\[redacted:unc-hostname]\\Users\\[redacted:account-home-path]\\project"
+    ],
+    [
+      "\\\\server\\C$\\Users\\Alice",
+      "\\\\[redacted:unc-hostname]\\C$\\Users\\[redacted:account-home-path]"
+    ],
+    [
+      "\\\\server\\share\\Users\\Alice\\work",
+      "\\\\[redacted:unc-hostname]\\share\\Users\\[redacted:account-home-path]\\work"
+    ],
+    [
+      "\\\\server\\home\\Alice\\work",
+      "\\\\[redacted:unc-hostname]\\home\\[redacted:account-home-path]\\work"
+    ],
+    [
+      "file://server/share/Users/Alice/work",
+      "file://[redacted:file-uri-hostname]/share/Users/[redacted:account-home-path]/work"
+    ],
+    [
+      "\\\\?\\UNC\\server\\Users\\Alice\\project",
+      "\\\\?\\UNC\\[redacted:extended-unc-hostname]\\Users\\[redacted:account-home-path]\\project"
+    ],
+    [
+      "\\\\?\\Volume{01234567-89ab-cdef-0123-456789abcdef}\\Users\\Alice\\work",
+      "\\\\?\\[redacted:windows-volume-id]\\Users\\[redacted:account-home-path]\\work"
+    ],
+    [
+      "\\\\wsl$\\Ubuntu\\home\\alice\\project",
+      "\\\\[redacted:unc-hostname]\\Ubuntu\\home\\[redacted:account-home-path]\\project"
+    ],
+    [
+      "\\\\wsl$\\Ubuntu\\mnt\\c\\Users\\Alice\\work",
+      "\\\\[redacted:unc-hostname]\\Ubuntu\\mnt\\c\\Users\\[redacted:account-home-path]\\work"
+    ],
+    [
+      "{\"path\":\"\\\\\\\\server\\\\Users\\\\Alice\\\\project\"}",
+      "{\"path\":\"\\\\\\\\[redacted:unc-hostname]\\\\Users\\\\[redacted:account-home-path]\\\\project\"}"
+    ]
+  ],
+  "identifierDelimiters": [
+    ["tool version 1.2.3.4\n", "tool version [redacted:ipv4-address]\n"],
+    ["UNC:\\\\secret-host\\share", "UNC:\\\\[redacted:unc-hostname]\\share"],
+    ["(file://runner-host)", "(file://[redacted:file-uri-hostname])"],
+    ["LicenseClient-runner,ok", "LicenseClient-[redacted:unity-license-client-hostname],ok"],
+    ["Machine ID: abc123, next", "Machine ID: [redacted:unity-machine-id], next"],
+    ["\\\\r\\u00f6nner\\share", "\\\\[redacted:unc-hostname]\\share"],
+    ["\\\\runner‮\\share", "\\\\[redacted:unc-hostname]\\share"],
+    ["path=//runner⁠/share", "path=//[redacted:unc-hostname]/share"],
+    ["path=//runner&#x202e;/share", "path=//[redacted:unc-hostname]/share"],
+    ["\\\\?\\UNC\\runner‏\\share", "\\\\?\\UNC\\[redacted:extended-unc-hostname]\\share"],
+    [
+      "{\"path\":\"\\\\\\\\runner\\\\u202e\\\\share\"}",
+      "{\"path\":\"\\\\\\\\[redacted:unc-hostname]\\\\share\"}"
+    ],
+    [
+      "{\"path\":\"\\\\\\\\runner\\t-private\\\\share\"}",
+      "{\"path\":\"\\\\\\\\[redacted:unc-hostname]\\\\share\"}"
+    ],
+    [
+      "{\"p\":\"\\\\\\\\.\\\\pipe\\\\Unity-LicenseClient-host\"}",
+      "{\"p\":\"\\\\\\\\.\\\\pipe\\\\Unity-LicenseClient-[redacted:unity-ipc-hostname]\"}"
+    ],
+    [
+      "<x uri=\"file://r&#246;nner/share\"/>",
+      "<x uri=\"file://[redacted:file-uri-hostname]/share\"/>"
+    ],
+    [
+      "{\"pipe\":\"Unity-LicenseClient-runner\",\"mode\":\"fast\"}",
+      "{\"pipe\":\"Unity-LicenseClient-[redacted:unity-ipc-hostname]\",\"mode\":\"fast\"}"
+    ],
+    [
+      "(-cacheServerEndpoint cache.internal:10080); next",
+      "(-cacheServerEndpoint [redacted:unity-cache-server-endpoint]); next"
+    ],
+    ["LicenseClient-A&B,ok", "LicenseClient-[redacted:unity-license-client-hostname],ok"],
+    ["Unity-LicenseClient-A&B,ok", "Unity-LicenseClient-[redacted:unity-ipc-hostname],ok"],
+    ["Machine ID: A&B,ok", "Machine ID: [redacted:unity-machine-id],ok"],
+    ["Machine ID:abc123,ok", "Machine ID:[redacted:unity-machine-id],ok"],
+    ["Machine ID: \"abc123XYZ=\"", "Machine ID: \"[redacted:unity-machine-id]\""],
+    ["Machine ID: [abc123XYZ=]", "Machine ID: [redacted:unity-machine-id]"],
+    [
+      "Machine Identification: 'abc123XYZ='",
+      "Machine Identification: '[redacted:unity-machine-id]'"
+    ],
+    ["{\"Machine ID\":\"abc123XYZ=\"}", "{\"Machine ID\":\"[redacted:unity-machine-id]\"}"],
+    ["machineName='O''Brien'", "machineName='[redacted:named-account-or-host]'"],
+    [
+      "{\"connectToHost\":\"runner\\\\\\\"private\"}",
+      "{\"connectToHost\":\"[redacted:unity-connect-host]\"}"
+    ],
+    [
+      "{\"msg\":\"WindowsEditor(1,runner\\\\\\\"PRIVATE)\"}",
+      "{\"msg\":\"WindowsEditor(1,[redacted:unity-editor-hostname])\"}"
+    ],
+    ["LicenseClient-O'Çonnor,ok", "LicenseClient-[redacted:unity-license-client-hostname],ok"],
+    [
+      "WindowsEditor(1,\"private-runner\")",
+      "WindowsEditor(1,\"[redacted:unity-editor-hostname]\")"
+    ],
+    [
+      "LicenseClient-\"private-runner\"",
+      "LicenseClient-\"[redacted:unity-license-client-hostname]\""
+    ],
+    ["https://build.private.corp.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://alice:secret@runner/path", "https://[redacted:web-hostname]/path"],
+    [
+      "https://alice@example.com@api.example.com/private",
+      "https://[redacted:web-hostname]/private"
+    ],
+    ["https://alice%40example.com@runner/path", "https://[redacted:web-hostname]/path"],
+    ["https://@runner/private", "https://[redacted:web-hostname]/private"],
+    ["https://user:secret@runner。local/path", "https://[redacted:web-hostname]/path"],
+    ["https://user:secret@%72unner/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner。local/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner%2dprivate/path", "https://[redacted:web-hostname]/path"],
+    ["https://foo%2elocal/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner\\private", "https://[redacted:web-hostname]\\private"],
+    ["https:\\runner\\private", "https:\\[redacted:web-hostname]\\private"],
+    ["https://\\runner/path", "https://\\[redacted:web-hostname]/path"],
+    ["https:///runner/path", "https:///[redacted:web-hostname]/path"],
+    ["https:////runner/path", "https:////[redacted:web-hostname]/path"],
+    ["https://127.1/path", "https://[redacted:web-hostname]/path"],
+    ["https://0x7f.0.0.1/path", "https://[redacted:web-hostname]/path"],
+    ["https://alice:secret@[2001:db8::1]/path", "https://[redacted:web-hostname]/path"],
+    ["https://alice@[fe80::1%25eth0]:443/path", "https://[redacted:web-hostname]:443/path"],
+    ["http://runner.:8080/", "http://[redacted:web-hostname]:8080/"],
+    ["https://foo.internal.:443/", "https://[redacted:web-hostname]:443/"],
+    ["https://runner.local../x", "https://[redacted:web-hostname]/x"],
+    ["https://runner%2elocal%2e%2e/x", "https://[redacted:web-hostname]/x"],
+    ["https://runner‮.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner﻿-private.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://alice﻿:secret@runner.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner\t-private.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://alice\t:secret@runner.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://alice\t:secret@example.com/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner\n-private.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner -private.local/path", "https://[redacted:web-hostname]/path"],
+    ["https://runner -private.local/path", "https://[redacted:web-hostname]/path"],
+    [
+      "{\"url\":\"https://runner\\u202e.local/path\"}",
+      "{\"url\":\"https://[redacted:web-hostname]/path\"}"
+    ],
+    [
+      "{\"url\":\"https://alice\\t:secret@runner.local/path\"}",
+      "{\"url\":\"https://[redacted:web-hostname]/path\"}"
+    ],
+    [
+      "<url>https://runner&#x2060;.local/path</url>",
+      "<url>https://[redacted:web-hostname]/path</url>"
+    ],
+    ["\"https://runner\"", "\"https://[redacted:web-hostname]\""],
+    ["https://runner?x=1", "https://[redacted:web-hostname]?x=1"],
+    [
+      "<root><url>https://runner/path</url></root>",
+      "<root><url>https://[redacted:web-hostname]/path</url></root>"
+    ],
+    ["file://runner(name)/share", "file://[redacted:file-uri-hostname]/share"],
+    ["file://user\t:secret@runner.local/path", "file://[redacted:file-uri-hostname]/path"],
+    ["file://runner -private/share", "file://[redacted:file-uri-hostname]/share"],
+    [
+      "{\"uri\":\"file://user\\t:secret@runner.local/path\"}",
+      "{\"uri\":\"file://[redacted:file-uri-hostname]/path\"}"
+    ],
+    ["file://user@runner(name)/share", "file://[redacted:file-uri-hostname]/share"],
+    ["'file://o''connor@runner'", "'file://[redacted:file-uri-hostname]'"],
+    ["\"file://user\\\\\\\"name@runner\"", "\"file://[redacted:file-uri-hostname]\""],
+    [
+      "{\"uri\":\"file://runner\",\"next\":\"/share\"}",
+      "{\"uri\":\"file://[redacted:file-uri-hostname]\",\"next\":\"/share\"}"
+    ],
+    ["fe80::1->peer", "[redacted:ipv6-address]->peer"],
+    ["[IP]2001:db8::2:1", "[IP][redacted:ipv6-address]"],
+    ["[fe80::1%eth0]:10080", "[redacted:ipv6-address]:10080"],
+    ["[file://[fe80::1]]", "[file://[redacted:ipv6-address]]"],
+    ["[[fe80::1]]", "[[redacted:ipv6-address]]"],
+    [
+      "<x uri=\"file://runner\" note=\"keep\"/>",
+      "<x uri=\"file://[redacted:file-uri-hostname]\" note=\"keep\"/>"
+    ],
+    [
+      "<x path=\"/home/alice\" note=\"keep\"/>",
+      "<x path=\"/home/[redacted:account-home-path]\" note=\"keep\"/>"
+    ],
+    [
+      "{\"uri\":\"file://runner\",\"note\":\"PUBLIC\"}",
+      "{\"uri\":\"file://[redacted:file-uri-hostname]\",\"note\":\"PUBLIC\"}"
+    ],
+    [
+      "{\"path\":\"/Users/Alice\",\"note\":\"PUBLIC\"}",
+      "{\"path\":\"/Users/[redacted:account-home-path]\",\"note\":\"PUBLIC\"}"
+    ],
+    ["path \"/Users/Alice\" completed", "path \"/Users/[redacted:account-home-path]\" completed"],
+    ["path `file://runner` completed", "path `file://[redacted:file-uri-hostname]` completed"],
+    ["\\\\?\\UNC\\runner-private\\share", "\\\\?\\UNC\\[redacted:extended-unc-hostname]\\share"],
+    ["2001:db8::192.0.2.33", "[redacted:ipv6-address]"]
+  ],
+  "addresses": [
+    ["loopback IPv4", "127.0.0.1"],
+    ["private IPv4", "10.0.0.1"],
+    ["public IPv4", "8.8.8.8"],
+    ["IPv4 upper boundary", "255.255.255.255"],
+    ["loopback IPv6", "::1"],
+    ["link-local IPv6", "fe80::1"],
+    ["unique-local IPv6", "fd12:3456::9"],
+    ["public IPv6", "2001:4860:4860::8888"]
+  ],
+  "pathValues": [
+    ["Linux file URI", "file:///home/account/project/file.cs"],
+    ["JSON file URI", "{\"path\":\"file:///home/account/project/file.cs\"}"],
+    ["WSL Windows home", "/mnt/c/Users/account/project/file.cs"],
+    ["WSL file URI", "file:///mnt/c/Users/account/project/file.cs"],
+    ["MSYS Windows home", "/c/Users/account/project/file.cs"],
+    ["Cygwin Windows home", "/cygdrive/c/Users/account/project/file.cs"],
+    ["Cygwin legacy Windows home", "/cygdrive/c/Documents and Settings/account/file.cs"],
+    ["MSYS file URI", "file:///c/Users/account/project/file.cs"],
+    ["Fedora immutable home", "/var/home/account/project/file.cs"],
+    ["macOS data-volume home", "/System/Volumes/Data/Users/account/project/file.cs"],
+    ["macOS mounted-volume home", "/Volumes/Macintosh HD/Users/account/project/file.cs"],
+    ["macOS network home", "/Network/Servers/host/Users/account/project/file.cs"],
+    ["backtick-delimited Linux path", "`/home/account/project`"],
+    ["compact-label Windows path", "[Path]C:\\Users\\account\\project"]
+  ],
+  "rootPaths": [
+    ["file:///root/project", "file:///[redacted:root-home-path]/project"],
+    ["[/root]", "[/[redacted:root-home-path]]"],
+    ["(/root);", "(/[redacted:root-home-path]);"],
+    ["{/root}", "{/[redacted:root-home-path]}"]
+  ],
+  "macs": [
+    ["colon MAC", "02:00:5E:10:00:00"],
+    ["hyphen MAC", "02-00-5e-10-00-00"],
+    ["dotted MAC", "0200.5E10.0000"],
+    ["colon EUI-64", "02:00:5E:10:00:00:00:01"],
+    ["dotted EUI-64", "0200.5E10.0000.0001"]
+  ],
+  "credentials": [
+    ["ASIA1234567890ABCDEF", "[redacted:aws-access-key-id]"],
+    ["UNITY_PASSWORD=P@ssw0rd!234\n", "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"],
+    [
+      "UNITY_PASSWORD=correct horse battery staple\n",
+      "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"
+    ],
+    [
+      "UNITY_PASSWORD=short-value rest-of-secret\n",
+      "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"
+    ],
+    [
+      "UNITY_PASSWORD=abcdefghijkl'OSECRET\n",
+      "UNITY_PASSWORD=[redacted:unity-password-assignment]\n"
+    ],
+    ["UNITY_EMAIL=a@b.co\n", "UNITY_EMAIL=[redacted:unity-email-assignment]\n"],
+    ["UNITY_EMAIL=o'connor@example.com\n", "UNITY_EMAIL=[redacted:unity-email-assignment]\n"],
+    [
+      "UNITY_EMAIL=\"much.more unusual\"@example.com\n",
+      "UNITY_EMAIL=[redacted:unity-email-assignment]\n"
+    ],
+    ["TOKEN=xxxxxxxxxxxxxxxx\n", "TOKEN=[redacted:credential-assignment]\n"],
+    ["TOKEN=abc'defghijklmnop\n", "TOKEN=[redacted:credential-assignment]\n"],
+    ["TOKEN=\"abcdefghijklmnop\n", "TOKEN=[redacted:credential-assignment]\n"],
+    ["PASSWORD=correct horse battery staple\n", "PASSWORD=[redacted:password-assignment]\n"],
+    ["PASSWORD=abcdefghijkl'OSECRET\n", "PASSWORD=[redacted:password-assignment]\n"],
+    [
+      "PASSWORD=\"correct horse battery staple\"\n",
+      "PASSWORD=\"[redacted:password-assignment]\"\n"
+    ],
+    [
+      "UNITY_PASSWORD='abc''PRIVATE_SUFFIX'",
+      "UNITY_PASSWORD='[redacted:unity-password-assignment]'"
+    ],
+    ["UNITY_EMAIL='o''connor@example.com'", "UNITY_EMAIL='[redacted:unity-email-assignment]'"],
+    ["PASSWORD=\"abc\"\"PRIVATE_SUFFIX\"", "PASSWORD=\"[redacted:password-assignment]\""],
+    ["TOKEN='abcdefghijkl''PRIVATE_SUFFIX'", "TOKEN='[redacted:credential-assignment]'"],
+    ["apiKey=abcdefghijklmnop", "apiKey=[redacted:credential-assignment]"],
+    ["accessKey=abcdefghijklmnop", "accessKey=[redacted:credential-assignment]"],
+    ["password=fake-password-value-0000", "password=[redacted:password-assignment]"],
+    ["{\"token\":\"abcdefghijklmnop\"}", "{\"token\":\"[redacted:credential-assignment]\"}"],
+    ["-username alice@example.com", "-username [redacted:unity-email-assignment]"],
+    ["-password\nfake-password-value-0000", "-password\n[redacted:unity-password-assignment]"]
+  ],
+  "licenses": [
+    [
+      "<License id='abcdefghijklmnop' version='1'>",
+      "<License id='[redacted:unity-license-id]' version='1'>"
+    ],
+    ["<license ID = \"abcdefghijklmnop\">", "<license ID = \"[redacted:unity-license-id]\">"],
+    ["<License id=\"abc'def\">", "<License id=\"[redacted:unity-license-id]\">"],
+    ["<License id='abc\"def'>", "<License id='[redacted:unity-license-id]'>"],
+    ["<License id=\"abc>def\">", "<License id=\"[redacted:unity-license-id]\">"],
+    ["<License id=\"abc\ndef\">", "<License id=\"[redacted:unity-license-id]\">"]
+  ],
+  "bareKeywords": ["TOKEN", "SECRET", "PASSWORD", "API_KEY", "AWS_SECRET_ACCESS_KEY"],
+  "truncatedLicenses": [
+    "<License id=\"abcdefghijklmnop",
+    "<License id=\"abcdefghijklmnop>",
+    "<License id=\"abcdefghijklmnop\nnext <tag>\n"
+  ],
+  "safeCredentials": [
+    [
+      "a redacted Unity license id",
+      "<License id=\"[redacted:unity-license-id]\" version=\"1.0\">\n"
+    ],
+    ["a masked GitHub token", "GITHUB_TOKEN=***\n"],
+    ["a masked Unity serial", "UNITY_SERIAL=***\n"],
+    ["a quoted masked password", "PASSWORD=\"************\"\n"],
+    ["an existing credential placeholder", "TOKEN='[redacted:credential-assignment]'\n"],
+    ["an empty Unity password", "UNITY_PASSWORD=\"\"\n"],
+    ["a blank Unity email", "UNITY_EMAIL=\"   \"\n"],
+    ["a value too short to be a key", "API_KEY=short\n"],
+    ["a bearer header with a short value", "Authorization: Bearer short\n"],
+    ["ordinary prose", "The build uploaded a token to the store without a password.\n"],
+    ["a Unity engine banner", "Initialize engine version: 6000.5.2f1 (b9e1b8d9d3a2)\n"]
+  ],
+  "blockedSensitive": [
+    "Bearer\\nFAKEbearerFAKEbearerFAKEbearer",
+    "ordinary﻿diagnostic",
+    "{\"path\":\"\\/home\\/alice\\/work\"}",
+    "{\"uri\":\"file:\\/\\/private-runner\\/share\"}",
+    "{\"path\":\"\\u002fhome&#47;alice&#47;work\"}",
+    "{\"path\":\"&#47;home\\u002falice\\u002fwork\"}",
+    "{\"payload\":\"{\\\"machineName\\\":\\\"private-runner\\\"}\"}",
+    "{\"payload\":\"{\\\"UNITY_PASSWORD\\\":\\\"secret123456\\\"}\"}",
+    "{\"payload\":\"{\\\"payload\\\":\\\"{\\\\\\\"UNITY_PASSWORD\\\\\\\":\\\\\\\"secret123456\\\\\\\"}\\\"}\"}",
+    "path=&amp;#47;home&amp;#47;alice&amp;#47;work",
+    "'/home/Alice\\\\' trailing PUBLIC 'other'",
+    "(file://user(name)@runner)"
+  ],
+  "entityIdentifiers": [
+    ["Machine ID: abc&#49;23, next", "abc&#49;23"],
+    ["LicenseClient-r&#246;nner,ok", "r&#246;nner"],
+    ["-cacheServerEndpoint private&#45;runner-host:10080", "private&#45;runner-host:10080"]
+  ],
+  "mappableSensitive": [
+    "{\"path\":\"C:\\\\Users\\\\alice\\\\work\",\"note\":\"line\\n\"}",
+    "<x note=\"A &amp; B\">Machine ID: abc123, next</x>",
+    "path=\\\\runner\\share",
+    "path=//private-runner/share",
+    "path=\\\\private-runner/share",
+    "{\"uri\":\"file://user(name)@runner\"}",
+    "\"C:\\Users\\Doe, John\"",
+    "{\"PASSWORD\":\"abc\\\"def\"}"
+  ],
+  "sealingSensitive": [
+    ["a GitHub token", "token: ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"],
+    ["a Unity serial", "UNITY_SERIAL resolved to SC-FAKE-FAKE-FAKE-FAKE-FAKE\n"],
+    ["a PEM private key", "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEYBODY\n"],
+    ["a bearer header", "Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"],
+    ["a credential assignment", "UNITY_PASSWORD=correct-horse-battery\n"],
+    ["a private network address", "Player connection [IP] 192.168.42.17 [Port] 55504\n"],
+    ["a runner host", "connected to LicenseClient-fake-runner-host$\n"],
+    ["a runner account path", "C:\\Users\\fake-runner-account\\AppData\\Local\n"],
+    ["a Unity machine identifier", "Machine Id: FAKEmachineID000000000000=\n"],
+    ["an internal endpoint", "\"connectToHost\": \"fake-runner-host\"\n"],
+    ["a format-control host", "URL https://runner‮.local/path\n"],
+    ["an escaped format-control host", "{\"url\":\"https://runner\\u2060.local/path\"}\n"],
+    ["an escaped account path", "{\"path\":\"\\/home\\/alice\\/work\"}\n"],
+    ["an escaped file URI", "{\"uri\":\"file:\\/\\/private-runner\\/share\"}\n"],
+    ["a composed JSON then XML account path", "{\"path\":\"\\u002fhome&#47;alice&#47;work\"}\n"],
+    ["a composed XML then JSON account path", "{\"path\":\"&#47;home\\u002falice\\u002fwork\"}\n"],
+    ["a nested JSON host", "{\"payload\":\"{\\\"machineName\\\":\\\"private-runner\\\"}\"}\n"],
+    ["a nested JSON password", "{\"payload\":\"{\\\"UNITY_PASSWORD\\\":\\\"secret123456\\\"}\"}\n"],
+    [
+      "a twice-nested JSON password",
+      "{\"payload\":\"{\\\"payload\\\":\\\"{\\\\\\\"UNITY_PASSWORD\\\\\\\":\\\\\\\"secret123456\\\\\\\"}\\\"}\"}\n"
+    ],
+    ["a twice-encoded XML account path", "path=&amp;#47;home&amp;#47;alice&amp;#47;work\n"],
+    ["a multiline Unity password", "UNITY_PASSWORD=correct horse battery staple\n"],
+    ["an apostrophe Unity password", "UNITY_PASSWORD=abcdefghijkl'OSECRET\n"]
+  ],
+  "unsupportedArtifactClasses": [
+    "paired-throughput",
+    "allocation-heavy-subunsub",
+    "cold-latency",
+    "frame-queue-latency",
+    "wpr-pmu-native-mapping",
+    "arm64-energy"
+  ],
+  "sealingAccepted": [
+    ["masked credentials", "clean.log", "GITHUB_TOKEN=***\nUNITY_SERIAL=***\n", "utf8"],
+    ["a clean Unity log carrying one stray NUL", "unity.log", "boot\u0000\ncompleted\n", "utf8"],
+    [
+      "eight sparse stray NULs",
+      "unity.log",
+      "short\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaalog",
+      "utf8"
+    ],
+    [
+      "valid byte-order-marked UTF-16 text",
+      "powershell.log",
+      "\ufeffUnity build completed\n",
+      "utf16le"
+    ]
+  ],
+  "invalidSealMetadata": [
+    ["reducer", "not-a-reducer", "Unknown reducer"],
+    ["reducer", "constructor", "Unknown reducer"],
+    ["reducer", "toString", "Unknown reducer"],
+    ["reducer", "__proto__", "Unknown reducer"],
+    ["experimentId", "Shipping_Matrix", "must be lowercase alphanumeric with dots or dashes"],
+    ["sourceCommit", "not-a-commit", "sourceCommit must be a 40- or 64-character commit ID"]
+  ],
+  "invalidBundlePaths": [
+    ["a Windows drive-letter path", "C:/cell/evidence.json", "must be relative"],
+    ["a backslash path", "cell\\evidence.json", "must use forward slashes"],
+    ["a parent traversal", "../outside.json", "must not contain empty"],
+    ["an absolute POSIX path", "/etc/passwd", "must be relative"],
+    ["a Windows-forbidden character", "bad?.log", "forbidden"],
+    ["a private identifier", "runner-192.168.42.17.log", "IPv4"],
+    ["a reserved Windows name", "aux.txt", "not portable"],
+    ["a superscript Windows device name", "COM¹.log", "not portable"],
+    ["a trailing dot", "bad./file.log", "not portable"]
+  ],
+  "sealCli": {
+    "validFlags": [
+      "--experiment-id",
+      "shipping-fidelity-matrix-6000.5.2f1",
+      "--artifact-class",
+      "shipping-fidelity-matrix",
+      "--reducer",
+      "shipping-fidelity-matrix-v1",
+      "--source-commit",
+      "98b47536a0eb1445fcd2a9700899aab0be24897f"
+    ],
+    "argv": [
+      "node",
+      "perf-evidence-bundle.js",
+      "seal",
+      "/tmp/bundle",
+      "--experiment-id",
+      "shipping-matrix",
+      "--artifact-class",
+      "shipping-fidelity-matrix",
+      "--reducer",
+      "shipping-fidelity-matrix-v1",
+      "--source-commit",
+      "abc123",
+      "--revision",
+      "3"
+    ],
+    "expected": {
+      "command": "seal",
+      "target": "/tmp/bundle",
+      "revision": 3,
+      "experimentId": "shipping-matrix",
+      "artifactClass": "shipping-fidelity-matrix",
+      "reducer": "shipping-fidelity-matrix-v1",
+      "sourceCommit": "abc123"
+    }
+  },
+  "sensitiveMetadata": [
+    ["experimentId", "192.168.42.17"],
+    ["artifactClass", "C:\\Users\\Private Runner\\matrix"],
+    ["sourceCommit", "192.168.42.17"],
+    ["artifactClass", "runner-192&#46;168&#46;42&#46;17"],
+    ["sourceCommit", "runner-192\\u002e168\\u002e42\\u002e17"]
+  ],
+  "digestInjectionPaths": [
+    ["a colon", "aa:4:deadbeef"],
+    ["a newline", "aa\nfile:bb"],
+    ["a C1 control", "aa\u0085bb"],
+    ["a Unicode line separator", "aa\u2028bb"],
+    ["a bidi override", "aa\u202ebb"]
+  ],
+  "digestInjectionFields": [
+    ["experimentId", "shipping\nmatrix"],
+    ["artifactClass", "c\nreducer:shipping-fidelity-matrix-v1"],
+    ["sourceCommit", "98b47536\nfile:smuggled.json"],
+    ["sourceCommit", "98b47536\u0085smuggled"],
+    ["sourceCommit", "98b47536\u2029smuggled"],
+    ["sourceCommit", "98b47536\u2066smuggled"]
+  ]
+}

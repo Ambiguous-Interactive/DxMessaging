@@ -24,10 +24,10 @@ used by diagnostics.
 
 ## Public-Counter Contract
 
-The watcher is read-only and goes through public surface exclusively. The
-counter set above IS the canonical leak-detection surface; no hidden field
-of the bus is reflected. The "counter source" doc-comment block on
-`LeakWatcher` documents this contract verbatim.
+Default registration accounting is read-only and uses the six public bus
+counters above. Bus slot checks use the public occupancy counters. Neither
+reflects hidden bus fields. Optional handler-storage accounting uses the cold
+internal query described below; it does not change the public counter contract.
 
 If a future bus revision introduces a seventh registration kind, BOTH
 `LeakWatcher.Snapshot` and `LeakWatcher.LeakedRegistrations` must be
@@ -122,7 +122,29 @@ namespace DxMessaging.Tests.Runtime.Core
 }
 ```
 
-## Cost: O(types) per Snapshot
+## Optional Handler Storage Checks
+
+Pass `handler: handler` to the `LeakWatcher` constructor to check that handler's
+retained storage on the supplied bus. Use
+`LeakWatcher.WatchWithSlots(bus, handler: handler)` when bus slots must also
+return to baseline. Always supply the intended bus explicitly when a handler
+participates in more than one bus.
+
+The internal `MessageHandler.GetRetainedStorageCounts` query counts context keys
+across typed slots and retained priority caches in both scalar and context-keyed
+maps. Keys in separate typed slots count separately even when they hold the same
+`InstanceId`. Several delegates sharing one priority cache count as one cache.
+The query observes storage without creating it or running on the emit path.
+
+`LeakedHandlerContexts` and `LeakedHandlerPriorityCaches` report drift from the
+watcher's initial snapshot. They are separate from `LeakedRegistrations` and
+bus-slot deltas: a deregistered context can retain storage while registration
+counts are already back at baseline. Nonzero drift fails disposal unless
+`throwOnLeak: false`. A live nonempty baseline is supported. Disposal freezes
+the counts, so a later trim does not change the recorded result. Default
+watchers neither traverse nor enforce handler storage.
+
+## Cost: Capture at Region Boundaries
 
 Both `Snapshot` and `LeakedRegistrations` walk every per-message-type
 cache backing `IMessageBus.RegisteredInterceptors` and
@@ -131,10 +153,14 @@ at region boundaries; do NOT read `Snapshot` inside a tight loop. The
 suite's wall-clock budget is 60 s soft / 180 s hard
 (`Tests/Runtime/Core/SuiteWallClockBudgetTest.cs`).
 
+Opt-in handler accounting walks the handler's typed slots and context maps at
+construction, disposal, and explicit live diagnostic reads. Use it at test-region
+boundaries; never add the query to dispatch or a measured allocation window.
+
 ## Self-Tests
 
 `Tests/Runtime/Core/LeakWatcherSelfTests.cs` parameterizes over
-`MessageScenarios.AllKinds` and exercises three behaviors:
+`MessageScenarios.AllKinds` for registration checks:
 
 - `WatcherPassesWhenAllHandlesAreRemoved` -- a clean register / emit /
   remove cycle disposes without raising.
@@ -143,6 +169,14 @@ suite's wall-clock budget is 60 s soft / 180 s hard
 - `WatcherThrowsOnLeakWhenConfiguredTo` -- `Dispose` raises
   `AssertionException` when `throwOnLeak: true` and a registration is
   outstanding.
+
+`HandlerStorageWatcherDetectsDeferredContextAfterRegistrationsDrain` covers
+targeted and broadcast cleanup with throwing and non-throwing watchers. It
+proves a default watcher accepts drained registration counts while the optional
+handler check detects retained storage, and that trim restores the baseline.
+`HandlerStorageCountsRetainedPrioritiesAndOnlyTheRequestedBus` covers all three
+kinds, shared priorities, multiple message types, simultaneous handler and
+postprocessor slots, an unused bus, and isolation between two buses.
 
 ## Adding a New Counter
 
@@ -166,8 +200,8 @@ exclusively against the new counter fails loudly otherwise.
 
 - Inside a tight loop. Use one watcher around the loop body, not one per
   iteration.
-- For non-bus resources. The watcher reads `IMessageBus` only; GameObject
-  leaks and NativeArray leaks are out of scope.
+- For unrelated resources. The watcher covers bus accounting and optional
+  typed-handler storage; GameObject and NativeArray leaks are out of scope.
 - For benchmark hot paths. Allocation / Performance fixtures avoid the
   watcher because the per-call O(types) cost shows up in measurements.
 

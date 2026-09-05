@@ -144,6 +144,16 @@ namespace DxMessaging.Core.Internal
         bool MarkedForOuterRemoval { get; }
 
         /// <summary>
+        /// Reports deferred context cleanup that must survive dirty-handler pruning.
+        /// </summary>
+        bool HasPendingContextCleanup { get; }
+
+        /// <summary>
+        /// Counts retained context keys and scalar or context-keyed priority caches for diagnostics.
+        /// </summary>
+        void GetRetainedStorageCounts(out int contextKeys, out int priorityCaches);
+
+        /// <summary>
         /// Resets every empty typed or typed-global slot and removes it from
         /// the handler's slot arrays.
         /// </summary>
@@ -167,11 +177,9 @@ namespace DxMessaging.Core.Internal
 
     /// <summary>
     /// Per-message-type, per-<see cref="SlotKey"/> dispatch slot on the
-    /// typed-handler side. Mirrors the role of
-    /// <see cref="BusSinkSlot"/> on the bus side: holds a priority-keyed map
-    /// of <see cref="IHandlerActionCache"/>s plus the snapshot-friendly
-    /// ordered-priority list, and tracks the staged-dispatch / eviction
-    /// counters.
+    /// typed-handler side. Holds priority-keyed maps of
+    /// <see cref="IHandlerActionCache"/> instances and tracks structural
+    /// versions, touch ticks, and live-handler counts.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -250,13 +258,10 @@ namespace DxMessaging.Core.Internal
         public long lastTouchTicks;
 
         /// <summary>
-        /// Reserved live-handler counter intended to mirror the unique
-        /// (handler, priority) pair count across every entry in
+        /// Counts unique live (handler, priority) pairs across every entry in
         /// <see cref="byPriority"/>; for context-bound slots, the SUM of
         /// (handler, priority) pair counts across every (InstanceId,
-        /// priority) leaf in <see cref="byContext"/> -- matching
-        /// <see cref="BusSinkSlot.liveCount"/> semantics so eviction logic
-        /// does not diverge between bus-side and handler-side.
+        /// priority) leaf in <see cref="byContext"/>.
         /// <see cref="IsEmpty"/> is a single integer compare. The typed
         /// handler maintains this counter on first-registration and
         /// final-deregistration transitions so <see cref="IsEmpty"/>
@@ -290,11 +295,7 @@ namespace DxMessaging.Core.Internal
         /// dictionary to <see cref="DxPools"/> before nulling the field.
         /// </para>
         /// <para>
-        /// Unlike the bus-side <see cref="BusContextSlot.byContext"/>, which
-        /// is rented from <c>DxPools.InstanceIdDicts</c> as a
-        /// <c>Dictionary&lt;InstanceId, object&gt;</c> (boxed
-        /// <see cref="BusSinkSlot"/>) for cross-message-type pool sharing,
-        /// the typed-handler-side equivalent here is a strongly-typed
+        /// The context map is a strongly-typed
         /// <c>Dictionary&lt;InstanceId, Dictionary&lt;int, IHandlerActionCache&gt;&gt;</c>.
         /// Both the outer context dictionary and the inner priority
         /// dictionaries are rented from typed-handler-specific
@@ -318,6 +319,88 @@ namespace DxMessaging.Core.Internal
         /// </para>
         /// </remarks>
         public Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> byContext;
+
+        /// <summary>
+        /// Tracks contexts emptied during dispatch until their frozen callbacks have finished.
+        /// </summary>
+        internal HashSet<InstanceId> pendingContextCleanup;
+
+        /// <summary>
+        /// Removes an empty, still-current priority cache when no dispatch can consume it.
+        /// </summary>
+        internal void PruneEmptyContextPriority(
+            InstanceId context,
+            int priority,
+            IHandlerActionCache cache
+        )
+        {
+            if (
+                !cache.IsEmpty
+                || byContext == null
+                || !byContext.TryGetValue(
+                    context,
+                    out Dictionary<int, IHandlerActionCache> priorities
+                )
+                || !priorities.TryGetValue(priority, out IHandlerActionCache current)
+                || !ReferenceEquals(cache, current)
+            )
+            {
+                return;
+            }
+            cache.Reset();
+            priorities.Remove(priority);
+            if (priorities.Count == 0)
+            {
+                byContext.Remove(context);
+                DxPools.TypedHandlerPriorityDicts.Return(priorities);
+            }
+        }
+
+        /// <summary>
+        /// Reclaims deferred empty leaves at a safe sweep boundary and returns the tracking set.
+        /// </summary>
+        internal void PrunePendingContexts()
+        {
+            if (pendingContextCleanup == null)
+            {
+                return;
+            }
+            HashSet<int> prioritiesToRemove = DxPools.IntSets.Rent();
+            try
+            {
+                foreach (InstanceId context in pendingContextCleanup)
+                {
+                    if (
+                        byContext == null
+                        || !byContext.TryGetValue(
+                            context,
+                            out Dictionary<int, IHandlerActionCache> priorities
+                        )
+                    )
+                    {
+                        continue;
+                    }
+                    prioritiesToRemove.Clear();
+                    foreach (KeyValuePair<int, IHandlerActionCache> entry in priorities)
+                    {
+                        if (entry.Value.IsEmpty)
+                        {
+                            prioritiesToRemove.Add(entry.Key);
+                        }
+                    }
+                    foreach (int priority in prioritiesToRemove)
+                    {
+                        PruneEmptyContextPriority(context, priority, priorities[priority]);
+                    }
+                }
+            }
+            finally
+            {
+                DxPools.IntSets.Return(prioritiesToRemove);
+                DxPools.InstanceIdSets.Return(pendingContextCleanup);
+                pendingContextCleanup = null;
+            }
+        }
 
         /// <summary>
         /// Constructs a <see cref="TypedSlot{T}"/> with the supplied
@@ -366,13 +449,11 @@ namespace DxMessaging.Core.Internal
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Mirrors <see cref="BusSinkSlot.Clear"/>. <see cref="byContext"/>
-        /// returns <see cref="byContext"/> and its inner priority
+        /// Returns <see cref="byContext"/> and its inner priority
         /// dictionaries to <see cref="DxPools"/>.
         /// </para>
         /// <para>
-        /// Unlike <see cref="BusSinkSlot.Clear"/> which drains inner buckets,
-        /// this <see cref="Clear"/> drops references only -- <see cref="Clear"/>
+        /// Drops cache references without draining them. <see cref="Clear"/>
         /// is intended for the typed-handler analog of
         /// <c>MessageBus.ResetState()</c> where the entire
         /// <see cref="MessageHandler"/> graph is being torn down, so per-cache
@@ -461,6 +542,11 @@ namespace DxMessaging.Core.Internal
 
         private void ReturnContextDictionaries()
         {
+            if (pendingContextCleanup != null)
+            {
+                DxPools.InstanceIdSets.Return(pendingContextCleanup);
+                pendingContextCleanup = null;
+            }
             if (byContext == null)
             {
                 return;

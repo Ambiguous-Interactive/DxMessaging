@@ -82,6 +82,10 @@ state, not stale cache.
 - Use `LeakWatcher.WatchWithSlots()` when trim is part of the expected cleanup;
   plain `LeakWatcher.Watch()` checks registration counters only. Slot deltas are
   measured against the watcher's own snapshot, so the bus need not be empty.
+- For typed-handler reclamation, also pass `handler: handler` to
+  `LeakWatcher.WatchWithSlots(bus, ...)`. This checks retained context keys and
+  priority caches through a cold internal query; those deltas are separate from
+  public bus counters and freeze on disposal. Default watchers skip this query.
 - Put direct reclamation fixtures in `Tests/Runtime/MemoryReclaim` with
   `[Category("MemoryReclaim")]`. The category is opt-in and, like `Stress`,
   `Performance`, and `Allocation`, suppresses the default-suite wall-clock
@@ -100,12 +104,11 @@ When any trigger file changes (`DxMessagingRuntimeSettings.cs`,
 members, `MessageHandler.TrimAll`, `Runtime/Core/Pooling/**`,
 `Runtime/Core/Configuration/**`), update in the SAME change:
 `docs/guides/memory-reclamation.md`, the per-setting table in
-`docs/reference/runtime-settings.md` (cross-checked by
-`validate:runtime-settings-docs`), and the existing `## [Unreleased]` runtime
+`docs/reference/runtime-settings.md`, and the existing `## [Unreleased]` runtime
 memory-reclamation bullet in `CHANGELOG.md` - mutate that bullet rather than
-stacking a new one. There is no automated drift gate; verify by hand that every
-setting has a row. If `validate:changelog:coverage` raises `W002`, rewrite the
-entry around user impact.
+stacking a new one. Verify every settings-table row against the settings source;
+there is no automated drift gate. Follow the changelog-management skill when
+describing user impact.
 
 ## References
 

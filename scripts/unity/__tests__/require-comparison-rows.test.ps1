@@ -2,8 +2,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..')).Path
-$headCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
-$scriptPath = Join-Path $repoRoot 'scripts' 'unity' 'require-comparison-rows.ps1'
 $tempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "dxm-comparison-row-gate-$([guid]::NewGuid())"
 $baselinePath = Join-Path $tempDirectory 'comparison-rows.csv'
 $evidencePath = Join-Path $tempDirectory 'results.xml'
@@ -192,6 +190,30 @@ function Assert-GateFails {
 
 try {
     [System.IO.Directory]::CreateDirectory($tempDirectory) | Out-Null
+    # Exercise the current production script against committed fixture sources. The developer's
+    # working tree may contain unrelated runtime edits and must not become test provenance.
+    $fixtureRoot = Join-Path $tempDirectory 'repository'
+    $candidatePath = 'Runtime/Core/MessageBus/MessageBus.cs'
+    foreach ($relativePath in @(
+        $candidatePath,
+        'scripts/unity/require-comparison-rows.ps1',
+        'scripts/unity/perf-scenarios.js',
+        'scripts/unity/post-route-perf-scenarios.json',
+        'scripts/unity/comparison-supported-scenarios.json'
+    )) {
+        $destination = Join-Path $fixtureRoot $relativePath
+        [System.IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repoRoot $relativePath) -Destination $destination
+    }
+    & git -C $fixtureRoot init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the evidence test repository.' }
+    & git -C $fixtureRoot add --all
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the evidence test sources.' }
+    & git -C $fixtureRoot -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit --quiet -m 'Evidence fixture'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not commit the evidence test sources.' }
+    $headCommit = (& git -C $fixtureRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the evidence test commit.' }
+    $scriptPath = Join-Path $fixtureRoot 'scripts' 'unity' 'require-comparison-rows.ps1'
     [System.IO.File]::WriteAllText(
         $bracketManifestPath,
         '{"schemaVersion":1,"bracketId":"test","orientation":"candidate-control-candidate","materialityBandPercent":3,"candidatePaths":["Runtime/Core/MessageBus/MessageBus.cs"],"rows":[]}' + "`n"
@@ -263,6 +285,17 @@ try {
             throw "The paired Markdown summary omitted '$scenario'."
         }
     }
+
+    $fixtureCandidate = Join-Path $fixtureRoot $candidatePath
+    $candidateBytes = [System.IO.File]::ReadAllBytes($fixtureCandidate)
+    [System.IO.File]::AppendAllText($fixtureCandidate, "`n// Uncommitted test source change.`n")
+    Assert-GateFails -Scenarios $expected -Records $validRecords -MessagePattern 'Measured runtime or benchmark sources differ'
+    & git -C $fixtureRoot add -- $candidatePath
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the dirty source fixture.' }
+    Assert-GateFails -Scenarios $expected -Records $validRecords -MessagePattern 'index contains measured runtime'
+    [System.IO.File]::WriteAllBytes($fixtureCandidate, $candidateBytes)
+    & git -C $fixtureRoot add -- $candidatePath
+    if ($LASTEXITCODE -ne 0) { throw 'Could not restore the source fixture.' }
 
     $stableRecords = @($pairedScenarios | ForEach-Object {
         New-PairedRecord -Scenario $_ -Ratios @(0.5, 0.501, 0.499, 0.5)

@@ -333,9 +333,9 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId hostId = host;
 
             // The method name exists, but the argument count does not match any
-            // overload. Pinned behavior: the failed signature lookup is cached as
-            // a null dispatcher, so dispatch is a silent no-op (no throw, no
-            // invocation). This is distinct from the unknown-name path above.
+            // overload. Failed signature lookups are not retained, and dispatch
+            // remains a silent no-op (no throw, no invocation). This is distinct
+            // from the unknown-name path above.
             ReflexiveMessage wrongArity = new(
                 nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
                 ReflexiveSendMode.Flat,

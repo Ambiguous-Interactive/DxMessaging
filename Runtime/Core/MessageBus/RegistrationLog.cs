@@ -1,8 +1,10 @@
 namespace DxMessaging.Core.MessageBus
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.Text;
+    using DxMessaging.Core.DataStructure;
 
     /// <summary>
     /// Logs MessageHandler registrations for diagnostics.
@@ -11,14 +13,49 @@ namespace DxMessaging.Core.MessageBus
     /// Disabled by default for performance. Set <see cref="Enabled"/> to true to start collecting
     /// <see cref="MessagingRegistration"/> entries, then inspect via <see cref="Registrations"/>,
     /// <see cref="GetRegistrations"/>, or <see cref="ToString()"/>.
+    /// Since 4.0, standalone logs retain the newest 1,024 entries. Bus-owned logs use
+    /// the runtime settings registration-history capacity. The read-only view remains live
+    /// through recording, capacity changes, and clearing without allocating empty storage.
     /// </remarks>
-    public sealed class RegistrationLog
+    public sealed class RegistrationLog : IReadOnlyList<MessagingRegistration>
     {
-        public IReadOnlyList<MessagingRegistration> Registrations =>
-            _finalizedRegistrations ??= new List<MessagingRegistration>();
+        /// <summary>Default retained history limit for standalone logs and unset bus configuration.</summary>
+        internal const int DefaultCapacity = 1024;
 
-        private List<MessagingRegistration> _finalizedRegistrations;
+        /// <summary>Live read-only view of retained registrations in chronological order.</summary>
+        public IReadOnlyList<MessagingRegistration> Registrations => this;
 
+        private CyclicBuffer<MessagingRegistration> _finalizedRegistrations;
+        private int _capacity;
+
+        int IReadOnlyCollection<MessagingRegistration>.Count => _finalizedRegistrations?.Count ?? 0;
+
+        MessagingRegistration IReadOnlyList<MessagingRegistration>.this[int index]
+        {
+            get
+            {
+                if ((uint)index >= (uint)(_finalizedRegistrations?.Count ?? 0))
+                {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+                return _finalizedRegistrations[index];
+            }
+        }
+
+        IEnumerator<MessagingRegistration> IEnumerable<MessagingRegistration>.GetEnumerator()
+        {
+            return (
+                (IEnumerable<MessagingRegistration>)_finalizedRegistrations
+                ?? Array.Empty<MessagingRegistration>()
+            ).GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return ((IEnumerable<MessagingRegistration>)this).GetEnumerator();
+        }
+
+        /// <summary>Controls recording without clearing entries already retained.</summary>
         public bool Enabled
         {
             get => _enabled;
@@ -34,8 +71,20 @@ namespace DxMessaging.Core.MessageBus
         /// When <c>true</c>, logging starts immediately; otherwise call <see cref="Enabled"/> to enable later.
         /// </param>
         public RegistrationLog(bool enabled = false)
+            : this(enabled, DefaultCapacity) { }
+
+        /// <summary>Creates a log with bounded history; negative capacities disable storage.</summary>
+        internal RegistrationLog(bool enabled, int capacity)
         {
             _enabled = enabled;
+            _capacity = Math.Max(0, capacity);
+        }
+
+        /// <summary>Applies a history limit, retaining the newest entries when shrinking.</summary>
+        internal void Resize(int capacity)
+        {
+            _capacity = Math.Max(0, capacity);
+            _finalizedRegistrations?.Resize(_capacity);
         }
 
         /// <summary>
@@ -44,11 +93,13 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="registration">MessagingRegistration to record.</param>
         public void Log(MessagingRegistration registration)
         {
-            if (!_enabled)
+            if (!_enabled || _capacity == 0)
             {
                 return;
             }
-            (_finalizedRegistrations ??= new List<MessagingRegistration>()).Add(registration);
+            (_finalizedRegistrations ??= new CyclicBuffer<MessagingRegistration>(_capacity)).Add(
+                registration
+            );
         }
 
         /// <summary>
@@ -58,7 +109,7 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>All registrations for the provided InstanceId.</returns>
         public IEnumerable<MessagingRegistration> GetRegistrations(InstanceId instanceId)
         {
-            List<MessagingRegistration> registrations = _finalizedRegistrations;
+            CyclicBuffer<MessagingRegistration> registrations = _finalizedRegistrations;
             if (registrations == null)
             {
                 yield break;
@@ -81,7 +132,7 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>The string representing all logged MessagingRegistrations.</returns>
         public string ToString(Func<MessagingRegistration, string> serializer)
         {
-            List<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
+            CyclicBuffer<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
             if (finalizedRegistrations == null || finalizedRegistrations.Count == 0)
             {
                 return "[]";
@@ -121,7 +172,7 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>Number of MessagingRegistrations removed.</returns>
         public int Clear(Predicate<MessagingRegistration> shouldRemove = null)
         {
-            List<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
+            CyclicBuffer<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
             if (finalizedRegistrations == null)
             {
                 return 0;
