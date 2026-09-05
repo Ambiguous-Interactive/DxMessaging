@@ -40,7 +40,10 @@ namespace DxMessaging.Tests.Runtime
             // Keep token storage keyed by the real implementation, even when a mutant intercepts emission.
             _emitter = emitter ?? bus;
             _reset = reset;
-            _leaks = new LeakWatcher(bus: bus, label: "Differential replay " + scenario.Kind);
+            // TrimResult includes process-shared retained pools. Start every isolated replay
+            // from the same real empty-pool baseline, without predicting any eviction result.
+            _bus.Trim(force: true);
+            _leaks = LeakWatcher.WatchWithSlots(bus, label: "Differential replay " + scenario.Kind);
             try
             {
                 for (int slot = 0; slot < _tokens.Length; ++slot)
@@ -77,6 +80,7 @@ namespace DxMessaging.Tests.Runtime
         {
             _callbacks.Clear();
             string exception = null;
+            IMessageBus.TrimResult? trimResult = null;
             try
             {
                 switch (operation.Kind)
@@ -96,6 +100,9 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.Emit:
                         Emit(operation);
+                        break;
+                    case BusTraceOperationKind.Trim:
+                        trimResult = Trim(operation.Value != 0);
                         break;
                     case BusTraceOperationKind.SetDiagnostics:
                         _tokens[operation.Token].DiagnosticMode = operation.Value != 0;
@@ -165,7 +172,14 @@ namespace DxMessaging.Tests.Runtime
             }
             string state =
                 $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}";
-            return new BusTraceObservation(_callbacks, state, exception);
+            return new BusTraceObservation(
+                _callbacks,
+                state,
+                exception,
+                trimResult,
+                _bus.OccupiedTypeSlots,
+                _bus.OccupiedTargetSlots
+            );
         }
 
         /// <summary>Always attempts every token cleanup and reports cleanup or registration-leak failures.</summary>
@@ -199,6 +213,14 @@ namespace DxMessaging.Tests.Runtime
             }
             try
             {
+                _bus.Trim(force: true);
+            }
+            catch (Exception error)
+            {
+                errors.Add(error);
+            }
+            try
+            {
                 _leaks.Dispose();
             }
             catch (Exception error)
@@ -216,6 +238,8 @@ namespace DxMessaging.Tests.Runtime
         protected MessageRegistrationHandle Handle(int slot) => _handles[slot];
 
         protected IMessageBus Bus => _bus;
+
+        protected virtual IMessageBus.TrimResult Trim(bool force) => _bus.Trim(force);
 
         protected virtual void Remove(BusTraceOperation operation)
         {
