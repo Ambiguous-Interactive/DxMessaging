@@ -6,7 +6,7 @@ namespace DxMessaging.Tests.Runtime
     using System.Collections.ObjectModel;
     using System.Text;
 
-    /// <summary>Supported replay operations, including callback-time reset of an isolated bus.</summary>
+    /// <summary>Versioned replay operations for isolated bus lifecycle, callbacks, stale handles, and diagnostics.</summary>
     internal enum BusTraceOperationKind
     {
         Register,
@@ -15,6 +15,9 @@ namespace DxMessaging.Tests.Runtime
         Disable,
         Emit,
         EmitWithReset,
+        EmitWithThrow,
+        RemoveStale,
+        SetDiagnostics,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -48,7 +51,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 2;
+        internal const int GeneratorVersion = 3;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
@@ -169,12 +172,18 @@ namespace DxMessaging.Tests.Runtime
             }
             List<BusTraceOperation> operations = new(length);
             bool[] registered = new bool[BusTraceSequence.TokenCount];
+            bool[] removed = new bool[BusTraceSequence.TokenCount];
             uint state = seed == 0 ? 0x9e3779b9u : seed;
             for (int index = 0; index < length; ++index)
             {
                 int token = (int)(Next(ref state) % BusTraceSequence.TokenCount);
                 BusTraceOperationKind kind = (BusTraceOperationKind)(
-                    Next(ref state) % (generatorVersion == 1 ? 5U : 6U)
+                    Next(ref state)
+                    % (
+                        generatorVersion == 1 ? 5U
+                        : generatorVersion == 2 ? 6U
+                        : 9U
+                    )
                 );
                 if (index == 0)
                 {
@@ -194,17 +203,31 @@ namespace DxMessaging.Tests.Runtime
                 {
                     kind = BusTraceOperationKind.Register;
                 }
-                if (kind == BusTraceOperationKind.EmitWithReset && !registered[token])
+                if (
+                    (
+                        kind == BusTraceOperationKind.EmitWithReset
+                        || kind == BusTraceOperationKind.EmitWithThrow
+                    ) && !registered[token]
+                )
+                {
+                    kind = BusTraceOperationKind.Emit;
+                }
+                if (kind == BusTraceOperationKind.RemoveStale && !removed[token])
                 {
                     kind = BusTraceOperationKind.Emit;
                 }
                 int context = index < 2 ? 0 : (int)(Next(ref state) % 2);
+                int value = unchecked((int)Next(ref state));
+                if (kind == BusTraceOperationKind.SetDiagnostics)
+                {
+                    value &= 1;
+                }
                 operations.Add(
                     new BusTraceOperation(
                         kind,
                         token,
                         context,
-                        unchecked((int)Next(ref state)),
+                        value,
                         (int)(Next(ref state) % 3) - 1
                     )
                 );
@@ -215,6 +238,7 @@ namespace DxMessaging.Tests.Runtime
                 if (kind == BusTraceOperationKind.Remove)
                 {
                     registered[token] = false;
+                    removed[token] = true;
                 }
             }
             return new BusTraceSequence(scenario, seed, operations, generatorVersion);
@@ -244,6 +268,7 @@ namespace DxMessaging.Tests.Runtime
                 return false;
             }
             bool[] registered = new bool[BusTraceSequence.TokenCount];
+            bool[] removed = new bool[BusTraceSequence.TokenCount];
             foreach (BusTraceOperation operation in sequence.Operations)
             {
                 if (
@@ -270,10 +295,31 @@ namespace DxMessaging.Tests.Runtime
                             return false;
                         }
                         registered[operation.Token] = false;
+                        removed[operation.Token] = true;
                         break;
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:
                     case BusTraceOperationKind.Emit:
+                        break;
+                    case BusTraceOperationKind.SetDiagnostics:
+                        if (sequence.Version < 3 || operation.Value < 0 || operation.Value > 1)
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.RemoveStale:
+                        if (sequence.Version < 3 || !removed[operation.Token])
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.EmitWithThrow:
+                        if (sequence.Version < 3 || !registered[operation.Token])
+                        {
+                            return false;
+                        }
+                        // A disabled or differently routed callback may not throw or remove its handle.
+                        // An explicit Remove still owns that handle, even after callback cleanup.
                         break;
                     case BusTraceOperationKind.EmitWithReset:
                         if (sequence.Version < 2 || !registered[operation.Token])
