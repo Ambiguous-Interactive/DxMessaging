@@ -287,7 +287,11 @@ metrics because the Release player strips the required profiler recorder (see
 
 - **Shipping-fidelity leg (not published)** builds separate IL2CPP Release
   players with Minimal, Low, Medium, and High managed stripping and no test
-  assemblies. Each level has a reviewed profile under `.github/perf/`; the
+  assemblies. The Unity Tests workflow runs this matrix weekly on Sunday at
+  04:17 UTC, or when a manual run enables `shipping_fidelity`. Pull requests,
+  pushes, and default manual runs execute the regular three test modes without
+  this matrix. The schedule takes effect after the workflow reaches the default
+  branch. Each level has a reviewed profile under `.github/perf/`; the
   existing `shipping-fidelity-il2cpp-profile.v1.json` remains the High profile.
   The harness calls `BuildPipeline.BuildPlayer` directly, without Unity Test
   Framework or a PlayerConnection. The oldest and newest supported Unity
