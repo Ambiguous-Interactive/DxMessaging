@@ -528,7 +528,18 @@
       "short\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000x\u0000xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaalog",
       "utf8"
     ],
-    ["valid byte-order-marked UTF-16 text", "powershell.log", "﻿Unity build completed\n", "utf16le"]
+    [
+      "valid byte-order-marked UTF-16 text",
+      "powershell.log",
+      "﻿Unity build completed\n",
+      "utf16le"
+    ],
+    [
+      "boolean connection flags",
+      "build-options-profile.json",
+      "{\"connectToHost\":false,\"nested\":{\"connectToHost\":true}}",
+      "utf8"
+    ]
   ],
   "invalidSealMetadata": [
     ["reducer", "not-a-reducer", "Unknown reducer"],
@@ -769,6 +780,11 @@
       "{\"message\":\"TOKEN=abcdefghijklmnop\",\"total\":1}\n{\"passed\":true}\n",
       "{\"message\":\"TOKEN=[redacted:credential-assignment]\",\"total\":1}\n{\"passed\":true}\n",
       ".jsonl"
+    ],
+    [
+      "typed connection flags beside nested credentials",
+      "{\"buildOptions\":{\"connectToHost\":false},\"enabled\":{\"connectToHost\":true},\"nested\":\"{\\\"connectToHost\\\":false,\\\"PASSWORD\\\":\\\"fake-private-password\\\"}\"}",
+      "{\"buildOptions\":{\"connectToHost\":false},\"enabled\":{\"connectToHost\":true},\"nested\":\"{\\\"connectToHost\\\":false,\\\"PASSWORD\\\":\\\"[redacted:password-assignment]\\\"}\"}"
     ]
   ],
   "invalidStructures": [
@@ -845,7 +861,15 @@
       ".json",
       "{\"message\":\"\\\\ufeffordinary\"}"
     ],
-    ["XML nested entity byte order mark in value", ".xml", "<a>&amp;#xfeff;ordinary</a>"]
+    ["XML nested entity byte order mark in value", ".xml", "<a>&amp;#xfeff;ordinary</a>"],
+    ["object JSON credential", ".json", "{\"TOKEN\":{\"value\":\"FAKE_PRIVATE_SECRET\"}}"],
+    ["array JSON credential", ".json", "{\"TOKEN\":[\"FAKE_PRIVATE_SECRET\"]}"],
+    [
+      "object JSON connection host",
+      ".json",
+      "{\"connectToHost\":{\"value\":\"FAKE_PRIVATE_RUNNER\"}}"
+    ],
+    ["array JSON connection host", ".json", "{\"connectToHost\":[\"FAKE_PRIVATE_RUNNER\"]}"]
   ],
   "labelPreservingCredentials": [
     [

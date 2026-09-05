@@ -267,8 +267,18 @@ function encodeText(text, encoding) {
   if (encoding === "utf16be") return Buffer.from(text, "utf16le").swap16();
   return Buffer.from(text, encoding);
 }
+const compiledGlobalPatterns = new WeakMap();
 function globalRegExp(entry) {
-  return new RegExp(entry.pattern.source, `${entry.pattern.flags}g`);
+  const pattern = entry.pattern;
+  const source = pattern.source;
+  const flags = pattern.flags;
+  let cached = compiledGlobalPatterns.get(pattern);
+  if (!cached || cached.source !== source || cached.flags !== flags) {
+    cached = { source, flags, expression: new RegExp(source, `${flags}g`) };
+    compiledGlobalPatterns.set(pattern, cached);
+  }
+  cached.expression.lastIndex = 0;
+  return cached.expression;
 }
 function matchesPattern(text, entry) {
   for (const match of text.matchAll(globalRegExp(entry))) {
@@ -567,7 +577,9 @@ function structuredText(text, visit, format, depth = 0) {
   if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length) invalid();
   const walk = (value, key = "") => {
     if (typeof value === "string") return scalar(value, key);
-    if (key && contextualPattern(key, JSON.stringify(value))) invalid();
+    // Containers under sensitive keys have ambiguous ownership; scalars retain their JSON type.
+    const context = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
+    if (key && contextualPattern(key, context)) invalid();
     if (
       typeof value === "number" &&
       (!Number.isFinite(value) ||

@@ -45,6 +45,35 @@ function invokeCli(root, written = []) {
 }
 const LEAK_CASES = VECTORS.leakCases;
 const IDENTIFIER_CASES = VECTORS.identifierCases;
+test("pattern scans preserve cursors across mutation and callback reentry", () => {
+  const entry = { pattern: /a/i };
+  entry.pattern.lastIndex = 9;
+  assert.equal(matchesPattern("A", entry), true);
+  assert.equal(matchesPattern("A", entry), true);
+  assert.equal(entry.pattern.lastIndex, 9);
+  entry.pattern.compile("b");
+  assert.equal(matchesPattern("a", entry), false);
+  assert.equal(matchesPattern("B", entry), false);
+  assert.equal(matchesPattern("b", entry), true);
+  entry.pattern.compile("b", "i");
+  assert.equal(matchesPattern("B", entry), true);
+  entry.pattern = /a/;
+  let nested = false;
+  const indices = [];
+  entry.accept = (match) => {
+    if (nested) return true;
+    indices.push(match.index);
+    nested = true;
+    try {
+      assert.equal(matchesPattern("a", entry), true);
+    } finally {
+      nested = false;
+    }
+    return match.index === 2;
+  };
+  assert.equal(matchesPattern("a a", entry), true);
+  assert.deepEqual(indices, [0, 2]);
+});
 test("identifier anchor gates preserve unfiltered production matches", () => {
   for (const text of Object.values(VECTORS)
     .flat(Infinity)
@@ -898,6 +927,20 @@ for (const [label, bom, encoded] of [
     assert.equal(result.binaryCount, 1, "the malformed file must be reported as opaque");
   });
 }
+test("tracked IL2CPP profiles survive artifact preparation unchanged", (t) => {
+  const profiles = path.resolve(__dirname, "../../.github/perf");
+  const files = fs.readdirSync(profiles).filter((name) => /il2cpp.*profile.*\.json$/.test(name));
+  assert.ok(files.length > 0, "the tracked profile roster must not be empty");
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(profiles, file), "utf8");
+    const { root, target } = artifactFile(source, file);
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    assert.equal(invokeCli(root), 0, file);
+    assert.equal(fs.readFileSync(target, "utf8"), source, file);
+    assert.deepEqual(findSensitiveData(source, ".json"), [], file);
+    assert.ok(isSerializedRedactionSafe(source, source, ".json"), file);
+  }
+});
 for (const [
   label,
   source,
