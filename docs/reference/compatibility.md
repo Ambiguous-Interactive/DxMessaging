@@ -44,6 +44,23 @@ DI and DxMessaging complement each other: DI manages dependencies/services, DxMe
 
 For comparisons with other messaging/event frameworks (UniRx, MessagePipe, Zenject Signals, etc.), see [Framework Comparisons](../architecture/comparisons.md).
 
+## Untyped dispatch
+
+Untyped dispatch accepts a message interface. A boxed struct is copied into a typed local;
+interceptors can change that emission's local value, but the original box stays unchanged.
+Class messages preserve object identity. Reuse a preboxed message when repeated untyped
+emissions must avoid boxing allocations; normal typed struct dispatch needs no box.
+
+On IL2CPP, a source-generated message includes its dispatch bridge. For a manually implemented
+message, register a handler or interceptor for the concrete message type, or emit that type
+through the typed API, before its first untyped emission. Registration on `MessageBus` is
+sufficient; it does not require a separate typed warm-up. An untyped emission of a manual
+message with no prepared bridge throws an exception that explains how to prepare it.
+
+Custom `IMessageBus` implementations receive bridge calls through their own typed methods.
+Their implementations remain responsible for making those generic methods available to
+IL2CPP.
+
 ## Plain .NET runtime
 
 The source checkout also builds the core runtime for .NET Standard 2.1, with C# 9 and
@@ -72,8 +89,3 @@ Call `DxMessagingStaticState.Reset()` when a host needs to reset shared static s
 Keep all bus activity, including trims and registration changes, on one owning thread.
 There is no background sweep outside Unity. Host activity advances idle counters; force
 trim at a maintenance boundary when an inactive bus needs immediate reclamation.
-
-Untyped dispatch accepts a message interface. A boxed struct is copied into a typed local;
-interceptors can change that emission's local value, but the original box stays unchanged.
-Class messages preserve object identity. Reuse a preboxed message when repeated untyped
-emissions must avoid boxing allocations; normal typed struct dispatch needs no box.

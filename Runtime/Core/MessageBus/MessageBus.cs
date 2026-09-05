@@ -7986,7 +7986,16 @@ namespace DxMessaging.Core.MessageBus
             where T : IUntargetedMessage
         {
             T typedMessage = (T)message;
-            messageBus.UntargetedBroadcast(ref typedMessage);
+            // A direct concrete call roots the closed native target from registration on
+            // IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            if (messageBus is MessageBus concreteBus)
+            {
+                concreteBus.UntargetedBroadcast(ref typedMessage);
+            }
+            else
+            {
+                messageBus.UntargetedBroadcast(ref typedMessage);
+            }
         }
 
         private static void AotTargetedBroadcast<T>(
@@ -7997,7 +8006,16 @@ namespace DxMessaging.Core.MessageBus
             where T : ITargetedMessage
         {
             T typedMessage = (T)message;
-            messageBus.TargetedBroadcast(ref target, ref typedMessage);
+            // A direct concrete call roots the closed native target from registration on
+            // IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            if (messageBus is MessageBus concreteBus)
+            {
+                concreteBus.TargetedBroadcast(ref target, ref typedMessage);
+            }
+            else
+            {
+                messageBus.TargetedBroadcast(ref target, ref typedMessage);
+            }
         }
 
         private static void AotSourcedBroadcast<T>(
@@ -8008,7 +8026,16 @@ namespace DxMessaging.Core.MessageBus
             where T : IBroadcastMessage
         {
             T typedMessage = (T)message;
-            messageBus.SourcedBroadcast(ref source, ref typedMessage);
+            // A direct concrete call roots the closed native target from registration on
+            // IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            if (messageBus is MessageBus concreteBus)
+            {
+                concreteBus.SourcedBroadcast(ref source, ref typedMessage);
+            }
+            else
+            {
+                messageBus.SourcedBroadcast(ref source, ref typedMessage);
+            }
         }
 
         private static void ThrowMissingAotBridge(Type messageType, string dispatchKind)

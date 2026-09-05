@@ -232,7 +232,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 scenario,
                 (token, bus) =>
                 {
-                    UntypedAllocationMessage payload = new UntypedAllocationMessage { value = 173 };
+                    UntypedAllocationMessage payload = new(173);
                     object boxed = payload;
                     int received = 0;
                     void Receive(in UntypedAllocationMessage message)
@@ -294,12 +294,18 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        private struct UntypedAllocationMessage
+        private readonly struct UntypedAllocationMessage
             : DxMessaging.Core.Messages.IUntargetedMessage,
                 DxMessaging.Core.Messages.ITargetedMessage,
                 DxMessaging.Core.Messages.IBroadcastMessage
         {
-            public int value;
+            public readonly int value;
+
+            public UntypedAllocationMessage(int value)
+            {
+                this.value = value;
+            }
+
             public Type MessageType => typeof(UntypedAllocationMessage);
         }
 

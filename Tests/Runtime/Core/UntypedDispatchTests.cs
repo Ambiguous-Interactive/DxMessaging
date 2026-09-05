@@ -253,6 +253,13 @@ namespace DxMessaging.Tests.Runtime.Core
     }
 
     /// <summary>Boxed struct payloads must be copied into typed dispatch locals before invocation.</summary>
+    /// <remarks>
+    /// 2026-09-05 (#529): IL2CPP 2021 found the registered bridge but lacked native code for
+    /// its generic interface dispatch target. Registration-only cases deliberately never emit
+    /// this payload through a concrete typed call, which could mask the missing native target.
+    /// Custom-bus rooting uses a distinct payload type. Interceptors replace readonly payloads
+    /// through the ref parameter to preserve mutation coverage without an analyzer suppression.
+    /// </remarks>
     public sealed class UntypedStructPayloadTests
     {
         [Test]
@@ -275,6 +282,7 @@ namespace DxMessaging.Tests.Runtime.Core
             token.DiagnosticMode = false;
             token.Enable();
             InstanceId context = new(0x6A17_4002);
+            NonEmptyManualMessage original = new(marker, value);
             List<(long Marker, int Value)> observed = new();
             int interceptions = 0;
             switch (scenario.Kind)
@@ -298,9 +306,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 default:
                     throw new ArgumentOutOfRangeException(nameof(scenario));
             }
-            NonEmptyManualMessage original = new() { Marker = marker, Value = value };
             object boxed = original;
-            Action emit = CreateEmit(bus, scenario.Kind, context, boxed, invokeAotBridge);
+            Action emit = CreateEmit<NonEmptyManualMessage>(
+                bus,
+                scenario.Kind,
+                context,
+                boxed,
+                invokeAotBridge
+            );
             emit();
             emit();
             string label = $"[{scenario.Kind}] aot={invokeAotBridge}, mutate={mutate}";
@@ -338,8 +351,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++interceptions;
                 if (mutate)
                 {
-                    message.Marker += 9;
-                    message.Value += 7;
+                    message = new NonEmptyManualMessage(message.Marker + 9, message.Value + 7);
                 }
                 return true;
             }
@@ -358,7 +370,140 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private static Action CreateEmit(
+        [Test]
+        public void AotBridgeInvokesSuppliedCustomBusWithoutUnwrappingIt(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusType bus = new() { DiagnosticsMode = false };
+            using LeakWatcher leaks = new(bus: bus, label: $"{scenario.Kind} custom AOT bridge");
+            DispatchSpy customBus = new(bus);
+            InstanceId context = new(0x6A17_5002);
+            CustomBusMessage payload = new(173);
+            MessageHandler handler = new(new InstanceId(0x6A17_5001), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.DiagnosticMode = false;
+            token.Enable();
+            int calls = 0;
+            int received = 0;
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    // Root this test-only custom generic implementation explicitly. Its distinct
+                    // message type must never root the registration-only regression payload.
+                    customBus.UntargetedBroadcast(ref payload);
+                    _ = token.RegisterUntargeted<CustomBusMessage>(Receive);
+                    break;
+                case MessageKind.Targeted:
+                    customBus.TargetedBroadcast(ref context, ref payload);
+                    _ = token.RegisterTargeted<CustomBusMessage>(context, Receive);
+                    break;
+                case MessageKind.Broadcast:
+                    customBus.SourcedBroadcast(ref context, ref payload);
+                    _ = token.RegisterBroadcast<CustomBusMessage>(context, Receive);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(scenario));
+            }
+            string label = $"[{scenario.Kind}] custom AOT bridge";
+            Assert.That(
+                customBus.Calls,
+                Is.EqualTo(1),
+                label + ": setup must root exactly one custom typed call."
+            );
+            Assert.That(
+                bus.EmissionId,
+                Is.EqualTo(1),
+                label + ": the explicit custom seed must forward once."
+            );
+            Assert.That(
+                calls,
+                Is.Zero,
+                label + ": setup must run before the callback is registered."
+            );
+            object boxed = payload;
+            Action emit = CreateEmit<CustomBusMessage>(
+                customBus,
+                scenario.Kind,
+                context,
+                boxed,
+                invokeAotBridge: true
+            );
+            emit();
+            Assert.That(
+                customBus.Calls,
+                Is.EqualTo(2),
+                label + ": the real bridge must invoke the supplied custom bus."
+            );
+            Assert.That(
+                bus.EmissionId,
+                Is.EqualTo(2),
+                label + ": the bridge must forward once after the seed."
+            );
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                label + ": only the bridge dispatch must reach the callback."
+            );
+            Assert.That(
+                received,
+                Is.EqualTo(173),
+                label + ": custom forwarding must preserve the boxed payload."
+            );
+            return;
+
+            void Receive(in CustomBusMessage message)
+            {
+                ++calls;
+                received = message.Value;
+            }
+        }
+
+        private sealed class DispatchSpy : DelegatingMessageBus
+        {
+            internal DispatchSpy(IMessageBus inner)
+                : base(inner) { }
+
+            internal int Calls { get; private set; }
+
+            public override void UntargetedBroadcast<TMessage>(ref TMessage message)
+            {
+                ++Calls;
+                base.UntargetedBroadcast(ref message);
+            }
+
+            public override void TargetedBroadcast<TMessage>(
+                ref InstanceId target,
+                ref TMessage message
+            )
+            {
+                ++Calls;
+                base.TargetedBroadcast(ref target, ref message);
+            }
+
+            public override void SourcedBroadcast<TMessage>(
+                ref InstanceId source,
+                ref TMessage message
+            )
+            {
+                ++Calls;
+                base.SourcedBroadcast(ref source, ref message);
+            }
+        }
+
+        private readonly struct CustomBusMessage
+            : IUntargetedMessage,
+                ITargetedMessage,
+                IBroadcastMessage
+        {
+            internal CustomBusMessage(int value) => Value = value;
+
+            internal int Value { get; }
+            public Type MessageType => typeof(CustomBusMessage);
+        }
+
+        private static Action CreateEmit<T>(
             IMessageBus bus,
             MessageKind kind,
             InstanceId context,
@@ -386,11 +531,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageKind.Broadcast => "AotSourcedBroadcast",
                 _ => throw new ArgumentOutOfRangeException(nameof(kind)),
             };
-            // Registration roots this exact closed bridge on IL2CPP. Reflection also lets
-            // Mono/.NET execute the real AOT body, whose normal public path uses reflection helpers.
+            // Registration must root this exact closed bridge and its typed dispatch target.
+            // Reflection lets Mono/.NET execute the same AOT body as IL2CPP public dispatch.
             MethodInfo method = typeof(BusType)
                 .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
-                ?.MakeGenericMethod(typeof(NonEmptyManualMessage));
+                ?.MakeGenericMethod(typeof(T));
             Assert.That(method, Is.Not.Null, $"[{kind}]: the production AOT bridge must exist.");
             switch (kind)
             {
@@ -421,13 +566,20 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private struct NonEmptyManualMessage
+        private readonly struct NonEmptyManualMessage
             : IUntargetedMessage,
                 ITargetedMessage,
                 IBroadcastMessage
         {
-            internal long Marker;
-            internal int Value;
+            internal readonly long Marker;
+            internal readonly int Value;
+
+            internal NonEmptyManualMessage(long marker, int value)
+            {
+                Marker = marker;
+                Value = value;
+            }
+
             public Type MessageType => typeof(NonEmptyManualMessage);
         }
     }
