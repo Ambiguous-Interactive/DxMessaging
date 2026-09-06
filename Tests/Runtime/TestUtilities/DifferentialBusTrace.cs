@@ -23,6 +23,8 @@ namespace DxMessaging.Tests.Runtime
         EmitNested,
         EmitWithDisable,
         RemoveForeign,
+        SetHandlerActive,
+        EmitWithHandlerActive,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -37,7 +39,9 @@ namespace DxMessaging.Tests.Runtime
             int kindOffset = 0,
             int nestedToken = 0,
             int depth = 0,
-            int handleToken = 0
+            int handleToken = 0,
+            int handlerToken = 0,
+            bool handlerActive = false
         )
         {
             Kind = kind;
@@ -49,6 +53,8 @@ namespace DxMessaging.Tests.Runtime
             NestedToken = nestedToken;
             Depth = depth;
             HandleToken = handleToken;
+            HandlerToken = handlerToken;
+            HandlerActive = handlerActive;
         }
 
         internal BusTraceOperationKind Kind { get; }
@@ -64,6 +70,9 @@ namespace DxMessaging.Tests.Runtime
         // RemoveForeign passes this owner's most recently issued handle to Token.
         internal int HandleToken { get; }
 
+        internal int HandlerToken { get; }
+        internal bool HandlerActive { get; }
+
         public override string ToString() =>
             $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})"
             + (
@@ -75,13 +84,19 @@ namespace DxMessaging.Tests.Runtime
                 Kind == BusTraceOperationKind.RemoveForeign
                     ? $"[handleToken={HandleToken}]"
                     : string.Empty
+            )
+            + (
+                Kind == BusTraceOperationKind.SetHandlerActive
+                || Kind == BusTraceOperationKind.EmitWithHandlerActive
+                    ? $"[handlerToken={HandlerToken},handlerActive={HandlerActive}]"
+                    : string.Empty
             );
     }
 
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 6;
+        internal const int GeneratorVersion = 7;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
@@ -229,7 +244,8 @@ namespace DxMessaging.Tests.Runtime
                         : generatorVersion == 3 ? 9U
                         : generatorVersion == 4 ? 10U
                         : generatorVersion == 5 ? 12U
-                        : 13U
+                        : generatorVersion == 6 ? 13U
+                        : 15U
                     )
                 );
                 if (index == 0)
@@ -256,6 +272,7 @@ namespace DxMessaging.Tests.Runtime
                         || kind == BusTraceOperationKind.EmitWithThrow
                         || kind == BusTraceOperationKind.EmitNested
                         || kind == BusTraceOperationKind.EmitWithDisable
+                        || kind == BusTraceOperationKind.EmitWithHandlerActive
                     ) && !registered[token]
                 )
                 {
@@ -301,6 +318,7 @@ namespace DxMessaging.Tests.Runtime
                     if (
                         kind == BusTraceOperationKind.EmitNested
                         || kind == BusTraceOperationKind.EmitWithDisable
+                        || kind == BusTraceOperationKind.EmitWithHandlerActive
                         || kind == BusTraceOperationKind.EmitWithReset
                         || kind == BusTraceOperationKind.EmitWithThrow
                     )
@@ -322,7 +340,15 @@ namespace DxMessaging.Tests.Runtime
                         kindOffset,
                         nestedToken: kind == BusTraceOperationKind.EmitNested ? nestedToken : 0,
                         depth: depth,
-                        handleToken: handleToken
+                        handleToken: handleToken,
+                        handlerToken: kind == BusTraceOperationKind.EmitWithHandlerActive
+                            ? nestedToken
+                            : 0,
+                        handlerActive: (
+                            kind == BusTraceOperationKind.SetHandlerActive
+                            || kind == BusTraceOperationKind.EmitWithHandlerActive
+                        )
+                            && (value & 1) != 0
                     )
                 );
                 if (kind == BusTraceOperationKind.Register)
@@ -380,6 +406,17 @@ namespace DxMessaging.Tests.Runtime
                     || (
                         operation.Kind != BusTraceOperationKind.RemoveForeign
                         && operation.HandleToken != 0
+                    )
+                    || operation.HandlerToken < 0
+                    || operation.HandlerToken >= registered.Length
+                    || (
+                        operation.Kind != BusTraceOperationKind.EmitWithHandlerActive
+                        && operation.HandlerToken != 0
+                    )
+                    || (
+                        operation.Kind != BusTraceOperationKind.SetHandlerActive
+                        && operation.Kind != BusTraceOperationKind.EmitWithHandlerActive
+                        && operation.HandlerActive
                     )
                     || operation.Depth < 0
                     || operation.Depth > 10
@@ -451,6 +488,20 @@ namespace DxMessaging.Tests.Runtime
                         {
                             return false;
                         }
+                        break;
+                    case BusTraceOperationKind.SetHandlerActive:
+                    case BusTraceOperationKind.EmitWithHandlerActive:
+                        if (
+                            sequence.Version < 7
+                            || (
+                                operation.Kind == BusTraceOperationKind.EmitWithHandlerActive
+                                && !registered[operation.Token]
+                            )
+                        )
+                        {
+                            return false;
+                        }
+                        // Handlers exist before registration; toggling does not consume a handle.
                         break;
                     case BusTraceOperationKind.Trim:
                         if (sequence.Version < 4 || operation.Value < 0 || operation.Value > 1)

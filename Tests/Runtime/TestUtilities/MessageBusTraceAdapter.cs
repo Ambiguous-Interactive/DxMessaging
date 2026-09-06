@@ -17,12 +17,16 @@ namespace DxMessaging.Tests.Runtime
         private int _resetOnCallbackToken = -1;
         private int _throwOnCallbackToken = -1;
         private int _disableOnCallbackToken = -1;
+        private BusTraceOperation? _handlerActiveOperation;
         private BusTraceOperation? _nestedOperation;
         private int _depth;
         private readonly BusTraceOperation[] _registrations = new BusTraceOperation[
             BusTraceSequence.TokenCount
         ];
         private readonly MessageRegistrationHandle[] _staleHandles = new MessageRegistrationHandle[
+            BusTraceSequence.TokenCount
+        ];
+        private readonly MessageHandler[] _handlers = new MessageHandler[
             BusTraceSequence.TokenCount
         ];
         private readonly MessageRegistrationToken[] _tokens = new MessageRegistrationToken[
@@ -58,6 +62,7 @@ namespace DxMessaging.Tests.Runtime
                     {
                         active = true,
                     };
+                    _handlers[slot] = handler;
                     _tokens[slot] = MessageRegistrationToken.Create(handler, bus);
                     _tokens[slot].DiagnosticMode = false;
                     _tokens[slot].Enable();
@@ -104,6 +109,21 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.Disable:
                         _tokens[operation.Token].Disable();
+                        break;
+                    case BusTraceOperationKind.SetHandlerActive:
+                        SetHandlerActive(operation.Token, operation.HandlerActive);
+                        break;
+                    case BusTraceOperationKind.EmitWithHandlerActive:
+                        _handlerActiveOperation = operation;
+                        try
+                        {
+                            Emit(operation);
+                        }
+                        finally
+                        {
+                            // The trigger may be disabled, inactive, or on a different route.
+                            _handlerActiveOperation = null;
+                        }
                         break;
                     case BusTraceOperationKind.Emit:
                         Emit(operation);
@@ -180,6 +200,11 @@ namespace DxMessaging.Tests.Runtime
             {
                 enabled += token.Enabled ? "1" : "0";
             }
+            string handlerActive = string.Empty;
+            foreach (MessageHandler handler in _handlers)
+            {
+                handlerActive += handler.active ? "1" : "0";
+            }
             string diagnostics = string.Empty;
             string retainedMessages = string.Empty;
             foreach (MessageRegistrationToken token in _tokens)
@@ -201,7 +226,7 @@ namespace DxMessaging.Tests.Runtime
                 retainedMessages += $"{references},";
             }
             string state =
-                $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}";
+                $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; handlerActive={handlerActive}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}";
             return new BusTraceObservation(
                 _callbacks,
                 state,
@@ -292,6 +317,9 @@ namespace DxMessaging.Tests.Runtime
         // Mutants change real callback behavior here; observation construction remains shared.
         protected virtual void OnCallback(int slot, IMessage message) { }
 
+        protected virtual void SetHandlerActive(int slot, bool active) =>
+            _handlers[slot].active = active;
+
         protected virtual void DisableFromCallback(int slot) => _tokens[slot].Disable();
 
         protected virtual void EmitNested(BusTraceOperation operation) => Emit(operation);
@@ -368,6 +396,12 @@ namespace DxMessaging.Tests.Runtime
         {
             _callbacks.Add($"token={token},value={value}");
             OnCallback(token, message);
+            if (_handlerActiveOperation.HasValue && token == _handlerActiveOperation.Value.Token)
+            {
+                BusTraceOperation operation = _handlerActiveOperation.Value;
+                _handlerActiveOperation = null;
+                SetHandlerActive(operation.HandlerToken, operation.HandlerActive);
+            }
             if (token == _disableOnCallbackToken)
             {
                 _disableOnCallbackToken = -1;
