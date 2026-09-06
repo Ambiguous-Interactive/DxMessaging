@@ -75,6 +75,8 @@ try {
     }
     foreach ($name in @(
         'Get-ComparisonSourceEvidence',
+        'Get-StandalonePlayerManifest',
+        'Write-JsonArtifact',
         'New-ConfiguratorSource',
         'New-StandaloneBuildModifierSource',
         'New-StandaloneTestCallbackSource'
@@ -344,7 +346,7 @@ try {
     Write-TestJson -Path (Join-Path $sourceFixture '.github/comparison-packages.json') -Value @{ packages = @{ 'com.cysharp.messagepipe' = '1.8.2' } }
     Write-TestJson -Path $ledgerFixturePath -Value @{ identity = @{ messagePipe = @{ version = '1.8.2' }; byteDomain = 'test bytes' } }
     $catalogFixture = @{ sources = @{
-        repository = @{ origin = 'repository'; path = 'Runtime/Contract.cs'; sha256 = $contractSha256 }
+        dxToken = @{ origin = 'repository'; path = 'Runtime/Contract.cs'; sha256 = $contractSha256 }
         package = @{ origin = 'messagepipe-unity'; packagePath = 'Runtime/Broker.cs'; sha256 = $contractSha256 }
     } }
     Write-TestJson -Path $catalogFixturePath -Value $catalogFixture
@@ -352,7 +354,50 @@ try {
     Write-TestJson -Path $resolvedPackagesPath -Value $resolvedFixture
     $sourceEvidence = Get-ComparisonSourceEvidence -RepoRoot $sourceFixture -ResolvedPackagesPath $resolvedPackagesPath
     Assert-That 'actual resolved package bytes and portable repository CRLF hash pass' ($sourceEvidence.sources.Count -eq 2)
+    foreach ($expected in @(
+        @('dxToken', 'Runtime/Contract.cs', $repositorySourcePath),
+        @('package', 'Runtime/Broker.cs', $packageSourcePath)
+    )) {
+        $sourceRecords = @($sourceEvidence.sources | Where-Object { $_.sourceRef -ceq $expected[0] })
+        Assert-That "source reference $($expected[0]) survives exactly once" ($sourceRecords.Count -eq 1)
+        Assert-That "source reference $($expected[0]) retains path and both byte domains" (
+            $sourceRecords[0].path -ceq $expected[1] -and
+            $sourceRecords[0].sha256 -ceq $contractSha256 -and
+            $sourceRecords[0].compilerInputSha256 -ceq (Get-FileHash -LiteralPath $expected[2] -Algorithm SHA256).Hash.ToLowerInvariant()
+        )
+    }
     Assert-That 'source evidence binds its schema and catalog' ($sourceEvidence.schemaSha256.Length -eq 64 -and $sourceEvidence.catalogSha256.Length -eq 64)
+    $artifactFixture = Join-Path $fixtureRoot 'comparison-artifacts'
+    $playerFixture = Join-Path $fixtureRoot 'player/DxmTestPlayer_Data/il2cpp_data/Metadata'
+    New-Item -ItemType Directory -Force -Path $artifactFixture, $playerFixture | Out-Null
+    $playerExecutable = Join-Path $fixtureRoot 'player/DxmTestPlayer.exe'
+    # These files are hashed by the real manifest producer, never executed.
+    foreach ($file in @($playerExecutable, (Join-Path $fixtureRoot 'player/GameAssembly.dll'), (Join-Path $playerFixture 'global-metadata.dat'))) {
+        [System.IO.File]::WriteAllBytes($file, $contractBytes)
+    }
+    $sourceEvidence['playerDirectoryManifest'] = Get-StandalonePlayerManifest -ExecutablePath $playerExecutable
+    $resultFixturePath = Join-Path $artifactFixture 'results.xml'
+    $logFixturePath = Join-Path $artifactFixture 'player.log'
+    [System.IO.File]::WriteAllText($resultFixturePath, '<test-run total="1" passed="1" failed="0" skipped="0"><test-case name="comparison" result="Passed" /></test-run>')
+    [System.IO.File]::WriteAllText($logFixturePath, "Comparison fixture completed.`n")
+    $sourceEvidence['runs'] = @(@{
+        runIndex = 1
+        unredactedResultsSha256 = (Get-FileHash -LiteralPath $resultFixturePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        unredactedPlayerLogSha256 = (Get-FileHash -LiteralPath $logFixturePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    })
+    $sourceEvidencePath = Join-Path $artifactFixture 'comparison-source-evidence.json'
+    Write-JsonArtifact -Path $sourceEvidencePath -Value $sourceEvidence
+    $evidenceBefore = (Get-FileHash -LiteralPath $sourceEvidencePath -Algorithm SHA256).Hash
+    $redactorPath = Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js'
+    & node $redactorPath $artifactFixture
+    Assert-That 'complete produced comparison evidence passes production redaction' ($LASTEXITCODE -eq 0)
+    Assert-That 'public source, player and run identities survive byte-for-byte' (
+        (Get-FileHash -LiteralPath $sourceEvidencePath -Algorithm SHA256).Hash -ceq $evidenceBefore
+    )
+    $sourceEvidence['accessToken'] = @{ nested = 'must not be accepted as a credential container' }
+    Write-JsonArtifact -Path $sourceEvidencePath -Value $sourceEvidence
+    & node $redactorPath $artifactFixture
+    Assert-That 'true sensitive containers remain rejected' ($LASTEXITCODE -eq 2)
     foreach ($mutation in @('byte', 'missing', 'case', 'version', 'duplicate', 'hash')) {
         [System.IO.File]::WriteAllBytes($packageSourcePath, $contractBytes)
         $catalogFixture.sources.package.packagePath = 'Runtime/Broker.cs'

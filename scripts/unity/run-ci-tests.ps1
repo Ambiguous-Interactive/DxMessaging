@@ -4380,7 +4380,7 @@ function Get-ComparisonSourceEvidence {
     if ($packageMetadata.name -cne 'com.cysharp.messagepipe' -or $packageMetadata.version -cne $expectedVersion) {
         throw 'Comparison source evidence resolved package metadata differs from Unity resolution.'
     }
-    $observed = [ordered]@{}
+    $observed = New-Object System.Collections.Generic.List[object]
     foreach ($entry in $catalog.sources.PSObject.Properties) {
         $source = $entry.Value
         $root = if ($source.origin -ceq 'repository') { $RepoRoot } else { $packageRoot }
@@ -4410,7 +4410,14 @@ function Get-ComparisonSourceEvidence {
         if ($sha256 -cne $source.sha256) {
             throw "Comparison source evidence hash mismatch: $relativePath"
         }
-        $observed[$entry.Name] = [ordered]@{ path = $relativePath; sha256 = $sha256; compilerInputSha256 = $compilerInputSha256 }
+        # Keep opaque source identifiers as values: keys ending in Token denote
+        # sensitive credential containers to the artifact safety validator.
+        $observed.Add([ordered]@{
+            sourceRef = $entry.Name
+            path = $relativePath
+            sha256 = $sha256
+            compilerInputSha256 = $compilerInputSha256
+        })
     }
     return [ordered]@{
         schemaVersion = 1
@@ -4420,7 +4427,7 @@ function Get-ComparisonSourceEvidence {
         ledgerSha256 = (Get-FileHash -LiteralPath $ledgerPath -Algorithm SHA256).Hash.ToLowerInvariant()
         catalogSha256 = (Get-FileHash -LiteralPath $catalogPath -Algorithm SHA256).Hash.ToLowerInvariant()
         schemaSha256 = (Get-FileHash -LiteralPath $schemaPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        sources = $observed
+        sources = @($observed.ToArray())
     }
 }
 
