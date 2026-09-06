@@ -305,7 +305,15 @@ jobs:
         id: install_dependencies
         timeout-minutes: 2
         shell: pwsh
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        # Unity imports node_modules beside the local package. Keep tooling under a
+        # hidden directory so dependency installation does not add thousands of assets.
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
 
       # Single source of truth for the assembly include list: the canonical
       # asmdef-discovery.js module. Extracted into a composite action shared by
@@ -651,7 +659,15 @@ jobs:
         id: install_dependencies
         timeout-minutes: 2
         shell: pwsh
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        # Unity imports node_modules beside the local package. Keep tooling under a
+        # hidden directory so dependency installation does not add thousands of assets.
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
 
       - name: Validate Unity license secrets
         timeout-minutes: 2

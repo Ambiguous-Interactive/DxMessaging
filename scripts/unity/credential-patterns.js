@@ -158,11 +158,35 @@ const IDENTIFIER_PATTERNS = Object.freeze([
 ]);
 const SENSITIVE_PATTERNS = Object.freeze([...CREDENTIAL_PATTERNS, ...IDENTIFIER_PATTERNS]);
 // Necessary literals only: test each complete candidate with Unicode case folding intact.
-const IDENTIFIER_ANCHORS = Object.freeze({
+const PATTERN_ANCHORS = Object.freeze({
+  "pem-private-key": /-----BEGIN /,
+  "unity-license-id": /<License/i,
+  "unity-serial": /S[CBP]-/,
+  "github-token": /gh[pousr]_|github_pat_/,
+  "aws-access-key-id": /AKIA|ASIA/,
+  "http-bearer-token": /Bearer/i,
+  "unity-password-assignment": /password/i,
+  "unity-email-assignment": /UNITY_EMAIL|-username/i,
+  "password-assignment": /PASSWORD/i,
+  "credential-assignment": /UNITY_SERIAL|TOKEN|SECRET|API_?KEY|ACCESS_?KEY/i,
   "account-home-path": /Users|home|Documents and Settings/iu,
   "web-hostname": /https?:/iu,
   "file-uri-hostname": /file:/iu,
-  "unity-machine-id": /Machine I/iu
+  "unity-machine-id": /Machine I/iu,
+  "root-home-path": /root/,
+  "windows-volume-id": /Volume\{/i,
+  "extended-unc-hostname": /UNC/iu,
+  "unc-hostname": /\\|\//,
+  "ipv6-address": /:/,
+  "mac-address": /[:.-]/,
+  "ipv4-address": /\./,
+  "unity-editor-hostname": /Editor\(/,
+  "unity-license-client-hostname": /LicenseClient-/,
+  "unity-ipc-hostname": /Unity-(?:LicenseClient|LicensingClient)-/,
+  "named-account-or-host": /[:=]/,
+  "unity-accelerator-endpoint": /AcceleratorClientConnectionCallback/,
+  "unity-cache-server-endpoint": /-cacheServerEndpoint/,
+  "unity-connect-host": /"connectToHost"/
 });
 function parseIPv6Candidate(raw) {
   const bracketed = raw.startsWith("[");
@@ -427,12 +451,16 @@ function findRawSensitiveData(text) {
   return [...found.values()];
 }
 function findCredentials(text) {
-  return CREDENTIAL_PATTERNS.filter((entry) => matchesPattern(text, entry));
+  return CREDENTIAL_PATTERNS.filter(
+    (entry) => hasPatternAnchor(text, entry) && matchesPattern(text, entry)
+  );
+}
+function hasPatternAnchor(text, entry) {
+  return !PATTERN_ANCHORS[entry.id] || PATTERN_ANCHORS[entry.id].test(text);
 }
 function findIdentifiers(text) {
-  const absent = Object.keys(IDENTIFIER_ANCHORS).filter((id) => !IDENTIFIER_ANCHORS[id].test(text));
   const matches = IDENTIFIER_PATTERNS.filter(
-    (entry) => !absent.includes(entry.id) && matchesPattern(text, entry)
+    (entry) => hasPatternAnchor(text, entry) && matchesPattern(text, entry)
   );
   return [...new Map(matches.map((entry) => [entry.id, entry])).values()];
 }
@@ -444,6 +472,7 @@ function redactPatterns(text, patterns) {
   const counts = new Map();
   let redacted = text;
   for (const entry of patterns) {
+    if (!hasPatternAnchor(redacted, entry)) continue;
     let replaced = 0;
     redacted = redacted.replace(globalRegExp(entry), (...match) => {
       if (entry.accept && !entry.accept(match)) return match[0];
@@ -474,8 +503,12 @@ function structuredText(text, visit, format, depth = 0) {
         : undefined) ?? visit(value, key, element)
     );
   };
+  // Cache only validated names within this traversal, never scalar contents.
+  const names = new Set();
   const name = (value) => {
+    if (names.has(value)) return;
     if (/[\p{Cf}\uD800-\uDFFF]/u.test(value) || findRawSensitiveData(value).length) invalid();
+    if (names.size < 4096 && value.length <= 256) names.add(value);
   };
   if (format === ".jsonl")
     return text.replace(/[^\r\n]+/g, (record) =>
@@ -605,12 +638,11 @@ function contextualPattern(key, value, element) {
       ? `<License id=${JSON.stringify(value)}>`
       : `${JSON.stringify(key)}:${JSON.stringify(value)}`;
   return SENSITIVE_PATTERNS.find((entry) => {
+    if (!(entry.replacement || entry.prefixGroup)) return false;
+    if (!hasPatternAnchor(source, entry)) return false;
     const match = entry.pattern.exec(source);
     return (
-      match &&
-      match.index < JSON.stringify(key).length &&
-      (!entry.accept || entry.accept(match)) &&
-      (entry.replacement || entry.prefixGroup)
+      match && match.index < JSON.stringify(key).length && (!entry.accept || entry.accept(match))
     );
   });
 }

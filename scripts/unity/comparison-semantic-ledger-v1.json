@@ -1,0 +1,1708 @@
+{
+  "schemaVersion": 1,
+  "ledgerId": "dx-messagepipe-public-v1-draft",
+  "state": "draft",
+  "parityEligible": false,
+  "scope": {
+    "publicRows": 9,
+    "supportedPairs": 8,
+    "requiredDimensions": 12,
+    "dimensionEntries": 108,
+    "meaning": "Classifications cover stated source contracts and work, including dormant guarantees. Matched means only the stated immediate policy; no row-wide parity or cost attribution follows.",
+    "nativeEvidencePolicy": "Source audit and logical test references only. No retained execution artifact or native result is asserted by this catalog."
+  },
+  "identity": {
+    "messagePipe": {
+      "package": "com.cysharp.messagepipe",
+      "version": "1.8.2",
+      "sourceCommit": "58516c36d4465a7b6396b7850a4ad7e03326998c",
+      "archiveSha256": "70c3879f8ce72e37ae453669763d9f1b3b2d4fe693c05135210892b159109830",
+      "archiveUrl": "https://package.openupm.com/com.cysharp.messagepipe/-/com.cysharp.messagepipe-1.8.2.tgz"
+    },
+    "uniTask": {
+      "package": "com.cysharp.unitask",
+      "version": "2.5.11",
+      "archiveSha256": "f502c3d1e56afee722c2707ba7370562446a6f3d4684a27afb74fd5817ab0a5b",
+      "archiveUrl": "https://package.openupm.com/com.cysharp.unitask/-/com.cysharp.unitask-2.5.11.tgz"
+    },
+    "byteDomain": "Repository source hashes use UTF-8 file bytes with CRLF normalized to LF for checkout portability. MessagePipe source hashes use exact installed package bytes."
+  },
+  "representation": "shared-catalog-v1",
+  "evidenceCatalogFile": "comparison-evidence-catalog-v1.json",
+  "comparisonBases": {
+    "extra": "Extra or different guarantee/bookkeeping on the named side; no performance advantage is inferred.",
+    "absent": "Absent public counterpart/operation as described.",
+    "matched": "Only synchronous immediate callback propagation/abort policy is matched; different unwind bookkeeping is recorded separately."
+  },
+  "contracts": {
+    "ordering": {
+      "dxmessaging": {
+        "description": "Lower priorities first; equal-priority registrations retain logical insertion order across handler owners. Four priority buckets are used only in PriorityOrdered.",
+        "sourceRefs": ["dxBus", "dxHandler", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Publish walks captured physical array slots; FreeList reuses FIFO free indices, so hole reuse can reorder new subscribers before older survivors. Filter Order orders middleware within one subscriber, not subscribers.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpQueue", "mpFactory", "mpBridge"]
+      }
+    },
+    "activity": {
+      "dxmessaging": {
+        "description": "Each invoked entry checks MessageHandler.active live. Enabled tokens own registrations; token Disable deregisters but does not make a frozen entry inactive. Public owners are active.",
+        "sourceRefs": ["dxBus", "dxHandler", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Each captured array entry is null-checked. Subscription disposal removes a slot; no reusable MessageHandler.active equivalent exists on this synchronous path.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpBridge"]
+      }
+    },
+    "callbackMutation": {
+      "dxmessaging": {
+        "description": "Normal callback additions wait for the next or nested snapshot; removing a pending callback leaves it in the outer frozen snapshot unless owner activity changes. Interceptor mutation precedes normal snapshot acquisition.",
+        "sourceRefs": ["dxBus", "reentrantTests", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Publish retains one backing array reference. Spare-slot add/remove can affect the outer loop; growth changes the current array and leaves the outer one unchanged. Removing the last keyed subscription removes its holder; replacement uses a new holder.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpBridge"]
+      }
+    },
+    "snapshots": {
+      "dxmessaging": {
+        "description": "Post snapshots freeze before interceptors/handlers; normal handler snapshots are acquired after interceptors. Immutable phase arrays and dispatch leases preserve in-flight views; route rewrites require route-specific evidence.",
+        "sourceRefs": ["dxBus", "dxFlat", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Keyless Publish reads GetValues once. Keyed Publish captures the holder array while holding the key lookup lock, then invokes outside it. Neither clones the array; filter chains are assembled at subscription time.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFactory", "mpFreeList", "mpBridge"]
+      }
+    },
+    "reset": {
+      "dxmessaging": {
+        "description": "ResetState advances a generation, clears registrations/sinks, aborts remaining callbacks after a generation change, and defers release of active snapshots. Reset is reusable runtime behavior, not invoked by public rows.",
+        "sourceRefs": ["dxBus", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "No reusable reset counterpart in this synchronous broker. Core Dispose is terminal; default subsequent Subscribe is ignored. Already captured publish arrays can still invoke pending callbacks after core disposal.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpOptions", "mpFreeList", "mpBridge"]
+      }
+    },
+    "reentrancy": {
+      "dxmessaging": {
+        "description": "Synchronous nested emission is allowed; scoped emission IDs and dispatch leases preserve outer state and displaced snapshots. Nested normal-handler mutation sees a new snapshot while the outer snapshot remains frozen.",
+        "sourceRefs": ["dxBus", "reentrantTests", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Nested Publish captures then-current storage. Outer Publish retains its prior array, which can remain live-mutated when capacity did not grow. No DxMessaging scoped ID/lease mechanism is present.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpBridge"]
+      }
+    },
+    "exceptions": {
+      "dxmessaging": {
+        "description": "Synchronous callback exceptions propagate and abort remaining callbacks. Normal-handler throw skips the later post phase. DispatchLease performs unwind bookkeeping; callback success precedes token diagnostic recording.",
+        "sourceRefs": ["dxBus", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Synchronous callback exceptions propagate and abort remaining array iteration. After-next middleware has no finally, so a terminal handler throw skips its post body.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpBridge"]
+      }
+    },
+    "diagnostics": {
+      "dxmessaging": {
+        "description": "Bridge sets bus DiagnosticsMode=false and token DiagnosticMode=false. The token diagnostic branch remains; MessagingDebug is an independent setting and is not set by this bridge.",
+        "sourceRefs": ["dxBridge", "dxToken", "dxBus"]
+      },
+      "messagepipe": {
+        "description": "Default EnableCaptureStackTrace=false suppresses stack capture, but diagnostics subscription counters still use Interlocked increment/decrement and dirty-state updates. This lifecycle work is timed in SubUnsub.",
+        "sourceRefs": ["mpBridge", "mpSetup", "mpOptions", "mpDiagnostics"]
+      }
+    },
+    "lifecycle": {
+      "dxmessaging": {
+        "description": "One active owner/token per listener, reusable registration handles, Enable/Disable and UnregisterAll. Churn reuses an enabled token and cached readonly-ref delegate. Final bridge cleanup unregisters and disposes tokens.",
+        "sourceRefs": ["dxBridge", "dxToken"]
+      },
+      "messagepipe": {
+        "description": "Subscribe(Action) creates an AnonymousMessageHandler wrapper and Subscription tied to a free-list slot. Dispose removes the slot and updates diagnostics. Cached Action avoids delegate creation only. Builtin provider implements IServiceProvider, not IDisposable; bridge disposes subscriptions then drops references.",
+        "sourceRefs": ["mpBridge", "mpExtensions", "mpBroker", "mpKeyed", "mpContainer"]
+      }
+    },
+    "reclamation": {
+      "dxmessaging": {
+        "description": "Typed/context slots, dispatch snapshots, token storage and bounded shared pools have distinct lifetimes. Typed emission checks idle sweep policy; Trim and deferred release reclaim different holders. Registration count alone does not prove storage or GC reclamation.",
+        "sourceRefs": ["dxBus", "dxToken", "dxPools", "dxSettings", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Live FreeList storage does not shrink. Keyless last removal shrinks capacity greater than 8 to 4; empty capacity 8 stays 8. Last keyed subscription removes its dictionary holder. Core Dispose instead retains empty keyed holders. Neither observation proves dictionary backing-array shrink or object collection.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpBridge"]
+      }
+    },
+    "threadOwnership": {
+      "dxmessaging": {
+        "description": "The bus contract is single-threaded; benchmark callbacks execute synchronously on the caller thread. No concurrent mutation guarantee is inferred.",
+        "sourceRefs": ["dxHandler", "dxInterface", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Registration/disposal are locked; keyed lookup is locked before callbacks; keyless Publish has no lock. Diagnostics uses Interlocked and array growth uses Volatile.Write. These operations do not establish safety for every racing Dispose sequence.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpDiagnostics", "mpBridge"]
+      }
+    },
+    "foundResult": {
+      "dxmessaging": {
+        "description": "Public Broadcast returns void. Internal foundAnyHandlers includes registered-bucket semantics and gates optional MessagingDebug reporting; it is not simply the number of callbacks.",
+        "sourceRefs": ["dxBus", "dxInterface", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Public Publish returns void; absent key returns and empty/null slots do no callback work. No equivalent caller-visible found bool or DxMessaging found bookkeeping exists.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpBridge"]
+      }
+    },
+    "ordering-unsupported": {
+      "dxmessaging": {
+        "description": "Lower priorities first; equal-priority registrations retain logical insertion order across handler owners. Four priority buckets are used only in PriorityOrdered.",
+        "sourceRefs": ["dxBus", "dxHandler", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "activity-unsupported": {
+      "dxmessaging": {
+        "description": "Each invoked entry checks MessageHandler.active live. Enabled tokens own registrations; token Disable deregisters but does not make a frozen entry inactive. Public owners are active.",
+        "sourceRefs": ["dxBus", "dxHandler", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "callbackMutation-unsupported": {
+      "dxmessaging": {
+        "description": "Normal callback additions wait for the next or nested snapshot; removing a pending callback leaves it in the outer frozen snapshot unless owner activity changes. Interceptor mutation precedes normal snapshot acquisition.",
+        "sourceRefs": ["dxBus", "reentrantTests", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "snapshots-unsupported": {
+      "dxmessaging": {
+        "description": "Post snapshots freeze before interceptors/handlers; normal handler snapshots are acquired after interceptors. Immutable phase arrays and dispatch leases preserve in-flight views; route rewrites require route-specific evidence.",
+        "sourceRefs": ["dxBus", "dxFlat", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "reset-unsupported": {
+      "dxmessaging": {
+        "description": "ResetState advances a generation, clears registrations/sinks, aborts remaining callbacks after a generation change, and defers release of active snapshots. Reset is reusable runtime behavior, not invoked by public rows.",
+        "sourceRefs": ["dxBus", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "reentrancy-unsupported": {
+      "dxmessaging": {
+        "description": "Synchronous nested emission is allowed; scoped emission IDs and dispatch leases preserve outer state and displaced snapshots. Nested normal-handler mutation sees a new snapshot while the outer snapshot remains frozen.",
+        "sourceRefs": ["dxBus", "reentrantTests", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "exceptions-unsupported": {
+      "dxmessaging": {
+        "description": "Synchronous callback exceptions propagate and abort remaining callbacks. Normal-handler throw skips the later post phase. DispatchLease performs unwind bookkeeping; callback success precedes token diagnostic recording.",
+        "sourceRefs": ["dxBus", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "diagnostics-unsupported": {
+      "dxmessaging": {
+        "description": "Bridge sets bus DiagnosticsMode=false and token DiagnosticMode=false. The token diagnostic branch remains; MessagingDebug is an independent setting and is not set by this bridge.",
+        "sourceRefs": ["dxBridge", "dxToken", "dxBus"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "lifecycle-unsupported": {
+      "dxmessaging": {
+        "description": "One active owner/token per listener, reusable registration handles, Enable/Disable and UnregisterAll. Churn reuses an enabled token and cached readonly-ref delegate. Final bridge cleanup unregisters and disposes tokens.",
+        "sourceRefs": ["dxBridge", "dxToken"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "reclamation-unsupported": {
+      "dxmessaging": {
+        "description": "Typed/context slots, dispatch snapshots, token storage and bounded shared pools have distinct lifetimes. Typed emission checks idle sweep policy; Trim and deferred release reclaim different holders. Registration count alone does not prove storage or GC reclamation.",
+        "sourceRefs": ["dxBus", "dxToken", "dxPools", "dxSettings", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "threadOwnership-unsupported": {
+      "dxmessaging": {
+        "description": "The bus contract is single-threaded; benchmark callbacks execute synchronously on the caller thread. No concurrent mutation guarantee is inferred.",
+        "sourceRefs": ["dxHandler", "dxInterface", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "foundResult-unsupported": {
+      "dxmessaging": {
+        "description": "Public Broadcast returns void. Internal foundAnyHandlers includes registered-bucket semantics and gates optional MessagingDebug reporting; it is not simply the number of callbacks.",
+        "sourceRefs": ["dxBus", "dxInterface", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Unsupported public row: no MessagePipe workload implements subscriber priority ordering. General broker behavior is not an executed counterpart.",
+        "sourceRefs": ["mpBridge"]
+      }
+    },
+    "ordering-2": {
+      "dxmessaging": {
+        "description": "No dispatch or callback operation in this churn row; reusable token registration/remove is the measured work.",
+        "sourceRefs": ["dxBus", "dxHandler", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "No Publish or callback operation in this churn row; Subscribe/Dispose is the measured work.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpQueue", "mpFactory", "mpBridge"]
+      }
+    },
+    "callbackMutation-2": {
+      "dxmessaging": {
+        "description": "No dispatch or callback operation in this churn row; reusable token registration/remove is the measured work.",
+        "sourceRefs": ["dxBus", "reentrantTests", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "No Publish or callback operation in this churn row; Subscribe/Dispose is the measured work.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpFreeList", "mpBridge"]
+      }
+    },
+    "exceptions-2": {
+      "dxmessaging": {
+        "description": "Register/remove failure and token rollback policies belong to lifecycle operations; immediate callback exception propagation is not exercised.",
+        "sourceRefs": ["dxBus", "dxToken", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "Subscribe/Dispose failure and disposed-subscribe policy differ from reusable token rollback; no callback exception path is exercised.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpBridge"]
+      }
+    },
+    "foundResult-2": {
+      "dxmessaging": {
+        "description": "No dispatch or callback operation in this churn row; reusable token registration/remove is the measured work.",
+        "sourceRefs": ["dxBus", "dxInterface", "dxBridge"]
+      },
+      "messagepipe": {
+        "description": "No Publish or callback operation in this churn row; Subscribe/Dispose is the measured work.",
+        "sourceRefs": ["mpBroker", "mpKeyed", "mpBridge"]
+      }
+    }
+  },
+  "evidenceScopes": {
+    "physical-order-controls": {
+      "source": "audited",
+      "native": [],
+      "testContracts": [
+        {
+          "evidenceRef": "MessagePipeHolesRefillInPhysicalSlotOrder",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        }
+      ]
+    },
+    "source-only": {
+      "source": "audited",
+      "native": [],
+      "testContracts": []
+    },
+    "mutation-controls": {
+      "source": "audited",
+      "native": [],
+      "testContracts": [
+        {
+          "evidenceRef": "MessagePipeMutationHasPinnedArrayTrace",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "DxMessagingMutationHasFrozenSnapshotTrace",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. DX control uses exact ComparisonStructPayload on an untargeted bus; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        }
+      ]
+    },
+    "terminal-disposal-control": {
+      "source": "audited",
+      "native": [],
+      "testContracts": [
+        {
+          "evidenceRef": "MessagePipeCoreDisposalKeepsCapturedCallbacksAndKeyedHolder",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        }
+      ]
+    },
+    "subscription-lifecycle-controls": {
+      "source": "audited",
+      "native": [],
+      "testContracts": [
+        {
+          "evidenceRef": "MessagePipeFinalSubscriptionRemovesOnlyItsKeyedHolder",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "MessagePipeChurnKeepsSurvivorAndCapacity",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        }
+      ]
+    },
+    "storage-controls": {
+      "source": "audited",
+      "native": [],
+      "testContracts": [
+        {
+          "evidenceRef": "MessagePipeFragmentationRetainsPhysicalCapacity",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "MessagePipeHolesRefillInPhysicalSlotOrder",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "MessagePipeChurnKeepsSurvivorAndCapacity",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "MessagePipeEmptySubscriptionStorageHasPinnedShape",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "MessagePipeFinalSubscriptionRemovesOnlyItsKeyedHolder",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        },
+        {
+          "evidenceRef": "MessagePipeCoreDisposalKeepsCapturedCallbacksAndKeyedHolder",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        }
+      ]
+    },
+    "mutation-controls-2": {
+      "source": "audited",
+      "native": [],
+      "testContracts": [
+        {
+          "evidenceRef": "MessagePipeMutationHasPinnedArrayTrace",
+          "scope": "Only unfiltered synchronous control cases, not this exact public row. MP controls use keyless/keyed int and exact ComparisonStructPayload; see explicit case names for configuration.",
+          "claim": "Logical test reference only; execution and native behavior require a separately retained build/result artifact."
+        }
+      ]
+    }
+  },
+  "limits": {
+    "unresolved": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-activity": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-reset": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-threadOwnership": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Single-thread benchmark only; no concurrency or racing-disposal guarantee established.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-KeyedToOne": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-KeyedToOne-activity": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-KeyedToOne-reset": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-KeyedToOne-threadOwnership": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Single-thread benchmark only; no concurrency or racing-disposal guarantee established.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-Filtered": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-Filtered-activity": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-Filtered-reset": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ],
+    "unresolved-Filtered-threadOwnership": [
+      "Bind native correctness results and installed/build source hashes before native claims.",
+      "No complete physical storage, GC reachability, or exact work/cost attribution for this public row.",
+      "Single-thread benchmark only; no concurrency or racing-disposal guarantee established.",
+      "Logical test references are not proof of execution or of this exact public row; retained source-bound native evidence remains required."
+    ]
+  },
+  "topologyDefaults": {
+    "callbackMutation": "none in measured row",
+    "diagnostics": "DX bus/token false; MessagingDebug is separate and not set here. MP default stack capture false; subscription counters remain active.",
+    "allocationWork": {
+      "measuredCalls": null,
+      "measuredBytes": null,
+      "status": "unmeasured in this ledger; never substitute zero",
+      "scope": "GC.Alloc uses the separate existing untimed probe. Non-development IL2CPP Release strips the profiler; its result remains Unmeasured. Source new sites do not predict backend counts.",
+      "dxmessaging": "Churn stages/registers/removes via a reused token and cached delegate; dispatch may refresh snapshots and run reclamation bookkeeping. No allocation count is inferred.",
+      "messagepipe": "Action wrapper and Subscription allocate on Subscribe; filter chain setup outside timed dispatch. Churn includes Subscribe/Dispose allocations and diagnostics. Unsupported PriorityOrdered has no MP work."
+    },
+    "cleanup": {
+      "timing": "Final cleanup outside dispatch timing; SubUnsub per-cycle pair is inside operation.",
+      "dxmessaging": "UnregisterAll then Dispose each token in reverse order; drops references. Six live registration counters are tested; retained pool/slot capacity and collection are separate.",
+      "messagepipe": "Dispose stored subscriptions in reverse order, then drop broker/provider references. Last keyed subscription removes holder; core Dispose is a distinct characterization that retains empty holder.",
+      "sourceRefs": ["dxBridge", "mpBridge", "dxToken", "mpKeyed", "characterization"]
+    },
+    "contractTests": {
+      "sourceRefs": ["topology", "characterization"],
+      "methods": [
+        "TrueTwinsObserveMatchingRegistrationsDispatchAndCleanup",
+        "ActualTopologyDriftFailsValidation"
+      ],
+      "scope": "Topology twin tests compare actual public DX bridge with independent DX workload. No native result is bound by this draft; this is not MP topology or semantic equality evidence."
+    },
+    "dxmessaging": {
+      "passing": "readonly-reference callback; ref broadcast",
+      "ownersActive": true,
+      "tokensEnabled": true,
+      "physicalSlots": null,
+      "physicalStatus": "unresolved: slots, snapshots, token arenas and pools require separate observations",
+      "sourceRefs": ["dxBridge", "scenario", "payload"]
+    },
+    "messagepipe": {
+      "subscriberPriority": null,
+      "sourceRefs": ["mpBridge", "mpBroker", "mpKeyed", "mpFreeList", "mpPredicate", "mpFilter"]
+    }
+  },
+  "rows": {
+    "GlobalToOne": {
+      "supported": true,
+      "publicResultIds": [
+        "Comparison_DxMessaging_GlobalToOne",
+        "Comparison_MessagePipe_GlobalToOne"
+      ],
+      "internalTwin": "UntargetedFlood_OneHandler",
+      "workloadScope": "One fresh keyless listener; no mutation, nesting, throw, reset, or activity toggle is performed by the measured callback.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 1,
+            "interceptors": 0,
+            "postProcessors": 0
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 1,
+          "liveDuringOperation": 1,
+          "liveAfterOperation": 1
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 1,
+          "filterOrders": [],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 1,
+            "physicalSlots": 4,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Fresh contiguous backing array: 1 live / 4 physical. Not a direct public bridge runtime capture."
+          }
+        },
+        "terminalCallbacksPerOperation": 1,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        }
+      }
+    },
+    "GlobalToMany": {
+      "supported": true,
+      "publicResultIds": [
+        "Comparison_DxMessaging_GlobalToMany",
+        "Comparison_MessagePipe_GlobalToMany"
+      ],
+      "internalTwin": "UntargetedFlood_SixteenHandlers_OnePriority",
+      "workloadScope": "Sixteen fresh keyless listeners, contiguous initial registration order; no holes or callback-time mutation in the measured row.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 16,
+          "tokens": 16,
+          "registrations": {
+            "normal": 16,
+            "interceptors": 0,
+            "postProcessors": 0
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 16,
+          "liveDuringOperation": 16,
+          "liveAfterOperation": 16
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 16,
+          "filterOrders": [],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 16,
+            "physicalSlots": 16,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Fresh contiguous backing array: 16 live / 16 physical. Not a direct public bridge runtime capture."
+          }
+        },
+        "terminalCallbacksPerOperation": 16,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 16
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        }
+      }
+    },
+    "KeyedToOne": {
+      "supported": true,
+      "publicResultIds": ["Comparison_DxMessaging_KeyedToOne", "Comparison_MessagePipe_KeyedToOne"],
+      "internalTwin": "InternalComparisonTwin_KeyedToOne",
+      "workloadScope": "Sixteen distinct routes, one matching listener invoked: DX InstanceId 41000 among 41000..41015; MP key 0 among 0..15. Keyed lookup work is timed.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleTargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 16,
+            "interceptors": 0,
+            "postProcessors": 0
+          },
+          "priorities": [0],
+          "routes": [
+            41000, 41001, 41002, 41003, 41004, 41005, 41006, 41007, 41008, 41009, 41010, 41011,
+            41012, 41013, 41014, 41015
+          ],
+          "dispatchRoute": 41000,
+          "liveBefore": 16,
+          "liveDuringOperation": 16,
+          "liveAfterOperation": 16
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 16,
+          "filterOrders": [],
+          "keys": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+          "publishKey": 0,
+          "storage": {
+            "liveSubscriptions": 16,
+            "physicalSlots": 64,
+            "holders": 16,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Per keyed holder 1 live / 4 physical, aggregate 16 / 64; dictionary capacity unobserved."
+          }
+        },
+        "terminalCallbacksPerOperation": 1,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-KeyedToOne-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-KeyedToOne-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved-KeyedToOne"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-KeyedToOne-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-KeyedToOne"
+        }
+      }
+    },
+    "PriorityOrdered": {
+      "supported": false,
+      "publicResultIds": ["Comparison_DxMessaging_PriorityOrdered"],
+      "internalTwin": "InternalComparisonTwin_PriorityOrdered",
+      "workloadScope": "DX invokes priorities 0,1,2,3 on one owner/token. MessagePipeBridge.Supports returns false; no MP operation or comparison ratio exists for this row.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 4,
+            "interceptors": 0,
+            "postProcessors": 0
+          },
+          "priorities": [0, 1, 2, 3],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 4,
+          "liveDuringOperation": 4,
+          "liveAfterOperation": 4
+        },
+        "messagepipe": {
+          "payloadType": null,
+          "passing": null,
+          "subscriptions": null,
+          "filterOrders": [],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": null,
+            "physicalSlots": null,
+            "holders": null,
+            "basis": "unsupported",
+            "description": "No MP setup."
+          }
+        },
+        "terminalCallbacksPerOperation": 4,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 4
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "ordering-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "activity": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "activity-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-activity"
+        },
+        "callbackMutation": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "callbackMutation-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "snapshots": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "snapshots-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-reset"
+        },
+        "reentrancy": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reentrancy-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "exceptions": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "exceptions-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "diagnostics": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "diagnostics-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "lifecycle": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "lifecycle-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "reclamation": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reclamation-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "threadOwnership": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-threadOwnership"
+        },
+        "foundResult": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "foundResult-unsupported",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        }
+      }
+    },
+    "Filtered": {
+      "supported": true,
+      "publicResultIds": ["Comparison_DxMessaging_Filtered", "Comparison_MessagePipe_Filtered"],
+      "internalTwin": "InternalComparisonTwin_Filtered",
+      "workloadScope": "DX uses one bus-wide allowing interceptor and one normal handler; MP uses one subscriber-local allowing predicate. Rejection and filter mutation are not exercised.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 1,
+            "interceptors": 1,
+            "postProcessors": 0
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 2,
+          "liveDuringOperation": 2,
+          "liveAfterOperation": 2
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 1,
+          "filterOrders": [-2147483648],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 1,
+            "physicalSlots": 4,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Fresh contiguous backing array: 1 live / 4 physical. Not a direct public bridge runtime capture."
+          }
+        },
+        "terminalCallbacksPerOperation": 1,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-Filtered-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        }
+      }
+    },
+    "PostProcess": {
+      "supported": true,
+      "publicResultIds": [
+        "Comparison_DxMessaging_PostProcess",
+        "Comparison_MessagePipe_PostProcess"
+      ],
+      "internalTwin": "InternalComparisonTwin_PostProcess",
+      "workloadScope": "DX uses one separate post registration plus one normal handler; MP uses after-next middleware on one subscriber. The empty post body does not increment the progress marker.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 1,
+            "interceptors": 0,
+            "postProcessors": 1
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 2,
+          "liveDuringOperation": 2,
+          "liveAfterOperation": 2
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 1,
+          "filterOrders": [0],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 1,
+            "physicalSlots": 4,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Fresh contiguous backing array: 1 live / 4 physical. Not a direct public bridge runtime capture."
+          }
+        },
+        "terminalCallbacksPerOperation": 1,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-Filtered-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        }
+      }
+    },
+    "FilteredPostProcess": {
+      "supported": true,
+      "publicResultIds": [
+        "Comparison_DxMessaging_FilteredPostProcess",
+        "Comparison_MessagePipe_FilteredPostProcess"
+      ],
+      "internalTwin": "InternalComparisonTwin_FilteredPostProcess",
+      "workloadScope": "DX uses interceptor, normal and separate post registrations; MP uses a subscriber-local predicate outside after-next middleware. Both predicates allow and post bodies are empty.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 1,
+            "interceptors": 1,
+            "postProcessors": 1
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 3,
+          "liveDuringOperation": 3,
+          "liveAfterOperation": 3
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 1,
+          "filterOrders": [-2147483648, 0],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 1,
+            "physicalSlots": 4,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Fresh contiguous backing array: 1 live / 4 physical. Not a direct public bridge runtime capture."
+          }
+        },
+        "terminalCallbacksPerOperation": 1,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-Filtered-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved-Filtered"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-Filtered"
+        }
+      }
+    },
+    "SubUnsub": {
+      "supported": true,
+      "publicResultIds": ["Comparison_DxMessaging_SubUnsub", "Comparison_MessagePipe_SubUnsub"],
+      "internalTwin": "InternalComparisonTwin_SubUnsub",
+      "workloadScope": "No payload is published and no callback is invoked. Each operation registers/removes once and increments a synthetic lifecycle progress marker; transient registration must be observed separately.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "SimpleUntargetedMessage",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 0,
+            "interceptors": 0,
+            "postProcessors": 0
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 0,
+          "liveDuringOperation": 1,
+          "liveAfterOperation": 0
+        },
+        "messagepipe": {
+          "payloadType": "System.Int32",
+          "passing": "value callback and value Publish",
+          "subscriptions": 0,
+          "filterOrders": [],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 0,
+            "physicalSlots": 4,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Empty before/after cycle, transient 1 live / 4 physical; free slots rotate."
+          }
+        },
+        "terminalCallbacksPerOperation": 0,
+        "lifecycleOperationsPerOperation": 1,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "absent",
+          "side": "operation",
+          "contractRef": "ordering-2",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-activity"
+        },
+        "callbackMutation": {
+          "status": "absent",
+          "side": "operation",
+          "contractRef": "callbackMutation-2",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls-2",
+          "limitsRef": "unresolved"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-reset"
+        },
+        "reentrancy": {
+          "status": "absent",
+          "side": "operation",
+          "contractRef": "callbackMutation-2",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "exceptions": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "exceptions-2",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-threadOwnership"
+        },
+        "foundResult": {
+          "status": "absent",
+          "side": "operation",
+          "contractRef": "foundResult-2",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        }
+      }
+    },
+    "StructNoBox": {
+      "supported": true,
+      "publicResultIds": [
+        "Comparison_DxMessaging_StructNoBox",
+        "Comparison_MessagePipe_StructNoBox"
+      ],
+      "internalTwin": "InternalComparisonTwin_StructNoBox",
+      "workloadScope": "Both dispatch the exact ComparisonStructPayload(1) type. DX passes by readonly reference and MP by value; exact payload identity does not imply any other semantic match.",
+      "topology": {
+        "dxmessaging": {
+          "payloadType": "ComparisonStructPayload",
+          "owners": 1,
+          "tokens": 1,
+          "registrations": {
+            "normal": 1,
+            "interceptors": 0,
+            "postProcessors": 0
+          },
+          "priorities": [0],
+          "routes": [],
+          "dispatchRoute": null,
+          "liveBefore": 1,
+          "liveDuringOperation": 1,
+          "liveAfterOperation": 1
+        },
+        "messagepipe": {
+          "payloadType": "ComparisonStructPayload",
+          "passing": "value callback and value Publish",
+          "subscriptions": 1,
+          "filterOrders": [],
+          "keys": [],
+          "publishKey": null,
+          "storage": {
+            "liveSubscriptions": 1,
+            "physicalSlots": 4,
+            "holders": 1,
+            "basis": "source-deduced-fresh-public-setup",
+            "description": "Fresh contiguous backing array: 1 live / 4 physical. Not a direct public bridge runtime capture."
+          }
+        },
+        "terminalCallbacksPerOperation": 1,
+        "lifecycleOperationsPerOperation": 0,
+        "progressIncrementPerOperation": 1
+      },
+      "dimensions": {
+        "ordering": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "ordering",
+          "evidenceScopeRef": "physical-order-controls",
+          "limitsRef": "unresolved"
+        },
+        "activity": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "activity",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-activity"
+        },
+        "callbackMutation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "callbackMutation",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "snapshots": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "snapshots",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "reset": {
+          "status": "absent",
+          "side": "messagepipe",
+          "contractRef": "reset",
+          "evidenceScopeRef": "terminal-disposal-control",
+          "limitsRef": "unresolved-reset"
+        },
+        "reentrancy": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "reentrancy",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "exceptions": {
+          "status": "matched",
+          "side": "neither",
+          "contractRef": "exceptions",
+          "evidenceScopeRef": "mutation-controls",
+          "limitsRef": "unresolved"
+        },
+        "diagnostics": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "diagnostics",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        },
+        "lifecycle": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "lifecycle",
+          "evidenceScopeRef": "subscription-lifecycle-controls",
+          "limitsRef": "unresolved"
+        },
+        "reclamation": {
+          "status": "extra",
+          "side": "both",
+          "contractRef": "reclamation",
+          "evidenceScopeRef": "storage-controls",
+          "limitsRef": "unresolved"
+        },
+        "threadOwnership": {
+          "status": "extra",
+          "side": "messagepipe",
+          "contractRef": "threadOwnership",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved-threadOwnership"
+        },
+        "foundResult": {
+          "status": "extra",
+          "side": "dxmessaging",
+          "contractRef": "foundResult",
+          "evidenceScopeRef": "source-only",
+          "limitsRef": "unresolved"
+        }
+      }
+    }
+  },
+  "rowDefaults": {
+    "normalizedMapping": "No normalized workload or result is implemented by this draft. Internal DX topology twins do not replace either public result.",
+    "resultKind": "public-contract",
+    "normalizedResultIds": [],
+    "parityEligible": false
+  }
+}

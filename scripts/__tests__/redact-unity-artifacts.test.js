@@ -74,7 +74,7 @@ test("pattern scans preserve cursors across mutation and callback reentry", () =
   assert.equal(matchesPattern("a a", entry), true);
   assert.deepEqual(indices, [0, 2]);
 });
-test("identifier anchor gates preserve unfiltered production matches", () => {
+test("credential and identifier anchor gates preserve unfiltered production matches", () => {
   for (const text of Object.values(VECTORS)
     .flat(Infinity)
     .filter((value) => typeof value === "string")) {
@@ -87,12 +87,17 @@ test("identifier anchor gates preserve unfiltered production matches", () => {
       JSON.stringify(text),
       `${redactSensitiveData(text).redacted}\n${text}`
     ]) {
-      const expected = IDENTIFIER_PATTERNS.filter((entry) => matchesPattern(input, entry));
-      assert.deepEqual(
-        new Set(findIdentifiers(input).map((entry) => entry.id)),
-        new Set(expected.map((entry) => entry.id)),
-        input
-      );
+      for (const [patterns, find] of [
+        [CREDENTIAL_PATTERNS, findCredentials],
+        [IDENTIFIER_PATTERNS, findIdentifiers]
+      ]) {
+        const expected = patterns.filter((entry) => matchesPattern(input, entry));
+        assert.deepEqual(
+          new Set(find(input).map((entry) => entry.id)),
+          new Set(expected.map((entry) => entry.id)),
+          input
+        );
+      }
     }
   }
 });

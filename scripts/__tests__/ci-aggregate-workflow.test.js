@@ -543,7 +543,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
     const install = getStepBlock(job, "Install artifact tooling dependencies");
-    assert.match(install, /id: install_dependencies\n[\s\S]*shell: pwsh\n        run: npm ci --ignore-scripts --no-audit --no-fund\n/);
+    assert.match(install, /id: install_dependencies\n[\s\S]*shell: pwsh\n[\s\S]*\bnpm ci [^\n]*--ignore-scripts --no-audit --no-fund\n/);
     assert.doesNotMatch(install, /continue-on-error:|\n        if:/);
     assert.ok(job.indexOf("id: setup_node") < job.indexOf(install) && job.indexOf(install) < job.indexOf(acquire), `${label}: install before acquiring a license`);
     for (const step of YAML.parse(job)[jobId].steps.filter((step) => step.uses === "./.github/actions/redact-unity-artifacts")) {

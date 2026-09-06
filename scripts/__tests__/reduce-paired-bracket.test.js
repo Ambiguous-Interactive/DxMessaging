@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const test = require("node:test");
+const PERF_TEST_VECTORS = require("./perf-test-vectors.json");
 
 const {
   manifestSha256,
@@ -26,15 +27,7 @@ test("manifest-only validation has an explicit CLI shape", () => {
 
 const TARGET = "Filtered";
 const AFFECTED = "FilteredPostProcess";
-const DEFAULT_ROWS = [
-  { scenario: "GlobalToOne", role: "sentinel" },
-  { scenario: "GlobalToMany", role: "sentinel" },
-  { scenario: "KeyedToOne", role: "sentinel" },
-  { scenario: TARGET, role: "target" },
-  { scenario: "PostProcess", role: "sentinel" },
-  { scenario: AFFECTED, role: "affected" },
-  { scenario: "StructNoBox", role: "sentinel" }
-];
+const DEFAULT_ROWS = PERF_TEST_VECTORS.defaultRows;
 const DEFAULT_FACTORS = Object.fromEntries(DEFAULT_ROWS.map((row) => [row.scenario, 1]));
 DEFAULT_FACTORS[TARGET] = 1.06;
 DEFAULT_FACTORS[AFFECTED] = 0.99;
@@ -46,11 +39,8 @@ const CENTER_CANDIDATE_SOURCE = "d".repeat(64);
 
 function makeManifest(orientation = "candidate-control-candidate", rows = DEFAULT_ROWS) {
   return {
-    schemaVersion: 1,
-    bracketId: "test-bracket",
+    ...structuredClone(PERF_TEST_VECTORS.manifestDefaults),
     orientation,
-    materialityBandPercent: 3,
-    candidatePaths: ["Runtime/Core/MessageBus/MessageBus.cs"],
     rows
   };
 }
@@ -82,21 +72,8 @@ function makeSummary(
     sourceTree,
     candidateSourceSha256,
     bracketManifestSha256: manifestSha256(manifestBytes),
-    executionProfile: {
-      id: "highest-efficiency-class-affinity-normal-v1",
-      cpuModel: "13th Gen Intel(R) Core(TM) i9-13900KF",
-      source: "GetSystemCpuSetInformation",
-      selectionPolicy: "maximum EfficiencyClass",
-      selectedEfficiencyClass: 1,
-      selectedLogicalProcessorIndices: Array.from({ length: 16 }, (_, index) => index),
-      affinityMask: "0xFFFF",
-      priorityClass: "Normal"
-    },
-    protocol: "interleaved-abba-baab-v1",
-    cycles: 4,
-    minimumCycleActiveMilliseconds: 625,
-    batchOperations: 10000,
-    materialityBandPercent: 3,
+    executionProfile: structuredClone(PERF_TEST_VECTORS.executionProfile),
+    ...PERF_TEST_VECTORS.protocol,
     rows: manifest.rows.map((row) => {
       const headline = ratios[row.scenario];
       const spread = spreads[row.scenario] ?? 1;
@@ -333,44 +310,14 @@ test("a sentinel effect outside three percent makes the bracket uninterpretable"
 });
 
 test("the session 240 artifact-shaped bracket fails its sentinel gate", () => {
-  const rows = [
-    { scenario: "GlobalToOne", role: "sentinel" },
-    { scenario: "GlobalToMany", role: "sentinel" },
-    { scenario: "KeyedToOne", role: "sentinel" },
-    { scenario: "Filtered", role: "target" },
-    { scenario: "PostProcess", role: "sentinel" },
-    { scenario: "FilteredPostProcess", role: "affected" },
-    { scenario: "StructNoBox", role: "sentinel" }
-  ];
+  const rows = PERF_TEST_VECTORS.session240Rows;
   const manifest = makeManifest("candidate-control-candidate", rows);
   manifest.bracketId = "session-240-inline-interceptor-flat-access";
   const manifestBytes = encodeManifest(manifest);
-  const c1 = [
-    0.3664825458329125, 0.9638895979446739, 1.1749603478334951, 0.4139565263871168,
-    0.30839240772835985, 0.35066743667156336, 0.41332080747580546
-  ];
-  const control = [
-    0.3397850194262837, 0.967803075233871, 1.1798167374564192, 0.3863364779458949,
-    0.31514396784308657, 0.3446972097633311, 0.38286598713193026
-  ];
-  const c2 = [
-    0.3626055198992972, 0.9684320021425954, 1.198908896941916, 0.41538562631333986,
-    0.3070944651881458, 0.3511185780464608, 0.4086341036570222
-  ];
-  const spreads = [
-    [
-      0.8204612835834624, 1.9333897889375118, 2.6835356075866956, 0.9103789875130497,
-      0.5659055890008702, 0.8146324113570858, 0.9451177125524346
-    ],
-    [
-      1.1028308453360225, 2.516331076690048, 1.831094466025407, 2.6269405956543146,
-      1.2355279753484494, 0.45885913299001935, 0.7936012788094526
-    ],
-    [
-      0.9706598505605957, 0.9008923477044295, 2.021145035917682, 0.8933299443459664,
-      0.6974634572843197, 1.335523904224556, 0.6007602409331403
-    ]
-  ];
+  const c1 = PERF_TEST_VECTORS.session240c1;
+  const control = PERF_TEST_VECTORS.session240control;
+  const c2 = PERF_TEST_VECTORS.session240c2;
+  const spreads = PERF_TEST_VECTORS.session240spreads;
   const toMap = (values) =>
     Object.fromEntries(rows.map((row, index) => [row.scenario, values[index]]));
   const summaries = [c1, control, c2].map((values, index) =>

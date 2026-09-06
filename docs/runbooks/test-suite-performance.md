@@ -36,6 +36,25 @@ correctness legs exclude the heavy categories
 which run in their own dedicated scopes so a perf change cannot hide in the
 correctness number.
 
+## Tooling and artifact overhead
+
+Measure the complete job, including setup, imports, builds, cleanup, redaction, and uploads.
+Record queue time separately. NUnit duration alone does not explain a slow job.
+
+Licensed jobs install npm dependencies before acquiring the organization lock. The install
+prefix is `.artifacts/node-tooling`; `NODE_PATH` lets the existing CommonJS scripts resolve
+those dependencies. Keep the prefix hidden from Unity. A root `node_modules` directory
+becomes part of the local UPM package's asset scan. In the Unity 2022 regression tracked by
+[issue #531](https://github.com/Ambiguous-Interactive/DxMessaging/issues/531), each mode imported
+7,720 assets instead of 39. EditMode initial refresh increased from 13.561 to 41.388 seconds,
+while script compilation stayed near 11 seconds.
+
+Keep artifact validation and redaction enabled. Measure changes against the same retained
+files and compare output bytes, findings, and rejection decisions. Include adversarial
+replacement cases: already-sanitized CI artifacts alone cannot prove credential removal.
+Use the full Windows job to assess the five-minute correctness-job target; a local redactor
+benchmark measures only its own processing cost.
+
 ## The levers
 
 See the [Fast Unity Tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/skills/unity-test-execution/references/fast-unity-tests.md) skill for

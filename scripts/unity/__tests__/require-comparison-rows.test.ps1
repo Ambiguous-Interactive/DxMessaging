@@ -2,6 +2,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..')).Path
+$originalNodePath = $env:NODE_PATH
+$env:NODE_PATH = @((Join-Path $repoRoot 'node_modules'), $originalNodePath) -join [System.IO.Path]::PathSeparator
 $tempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "dxm-comparison-row-gate-$([guid]::NewGuid())"
 $baselinePath = Join-Path $tempDirectory 'comparison-rows.csv'
 $evidencePath = Join-Path $tempDirectory 'results.xml'
@@ -200,7 +202,10 @@ try {
         'scripts/unity/perf-scenarios.js',
         'scripts/unity/post-route-perf-scenarios.json',
         'scripts/unity/perf-scenario-definitions.json',
-        'scripts/unity/comparison-supported-scenarios.json'
+        'scripts/unity/comparison-supported-scenarios.json',
+        'scripts/unity/comparison-semantic-ledger-v1.json',
+        'scripts/unity/comparison-evidence-catalog-v1.json',
+        'scripts/unity/comparison-contract-v1.schema.json'
     )) {
         $destination = Join-Path $fixtureRoot $relativePath
         [System.IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
@@ -602,6 +607,7 @@ try {
     }
 }
 finally {
+    $env:NODE_PATH = $originalNodePath
     if (Test-Path -LiteralPath $tempDirectory) {
         Remove-Item -LiteralPath $tempDirectory -Recurse -Force
     }
