@@ -129,6 +129,8 @@ namespace DxMessaging.Editor.CustomEditors
             root.AddToClassList(RootClassName);
 
             VisualElement warningHost = new() { name = WarningHostName };
+            // The first resolution may defer while Unity imports; an empty host stays hidden.
+            warningHost.style.display = DisplayStyle.None;
             warningHost.AddToClassList(WarningHostClassName);
             root.Add(warningHost);
 

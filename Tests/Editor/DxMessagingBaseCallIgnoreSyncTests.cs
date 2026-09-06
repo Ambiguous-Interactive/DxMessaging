@@ -609,16 +609,15 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <remarks>
+        /// 2026-09-06: An ambient editor-update assumption skipped this test on Unity 2021 CI
+        /// even though SetUp controls the idle predicate and captures every side effect.
+        /// </remarks>
         [Test]
-        public void RegenerateSidecarAppliesSynchronouslyOutsideUpdateAndCompile()
+        public void RegenerateSidecarAppliesSynchronouslyWhenEditorCanMutateAssets()
         {
-            // Add/Remove ignored-type actions are explicit user edits (button clicks, Project
-            // Settings UI), not deserialization callbacks, so the synchronous path is correct there
-            // and must be preserved. EditMode tests run outside update/compile, exercising it.
-            Assume.That(
-                !EditorApplication.isUpdating && !EditorApplication.isCompiling,
-                "Test must run outside an editor update/compile window to exercise the synchronous path."
-            );
+            // SetUp supplies an idle predicate and captures the apply and scheduling actions.
+            // Explicit ignored-type edits must apply immediately under that controlled state.
             DxMessagingSettings settings = NewSettings();
 
             DxMessagingBaseCallIgnoreSync.RegenerateSidecar(settings);
