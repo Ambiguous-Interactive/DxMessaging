@@ -19,10 +19,10 @@ namespace DxMessaging.Tests.Runtime.Core
     /// Pins lifecycle invariants that arise from interactions between the
     /// DxMessaging bus and Unity GameObject / Token state changes. Tests in
     /// this fixture exercise destruction, enable/disable cycles, and token
-    /// disable/re-enable mid-emission. Scene-loading paths are gated behind
-    /// the <c>UnityRuntime</c> category because they require the editor's
-    /// runtime to be live and add several seconds to the wall clock; the
-    /// rest of the fixture stays in the default suite.
+    /// disable/re-enable mid-emission. The <c>UnityRuntime</c> category groups
+    /// scene and quit paths included in default PlayMode and standalone runs.
+    /// Scene tests yield for actual lifecycle completion and share the
+    /// default suite wall-clock budget.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1202,12 +1202,11 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Pins that calling <c>OnApplicationQuit</c> on a registered
-        /// <see cref="EmptyMessageAwareComponent"/> drains cleanly: no
-        /// exceptions thrown, and (under <see cref="LeakWatcher"/>) no
-        /// registration leaks remain. Production code overrides
-        /// <c>OnApplicationQuit</c> to log/persist on shutdown; the bus
-        /// should tolerate the call without surfacing errors.
+        /// Pins the base <c>OnApplicationQuit</c> hook's no-op contract:
+        /// the call does not throw and existing registrations remain usable.
+        /// Explicit removal then leaves no registrations under
+        /// <see cref="LeakWatcher"/>. This invokes the hook without quitting
+        /// the editor or player.
         /// </summary>
         [Test]
         [Category("UnityRuntime")]
@@ -1248,6 +1247,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.DoesNotThrow(
                     () => component.RaiseOnApplicationQuit(),
                     "[{0}] OnApplicationQuit must not throw.",
+                    scenario.Kind
+                );
+
+                ScenarioCallbacks.EmitForKind(scenario, hostId);
+                Assert.AreEqual(
+                    2,
+                    handlerCount,
+                    "[{0}] The no-op quit hook must leave the registered handler usable before explicit removal.",
                     scenario.Kind
                 );
 

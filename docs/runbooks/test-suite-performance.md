@@ -32,9 +32,13 @@ and `standalone` as separate Unity invocations. Each mode uses a separate
 runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, result
 verification, and artifact. The
 correctness legs exclude the heavy categories
-(`Stress;Performance;Allocation;MemoryReclaim;UnityRuntime;PerfBench;PerfGate;PerfBaseline`),
+(`Stress;Performance;Allocation;MemoryReclaim;PerfBench;PerfGate;PerfBaseline`),
 which run in their own dedicated scopes so a perf change cannot hide in the
-correctness number.
+correctness number. PlayMode and Standalone include the fast `UnityRuntime`
+lifecycle tests, including scene unload, persistence, and application quit.
+EditMode keeps `UnityRuntime` excluded because these tests need a running player.
+The existing runtime suite timer includes these tests; they add no Unity invocation
+or benchmark timing window.
 
 ## Tooling and artifact overhead
 
@@ -139,6 +143,10 @@ SECOND, persistent run).
 
 ## Drift-guards
 
+- `scripts/__tests__/ci-aggregate-workflow.test.js` parses the correctness workflow
+  and checks the category filter on each mode's actual run step. PlayMode and
+  Standalone must include `UnityRuntime`; every mode must keep the heavy-category
+  exclusions above.
 - `scripts/__tests__/run-ci-tests-enter-play-mode.test.js` (Node) asserts
   `run-ci-tests.ps1` emits the reload-disable into each CI ephemeral project. It
   guards the runner emit rather than `.unity-test-project` (whose `ProjectSettings`
