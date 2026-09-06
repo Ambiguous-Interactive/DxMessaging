@@ -36,16 +36,10 @@ namespace DxMessaging.Tests.Runtime.Core
     /// without expecting a log branch that was compiled out.
     /// </para>
     /// <para>
-    /// The leak tests
-    /// (<see cref="OmitBaseOnDisableAndOnDestroyLeaksRegistration"/> and
-    /// <see cref="OmitBaseOnDisableAndOnDestroyLeaksDefaultHandlersToo"/>)
-    /// intentionally produce registrations that survive component
-    /// destruction. The leaked registrations are cleaned up by the global
-    /// bus reset that <see cref="MessagingTestBase.UnitySetup"/> performs at
-    /// the start of every test, so they cannot bleed into subsequent tests;
-    /// both tests additionally invoke <c>DxMessagingStaticState.Reset</c>
-    /// after observing the leak so the bus is drained before
-    /// <see cref="MessagingTestBase.UnityCleanup"/> asserts the bus is fresh.
+    /// The leak tests destroy only the listener first, leaving its messaging owner alive.
+    /// This isolates missing listener base calls from the owner's destruction cleanup.
+    /// They then destroy the host and verify that owner cleanup removes every retained
+    /// registration before fixture teardown.
     /// </para>
     /// </remarks>
     public sealed class BaseCallContractTests : MessagingTestBase
@@ -248,142 +242,100 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Skipping BOTH <c>base.OnDisable()</c> and <c>base.OnDestroy()</c>
-        /// means the framework never releases the messaging component or
-        /// disables the token, so the registration outlives the GameObject
-        /// and the bus's registration counter does not return to the baseline
-        /// captured by <see cref="LeakWatcher"/>. The fixture
-        /// <see cref="MissingBaseOnDestroyComponent"/> intentionally skips
-        /// both base calls because Unity's destroy lifecycle fires
-        /// <c>OnDisable</c> before <c>OnDestroy</c>; if only <c>OnDestroy</c>
-        /// were skipped, the inherited <c>OnDisable</c> would deregister the
-        /// handlers during destruction and the leak would be masked. The
-        /// companion test
-        /// <see cref="OnDisableDuringDestroyMasksOnDestroyLeak"/> pins that
-        /// masking behavior explicitly.
-        /// Cleanup choice: the test calls
-        /// <see cref="DxMessagingStaticState.Reset"/> after observing the leak
-        /// so the bus returns to a clean state before
-        /// <see cref="MessagingTestBase.UnityCleanup"/> asserts the bus is
-        /// fresh; this is the simplest deterministic way to drop an orphaned
-        /// registration whose owning GameObject no longer exists.
+        /// Skipping both listener cleanup base calls retains all registrations until
+        /// the messaging owner is destroyed.
         /// </summary>
+        /// <remarks>
+        /// 2026-09-06: Whole-host destruction also invokes MessagingComponent cleanup.
+        /// Destroy only the listener to observe its missing-base-call failure, then
+        /// destroy the host to prove the owner still drains the retained token.
+        /// </remarks>
         [UnityTest]
         public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksRegistration(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
         {
-            // Construct the watcher BEFORE spawning the host so the baseline
-            // is the truly-fresh bus (0) that MessagingTestBase.UnitySetup
-            // guarantees. Capturing the baseline after spawn would understate
-            // the leak: the 3 default StringMessage handlers added by the
-            // inherited RegisterMessageHandlers would already be in the
-            // baseline, so a leak that includes them would only show as the
-            // user counter (1) instead of the full failure surface (4).
-            // Watching from before spawn lets the assertion pin the EXACT
-            // leak count (defaults + counter) and proves that skipping both
-            // base.OnDisable and base.OnDestroy strands every handler the
-            // framework added on Awake, not just the user-added one.
-            LeakWatcher watcher = new(
+            using LeakWatcher watcher = new(
                 bus: MessageHandler.MessageBus,
-                throwOnLeak: false,
                 label: scenario.DisplayName
             );
+            GameObject host = new(
+                nameof(OmitBaseOnDisableAndOnDestroyLeaksRegistration) + scenario.Kind,
+                typeof(MissingBaseOnDestroyComponent)
+            );
+            _spawned.Add(host);
+            MissingBaseOnDestroyComponent component =
+                host.GetComponent<MissingBaseOnDestroyComponent>();
+            MessageRegistrationToken token = GetToken(component);
+            Assert.IsNotNull(token, "[{0}] base.Awake() must create the token.", scenario.Kind);
+            Assert.AreEqual(
+                DefaultStringMessageHandlerCount,
+                watcher.Snapshot,
+                "[{0}] Spawn must install all default handlers. {1}",
+                scenario.Kind,
+                watcher.DescribeDelta()
+            );
 
-            int observedLeak;
-            string deltaDescription;
-            try
-            {
-                GameObject host = new(
-                    nameof(OmitBaseOnDisableAndOnDestroyLeaksRegistration) + scenario.Kind,
-                    typeof(MissingBaseOnDestroyComponent)
-                );
-                _spawned.Add(host);
-
-                MissingBaseOnDestroyComponent component =
-                    host.GetComponent<MissingBaseOnDestroyComponent>();
-                MessageRegistrationToken token = GetToken(component);
-                Assert.IsNotNull(
-                    token,
-                    "[{0}] Token must be created because base.Awake() still runs.",
-                    scenario.Kind
-                );
-
-                int snapshotAfterSpawn = watcher.Snapshot;
-                Assert.AreEqual(
-                    DefaultStringMessageHandlerCount,
-                    snapshotAfterSpawn,
-                    "[{0}] Spawning a MessageAwareComponent subclass that does not "
-                        + "override RegisterForStringMessages must add exactly the "
-                        + "default StringMessage handler count to the bus. {1}",
-                    scenario.Kind,
-                    watcher.DescribeDelta()
-                );
-
-                _ = RegisterCounter(scenario, token, host, () => { });
-                Assert.AreEqual(
-                    snapshotAfterSpawn + 1,
-                    watcher.Snapshot,
-                    "[{0}] Bus must reflect the new registration before destroy. {1}",
-                    scenario.Kind,
-                    watcher.DescribeDelta()
-                );
-
-                // Destroy the component / GameObject; because the override skips
-                // BOTH base.OnDisable() and base.OnDestroy(), neither the token's
-                // handler list nor the framework's MessagingComponent are torn
-                // down, and every handler installed during Awake leaks. The
-                // expected leak is therefore the default StringMessage handlers
-                // PLUS the counter handler, not just the counter.
-                UnityEngine.Object.Destroy(host);
-                _spawned.Remove(host);
-
-                if (Application.isPlaying)
-                {
-                    yield return null;
-                }
-
-                // Capture the live leak BEFORE Dispose/Reset so the assertion
-                // sees the actual orphaned count even if a later step throws.
-                observedLeak = watcher.LeakedRegistrations;
-                deltaDescription = watcher.DescribeDelta();
-            }
-            finally
-            {
-                // Idempotent: protects the watcher from being left undisposed
-                // if any earlier Assert in the try block throws. The values
-                // captured into observedLeak/deltaDescription above are taken
-                // from the live bus, so the assertion below remains correct
-                // regardless of when Dispose runs.
-                watcher.Dispose();
-            }
-
-            // Drop the orphaned registrations so they cannot bleed into the
-            // next test; UnityCleanup's WaitUntilMessageHandlerIsFresh would
-            // otherwise time out asserting bus staleness.
-            DxMessagingStaticState.Reset();
-
-            // Exact equality: the leak surface must be the default handlers
-            // PLUS the user counter. Asserting >= 1 (the prior behaviour)
-            // would silently allow a future regression that loses one or more
-            // of the default handlers but still leaks the counter.
+            _ = RegisterCounter(scenario, token, host, () => { });
             const int expectedLeak = DefaultStringMessageHandlerCount + 1;
             Assert.AreEqual(
                 expectedLeak,
-                observedLeak,
-                "[{0}] Skipping base.OnDisable() and base.OnDestroy() must leak "
-                    + "exactly {1} registrations ({2} default StringMessage "
-                    + "handlers + 1 counter), proving that NEITHER user nor "
-                    + "default handlers are deregistered when both base calls "
-                    + "are absent. {3}",
+                watcher.Snapshot,
+                "[{0}] Control must include defaults and the user registration. {1}",
                 scenario.Kind,
-                expectedLeak,
-                DefaultStringMessageHandlerCount,
-                deltaDescription
+                watcher.DescribeDelta()
             );
 
-            yield break;
+            UnityEngine.Object.Destroy(component);
+            yield return null;
+            Assert.That(
+                component == null,
+                Is.True,
+                "[{0}] Listener must be destroyed.",
+                scenario.Kind
+            );
+            Assert.That(
+                host != null,
+                Is.True,
+                "[{0}] Messaging owner must survive listener destruction.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                expectedLeak,
+                watcher.LeakedRegistrations,
+                "[{0}] Missing listener base calls must retain all {1} registrations while the owner survives. {2}",
+                scenario.Kind,
+                expectedLeak,
+                watcher.DescribeDelta()
+            );
+            Assert.IsTrue(
+                token.Enabled,
+                "[{0}] Missing listener cleanup must leave its token enabled.",
+                scenario.Kind
+            );
+
+            UnityEngine.Object.Destroy(host);
+            _spawned.Remove(host);
+            yield return null;
+            Assert.That(
+                host == null,
+                Is.True,
+                "[{0}] Messaging owner must be destroyed.",
+                scenario.Kind
+            );
+            Assert.IsFalse(
+                token.Enabled,
+                "[{0}] Owner destruction must dispose the retained token.",
+                scenario.Kind
+            );
+            Assert.AreEqual(
+                0,
+                watcher.LeakedRegistrations,
+                "[{0}] Owner destruction must remove defaults and user registrations. {1}",
+                scenario.Kind,
+                watcher.DescribeDelta()
+            );
         }
 
         /// <summary>
@@ -456,19 +408,32 @@ namespace DxMessaging.Tests.Runtime.Core
                 watcher.DescribeDelta()
             );
 
-            // Destroy the GameObject. Unity fires OnDisable then OnDestroy;
+            // Destroy only the listener, so owner cleanup cannot mask a missing OnDisable.
+            // Unity fires OnDisable then OnDestroy;
             // the inherited base.OnDisable() runs (the override is absent on
             // this fixture) and disables the token before the broken
             // OnDestroy runs, so no registration leaks - including the
             // default StringMessage handlers, which is what makes the masking
             // observable end-to-end.
-            UnityEngine.Object.Destroy(host);
-            _spawned.Remove(host);
+            UnityEngine.Object.Destroy(component);
 
             if (Application.isPlaying)
             {
                 yield return null;
             }
+
+            Assert.That(
+                component == null,
+                Is.True,
+                "[{0}] Listener must be destroyed.",
+                scenario.Kind
+            );
+            Assert.That(
+                host != null,
+                Is.True,
+                "[{0}] Messaging owner must survive this negative control.",
+                scenario.Kind
+            );
 
             Assert.AreEqual(
                 0,
@@ -482,7 +447,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             // Belt-and-braces: the live bus counters must each be 0 after the
-            // host is gone, not just the aggregate. Guards against a future
+            // listener is gone, not just the aggregate. Guards against a future
             // refactor that nets to zero by accidentally deregistering
             // unrelated registrations along with the user counter.
             IMessageBus bus = MessageHandler.MessageBus;
@@ -507,9 +472,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// individually so a future "fix" that accidentally only deregisters
         /// user handlers from one path (or that loses one of the default
         /// handlers but keeps another) cannot pass while still masking the
-        /// regression. The expected per-counter shape after destroy is:
+        /// regression. The messaging owner survives listener destruction so its cleanup
+        /// cannot mask the missing listener base calls. The expected counter shape is:
         /// Targeted == 2 (the two default StringMessage handlers) plus 1 if
-        /// the scenario registers a targeted/broadcast counter,
+        /// the scenario registers a targeted counter,
         /// Untargeted == 1 (the default GlobalStringMessage handler) plus 1
         /// if the scenario registers an untargeted counter, Broadcast == 1
         /// only when the scenario registers a broadcast counter.
@@ -524,7 +490,6 @@ namespace DxMessaging.Tests.Runtime.Core
             // anchored to a fresh bus.
             using LeakWatcher watcher = new(
                 bus: MessageHandler.MessageBus,
-                throwOnLeak: false,
                 label: scenario.DisplayName
             );
 
@@ -545,14 +510,25 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = RegisterCounter(scenario, token, host, () => { });
 
-            UnityEngine.Object.Destroy(host);
-            _spawned.Remove(host);
+            UnityEngine.Object.Destroy(component);
 
             if (Application.isPlaying)
             {
                 yield return null;
             }
 
+            Assert.That(
+                component == null,
+                Is.True,
+                "[{0}] Listener must be destroyed.",
+                scenario.Kind
+            );
+            Assert.That(
+                host != null,
+                Is.True,
+                "[{0}] Messaging owner must survive listener destruction.",
+                scenario.Kind
+            );
             IMessageBus bus = MessageHandler.MessageBus;
 
             // The two default StringMessage handlers ALWAYS land on Targeted
@@ -579,12 +555,22 @@ namespace DxMessaging.Tests.Runtime.Core
                     + $"after destroy. {deltaDescription}"
             );
 
-            // Drop the orphaned registrations so they cannot bleed into the
-            // next test; UnityCleanup's WaitUntilMessageHandlerIsFresh would
-            // otherwise time out asserting bus staleness.
-            DxMessagingStaticState.Reset();
-
-            yield break;
+            UnityEngine.Object.Destroy(host);
+            _spawned.Remove(host);
+            yield return null;
+            Assert.That(
+                host == null,
+                Is.True,
+                "[{0}] Messaging owner must be destroyed.",
+                scenario.Kind
+            );
+            AssertRegistrationCounts(
+                bus,
+                untargeted: 0,
+                targeted: 0,
+                broadcast: 0,
+                context: $"OwnerCleanupAfterMissingBaseCalls[{scenario.Kind}]. {watcher.DescribeDelta()}"
+            );
         }
 
         /// <summary>
@@ -597,7 +583,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <c>OnDisable</c> during the destroy lifecycle. This guards against
         /// a future regression where the framework only deregisters user
         /// handlers in some code path, leaving default handlers stranded
-        /// against a destroyed host.
+        /// against a destroyed listener.
         /// </summary>
         [UnityTest]
         public IEnumerator OnDisableDuringDestroyDeregistersDefaultStringHandlers()
@@ -618,9 +604,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 host.GetComponent<MissingBaseOnDestroyOnlyComponent>();
             Assert.IsNotNull(GetToken(component), "Token must be created.");
 
-            // Capture the InstanceId BEFORE destroy so the post-destroy
-            // emission targets the same id without dereferencing a
-            // fake-null Unity wrapper.
+            // Retain the host route while destroying only the listener, so owner
+            // cleanup cannot make the inherited-OnDisable assertion pass.
             InstanceId hostId = host;
 
             // Sanity: spawning installs exactly the default handler count.
@@ -631,14 +616,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 watcher.DescribeDelta()
             );
 
-            UnityEngine.Object.Destroy(host);
-            _spawned.Remove(host);
+            UnityEngine.Object.Destroy(component);
 
             if (Application.isPlaying)
             {
                 yield return null;
             }
 
+            Assert.That(component == null, Is.True, "Listener must be destroyed.");
+            Assert.That(
+                host != null,
+                Is.True,
+                "Messaging owner must survive this negative control."
+            );
             IMessageBus bus = MessageHandler.MessageBus;
             Assert.Zero(
                 bus.RegisteredTargeted,
@@ -668,7 +658,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     StringMessage stringMessage = new("after-destroy");
                     bus.UntypedTargetedBroadcast(hostId, stringMessage);
                 },
-                "Targeted broadcast against the destroyed host's id must not "
+                "Targeted broadcast against the destroyed listener's host id must not "
                     + "throw and must dispatch to nobody."
             );
             Assert.DoesNotThrow(
@@ -677,7 +667,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     GlobalStringMessage globalMessage = new("after-destroy-global");
                     globalMessage.EmitUntargeted();
                 },
-                "Emitting GlobalStringMessage after the host is destroyed must not throw."
+                "Emitting GlobalStringMessage after the listener is destroyed must not throw."
             );
 
             Assert.AreEqual(

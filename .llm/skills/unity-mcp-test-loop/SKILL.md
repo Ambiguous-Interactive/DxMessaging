@@ -71,11 +71,13 @@ The devcontainer workspace is the same directory as the embedded package inside 
 ### The loop
 
 1. **Edit** files in the container.
-1. **Preflight the shared editor before any refresh or test.** Read `Unity_ManageEditor GetState`,
-   then use a read-only `Unity_RunCommand` to inspect every open scene's `isDirty`, confirm the
-   current stage is the main stage, and confirm the editor is not playing, compiling, or updating.
-   If any scene is dirty, a prefab stage is open, or the editor is busy, do not refresh or change
-   scenes. Wait or report the unsafe state; never invoke an API that can raise a save prompt.
+1. **Preflight before any refresh-capable command or test.** Establish framework idleness, idle editor
+   flags, the main stage, and clean state for every open scene using dedicated queries whose
+   installed implementation does not refresh assets, or an already-installed passive observer.
+   `GetState`, `GetPrefabStage`, and `GetActive` suffice only when their responses cover every
+   required field; an active-scene response cannot prove other scenes are clean. Never use
+   `Unity_RunCommand` to establish safety: it refreshes assets before checking the snippet's
+   guard. If evidence is missing or unsafe, wait or report it without refreshing or changing scenes.
 1. **Compile** with `Unity_ValidateScript` for changed C# under `Assets/`, then execute the
    `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator rejects embedded
    `Packages/` paths, so package edits must use the refresh plus fresh-assembly proof. Wait for
@@ -83,6 +85,13 @@ The devcontainer workspace is the same directory as the embedded package inside 
    `Unity_RunCommand`; a modal prompt blocks the editor and only the developer can dismiss it.
 1. **Run** `DxMcpTestRunner.Run(testMode, assemblyNames, testNames, categoryNames, resultPath)` through `Unity_RunCommand`, locating the type by scanning `AppDomain` assemblies. Arguments are semicolon-separated lists and `null` means no filter. `testMode` is `EditMode` or `PlayMode`. `testNames` accepts a full fixture type name such as `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests` for a single-fixture red-green loop.
 1. **Poll** the `.status` sidecar next to `resultPath` from bash. It moves `running` to `done` or `error: <message>`. The JSON result carries `{ passCount, failCount, skipCount, inconclusiveCount, durationSeconds, failures[] }`.
+1. **Wait for framework cleanup before another run or scene mutation.** `RunFinished` can write
+   `done` before Unity restores its temporary scenes. Check the installed Test Framework's active
+   job state and run-scoped framework errors through a passive host observer; do not poll
+   `Unity_RunCommand` during tests because it refreshes assets before executing the snippet.
+   See the [framework cleanup gate](./references/mcp-test-loop.md#framework-cleanup-gate).
+   A stale `running` sidecar alone is not a live job. Inspect framework state and errors before
+   treating an observation timeout as completion or starting another run.
 
 `resultPath` resolves relative to the HOST Unity project root, not the embedded package. To land somewhere the container can read, prefix it: `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`. A bare `.artifacts/unity-mcp/<name>.json` writes to the host project root, invisible to the container.
 
@@ -98,6 +107,15 @@ active scene. Re-read scene dirtiness after the run.
 ### Assemblies
 
 EditMode: `WallstopStudios.DxMessaging.Tests.Editor`, `...Tests.Editor.Allocations`, `...Tests.00.Editor.Benchmarks`. PlayMode: `...Tests.Runtime`, `...Tests.00.Runtime.Benchmarks` (category `PerfBench`), `...Tests.00.Runtime.Comparisons`, and the Reflex / VContainer / Zenject integrations. Keep choices consistent with `defaultIncludeAssemblies` in `scripts/unity/lib/asmdef-discovery.js`.
+
+### Default Editor scope
+
+For ordinary Editor verification, select `WallstopStudios.DxMessaging.Tests.Editor` and the
+EditMode category exclusions in `.github/workflows/unity-tests.yml`. Run allocation and benchmark
+assemblies separately. The bridge forwards semicolon-separated native filters, including `!`
+exclusions. An assembly selection can run `[Explicit]` tests; explicitly exclude the documentation
+PNG writer when testing the whole Editor assembly. See
+[default Editor filters and imported samples](./references/mcp-test-loop.md#default-editor-filters-and-imported-samples).
 
 ### Sandbox restrictions
 

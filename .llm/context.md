@@ -97,9 +97,13 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 
 - The devcontainer workspace IS the embedded package inside the host Unity project,
   so edits in-container are instantly visible to the editor.
-- Compile: first refuse if any open scene is dirty, a prefab stage is open, or the editor is
-  playing/compiling/updating; then execute `Assets/Refresh` through `Unity_ManageMenuItem`.
-  Never use an operation that can raise a modal prompt in the developer's shared editor.
+- Preflight: prove framework idleness, idle editor flags, the main stage, and every open scene's
+  clean state through non-refreshing queries or an installed passive observer. `Unity_RunCommand`
+  refreshes assets before executing its snippet, so it cannot establish safety. Once safe, compile
+  through `Unity_ManageMenuItem` with `Assets/Refresh`. Never raise a save prompt in the shared editor.
+- Poll active tests through files only. Require passive framework cleanup and error checks after
+  the raw result reports `done`; never restart solely because observation timed out. See the
+  [framework cleanup gate](./skills/unity-mcp-test-loop/references/mcp-test-loop.md#framework-cleanup-gate).
 - Run tests: call the host bridge `DxMcpTestRunner.Run(testMode, assemblies, tests, categories, resultPath)` via `Unity_RunCommand`, then poll the `.status` sidecar from the container. `resultPath` resolves against the HOST project root, so it MUST be prefixed `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`; a bare `.artifacts/unity-mcp/<name>.json` lands where the container cannot see it and the poll waits forever next to stale files.
 - EditMode assemblies: `WallstopStudios.DxMessaging.Tests.Editor`, `...Tests.Editor.Allocations`, `...Tests.00.Editor.Benchmarks`. PlayMode: `...Tests.Runtime`, `...Tests.00.Runtime.Benchmarks` (category `PerfBench`), `...Tests.00.Runtime.Comparisons`, DI integrations (Reflex/VContainer/Zenject).
 - Perf baselines: the benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override env `DX_PERF_BASELINE`; `DX_PERF_COMMIT` stamps the commit column).

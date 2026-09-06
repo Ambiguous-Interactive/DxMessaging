@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix `MessagingComponent` retaining registrations after destruction and delivering to inactive
+  hosts before activation ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
+  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543)).
+
 - Fix base-call ignore compiler wiring and batch preparation while preserving consumer options
   ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),
   [#538](https://github.com/Ambiguous-Interactive/DxMessaging/issues/538),

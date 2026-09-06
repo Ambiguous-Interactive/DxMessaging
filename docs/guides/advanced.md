@@ -124,13 +124,18 @@ messaging.ToggleMessageHandler(false); // suspends delivery despite the flag
 messaging.ToggleMessageHandler(true); // resumes delivery
 ```
 
-While `emitMessagesWhenDisabled` is true, the Unity lifecycle never toggles the
+While `emitMessagesWhenDisabled` is true, Unity enable/disable callbacks never toggle the
 handler: disabling the component keeps emission alive, and re-enabling does not
 revert an explicit `ToggleMessageHandler(false)`. Explicit toggle calls are the
 single source of truth until the flag is cleared. One ordering to know: if the
 lifecycle already deactivated the handler (component disabled with the flag
 clear) and you then set the flag while disabled, re-enabling does not
 reactivate it -- call `ToggleMessageHandler(true)` to resume.
+
+**Fixed in v4.0.0:** Initial handler activity follows the component and host enable state
+unless disabled delivery is opted in. Destroying an initialized messaging owner deactivates
+its shared handler and disposes its owned tokens. See [manual lifecycle cleanup](unity-integration.md#messagingcomponent)
+for cleanup failures and hosts that have never been active.
 
 Re-register after release (opt-in)
 
