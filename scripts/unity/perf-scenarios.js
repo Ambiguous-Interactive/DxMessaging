@@ -1,5 +1,26 @@
 "use strict";
 
+const Ajv = require("ajv");
+const CONTRACT_SCHEMA = require("./comparison-contract-v1.schema.json");
+const COMPARISON_SEMANTIC_LEDGER = require("./comparison-semantic-ledger-v1.json");
+const COMPARISON_EVIDENCE_CATALOG = require("./comparison-evidence-catalog-v1.json");
+const ajv = new Ajv({ allErrors: true, strict: true });
+ajv.addSchema(CONTRACT_SCHEMA);
+const validateComparisonLedger = ajv.compile({
+  $ref: `${CONTRACT_SCHEMA.$id}#/definitions/ledger`
+});
+const validateComparisonCatalog = ajv.compile({
+  $ref: `${CONTRACT_SCHEMA.$id}#/definitions/catalog`
+});
+for (const [validate, data] of [
+  [validateComparisonLedger, COMPARISON_SEMANTIC_LEDGER],
+  [validateComparisonCatalog, COMPARISON_EVIDENCE_CATALOG]
+]) {
+  if (!validate(data)) {
+    throw new Error(`Invalid comparison contract: ${ajv.errorsText(validate.errors)}`);
+  }
+}
+
 const COMPARISON_SCENARIO_PREFIX = "Comparison_";
 const POST_ROUTE_SCENARIO_DEFINITIONS = require("./post-route-perf-scenarios.json");
 
@@ -95,6 +116,10 @@ function deriveScope(platform) {
 }
 
 module.exports = {
+  COMPARISON_SEMANTIC_LEDGER,
+  COMPARISON_EVIDENCE_CATALOG,
+  validateComparisonLedger,
+  validateComparisonCatalog,
   SCENARIO_ORDER,
   SCENARIOS,
   WALL_CLOCK_SCENARIOS,

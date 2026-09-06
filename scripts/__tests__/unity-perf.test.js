@@ -38,6 +38,10 @@ const {
   selectRowsForVersion
 } = require("../unity/render-perf-doc.js");
 const {
+  COMPARISON_SEMANTIC_LEDGER,
+  COMPARISON_EVIDENCE_CATALOG,
+  validateComparisonLedger,
+  validateComparisonCatalog,
   SCENARIO_ORDER,
   WALL_CLOCK_SCENARIOS,
   DISPATCH_DISPLAY_NAMES,
@@ -49,28 +53,13 @@ const PLATFORM = "Unity 6000.3.16f1 Linux PlayMode Mono";
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
 const EDITOR_PLAYMODE_PLATFORM =
   "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
+const PERF_TEST_VECTORS = require("./perf-test-vectors.json");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 test("dispatch baseline scenarios keep stable order and labels", () => {
   const expected = [
-    ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
-    ["UntargetedFlood_OneDirectHandler", "Untargeted Flood (One Direct Handler)"],
-    ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
-    [
-      "UntargetedFlood_ThreeHandlers_OnePriority",
-      "Untargeted Flood (Three Handlers, One Priority)"
-    ],
-    ["UntargetedFlood_OneInactiveHandler", "Untargeted Flood (One Inactive Handler)"],
-    [
-      "UntargetedFlood_SixteenHandlers_OnePriority",
-      "Untargeted Flood (Sixteen Handlers, One Priority)"
-    ],
-    ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"],
+    ...PERF_TEST_VECTORS.dispatchBeforePostRoutes,
     ...EXPECTED_POST_ROUTE_SCENARIOS,
-    ["MessageBusConstruction_1000", "Message Bus Construction (1000)"],
-    [
-      "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
-      "Registration Token Construction (1000, Prebuilt Handler + Bus)"
-    ]
+    ...PERF_TEST_VECTORS.dispatchAfterPostRoutes
   ];
   for (const [key, label] of expected) {
     assert.ok(SCENARIO_ORDER.includes(key), `${key} must be rendered`);
@@ -82,28 +71,11 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
     EXPECTED_POST_ROUTE_SCENARIOS.map(([key]) => key)
   );
   assert.equal(SCENARIO_ORDER.indexOf(EXPECTED_POST_ROUTE_SCENARIOS[0][0]), 16);
-  const registrationLabel = "Registration Attribution";
-  const deregistrationLabel = "Deregistration Attribution";
-  const attributionLabels = {
-    RegistrationAttribution_DirectBus_131072: `${registrationLabel} (Direct Bus, 131072)`,
-    RegistrationAttribution_DirectHandler_131072: `${registrationLabel} (Direct Handler, 131072)`,
-    RegistrationAttribution_TokenStage_131072: `${registrationLabel} (Token Stage, 131072)`,
-    RegistrationAttribution_TokenActive_131072: `${registrationLabel} (Token Active, 131072)`,
-    DeregistrationAttribution_DirectBus_131072: `${deregistrationLabel} (Direct Bus, 131072)`,
-    DeregistrationAttribution_DirectHandler_131072: `${deregistrationLabel} (Direct Handler, 131072)`,
-    DeregistrationAttribution_TokenRemove_131072: `${deregistrationLabel} (Token Remove, 131072)`,
-    DeregistrationAttribution_TokenDisable_131072: `${deregistrationLabel} (Token Disable, 131072)`
-  };
+  const attributionLabels = PERF_TEST_VECTORS.attributionLabels;
   for (const [key, label] of Object.entries(attributionLabels)) {
     assert.equal(DISPATCH_DISPLAY_NAMES[key], label, `${key} must retain its stable label`);
   }
-  assert.deepEqual(SCENARIO_ORDER.slice(1, 6), [
-    "UntargetedFlood_OneHandler",
-    "UntargetedFlood_OneDirectHandler",
-    "UntargetedFlood_TwoHandlers_OnePriority",
-    "UntargetedFlood_ThreeHandlers_OnePriority",
-    "UntargetedFlood_FourHandlers_OnePriority"
-  ]);
+  assert.deepEqual(SCENARIO_ORDER.slice(1, 6), PERF_TEST_VECTORS.firstFiveDispatchRows);
   assert.equal(new Set(SCENARIO_ORDER).size, SCENARIO_ORDER.length);
   const attributionKeys = Object.keys(attributionLabels);
   assert.deepEqual([...WALL_CLOCK_SCENARIOS].slice(-8, -4), attributionKeys.slice(0, 4));
@@ -114,12 +86,7 @@ test("dispatch baseline scenarios keep stable order and labels", () => {
   );
   assert.deepEqual(
     [...WALL_CLOCK_SCENARIOS].filter((key) => key.startsWith("DeregistrationAttribution_")),
-    [
-      "DeregistrationAttribution_DirectBus_131072",
-      "DeregistrationAttribution_DirectHandler_131072",
-      "DeregistrationAttribution_TokenRemove_131072",
-      "DeregistrationAttribution_TokenDisable_131072"
-    ]
+    PERF_TEST_VECTORS.deregistrationRows
   );
 });
 
@@ -524,7 +491,7 @@ test("performance workflow publishes exact player-size and codegen evidence", ()
   );
   assert.match(
     workflow,
-    /scripts\/unity\/\(paired-bracket-manifest\|post-route-perf-scenarios\|perf-scenario-definitions\)\\\.json\$/
+    /scripts\/unity\/\(comparison-\.\*\|paired-bracket-manifest\|post-route-perf-scenarios\|perf-scenario-definitions\)\\\.json\$/
   );
   assert.match(
     workflow,
@@ -809,18 +776,8 @@ test("extract-perf-baseline --scope filters rows to one execution scope", () => 
 });
 
 test("a winner flip within tolerance does not defeat table idempotence", () => {
-  const existing = [
-    "| Technology  | Global broadcast      |",
-    "| ----------- | --------------------- |",
-    "| DxMessaging | **30.10 M emits/sec** |",
-    "| MessagePipe | 30.00 M emits/sec     |"
-  ].join("\n");
-  const candidate = [
-    "| Technology  | Global broadcast      |",
-    "| ----------- | --------------------- |",
-    "| DxMessaging | 30.05 M emits/sec     |",
-    "| MessagePipe | **30.20 M emits/sec** |"
-  ].join("\n");
+  const existing = PERF_TEST_VECTORS.existingTable.join("\n");
+  const candidate = PERF_TEST_VECTORS.candidateTable.join("\n");
 
   assert.equal(blocksEquivalent(existing, candidate, 0.02), true);
   assert.equal(
@@ -854,4 +811,31 @@ test("rendered perf-doc region uses MD001-safe h3 headings", () => {
   assert.ok(block.includes("### Dispatch throughput - "));
   assert.ok(block.includes("### Library comparison - throughput "));
   assert.ok(!block.includes("#### "));
+});
+
+test("comparison ledger rejects every missing dimension and topology drift", () => {
+  assert.ok(validateComparisonLedger(COMPARISON_SEMANTIC_LEDGER));
+  assert.ok(validateComparisonCatalog(COMPARISON_EVIDENCE_CATALOG));
+  for (const [name, row] of Object.entries(COMPARISON_SEMANTIC_LEDGER.rows)) {
+    for (const dimension of Object.keys(row.dimensions)) {
+      const ledger = structuredClone(COMPARISON_SEMANTIC_LEDGER);
+      delete ledger.rows[name].dimensions[dimension];
+      assert.equal(validateComparisonLedger(ledger), false, `${name}/${dimension}`);
+    }
+    for (const [side, dimension, value] of PERF_TEST_VECTORS.topologyDrift) {
+      const ledger = structuredClone(COMPARISON_SEMANTIC_LEDGER);
+      ledger.rows[name].topology[side][dimension] = value;
+      assert.equal(validateComparisonLedger(ledger), false, `${name}/${dimension}`);
+    }
+  }
+  for (const name of ["cleanup", "contractTests", "dxmessaging", "messagepipe"]) {
+    const ledger = structuredClone(COMPARISON_SEMANTIC_LEDGER);
+    ledger.topologyDefaults[name].sourceRefs = ["does-not-exist"];
+    assert.equal(validateComparisonLedger(ledger), false, name);
+  }
+  for (const name of Object.keys(COMPARISON_EVIDENCE_CATALOG.sources)) {
+    const catalog = structuredClone(COMPARISON_EVIDENCE_CATALOG);
+    delete catalog.sources[name];
+    assert.equal(validateComparisonCatalog(catalog), false, name);
+  }
 });

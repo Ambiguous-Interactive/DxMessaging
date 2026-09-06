@@ -20,6 +20,8 @@ namespace DxMessaging.Tests.Runtime
         RemoveStale,
         SetDiagnostics,
         Trim,
+        EmitNested,
+        EmitWithDisable,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -30,7 +32,10 @@ namespace DxMessaging.Tests.Runtime
             int token = 0,
             int context = 0,
             int value = 0,
-            int priority = 0
+            int priority = 0,
+            int kindOffset = 0,
+            int nestedToken = 0,
+            int depth = 0
         )
         {
             Kind = kind;
@@ -38,6 +43,9 @@ namespace DxMessaging.Tests.Runtime
             Context = context;
             Value = value;
             Priority = priority;
+            KindOffset = kindOffset;
+            NestedToken = nestedToken;
+            Depth = depth;
         }
 
         internal BusTraceOperationKind Kind { get; }
@@ -46,14 +54,23 @@ namespace DxMessaging.Tests.Runtime
         internal int Value { get; }
         internal int Priority { get; }
 
+        internal int KindOffset { get; }
+        internal int NestedToken { get; }
+        internal int Depth { get; }
+
         public override string ToString() =>
-            $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})";
+            $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})"
+            + (
+                KindOffset != 0 || NestedToken != 0 || Depth != 0
+                    ? $"[kindOffset={KindOffset},nestedToken={NestedToken},depth={Depth}]"
+                    : string.Empty
+            );
     }
 
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 4;
+        internal const int GeneratorVersion = 5;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
@@ -188,6 +205,7 @@ namespace DxMessaging.Tests.Runtime
             List<BusTraceOperation> operations = new(length);
             bool[] registered = new bool[BusTraceSequence.TokenCount];
             bool[] removed = new bool[BusTraceSequence.TokenCount];
+            BusTraceOperation[] registrations = new BusTraceOperation[BusTraceSequence.TokenCount];
             uint state = seed == 0 ? 0x9e3779b9u : seed;
             for (int index = 0; index < length; ++index)
             {
@@ -198,7 +216,8 @@ namespace DxMessaging.Tests.Runtime
                         generatorVersion == 1 ? 5U
                         : generatorVersion == 2 ? 6U
                         : generatorVersion == 3 ? 9U
-                        : 10U
+                        : generatorVersion == 4 ? 10U
+                        : 12U
                     )
                 );
                 if (index == 0)
@@ -223,6 +242,8 @@ namespace DxMessaging.Tests.Runtime
                     (
                         kind == BusTraceOperationKind.EmitWithReset
                         || kind == BusTraceOperationKind.EmitWithThrow
+                        || kind == BusTraceOperationKind.EmitNested
+                        || kind == BusTraceOperationKind.EmitWithDisable
                     ) && !registered[token]
                 )
                 {
@@ -241,18 +262,51 @@ namespace DxMessaging.Tests.Runtime
                 {
                     value &= 1;
                 }
+                int kindOffset = generatorVersion >= 5 ? (int)(Next(ref state) % 3) : 0;
+                int nestedToken =
+                    generatorVersion >= 5
+                        ? (int)(Next(ref state) % BusTraceSequence.TokenCount)
+                        : 0;
+                if (kind == BusTraceOperationKind.EmitNested && !registered[nestedToken])
+                {
+                    nestedToken = token;
+                }
+                if (generatorVersion >= 5)
+                {
+                    if (index < 2)
+                    {
+                        kindOffset = 0;
+                    }
+                    if (
+                        kind == BusTraceOperationKind.EmitNested
+                        || kind == BusTraceOperationKind.EmitWithDisable
+                        || kind == BusTraceOperationKind.EmitWithReset
+                        || kind == BusTraceOperationKind.EmitWithThrow
+                    )
+                    {
+                        // Registration inputs are replay dependencies, not predicted dispatch state.
+                        kindOffset = registrations[token].KindOffset;
+                        context = registrations[token].Context;
+                    }
+                }
+                int depth =
+                    kind == BusTraceOperationKind.EmitNested ? 1 + (int)(Next(ref state) % 10) : 0;
                 operations.Add(
                     new BusTraceOperation(
                         kind,
                         token,
                         context,
                         value,
-                        (int)(Next(ref state) % 3) - 1
+                        (int)(Next(ref state) % 3) - 1,
+                        kindOffset,
+                        nestedToken: kind == BusTraceOperationKind.EmitNested ? nestedToken : 0,
+                        depth: depth
                     )
                 );
                 if (kind == BusTraceOperationKind.Register)
                 {
                     registered[token] = true;
+                    registrations[token] = operations[operations.Count - 1];
                 }
                 if (kind == BusTraceOperationKind.Remove)
                 {
@@ -295,6 +349,24 @@ namespace DxMessaging.Tests.Runtime
                     || operation.Token >= registered.Length
                     || operation.Context < 0
                     || operation.Context > 1
+                    || operation.KindOffset < 0
+                    || operation.KindOffset > 2
+                    || operation.NestedToken < 0
+                    || operation.NestedToken >= registered.Length
+                    || operation.Depth < 0
+                    || operation.Depth > 10
+                    || (
+                        sequence.Version < 5
+                        && (
+                            operation.KindOffset != 0
+                            || operation.NestedToken != 0
+                            || operation.Depth != 0
+                        )
+                    )
+                    || (
+                        operation.Kind != BusTraceOperationKind.EmitNested
+                        && (operation.NestedToken != 0 || operation.Depth != 0)
+                    )
                 )
                 {
                     return false;
@@ -319,6 +391,23 @@ namespace DxMessaging.Tests.Runtime
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:
                     case BusTraceOperationKind.Emit:
+                        break;
+                    case BusTraceOperationKind.EmitNested:
+                        if (
+                            sequence.Version < 5
+                            || operation.Depth == 0
+                            || !registered[operation.Token]
+                            || !registered[operation.NestedToken]
+                        )
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.EmitWithDisable:
+                        if (sequence.Version < 5 || !registered[operation.Token])
+                        {
+                            return false;
+                        }
                         break;
                     case BusTraceOperationKind.Trim:
                         if (sequence.Version < 4 || operation.Value < 0 || operation.Value > 1)

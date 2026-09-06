@@ -360,7 +360,15 @@ jobs:
         id: install_dependencies
         timeout-minutes: 2
         shell: pwsh
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        # Unity imports node_modules beside the local package. Keep tooling under a
+        # hidden directory so dependency installation does not add thousands of assets.
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
 
       - name: Validate the predeclared paired bracket manifest
         if: ${{ hashFiles('scripts/unity/paired-bracket-manifest.json') != '' }}
@@ -1416,6 +1424,18 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
+      - name: Setup Node.js for reporting
+        if: needs.perf-benchmarks.result == 'success'
+        timeout-minutes: 5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.18.0"
+
+      - name: Install reporting dependencies
+        if: needs.perf-benchmarks.result == 'success'
+        timeout-minutes: 2
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Download perf benchmark artifacts
         if: needs.perf-benchmarks.result == 'success'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -1447,7 +1467,7 @@ jobs:
           methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
           methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
           methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|reduce-paired-bracket|render-perf|run-ci-tests|resolve-performance-cpu-profile|validate-il2cpp-profile)'
-          methodology_pattern+='|scripts/unity/(paired-bracket-manifest|post-route-perf-scenarios|perf-scenario-definitions)\.json$'
+          methodology_pattern+='|scripts/unity/(comparison-.*|paired-bracket-manifest|post-route-perf-scenarios|perf-scenario-definitions)\.json$'
           methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
           methodology_pattern+='|\.github/comparison-packages\.json$'
           methodology_pattern+='|\.github/perf/canonical-il2cpp-profile\.v1\.json$'

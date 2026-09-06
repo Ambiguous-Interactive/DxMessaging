@@ -1527,6 +1527,43 @@ public static class DxmCiTestConfigurator
         public bool detailedBuildReport;
     }
 
+    [Serializable]
+    private sealed class ResolvedPackage
+    {
+        public string name;
+        public string version;
+        public string resolvedPath;
+    }
+
+    [Serializable]
+    private sealed class ResolvedPackages
+    {
+        public ResolvedPackage[] packages;
+    }
+
+    internal static void WriteComparisonPackageResolution()
+    {
+        string path = Environment.GetEnvironmentVariable("DXM_COMPARISON_PACKAGES_PATH");
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+        UnityEditor.PackageManager.PackageInfo[] registered = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages();
+        ResolvedPackages evidence = new ResolvedPackages();
+        evidence.packages = new ResolvedPackage[registered.Length];
+        for (int index = 0; index < registered.Length; index++)
+        {
+            UnityEditor.PackageManager.PackageInfo package = registered[index];
+            evidence.packages[index] = new ResolvedPackage
+            {
+                name = package.name,
+                version = package.version,
+                resolvedPath = package.resolvedPath
+            };
+        }
+        WriteJson(path, evidence);
+    }
+
     public static void Apply()
     {
         // Prove Release editor code optimization for every Unity CI leg. Set FIRST
@@ -1580,6 +1617,7 @@ public static class DxmCiTestConfigurator
 
         string profilePath = Environment.GetEnvironmentVariable("DXM_CONFIGURED_PROFILE_PATH");
         WriteConfigurationEvidence(profilePath);
+        WriteComparisonPackageResolution();
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
@@ -1730,6 +1768,7 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
 
     public BuildPlayerOptions ModifyOptions(BuildPlayerOptions playerOptions)
     {
+        DxmCiTestConfigurator.WriteComparisonPackageResolution();
         playerOptions.options &= ~BuildOptions.AutoRunPlayer;
         playerOptions.options &= ~BuildOptions.ConnectToHost;
         playerOptions.options &= ~BuildOptions.ConnectWithProfiler;
@@ -4315,6 +4354,83 @@ function Get-StandaloneHostConditionSnapshot {
     }
 }
 
+function Get-ComparisonSourceEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ResolvedPackagesPath
+    )
+
+    $ledgerPath = Join-Path $RepoRoot 'scripts/unity/comparison-semantic-ledger-v1.json'
+    $catalogPath = Join-Path $RepoRoot 'scripts/unity/comparison-evidence-catalog-v1.json'
+    $schemaPath = Join-Path $RepoRoot 'scripts/unity/comparison-contract-v1.schema.json'
+    $ledger = Get-Content -LiteralPath $ledgerPath -Raw | ConvertFrom-Json
+    $catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
+    $pins = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/comparison-packages.json') -Raw | ConvertFrom-Json
+    $resolved = Get-Content -LiteralPath $ResolvedPackagesPath -Raw | ConvertFrom-Json
+    $messagePipe = @($resolved.packages | Where-Object { $_.name -ceq 'com.cysharp.messagepipe' })
+    if ($messagePipe.Count -ne 1) {
+        throw 'Comparison source evidence requires exactly one resolved MessagePipe package.'
+    }
+    $expectedVersion = $ledger.identity.messagePipe.version
+    if ($messagePipe[0].version -cne $expectedVersion -or $pins.packages.'com.cysharp.messagepipe' -cne $expectedVersion) {
+        throw 'Comparison source evidence MessagePipe version differs from the ledger or package pin.'
+    }
+    $packageRoot = $messagePipe[0].resolvedPath
+    $packageMetadata = Get-Content -LiteralPath (Join-Path $packageRoot 'package.json') -Raw | ConvertFrom-Json
+    if ($packageMetadata.name -cne 'com.cysharp.messagepipe' -or $packageMetadata.version -cne $expectedVersion) {
+        throw 'Comparison source evidence resolved package metadata differs from Unity resolution.'
+    }
+    $observed = New-Object System.Collections.Generic.List[object]
+    foreach ($entry in $catalog.sources.PSObject.Properties) {
+        $source = $entry.Value
+        $root = if ($source.origin -ceq 'repository') { $RepoRoot } else { $packageRoot }
+        $relativePath = if ($source.origin -ceq 'repository') { $source.path } else { $source.packagePath }
+        if ($relativePath -notmatch '^[A-Za-z0-9_.~/-]+$' -or $relativePath.StartsWith('/') -or $relativePath.Split('/') -contains '..') {
+            throw "Comparison source evidence rejects non-relative source path: $relativePath"
+        }
+        $sourcePath = $root
+        foreach ($segment in $relativePath.Split('/')) {
+            $sourceMatches = @(Get-ChildItem -LiteralPath $sourcePath -Force | Where-Object { $_.Name -ceq $segment })
+            if ($sourceMatches.Count -ne 1) {
+                throw "Comparison source evidence missing exact-case source: $relativePath"
+            }
+            $sourcePath = $sourceMatches[0].FullName
+        }
+        $bytes = [System.IO.File]::ReadAllBytes($sourcePath)
+        $hasher = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $compilerInputSha256 = [BitConverter]::ToString($hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+            if ($source.origin -ceq 'repository') {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes([System.Text.Encoding]::UTF8.GetString($bytes).Replace("`r`n", "`n"))
+            }
+            $sha256 = [BitConverter]::ToString($hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $hasher.Dispose()
+        }
+        if ($sha256 -cne $source.sha256) {
+            throw "Comparison source evidence hash mismatch: $relativePath"
+        }
+        # Keep opaque source identifiers as values: keys ending in Token denote
+        # sensitive credential containers to the artifact safety validator.
+        $observed.Add([ordered]@{
+            sourceRef = $entry.Name
+            path = $relativePath
+            sha256 = $sha256
+            compilerInputSha256 = $compilerInputSha256
+        })
+    }
+    return [ordered]@{
+        schemaVersion = 1
+        scope = 'Declared source files only; package resolution and source bytes do not establish compiled closures or semantic parity.'
+        byteDomain = $ledger.identity.byteDomain
+        messagePipeVersion = $expectedVersion
+        ledgerSha256 = (Get-FileHash -LiteralPath $ledgerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        catalogSha256 = (Get-FileHash -LiteralPath $catalogPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        schemaSha256 = (Get-FileHash -LiteralPath $schemaPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        sources = @($observed.ToArray())
+    }
+}
+
 function Get-StandalonePlayerManifest {
     # Hash every file present under the built player directory. Capturing the
     # complete manifest before the first launch and after the last detects any
@@ -6562,6 +6678,8 @@ $startupProbeLogPath = Join-Path $ArtifactsPath 'unity-startup-probe.log'
 # code -- so we never fail a successful configure on a benign teardown crash.
 $configureMarkerPath = Join-Path $ArtifactsPath 'configure-complete.marker'
 $configuredProfileEvidencePath = Join-Path $ArtifactsPath 'configured-profile.json'
+$comparisonPackagesPath = Join-Path $ArtifactsPath 'comparison-resolved-packages.json'
+$comparisonSourcesBefore = $null
 $prebuildProfileEvidencePath = Join-Path $ArtifactsPath 'prebuild-profile.json'
 $postbuildProfileEvidencePath = Join-Path $ArtifactsPath 'postbuild-profile.json'
 $buildOptionsProfileEvidencePath = Join-Path $ArtifactsPath 'build-options-profile.json'
@@ -6646,6 +6764,10 @@ try {
         ) {
             $env:DXM_CONFIGURED_PROFILE_PATH = $configuredProfileEvidencePath
         }
+        if ($IncludeComparisons) {
+            Remove-Item -LiteralPath $comparisonPackagesPath -Force -ErrorAction SilentlyContinue
+            $env:DXM_COMPARISON_PACKAGES_PATH = $comparisonPackagesPath
+        }
         $configureStartedUtc = [DateTime]::UtcNow
         $configureArgs = @(
             '-quit',
@@ -6679,6 +6801,11 @@ try {
             Write-UnityBenignExitWarning -Label "Configure $configurationScope IL2CPP project" -ExitCode $configureExit -LogPath $configureLogPath
         }
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $configureLogPath -Label "$configurationScope configure"
+        if ($IncludeComparisons) {
+            $comparisonSourcesBefore = Get-ComparisonSourceEvidence -RepoRoot $RepoRoot -ResolvedPackagesPath $comparisonPackagesPath
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'comparison-source-evidence.json') -Value $comparisonSourcesBefore
+            Remove-Item -LiteralPath $comparisonPackagesPath -Force
+        }
         if (
             -not [string]::IsNullOrWhiteSpace($canonicalProfileId) -and
             -not $isShippingFidelity
@@ -7054,6 +7181,16 @@ try {
             }
         }
 
+        if ($IncludeComparisons) {
+            $comparisonSourcesAfter = Get-ComparisonSourceEvidence -RepoRoot $RepoRoot -ResolvedPackagesPath $comparisonPackagesPath
+            if (($comparisonSourcesBefore | ConvertTo-Json -Depth 10 -Compress) -cne ($comparisonSourcesAfter | ConvertTo-Json -Depth 10 -Compress)) {
+                throw 'Comparison source evidence changed during player build.'
+            }
+            $comparisonSourcesAfter['playerDirectoryManifest'] = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            $comparisonSourcesAfter['runs'] = @()
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'comparison-source-evidence.json') -Value $comparisonSourcesAfter
+        }
+
         # (2b) RUN the built exe directly (no PlayerConnection), under the watchdog.
         # Run 1 keeps the canonical filenames consumed by publication. Optional
         # same-player repeats use deliberately noncanonical names under a diagnostic
@@ -7069,7 +7206,11 @@ try {
                 Remove-Item -LiteralPath $samePlayerEvidenceRoot -Recurse -Force
             }
             New-Item -ItemType Directory -Force -Path $samePlayerEvidenceRoot | Out-Null
-            $playerManifestBefore = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            $playerManifestBefore = if ($IncludeComparisons) {
+                $comparisonSourcesAfter.playerDirectoryManifest
+            } else {
+                Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            }
         }
 
         for ($playerRunIndex = 1; $playerRunIndex -le $StandalonePlayerRunCount; $playerRunIndex++) {
@@ -7163,6 +7304,15 @@ try {
                     -ExpectedSha256 $canonicalProfileSha256
             }
 
+            if ($IncludeComparisons) {
+                $comparisonSourcesAfter['runs'] += [ordered]@{
+                    runIndex = $playerRunIndex
+                    unredactedResultsSha256 = (Get-FileHash -LiteralPath $currentResultsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    unredactedPlayerLogSha256 = (Get-FileHash -LiteralPath $currentPlayerLogPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+                Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'comparison-source-evidence.json') -Value $comparisonSourcesAfter
+            }
+
             if ($captureSamePlayerEvidence) {
                 $relativeResultsPath = $currentResultsPath.Substring($ArtifactsPath.Length).TrimStart(
                     [System.IO.Path]::DirectorySeparatorChar,
@@ -7251,6 +7401,7 @@ try {
     foreach ($temporaryEnvironmentVariable in @(
         'DXM_CONFIGURE_MARKER_PATH',
         'DXM_CONFIGURED_PROFILE_PATH',
+        'DXM_COMPARISON_PACKAGES_PATH',
         'DXM_PREBUILD_CONFIG_PROFILE_PATH',
         'DXM_POSTBUILD_CONFIG_PROFILE_PATH',
         'DXM_BUILD_OPTIONS_PROFILE_PATH',

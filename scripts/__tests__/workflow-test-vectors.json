@@ -1,0 +1,53 @@
+{
+  "UNITY_LOCK_WINDOWS": [
+    ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
+    ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
+    ["release.yml", "unity-checks", "Run Unity Test Runner", true],
+    ["release.yml", "unitypackage", "Export the .unitypackage", false],
+    ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
+  ],
+  "STATIC_CHILD_JOBS": [
+    ["actionlint", "actionlint"],
+    ["markdownlint", "markdown"],
+    ["csharpier", "csharpier"],
+    ["dotnet", "dotnet"],
+    ["json-format", "json"],
+    ["spellcheck", "spellcheck"],
+    ["validate-banner", "banner"],
+    ["validate-llms-txt", "llms"],
+    ["yaml-format-lint", "yaml"],
+    ["script-tests", "scripts"],
+    ["validate-docs", "docs"],
+    ["lint-doc-links", "docs_links"]
+  ],
+  "CORRECTNESS_CATEGORY_FILTERS": {
+    "editmode": [
+      "!Stress",
+      "!Performance",
+      "!Allocation",
+      "!MemoryReclaim",
+      "!PerfBench",
+      "!PerfGate",
+      "!PerfBaseline",
+      "!UnityRuntime"
+    ],
+    "playmode": [
+      "!Stress",
+      "!Performance",
+      "!Allocation",
+      "!MemoryReclaim",
+      "!PerfBench",
+      "!PerfGate",
+      "!PerfBaseline"
+    ],
+    "standalone": [
+      "!Stress",
+      "!Performance",
+      "!Allocation",
+      "!MemoryReclaim",
+      "!PerfBench",
+      "!PerfGate",
+      "!PerfBaseline"
+    ]
+  }
+}

@@ -15,8 +15,9 @@ namespace DxMessaging.Tests.Runtime
     /// (Core, Integrations, Unity) within the runtime test assembly. The
     /// default Unity Edit + Play mode test run is supposed to finish in
     /// under 60 seconds once the <c>Stress</c>, <c>Allocation</c>,
-    /// <c>Performance</c>, <c>MemoryReclaim</c>, and <c>UnityRuntime</c>
-    /// categories are filtered out. This setup fixture captures a timestamp at suite start (via
+    /// <c>Performance</c>, and <c>MemoryReclaim</c> categories are filtered out.
+    /// The <c>UnityRuntime</c> lifecycle cases remain within this budget in
+    /// PlayMode and standalone runs. This fixture captures a timestamp at suite start (via
     /// <see cref="OneTimeSetUpAttribute"/>) and asserts the elapsed wall
     /// clock at suite end is below a soft and hard budget.
     /// </summary>
@@ -50,7 +51,7 @@ namespace DxMessaging.Tests.Runtime
     /// each one to <see cref="NoteGatedCategoryObserved"/>.
     /// If any test in the session is in the gated set
     /// (<c>Stress</c>, <c>Performance</c>, <c>Allocation</c>,
-    /// <c>MemoryReclaim</c>, or <c>UnityRuntime</c>), the wall-clock budget assertion is skipped
+    /// or <c>MemoryReclaim</c>), the wall-clock budget assertion is skipped
     /// because the gated suites have their own CI-side timing budgets.
     /// </para>
     /// <para>
@@ -129,7 +130,6 @@ namespace DxMessaging.Tests.Runtime
             "Performance",
             "Allocation",
             "MemoryReclaim",
-            "UnityRuntime",
         };
 
         private static Stopwatch _suiteTimer;
@@ -180,7 +180,7 @@ namespace DxMessaging.Tests.Runtime
             if (_gatedCategoryDetected)
             {
                 UnityEngine.Debug.Log(
-                    "Skipping default-suite wall-clock assertion: a Stress/Performance/Allocation/MemoryReclaim/UnityRuntime "
+                    "Skipping default-suite wall-clock assertion: a Stress/Performance/Allocation/MemoryReclaim "
                         + "test was observed in this run."
                 );
                 return;
@@ -195,7 +195,7 @@ namespace DxMessaging.Tests.Runtime
                         + "absorbs runner-speed variance (2021.x gets a wider bound), so a breach this "
                         + "large means a genuine regression, not slowness. Reduce iteration counts or move "
                         + "offending tests behind a gated category "
-                        + "(Stress/Performance/Allocation/MemoryReclaim/UnityRuntime)."
+                        + "(Stress/Performance/Allocation/MemoryReclaim)."
                 );
             }
             else if (elapsed > SoftBudget)

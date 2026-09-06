@@ -1,0 +1,197 @@
+{
+  "defaultRows": [
+    {
+      "scenario": "GlobalToOne",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "GlobalToMany",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "KeyedToOne",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "Filtered",
+      "role": "target"
+    },
+    {
+      "scenario": "PostProcess",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "FilteredPostProcess",
+      "role": "affected"
+    },
+    {
+      "scenario": "StructNoBox",
+      "role": "sentinel"
+    }
+  ],
+  "executionProfile": {
+    "id": "highest-efficiency-class-affinity-normal-v1",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "source": "GetSystemCpuSetInformation",
+    "selectionPolicy": "maximum EfficiencyClass",
+    "selectedEfficiencyClass": 1,
+    "selectedLogicalProcessorIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "affinityMask": "0xFFFF",
+    "priorityClass": "Normal"
+  },
+  "session240Rows": [
+    {
+      "scenario": "GlobalToOne",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "GlobalToMany",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "KeyedToOne",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "Filtered",
+      "role": "target"
+    },
+    {
+      "scenario": "PostProcess",
+      "role": "sentinel"
+    },
+    {
+      "scenario": "FilteredPostProcess",
+      "role": "affected"
+    },
+    {
+      "scenario": "StructNoBox",
+      "role": "sentinel"
+    }
+  ],
+  "session240c1": [
+    0.3664825458329125, 0.9638895979446739, 1.1749603478334951, 0.4139565263871168,
+    0.30839240772835985, 0.35066743667156336, 0.41332080747580546
+  ],
+  "session240control": [
+    0.3397850194262837, 0.967803075233871, 1.1798167374564192, 0.3863364779458949,
+    0.31514396784308657, 0.3446972097633311, 0.38286598713193026
+  ],
+  "session240c2": [
+    0.3626055198992972, 0.9684320021425954, 1.198908896941916, 0.41538562631333986,
+    0.3070944651881458, 0.3511185780464608, 0.4086341036570222
+  ],
+  "session240spreads": [
+    [
+      0.8204612835834624, 1.9333897889375118, 2.6835356075866956, 0.9103789875130497,
+      0.5659055890008702, 0.8146324113570858, 0.9451177125524346
+    ],
+    [
+      1.1028308453360225, 2.516331076690048, 1.831094466025407, 2.6269405956543146,
+      1.2355279753484494, 0.45885913299001935, 0.7936012788094526
+    ],
+    [
+      0.9706598505605957, 0.9008923477044295, 2.021145035917682, 0.8933299443459664,
+      0.6974634572843197, 1.335523904224556, 0.6007602409331403
+    ]
+  ],
+  "dispatchBeforePostRoutes": [
+    ["EmptyBus_Dispatch", "Empty Bus Dispatch"],
+    ["UntargetedFlood_OneDirectHandler", "Untargeted Flood (One Direct Handler)"],
+    ["UntargetedFlood_TwoHandlers_OnePriority", "Untargeted Flood (Two Handlers, One Priority)"],
+    [
+      "UntargetedFlood_ThreeHandlers_OnePriority",
+      "Untargeted Flood (Three Handlers, One Priority)"
+    ],
+    ["UntargetedFlood_OneInactiveHandler", "Untargeted Flood (One Inactive Handler)"],
+    [
+      "UntargetedFlood_SixteenHandlers_OnePriority",
+      "Untargeted Flood (Sixteen Handlers, One Priority)"
+    ],
+    ["TargetedFlood_NoMatchingTarget", "Targeted Flood (No Matching Target)"]
+  ],
+  "dispatchAfterPostRoutes": [
+    ["MessageBusConstruction_1000", "Message Bus Construction (1000)"],
+    [
+      "MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus",
+      "Registration Token Construction (1000, Prebuilt Handler + Bus)"
+    ]
+  ],
+  "attributionLabels": {
+    "RegistrationAttribution_DirectBus_131072": "Registration Attribution (Direct Bus, 131072)",
+    "RegistrationAttribution_DirectHandler_131072": "Registration Attribution (Direct Handler, 131072)",
+    "RegistrationAttribution_TokenStage_131072": "Registration Attribution (Token Stage, 131072)",
+    "RegistrationAttribution_TokenActive_131072": "Registration Attribution (Token Active, 131072)",
+    "DeregistrationAttribution_DirectBus_131072": "Deregistration Attribution (Direct Bus, 131072)",
+    "DeregistrationAttribution_DirectHandler_131072": "Deregistration Attribution (Direct Handler, 131072)",
+    "DeregistrationAttribution_TokenRemove_131072": "Deregistration Attribution (Token Remove, 131072)",
+    "DeregistrationAttribution_TokenDisable_131072": "Deregistration Attribution (Token Disable, 131072)"
+  },
+  "firstFiveDispatchRows": [
+    "UntargetedFlood_OneHandler",
+    "UntargetedFlood_OneDirectHandler",
+    "UntargetedFlood_TwoHandlers_OnePriority",
+    "UntargetedFlood_ThreeHandlers_OnePriority",
+    "UntargetedFlood_FourHandlers_OnePriority"
+  ],
+  "protocol": {
+    "protocol": "interleaved-abba-baab-v1",
+    "cycles": 4,
+    "minimumCycleActiveMilliseconds": 625,
+    "batchOperations": 10000,
+    "materialityBandPercent": 3
+  },
+  "existingTable": [
+    "| Technology  | Global broadcast      |",
+    "| ----------- | --------------------- |",
+    "| DxMessaging | **30.10 M emits/sec** |",
+    "| MessagePipe | 30.00 M emits/sec     |"
+  ],
+  "candidateTable": [
+    "| Technology  | Global broadcast      |",
+    "| ----------- | --------------------- |",
+    "| DxMessaging | 30.05 M emits/sec     |",
+    "| MessagePipe | **30.20 M emits/sec** |"
+  ],
+  "deregistrationRows": [
+    "DeregistrationAttribution_DirectBus_131072",
+    "DeregistrationAttribution_DirectHandler_131072",
+    "DeregistrationAttribution_TokenRemove_131072",
+    "DeregistrationAttribution_TokenDisable_131072"
+  ],
+  "manifestDefaults": {
+    "schemaVersion": 1,
+    "bracketId": "test-bracket",
+    "materialityBandPercent": 3,
+    "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"]
+  },
+  "topologyDrift": [
+    ["dxmessaging", "tokens", 99],
+    ["dxmessaging", "owners", 99],
+    ["dxmessaging", "payloadType", "ChangedPayload"],
+    ["dxmessaging", "priorities", [99]],
+    ["dxmessaging", "routes", [99]],
+    [
+      "dxmessaging",
+      "registrations",
+      {
+        "normal": 99,
+        "interceptors": 0,
+        "postProcessors": 0
+      }
+    ],
+    ["messagepipe", "subscriptions", 99],
+    ["messagepipe", "keys", [99]],
+    [
+      "messagepipe",
+      "storage",
+      {
+        "liveSubscriptions": 1,
+        "physicalSlots": 99,
+        "holders": 1,
+        "basis": "source-deduced-fresh-public-setup",
+        "description": "Changed capacity"
+      }
+    ]
+  ]
+}

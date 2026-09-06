@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const supportedScenarios = require("./comparison-supported-scenarios.json");
+const { COMPARISON_SUPPORTED_SCENARIOS: supportedScenarios } = require("./perf-scenarios.js");
 
 const SCHEMA_VERSION = 1;
 const MATERIALITY_BAND_PERCENT = 3;

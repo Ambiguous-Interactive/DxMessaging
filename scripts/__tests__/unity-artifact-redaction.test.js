@@ -306,3 +306,19 @@ for (const [label, condition, expected] of ALWAYS_RUNS_CASES) {
     );
   });
 }
+test("licensed jobs install tooling outside Unity imports before acquiring a license", () => {
+  for (const { document } of readWorkflows()) {
+    for (const job of Object.values(document.jobs ?? {})) {
+      const steps = jobSteps(job);
+      const install = steps.findIndex((step) => step.id === "install_dependencies");
+      const lock = steps.findIndex((step) => step.id === "acquire_lock");
+      if (lock < 0) continue;
+      assert.ok(install >= 0 && install < lock, "install npm tools before acquiring a Unity license");
+      const command = steps[install].run;
+      assert.match(command, /Join-Path \$env:GITHUB_WORKSPACE '\.artifacts\/node-tooling'/);
+      assert.match(command, /npm ci --prefix "\$tooling"/);
+      assert.match(command, /NODE_PATH=\$\(Join-Path \$tooling 'node_modules'\)/);
+      assert.match(command, />> \$env:GITHUB_ENV/);
+    }
+  }
+});

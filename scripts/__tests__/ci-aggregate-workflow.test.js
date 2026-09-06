@@ -7,6 +7,11 @@ const path = require("node:path");
 const YAML = require("yaml");
 const { spawnSync } = require("node:child_process");
 const { walkFiles } = require("../lib/repo-files.js");
+const {
+  UNITY_LOCK_WINDOWS,
+  STATIC_CHILD_JOBS,
+  CORRECTNESS_CATEGORY_FILTERS
+} = require("./workflow-test-vectors.json");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
@@ -41,14 +46,7 @@ const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
-// SYNC: Keep scripts/validate-unity-pr-policy.py LICENSED_LOCK_WINDOWS aligned.
-const UNITY_LOCK_WINDOWS = [
-  ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
-  ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
-  ["release.yml", "unity-checks", "Run Unity Test Runner", true],
-  ["release.yml", "unitypackage", "Export the .unitypackage", false],
-  ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
-];
+// SYNC: workflow-test-vectors.json UNITY_LOCK_WINDOWS mirrors scripts/validate-unity-pr-policy.py LICENSED_LOCK_WINDOWS.
 
 // prettier-ignore
 const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet-tests.yml", "json-format-check.yml", "lint-doc-links.yml", "markdownlint.yml", "script-tests.yml", "spellcheck.yml", "validate-banner.yml", "validate-docs.yml", "validate-llms-txt.yml", "yaml-format-lint.yml"];
@@ -57,20 +55,7 @@ const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet
 const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
 
 // cspell:ignore ACDMRT
-const STATIC_CHILD_JOBS = [
-  ["actionlint", "actionlint"],
-  ["markdownlint", "markdown"],
-  ["csharpier", "csharpier"],
-  ["dotnet", "dotnet"],
-  ["json-format", "json"],
-  ["spellcheck", "spellcheck"],
-  ["validate-banner", "banner"],
-  ["validate-llms-txt", "llms"],
-  ["yaml-format-lint", "yaml"],
-  ["script-tests", "scripts"],
-  ["validate-docs", "docs"],
-  ["lint-doc-links", "docs_links"]
-];
+
 
 const readWorkflow = (file = "ci.yml") => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 
@@ -543,7 +528,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
     const install = getStepBlock(job, "Install artifact tooling dependencies");
-    assert.match(install, /id: install_dependencies\n[\s\S]*shell: pwsh\n        run: npm ci --ignore-scripts --no-audit --no-fund\n/);
+    assert.match(install, /id: install_dependencies\n[\s\S]*shell: pwsh\n[\s\S]*\bnpm ci [^\n]*--ignore-scripts --no-audit --no-fund\n/);
     assert.doesNotMatch(install, /continue-on-error:|\n        if:/);
     assert.ok(job.indexOf("id: setup_node") < job.indexOf(install) && job.indexOf(install) < job.indexOf(acquire), `${label}: install before acquiring a license`);
     for (const step of YAML.parse(job)[jobId].steps.filter((step) => step.uses === "./.github/actions/redact-unity-artifacts")) {
@@ -821,3 +806,13 @@ test("release workflows pin App write scopes and denied-push diagnostics", () =>
   );
   assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
 });
+
+for (const [mode, expected] of Object.entries(CORRECTNESS_CATEGORY_FILTERS)) {
+  test(`${mode} correctness category filter retains lifecycle coverage and excludes heavy work`, () => {
+    const steps = YAML.parse(readWorkflow("unity-tests.yml")).jobs["unity-tests"].steps;
+    const step = steps.find((candidate) => candidate.id === `run_${mode}`);
+    assert.ok(step, `${mode} correctness step must exist`);
+    assert.match(step.run, new RegExp(`-TestMode ${mode}\\b`));
+    assert.deepEqual(step.env.DXM_UNITY_TEST_CATEGORY.split(";").sort(), expected.toSorted());
+  });
+}

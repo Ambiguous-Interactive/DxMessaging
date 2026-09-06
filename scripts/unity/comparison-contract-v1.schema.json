@@ -1,0 +1,1989 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:dxmessaging:comparison-contract:v1",
+  "definitions": {
+    "sourceRef": {
+      "enum": [
+        "dxBridge",
+        "mpBridge",
+        "scenario",
+        "payload",
+        "harness",
+        "topology",
+        "twins",
+        "dxBus",
+        "dxInterface",
+        "dxHandler",
+        "dxToken",
+        "dxFlat",
+        "dxPools",
+        "dxSettings",
+        "reentrantTests",
+        "characterization",
+        "pins",
+        "untargetedPayload",
+        "targetedPayload",
+        "roster",
+        "supported",
+        "mpBroker",
+        "mpKeyed",
+        "mpFreeList",
+        "mpQueue",
+        "mpOptions",
+        "mpDiagnostics",
+        "mpFactory",
+        "mpExtensions",
+        "mpPredicate",
+        "mpContainer",
+        "mpSetup",
+        "mpFilter"
+      ]
+    },
+    "evidenceRef": {
+      "enum": [
+        "MessagePipeMutationHasPinnedArrayTrace",
+        "DxMessagingMutationHasFrozenSnapshotTrace",
+        "MessagePipeFragmentationRetainsPhysicalCapacity",
+        "MessagePipeHolesRefillInPhysicalSlotOrder",
+        "MessagePipeChurnKeepsSurvivorAndCapacity",
+        "MessagePipeEmptySubscriptionStorageHasPinnedShape",
+        "MessagePipeFinalSubscriptionRemovesOnlyItsKeyedHolder",
+        "MessagePipeCoreDisposalKeepsCapturedCallbacksAndKeyedHolder"
+      ]
+    },
+    "contract": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/sourceRef"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": ["description", "sourceRefs"],
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": ["matched", "extra", "absent"]
+        },
+        "side": {
+          "enum": ["dxmessaging", "messagepipe", "both", "neither", "operation"]
+        },
+        "contractRef": {
+          "enum": [
+            "ordering",
+            "activity",
+            "callbackMutation",
+            "snapshots",
+            "reset",
+            "reentrancy",
+            "exceptions",
+            "diagnostics",
+            "lifecycle",
+            "reclamation",
+            "threadOwnership",
+            "foundResult",
+            "ordering-unsupported",
+            "activity-unsupported",
+            "callbackMutation-unsupported",
+            "snapshots-unsupported",
+            "reset-unsupported",
+            "reentrancy-unsupported",
+            "exceptions-unsupported",
+            "diagnostics-unsupported",
+            "lifecycle-unsupported",
+            "reclamation-unsupported",
+            "threadOwnership-unsupported",
+            "foundResult-unsupported",
+            "ordering-2",
+            "callbackMutation-2",
+            "exceptions-2",
+            "foundResult-2"
+          ]
+        },
+        "evidenceScopeRef": {
+          "enum": [
+            "physical-order-controls",
+            "source-only",
+            "mutation-controls",
+            "terminal-disposal-control",
+            "subscription-lifecycle-controls",
+            "storage-controls",
+            "mutation-controls-2"
+          ]
+        },
+        "limitsRef": {
+          "enum": [
+            "unresolved",
+            "unresolved-activity",
+            "unresolved-reset",
+            "unresolved-threadOwnership",
+            "unresolved-KeyedToOne",
+            "unresolved-KeyedToOne-activity",
+            "unresolved-KeyedToOne-reset",
+            "unresolved-KeyedToOne-threadOwnership",
+            "unresolved-Filtered",
+            "unresolved-Filtered-activity",
+            "unresolved-Filtered-reset",
+            "unresolved-Filtered-threadOwnership"
+          ]
+        }
+      },
+      "required": ["status", "side", "contractRef", "evidenceScopeRef", "limitsRef"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "matched"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "side": {
+                "const": "neither"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "extra"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "side": {
+                "enum": ["dxmessaging", "messagepipe", "both"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "trace": {
+      "type": "object",
+      "properties": {
+        "evidenceRef": {
+          "$ref": "#/definitions/evidenceRef"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["evidenceRef", "scope", "claim"],
+      "additionalProperties": false
+    },
+    "evidenceScope": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "const": "audited"
+        },
+        "native": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "testContracts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/trace"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": ["source", "testContracts", "native"],
+      "additionalProperties": false
+    },
+    "dxTopology": {
+      "type": "object",
+      "properties": {
+        "payloadType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owners": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "registrations": {
+          "type": "object",
+          "properties": {
+            "normal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "interceptors": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "postProcessors": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["normal", "interceptors", "postProcessors"],
+          "additionalProperties": false
+        },
+        "priorities": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "dispatchRoute": {
+          "type": ["integer", "null"]
+        },
+        "liveBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "liveDuringOperation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "liveAfterOperation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "payloadType",
+        "owners",
+        "tokens",
+        "registrations",
+        "priorities",
+        "routes",
+        "dispatchRoute",
+        "liveBefore",
+        "liveDuringOperation",
+        "liveAfterOperation"
+      ],
+      "additionalProperties": false
+    },
+    "mpTopology": {
+      "type": "object",
+      "properties": {
+        "payloadType": {
+          "type": ["string", "null"]
+        },
+        "passing": {
+          "type": ["string", "null"]
+        },
+        "subscriptions": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "filterOrders": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "publishKey": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "liveSubscriptions": {
+              "type": ["integer", "null"],
+              "minimum": 0
+            },
+            "physicalSlots": {
+              "type": ["integer", "null"],
+              "minimum": 0
+            },
+            "holders": {
+              "type": ["integer", "null"],
+              "minimum": 0
+            },
+            "basis": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["liveSubscriptions", "physicalSlots", "holders", "basis", "description"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "payloadType",
+        "passing",
+        "subscriptions",
+        "filterOrders",
+        "keys",
+        "publishKey",
+        "storage"
+      ],
+      "additionalProperties": false
+    },
+    "topology": {
+      "type": "object",
+      "properties": {
+        "dxmessaging": {
+          "$ref": "#/definitions/dxTopology"
+        },
+        "messagepipe": {
+          "$ref": "#/definitions/mpTopology"
+        },
+        "terminalCallbacksPerOperation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lifecycleOperationsPerOperation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "progressIncrementPerOperation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "dxmessaging",
+        "messagepipe",
+        "terminalCallbacksPerOperation",
+        "lifecycleOperationsPerOperation",
+        "progressIncrementPerOperation"
+      ],
+      "additionalProperties": false
+    },
+    "row": {
+      "type": "object",
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        },
+        "publicResultIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "internalTwin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workloadScope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topology": {
+          "$ref": "#/definitions/topology"
+        },
+        "dimensions": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "ordering",
+              "activity",
+              "callbackMutation",
+              "snapshots",
+              "reset",
+              "reentrancy",
+              "exceptions",
+              "diagnostics",
+              "lifecycle",
+              "reclamation",
+              "threadOwnership",
+              "foundResult"
+            ]
+          },
+          "minProperties": 12,
+          "additionalProperties": {
+            "$ref": "#/definitions/dimension"
+          }
+        }
+      },
+      "required": [
+        "supported",
+        "publicResultIds",
+        "internalTwin",
+        "workloadScope",
+        "topology",
+        "dimensions"
+      ],
+      "additionalProperties": false
+    },
+    "contractPair": {
+      "type": "object",
+      "properties": {
+        "dxmessaging": {
+          "$ref": "#/definitions/contract"
+        },
+        "messagepipe": {
+          "$ref": "#/definitions/contract"
+        }
+      },
+      "required": ["dxmessaging", "messagepipe"],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "enum": ["repository", "messagepipe-unity"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packagePath": {
+          "type": "string",
+          "pattern": "^Runtime/.+\\.cs$"
+        }
+      },
+      "required": ["origin", "path", "sha256"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "origin": {
+                "const": "messagepipe-unity"
+              }
+            }
+          },
+          "then": {
+            "required": ["revision", "url", "packagePath"],
+            "properties": {
+              "revision": {},
+              "url": {},
+              "packagePath": {}
+            }
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "logical-test-reference"
+        },
+        "testSourceRef": {
+          "$ref": "#/definitions/sourceRef"
+        },
+        "testMethod": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["kind", "testSourceRef", "testMethod", "scope"],
+      "additionalProperties": false
+    },
+    "catalog": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "dxBridge",
+              "mpBridge",
+              "scenario",
+              "payload",
+              "harness",
+              "topology",
+              "twins",
+              "dxBus",
+              "dxInterface",
+              "dxHandler",
+              "dxToken",
+              "dxFlat",
+              "dxPools",
+              "dxSettings",
+              "reentrantTests",
+              "characterization",
+              "pins",
+              "untargetedPayload",
+              "targetedPayload",
+              "roster",
+              "supported",
+              "mpBroker",
+              "mpKeyed",
+              "mpFreeList",
+              "mpQueue",
+              "mpOptions",
+              "mpDiagnostics",
+              "mpFactory",
+              "mpExtensions",
+              "mpPredicate",
+              "mpContainer",
+              "mpSetup",
+              "mpFilter"
+            ]
+          },
+          "minProperties": 33,
+          "additionalProperties": {
+            "$ref": "#/definitions/source"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "MessagePipeMutationHasPinnedArrayTrace",
+              "DxMessagingMutationHasFrozenSnapshotTrace",
+              "MessagePipeFragmentationRetainsPhysicalCapacity",
+              "MessagePipeHolesRefillInPhysicalSlotOrder",
+              "MessagePipeChurnKeepsSurvivorAndCapacity",
+              "MessagePipeEmptySubscriptionStorageHasPinnedShape",
+              "MessagePipeFinalSubscriptionRemovesOnlyItsKeyedHolder",
+              "MessagePipeCoreDisposalKeepsCapturedCallbacksAndKeyedHolder"
+            ]
+          },
+          "minProperties": 8,
+          "additionalProperties": {
+            "$ref": "#/definitions/evidence"
+          }
+        }
+      },
+      "required": ["sources", "evidence"],
+      "additionalProperties": false
+    },
+    "ledger": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "ledgerId": {
+          "const": "dx-messagepipe-public-v1-draft"
+        },
+        "state": {
+          "const": "draft"
+        },
+        "parityEligible": {
+          "const": false
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "publicRows": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "supportedPairs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requiredDimensions": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dimensionEntries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "meaning": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nativeEvidencePolicy": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "publicRows",
+            "supportedPairs",
+            "requiredDimensions",
+            "dimensionEntries",
+            "meaning",
+            "nativeEvidencePolicy"
+          ],
+          "additionalProperties": false
+        },
+        "identity": {
+          "type": "object",
+          "properties": {
+            "messagePipe": {
+              "type": "object",
+              "properties": {
+                "package": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "const": "1.8.2"
+                },
+                "sourceCommit": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "archiveSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "archiveUrl": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["package", "version", "sourceCommit", "archiveUrl", "archiveSha256"],
+              "additionalProperties": false
+            },
+            "uniTask": {
+              "type": "object",
+              "properties": {
+                "package": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "const": "2.5.11"
+                },
+                "archiveSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "archiveUrl": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["package", "version", "archiveUrl", "archiveSha256"],
+              "additionalProperties": false
+            },
+            "byteDomain": {
+              "const": "Repository source hashes use UTF-8 file bytes with CRLF normalized to LF for checkout portability. MessagePipe source hashes use exact installed package bytes."
+            }
+          },
+          "required": ["messagePipe", "uniTask", "byteDomain"],
+          "additionalProperties": false
+        },
+        "representation": {
+          "const": "shared-catalog-v1"
+        },
+        "evidenceCatalogFile": {
+          "const": "comparison-evidence-catalog-v1.json"
+        },
+        "comparisonBases": {
+          "type": "object",
+          "properties": {
+            "extra": {
+              "type": "string",
+              "minLength": 1
+            },
+            "absent": {
+              "type": "string",
+              "minLength": 1
+            },
+            "matched": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["extra", "absent", "matched"],
+          "additionalProperties": false
+        },
+        "topologyDefaults": {
+          "type": "object",
+          "properties": {
+            "callbackMutation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diagnostics": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allocationWork": {
+              "type": "object",
+              "properties": {
+                "measuredCalls": {
+                  "type": "null"
+                },
+                "measuredBytes": {
+                  "type": "null"
+                },
+                "status": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scope": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "dxmessaging": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "messagepipe": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "measuredCalls",
+                "measuredBytes",
+                "status",
+                "scope",
+                "dxmessaging",
+                "messagepipe"
+              ],
+              "additionalProperties": false
+            },
+            "cleanup": {
+              "type": "object",
+              "properties": {
+                "timing": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "dxmessaging": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "messagepipe": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceRefs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/sourceRef"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              },
+              "required": ["timing", "dxmessaging", "messagepipe", "sourceRefs"],
+              "additionalProperties": false
+            },
+            "contractTests": {
+              "type": "object",
+              "properties": {
+                "sourceRefs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/sourceRef"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                },
+                "methods": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                },
+                "scope": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["sourceRefs", "methods", "scope"],
+              "additionalProperties": false
+            },
+            "dxmessaging": {
+              "type": "object",
+              "properties": {
+                "passing": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownersActive": {
+                  "type": "boolean"
+                },
+                "tokensEnabled": {
+                  "type": "boolean"
+                },
+                "physicalSlots": {
+                  "type": "null"
+                },
+                "physicalStatus": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceRefs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/sourceRef"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "passing",
+                "ownersActive",
+                "tokensEnabled",
+                "physicalSlots",
+                "physicalStatus",
+                "sourceRefs"
+              ],
+              "additionalProperties": false
+            },
+            "messagepipe": {
+              "type": "object",
+              "properties": {
+                "subscriberPriority": {
+                  "type": "null"
+                },
+                "sourceRefs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/sourceRef"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              },
+              "required": ["subscriberPriority", "sourceRefs"],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "callbackMutation",
+            "diagnostics",
+            "allocationWork",
+            "cleanup",
+            "contractTests",
+            "dxmessaging",
+            "messagepipe"
+          ],
+          "additionalProperties": false
+        },
+        "rowDefaults": {
+          "const": {
+            "normalizedMapping": "No normalized workload or result is implemented by this draft. Internal DX topology twins do not replace either public result.",
+            "resultKind": "public-contract",
+            "normalizedResultIds": [],
+            "parityEligible": false
+          }
+        },
+        "contracts": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "ordering",
+              "activity",
+              "callbackMutation",
+              "snapshots",
+              "reset",
+              "reentrancy",
+              "exceptions",
+              "diagnostics",
+              "lifecycle",
+              "reclamation",
+              "threadOwnership",
+              "foundResult",
+              "ordering-unsupported",
+              "activity-unsupported",
+              "callbackMutation-unsupported",
+              "snapshots-unsupported",
+              "reset-unsupported",
+              "reentrancy-unsupported",
+              "exceptions-unsupported",
+              "diagnostics-unsupported",
+              "lifecycle-unsupported",
+              "reclamation-unsupported",
+              "threadOwnership-unsupported",
+              "foundResult-unsupported",
+              "ordering-2",
+              "callbackMutation-2",
+              "exceptions-2",
+              "foundResult-2"
+            ]
+          },
+          "minProperties": 28,
+          "additionalProperties": {
+            "$ref": "#/definitions/contractPair"
+          }
+        },
+        "evidenceScopes": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "physical-order-controls",
+              "source-only",
+              "mutation-controls",
+              "terminal-disposal-control",
+              "subscription-lifecycle-controls",
+              "storage-controls",
+              "mutation-controls-2"
+            ]
+          },
+          "minProperties": 7,
+          "additionalProperties": {
+            "$ref": "#/definitions/evidenceScope"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "unresolved",
+              "unresolved-activity",
+              "unresolved-reset",
+              "unresolved-threadOwnership",
+              "unresolved-KeyedToOne",
+              "unresolved-KeyedToOne-activity",
+              "unresolved-KeyedToOne-reset",
+              "unresolved-KeyedToOne-threadOwnership",
+              "unresolved-Filtered",
+              "unresolved-Filtered-activity",
+              "unresolved-Filtered-reset",
+              "unresolved-Filtered-threadOwnership"
+            ]
+          },
+          "minProperties": 12,
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        },
+        "rows": {
+          "type": "object",
+          "properties": {
+            "GlobalToOne": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_GlobalToOne",
+                        "Comparison_MessagePipe_GlobalToOne"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "UntargetedFlood_OneHandler"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 1,
+                              "interceptors": 0,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 1,
+                            "liveDuringOperation": 1,
+                            "liveAfterOperation": 1
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 1
+                            },
+                            "filterOrders": {
+                              "const": []
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageGlobalToOne"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 1
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "GlobalToMany": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_GlobalToMany",
+                        "Comparison_MessagePipe_GlobalToMany"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "UntargetedFlood_SixteenHandlers_OnePriority"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 16,
+                            "tokens": 16,
+                            "registrations": {
+                              "normal": 16,
+                              "interceptors": 0,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 16,
+                            "liveDuringOperation": 16,
+                            "liveAfterOperation": 16
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 16
+                            },
+                            "filterOrders": {
+                              "const": []
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageGlobalToMany"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 16
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 16
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "KeyedToOne": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_KeyedToOne",
+                        "Comparison_MessagePipe_KeyedToOne"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_KeyedToOne"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleTargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 16,
+                              "interceptors": 0,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0],
+                            "routes": [
+                              41000, 41001, 41002, 41003, 41004, 41005, 41006, 41007, 41008, 41009,
+                              41010, 41011, 41012, 41013, 41014, 41015
+                            ],
+                            "dispatchRoute": 41000,
+                            "liveBefore": 16,
+                            "liveDuringOperation": 16,
+                            "liveAfterOperation": 16
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 16
+                            },
+                            "filterOrders": {
+                              "const": []
+                            },
+                            "keys": {
+                              "const": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+                            },
+                            "publishKey": {
+                              "const": 0
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageKeyedToOne"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 1
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "PriorityOrdered": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": false
+                    },
+                    "publicResultIds": {
+                      "const": ["Comparison_DxMessaging_PriorityOrdered"]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_PriorityOrdered"
+                    },
+                    "dimensions": {
+                      "type": "object",
+                      "properties": {
+                        "ordering": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "activity": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "callbackMutation": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "snapshots": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "reset": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "reentrancy": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "exceptions": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "diagnostics": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "lifecycle": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "reclamation": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "threadOwnership": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        },
+                        "foundResult": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "const": "absent"
+                            },
+                            "side": {
+                              "const": "messagepipe"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 4,
+                              "interceptors": 0,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0, 1, 2, 3],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 4,
+                            "liveDuringOperation": 4,
+                            "liveAfterOperation": 4
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": null
+                            },
+                            "subscriptions": {
+                              "const": null
+                            },
+                            "filterOrders": {
+                              "const": []
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStoragePriorityOrdered"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 4
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 4
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "Filtered": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_Filtered",
+                        "Comparison_MessagePipe_Filtered"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_Filtered"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 1,
+                              "interceptors": 1,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 2,
+                            "liveDuringOperation": 2,
+                            "liveAfterOperation": 2
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 1
+                            },
+                            "filterOrders": {
+                              "const": [-2147483648]
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageGlobalToOne"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 1
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "PostProcess": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_PostProcess",
+                        "Comparison_MessagePipe_PostProcess"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_PostProcess"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 1,
+                              "interceptors": 0,
+                              "postProcessors": 1
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 2,
+                            "liveDuringOperation": 2,
+                            "liveAfterOperation": 2
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 1
+                            },
+                            "filterOrders": {
+                              "const": [0]
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageGlobalToOne"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 1
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "FilteredPostProcess": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_FilteredPostProcess",
+                        "Comparison_MessagePipe_FilteredPostProcess"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_FilteredPostProcess"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 1,
+                              "interceptors": 1,
+                              "postProcessors": 1
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 3,
+                            "liveDuringOperation": 3,
+                            "liveAfterOperation": 3
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 1
+                            },
+                            "filterOrders": {
+                              "const": [-2147483648, 0]
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageGlobalToOne"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 1
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "SubUnsub": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_SubUnsub",
+                        "Comparison_MessagePipe_SubUnsub"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_SubUnsub"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "SimpleUntargetedMessage",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 0,
+                              "interceptors": 0,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 0,
+                            "liveDuringOperation": 1,
+                            "liveAfterOperation": 0
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "System.Int32"
+                            },
+                            "subscriptions": {
+                              "const": 0
+                            },
+                            "filterOrders": {
+                              "const": []
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageSubUnsub"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 0
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 1
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "StructNoBox": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/row"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "const": true
+                    },
+                    "publicResultIds": {
+                      "const": [
+                        "Comparison_DxMessaging_StructNoBox",
+                        "Comparison_MessagePipe_StructNoBox"
+                      ]
+                    },
+                    "internalTwin": {
+                      "const": "InternalComparisonTwin_StructNoBox"
+                    },
+                    "topology": {
+                      "type": "object",
+                      "properties": {
+                        "dxmessaging": {
+                          "const": {
+                            "payloadType": "ComparisonStructPayload",
+                            "owners": 1,
+                            "tokens": 1,
+                            "registrations": {
+                              "normal": 1,
+                              "interceptors": 0,
+                              "postProcessors": 0
+                            },
+                            "priorities": [0],
+                            "routes": [],
+                            "dispatchRoute": null,
+                            "liveBefore": 1,
+                            "liveDuringOperation": 1,
+                            "liveAfterOperation": 1
+                          }
+                        },
+                        "messagepipe": {
+                          "type": "object",
+                          "properties": {
+                            "payloadType": {
+                              "const": "ComparisonStructPayload"
+                            },
+                            "subscriptions": {
+                              "const": 1
+                            },
+                            "filterOrders": {
+                              "const": []
+                            },
+                            "keys": {
+                              "const": []
+                            },
+                            "publishKey": {
+                              "const": null
+                            },
+                            "storage": {
+                              "$ref": "#/definitions/mpStorageGlobalToOne"
+                            }
+                          }
+                        },
+                        "terminalCallbacksPerOperation": {
+                          "const": 1
+                        },
+                        "lifecycleOperationsPerOperation": {
+                          "const": 0
+                        },
+                        "progressIncrementPerOperation": {
+                          "const": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "GlobalToOne",
+            "GlobalToMany",
+            "KeyedToOne",
+            "PriorityOrdered",
+            "Filtered",
+            "PostProcess",
+            "FilteredPostProcess",
+            "SubUnsub",
+            "StructNoBox"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "ledgerId",
+        "state",
+        "parityEligible",
+        "scope",
+        "identity",
+        "representation",
+        "evidenceCatalogFile",
+        "comparisonBases",
+        "topologyDefaults",
+        "rowDefaults",
+        "contracts",
+        "evidenceScopes",
+        "limits",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "mpStorageGlobalToOne": {
+      "type": "object",
+      "properties": {
+        "liveSubscriptions": {
+          "const": 1
+        },
+        "physicalSlots": {
+          "const": 4
+        },
+        "holders": {
+          "const": 1
+        },
+        "basis": {
+          "const": "source-deduced-fresh-public-setup"
+        }
+      }
+    },
+    "mpStorageGlobalToMany": {
+      "type": "object",
+      "properties": {
+        "liveSubscriptions": {
+          "const": 16
+        },
+        "physicalSlots": {
+          "const": 16
+        },
+        "holders": {
+          "const": 1
+        },
+        "basis": {
+          "const": "source-deduced-fresh-public-setup"
+        }
+      }
+    },
+    "mpStorageKeyedToOne": {
+      "type": "object",
+      "properties": {
+        "liveSubscriptions": {
+          "const": 16
+        },
+        "physicalSlots": {
+          "const": 64
+        },
+        "holders": {
+          "const": 16
+        },
+        "basis": {
+          "const": "source-deduced-fresh-public-setup"
+        }
+      }
+    },
+    "mpStoragePriorityOrdered": {
+      "type": "object",
+      "properties": {
+        "liveSubscriptions": {
+          "const": null
+        },
+        "physicalSlots": {
+          "const": null
+        },
+        "holders": {
+          "const": null
+        },
+        "basis": {
+          "const": "unsupported"
+        }
+      }
+    },
+    "mpStorageSubUnsub": {
+      "type": "object",
+      "properties": {
+        "liveSubscriptions": {
+          "const": 0
+        },
+        "physicalSlots": {
+          "const": 4
+        },
+        "holders": {
+          "const": 1
+        },
+        "basis": {
+          "const": "source-deduced-fresh-public-setup"
+        }
+      }
+    }
+  }
+}

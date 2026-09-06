@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Diagnostics;
+    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using NUnit.Framework;
@@ -28,10 +29,11 @@ namespace DxMessaging.Tests.Runtime.Core
     /// <item><description><c>Performance</c> - throughput / latency benchmarks.</description></item>
     /// <item><description><c>Allocation</c> - the zero-GC matrix.</description></item>
     /// <item><description><c>MemoryReclaim</c> - explicit trim and idle-sweep reclamation tests.</description></item>
-    /// <item><description><c>UnityRuntime</c> - Unity-only runtime lifecycle tests.</description></item>
+    /// <item><description><c>UnityRuntime</c> - lifecycle tests included in default PlayMode and standalone runs.</description></item>
     /// </list>
-    /// CI runs the default suite (tests outside the gated categories, including
-    /// this guard rail) on every PR; the gated categories are opt-in.
+    /// CI runs this guard rail and the runtime lifecycle cases on every PR.
+    /// Stress, Performance, Allocation, and MemoryReclaim have separate budgets;
+    /// observing UnityRuntime does not exempt the default suite wall clock.
     /// </remarks>
     public sealed class SuiteSpeedBudgetTest : MessagingTestBase
     {
@@ -60,6 +62,51 @@ namespace DxMessaging.Tests.Runtime.Core
         /// gated Performance/PerfBench benchmark suite.
         /// </summary>
         private static readonly TimeSpan RepresentativeHardBudget = TimeSpan.FromSeconds(30);
+
+        [TestCase("Stress", true)]
+        [TestCase("Performance", true)]
+        [TestCase("Allocation", true)]
+        [TestCase("MemoryReclaim", true)]
+        [TestCase("sTrEsS", true)]
+        [TestCase("UnityRuntime", false)]
+        [TestCase("unityruntime", false)]
+        [TestCase("Stressful", false)]
+        [TestCase("", false)]
+        [TestCase(null, false)]
+        public void CategoryObservationPreservesDefaultSuiteBudget(string category, bool gated)
+        {
+            FieldInfo detected = typeof(SuiteWallClockBudgetTest).GetField(
+                "_gatedCategoryDetected",
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+            Assert.That(detected, Is.Not.Null, "The suite gate observation field must exist.");
+            bool original = (bool)detected.GetValue(null);
+            try
+            {
+                detected.SetValue(null, false);
+                SuiteWallClockBudgetTest.NoteGatedCategoryObserved(category);
+                Assert.That(
+                    (bool)detected.GetValue(null),
+                    Is.EqualTo(gated),
+                    "Category '{0}' must {1} the default-suite wall-clock assertion.",
+                    category ?? "<null>",
+                    gated ? "exempt" : "retain"
+                );
+
+                SuiteWallClockBudgetTest.NoteGatedCategoryObserved(null);
+                Assert.That(
+                    (bool)detected.GetValue(null),
+                    Is.EqualTo(gated),
+                    "An uncategorized test must preserve the previously observed gate state for '{0}'.",
+                    category ?? "<null>"
+                );
+            }
+            finally
+            {
+                // The real assembly timer must retain categories observed before this test.
+                detected.SetValue(null, original);
+            }
+        }
 
         /// <summary>
         /// Measures a representative default-suite registration / emit /

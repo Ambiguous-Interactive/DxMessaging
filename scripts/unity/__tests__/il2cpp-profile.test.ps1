@@ -74,6 +74,9 @@ try {
         throw "run-ci-tests.ps1 has parse errors: $($parseErrors.Message -join '; ')"
     }
     foreach ($name in @(
+        'Get-ComparisonSourceEvidence',
+        'Get-StandalonePlayerManifest',
+        'Write-JsonArtifact',
         'New-ConfiguratorSource',
         'New-StandaloneBuildModifierSource',
         'New-StandaloneTestCallbackSource'
@@ -103,6 +106,10 @@ try {
     $buildModifierSource = New-StandaloneBuildModifierSource -CanonicalProfileId $profile.profileId
     Assert-That 'the configurator pins OptimizeSpeed' (
         $generatedSources[0].Contains('Il2CppCodeGeneration.OptimizeSpeed')
+    )
+    Assert-That 'configure and build observe Unity registered package resolution' (
+        $generatedSources[0].Contains('PackageInfo.GetAllRegisteredPackages()') -and
+        $buildModifierSource.Contains('DxmCiTestConfigurator.WriteComparisonPackageResolution();')
     )
     Assert-That 'the build evidence reads final BuildReport options' (
         $buildModifierSource.Contains('report.summary.options')
@@ -317,6 +324,98 @@ try {
     [System.IO.File]::WriteAllText($badProfilePath, '{')
     Assert-Fails 'invalid canonical profile JSON' {
         & $validatorPath -ProfilePath $badProfilePath -ProfileOnly
+    }
+
+    $sourceFixture = Join-Path $fixtureRoot 'comparison-sources'
+    $packageFixture = Join-Path $fixtureRoot 'resolved-messagepipe'
+    foreach ($directory in @('scripts/unity', '.github', 'Runtime')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $sourceFixture $directory) | Out-Null
+    }
+    New-Item -ItemType Directory -Force -Path (Join-Path $packageFixture 'Runtime') | Out-Null
+    $resolvedPackagesPath = Join-Path $fixtureRoot 'resolved-packages.json'
+    $ledgerFixturePath = Join-Path $sourceFixture 'scripts/unity/comparison-semantic-ledger-v1.json'
+    $catalogFixturePath = Join-Path $sourceFixture 'scripts/unity/comparison-evidence-catalog-v1.json'
+    $packageSourcePath = Join-Path $packageFixture 'Runtime/Broker.cs'
+    $repositorySourcePath = Join-Path $sourceFixture 'Runtime/Contract.cs'
+    $contractBytes = [System.Text.Encoding]::UTF8.GetBytes("source contract`n")
+    [System.IO.File]::WriteAllBytes($packageSourcePath, $contractBytes)
+    $contractSha256 = (Get-FileHash -LiteralPath $packageSourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText($repositorySourcePath, "source contract`r`n")
+    [System.IO.File]::WriteAllText((Join-Path $sourceFixture 'scripts/unity/comparison-contract-v1.schema.json'), '{}')
+    Write-TestJson -Path (Join-Path $packageFixture 'package.json') -Value @{ name = 'com.cysharp.messagepipe'; version = '1.8.2' }
+    Write-TestJson -Path (Join-Path $sourceFixture '.github/comparison-packages.json') -Value @{ packages = @{ 'com.cysharp.messagepipe' = '1.8.2' } }
+    Write-TestJson -Path $ledgerFixturePath -Value @{ identity = @{ messagePipe = @{ version = '1.8.2' }; byteDomain = 'test bytes' } }
+    $catalogFixture = @{ sources = @{
+        dxToken = @{ origin = 'repository'; path = 'Runtime/Contract.cs'; sha256 = $contractSha256 }
+        package = @{ origin = 'messagepipe-unity'; packagePath = 'Runtime/Broker.cs'; sha256 = $contractSha256 }
+    } }
+    Write-TestJson -Path $catalogFixturePath -Value $catalogFixture
+    $resolvedFixture = @{ packages = @(@{ name = 'com.cysharp.messagepipe'; version = '1.8.2'; resolvedPath = $packageFixture }) }
+    Write-TestJson -Path $resolvedPackagesPath -Value $resolvedFixture
+    $sourceEvidence = Get-ComparisonSourceEvidence -RepoRoot $sourceFixture -ResolvedPackagesPath $resolvedPackagesPath
+    Assert-That 'actual resolved package bytes and portable repository CRLF hash pass' ($sourceEvidence.sources.Count -eq 2)
+    foreach ($expected in @(
+        @('dxToken', 'Runtime/Contract.cs', $repositorySourcePath),
+        @('package', 'Runtime/Broker.cs', $packageSourcePath)
+    )) {
+        $sourceRecords = @($sourceEvidence.sources | Where-Object { $_.sourceRef -ceq $expected[0] })
+        Assert-That "source reference $($expected[0]) survives exactly once" ($sourceRecords.Count -eq 1)
+        Assert-That "source reference $($expected[0]) retains path and both byte domains" (
+            $sourceRecords[0].path -ceq $expected[1] -and
+            $sourceRecords[0].sha256 -ceq $contractSha256 -and
+            $sourceRecords[0].compilerInputSha256 -ceq (Get-FileHash -LiteralPath $expected[2] -Algorithm SHA256).Hash.ToLowerInvariant()
+        )
+    }
+    Assert-That 'source evidence binds its schema and catalog' ($sourceEvidence.schemaSha256.Length -eq 64 -and $sourceEvidence.catalogSha256.Length -eq 64)
+    $artifactFixture = Join-Path $fixtureRoot 'comparison-artifacts'
+    $playerFixture = Join-Path $fixtureRoot 'player/DxmTestPlayer_Data/il2cpp_data/Metadata'
+    New-Item -ItemType Directory -Force -Path $artifactFixture, $playerFixture | Out-Null
+    $playerExecutable = Join-Path $fixtureRoot 'player/DxmTestPlayer.exe'
+    # These files are hashed by the real manifest producer, never executed.
+    foreach ($file in @($playerExecutable, (Join-Path $fixtureRoot 'player/GameAssembly.dll'), (Join-Path $playerFixture 'global-metadata.dat'))) {
+        [System.IO.File]::WriteAllBytes($file, $contractBytes)
+    }
+    $sourceEvidence['playerDirectoryManifest'] = Get-StandalonePlayerManifest -ExecutablePath $playerExecutable
+    $resultFixturePath = Join-Path $artifactFixture 'results.xml'
+    $logFixturePath = Join-Path $artifactFixture 'player.log'
+    [System.IO.File]::WriteAllText($resultFixturePath, '<test-run total="1" passed="1" failed="0" skipped="0"><test-case name="comparison" result="Passed" /></test-run>')
+    [System.IO.File]::WriteAllText($logFixturePath, "Comparison fixture completed.`n")
+    $sourceEvidence['runs'] = @(@{
+        runIndex = 1
+        unredactedResultsSha256 = (Get-FileHash -LiteralPath $resultFixturePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        unredactedPlayerLogSha256 = (Get-FileHash -LiteralPath $logFixturePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    })
+    $sourceEvidencePath = Join-Path $artifactFixture 'comparison-source-evidence.json'
+    Write-JsonArtifact -Path $sourceEvidencePath -Value $sourceEvidence
+    $evidenceBefore = (Get-FileHash -LiteralPath $sourceEvidencePath -Algorithm SHA256).Hash
+    $redactorPath = Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js'
+    & node $redactorPath $artifactFixture
+    Assert-That 'complete produced comparison evidence passes production redaction' ($LASTEXITCODE -eq 0)
+    Assert-That 'public source, player and run identities survive byte-for-byte' (
+        (Get-FileHash -LiteralPath $sourceEvidencePath -Algorithm SHA256).Hash -ceq $evidenceBefore
+    )
+    $sourceEvidence['accessToken'] = @{ nested = 'must not be accepted as a credential container' }
+    Write-JsonArtifact -Path $sourceEvidencePath -Value $sourceEvidence
+    & node $redactorPath $artifactFixture
+    Assert-That 'true sensitive containers remain rejected' ($LASTEXITCODE -eq 2)
+    foreach ($mutation in @('byte', 'missing', 'case', 'version', 'duplicate', 'hash')) {
+        [System.IO.File]::WriteAllBytes($packageSourcePath, $contractBytes)
+        $catalogFixture.sources.package.packagePath = 'Runtime/Broker.cs'
+        $catalogFixture.sources.package.sha256 = $contractSha256
+        $resolvedFixture.packages = @(@{ name = 'com.cysharp.messagepipe'; version = '1.8.2'; resolvedPath = $packageFixture })
+        switch ($mutation) {
+            'byte' { [System.IO.File]::AppendAllText($packageSourcePath, 'x') }
+            'missing' { Remove-Item -LiteralPath $packageSourcePath }
+            'case' { $catalogFixture.sources.package.packagePath = 'Runtime/broker.cs' }
+            'version' { $resolvedFixture.packages[0].version = '1.8.1' }
+            'duplicate' { $resolvedFixture.packages += $resolvedFixture.packages[0] }
+            'hash' { $catalogFixture.sources.package.sha256 = '0' * 64 }
+        }
+        Write-TestJson -Path $catalogFixturePath -Value $catalogFixture
+        Write-TestJson -Path $resolvedPackagesPath -Value $resolvedFixture
+        Assert-Fails "comparison package rejects $mutation drift" -ExpectedMessage 'Comparison source evidence' {
+            Get-ComparisonSourceEvidence -RepoRoot $sourceFixture -ResolvedPackagesPath $resolvedPackagesPath
+        }
     }
 
     Write-Host 'IL2CPP profile contract tests passed.'

@@ -76,10 +76,11 @@ not already covered, extend the appropriate fixture:
 1. Track every spawned `GameObject` via `_spawned.Add(host)`. The
    `MessagingTestBase` cleanup loop relies on this list; the rule is pinned
    by `TestAttributeContractTests.FixturesUsingMessagingTestBaseUseSpawnedCleanupPattern`.
-1. Gate scene-load / scene-unload tests behind `[Category("UnityRuntime")]`.
-   These tests yield frames for async ops to settle and add wall-clock to
-   the run; the suite-wide budget in `SuiteWallClockBudgetTest.cs` skips
-   the default-suite assertion when a UnityRuntime test is observed.
+1. Group scene-load / scene-unload tests under `[Category("UnityRuntime")]`.
+   Fast lifecycle tests run in the normal PlayMode and Standalone correctness
+   legs; EditMode excludes them. Yield only for the actual asynchronous operation.
+   The runtime suite budget includes these tests and remains enforced; the category
+   does not exempt a run from its wall-clock limit.
 1. When the test creates and tears down registrations in a small region,
    wrap the region in `using (LeakWatcher.Watch(...))`. The watcher reads
    every public counter on `IMessageBus`; new counter kinds added to the

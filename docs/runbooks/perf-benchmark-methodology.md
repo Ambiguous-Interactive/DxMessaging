@@ -494,12 +494,33 @@ warm-up plus all timed and probe operations, then verifies cleanup. Results reta
 the `InternalComparisonTwin_` prefix; they cannot replace a public `Comparison_` row.
 These are exact public-topology workloads, not normalized lower bounds.
 
-This covers the nine public comparison topologies. MessagePipe fragmentation,
-callback-time mutation characterization, targeted/broadcast/without-context and
-global-accept-all sibling experiments, source pins, and the complete versioned
-semantic ledger remain tracked by
+The [versioned semantic ledger](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-semantic-ledger-v1.json)
+classifies twelve dimensions for each of the nine public rows. It preserves the public
+result identifiers, exact internal twin names, topology, and unsupported MessagePipe
+priority row. The [contract catalog](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-evidence-catalog-v1.json)
+records source hashes and logical test references. These references do not assert retained
+test execution. Every row remains ineligible for a parity claim, and normalized result
+mappings stay empty. Unmatched dimensions prevent cost attribution.
+
+The existing performance registry validates both files against the
+[shared JSON schema](https://github.com/Ambiguous-Interactive/DxMessaging/blob/main/scripts/unity/comparison-contract-v1.schema.json) before extraction,
+rendering, or paired reduction. Missing dimensions, source references, and numerical topology
+drift fail validation. Standalone comparison builds also record Unity's resolved MessagePipe
+package, check its version and twelve declared source files, and check the twenty-one declared
+repository files before the player build. Repository hashes normalize CRLF to LF; the evidence
+also retains exact compiler-input hashes. Package hashes use exact installed bytes. The runner
+checks sources again after the build and binds `comparison-source-evidence.json` to the player
+directory manifest and each validated result file before artifact redaction. Hashes labeled
+`unredacted` describe the original bytes; they do not authenticate a later sanitized upload.
+Post-redaction content binding remains part of the evidence-retention work. This checks the
+declared files, not the complete compiled package or its stripped generic closures. It adds
+no timing windows or Unity launches. Repeated launches reuse the same prelaunch player
+manifest; ordinary comparison builds add one directory hash pass.
+
+Retained native semantic results, targeted/broadcast/without-context and global-accept-all
+sibling experiments, and source-bound allocation/lifecycle evidence remain tracked by
 [comparison audit #507](https://github.com/Ambiguous-Interactive/DxMessaging/issues/507).
-No MessagePipe parity verdict follows from topology coverage alone.
+No MessagePipe parity verdict follows from topology or schema coverage alone.
 
 **Fresh-state guarantee.** CI builds the comparison matrix into a dedicated player;
 the internal benchmark player, including the 131072-cycle and teardown rows,

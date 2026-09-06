@@ -32,9 +32,32 @@ and `standalone` as separate Unity invocations. Each mode uses a separate
 runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, result
 verification, and artifact. The
 correctness legs exclude the heavy categories
-(`Stress;Performance;Allocation;MemoryReclaim;UnityRuntime;PerfBench;PerfGate;PerfBaseline`),
+(`Stress;Performance;Allocation;MemoryReclaim;PerfBench;PerfGate;PerfBaseline`),
 which run in their own dedicated scopes so a perf change cannot hide in the
-correctness number.
+correctness number. PlayMode and Standalone include the fast `UnityRuntime`
+lifecycle tests, including scene unload, persistence, and application quit.
+EditMode keeps `UnityRuntime` excluded because these tests need a running player.
+The existing runtime suite timer includes these tests; they add no Unity invocation
+or benchmark timing window.
+
+## Tooling and artifact overhead
+
+Measure the complete job, including setup, imports, builds, cleanup, redaction, and uploads.
+Record queue time separately. NUnit duration alone does not explain a slow job.
+
+Licensed jobs install npm dependencies before acquiring the organization lock. The install
+prefix is `.artifacts/node-tooling`; `NODE_PATH` lets the existing CommonJS scripts resolve
+those dependencies. Keep the prefix hidden from Unity. A root `node_modules` directory
+becomes part of the local UPM package's asset scan. In the Unity 2022 regression tracked by
+[issue #531](https://github.com/Ambiguous-Interactive/DxMessaging/issues/531), each mode imported
+7,720 assets instead of 39. EditMode initial refresh increased from 13.561 to 41.388 seconds,
+while script compilation stayed near 11 seconds.
+
+Keep artifact validation and redaction enabled. Measure changes against the same retained
+files and compare output bytes, findings, and rejection decisions. Include adversarial
+replacement cases: already-sanitized CI artifacts alone cannot prove credential removal.
+Use the full Windows job to assess the five-minute correctness-job target; a local redactor
+benchmark measures only its own processing cost.
 
 ## The levers
 
@@ -120,6 +143,10 @@ SECOND, persistent run).
 
 ## Drift-guards
 
+- `scripts/__tests__/ci-aggregate-workflow.test.js` parses the correctness workflow
+  and checks the category filter on each mode's actual run step. PlayMode and
+  Standalone must include `UnityRuntime`; every mode must keep the heavy-category
+  exclusions above.
 - `scripts/__tests__/run-ci-tests-enter-play-mode.test.js` (Node) asserts
   `run-ci-tests.ps1` emits the reload-disable into each CI ephemeral project. It
   guards the runner emit rather than `.unity-test-project` (whose `ProjectSettings`
