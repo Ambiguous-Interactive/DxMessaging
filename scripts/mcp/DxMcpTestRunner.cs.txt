@@ -17,6 +17,7 @@ using UnityEngine.SceneManagement;
 public static class DxMcpTestRunner
 {
     private const string Prefix = "DxMcpTestRunner.";
+    private const string LegacyObserverKey = "DxMcpObservedTestRunner.ResultPath";
     private const string StatePath =
         "Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json";
     private static readonly TestRunnerApi Api;
@@ -43,8 +44,9 @@ public static class DxMcpTestRunner
     {
         if (
             !string.IsNullOrEmpty(Get("ResultPath"))
+            || !string.IsNullOrEmpty(Get("OwnedResultPath"))
             || !string.IsNullOrEmpty(
-                SessionState.GetString("DxMcpObservedTestRunner.ResultPath", "")
+                SessionState.GetString(LegacyObserverKey, "")
             )
         )
         {
@@ -81,6 +83,7 @@ public static class DxMcpTestRunner
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         // Claim the path before Execute: callbacks can fire before Execute returns its GUID.
         Set("ResultPath", path);
+        Set("OwnedResultPath", path);
         Set("InitialScenes", JsonUtility.ToJson(state));
         Set("Errors", "");
         Set("RunGuid", "");
@@ -121,6 +124,13 @@ public static class DxMcpTestRunner
 
     private static string Get(string key) => SessionState.GetString(Prefix + key, "");
 
+    private static string GetOwnedResultPath()
+    {
+        // Legacy runners used ResultPath alone. Never claim their unfinished evidence.
+        string path = Get("ResultPath");
+        return !string.IsNullOrEmpty(path) && path == Get("OwnedResultPath") ? path : "";
+    }
+
     private static void Set(string key, string value) =>
         SessionState.SetString(Prefix + key, value);
 
@@ -157,6 +167,8 @@ public static class DxMcpTestRunner
             scenes = scenes,
             runGuid = Get("RunGuid"),
             resultPath = Get("ResultPath"),
+            ownedResultPath = Get("OwnedResultPath"),
+            legacyObserverResultPath = SessionState.GetString(LegacyObserverKey, ""),
             frameworkErrors = Get("Errors"),
         };
     }
@@ -190,7 +202,7 @@ public static class DxMcpTestRunner
 
     private static void Observe()
     {
-        string path = Get("ResultPath");
+        string path = GetOwnedResultPath();
         try
         {
             // No refresh, scene mutation, cancellation, retry, or new test launch.
@@ -290,6 +302,7 @@ public static class DxMcpTestRunner
                 string key in new[]
                 {
                     "ResultPath",
+                    "OwnedResultPath",
                     "RunGuid",
                     "InitialScenes",
                     "Errors",
@@ -326,7 +339,7 @@ public static class DxMcpTestRunner
 
     private static void RecordError(string message)
     {
-        string path = Get("ResultPath");
+        string path = GetOwnedResultPath();
         if (string.IsNullOrEmpty(path))
         {
             return;
@@ -380,7 +393,7 @@ public static class DxMcpTestRunner
 
         public void RunFinished(ITestResultAdaptor result)
         {
-            string path = Get("ResultPath");
+            string path = GetOwnedResultPath();
             if (string.IsNullOrEmpty(path))
             {
                 return;
@@ -485,6 +498,8 @@ public static class DxMcpTestRunner
         public SceneState[] scenes = Array.Empty<SceneState>();
         public string runGuid = "";
         public string resultPath = "";
+        public string ownedResultPath = "";
+        public string legacyObserverResultPath = "";
         public string frameworkErrors = "";
     }
 

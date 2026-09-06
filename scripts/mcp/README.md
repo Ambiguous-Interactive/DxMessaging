@@ -167,10 +167,20 @@ when replacing an owned script. Refresh through `Assets/Refresh` only after the 
 verify the new assembly and unchanged scenes. Remove an old `DxMcpObservedTestRunner` only through
 the same reviewed flow after its ownership scope is empty.
 
+Inspect the existing `DxMcpTestRunner.ResultPath`, `DxMcpTestRunner.OwnedResultPath`, and
+`DxMcpObservedTestRunner.ResultPath` SessionState keys before replacement. Let an active run
+finish through its installed runner. If a legacy run is terminal and cannot clear its ownership,
+preserve its artifacts and record passive framework inactivity plus saved, clean scene state.
+Retire only the identified legacy key through the reviewed host recovery flow after checking
+that evidence; never erase a key merely to force a new run. The maintained callbacks require
+matching result and owner paths, so they cannot overwrite evidence left by an older runner or
+inconsistent ownership metadata.
+
 The runner writes a passive snapshot once per second to
 `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json`. Require a fresh
 `observedUtc`, no `observationError`, inactive framework/editor flags, `mainStage: true`, an empty
-`resultPath`, and saved, clean scenes before the next refresh or run. Compare the host clock when
+`resultPath`, `ownedResultPath`, and `legacyObserverResultPath`, and saved, clean scenes before
+the next refresh or run. Compare the host clock when
 checking freshness. A missing, stale, or temporarily malformed snapshot proves no state. Read it
 again without invoking an asset-refreshing tool; never launch another test because observation
 timed out.

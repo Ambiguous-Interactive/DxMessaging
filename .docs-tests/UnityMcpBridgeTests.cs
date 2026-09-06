@@ -76,6 +76,76 @@ internal sealed class UnityMcpBridgeTests
         Assert.That(TestRunnerApi.Executions, Is.EqualTo(1));
     }
 
+    [TestCase("observe")]
+    [TestCase("error")]
+    [TestCase("result")]
+    public void UnmarkedLegacyOwnershipPreservesEvidence(string callback)
+    {
+        SessionState.SetString("DxMcpTestRunner.ResultPath", _path);
+        Dictionary<string, string> evidence = new()
+        {
+            [_path] = "legacy result",
+            [_path + ".status"] = "running",
+            [_path + ".errors.log"] = "legacy error",
+        };
+        foreach ((string path, string content) in evidence)
+        {
+            File.WriteAllText(path, content);
+        }
+        // Initialize callbacks while proving the unresolved legacy owner blocks Run.
+        Assert.Throws<InvalidOperationException>(() => Run());
+        switch (callback)
+        {
+            case "observe":
+                EditorApplication.Tick();
+                break;
+            case "error":
+                TestRunnerApi.Callbacks.OnError("unrelated framework error");
+                break;
+            case "result":
+                TestRunnerApi.Callbacks.RunFinished(new Result());
+                break;
+        }
+        foreach ((string path, string content) in evidence)
+        {
+            Assert.That(File.ReadAllText(path), Is.EqualTo(content), callback + ": " + path);
+        }
+        Assert.That(Directory.GetFiles(_directory), Is.EquivalentTo(evidence.Keys), callback);
+        Assert.That(
+            SessionState.GetString("DxMcpTestRunner.ResultPath", ""),
+            Is.EqualTo(_path),
+            callback
+        );
+        Assert.That(TestRunnerApi.Executions, Is.Zero);
+    }
+
+    [TestCase("ownedResultPath", false)]
+    [TestCase("ownedResultPath", true)]
+    [TestCase("legacyObserverResultPath", false)]
+    public void IncompleteOwnershipRemainsVisibleAndBlocksNewRuns(string field, bool hasRawPath)
+    {
+        string key =
+            field == "ownedResultPath"
+                ? "DxMcpTestRunner.OwnedResultPath"
+                : "DxMcpObservedTestRunner.ResultPath";
+        SessionState.SetString(key, _path);
+        if (hasRawPath)
+        {
+            SessionState.SetString("DxMcpTestRunner.ResultPath", _path + ".different");
+        }
+        Assert.Throws<InvalidOperationException>(() => Run());
+        EditorApplication.timeSinceStartup = double.MaxValue;
+        EditorApplication.Tick();
+        string snapshot = File.ReadAllText(
+            "Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json"
+        );
+        Assert.That(snapshot, Does.Contain(field));
+        using JsonDocument state = JsonDocument.Parse(snapshot);
+        Assert.That(state.RootElement.GetProperty(field).GetString(), Is.EqualTo(_path));
+        Assert.That(SessionState.GetString(key, ""), Is.EqualTo(_path));
+        Assert.That(TestRunnerApi.Executions, Is.Zero);
+    }
+
     [TestCase("active")]
     [TestCase("compiling")]
     [TestCase("updating")]
