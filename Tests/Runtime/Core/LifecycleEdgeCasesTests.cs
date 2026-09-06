@@ -43,6 +43,30 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed class LifecycleEdgeCasesTests : MessagingTestBase
     {
         private const int PrefabPoolingCycleCount = 100;
+        private Scene _ownedScene;
+        private AsyncOperation _sceneUnload;
+
+        [UnityTearDown]
+        public IEnumerator UnloadOwnedScene()
+        {
+            // Retain an in-progress request when an assertion interrupts either scene test.
+            // Only this fixture's scene is eligible for cleanup; the runner scene stays loaded.
+            if (_sceneUnload == null && _ownedScene.IsValid() && _ownedScene.isLoaded)
+            {
+                _sceneUnload = SceneManager.UnloadSceneAsync(_ownedScene);
+            }
+            if (_sceneUnload != null && !_sceneUnload.isDone)
+            {
+                yield return _sceneUnload;
+            }
+            Assert.That(
+                !_ownedScene.IsValid() || !_ownedScene.isLoaded,
+                Is.True,
+                "The fixture's owned scene must finish unloading during cleanup."
+            );
+            _sceneUnload = null;
+            _ownedScene = default;
+        }
 
         [TestCase("DispatchLease", "_dispatchDepth", true)]
         [TestCase("DispatchLease", "_dispatchDepth", false)]
@@ -700,6 +724,11 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Only a host moved out of its owning scene by persistence survives that scene's unload.</summary>
+        /// <remarks>
+        /// On 2026-09-06, the test was corrected to unload the hosts' actual scene.
+        /// The old setup unloaded an unrelated empty scene and passed without persistence.
+        /// </remarks>
         [UnityTest]
         [Category("UnityRuntime")]
         public IEnumerator SceneTransitionWithDontDestroyOnLoad(
@@ -707,69 +736,119 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // The active scene at test start is the test runner's scene. We
-            // mark a freshly created GameObject as DontDestroyOnLoad so it
-            // survives a scene unload, then load an empty scene additively
-            // to simulate a transition without touching the test runner
-            // scene. This avoids destroying the test runner's GameObjects
-            // (which would terminate the test prematurely).
-            GameObject host = new(
-                nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind,
-                typeof(EmptyMessageAwareComponent)
-            );
-            UnityEngine.Object.DontDestroyOnLoad(host);
-            _spawned.Add(host);
-
-            EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
-            MessageRegistrationToken token = GetToken(component);
-            InstanceId hostId = host;
-
-            int handlerCount = 0;
-            MessageRegistrationHandle handle = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => ++handlerCount
-            );
-
-            ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                1,
-                handlerCount,
-                "[{0}] DDOL handler must receive its first emission.",
-                scenario.Kind
-            );
-
-            // Create + unload an empty scene additively; the host should
-            // survive thanks to DontDestroyOnLoad.
-            Scene transient = SceneManager.CreateScene(
-                nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Transient"
-            );
-            yield return null;
-
-            AsyncOperation unload = SceneManager.UnloadSceneAsync(transient);
-            while (unload != null && !unload.isDone)
+            using LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName);
+            MessageRegistrationToken persistentToken = null;
+            MessageRegistrationToken ordinaryToken = null;
+            try
             {
+                Scene transient = _ownedScene = SceneManager.CreateScene(
+                    nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Transient"
+                );
                 yield return null;
+
+                GameObject persistent = new(
+                    nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Persistent",
+                    typeof(EmptyMessageAwareComponent)
+                );
+                _spawned.Add(persistent);
+                persistentToken = GetToken(persistent.GetComponent<EmptyMessageAwareComponent>());
+                SceneManager.MoveGameObjectToScene(persistent, transient);
+                GameObject ordinary = new(
+                    nameof(SceneTransitionWithDontDestroyOnLoad) + scenario.Kind + "-Ordinary",
+                    typeof(EmptyMessageAwareComponent)
+                );
+                _spawned.Add(ordinary);
+                ordinaryToken = GetToken(ordinary.GetComponent<EmptyMessageAwareComponent>());
+                SceneManager.MoveGameObjectToScene(ordinary, transient);
+                Assert.That(
+                    persistent.scene,
+                    Is.EqualTo(transient),
+                    "[{0}] Persistent host must start in the scene being unloaded.",
+                    scenario.Kind
+                );
+                Assert.That(
+                    ordinary.scene,
+                    Is.EqualTo(transient),
+                    "[{0}] Ordinary control must start in the scene being unloaded.",
+                    scenario.Kind
+                );
+                UnityEngine.Object.DontDestroyOnLoad(persistent);
+
+                InstanceId route = persistent;
+                int persistentCalls = 0;
+                int ordinaryCalls = 0;
+                _ = ScenarioCallbacks.RegisterCountingHandler(
+                    scenario,
+                    persistentToken,
+                    route,
+                    () => ++persistentCalls
+                );
+                _ = ScenarioCallbacks.RegisterCountingHandler(
+                    scenario,
+                    ordinaryToken,
+                    route,
+                    () => ++ordinaryCalls
+                );
+                ScenarioCallbacks.EmitForKind(scenario, route);
+                Assert.That(
+                    persistentCalls,
+                    Is.EqualTo(1),
+                    "[{0}] Persistent host must receive the initial emission.",
+                    scenario.Kind
+                );
+                Assert.That(
+                    ordinaryCalls,
+                    Is.EqualTo(1),
+                    "[{0}] Ordinary control must receive the same initial emission.",
+                    scenario.Kind
+                );
+
+                _sceneUnload = SceneManager.UnloadSceneAsync(transient);
+                Assert.That(
+                    _sceneUnload,
+                    Is.Not.Null,
+                    "[{0}] The owned scene must start unloading.",
+                    scenario.Kind
+                );
+                yield return _sceneUnload;
+                Assert.That(
+                    transient.isLoaded,
+                    Is.False,
+                    "[{0}] The hosts' scene must actually finish unloading.",
+                    scenario.Kind
+                );
+                Assert.That(
+                    ordinary == null,
+                    Is.True,
+                    "[{0}] Unloading the owning scene must destroy the ordinary control.",
+                    scenario.Kind
+                );
+                Assert.That(
+                    persistent != null,
+                    Is.True,
+                    "[{0}] Persistence must preserve the host after its owning scene unloads.",
+                    scenario.Kind
+                );
+                ScenarioCallbacks.EmitForKind(scenario, route);
+                Assert.That(
+                    persistentCalls,
+                    Is.EqualTo(2),
+                    "[{0}] The persistent host must remain registered after unload.",
+                    scenario.Kind
+                );
+                Assert.That(
+                    ordinaryCalls,
+                    Is.EqualTo(1),
+                    "[{0}] The destroyed control must not receive later emissions.",
+                    scenario.Kind
+                );
             }
-
-            // After the additive scene unloads, the DDOL host must still be
-            // alive and continue receiving messages.
-            Assert.IsTrue(
-                host != null,
-                "[{0}] DDOL host must survive the additive scene unload.",
-                scenario.Kind
-            );
-            ScenarioCallbacks.EmitForKind(scenario, hostId);
-            Assert.AreEqual(
-                2,
-                handlerCount,
-                "[{0}] DDOL handler must continue to receive messages after scene transition.",
-                scenario.Kind
-            );
-
-            token.RemoveRegistration(handle);
-            yield break;
+            finally
+            {
+                // Includes the component's built-in registrations, even after a failed assertion.
+                persistentToken?.UnregisterAll();
+                ordinaryToken?.UnregisterAll();
+            }
         }
 
         /// <summary>
@@ -1001,7 +1080,7 @@ namespace DxMessaging.Tests.Runtime.Core
         )
         {
             // Create a transient scene; the handler-host lives there.
-            Scene transient = SceneManager.CreateScene(
+            Scene transient = _ownedScene = SceneManager.CreateScene(
                 nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Transient"
             );
             yield return null;
@@ -1052,7 +1131,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     if (!emittedFromHost)
                     {
                         emittedFromHost = true;
-                        unloadOp = SceneManager.UnloadSceneAsync(transient);
+                        unloadOp = _sceneUnload = SceneManager.UnloadSceneAsync(transient);
                     }
                 },
                 priority: 0
@@ -1080,13 +1159,25 @@ namespace DxMessaging.Tests.Runtime.Core
                 peerCount
             );
 
-            // Wait for the actual scene unload to finish before re-emitting.
-            while (unloadOp != null && !unloadOp.isDone)
-            {
-                yield return null;
-            }
-            // One more frame so OnDestroy callbacks land.
-            yield return null;
+            Assert.That(
+                unloadOp,
+                Is.Not.Null,
+                "[{0}] The host callback must request an actual scene unload.",
+                scenario.Kind
+            );
+            yield return unloadOp;
+            Assert.That(
+                transient.isLoaded,
+                Is.False,
+                "[{0}] The host's scene must finish unloading before re-emission.",
+                scenario.Kind
+            );
+            Assert.That(
+                host == null,
+                Is.True,
+                "[{0}] The unloaded scene's host must be destroyed.",
+                scenario.Kind
+            );
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
