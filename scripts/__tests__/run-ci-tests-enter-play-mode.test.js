@@ -8,6 +8,10 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { stripVTControlCharacters } = require("node:util");
 
+const { extractRows, deriveScope: extractorDeriveScope } = require("../unity/extract-perf-baseline.js");
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
+const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
+const EDITOR_PLAYMODE_PLATFORM = "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1");
 // prettier-ignore
 const ROSLYNATOR_ANALYZER_FILES = ["Roslynator.CSharp.Analyzers.dll", "Roslynator_Analyzers_Roslynator.Common.dll", "Roslynator_Analyzers_Roslynator.Core.dll", "Roslynator_Analyzers_Roslynator.CSharp.dll"];
@@ -252,5 +256,86 @@ test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying 
     assert.equal(fs.existsSync(path.join(cachePath, ".dxmessaging-ci-cache")), false);
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
+  }
+});
+
+test("PowerShell performance harness regression tests pass", () => {
+  // prettier-ignore
+  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "editor-process-watchdog.test.ps1", "shipping-fidelity.test.ps1"]) {
+    const testScript = path.join(REPO_ROOT, "scripts", "unity", "__tests__", script);
+    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
+      encoding: "utf8"
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, `${script}\n${result.stdout}\n${result.stderr}`);
+  }
+  const result = spawnSync("pwsh", ["-NoProfile", "-File", "scripts/unity/capture-dispatch-codegen.ps1", "-SelfTestOnly"], {
+    cwd: REPO_ROOT, encoding: "utf8"
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("render-perf-deltas CLI failures preserve non-gating diagnostic output", () => {
+  const script = path.join(REPO_ROOT, "scripts", "unity", "render-perf-deltas.js");
+  const result = spawnSync(process.execPath, [script, "--bogus"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "changed=false\nregressed=false\n");
+  assert.match(result.stderr, /Unknown argument: --bogus/);
+  assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
+});
+
+test("extract-perf-baseline --scope filters rows to one execution scope", () => {
+  const mixed = [
+    `UntargetedFlood_OneHandler,${STANDALONE_PLATFORM},abc1234,-1,37500000,-1,5000`,
+    `UntargetedFlood_OneHandler,${EDITOR_PLAYMODE_PLATFORM},abc1234,-1,20000000,0,5000`,
+    `TargetedFlood_OneListener,Unity 6000.3.16f1 EditMode Mono,abc1234,-1,9000000,0,5000`
+  ].join("\n");
+  const all = extractRows(mixed);
+  const standaloneOnly = all.filter((r) => extractorDeriveScope(r.platform) === "Standalone");
+  assert.equal(all.length, 3);
+  assert.deepEqual(
+    standaloneOnly.map((r) => r.platform),
+    [STANDALONE_PLATFORM]
+  );
+
+  const script = path.join(REPO_ROOT, "scripts", "unity", "extract-perf-baseline.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-scope-"));
+  try {
+    const mixedPath = path.join(dir, "mixed.log");
+    const editorOnlyPath = path.join(dir, "editor.log");
+    fs.writeFileSync(mixedPath, mixed);
+    fs.writeFileSync(
+      editorOnlyPath,
+      `UntargetedFlood_OneHandler,${EDITOR_PLAYMODE_PLATFORM},abc1234,-1,20000000,0,5000`
+    );
+
+    const kept = spawnSync(
+      process.execPath,
+      [script, "--input", mixedPath, "--scope", "Standalone"],
+      { cwd: REPO_ROOT, encoding: "utf8" }
+    );
+    assert.equal(kept.status, 0, kept.stderr);
+    const keptRows = extractRows(kept.stdout);
+    assert.deepEqual(
+      keptRows.map((r) => r.platform),
+      [STANDALONE_PLATFORM]
+    );
+
+    const empty = spawnSync(
+      process.execPath,
+      [script, "--input", editorOnlyPath, "--scope", "Standalone"],
+      { cwd: REPO_ROOT, encoding: "utf8" }
+    );
+    assert.notEqual(empty.status, 0);
+    assert.match(empty.stderr, /No DispatchThroughputBenchmarks rows found/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
