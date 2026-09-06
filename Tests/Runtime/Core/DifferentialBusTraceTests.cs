@@ -27,7 +27,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TearDown() => _diagnostics.Dispose();
 
         [Test]
-        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2, 3, 4)] int version)
+        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2, 3, 4, 5)] int version)
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
                 MessageScenario.Untargeted(),
@@ -37,27 +37,36 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 BusTraceSequence.GeneratorVersion,
-                Is.EqualTo(4),
+                Is.EqualTo(5),
                 "Changing generation requires a new version and a reviewed replay fixture."
             );
             CollectionAssert.AreEqual(
-                new[]
-                {
-                    "Register(token=0,context=0,value=1409999377,priority=1)",
-                    "Emit(token=0,context=0,value=-576100708,priority=-1)",
-                    (
-                        version == 1 ? "Disable"
-                        : version == 2 ? "Emit"
-                        : version == 3 ? "Register"
-                        : "SetDiagnostics"
-                    ) + $"(token=1,context=0,value={(version == 4 ? 0 : 1944224582)},priority=1)",
-                    (
-                        version == 1 ? "Disable"
-                        : version == 2 ? "Register"
-                        : version == 3 ? "Emit"
-                        : "Disable"
-                    ) + "(token=1,context=1,value=1180700304,priority=0)",
-                },
+                version == 5
+                    ? new[]
+                    {
+                        "Register(token=0,context=0,value=1409999377,priority=1)",
+                        "Emit(token=0,context=0,value=1481184789,priority=1)",
+                        "Register(token=3,context=1,value=-541008231,priority=1)",
+                        "EmitNested(token=0,context=0,value=-1592061232,priority=0)[kindOffset=0,nestedToken=0,depth=1]",
+                    }
+                    : new[]
+                    {
+                        "Register(token=0,context=0,value=1409999377,priority=1)",
+                        "Emit(token=0,context=0,value=-576100708,priority=-1)",
+                        (
+                            version == 1 ? "Disable"
+                            : version == 2 ? "Emit"
+                            : version == 3 ? "Register"
+                            : "SetDiagnostics"
+                        )
+                            + $"(token=1,context=0,value={(version == 4 ? 0 : 1944224582)},priority=1)",
+                        (
+                            version == 1 ? "Disable"
+                            : version == 2 ? "Register"
+                            : version == 3 ? "Emit"
+                            : "Disable"
+                        ) + "(token=1,context=1,value=1180700304,priority=0)",
+                    },
                 sequence.Operations.Select(operation => operation.ToString()),
                 $"Generator version {version}, seed 17 must retain its exact replay prefix across runtime profiles."
             );
@@ -66,6 +75,304 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(version),
                 $"version={version}: replay identity must preserve the requested generator."
             );
+        }
+
+        [Test]
+        public void NestedReplayRestoresEmissionScopeAndRemainsUsable(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(0, 1, 2)] int innerKindOffset,
+            [Values(1, 10)] int depth
+        )
+        {
+            BusTraceSequence sequence = NestedSequence(scenario, innerKindOffset, depth);
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            Assert.That(DifferentialBusTrace.Compare(control, candidate), Is.Null, report);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            BusTraceObservation nested = control[innerKindOffset == 0 ? 2 : 3];
+            CollectionAssert.AreEqual(
+                NestedCallbacks(innerKindOffset, depth, 1),
+                nested.Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=31" },
+                control[control.Count - 1].Callbacks,
+                report
+            );
+        }
+
+        [Test]
+        public void NestedCallbackFailureUnwindsScopeAndDoesNotRearmLaterEmissions(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(0, 1, 2)] int innerKindOffset,
+            [Values(1, 10)] int depth
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            using ThrowOnceInNestedCallbackAdapter adapter = new(scenario, bus, depth + 1);
+            BusTraceSequence sequence = NestedSequence(scenario, innerKindOffset, depth);
+            int nestedIndex = innerKindOffset == 0 ? 2 : 3;
+            string label = $"[{scenario.Kind}] innerKindOffset={innerKindOffset}, depth={depth}";
+            for (int index = 0; index < nestedIndex; ++index)
+            {
+                BusTraceObservation setup = adapter.Execute(sequence.Operations[index]);
+                Assert.That(setup.Exception, Is.Null, label + ": " + setup);
+            }
+            BusTraceOperation nestedOperation = sequence.Operations[nestedIndex];
+            BusTraceObservation failed = adapter.Execute(nestedOperation);
+            string report = label + ": " + failed;
+            Assert.That(
+                failed.Exception,
+                Is.EqualTo(
+                    "System.InvalidOperationException: intentional nested trace callback failure"
+                ),
+                report
+            );
+            CollectionAssert.AreEqual(
+                NestedCallbacks(innerKindOffset, depth, 1),
+                failed.Callbacks,
+                report
+            );
+            Assert.That(bus.IsDispatching, Is.False, report);
+            Assert.That(bus.EmissionId, Is.EqualTo(depth + 1), report);
+
+            BusTraceObservation later = adapter.Execute(sequence.Operations[nestedIndex + 1]);
+            report = label + ": after failure: " + later;
+            Assert.That(later.Exception, Is.Null, report);
+            CollectionAssert.AreEqual(new[] { "token=0,value=31" }, later.Callbacks, report);
+            Assert.That(bus.IsDispatching, Is.False, report);
+            Assert.That(bus.EmissionId, Is.EqualTo(depth + 2), report);
+
+            BusTraceObservation recovered = adapter.Execute(nestedOperation);
+            report = label + ": recovered nested emit: " + recovered;
+            Assert.That(recovered.Exception, Is.Null, report);
+            CollectionAssert.AreEqual(
+                NestedCallbacks(innerKindOffset, depth, depth + 3),
+                recovered.Callbacks,
+                report
+            );
+            Assert.That(bus.IsDispatching, Is.False, report);
+            Assert.That(bus.EmissionId, Is.EqualTo(2 * depth + 3), report);
+        }
+
+        private static List<string> NestedCallbacks(
+            int innerKindOffset,
+            int depth,
+            int firstEmission
+        )
+        {
+            List<string> expected = new();
+            for (int level = 0; level <= depth; ++level)
+            {
+                int token = innerKindOffset == 0 ? 0 : level % 2;
+                expected.Add($"token={token},value={17 + level}");
+                if (level < depth)
+                {
+                    expected.Add($"nested-enter:depth={level},emission={firstEmission + level}");
+                }
+            }
+            for (int level = depth - 1; level >= 0; --level)
+            {
+                expected.Add($"nested-return:depth={level},emission={firstEmission + level}");
+            }
+            return expected;
+        }
+
+        [Test]
+        public void NestedAndCallbackDisableMutantsAreDetectedAndShrunk(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("nested", "callback-disable")] string fault
+        )
+        {
+            BusTraceSequence original =
+                fault == "nested"
+                    ? NestedSequence(scenario, 1, 10)
+                    : new BusTraceSequence(
+                        scenario,
+                        509,
+                        new[]
+                        {
+                            new BusTraceOperation(BusTraceOperationKind.Enable, token: 3),
+                            new BusTraceOperation(BusTraceOperationKind.Register),
+                            new BusTraceOperation(BusTraceOperationKind.EmitWithDisable, value: 17),
+                            new BusTraceOperation(BusTraceOperationKind.Emit, value: 19),
+                            new BusTraceOperation(BusTraceOperationKind.Enable),
+                            new BusTraceOperation(BusTraceOperationKind.Emit, value: 31),
+                        }
+                    );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                original,
+                kind => CreateAdapter(kind, false)
+            );
+            Assert.That(control.All(item => item.Exception == null), Is.True);
+            if (fault == "callback-disable")
+            {
+                CollectionAssert.AreEqual(new[] { "token=0,value=17" }, control[2].Callbacks);
+                Assert.That(control[3].Callbacks, Is.Empty);
+                CollectionAssert.AreEqual(new[] { "token=0,value=31" }, control[5].Callbacks);
+            }
+            BusTraceMismatch mismatch = EvaluateMutant(original, fault);
+            Assert.That(
+                mismatch,
+                Is.Not.Null,
+                $"[{scenario.Kind}] {fault} must alter real operations."
+            );
+            string report = mismatch.BuildReport(original);
+            Assert.That(
+                mismatch.Category,
+                Is.EqualTo(fault == "nested" ? "callbacks" : "state"),
+                report
+            );
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                original,
+                sequence => EvaluateMutant(sequence, fault)
+            );
+            BusTraceMismatch replayed = EvaluateMutant(minimal, fault);
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(replayed?.Category, Is.EqualTo(mismatch.Category), report);
+            Assert.That(minimal.Seed, Is.EqualTo(original.Seed), report);
+            Assert.That(minimal.Version, Is.EqualTo(5), report);
+            CollectionAssert.AreEqual(
+                fault == "nested"
+                    ? new[]
+                    {
+                        BusTraceOperationKind.Register,
+                        BusTraceOperationKind.Register,
+                        BusTraceOperationKind.EmitNested,
+                    }
+                    : new[]
+                    {
+                        BusTraceOperationKind.Register,
+                        BusTraceOperationKind.EmitWithDisable,
+                    },
+                minimal.Operations.Select(item => item.Kind),
+                report
+            );
+        }
+
+        [Test]
+        public void NestedReplayRequiresBothHandlesAndBoundedDepth()
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            BusTraceOperation first = new(BusTraceOperationKind.Register);
+            BusTraceOperation second = new(BusTraceOperationKind.Register, token: 1, kindOffset: 1);
+            BusTraceOperation nested = new(
+                BusTraceOperationKind.EmitNested,
+                nestedToken: 1,
+                depth: 10
+            );
+            Assert.That(
+                DifferentialBusTrace.IsValid(
+                    new BusTraceSequence(scenario, 509, new[] { first, second, nested })
+                ),
+                Is.True
+            );
+            foreach (
+                BusTraceOperation[] operations in new[]
+                {
+                    new[] { first, nested },
+                    new[] { second, nested },
+                    new[]
+                    {
+                        first,
+                        second,
+                        new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                        nested,
+                    },
+                    new[] { first, new BusTraceOperation(BusTraceOperationKind.EmitNested) },
+                    new[]
+                    {
+                        first,
+                        new BusTraceOperation(BusTraceOperationKind.EmitNested, depth: 11),
+                    },
+                    new[] { first, new BusTraceOperation(BusTraceOperationKind.Emit, depth: 1) },
+                    new[] { new BusTraceOperation(BusTraceOperationKind.Register, kindOffset: 3) },
+                }
+            )
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(new BusTraceSequence(scenario, 509, operations)),
+                    Is.False,
+                    string.Join(";", operations)
+                );
+            }
+            Assert.That(
+                DifferentialBusTrace.IsValid(
+                    new BusTraceSequence(
+                        scenario,
+                        509,
+                        new[] { first, second, nested },
+                        generatorVersion: 4
+                    )
+                ),
+                Is.False
+            );
+            BusTraceSequence generated = DifferentialBusTrace.Generate(scenario, 17, 256);
+            Assert.That(DifferentialBusTrace.IsValid(generated), Is.True);
+            foreach (
+                BusTraceOperationKind kind in new[]
+                {
+                    BusTraceOperationKind.EmitNested,
+                    BusTraceOperationKind.EmitWithDisable,
+                }
+            )
+            {
+                Assert.That(
+                    generated.Operations.Any(operation => operation.Kind == kind),
+                    Is.True,
+                    kind.ToString()
+                );
+            }
+        }
+
+        private static BusTraceSequence NestedSequence(
+            MessageScenario scenario,
+            int offset,
+            int depth
+        )
+        {
+            List<BusTraceOperation> operations = new()
+            {
+                new(BusTraceOperationKind.Enable, token: 3),
+                new(BusTraceOperationKind.Register),
+            };
+            if (offset != 0)
+            {
+                operations.Add(
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 1,
+                        context: 1,
+                        kindOffset: offset
+                    )
+                );
+            }
+            operations.Add(
+                new BusTraceOperation(
+                    BusTraceOperationKind.EmitNested,
+                    value: 17,
+                    nestedToken: offset == 0 ? 0 : 1,
+                    depth: depth
+                )
+            );
+            operations.Add(new BusTraceOperation(BusTraceOperationKind.Emit, value: 31));
+            return new BusTraceSequence(scenario, 509, operations);
         }
 
         [Test]
@@ -242,7 +549,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 minimal.Operations.Select(operation => operation.Kind),
                 report
             );
-            Assert.That(minimal.Version, Is.EqualTo(4), report);
+            Assert.That(minimal.Version, Is.EqualTo(5), report);
             Assert.That(minimal.Seed, Is.EqualTo(original.Seed), report);
             Assert.That(
                 EvaluateMutant(minimal, "trim-force")?.Category,
@@ -435,7 +742,7 @@ namespace DxMessaging.Tests.Runtime.Core
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
             [Values(17, 42)] int seed,
-            [Values(3, 4)] int version
+            [Values(3, 4, 5)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -627,7 +934,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void CallbackTriggerWithoutMatchingRegistrationDoesNotRemainArmed(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
-            [Values(false, true)] bool throwingCallback
+            [Values("reset", "throw", "nested", "disable")] string callback
         )
         {
             // Untargeted dispatch has no unmatched-context case; every kind has a disabled trigger.
@@ -646,15 +953,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 BusTraceObservation untriggered = adapter.Execute(
                     new BusTraceOperation(
-                        throwingCallback
-                            ? BusTraceOperationKind.EmitWithThrow
-                            : BusTraceOperationKind.EmitWithReset,
+                        callback switch
+                        {
+                            "throw" => BusTraceOperationKind.EmitWithThrow,
+                            "nested" => BusTraceOperationKind.EmitNested,
+                            "disable" => BusTraceOperationKind.EmitWithDisable,
+                            _ => BusTraceOperationKind.EmitWithReset,
+                        },
                         context: otherRoute ? 1 : 0,
-                        value: 10
+                        value: 10,
+                        depth: callback == "nested" ? 10 : 0
                     )
                 );
                 string label =
-                    $"[{scenario.Kind}] throwingCallback={throwingCallback}, otherRoute={otherRoute}: {untriggered}";
+                    $"[{scenario.Kind}] callback={callback}, otherRoute={otherRoute}: {untriggered}";
                 Assert.That(untriggered.Exception, Is.Null, label);
                 CollectionAssert.AreEqual(
                     otherRoute ? Array.Empty<string>() : new[] { "token=1,value=10" },
@@ -802,7 +1114,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(5)]
+        [TestCase(6)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
@@ -1080,12 +1392,56 @@ namespace DxMessaging.Tests.Runtime.Core
                 "leak" => new RegistrationLeakAdapter(scenario, bus),
                 "retention" => new RetainedDiagnosticReferenceAdapter(scenario, bus),
                 "trim-force" => new IgnoredForceTrimAdapter(scenario, bus),
+                "nested" => new MissingNestedEmitAdapter(scenario, bus),
+                "callback-disable" => new IgnoredCallbackDisableAdapter(scenario, bus),
                 _ => throw new ArgumentOutOfRangeException(nameof(fault)),
             };
         }
 
         // Each mutant changes a real operation before the shared observer reads production state.
         // None rewrites observations or implements message routing.
+        private sealed class ThrowOnceInNestedCallbackAdapter : MessageBusTraceAdapter
+        {
+            private long _throwAtEmission;
+
+            internal ThrowOnceInNestedCallbackAdapter(
+                MessageScenario scenario,
+                MessageBus bus,
+                long throwAtEmission
+            )
+                : base(scenario, bus, reset: bus.ResetState)
+            {
+                _throwAtEmission = throwAtEmission;
+            }
+
+            protected override void OnCallback(int slot, IMessage message)
+            {
+                if (Bus.EmissionId == _throwAtEmission)
+                {
+                    _throwAtEmission = -1;
+                    throw new InvalidOperationException(
+                        "intentional nested trace callback failure"
+                    );
+                }
+            }
+        }
+
+        private sealed class MissingNestedEmitAdapter : MessageBusTraceAdapter
+        {
+            internal MissingNestedEmitAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void EmitNested(BusTraceOperation operation) { }
+        }
+
+        private sealed class IgnoredCallbackDisableAdapter : MessageBusTraceAdapter
+        {
+            internal IgnoredCallbackDisableAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void DisableFromCallback(int slot) { }
+        }
+
         private sealed class IgnoredForceTrimAdapter : MessageBusTraceAdapter
         {
             internal IgnoredForceTrimAdapter(MessageScenario scenario, MessageBus bus)
@@ -1273,7 +1629,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (
                 string expected in new[]
                 {
-                    "generator=4",
+                    "generator=5",
                     "seed=42",
                     "kind=" + scenario.Kind,
                     "firstMismatch=1",

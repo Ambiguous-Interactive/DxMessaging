@@ -16,6 +16,12 @@ namespace DxMessaging.Tests.Runtime
         private readonly Action _reset;
         private int _resetOnCallbackToken = -1;
         private int _throwOnCallbackToken = -1;
+        private int _disableOnCallbackToken = -1;
+        private BusTraceOperation? _nestedOperation;
+        private int _depth;
+        private readonly BusTraceOperation[] _registrations = new BusTraceOperation[
+            BusTraceSequence.TokenCount
+        ];
         private readonly MessageRegistrationHandle[] _staleHandles = new MessageRegistrationHandle[
             BusTraceSequence.TokenCount
         ];
@@ -106,6 +112,29 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.SetDiagnostics:
                         _tokens[operation.Token].DiagnosticMode = operation.Value != 0;
+                        break;
+                    case BusTraceOperationKind.EmitNested:
+                        _nestedOperation = operation;
+                        try
+                        {
+                            Emit(operation);
+                        }
+                        finally
+                        {
+                            _nestedOperation = null;
+                            _depth = 0;
+                        }
+                        break;
+                    case BusTraceOperationKind.EmitWithDisable:
+                        _disableOnCallbackToken = operation.Token;
+                        try
+                        {
+                            Emit(operation);
+                        }
+                        finally
+                        {
+                            _disableOnCallbackToken = -1;
+                        }
                         break;
                     case BusTraceOperationKind.EmitWithThrow:
                         _throwOnCallbackToken = operation.Token;
@@ -261,16 +290,27 @@ namespace DxMessaging.Tests.Runtime
         // Mutants change real callback behavior here; observation construction remains shared.
         protected virtual void OnCallback(int slot, IMessage message) { }
 
+        protected virtual void DisableFromCallback(int slot) => _tokens[slot].Disable();
+
+        protected virtual void EmitNested(BusTraceOperation operation) => Emit(operation);
+
+        private MessageScenario Scenario(int offset) =>
+            offset == 0
+                ? _scenario
+                : new MessageScenario((MessageKind)(((int)_scenario.Kind + offset) % 3));
+
         protected virtual void Register(BusTraceOperation operation)
         {
             int slot = operation.Token;
             MessageRegistrationToken token = _tokens[slot];
+            _registrations[slot] = operation;
+            MessageScenario scenario = Scenario(operation.KindOffset);
             InstanceId context = new(2000 + operation.Context);
-            switch (_scenario.Kind)
+            switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                     _handles[slot] = ScenarioHarness.RegisterUntargeted<UntargetedPayload>(
-                        _scenario,
+                        scenario,
                         token,
                         (in UntargetedPayload message) => Record(slot, message.Value, message),
                         operation.Priority
@@ -278,7 +318,7 @@ namespace DxMessaging.Tests.Runtime
                     break;
                 case MessageKind.Targeted:
                     _handles[slot] = ScenarioHarness.RegisterTargeted<TargetedPayload>(
-                        _scenario,
+                        scenario,
                         token,
                         context,
                         (in TargetedPayload message) => Record(slot, message.Value, message),
@@ -287,7 +327,7 @@ namespace DxMessaging.Tests.Runtime
                     break;
                 case MessageKind.Broadcast:
                     _handles[slot] = ScenarioHarness.RegisterBroadcast<BroadcastPayload>(
-                        _scenario,
+                        scenario,
                         token,
                         context,
                         (in BroadcastPayload message) => Record(slot, message.Value, message),
@@ -301,20 +341,21 @@ namespace DxMessaging.Tests.Runtime
 
         private void Emit(BusTraceOperation operation)
         {
+            MessageScenario scenario = Scenario(operation.KindOffset);
             InstanceId context = new(2000 + operation.Context);
-            switch (_scenario.Kind)
+            switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
                     UntargetedPayload untargeted = new(operation.Value);
-                    ScenarioHarness.EmitUntargeted(_scenario, ref untargeted, _emitter);
+                    ScenarioHarness.EmitUntargeted(scenario, ref untargeted, _emitter);
                     break;
                 case MessageKind.Targeted:
                     TargetedPayload targeted = new(operation.Value);
-                    ScenarioHarness.EmitTargeted(_scenario, ref targeted, context, _emitter);
+                    ScenarioHarness.EmitTargeted(scenario, ref targeted, context, _emitter);
                     break;
                 case MessageKind.Broadcast:
                     BroadcastPayload broadcast = new(operation.Value);
-                    ScenarioHarness.EmitBroadcast(_scenario, ref broadcast, context, _emitter);
+                    ScenarioHarness.EmitBroadcast(scenario, ref broadcast, context, _emitter);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(_scenario));
@@ -325,6 +366,41 @@ namespace DxMessaging.Tests.Runtime
         {
             _callbacks.Add($"token={token},value={value}");
             OnCallback(token, message);
+            if (token == _disableOnCallbackToken)
+            {
+                _disableOnCallbackToken = -1;
+                DisableFromCallback(token);
+            }
+            if (_nestedOperation.HasValue)
+            {
+                BusTraceOperation nested = _nestedOperation.Value;
+                int trigger = (_depth & 1) == 0 ? nested.Token : nested.NestedToken;
+                if (token == trigger && _depth < nested.Depth)
+                {
+                    long emission = _bus.EmissionId;
+                    int next = (_depth & 1) == 0 ? nested.NestedToken : nested.Token;
+                    BusTraceOperation registration = _registrations[next];
+                    _callbacks.Add($"nested-enter:depth={_depth},emission={emission}");
+                    ++_depth;
+                    try
+                    {
+                        EmitNested(
+                            new BusTraceOperation(
+                                BusTraceOperationKind.Emit,
+                                next,
+                                registration.Context,
+                                unchecked(value + 1),
+                                kindOffset: registration.KindOffset
+                            )
+                        );
+                    }
+                    finally
+                    {
+                        --_depth;
+                        _callbacks.Add($"nested-return:depth={_depth},emission={_bus.EmissionId}");
+                    }
+                }
+            }
             if (token == _throwOnCallbackToken)
             {
                 _throwOnCallbackToken = -1;
