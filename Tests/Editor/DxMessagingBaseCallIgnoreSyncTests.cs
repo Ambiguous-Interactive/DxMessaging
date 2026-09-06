@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Editor
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Reflection;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Editor;
@@ -460,6 +461,86 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingBaseCallIgnoreSync.SidecarApplier = _originalApplier;
                 DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler =
                     _originalCscRspAdditionalFileSyncScheduler;
+            }
+        }
+
+        [Test]
+        public void DeferredCallbacksDoNotRewritePreparedCompilerInputs()
+        {
+            string project = Path.Combine(Path.GetTempPath(), $"dxm_prepared_{Guid.NewGuid():N}");
+            string assets = Path.Combine(project, "Assets");
+            string sidecar = Path.Combine(project, DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
+            Directory.CreateDirectory(assets);
+            try
+            {
+                DxMessagingSettings settings = NewSettings();
+                settings._baseCallIgnoredTypes = new List<string> { "Consumer.IgnoredType" };
+                bool sidecarPending = false;
+                bool rspPending = false;
+                List<string> imports = new();
+                Action writeSidecar = () =>
+                    DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
+                        sidecar,
+                        settings._baseCallIgnoredTypes,
+                        imports.Add,
+                        ref sidecarPending
+                    );
+                Action writeResponse = () =>
+                    SetupCscRsp.SynchronizeResponseFiles(assets, imports.Add, ref rspPending);
+                DxMessagingBaseCallIgnoreSync.SidecarApplier = _ => writeSidecar();
+                DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler = () =>
+                    _scheduled.Add(writeResponse);
+                _scheduled.Clear();
+                DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
+
+                SetupCscRsp.PrepareCompilerInputs(
+                    true,
+                    writeSidecar,
+                    writeResponse,
+                    () => { },
+                    () => { },
+                    ref sidecarPending,
+                    ref rspPending
+                );
+                DateTime unchangedTime = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+                File.SetLastWriteTimeUtc(sidecar, unchangedTime);
+                File.SetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp"), unchangedTime);
+                for (int callback = 0; callback < 2; ++callback)
+                {
+                    Assert.AreEqual(
+                        1,
+                        _scheduled.Count,
+                        $"Callback {callback + 1} must be the sole pending sidecar or response-file work item."
+                    );
+                    Action work = _scheduled[0];
+                    _scheduled.RemoveAt(0);
+                    work();
+                }
+
+                Assert.IsEmpty(
+                    _scheduled,
+                    "The sidecar and response-file callbacks must finish without requeuing work."
+                );
+                CollectionAssert.AreEqual(
+                    new[] { DxMessagingBaseCallIgnoreSync.SidecarAssetPath, "Assets/csc.rsp" },
+                    imports,
+                    "Deferred callbacks must not import already-prepared compiler inputs again."
+                );
+                Assert.AreEqual(
+                    unchangedTime,
+                    File.GetLastWriteTimeUtc(sidecar),
+                    "Deferred regeneration must leave sidecar bytes untouched."
+                );
+                Assert.AreEqual(
+                    unchangedTime,
+                    File.GetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp")),
+                    "Deferred response-file synchronization must leave compiler inputs untouched."
+                );
+            }
+            finally
+            {
+                _scheduled.Clear();
+                Directory.Delete(project, true);
             }
         }
 

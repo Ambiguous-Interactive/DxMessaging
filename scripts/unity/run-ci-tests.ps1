@@ -1566,8 +1566,13 @@ public static class DxmCiTestConfigurator
 
     public static void Apply()
     {
-        // Prove Release editor code optimization for every Unity CI leg. Set FIRST
-        // so the effective value is logged below.
+        // Finish package compiler inputs before this process exits. Deferring the
+        // sidecar/response-file sync lets the next test launch trigger compilation
+        // after its player build has already started.
+        DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();
+
+        // Prove Release editor code optimization for every Unity CI leg before
+        // logging the effective configuration below.
         UnityEditor.Compilation.CompilationPipeline.codeOptimization = UnityEditor.Compilation.CodeOptimization.Release;
 
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneWindows64);

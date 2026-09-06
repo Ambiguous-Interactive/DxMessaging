@@ -26,6 +26,8 @@ namespace DxMessaging.Editor.Settings
         /// </summary>
         public const string SidecarAssetPath = "Assets/Editor/DxMessaging.BaseCallIgnore.txt";
 
+        internal static bool SidecarImportPending;
+
         private const string HeaderComment =
             "# Auto-generated from Assets/Editor/DxMessagingSettings.asset; edit there instead.";
         private const string FormatComment =
@@ -187,24 +189,9 @@ namespace DxMessaging.Editor.Settings
             {
                 return;
             }
-
             try
             {
-                string newContent = BuildContent(settings._baseCallIgnoredTypes);
-                string absolutePath = GetAbsolutePath();
-                EnsureParentDirectoryExists(absolutePath);
-
-                if (File.Exists(absolutePath))
-                {
-                    string existing = File.ReadAllText(absolutePath);
-                    if (string.Equals(existing, newContent, StringComparison.Ordinal))
-                    {
-                        return;
-                    }
-                }
-
-                File.WriteAllText(absolutePath, newContent);
-                AssetDatabase.ImportAsset(SidecarAssetPath);
+                RegenerateSidecarOrThrow(settings);
             }
             catch (Exception ex)
             {
@@ -212,6 +199,52 @@ namespace DxMessaging.Editor.Settings
                     $"Failed to write base-call ignore sidecar at '{SidecarAssetPath}'.",
                     ex
                 );
+            }
+        }
+
+        internal static void RegenerateSidecarOrThrow(DxMessagingSettings settings)
+        {
+            if (settings == null)
+            {
+                throw new ArgumentNullException(nameof(settings));
+            }
+            WriteSidecarOrThrow(
+                GetAbsolutePath(),
+                settings._baseCallIgnoredTypes,
+                path => AssetDatabase.ImportAsset(path),
+                ref SidecarImportPending
+            );
+        }
+
+        internal static void WriteSidecarOrThrow(
+            string absolutePath,
+            IList<string> ignoredTypes,
+            Action<string> importAsset,
+            ref bool importPending
+        )
+        {
+            string newContent = BuildContent(ignoredTypes);
+            EnsureParentDirectoryExists(absolutePath);
+            if (
+                !File.Exists(absolutePath)
+                || !string.Equals(
+                    File.ReadAllText(absolutePath),
+                    newContent,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                DxMessaging.Editor.SetupCscRsp.WriteTextFileAtomically(
+                    absolutePath,
+                    newContent,
+                    new UTF8Encoding(false)
+                );
+                importPending = true;
+            }
+            if (importPending)
+            {
+                importAsset(SidecarAssetPath);
+                importPending = false;
             }
         }
 

@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor
     using System.Collections.Generic;
     using System.IO;
     using System.Text;
+    using System.Threading.Tasks;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Settings;
     using NUnit.Framework;
@@ -47,6 +48,329 @@ namespace DxMessaging.Tests.Editor
                 Path.GetFullPath(Path.Combine(Application.dataPath, "csc.rsp")),
                 Path.GetFullPath(SetupCscRsp.GetRspFilePath(Application.dataPath)),
                 "Unity reads the response file from Assets/csc.rsp, not the project root."
+            );
+        }
+
+        [Test]
+        public void PublicPreparationRejectsAWorkerBeforeReadingUnityEditorState()
+        {
+            // Initialize the class on the editor thread before exercising its worker guard.
+            SetupCscRsp.GetRspFilePath(_assetsDirectory);
+            Exception failure = Task.Run<Exception>(() =>
+                {
+                    try
+                    {
+                        SetupCscRsp.PrepareCompilerInputs();
+                        return null;
+                    }
+                    catch (Exception ex)
+                    {
+                        return ex;
+                    }
+                })
+                .GetAwaiter()
+                .GetResult();
+
+            Assert.That(failure, Is.TypeOf<InvalidOperationException>());
+            Assert.AreEqual(
+                "PrepareCompilerInputs requires an idle main-thread editor configuration phase.",
+                failure.Message,
+                "The public API must reject the worker itself before invoking Unity editor APIs."
+            );
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void PreparationCreatesColdInputsBeforeCompletingTheImportBatch(
+            bool existingConsumerOptions
+        )
+        {
+            if (existingConsumerOptions)
+            {
+                File.WriteAllText(_testRspFilePath, "-define:CONSUMER\n");
+            }
+            string sidecarPath = Path.Combine(
+                _projectDirectory,
+                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
+            );
+            List<string> events = new();
+            bool sidecarPending = false;
+            bool rspPending = false;
+            Action prepareSidecar = () =>
+                DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
+                    sidecarPath,
+                    new[] { "Consumer.IgnoredType" },
+                    path => events.Add(path),
+                    ref sidecarPending
+                );
+            Action prepareResponse = () =>
+                SetupCscRsp.SynchronizeResponseFiles(
+                    _assetsDirectory,
+                    path => events.Add(path),
+                    ref rspPending
+                );
+
+            SetupCscRsp.PrepareCompilerInputs(
+                true,
+                prepareSidecar,
+                prepareResponse,
+                () => events.Add("begin"),
+                () => events.Add("end"),
+                ref sidecarPending,
+                ref rspPending
+            );
+
+            string context = $"existingConsumerOptions={existingConsumerOptions}";
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    "begin",
+                    DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
+                    "Assets/csc.rsp",
+                    "end",
+                },
+                events,
+                $"Cold sidecar and response-file imports must finish in one ordered batch: {context}."
+            );
+            Assert.IsTrue(
+                File.ReadAllText(sidecarPath).Contains("\nConsumer.IgnoredType\n"),
+                $"Preparation must persist ignored types before returning: {context}."
+            );
+            AssertResponseFile(
+                _testRspFilePath,
+                existingConsumerOptions
+                    ? new[] { "-define:CONSUMER", SidecarArgument }
+                    : new[] { SidecarArgument },
+                context
+            );
+            Assert.IsFalse(
+                sidecarPending || rspPending,
+                $"Successful batch must finish both imports: {context}."
+            );
+
+            events.Clear();
+            prepareSidecar();
+            prepareResponse();
+            Assert.IsEmpty(
+                events,
+                $"Later deferred sidecar/response synchronization must not import again: {context}."
+            );
+        }
+
+        [TestCase("start")]
+        [TestCase("sidecar")]
+        [TestCase("response")]
+        [TestCase("stop")]
+        public void PreparationPropagatesFailuresAndRetainsPendingImports(string failureStage)
+        {
+            List<string> events = new();
+            IOException expected = new("Injected " + failureStage + " failure");
+            Action<string> step = name =>
+            {
+                events.Add(name);
+                if (name == failureStage)
+                {
+                    throw expected;
+                }
+            };
+            bool sidecarPending = false;
+            bool rspPending = false;
+            IOException actual = Assert.Throws<IOException>(
+                () =>
+                    SetupCscRsp.PrepareCompilerInputs(
+                        true,
+                        () => step("sidecar"),
+                        () => step("response"),
+                        () => step("start"),
+                        () => step("stop"),
+                        ref sidecarPending,
+                        ref rspPending
+                    ),
+                $"Preparation must fail at {failureStage}."
+            );
+            Assert.AreSame(
+                expected,
+                actual,
+                $"The original {failureStage} failure must reach the caller."
+            );
+            Assert.IsTrue(
+                sidecarPending && rspPending,
+                $"The failed {failureStage} phase must retain both import retries."
+            );
+            CollectionAssert.AreEqual(
+                failureStage == "start" ? new[] { "start" }
+                    : failureStage == "sidecar" ? new[] { "start", "sidecar", "stop" }
+                    : new[] { "start", "sidecar", "response", "stop" },
+                events,
+                $"An entered batch must stop even when {failureStage} fails."
+            );
+        }
+
+        [Test]
+        public void PreparationRejectsAnUnsafeEditorBeforeStartingWork()
+        {
+            List<string> events = new();
+            bool sidecarPending = false;
+            bool rspPending = false;
+            Assert.Throws<InvalidOperationException>(
+                () =>
+                    SetupCscRsp.PrepareCompilerInputs(
+                        false,
+                        () => events.Add("sidecar"),
+                        () => events.Add("response"),
+                        () => events.Add("start"),
+                        () => events.Add("stop"),
+                        ref sidecarPending,
+                        ref rspPending
+                    ),
+                "A busy or non-main-thread editor must reject preparation."
+            );
+            Assert.IsEmpty(events, "Rejected preparation must not perform any asset operation.");
+            Assert.IsFalse(
+                sidecarPending || rspPending,
+                "Rejected preparation must not change import state."
+            );
+        }
+
+        [Test]
+        public void PreparationPreservesBothTheWorkAndStopFailures()
+        {
+            IOException workFailure = new("Sidecar write failed");
+            IOException stopFailure = new("Batch completion failed");
+            bool sidecarPending = false;
+            bool rspPending = false;
+            AggregateException actual = Assert.Throws<AggregateException>(
+                () =>
+                    SetupCscRsp.PrepareCompilerInputs(
+                        true,
+                        () => throw workFailure,
+                        () => Assert.Fail("Response sync cannot follow a failed sidecar"),
+                        () => { },
+                        () => throw stopFailure,
+                        ref sidecarPending,
+                        ref rspPending
+                    ),
+                "Batch cleanup must not replace the original preparation failure."
+            );
+            CollectionAssert.AreEqual(
+                new Exception[] { workFailure, stopFailure },
+                actual.InnerExceptions,
+                "Both failures must remain available for CI diagnosis."
+            );
+        }
+
+        [Test]
+        public void FailedBatchCompletionRetriesBothImportsWithoutRewritingInputs()
+        {
+            string sidecarPath = Path.Combine(
+                _projectDirectory,
+                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
+            );
+            List<string> imports = new();
+            bool sidecarPending = false;
+            bool rspPending = false;
+            Action prepareSidecar = () =>
+                DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
+                    sidecarPath,
+                    Array.Empty<string>(),
+                    imports.Add,
+                    ref sidecarPending
+                );
+            Action prepareResponse = () =>
+                SetupCscRsp.SynchronizeResponseFiles(_assetsDirectory, imports.Add, ref rspPending);
+            Assert.Throws<IOException>(
+                () =>
+                    SetupCscRsp.PrepareCompilerInputs(
+                        true,
+                        prepareSidecar,
+                        prepareResponse,
+                        () => { },
+                        () => throw new IOException("Stop failed"),
+                        ref sidecarPending,
+                        ref rspPending
+                    ),
+                "A failed StopAssetEditing must fail preparation."
+            );
+            DateTime unchangedTime = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+            File.SetLastWriteTimeUtc(sidecarPath, unchangedTime);
+            File.SetLastWriteTimeUtc(_testRspFilePath, unchangedTime);
+            imports.Clear();
+
+            SetupCscRsp.PrepareCompilerInputs(
+                true,
+                prepareSidecar,
+                prepareResponse,
+                () => { },
+                () => { },
+                ref sidecarPending,
+                ref rspPending
+            );
+
+            CollectionAssert.AreEqual(
+                new[] { DxMessagingBaseCallIgnoreSync.SidecarAssetPath, "Assets/csc.rsp" },
+                imports,
+                "Both queued imports must be retried after failed batch completion."
+            );
+            Assert.AreEqual(
+                unchangedTime,
+                File.GetLastWriteTimeUtc(sidecarPath),
+                "Retry must not rewrite identical sidecar bytes."
+            );
+            Assert.AreEqual(
+                unchangedTime,
+                File.GetLastWriteTimeUtc(_testRspFilePath),
+                "Retry must not rewrite identical response-file bytes."
+            );
+            Assert.IsFalse(
+                sidecarPending || rspPending,
+                "A successful retry must clear both pending imports."
+            );
+        }
+
+        [Test]
+        public void AFailedSidecarWriteStopsPreparationBeforeResponseFileMutation()
+        {
+            string sidecarPath = Path.Combine(
+                _projectDirectory,
+                DxMessagingBaseCallIgnoreSync.SidecarAssetPath
+            );
+            Directory.CreateDirectory(sidecarPath);
+            File.WriteAllText(_testRspFilePath, "-define:CONSUMER\n");
+            bool sidecarPending = false;
+            bool rspPending = false;
+            List<string> imports = new();
+            Assert.Throws<IOException>(
+                () =>
+                    SetupCscRsp.PrepareCompilerInputs(
+                        true,
+                        () =>
+                            DxMessagingBaseCallIgnoreSync.WriteSidecarOrThrow(
+                                sidecarPath,
+                                Array.Empty<string>(),
+                                imports.Add,
+                                ref sidecarPending
+                            ),
+                        () =>
+                            SetupCscRsp.SynchronizeResponseFiles(
+                                _assetsDirectory,
+                                imports.Add,
+                                ref rspPending
+                            ),
+                        () => { },
+                        () => { },
+                        ref sidecarPending,
+                        ref rspPending
+                    ),
+                "A real sidecar write error must propagate instead of being logged and ignored."
+            );
+            Assert.IsEmpty(
+                imports,
+                "Failed sidecar persistence must not import either compiler input."
+            );
+            Assert.AreEqual(
+                "-define:CONSUMER\n",
+                File.ReadAllText(_testRspFilePath),
+                "A failed sidecar write must leave consumer response-file bytes untouched."
             );
         }
 

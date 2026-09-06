@@ -6,6 +6,7 @@ namespace DxMessaging.Editor
     using System.Collections.Generic;
     using System.IO;
     using System.Text;
+    using System.Threading;
     using DxMessaging.Editor.Settings;
     using UnityEditor;
     using UnityEngine;
@@ -15,6 +16,7 @@ namespace DxMessaging.Editor
     {
         internal const string RspAssetPath = "Assets/csc.rsp";
         private static bool responseFileImportPending;
+        private static readonly int EditorThreadId = Thread.CurrentThread.ManagedThreadId;
 
         // Older package versions copied the analyzer + Roslyn runtime DLLs into the consumer
         // project here so the source generator applied project-wide. The generator now ships
@@ -66,6 +68,110 @@ namespace DxMessaging.Editor
                 "remove redundant in-project analyzer copy"
             );
             ScheduleAdditionalFileForIgnoreListSync();
+        }
+
+        /// <summary>
+        /// Saves the settings and compiler inputs before a separate batch build or test process starts.
+        /// </summary>
+        /// <remarks>
+        /// Call from an idle editor configuration entry point before changing player settings.
+        /// Do not call from InitializeOnLoad, OnValidate, or other asset-import callbacks.
+        /// This method writes and imports the ignore sidecar and response file synchronously;
+        /// Unity can then compile the changed inputs. Let the configuration process finish before
+        /// starting the build process. Preparation failures propagate to the caller, which must
+        /// not report configuration success. Pending import retries last only within this domain.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">The editor is not idle on its main thread.</exception>
+        /// <example>
+        /// <code>
+        /// public static void ConfigureProject()
+        /// {
+        ///     DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();
+        ///     // Apply player settings in this configuration process, then exit it.
+        /// }
+        /// </code>
+        /// </example>
+        public static void PrepareCompilerInputs()
+        {
+            bool canPrepare =
+                Thread.CurrentThread.ManagedThreadId == EditorThreadId
+                && DxMessagingEditorIdle.CanMutateAssetDatabase()
+                && !EditorApplication.isPlayingOrWillChangePlaymode
+                && !BuildPipeline.isBuildingPlayer
+                && !AssetDatabase.IsAssetImportWorkerProcess();
+            PrepareCompilerInputs(
+                canPrepare,
+                () =>
+                {
+                    DxMessagingSettings settings = DxMessagingSettings.GetOrCreateSettings();
+                    DxMessagingBaseCallIgnoreSync.RegenerateSidecarOrThrow(settings);
+                },
+                EnsureCscRsp,
+                AssetDatabase.StartAssetEditing,
+                AssetDatabase.StopAssetEditing,
+                ref DxMessagingBaseCallIgnoreSync.SidecarImportPending,
+                ref responseFileImportPending
+            );
+        }
+
+        internal static void PrepareCompilerInputs(
+            bool canPrepare,
+            Action prepareSidecar,
+            Action prepareResponseFile,
+            Action startAssetEditing,
+            Action stopAssetEditing,
+            ref bool sidecarImportPending,
+            ref bool rspImportPending
+        )
+        {
+            if (!canPrepare)
+            {
+                throw new InvalidOperationException(
+                    "PrepareCompilerInputs requires an idle main-thread editor configuration phase."
+                );
+            }
+            try
+            {
+                startAssetEditing();
+                Exception preparationFailure = null;
+                try
+                {
+                    prepareSidecar();
+                    prepareResponseFile();
+                }
+                catch (Exception ex)
+                {
+                    preparationFailure = ex;
+                    throw;
+                }
+                finally
+                {
+                    try
+                    {
+                        stopAssetEditing();
+                    }
+                    catch (Exception stopFailure)
+                    {
+                        if (preparationFailure != null)
+                        {
+                            throw new AggregateException(
+                                "Compiler input preparation and asset import completion both failed.",
+                                preparationFailure,
+                                stopFailure
+                            );
+                        }
+                        throw;
+                    }
+                }
+            }
+            catch
+            {
+                // ImportAsset calls inside the batch only enqueue imports. StopAssetEditing can
+                // fail after either file was written, so preserve both imports for an explicit retry.
+                sidecarImportPending = true;
+                rspImportPending = true;
+                throw;
+            }
         }
 
         internal static void ScheduleAdditionalFileForIgnoreListSync()
@@ -420,13 +526,18 @@ namespace DxMessaging.Editor
 
         private static void WriteResponseFile(string path, string[] lines, Encoding encoding)
         {
+            WriteTextFileAtomically(path, string.Concat(lines), encoding);
+        }
+
+        internal static void WriteTextFileAtomically(string path, string content, Encoding encoding)
+        {
             string temporaryPath = Path.Combine(
                 Path.GetDirectoryName(path),
-                $".csc.rsp.{Guid.NewGuid():N}.tmp"
+                $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp"
             );
             try
             {
-                File.WriteAllText(temporaryPath, string.Concat(lines), encoding);
+                File.WriteAllText(temporaryPath, content, encoding);
                 if (File.Exists(path))
                 {
                     File.Replace(temporaryPath, path, null);

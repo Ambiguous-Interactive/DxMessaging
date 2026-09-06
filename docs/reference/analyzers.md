@@ -474,6 +474,15 @@ unrelated options there. Existing consumer options in `Assets/csc.rsp` are
 preserved. Review any custom root-file options before moving them into `Assets`,
 because moving them activates them for compilation.
 
+For automated builds, call `DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs()`
+from an explicit configuration entry point before changing compilation settings.
+Added in 4.0.0, this method prepares the settings asset, ignore sidecar, and response
+file synchronously and throws if preparation fails. Run configuration before the
+separate build or test editor invocation, as the repository's CI runner does.
+Preparation can request script compilation; it does not wait for compilation to
+finish. Do not call it from initialization or deserialization callbacks, or start
+a player build immediately after it in the same callback.
+
 ---
 
 ## Unity 2021 setup notes

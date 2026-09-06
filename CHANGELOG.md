@@ -35,9 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix project base-call ignore wiring and preserve consumer compiler options during cleanup
+- Fix base-call ignore compiler wiring and batch preparation while preserving consumer options
   ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),
-  [#538](https://github.com/Ambiguous-Interactive/DxMessaging/issues/538)).
+  [#538](https://github.com/Ambiguous-Interactive/DxMessaging/issues/538),
+  [#541](https://github.com/Ambiguous-Interactive/DxMessaging/issues/541)).
 - Keep the Inspector's empty warning area hidden while its first refresh waits for imports
   ([#540](https://github.com/Ambiguous-Interactive/DxMessaging/issues/540)).
 - Fix corrupted boxed struct payloads and IL2CPP failures when emitting registered manual messages
