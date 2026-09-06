@@ -1,0 +1,522 @@
+#nullable disable
+// Unity loads this global entry point and requires exception containment in editor callbacks.
+#pragma warning disable CA1050, CA1515, CA1031
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEditor.TestTools.TestRunner.Api;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+// Copy this maintained source to the host's Assets/Editor/DxMcpTestRunner.cs.
+// It is local tooling; the .txt suffix prevents compilation inside the package.
+[InitializeOnLoad]
+public static class DxMcpTestRunner
+{
+    private const string Prefix = "DxMcpTestRunner.";
+    private const string StatePath =
+        "Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json";
+    private static readonly TestRunnerApi Api;
+    private static readonly MethodInfo ActiveMethod = typeof(TestRunnerApi).GetMethod(
+        "IsRunActive",
+        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
+    );
+    private static double nextSnapshot;
+
+    static DxMcpTestRunner()
+    {
+        Api = ScriptableObject.CreateInstance<TestRunnerApi>();
+        Api.RegisterCallbacks(new ResultWriter());
+        EditorApplication.update += Observe;
+    }
+
+    public static string Run(
+        string testMode,
+        string assemblyNames,
+        string testNames,
+        string categoryNames,
+        string resultPath
+    )
+    {
+        if (
+            !string.IsNullOrEmpty(Get("ResultPath"))
+            || !string.IsNullOrEmpty(
+                SessionState.GetString("DxMcpObservedTestRunner.ResultPath", "")
+            )
+        )
+        {
+            throw new InvalidOperationException("A previous run still owns its cleanup scope.");
+        }
+        EditorState state = ReadEditorState();
+        RequireSafeEditor(state);
+        if (testMode != "EditMode" && testMode != "PlayMode")
+        {
+            throw new ArgumentException("Expected EditMode or PlayMode.", nameof(testMode));
+        }
+        if (string.IsNullOrWhiteSpace(resultPath))
+        {
+            throw new ArgumentException("A fresh result path is required.", nameof(resultPath));
+        }
+        string path = Path.GetFullPath(resultPath);
+        foreach (
+            string suffix in new[]
+            {
+                "",
+                ".status",
+                ".run.json",
+                ".cleanup.json",
+                ".cleanup.status",
+                ".errors.log",
+            }
+        )
+        {
+            if (File.Exists(path + suffix) || Directory.Exists(path + suffix))
+            {
+                throw new IOException("Refusing existing run evidence: " + path + suffix);
+            }
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        // Claim the path before Execute: callbacks can fire before Execute returns its GUID.
+        Set("ResultPath", path);
+        Set("InitialScenes", JsonUtility.ToJson(state));
+        Set("Errors", "");
+        Set("RunGuid", "");
+        Set("ResultWritten", "");
+        try
+        {
+            File.WriteAllText(path + ".status", "running");
+            File.WriteAllText(path + ".cleanup.status", "running");
+            Filter filter = new Filter
+            {
+                testMode = testMode == "PlayMode" ? TestMode.PlayMode : TestMode.EditMode,
+                assemblyNames = Split(assemblyNames),
+                testNames = Split(testNames),
+                categoryNames = Split(categoryNames),
+            };
+            string guid = Api.Execute(new ExecutionSettings(filter));
+            Set("RunGuid", guid);
+            if (string.IsNullOrEmpty(guid))
+            {
+                throw new InvalidOperationException("Execute returned no run GUID.");
+            }
+            File.WriteAllText(
+                path + ".run.json",
+                JsonUtility.ToJson(new RunIdentity { runGuid = guid, resultPath = path }, true)
+            );
+            return guid;
+        }
+        catch (Exception error)
+        {
+            RecordError("Starting the run failed: " + error);
+            // Execute may have created a job before throwing. Keep ownership until passive cleanup.
+            throw;
+        }
+    }
+
+    private static string[] Split(string value) =>
+        string.IsNullOrEmpty(value) ? null : value.Split(';');
+
+    private static string Get(string key) => SessionState.GetString(Prefix + key, "");
+
+    private static void Set(string key, string value) =>
+        SessionState.SetString(Prefix + key, value);
+
+    private static EditorState ReadEditorState()
+    {
+        if (ActiveMethod == null)
+        {
+            throw new MissingMethodException(
+                "TestRunnerApi.IsRunActive is unavailable; idleness is unproven."
+            );
+        }
+        SceneState[] scenes = new SceneState[SceneManager.sceneCount];
+        for (int index = 0; index < scenes.Length; ++index)
+        {
+            Scene scene = SceneManager.GetSceneAt(index);
+            scenes[index] = new SceneState
+            {
+                path = scene.path,
+                dirty = scene.isDirty,
+                loaded = scene.isLoaded,
+            };
+        }
+        return new EditorState
+        {
+            observedUtc = DateTime.UtcNow.ToString("O"),
+            frameworkActive = (bool)ActiveMethod.Invoke(null, null),
+            playing = EditorApplication.isPlayingOrWillChangePlaymode,
+            compiling = EditorApplication.isCompiling,
+            updating = EditorApplication.isUpdating,
+            mainStage = StageUtility
+                .GetCurrentStageHandle()
+                .Equals(StageUtility.GetMainStageHandle()),
+            activeScene = SceneManager.GetActiveScene().path,
+            scenes = scenes,
+            runGuid = Get("RunGuid"),
+            resultPath = Get("ResultPath"),
+            frameworkErrors = Get("Errors"),
+        };
+    }
+
+    private static void RequireSafeEditor(EditorState state)
+    {
+        if (
+            state.frameworkActive
+            || state.playing
+            || state.compiling
+            || state.updating
+            || !state.mainStage
+        )
+        {
+            throw new InvalidOperationException("The shared editor is not idle in its main stage.");
+        }
+        if (state.scenes.Length == 0 || string.IsNullOrEmpty(state.activeScene))
+        {
+            throw new InvalidOperationException("A saved active scene is required.");
+        }
+        foreach (SceneState scene in state.scenes)
+        {
+            if (scene.dirty || (scene.loaded && string.IsNullOrEmpty(scene.path)))
+            {
+                throw new InvalidOperationException(
+                    "The shared editor has a dirty or unsaved scene."
+                );
+            }
+        }
+    }
+
+    private static void Observe()
+    {
+        string path = Get("ResultPath");
+        try
+        {
+            // No refresh, scene mutation, cancellation, retry, or new test launch.
+            // The bounded idle snapshot makes the next preflight possible without Unity_RunCommand.
+            if (string.IsNullOrEmpty(path) && EditorApplication.timeSinceStartup < nextSnapshot)
+            {
+                return;
+            }
+            EditorState state = ReadEditorState();
+            if (EditorApplication.timeSinceStartup >= nextSnapshot)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(StatePath));
+                File.WriteAllText(StatePath, JsonUtility.ToJson(state, true));
+                SessionState.EraseString(Prefix + "ObservationError");
+                nextSnapshot = EditorApplication.timeSinceStartup + 1;
+            }
+            if (
+                string.IsNullOrEmpty(path)
+                || state.frameworkActive
+                || state.playing
+                || state.compiling
+                || state.updating
+            )
+            {
+                return;
+            }
+            string errors = Get("Errors");
+            string terminal;
+            if (!string.IsNullOrEmpty(errors))
+            {
+                terminal = "error: framework or result writer failed; see .errors.log";
+            }
+            else if (Get("ResultWritten") != "yes")
+            {
+                terminal = "error: framework inactive without a completed result";
+            }
+            else
+            {
+                ResultSummary result = JsonUtility.FromJson<ResultSummary>(File.ReadAllText(path));
+                terminal =
+                    result.passCount > 0
+                    && result.failCount == 0
+                    && result.inconclusiveCount == 0
+                    && result.nodes != null
+                    && result.nodes.Length > 0
+                    && result.nodes[0].status == nameof(TestStatus.Passed)
+                    && Array.TrueForAll(
+                        result.nodes,
+                        node =>
+                            node != null
+                            && (
+                                node.status == nameof(TestStatus.Passed)
+                                || node.status == nameof(TestStatus.Skipped)
+                            )
+                    )
+                        ? "done"
+                        : "error: result has no passes or contains failed/inconclusive nodes";
+            }
+            try
+            {
+                RequireSafeEditor(state);
+                EditorState initial = JsonUtility.FromJson<EditorState>(Get("InitialScenes"));
+                if (
+                    initial.activeScene != state.activeScene
+                    || initial.scenes.Length != state.scenes.Length
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The initial scene setup was not restored."
+                    );
+                }
+                for (int index = 0; index < initial.scenes.Length; ++index)
+                {
+                    if (
+                        initial.scenes[index].path != state.scenes[index].path
+                        || initial.scenes[index].loaded != state.scenes[index].loaded
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            "The initial scene setup was not restored."
+                        );
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                terminal = "error: " + error.Message;
+            }
+            File.WriteAllText(path + ".cleanup.json", JsonUtility.ToJson(state, true));
+            File.WriteAllText(path + ".cleanup.status", terminal);
+            if (Get("ResultWritten") != "yes")
+            {
+                File.WriteAllText(path + ".status", terminal);
+            }
+            // A terminal cleanup record keeps identity and errors after SessionState ownership clears.
+            foreach (
+                string key in new[]
+                {
+                    "ResultPath",
+                    "RunGuid",
+                    "InitialScenes",
+                    "Errors",
+                    "ResultWritten",
+                    "ObservationError",
+                }
+            )
+            {
+                SessionState.EraseString(Prefix + key);
+            }
+        }
+        catch (Exception error)
+        {
+            // A missing/failed query is never evidence of cleanup. Keep ownership and keep observing.
+            Set("ObservationError", error.ToString());
+            if (!string.IsNullOrEmpty(path))
+            {
+                TryWriteFailure(path + ".cleanup.status", "observation-error: " + error);
+            }
+            // Mark an unavailable query unsafe; if storage fails, the previous snapshot goes stale.
+            TryWriteFailure(
+                StatePath,
+                JsonUtility.ToJson(
+                    new EditorState
+                    {
+                        observedUtc = DateTime.UtcNow.ToString("O"),
+                        observationError = error.ToString(),
+                    },
+                    true
+                )
+            );
+        }
+    }
+
+    private static void RecordError(string message)
+    {
+        string path = Get("ResultPath");
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+        if (string.IsNullOrEmpty(message))
+        {
+            message = "The framework reported an empty error.";
+        }
+        string entry = DateTime.UtcNow.ToString("O") + " " + message + Environment.NewLine;
+        string previous = Get("Errors");
+        // Repeated passive storage failures must not grow SessionState every editor frame.
+        if (previous.Contains(message, StringComparison.Ordinal))
+        {
+            return;
+        }
+        Set("Errors", previous + entry);
+        try
+        {
+            File.AppendAllText(path + ".errors.log", entry);
+        }
+        catch (Exception error)
+        {
+            // SessionState retains the error even when the filesystem cannot retain a log.
+            Set("Errors", Get("Errors") + "Writing the error log failed: " + error);
+        }
+    }
+
+    private static void TryWriteFailure(string path, string content)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, content);
+        }
+        catch (Exception error)
+        {
+            Set("ObservationError", "Writing failure evidence failed: " + error);
+            RecordError("Writing failure evidence failed: " + error);
+        }
+    }
+
+    private sealed class ResultWriter : IErrorCallbacks
+    {
+        public void OnError(string message) => RecordError(message);
+
+        public void RunStarted(ITestAdaptor testsToRun) { }
+
+        public void TestStarted(ITestAdaptor test) { }
+
+        public void TestFinished(ITestResultAdaptor result) { }
+
+        public void RunFinished(ITestResultAdaptor result)
+        {
+            string path = Get("ResultPath");
+            if (string.IsNullOrEmpty(path))
+            {
+                return;
+            }
+            try
+            {
+                if (Get("ResultWritten") == "yes")
+                {
+                    throw new InvalidOperationException("Multiple run results reached one owner.");
+                }
+                List<ResultNode> nodes = new List<ResultNode>();
+                List<ResultNode> failures = new List<ResultNode>();
+                AppendResultTree(result, -1, nodes, failures);
+                ResultSummary summary = new ResultSummary
+                {
+                    passCount = result.PassCount,
+                    failCount = result.FailCount,
+                    skipCount = result.SkipCount,
+                    inconclusiveCount = result.InconclusiveCount,
+                    durationSeconds = result.Duration,
+                    nodes = nodes.ToArray(),
+                    failures = failures.ToArray(),
+                };
+                File.WriteAllText(path, JsonUtility.ToJson(summary, true));
+                File.WriteAllText(path + ".status", "done");
+                Set("ResultWritten", "yes");
+            }
+            catch (Exception error)
+            {
+                RecordError("Saving the result failed: " + error);
+                TryWriteFailure(path + ".status", "error: " + error);
+            }
+        }
+    }
+
+    private static void AppendResultTree(
+        ITestResultAdaptor result,
+        int parentIndex,
+        List<ResultNode> nodes,
+        List<ResultNode> failures
+    )
+    {
+        int index = nodes.Count;
+        ResultNode node = new ResultNode
+        {
+            parentIndex = parentIndex,
+            name = result.FullName,
+            isSuite = result.Test.IsSuite,
+            status = result.TestStatus.ToString(),
+            resultState = result.ResultState,
+            durationSeconds = result.Duration,
+            message = result.Message,
+            stack = result.StackTrace,
+            output = result.Output,
+            startTime = result.StartTime.ToString("O"),
+            endTime = result.EndTime.ToString("O"),
+            passCount = result.PassCount,
+            failCount = result.FailCount,
+            skipCount = result.SkipCount,
+            inconclusiveCount = result.InconclusiveCount,
+        };
+        nodes.Add(node);
+        if (result.TestStatus == TestStatus.Failed)
+        {
+            failures.Add(node);
+        }
+        if (result.Children != null)
+        {
+            foreach (ITestResultAdaptor child in result.Children)
+            {
+                AppendResultTree(child, index, nodes, failures);
+            }
+        }
+    }
+
+    [Serializable]
+    private sealed class RunIdentity
+    {
+        public string runGuid = "";
+        public string resultPath = "";
+    }
+
+    [Serializable]
+    private sealed class SceneState
+    {
+        public string path = "";
+        public bool dirty;
+        public bool loaded;
+    }
+
+    [Serializable]
+    private sealed class EditorState
+    {
+        public string observedUtc = "";
+        public string observationError = "";
+        public bool frameworkActive;
+        public bool playing;
+        public bool compiling;
+        public bool updating;
+        public bool mainStage;
+        public string activeScene = "";
+        public SceneState[] scenes = Array.Empty<SceneState>();
+        public string runGuid = "";
+        public string resultPath = "";
+        public string frameworkErrors = "";
+    }
+
+    [Serializable]
+    private sealed class ResultSummary
+    {
+        public int passCount = -1;
+        public int failCount = -1;
+        public int skipCount;
+        public int inconclusiveCount = -1;
+        public double durationSeconds;
+        public ResultNode[] nodes = Array.Empty<ResultNode>();
+        public ResultNode[] failures = Array.Empty<ResultNode>();
+    }
+
+    [Serializable]
+    private sealed class ResultNode
+    {
+        public int parentIndex;
+        public string name = "";
+        public bool isSuite;
+        public string status = "";
+        public string resultState = "";
+        public double durationSeconds;
+        public string message = "";
+        public string stack = "";
+        public string output = "";
+        public string startTime = "";
+        public string endTime = "";
+        public int passCount;
+        public int failCount;
+        public int skipCount;
+        public int inconclusiveCount;
+    }
+}

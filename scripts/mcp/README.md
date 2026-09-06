@@ -150,6 +150,55 @@ every committed file back to its previous content and permissions. Rollback is i
 which matters on Windows where `rename` returns `EPERM` while an editor holds a config file open: a
 failed restore is collected and attached to the original error rather than replacing it.
 
+## Maintain the local Unity test runner
+
+The HTTP relay above transports requests. The maintained Editor test runner is
+[DxMcpTestRunner.cs.txt](./DxMcpTestRunner.cs.txt). Copy that file verbatim to the host project's
+`Assets/Editor/DxMcpTestRunner.cs`; the `.txt` source stays outside package compilation and CI
+test execution. The same source is compiled and exercised by `.docs-tests/UnityMcpBridgeTests.cs`.
+
+Before installing or replacing it, prove framework inactivity, idle editor flags, the main stage,
+and every loaded scene's saved, clean state through passive queries or a maintainer's inspection.
+`Unity_RunCommand` refreshes assets before executing code, so it cannot establish that preflight.
+Preserve any existing runner source and metadata outside `Assets` before replacement, and review
+local changes before overwriting them. Use an approved host Editor/filesystem flow when MCP cannot
+serve the required interaction; do not bypass its approval gate. Keep existing `.meta` identity
+when replacing an owned script. Refresh through `Assets/Refresh` only after the preflight, then
+verify the new assembly and unchanged scenes. Remove an old `DxMcpObservedTestRunner` only through
+the same reviewed flow after its ownership scope is empty.
+
+The runner writes a passive snapshot once per second to
+`Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/editor-state.json`. Require a fresh
+`observedUtc`, no `observationError`, inactive framework/editor flags, `mainStage: true`, an empty
+`resultPath`, and saved, clean scenes before the next refresh or run. Compare the host clock when
+checking freshness. A missing, stale, or temporarily malformed snapshot proves no state. Read it
+again without invoking an asset-refreshing tool; never launch another test because observation
+timed out.
+
+`DxMcpTestRunner.Run(mode, assemblies, tests, categories, resultPath)` returns the exact GUID from
+`TestRunnerApi.Execute`. Filters use semicolon-separated strings. Use a fresh result path under
+`Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/`; existing result or companion
+files are refused. The runner owns that path until passive framework cleanup ends.
+
+| Artifact                                        | Meaning                                                                             |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `resultPath.run.json`                           | Exact Execute GUID and absolute result path; joins every companion to one job       |
+| `resultPath` and `.status`                      | Raw RunFinished result, including every result-tree node, output, failure and count |
+| `resultPath.errors.log`                         | Framework and result-writer errors, including errors after RunFinished              |
+| `resultPath.cleanup.json` and `.cleanup.status` | Passive terminal outcome, GUID, retained errors and restored-scene evidence         |
+
+A raw `.status` of `done` means results are available. Accept success only when `.cleanup.status`
+is also `done`, GUID/path companions agree, and the result has positive passes with zero failures
+and inconclusive cases. Keep skips visible. Cleanup checks that the original scene paths, loaded
+states and active scene were restored. A framework failure without RunFinished becomes an `error:`
+outcome after framework inactivity is proven. An `observation-error:` keeps ownership pending;
+continue observing the same job. Storage failures retain errors in SessionState and later copy
+them into the cleanup record when storage recovers.
+
+Validate an installation with consecutive focused runs and a deliberately failed framework setup.
+Retain each GUID, complete result and terminal cleanup record, and verify the original scene setup
+after each attempt. No waits, retries or extra Unity launches are added to CI by this local runner.
+
 ## Local overrides
 
 Set any of these in `.env.local` at the repository root, or pass the matching flag:

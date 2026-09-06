@@ -84,49 +84,43 @@ testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type b
    - `testNames` accepts a fixture's full type name (for example
      `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests`) to run just that
      fixture -- handy for a fast red-green loop on a single contract test.
-1. **Poll**: read the `.status` sidecar next to `resultPath` from bash in the
-   container. It moves `running` -> `done` (or `error: <message>`). The JSON result
-   carries `{ passCount, failCount, skipCount, inconclusiveCount, durationSeconds,
-failures[] }`.
+1. **Poll** through files only. With the maintained bridge, `.status` describes raw result
+   availability and `.cleanup.status` describes passive framework completion. Require `done` in
+   both files, positive passes, zero failed/inconclusive cases, and matching GUID/path companions.
+   Keep expected skips visible. Read the complete tree in the result JSON for individual outcomes.
 
-The bridge survives domain reloads via `[InitializeOnLoad]` + `SessionState`, so a
-recompile mid-run does not lose the result.
+The maintained bridge survives domain reloads through `[InitializeOnLoad]` and `SessionState`.
+Its source, installation, artifact contract, and preflight snapshot are documented in
+[Maintain the local Unity test runner](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
 
 ## Framework cleanup gate
 
-`DxMcpTestRunner` writes its result during `RunFinished`. Unity Test Framework can still be
-restoring scenes after that callback, even when `EditorApplication.isPlaying` is false. Starting
-another run in that interval can capture a temporary scene that the previous run then deletes.
-Session 266 observed `Invalid SceneManagerSetup` followed by `ReloadScene cannot be used with a
-scene without a SceneAsset` during repeated local runs.
+`RunFinished` makes a result available before Unity Test Framework necessarily finishes restoring
+scenes. Session 266 observed `Invalid SceneManagerSetup` and a missing temporary scene after a new
+run started during that cleanup interval. A raw passing result is not cleanup evidence.
 
-Do not poll `Unity_RunCommand` during a test run. The inspected MCP implementation calls
-`AssetDatabase.Refresh` before executing the supplied code, including read-only snippets. During
-local runtime tests that refresh imported malformed host assets and produced unrelated test
-failures. Use filesystem polling for the active run.
+The maintained `DxMcpTestRunner` retains the Execute GUID, owns a fresh result path, records
+`IErrorCallbacks.OnError`, and observes framework inactivity from `EditorApplication.update`.
+It writes `.cleanup.json` and `.cleanup.status` after verifying the original scene setup. Missing
+results and late framework errors produce terminal errors; failed observations retain ownership.
+An observation timeout never authorizes cancellation or a replacement launch.
 
-Before repeated runs, prepare a host-side observer while the editor is safe. It must retain the
-current result path across reloads, capture `IErrorCallbacks.OnError` for that run, and use
-`EditorApplication.update` to observe framework cleanup without refreshing assets. On the
-inspected framework the active-job query is the internal static `TestRunnerApi.IsRunActive`.
-Inspect the installed source if that API changes; missing state is not proof of idleness.
+Do not poll `Unity_RunCommand` during a test run. Its installed implementation refreshes assets
+before executing even read-only snippets. Use filesystem polling and the bridge's passive
+`editor-state.json` for subsequent preflight, requiring current timestamps and complete safe-state
+fields. Missing, stale, or temporarily malformed files prove no state; continue observing the same
+job without refreshing assets.
 
-The observer must write a separate terminal marker only after the framework reports inactive.
-Capture errors through that point: cleanup can fail after `RunFinished` has already written a
-passing result. Require both successful framework completion and a result with a positive pass
-count, zero failures, and zero inconclusive cases. Keep expected skips visible. Check editor flags
-and every scene's dirtiness again before the next refresh, run, or scene change.
+For a host that still has the earlier simple bridge, retain its reviewed
+`DxMcpObservedTestRunner` until migration is safe. That observer writes `.observer.status`;
+require its terminal `done` alongside the raw result. An old terminal file is historical evidence,
+not a fresh editor preflight. The simple bridge alone can leave `running` without a result after
+framework setup fails. Prove inactivity before classifying that as terminal or recovering scenes.
+Never discard an unnamed or dirty user scene.
 
-The simple bridge implements only `ICallbacks`, so a framework-level `RunFailed` can leave its
-sidecar at `running` without a result. Inactive framework state with no result is a terminal
-framework failure, not a live test or a pass. Preserve that failed attempt and inspect the error
-before recovery. Restore the original saved scene only after verifying that the editor is idle
-and all scenes are clean. Never restart solely because polling timed out, cancel a run to resolve
-an observation timeout, or discard an unnamed scene containing unreviewed work.
-
-This is local orchestration. Add no delays, retries, or extra test launches to CI. Durable bridge
-ownership and regeneration are tracked in
-[issue #544](https://github.com/Ambiguous-Interactive/DxMessaging/issues/544).
+This is local orchestration. It adds no delays, retries, or test launches to CI.
+[Issue #544](https://github.com/Ambiguous-Interactive/DxMessaging/issues/544) tracks native acceptance
+of maintained bridge ownership and regeneration.
 
 ## Shared Editor Safety
 
@@ -206,11 +200,10 @@ benchmark run, since the editor process is already up. See
 
 ## If the Bridge Is Missing
 
-The `DxMcpTestRunner` bridge lives in the host project (under its `Assets/Editor/`),
-NOT in this package repo, so a clean of the host project drops it. Regenerate it via
-`Unity_RunCommand` (`System.IO.File.WriteAllText` of the bridge source), then run the
-safe-state preflight and execute `Assets/Refresh` through `Unity_ManageMenuItem`. It
-wraps `TestRunnerApi` and writes the JSON result plus the `.status` sidecar.
+The installed bridge lives under the host's `Assets/Editor/`, outside this package. Regenerate it
+from the maintained `scripts/mcp/DxMcpTestRunner.cs.txt`, following the
+[installation and preflight contract](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+Do not invent a replacement bridge or use a refresh-capable command to establish its own safety.
 
 ## CI vs Local
 

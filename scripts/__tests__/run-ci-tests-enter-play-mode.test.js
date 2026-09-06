@@ -58,7 +58,9 @@ function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
   if (options.cachePath) args.push("-CachePath", options.cachePath);
   args.push("-GenerateOnly");
 
-  return spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 120000 });
+  const result = spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 120000 });
+  assert.ifError(result.error);
+  return result;
 }
 
 test("run-ci-tests emits EnterPlayModeOptions reload-disable for CI projects", () => {
@@ -76,7 +78,7 @@ test("Unity native-exit, diagnostic, and retry-cleanup guards stay fail-closed",
   for (const text of [runCiTests, exportUnityPackage]) {
     assert.match(
       text,
-      /(?=[\s\S]*function Clear-NonFatalNativeExitCode[\s\S]*\$global:LASTEXITCODE = 0)(?=[\s\S]*\$exitCode = \$LASTEXITCODE\s+Clear-NonFatalNativeExitCode -Context \$Label)(?=[\s\S]*finally \{\s+Clear-NonFatalNativeExitCode -Context 'Unity license return cleanup'\s+\})/
+      /^(?=[\s\S]*function Clear-NonFatalNativeExitCode[\s\S]*\$global:LASTEXITCODE = 0)(?=[\s\S]*\$exitCode = \$(?:LASTEXITCODE|processResult\.ExitCode)\s+Clear-NonFatalNativeExitCode -Context \$Label)(?=[\s\S]*finally \{\s+Clear-NonFatalNativeExitCode -Context 'Unity license return cleanup'\s+\})/
     );
   }
   // prettier-ignore
@@ -84,7 +86,7 @@ test("Unity native-exit, diagnostic, and retry-cleanup guards stay fail-closed",
   // prettier-ignore
   assert.match(runCiTests, /function Write-CacheOwnershipMarker \{(?:(?!\n\})[\s\S])*Test-IsReparsePoint -Path \$markerPath/);
   // prettier-ignore
-  assert.match(runCiTests, /(?=[\s\S]*function Test-IsReparsePoint \{(?!(?:(?!\n\})[\s\S])*Test-Path)(?:(?!\n\})[\s\S])*Get-Item -LiteralPath \$Path -Force(?:(?!\n\})[\s\S])*catch \[System\.Management\.Automation\.ItemNotFoundException\])(?=[\s\S]*foreach \(\$projectRetryPath in \$projectRetryPaths\)[\s\S]*Assert-UnityProjectRetryPathSafe)(?=[\s\S]*foreach \(\$retryCachePath in \$retryCachePaths\)[\s\S]*Assert-UnityCacheRetryPathSafe)(?=[\s\S]*\$paths = \$projectRetryPaths \+ \$retryCachePaths[\s\S]*Remove-Item -LiteralPath \$path -Recurse)/);
+  assert.match(runCiTests, /^(?=[\s\S]*function Test-IsReparsePoint \{(?!(?:(?!\n\})[\s\S])*Test-Path)(?:(?!\n\})[\s\S])*Get-Item -LiteralPath \$Path -Force(?:(?!\n\})[\s\S])*catch \[System\.Management\.Automation\.ItemNotFoundException\])(?=[\s\S]*foreach \(\$projectRetryPath in \$projectRetryPaths\)[\s\S]*Assert-UnityProjectRetryPathSafe)(?=[\s\S]*foreach \(\$retryCachePath in \$retryCachePaths\)[\s\S]*Assert-UnityCacheRetryPathSafe)(?=[\s\S]*\$paths = \$projectRetryPaths \+ \$retryCachePaths[\s\S]*Remove-Item -LiteralPath \$path -Recurse)/);
 });
 
 test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache paths", (t) => {

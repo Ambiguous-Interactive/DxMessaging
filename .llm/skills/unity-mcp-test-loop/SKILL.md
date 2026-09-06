@@ -84,7 +84,12 @@ The devcontainer workspace is the same directory as the embedded package inside 
    compilation to settle before trusting tests. Do not use `AssetDatabase.Refresh()` through
    `Unity_RunCommand`; a modal prompt blocks the editor and only the developer can dismiss it.
 1. **Run** `DxMcpTestRunner.Run(testMode, assemblyNames, testNames, categoryNames, resultPath)` through `Unity_RunCommand`, locating the type by scanning `AppDomain` assemblies. Arguments are semicolon-separated lists and `null` means no filter. `testMode` is `EditMode` or `PlayMode`. `testNames` accepts a full fixture type name such as `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests` for a single-fixture red-green loop.
-1. **Poll** the `.status` sidecar next to `resultPath` from bash. It moves `running` to `done` or `error: <message>`. The JSON result carries `{ passCount, failCount, skipCount, inconclusiveCount, durationSeconds, failures[] }`.
+1. **Poll** the `.status` and `.cleanup.status` sidecars next to `resultPath` from bash.
+   The first records raw result capture; only the second establishes passive cleanup.
+   Retain the returned Execute GUID and its `.run.json` identity record. The JSON result
+   includes counts, duration, and the full `nodes[]` tree with output and failures.
+   Require both sidecars to report `done`, positive passes, no failed/inconclusive nodes,
+   and matching GUID/path in the cleanup record before accepting a run.
 1. **Wait for framework cleanup before another run or scene mutation.** `RunFinished` can write
    `done` before Unity restores its temporary scenes. Check the installed Test Framework's active
    job state and run-scoped framework errors through a passive host observer; do not poll
@@ -124,7 +129,13 @@ PNG writer when testing the whole Editor assembly. See
 
 ### If the bridge is missing
 
-`DxMcpTestRunner` lives in the host project under its `Assets/Editor/`, not in this repo, so cleaning the host project drops it. After the safe-state preflight, regenerate it through `Unity_RunCommand` with `System.IO.File.WriteAllText` of the bridge source, then execute `Assets/Refresh` through `Unity_ManageMenuItem`. It wraps `TestRunnerApi` and writes the JSON result plus the `.status` sidecar.
+The maintained source is `scripts/mcp/DxMcpTestRunner.cs.txt`. Its installed copy lives at
+the host's `Assets/Editor/DxMcpTestRunner.cs`, so cleaning the host can remove it.
+After the safe-state preflight, follow the
+[maintained runner installation flow](../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+Copy that source verbatim, preserve unreviewed host changes, and refresh through
+`Unity_ManageMenuItem`. Do not generate a replacement implementation. If the missing
+observer also leaves preflight evidence unavailable, report it before installation.
 
 ### Measuring suite speed
 

@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using System;
     using System.Collections.Generic;
     using System.Reflection;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Benchmarks;
     using NUnit.Framework;
     using UnityEngine.Profiling;
@@ -41,6 +42,77 @@ namespace DxMessaging.Tests.Editor.Allocations
             // Defensive hygiene: never let a failing test leak an enabled recorder into the
             // next test. Assertions run BEFORE teardown, so this never masks a real leak.
             Recorder.Get(GcAllocMarker).enabled = false;
+        }
+
+        [TestCase(1)]
+        [TestCase(3)]
+        public void ZeroAllocationFailureReportsMeasuredCountWithoutRepeating(int iterations)
+        {
+            if (!AllocationProbe.IsFunctional)
+            {
+                Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
+            }
+
+            const string label = "Deliberate allocation diagnostic";
+            int calls = 0;
+            byte[] sink = null;
+            Action allocate = () =>
+            {
+                ++calls;
+                sink = new byte[16];
+            };
+
+            AssertionException failure = Assert.Throws<AssertionException>(() =>
+                AllocationAssertions.AssertNoAllocations(label, allocate, 0, iterations)
+            );
+            StringAssert.Contains(label, failure.Message, $"iterations={iterations}");
+            System.Text.RegularExpressions.Match count = System.Text.RegularExpressions.Regex.Match(
+                failure.Message,
+                @"made (\d+) GC allocation\(s\)"
+            );
+            Assert.IsTrue(count.Success, $"iterations={iterations}: {failure.Message}");
+            Assert.GreaterOrEqual(
+                long.Parse(
+                    count.Groups[1].Value,
+                    System.Globalization.CultureInfo.InvariantCulture
+                ),
+                iterations,
+                $"iterations={iterations}: diagnostic must retain the positive allocation count."
+            );
+            StringAssert.Contains(
+                $"across {iterations} iterations",
+                failure.Message,
+                $"iterations={iterations}"
+            );
+            Assert.AreEqual(
+                iterations * 2,
+                calls,
+                $"iterations={iterations}: one wrapper warmup and one measured window; no retry."
+            );
+            Assert.IsFalse(RecorderEnabled, $"iterations={iterations}: recorder must be disabled.");
+            GC.KeepAlive(sink);
+        }
+
+        [TestCase(0, 1)]
+        [TestCase(2, 3)]
+        public void ZeroAllocationSuccessPreservesWarmupAndMeasurementCounts(
+            int warmup,
+            int iterations
+        )
+        {
+            int calls = 0;
+            AllocationAssertions.AssertNoAllocations(
+                "Nonallocating control",
+                () => ++calls,
+                warmup,
+                iterations
+            );
+            Assert.AreEqual(
+                warmup + iterations * 2,
+                calls,
+                $"warmup={warmup}, iterations={iterations}: the diagnostic must not remeasure."
+            );
+            Assert.IsFalse(RecorderEnabled, $"warmup={warmup}, iterations={iterations}");
         }
 
         [Test]
