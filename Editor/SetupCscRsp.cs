@@ -5,6 +5,7 @@ namespace DxMessaging.Editor
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Text;
     using DxMessaging.Editor.Settings;
     using UnityEditor;
     using UnityEngine;
@@ -12,12 +13,8 @@ namespace DxMessaging.Editor
     [InitializeOnLoad]
     public static class SetupCscRsp
     {
-        private static readonly string RspFilePath = Path.Combine(
-                Application.dataPath,
-                "..",
-                "csc.rsp"
-            )
-            .Replace("\\", "/");
+        internal const string RspAssetPath = "Assets/csc.rsp";
+        private static bool responseFileImportPending;
 
         // Older package versions copied the analyzer + Roslyn runtime DLLs into the consumer
         // project here so the source generator applied project-wide. The generator now ships
@@ -68,16 +65,12 @@ namespace DxMessaging.Editor
                 () => TryRemoveLegacyAnalyzerCopy(),
                 "remove redundant in-project analyzer copy"
             );
-            ScheduleSetupStep(EnsureCscRsp, "clean csc.rsp analyzer entries");
             ScheduleAdditionalFileForIgnoreListSync();
         }
 
         internal static void ScheduleAdditionalFileForIgnoreListSync()
         {
-            ScheduleSetupStep(
-                EnsureAdditionalFileForIgnoreList,
-                "sync csc.rsp base-call ignore additionalfile entry"
-            );
+            ScheduleSetupStep(EnsureCscRsp, "sync Assets/csc.rsp compiler options");
         }
 
         private static void ScheduleSetupStep(Action work, string description)
@@ -295,36 +288,160 @@ namespace DxMessaging.Editor
         /// </remarks>
         private static void EnsureCscRsp()
         {
-            try
+            SynchronizeResponseFiles(
+                Application.dataPath,
+                path => AssetDatabase.ImportAsset(path),
+                ref responseFileImportPending
+            );
+        }
+
+        internal static string GetRspFilePath(string assetsDirectory)
+        {
+            return Path.Combine(assetsDirectory, "csc.rsp").Replace("\\", "/");
+        }
+
+        internal static void SynchronizeResponseFiles(
+            string assetsDirectory,
+            Action<string> importAsset,
+            ref bool importPending
+        )
+        {
+            string rspPath = GetRspFilePath(assetsDirectory);
+            string projectRoot = Path.GetFullPath(Path.Combine(assetsDirectory, ".."));
+            string legacyRspPath = Path.Combine(projectRoot, "csc.rsp");
+            string sidecarPath = DxMessagingBaseCallIgnoreSync.SidecarAssetPath;
+            bool sidecarExists = File.Exists(Path.Combine(projectRoot, sidecarPath));
+
+            string[] assetLines = ReadResponseFile(rspPath, out Encoding assetEncoding);
+            string newline = FindNewline(assetLines);
+            assetLines = CleanDxMessagingAnalyzerLines(assetLines, out bool removedAnalyzers);
+            assetLines = SynchronizeAdditionalFileForIgnoreListLines(
+                assetLines,
+                sidecarPath,
+                sidecarExists,
+                out bool changedSidecar,
+                newline
+            );
+
+            // Only remove package-managed options from the old root file. Moving unrelated
+            // options to Assets would activate compiler settings Unity previously ignored.
+            string[] legacyLines = ReadResponseFile(legacyRspPath, out Encoding legacyEncoding);
+            legacyLines = CleanDxMessagingAnalyzerLines(
+                legacyLines,
+                out bool removedLegacyAnalyzers
+            );
+            legacyLines = SynchronizeAdditionalFileForIgnoreListLines(
+                legacyLines,
+                sidecarPath,
+                false,
+                out bool removedLegacySidecar
+            );
+
+            if (removedAnalyzers || changedSidecar)
             {
-                if (!File.Exists(RspFilePath))
+                WriteResponseFile(rspPath, assetLines, assetEncoding);
+                importPending = true;
+            }
+
+            // Keep an unsuccessful import pending even if the file was already written. The
+            // next scheduled sync must retry the import without rewriting unchanged contents.
+            if (importPending)
+            {
+                importAsset(RspAssetPath);
+                importPending = false;
+            }
+
+            // Do not retire the old wiring until the destination write and import succeeded.
+            if (removedLegacyAnalyzers || removedLegacySidecar)
+            {
+                if (string.IsNullOrWhiteSpace(string.Concat(legacyLines)))
                 {
-                    return;
+                    File.Delete(legacyRspPath);
                 }
-
-                string rspContent = File.ReadAllText(RspFilePath);
-
-                string[] newLines = CleanDxMessagingAnalyzerLines(
-                    rspContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
-                    out bool foundStaleEntries
-                );
-
-                if (foundStaleEntries)
+                else
                 {
-                    // Write the cleaned up content
-                    string newContent = string.Join(Environment.NewLine, newLines);
-                    if (!string.IsNullOrEmpty(newContent))
-                    {
-                        newContent += Environment.NewLine;
-                    }
-                    File.WriteAllText(RspFilePath, newContent);
-                    AssetDatabase.ImportAsset("csc.rsp");
-                    Debug.Log("Updated csc.rsp.");
+                    WriteResponseFile(legacyRspPath, legacyLines, legacyEncoding);
                 }
             }
-            catch (IOException ex)
+        }
+
+        private static string[] ReadResponseFile(string path, out Encoding encoding)
+        {
+            encoding = new UTF8Encoding(false, true);
+            if (!File.Exists(path))
             {
-                DxMessagingEditorLog.LogError("Failed to modify csc.rsp.", ex);
+                return Array.Empty<string>();
+            }
+
+            using StreamReader reader = new(path, encoding, true);
+            string text = reader.ReadToEnd();
+            encoding = reader.CurrentEncoding;
+            List<string> lines = new();
+            int start = 0;
+            for (int index = 0; index < text.Length; ++index)
+            {
+                if (text[index] != '\r' && text[index] != '\n')
+                {
+                    continue;
+                }
+                if (text[index] == '\r' && index + 1 < text.Length && text[index + 1] == '\n')
+                {
+                    ++index;
+                }
+                lines.Add(text.Substring(start, index + 1 - start));
+                start = index + 1;
+            }
+            if (start < text.Length)
+            {
+                lines.Add(text.Substring(start));
+            }
+            return lines.ToArray();
+        }
+
+        private static string FindNewline(IEnumerable<string> lines)
+        {
+            foreach (string line in lines)
+            {
+                if (line.EndsWith("\r\n", StringComparison.Ordinal))
+                {
+                    return "\r\n";
+                }
+                if (line.EndsWith("\n", StringComparison.Ordinal))
+                {
+                    return "\n";
+                }
+                if (line.EndsWith("\r", StringComparison.Ordinal))
+                {
+                    return "\r";
+                }
+            }
+            return Environment.NewLine;
+        }
+
+        private static void WriteResponseFile(string path, string[] lines, Encoding encoding)
+        {
+            string temporaryPath = Path.Combine(
+                Path.GetDirectoryName(path),
+                $".csc.rsp.{Guid.NewGuid():N}.tmp"
+            );
+            try
+            {
+                File.WriteAllText(temporaryPath, string.Concat(lines), encoding);
+                if (File.Exists(path))
+                {
+                    File.Replace(temporaryPath, path, null);
+                }
+                else
+                {
+                    File.Move(temporaryPath, path);
+                }
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
             }
         }
 
@@ -333,216 +450,178 @@ namespace DxMessaging.Editor
             out bool foundStaleEntries
         )
         {
-            List<string> newLines = new();
+            List<string> result = new();
             foundStaleEntries = false;
-
             foreach (string line in lines ?? Array.Empty<string>())
             {
-                string trimmedLine = line?.Trim();
-                if (string.IsNullOrEmpty(trimmedLine))
-                {
-                    continue;
-                }
-
-                if (IsResponseFileComment(trimmedLine))
-                {
-                    newLines.Add(trimmedLine);
-                    continue;
-                }
-
-                List<string> retainedArguments = new();
-                bool removedFromLine = false;
-                foreach (string argument in SplitResponseFileArguments(trimmedLine))
-                {
-                    if (IsDxMessagingAnalyzerArgument(argument))
+                string rewritten = RewriteResponseFileLine(
+                    line,
+                    argument =>
                     {
-                        foundStaleEntries = true;
-                        removedFromLine = true;
-                        continue;
+                        if (
+                            !TryGetCompilerOptionValue(argument, "a", out string value)
+                            && !TryGetCompilerOptionValue(argument, "analyzer", out value)
+                        )
+                        {
+                            return argument;
+                        }
+                        return FilterCompilerPaths(
+                            argument,
+                            value,
+                            path => !IsDxMessagingAnalyzerPath(DecodeCompilerPath(path))
+                        );
                     }
-
-                    retainedArguments.Add(argument);
-                }
-
-                if (removedFromLine)
-                {
-                    if (retainedArguments.Count > 0)
-                    {
-                        newLines.Add(string.Join(" ", retainedArguments));
-                    }
-                    continue;
-                }
-
-                newLines.Add(trimmedLine);
-            }
-
-            return newLines.ToArray();
-        }
-
-        private static bool IsDxMessagingAnalyzerArgument(string trimmedLine)
-        {
-            return (
-                    TryGetCompilerOptionValue(trimmedLine, "a", out string _)
-                    || TryGetCompilerOptionValue(trimmedLine, "analyzer", out string _)
-                )
-                && (
-                    trimmedLine.Contains(
-                        "com.wallstop-studios.dxmessaging",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                    || trimmedLine.Contains(
-                        "WallstopStudios.DxMessaging",
-                        StringComparison.OrdinalIgnoreCase
-                    )
                 );
-        }
-
-        /// <summary>
-        /// Ensures <c>csc.rsp</c> contains a single <c>-additionalfile:</c> line pointing at the
-        /// base-call ignore sidecar, when (and only when) that sidecar physically exists. Stale
-        /// entries pointing at moved or deleted sidecar paths are removed.
-        /// </summary>
-        /// <remarks>
-        /// The sidecar is generated by <see cref="DxMessagingBaseCallIgnoreSync"/>. csc happily
-        /// runs without it, so this method does NOT auto-create; sidecar writes schedule this sync
-        /// again after deferred regeneration completes.
-        /// </remarks>
-        private static void EnsureAdditionalFileForIgnoreList()
-        {
-            try
-            {
-                string sidecarRelativePath = DxMessagingBaseCallIgnoreSync.SidecarAssetPath;
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
-                    .Replace("\\", "/");
-                string sidecarAbsolutePath = Path.Combine(projectRoot, sidecarRelativePath)
-                    .Replace("\\", "/");
-
-                bool sidecarExists = File.Exists(sidecarAbsolutePath);
-                if (!File.Exists(RspFilePath))
+                foundStaleEntries |= !string.Equals(line, rewritten, StringComparison.Ordinal);
+                if (rewritten != null)
                 {
-                    if (!sidecarExists)
-                    {
-                        return;
-                    }
-
-                    File.WriteAllText(
-                        RspFilePath,
-                        FormatAdditionalFileArgument(sidecarRelativePath) + Environment.NewLine
-                    );
-                    AssetDatabase.ImportAsset("csc.rsp");
-                    Debug.Log("Updated csc.rsp additionalfile entries.");
-                    return;
-                }
-
-                string[] newLines = SynchronizeAdditionalFileForIgnoreListLines(
-                    File.ReadAllLines(RspFilePath),
-                    sidecarRelativePath,
-                    sidecarExists,
-                    out bool modified
-                );
-
-                if (modified)
-                {
-                    string newContent = string.Join(Environment.NewLine, newLines);
-                    if (!string.IsNullOrEmpty(newContent))
-                    {
-                        newContent += Environment.NewLine;
-                    }
-                    File.WriteAllText(RspFilePath, newContent);
-                    AssetDatabase.ImportAsset("csc.rsp");
-                    Debug.Log("Updated csc.rsp additionalfile entries.");
+                    result.Add(rewritten);
                 }
             }
-            catch (IOException ex)
-            {
-                DxMessagingEditorLog.LogError("Failed to update csc.rsp additionalfile entry.", ex);
-            }
+            return result.ToArray();
         }
 
         internal static string[] SynchronizeAdditionalFileForIgnoreListLines(
             IEnumerable<string> lines,
             string sidecarRelativePath,
             bool sidecarExists,
-            out bool modified
+            out bool modified,
+            string newline = null
         )
         {
-            string desiredLine = FormatAdditionalFileArgument(sidecarRelativePath);
-            List<string> newLines = new();
+            string desired = FormatAdditionalFileArgument(sidecarRelativePath);
+            List<string> result = new();
             bool foundDesired = false;
-            bool foundStale = false;
-
+            modified = false;
             foreach (string line in lines ?? Array.Empty<string>())
             {
-                string trimmedLine = line?.Trim();
-                if (string.IsNullOrEmpty(trimmedLine))
-                {
-                    continue;
-                }
-
-                if (IsResponseFileComment(trimmedLine))
-                {
-                    newLines.Add(trimmedLine);
-                    continue;
-                }
-
-                List<string> retainedArguments = new();
-                bool removedFromLine = false;
-                foreach (string argument in SplitResponseFileArguments(trimmedLine))
-                {
-                    if (!IsDxMessagingBaseCallIgnoreAdditionalFile(argument))
+                string rewritten = RewriteResponseFileLine(
+                    line,
+                    argument =>
                     {
-                        retainedArguments.Add(argument);
-                        continue;
+                        if (
+                            !TryGetCompilerOptionValue(argument, "additionalfile", out string value)
+                        )
+                        {
+                            return argument;
+                        }
+                        bool insertDesired = false;
+                        string retained = FilterCompilerPaths(
+                            argument,
+                            value,
+                            path =>
+                            {
+                                string decoded = DecodeCompilerPath(path).Replace("\\", "/");
+                                string fileName = GetLegacyAnalyzerCopyEntryName(decoded);
+                                if (
+                                    !string.Equals(
+                                        fileName,
+                                        "DxMessaging.BaseCallIgnore.txt",
+                                        StringComparison.OrdinalIgnoreCase
+                                    )
+                                    && !string.Equals(
+                                        fileName,
+                                        "DxMessaging.BaseCallIgnore.generated.txt",
+                                        StringComparison.OrdinalIgnoreCase
+                                    )
+                                )
+                                {
+                                    return true;
+                                }
+                                if (
+                                    sidecarExists
+                                    && !foundDesired
+                                    && string.Equals(
+                                        decoded,
+                                        sidecarRelativePath,
+                                        StringComparison.OrdinalIgnoreCase
+                                    )
+                                )
+                                {
+                                    foundDesired = true;
+                                    insertDesired = true;
+                                }
+                                return false;
+                            }
+                        );
+                        return insertDesired
+                            ? (retained == null ? desired : retained + " " + desired)
+                            : retained;
                     }
-
-                    bool isDesired =
-                        sidecarExists
-                        && IsAdditionalFileArgumentForPath(argument, sidecarRelativePath);
-                    if (!isDesired)
-                    {
-                        // Stale entry pointing at a moved/renamed/deleted sidecar; drop it.
-                        foundStale = true;
-                        removedFromLine = true;
-                        continue;
-                    }
-
-                    if (foundDesired)
-                    {
-                        // Drop duplicate.
-                        foundStale = true;
-                        removedFromLine = true;
-                        continue;
-                    }
-
-                    retainedArguments.Add(desiredLine);
-                    foundDesired = true;
-                    if (!string.Equals(argument, desiredLine, StringComparison.Ordinal))
-                    {
-                        foundStale = true;
-                        removedFromLine = true;
-                    }
-                }
-
-                if (retainedArguments.Count > 0)
+                );
+                modified |= !string.Equals(line, rewritten, StringComparison.Ordinal);
+                if (rewritten != null)
                 {
-                    newLines.Add(string.Join(" ", retainedArguments));
-                    continue;
-                }
-
-                if (!removedFromLine)
-                {
-                    newLines.Add(trimmedLine);
+                    result.Add(rewritten);
                 }
             }
-
-            bool needsAppend = sidecarExists && !foundDesired;
-            if (needsAppend)
+            if (sidecarExists && !foundDesired)
             {
-                newLines.Add(desiredLine);
+                if (newline != null && result.Count > 0)
+                {
+                    string last = result[result.Count - 1];
+                    if (
+                        !last.EndsWith("\n", StringComparison.Ordinal)
+                        && !last.EndsWith("\r", StringComparison.Ordinal)
+                    )
+                    {
+                        result[result.Count - 1] += newline;
+                    }
+                }
+                result.Add(desired + newline);
+                modified = true;
             }
+            return result.ToArray();
+        }
 
-            modified = foundStale || needsAppend;
-            return newLines.ToArray();
+        private static bool IsDxMessagingAnalyzerPath(string path)
+        {
+            string normalized = path.Replace("\\", "/");
+            string fileName = GetLegacyAnalyzerCopyEntryName(normalized);
+            if (
+                string.Equals(
+                    fileName,
+                    LegacySourceGeneratorDllName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || string.Equals(
+                    fileName,
+                    "WallstopStudios.DxMessaging.Analyzer.dll",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return true;
+            }
+            if (!KnownLegacyAnalyzerCopyDlls.Contains(fileName))
+            {
+                return false;
+            }
+            foreach (string segment in normalized.Split('/'))
+            {
+                if (
+                    string.Equals(
+                        segment,
+                        "com.wallstop-studios.dxmessaging",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    || segment.StartsWith(
+                        "com.wallstop-studios.dxmessaging@",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return true;
+                }
+            }
+            return normalized.StartsWith(
+                    LegacyAnalyzerCopyFolder + "/",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || normalized.Contains(
+                    "/" + LegacyAnalyzerCopyFolder + "/",
+                    StringComparison.OrdinalIgnoreCase
+                );
         }
 
         private static string FormatAdditionalFileArgument(string sidecarRelativePath)
@@ -550,34 +629,160 @@ namespace DxMessaging.Editor
             return $"-additionalfile:\"{sidecarRelativePath}\"";
         }
 
-        private static bool IsResponseFileComment(string trimmedLine)
-        {
-            return trimmedLine.StartsWith("#", StringComparison.Ordinal);
-        }
-
-        private static bool IsDxMessagingBaseCallIgnoreAdditionalFile(string trimmedLine)
-        {
-            return TryGetCompilerOptionValue(trimmedLine, "additionalfile", out string value)
-                && value.Contains("DxMessaging.", StringComparison.OrdinalIgnoreCase)
-                && value.Contains("BaseCallIgnore", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsAdditionalFileArgumentForPath(
+        private static string FilterCompilerPaths(
             string argument,
-            string sidecarRelativePath
+            string value,
+            Func<string, bool> retain
         )
         {
-            if (!TryGetCompilerOptionValue(argument, "additionalfile", out string value))
+            StringBuilder kept = new();
+            bool changed = false;
+            bool inQuotes = false;
+            int start = 0;
+            // Roslyn splits analyzer/additionalfile path lists on comma and semicolon outside
+            // quotes. Retain each surviving path and its original separator without decoding it.
+            for (int index = 0; index <= value.Length; ++index)
             {
-                return false;
+                if (index < value.Length && value[index] == '"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                if (
+                    index < value.Length
+                    && (inQuotes || (value[index] != ',' && value[index] != ';'))
+                )
+                {
+                    continue;
+                }
+                string path = value.Substring(start, index - start);
+                if (retain(path))
+                {
+                    if (kept.Length > 0)
+                    {
+                        kept.Append(value[start - 1]);
+                    }
+                    kept.Append(path);
+                }
+                else
+                {
+                    changed = true;
+                }
+                start = index + 1;
             }
+            if (!changed)
+            {
+                return argument;
+            }
+            if (kept.Length == 0)
+            {
+                return null;
+            }
+            string unquoted = UnquoteWholeArgument(argument);
+            string rewritten = unquoted.Substring(0, unquoted.Length - value.Length) + kept;
+            return unquoted == argument ? rewritten : "\"" + rewritten + "\"";
+        }
 
-            string unquotedValue = UnquoteWholeArgument(value.Trim());
-            return string.Equals(
-                unquotedValue.Replace("\\", "/"),
-                sidecarRelativePath,
-                StringComparison.OrdinalIgnoreCase
-            );
+        private static string RewriteResponseFileLine(string line, Func<string, string> rewrite)
+        {
+            if (line == null)
+            {
+                return null;
+            }
+            int length = line.Length;
+            while (length > 0 && (line[length - 1] == '\r' || line[length - 1] == '\n'))
+            {
+                --length;
+            }
+            StringBuilder output = null;
+            int copied = 0;
+            int index = 0;
+            while (index < length)
+            {
+                while (index < length && char.IsWhiteSpace(line[index]))
+                {
+                    ++index;
+                }
+                // Roslyn recognizes # at the beginning of a token. An embedded or quoted #
+                // belongs to its argument and must not hide following compiler options.
+                if (index == length || line[index] == '#')
+                {
+                    break;
+                }
+                int start = index;
+                bool inQuotes = false;
+                int backslashes = 0;
+                while (index < length && (inQuotes || !char.IsWhiteSpace(line[index])))
+                {
+                    char character = line[index++];
+                    if (character == '"' && backslashes % 2 == 0)
+                    {
+                        inQuotes = !inQuotes;
+                    }
+                    backslashes = character == '\\' ? backslashes + 1 : 0;
+                }
+                string argument = line.Substring(start, index - start);
+                string replacement = rewrite(argument);
+                if (string.Equals(argument, replacement, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                output ??= new StringBuilder();
+                if (replacement == null)
+                {
+                    while (index < length && char.IsWhiteSpace(line[index]))
+                    {
+                        ++index;
+                    }
+                    if (index == length)
+                    {
+                        while (start > copied && char.IsWhiteSpace(line[start - 1]))
+                        {
+                            --start;
+                        }
+                    }
+                }
+                output.Append(line, copied, start - copied);
+                output.Append(replacement);
+                copied = index;
+            }
+            if (output == null)
+            {
+                return line;
+            }
+            output.Append(line, copied, line.Length - copied);
+            string result = output.ToString();
+            return string.IsNullOrWhiteSpace(result) ? null : result;
+        }
+
+        private static string DecodeCompilerPath(string path)
+        {
+            StringBuilder decoded = new();
+            for (int index = 0; index < path.Length; ++index)
+            {
+                int slashes = 0;
+                while (index < path.Length && path[index] == '\\')
+                {
+                    ++slashes;
+                    ++index;
+                }
+                if (index < path.Length && path[index] == '"')
+                {
+                    decoded.Append('\\', slashes / 2);
+                    if (slashes % 2 != 0)
+                    {
+                        decoded.Append('"');
+                    }
+                }
+                else
+                {
+                    decoded.Append('\\', slashes);
+                    if (index < path.Length)
+                    {
+                        decoded.Append(path[index]);
+                    }
+                }
+            }
+            return decoded.ToString();
         }
 
         private static bool TryGetCompilerOptionValue(
@@ -628,52 +833,21 @@ namespace DxMessaging.Editor
 
         private static string UnquoteWholeArgument(string argument)
         {
-            if (argument.Length >= 2 && argument[0] == '"' && argument[argument.Length - 1] == '"')
+            int quotes = 0;
+            int backslashes = 0;
+            foreach (char character in argument)
             {
-                return argument.Substring(1, argument.Length - 2).Replace("\"\"", "\"");
+                if (character == '"' && backslashes % 2 == 0)
+                {
+                    ++quotes;
+                }
+                backslashes = character == '\\' ? backslashes + 1 : 0;
             }
-
+            if (quotes == 2 && argument[0] == '"' && argument[argument.Length - 1] == '"')
+            {
+                return argument.Substring(1, argument.Length - 2);
+            }
             return argument;
-        }
-
-        private static List<string> SplitResponseFileArguments(string line)
-        {
-            List<string> arguments = new();
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                return arguments;
-            }
-
-            System.Text.StringBuilder current = new();
-            bool inQuotes = false;
-            foreach (char character in line)
-            {
-                if (character == '"')
-                {
-                    inQuotes = !inQuotes;
-                    current.Append(character);
-                    continue;
-                }
-
-                if (char.IsWhiteSpace(character) && !inQuotes)
-                {
-                    if (current.Length > 0)
-                    {
-                        arguments.Add(current.ToString());
-                        current.Clear();
-                    }
-                    continue;
-                }
-
-                current.Append(character);
-            }
-
-            if (current.Length > 0)
-            {
-                arguments.Add(current.ToString());
-            }
-
-            return arguments;
         }
     }
 

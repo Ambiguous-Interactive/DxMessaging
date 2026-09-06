@@ -300,7 +300,7 @@ The settings asset itself lives at
 `Assets/Editor/DxMessagingSettings.asset`. The ignored-types list is
 mirrored to the sidecar
 `Assets/Editor/DxMessaging.BaseCallIgnore.txt` that the analyzer reads
-via `csc.rsp`'s `-additionalfile:` switch.
+via `Assets/csc.rsp`'s `-additionalfile:` switch.
 
 > **Note**: The Inspector overlay's **Ignore this type** / **Stop ignoring**
 > buttons read and write the same ignore-list field that Project Settings

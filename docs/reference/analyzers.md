@@ -450,7 +450,7 @@ compiler host supplies Roslyn and `System.Collections.Immutable`; DxMessaging
 does not bundle private copies of those compiler assemblies.
 
 `Editor/SetupCscRsp.cs` is still used for the base-call ignore sidecar. It keeps
-`csc.rsp` in sync by removing stale DxMessaging analyzer `-a:` entries (left
+`Assets/csc.rsp` in sync by removing stale DxMessaging analyzer `-a:` entries (left
 behind by older package versions that copied analyzers into the project) and
 ensuring there is at most one ignore-list entry when the sidecar exists:
 
@@ -459,13 +459,20 @@ ensuring there is at most one ignore-list entry when the sidecar exists:
 ```
 
 The `-additionalfile:` line is only emitted when the ignore-list sidecar
-physically exists. Sidecar regeneration also schedules a follow-up `csc.rsp`
+physically exists. Sidecar regeneration also schedules a follow-up `Assets/csc.rsp`
 sync, so deferred `OnValidate` writes and the Inspector overlay's ignore-list
 buttons repair missing response-file wiring during the same editor session.
 
-Manual edits to `csc.rsp` are rarely necessary; the setup helper detects
+Manual edits to `Assets/csc.rsp` are rarely necessary; the setup helper detects
 existing lines and only appends or removes the DxMessaging lines that need
 normalization.
+
+Starting in 4.0.0, the helper uses `Assets/csc.rsp`, where Unity reads compiler
+options. Earlier versions wrote an unused `csc.rsp` at the project root. The
+helper removes its own obsolete entries from that root file and preserves
+unrelated options there. Existing consumer options in `Assets/csc.rsp` are
+preserved. Review any custom root-file options before moving them into `Assets`,
+because moving them activates them for compilation.
 
 ---
 
