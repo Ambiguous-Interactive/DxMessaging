@@ -76,6 +76,40 @@ internal sealed class UnityMcpBridgeTests
         Assert.That(TestRunnerApi.Executions, Is.EqualTo(1));
     }
 
+    [TestCase(TestStatus.Passed)]
+    [TestCase(TestStatus.Skipped)]
+    public void MixedPassingAndSkippedResultsCompleteCleanup(TestStatus rootStatus)
+    {
+        Run();
+        // Unity propagates ignored children to a skipped suite with positive pass counts.
+        Result result = new()
+        {
+            IsSuite = true,
+            TestStatus = rootStatus,
+            PassCount = 1,
+            SkipCount = 1,
+            Children =
+            [
+                new Result(),
+                new Result
+                {
+                    TestStatus = TestStatus.Skipped,
+                    PassCount = 0,
+                    SkipCount = 1,
+                },
+            ],
+        };
+        TestRunnerApi.Callbacks.RunFinished(result);
+        TestRunnerApi.Active = false;
+        EditorApplication.Tick();
+        Assert.That(
+            File.ReadAllText(_path + ".cleanup.status"),
+            Is.EqualTo("done"),
+            rootStatus.ToString()
+        );
+        Assert.That(SessionState.Values, Is.Empty);
+    }
+
     [TestCase("observe")]
     [TestCase("error")]
     [TestCase("result")]
@@ -282,6 +316,7 @@ internal sealed class UnityMcpBridgeTests
     [TestCase("dirty")]
     [TestCase("scene-replaced")]
     [TestCase("zero-passes")]
+    [TestCase("all-skipped")]
     [TestCase("failed")]
     [TestCase("inconclusive")]
     [TestCase("suite-teardown-failed")]
@@ -301,6 +336,11 @@ internal sealed class UnityMcpBridgeTests
                 break;
             case "zero-passes":
                 result.PassCount = 0;
+                break;
+            case "all-skipped":
+                result.TestStatus = TestStatus.Skipped;
+                result.PassCount = 0;
+                result.SkipCount = 1;
                 break;
             case "failed":
                 result.FailCount = 1;
@@ -447,7 +487,7 @@ internal sealed class UnityMcpBridgeTests
         public bool IsSuite { get; set; }
         public int PassCount { get; set; } = 1;
         public int FailCount { get; set; }
-        public int SkipCount => 0;
+        public int SkipCount { get; set; }
         public int InconclusiveCount { get; set; }
         public double Duration => 0.125;
         public string FullName { get; set; } = "test";

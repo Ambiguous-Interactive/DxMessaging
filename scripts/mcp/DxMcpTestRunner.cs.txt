@@ -248,7 +248,6 @@ public static class DxMcpTestRunner
                     && result.inconclusiveCount == 0
                     && result.nodes != null
                     && result.nodes.Length > 0
-                    && result.nodes[0].status == nameof(TestStatus.Passed)
                     && Array.TrueForAll(
                         result.nodes,
                         node =>

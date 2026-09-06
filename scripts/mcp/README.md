@@ -199,7 +199,9 @@ files are refused. The runner owns that path until passive framework cleanup end
 
 A raw `.status` of `done` means results are available. Accept success only when `.cleanup.status`
 is also `done`, GUID/path companions agree, and the result has positive passes with zero failures
-and inconclusive cases. Keep skips visible. Cleanup checks that the original scene paths, loaded
+and inconclusive cases. Keep skips visible. Unity can mark a suite `Skipped` when it contains
+both passing and ignored tests; failed or inconclusive suites still prevent acceptance.
+Cleanup checks that the original scene paths, loaded
 states and active scene were restored. A framework failure without RunFinished becomes an `error:`
 outcome after framework inactivity is proven. An `observation-error:` keeps ownership pending;
 continue observing the same job. Storage failures retain errors in SessionState and later copy
