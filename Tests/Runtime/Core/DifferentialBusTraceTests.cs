@@ -27,7 +27,7 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TearDown() => _diagnostics.Dispose();
 
         [Test]
-        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2, 3, 4, 5)] int version)
+        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2, 3, 4, 5, 6)] int version)
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
                 MessageScenario.Untargeted(),
@@ -37,18 +37,26 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 BusTraceSequence.GeneratorVersion,
-                Is.EqualTo(5),
+                Is.EqualTo(6),
                 "Changing generation requires a new version and a reviewed replay fixture."
             );
             CollectionAssert.AreEqual(
-                version == 5
-                    ? new[]
-                    {
-                        "Register(token=0,context=0,value=1409999377,priority=1)",
-                        "Emit(token=0,context=0,value=1481184789,priority=1)",
-                        "Register(token=3,context=1,value=-541008231,priority=1)",
-                        "EmitNested(token=0,context=0,value=-1592061232,priority=0)[kindOffset=0,nestedToken=0,depth=1]",
-                    }
+                version == 6
+                        ? new[]
+                        {
+                            "Register(token=0,context=0,value=1409999377,priority=1)",
+                            "Emit(token=0,context=0,value=1481184789,priority=1)",
+                            "Emit(token=3,context=1,value=-541008231,priority=1)",
+                            "EmitNested(token=0,context=0,value=-1592061232,priority=0)[kindOffset=0,nestedToken=0,depth=1]",
+                        }
+                    : version == 5
+                        ? new[]
+                        {
+                            "Register(token=0,context=0,value=1409999377,priority=1)",
+                            "Emit(token=0,context=0,value=1481184789,priority=1)",
+                            "Register(token=3,context=1,value=-541008231,priority=1)",
+                            "EmitNested(token=0,context=0,value=-1592061232,priority=0)[kindOffset=0,nestedToken=0,depth=1]",
+                        }
                     : new[]
                     {
                         "Register(token=0,context=0,value=1409999377,priority=1)",
@@ -247,7 +255,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(replayed?.Category, Is.EqualTo(mismatch.Category), report);
             Assert.That(minimal.Seed, Is.EqualTo(original.Seed), report);
-            Assert.That(minimal.Version, Is.EqualTo(5), report);
+            Assert.That(minimal.Version, Is.EqualTo(BusTraceSequence.GeneratorVersion), report);
             CollectionAssert.AreEqual(
                 fault == "nested"
                     ? new[]
@@ -549,7 +557,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 minimal.Operations.Select(operation => operation.Kind),
                 report
             );
-            Assert.That(minimal.Version, Is.EqualTo(5), report);
+            Assert.That(minimal.Version, Is.EqualTo(BusTraceSequence.GeneratorVersion), report);
             Assert.That(minimal.Seed, Is.EqualTo(original.Seed), report);
             Assert.That(
                 EvaluateMutant(minimal, "trim-force")?.Category,
@@ -742,7 +750,7 @@ namespace DxMessaging.Tests.Runtime.Core
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
             [Values(17, 42)] int seed,
-            [Values(3, 4, 5)] int version
+            [Values(3, 4, 5, 6)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -1114,7 +1122,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(6)]
+        [TestCase(7)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
@@ -1368,6 +1376,249 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <remarks>
+        /// 2026-09-06: A reused registration can make a five-operation trace irreducible by
+        /// single deletion. Check that contract instead of assuming a global three-operation minimum.
+        /// </remarks>
+        [Test]
+        public void ForeignHandleReplayPreservesBothOwnersAndDetectsAliasing(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Enable, token: 3),
+                    new BusTraceOperation(BusTraceOperationKind.Register, priority: -1),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1, priority: 1),
+                    new BusTraceOperation(BusTraceOperationKind.RemoveForeign, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 11),
+                    new BusTraceOperation(BusTraceOperationKind.Disable, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.RemoveForeign, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Enable, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 12),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.RemoveForeign, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 13),
+                    new BusTraceOperation(BusTraceOperationKind.Register, priority: -1),
+                    new BusTraceOperation(BusTraceOperationKind.RemoveForeign, handleToken: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 14),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 15),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report =
+                $"[{scenario.Kind}] foreign handle trace: " + string.Join("\n", control);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=11", "token=1,value=11" },
+                control[4].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=12", "token=1,value=12" },
+                control[8].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(new[] { "token=1,value=13" }, control[11].Callbacks, report);
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=14", "token=1,value=14" },
+                control[14].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(new[] { "token=0,value=15" }, control[16].Callbacks, report);
+            Assert.That(Evaluate(sequence, dropEmits: false), Is.Null, report);
+
+            BusTraceMismatch mismatch = EvaluateMutant(sequence, "foreign");
+            Assert.That(mismatch, Is.Not.Null, report);
+            Assert.That(mismatch.Index, Is.EqualTo(3), mismatch.BuildReport(sequence));
+            Assert.That(mismatch.Category, Is.EqualTo("state"), mismatch.BuildReport(sequence));
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                sequence,
+                replay => EvaluateMutant(replay, "foreign")
+            );
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(EvaluateMutant(minimal, "foreign")?.Category, Is.EqualTo("state"), report);
+            Assert.That(minimal.Seed, Is.EqualTo(sequence.Seed), report);
+            Assert.That(minimal.Version, Is.EqualTo(sequence.Version), report);
+            string minimalReport =
+                $"[{scenario.Kind}] minimalCount={minimal.Operations.Count}; minimal={string.Join(";", minimal.Operations)}";
+            Assert.That(
+                minimal.Operations.Count,
+                Is.LessThan(sequence.Operations.Count),
+                minimalReport
+            );
+            for (int index = 0; index < minimal.Operations.Count; ++index)
+            {
+                List<BusTraceOperation> remaining = new(minimal.Operations);
+                remaining.RemoveAt(index);
+                BusTraceSequence deletion = new(
+                    minimal.Scenario,
+                    minimal.Seed,
+                    remaining,
+                    minimal.Version
+                );
+                Assert.That(
+                    !DifferentialBusTrace.IsValid(deletion)
+                        || EvaluateMutant(deletion, "foreign")?.Category != mismatch.Category,
+                    Is.True,
+                    $"{minimalReport}; deleting operation {index} must invalidate dependencies or lose the original mismatch."
+                );
+            }
+
+            BusTraceSequence simple = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Enable, token: 3),
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.RemoveForeign, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit),
+                }
+            );
+            BusTraceSequence simpleMinimum = DifferentialBusTrace.Shrink(
+                simple,
+                replay => EvaluateMutant(replay, "foreign")
+            );
+            Assert.That(DifferentialBusTrace.IsValid(simpleMinimum), Is.True, report);
+            Assert.That(
+                EvaluateMutant(simpleMinimum, "foreign")?.Category,
+                Is.EqualTo("state"),
+                report
+            );
+            Assert.That(simpleMinimum.Seed, Is.EqualTo(simple.Seed), report);
+            Assert.That(simpleMinimum.Version, Is.EqualTo(simple.Version), report);
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.Register,
+                    BusTraceOperationKind.RemoveForeign,
+                },
+                simpleMinimum.Operations.Select(operation => operation.Kind),
+                $"[{scenario.Kind}] simple minimum must retain both owners and foreign cleanup: {string.Join(";", simpleMinimum.Operations)}"
+            );
+        }
+
+        [Test]
+        public void ForeignHandleValidityPreservesIssuedHandleDependencies()
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            BusTraceOperation owner = new(BusTraceOperationKind.Register, token: 1);
+            BusTraceOperation foreign = new(BusTraceOperationKind.RemoveForeign, handleToken: 1);
+            foreach (
+                BusTraceOperation[] operations in new[]
+                {
+                    new[] { owner, foreign, foreign },
+                    new[]
+                    {
+                        owner,
+                        new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                        foreign,
+                    },
+                }
+            )
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(new BusTraceSequence(scenario, 509, operations)),
+                    Is.True,
+                    string.Join(";", operations)
+                );
+                Assert.That(
+                    DifferentialBusTrace.IsValid(
+                        new BusTraceSequence(scenario, 509, operations, generatorVersion: 5)
+                    ),
+                    Is.False,
+                    string.Join(";", operations)
+                );
+            }
+            foreach (
+                BusTraceOperation[] operations in new[]
+                {
+                    new[] { foreign },
+                    new[]
+                    {
+                        owner,
+                        new BusTraceOperation(
+                            BusTraceOperationKind.RemoveForeign,
+                            token: 1,
+                            handleToken: 1
+                        ),
+                    },
+                    new[]
+                    {
+                        owner,
+                        new BusTraceOperation(BusTraceOperationKind.RemoveForeign, handleToken: -1),
+                    },
+                    new[]
+                    {
+                        owner,
+                        new BusTraceOperation(
+                            BusTraceOperationKind.RemoveForeign,
+                            handleToken: BusTraceSequence.TokenCount
+                        ),
+                    },
+                    new[]
+                    {
+                        owner,
+                        new BusTraceOperation(BusTraceOperationKind.Emit, handleToken: 1),
+                    },
+                }
+            )
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(new BusTraceSequence(scenario, 509, operations)),
+                    Is.False,
+                    string.Join(";", operations)
+                );
+            }
+            BusTraceSequence generated = DifferentialBusTrace.Generate(scenario, 17, 256);
+            Assert.That(
+                DifferentialBusTrace.IsValid(generated),
+                Is.True,
+                "Version 6 seed 17 must retain foreign handle dependencies."
+            );
+            Assert.That(
+                generated.Operations.Any(operation =>
+                    operation.Kind == BusTraceOperationKind.RemoveForeign
+                ),
+                Is.True,
+                "Version 6 seed 17 must generate foreign cleanup."
+            );
+            StringAssert.Contains(
+                "handleToken=1",
+                foreign.ToString(),
+                "Replay evidence must identify the foreign handle owner."
+            );
+        }
+
+        private sealed class ForeignHandleAliasAdapter : MessageBusTraceAdapter
+        {
+            internal ForeignHandleAliasAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Remove(BusTraceOperation operation)
+            {
+                if (operation.Kind == BusTraceOperationKind.RemoveForeign)
+                {
+                    // Simulate treating a foreign identity as the destination's own slot.
+                    // The production API performs the removal; the observer stays unchanged.
+                    Token(operation.Token).RemoveRegistration(Handle(operation.Token));
+                    return;
+                }
+                base.Remove(operation);
+            }
+        }
+
         private static BusTraceMismatch EvaluateMutant(BusTraceSequence sequence, string fault) =>
             DifferentialBusTrace.Compare(
                 DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false)),
@@ -1387,6 +1638,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 "order" => new EqualPriorityReorderAdapter(scenario, bus),
                 "stale" => new StaleHandleReuseAdapter(scenario, bus),
+                "foreign" => new ForeignHandleAliasAdapter(scenario, bus),
                 "exception-cleanup" => new SkippedExceptionCleanupAdapter(scenario, bus),
                 "diagnostics" => new DuplicateDiagnosticsAdapter(scenario, bus),
                 "leak" => new RegistrationLeakAdapter(scenario, bus),
@@ -1629,7 +1881,7 @@ namespace DxMessaging.Tests.Runtime.Core
             foreach (
                 string expected in new[]
                 {
-                    "generator=5",
+                    "generator=" + BusTraceSequence.GeneratorVersion,
                     "seed=42",
                     "kind=" + scenario.Kind,
                     "firstMismatch=1",
