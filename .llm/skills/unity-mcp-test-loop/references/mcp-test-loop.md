@@ -29,16 +29,12 @@ the host editor; the container only edits files and drives the editor over MCP.
 ## The Loop
 
 1. **Edit** files in the container as usual.
-1. **Preflight before any refresh-capable command or test.** Use dedicated query actions
-   whose installed implementation does not refresh assets, or an already-installed passive
-   observer, to establish framework idleness, editor flags, current stage, loaded-scene count,
-   and every scene's path and dirty flag. `Unity_ManageEditor GetState` and `GetPrefabStage`
-   plus `Unity_ManageScene GetActive` suffice only when their responses provide all that
-   evidence. With multiple loaded scenes, an active-scene result alone is insufficient.
-   Do not use `Unity_RunCommand` to fill missing fields: its implicit refresh runs before any
-   guard in the supplied code. Report missing evidence or an unsafe state without refreshing,
-   installing a new observer, or changing scenes. A tool's read-only name does not prove its
-   implementation has no import side effects.
+1. **Preflight.** Prefer passive `Unity_ManageEditor GetState` and `GetPrefabStage`,
+   `Unity_ManageScene GetActive`, and a fresh observer snapshot. Establish framework idleness,
+   idle editor flags, the main stage, loaded-scene count, and every scene's path and dirty flag.
+   An active-scene response alone cannot prove other scenes are clean. When the observer is
+   absent or incomplete, use the [bootstrap procedure](#bootstrap-without-a-complete-passive-observer)
+   below. A tool's read-only name does not prove its implementation has no import side effects.
 1. **Compile**: validate changed C# under `Assets/` with `Unity_ValidateScript`, then
    execute the `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator
    rejects embedded `Packages/` paths, so package edits rely on the refresh plus the
@@ -92,6 +88,35 @@ testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type b
 The maintained bridge survives domain reloads through `[InitializeOnLoad]` and `SessionState`.
 Its source, installation, artifact contract, and preflight snapshot are documented in
 [Maintain the local Unity test runner](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+
+## Bootstrap without a complete passive observer
+
+Missing observer fields alone do not require user confirmation or prevent local verification.
+First read the passive editor, stage, and active-scene queries and any existing snapshot. If the
+available flags show idle editor state, the main stage, and a clean scene, and no test is known
+active, use a minimal `Unity_RunCommand` inspection to read `TestRunnerApi.IsRunActive`, current
+editor flags and stage, every open scene's path/loading/dirty state through
+`SceneManager.sceneCount` and `GetSceneAt`, and the runner SessionState ownership keys listed in
+the installation guide. Do not mutate scenes, launch tests, or install source in that inspection.
+Use the installed framework's available API; `IsRunActive` may be nonpublic and unavailable to a
+direct snippet call. Resolve API compatibility failures with a minimal inspection sequence using
+supported public metadata or installed runner APIs. A compile or lookup failure does not prove
+framework inactivity.
+
+`Unity_RunCommand` refreshes assets before executing the snippet. State that limitation honestly:
+the inspection bootstraps missing evidence; its result cannot prove that preceding refresh was
+safe. Preserve tool approval gates. If a tool rejects the inspection or installation, report its
+reason and do not switch transports or tools to bypass the rejection. Wait for actual framework
+activity, compilation, imports, or play-mode transitions. Stop for dirty or unnamed scenes or a
+non-main stage; never save, discard, or switch the developer's scenes to force progress.
+
+Once the inspection shows inactive framework/editor state and saved, clean scenes, install or
+update the maintained source through supported MCP editing, following the
+[backup and installation flow](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+Validate, refresh through `Unity_ManageMenuItem`, and verify the loaded assembly and fresh passive
+snapshots before testing. If supported inspection cannot resolve the required state, report the
+specific failure. During a known or owned test, poll its files and passive snapshots only,
+including after an observation timeout; never use bootstrap inspection as a polling loop.
 
 ## Framework cleanup gate
 
@@ -192,8 +217,10 @@ benchmark run, since the editor process is already up. See
 
 `Unity_RunCommand` snippets run in a restricted compile sandbox:
 
-- `using System.Reflection;` is REJECTED. Fully qualify instead
-  (`System.Reflection.Assembly`, `System.Reflection.BindingFlags`, ...).
+- `using System.Reflection;` is rejected. Qualify allowed types such as
+  `System.Reflection.Assembly`; qualification does not bypass member restrictions. Some installed
+  sandboxes also reject `System.Reflection.BindingFlags` members. Prefer public APIs or supported
+  script editing within existing tool permissions; do not bypass a tool rejection.
 - Inside `DxMessaging.*` namespaces the bare identifier `Unity` binds to
   `DxMessaging.Unity`, not `UnityEngine`-adjacent types; use a `global::`-qualified
   alias when that ambiguity bites.
@@ -203,7 +230,8 @@ benchmark run, since the editor process is already up. See
 The installed bridge lives under the host's `Assets/Editor/`, outside this package. Regenerate it
 from the maintained `scripts/mcp/DxMcpTestRunner.cs.txt`, following the
 [installation and preflight contract](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
-Do not invent a replacement bridge or use a refresh-capable command to establish its own safety.
+Use the bootstrap procedure above if passive evidence is incomplete. Do not invent a replacement
+bridge or describe the bootstrap's implicit refresh as proven safe.
 
 ## CI vs Local
 

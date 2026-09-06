@@ -71,13 +71,13 @@ The devcontainer workspace is the same directory as the embedded package inside 
 ### The loop
 
 1. **Edit** files in the container.
-1. **Preflight before any refresh-capable command or test.** Establish framework idleness, idle editor
-   flags, the main stage, and clean state for every open scene using dedicated queries whose
-   installed implementation does not refresh assets, or an already-installed passive observer.
-   `GetState`, `GetPrefabStage`, and `GetActive` suffice only when their responses cover every
-   required field; an active-scene response cannot prove other scenes are clean. Never use
-   `Unity_RunCommand` to establish safety: it refreshes assets before checking the snippet's
-   guard. If evidence is missing or unsafe, wait or report it without refreshing or changing scenes.
+1. **Preflight.** Prefer passive `GetState`, `GetPrefabStage`, `GetActive`, and a fresh observer
+   snapshot for framework activity, editor flags, stage, and every open scene's dirty flag.
+   If the observer is absent or incomplete, available flags are idle/clean, and no test is known
+   active, use a minimal `Unity_RunCommand` inspection to fill the gaps. It refreshes before
+   the snippet; this bootstrap cannot prove the prior refresh safe. Missing fields alone do not
+   require user confirmation. Follow the [bootstrap procedure](./references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer)
+   and preserve tool approval gates. Wait for active tests or editor work; stop for dirty scenes.
 1. **Compile** with `Unity_ValidateScript` for changed C# under `Assets/`, then execute the
    `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator rejects embedded
    `Packages/` paths, so package edits must use the refresh plus fresh-assembly proof. Wait for
@@ -124,7 +124,8 @@ PNG writer when testing the whole Editor assembly. See
 
 ### Sandbox restrictions
 
-- `using System.Reflection;` is REJECTED in `Unity_RunCommand` snippets. Fully qualify instead: `System.Reflection.Assembly`, `System.Reflection.BindingFlags`.
+- `using System.Reflection;` is rejected in `Unity_RunCommand`. Qualify allowed reflection types;
+  qualification does not bypass member restrictions. Prefer public APIs when `BindingFlags` is rejected.
 - Inside `DxMessaging.*` namespaces the bare identifier `Unity` binds to `DxMessaging.Unity`. Use a `global::`-qualified alias when that ambiguity bites.
 
 ### If the bridge is missing
@@ -133,9 +134,10 @@ The maintained source is `scripts/mcp/DxMcpTestRunner.cs.txt`. Its installed cop
 the host's `Assets/Editor/DxMcpTestRunner.cs`, so cleaning the host can remove it.
 After the safe-state preflight, follow the
 [maintained runner installation flow](../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
-Copy that source verbatim, preserve unreviewed host changes, and refresh through
-`Unity_ManageMenuItem`. Do not generate a replacement implementation. If the missing
-observer also leaves preflight evidence unavailable, report it before installation.
+Copy that source verbatim through supported MCP editing, back up existing source and metadata
+outside `Assets`, preserve unreviewed host changes, and refresh through `Unity_ManageMenuItem`.
+Verify the loaded assembly and fresh passive snapshots. Use the bootstrap procedure when the
+missing observer leaves preflight fields unavailable; do not generate a replacement runner.
 
 ### Measuring suite speed
 

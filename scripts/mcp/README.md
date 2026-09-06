@@ -157,15 +157,21 @@ The HTTP relay above transports requests. The maintained Editor test runner is
 `Assets/Editor/DxMcpTestRunner.cs`; the `.txt` source stays outside package compilation and CI
 test execution. The same source is compiled and exercised by `.docs-tests/UnityMcpBridgeTests.cs`.
 
-Before installing or replacing it, prove framework inactivity, idle editor flags, the main stage,
-and every loaded scene's saved, clean state through passive queries or a maintainer's inspection.
-`Unity_RunCommand` refreshes assets before executing code, so it cannot establish that preflight.
-Preserve any existing runner source and metadata outside `Assets` before replacement, and review
-local changes before overwriting them. Use an approved host Editor/filesystem flow when MCP cannot
-serve the required interaction; do not bypass its approval gate. Keep existing `.meta` identity
-when replacing an owned script. Refresh through `Assets/Refresh` only after the preflight, then
-verify the new assembly and unchanged scenes. Remove an old `DxMcpObservedTestRunner` only through
-the same reviewed flow after its ownership scope is empty.
+Before installing or replacing it, prefer passive `GetState`, `GetPrefabStage`, `GetActive`, and
+a fresh observer snapshot for framework inactivity, idle editor flags, the main stage, and every
+loaded scene's saved, clean state. If the observer is absent or incomplete, available flags are
+idle/clean, and no test is known active, use a minimal `Unity_RunCommand` inspection for
+`TestRunnerApi.IsRunActive`, every open scene, and ownership keys. It refreshes before the snippet;
+this bootstrap cannot prove the prior refresh safe. Missing fields alone do not require user
+confirmation. Follow the [bootstrap procedure](../../.llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer).
+
+After inspection confirms inactivity and saved, clean scenes, preserve any existing runner source
+and metadata outside `Assets`, review local changes, and copy the maintained source through
+supported MCP editing. Keep existing `.meta` identity when replacing an owned script. Validate
+with `Unity_ValidateScript`, refresh through `Unity_ManageMenuItem` with `Assets/Refresh`, then
+verify the loaded assembly, fresh passive snapshots, and unchanged scenes. Respect tool approval
+gates; do not bypass a rejected operation through another transport. Remove an old
+`DxMcpObservedTestRunner` only after its ownership scope is empty and its source is backed up.
 
 Inspect the existing `DxMcpTestRunner.ResultPath`, `DxMcpTestRunner.OwnedResultPath`, and
 `DxMcpObservedTestRunner.ResultPath` SessionState keys before replacement. Let an active run
@@ -181,9 +187,10 @@ The runner writes a passive snapshot once per second to
 `observedUtc`, no `observationError`, inactive framework/editor flags, `mainStage: true`, an empty
 `resultPath`, `ownedResultPath`, and `legacyObserverResultPath`, and saved, clean scenes before
 the next refresh or run. Compare the host clock when
-checking freshness. A missing, stale, or temporarily malformed snapshot proves no state. Read it
-again without invoking an asset-refreshing tool; never launch another test because observation
-timed out.
+checking freshness. A missing, stale, or temporarily malformed snapshot proves no state. During
+a known or owned run, keep polling its files without invoking an asset-refreshing tool; never
+launch another test because observation timed out. Outside an active run, use the bootstrap
+procedure above if the observer is absent or incomplete.
 
 `DxMcpTestRunner.Run(mode, assemblies, tests, categories, resultPath)` returns the exact GUID from
 `TestRunnerApi.Execute`. Filters use semicolon-separated strings. Use a fresh result path under
