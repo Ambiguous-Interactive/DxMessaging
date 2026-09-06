@@ -29,13 +29,16 @@ the host editor; the container only edits files and drives the editor over MCP.
 ## The Loop
 
 1. **Edit** files in the container as usual.
-1. **Preflight the shared editor.** Call `Unity_ManageEditor GetState`, then run one
-   read-only command that logs `SceneManager.sceneCount`, every scene's `path` and
-   `isDirty`, whether `StageUtility.GetCurrentStageHandle()` equals the main stage,
-   and `EditorApplication.isPlaying`, `isCompiling`, and `isUpdating`. Refuse to
-   refresh or change scenes while any scene is dirty, a prefab stage is open, or the
-   editor is busy. Never call an API that can raise a save prompt; a modal blocks the
-   main thread and only the developer can dismiss it.
+1. **Preflight before any refresh-capable command or test.** Use dedicated query actions
+   whose installed implementation does not refresh assets, or an already-installed passive
+   observer, to establish framework idleness, editor flags, current stage, loaded-scene count,
+   and every scene's path and dirty flag. `Unity_ManageEditor GetState` and `GetPrefabStage`
+   plus `Unity_ManageScene GetActive` suffice only when their responses provide all that
+   evidence. With multiple loaded scenes, an active-scene result alone is insufficient.
+   Do not use `Unity_RunCommand` to fill missing fields: its implicit refresh runs before any
+   guard in the supplied code. Report missing evidence or an unsafe state without refreshing,
+   installing a new observer, or changing scenes. A tool's read-only name does not prove its
+   implementation has no import side effects.
 1. **Compile**: validate changed C# under `Assets/` with `Unity_ValidateScript`, then
    execute the `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator
    rejects embedded `Packages/` paths, so package edits rely on the refresh plus the
@@ -88,6 +91,42 @@ failures[] }`.
 The bridge survives domain reloads via `[InitializeOnLoad]` + `SessionState`, so a
 recompile mid-run does not lose the result.
 
+## Framework cleanup gate
+
+`DxMcpTestRunner` writes its result during `RunFinished`. Unity Test Framework can still be
+restoring scenes after that callback, even when `EditorApplication.isPlaying` is false. Starting
+another run in that interval can capture a temporary scene that the previous run then deletes.
+Session 266 observed `Invalid SceneManagerSetup` followed by `ReloadScene cannot be used with a
+scene without a SceneAsset` during repeated local runs.
+
+Do not poll `Unity_RunCommand` during a test run. The inspected MCP implementation calls
+`AssetDatabase.Refresh` before executing the supplied code, including read-only snippets. During
+local runtime tests that refresh imported malformed host assets and produced unrelated test
+failures. Use filesystem polling for the active run.
+
+Before repeated runs, prepare a host-side observer while the editor is safe. It must retain the
+current result path across reloads, capture `IErrorCallbacks.OnError` for that run, and use
+`EditorApplication.update` to observe framework cleanup without refreshing assets. On the
+inspected framework the active-job query is the internal static `TestRunnerApi.IsRunActive`.
+Inspect the installed source if that API changes; missing state is not proof of idleness.
+
+The observer must write a separate terminal marker only after the framework reports inactive.
+Capture errors through that point: cleanup can fail after `RunFinished` has already written a
+passing result. Require both successful framework completion and a result with a positive pass
+count, zero failures, and zero inconclusive cases. Keep expected skips visible. Check editor flags
+and every scene's dirtiness again before the next refresh, run, or scene change.
+
+The simple bridge implements only `ICallbacks`, so a framework-level `RunFailed` can leave its
+sidecar at `running` without a result. Inactive framework state with no result is a terminal
+framework failure, not a live test or a pass. Preserve that failed attempt and inspect the error
+before recovery. Restore the original saved scene only after verifying that the editor is idle
+and all scenes are clean. Never restart solely because polling timed out, cancel a run to resolve
+an observation timeout, or discard an unnamed scene containing unreviewed work.
+
+This is local orchestration. Add no delays, retries, or extra test launches to CI. Durable bridge
+ownership and regeneration are tracked in
+[issue #544](https://github.com/Ambiguous-Interactive/DxMessaging/issues/544).
+
 ## Shared Editor Safety
 
 The MCP host is the developer's editor, not an expendable test process. A normal
@@ -118,6 +157,33 @@ test batch.
 
 The canonical include list for CI is `scripts/unity/lib/asmdef-discovery.js`
 (`defaultIncludeAssemblies`); keep MCP-loop assembly choices consistent with it.
+
+## Default Editor filters and imported samples
+
+For an ordinary Editor run, select only `WallstopStudios.DxMessaging.Tests.Editor` and use the
+EditMode exclusions from the [Unity test workflow](../../../../.github/workflows/unity-tests.yml).
+Run `WallstopStudios.DxMessaging.Tests.Editor.Allocations` and benchmark assemblies as separate
+scopes so their measurement windows do not inflate the ordinary suite time.
+
+The bridge splits `categoryNames` and `testNames` at semicolons and forwards native filters
+unchanged. The framework separates leading `!` exclusions from inclusions and ANDs the
+exclusions. Inspect the installed `RuntimeTestRunnerFilter.AddFilters` if its behavior changes.
+An assembly-name inclusion can select an `[Explicit]` test. When running the whole Editor
+assembly, pass
+`!DxMessaging.Tests.Editor.EditorToolingDocumentationCaptureTests.CaptureAllPublishedEditorTooling`
+as `testNames` to prevent the documentation writer from regenerating tracked PNGs.
+Keep other tests in that fixture selected.
+
+Eight `SampleQualityContractTests` cases need imported runnable samples at `Assets/DxmCiSamples`.
+A missing fixture is an inconclusive result, not a passing verification. The CI provisioner
+`Copy-SamplesForCompilation` in `scripts/unity/run-ci-tests.ps1` copies `.cs`, `.asmdef`, and
+`.unity` files with their original `.meta` files. The local fixture needs Mini Combat,
+UI Buttons + Inspector, and Diagnostics Tooling Exerciser. Preserve their GUIDs, refuse an
+existing destination or duplicate imported sample GUIDs/assembly names, and record ownership
+and file hashes outside `Assets`. Import only while the editor is proven safe. After verification,
+remove only the owned fixture, preserving any unexpected changes for review, and confirm the
+editor's original scenes remain clean. Do not weaken the fixture assertions or accept the
+inconclusive results to obtain a green run.
 
 ## Perf Baselines
 
