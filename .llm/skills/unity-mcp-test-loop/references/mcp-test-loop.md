@@ -66,8 +66,9 @@ the host editor; the container only edits files and drives the editor over MCP.
        System.IO.File.GetLastWriteTimeUtc(fixture.Assembly.Location).ToString("O"));
    ```
 
-   A stale timestamp means the compile failed. Read the CI job log or Unity's
-   `Editor.log` for the `CS####` rather than re-running the suite.
+   After the safe idle preflight, resolve the connected editor's `Application.consoleLogPath`
+   and read only the current compile's `CS####` errors. Do not assume a default `Editor.log`
+   belongs to that editor or print the entire log.
 
 1. **Run**: invoke the host bridge `DxMcpTestRunner.Run(testMode, assemblyNames,
 testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type by

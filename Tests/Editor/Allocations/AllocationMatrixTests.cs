@@ -936,6 +936,10 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// <see cref="EmitWithDiagnosticsEnabledIsBoundedAlloc"/> already pins
         /// that axis.
         /// </summary>
+        /// <remarks>
+        /// 2026-09-06: Duplicate registrations at priority zero shared one post-processor
+        /// entry. Use distinct priorities and verify both exist before measuring allocation.
+        /// </remarks>
         [Test]
         [Category("Allocation")]
         public void EmitWithFullStackIsZeroAlloc()
@@ -953,8 +957,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                     RegisterHandler(scenario, token, priority: 5);
                     RegisterHandler(scenario, token, priority: 10);
                     RegisterAllowingInterceptor(scenario, token);
-                    RegisterPostProcessor(scenario, token);
-                    RegisterPostProcessor(scenario, token);
+                    RegisterPostProcessor(scenario, token, priority: 0);
+                    RegisterPostProcessor(scenario, token, priority: 5);
+                    Assert.That(
+                        bus.RegisteredPostProcessors,
+                        Is.EqualTo(2),
+                        "Full-stack allocation coverage requires two distinct post-processor priorities."
+                    );
                     AllocationAssertions.AssertNoAllocations(
                         $"EmitFullStack-{scenario.Kind}",
                         emit
@@ -1956,7 +1965,8 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         private static MessageRegistrationHandle RegisterPostProcessor(
             MessageScenario scenario,
-            MessageRegistrationToken token
+            MessageRegistrationToken token,
+            int priority = 0
         )
         {
             switch (scenario.Kind)
@@ -1966,7 +1976,8 @@ namespace DxMessaging.Tests.Editor.Allocations
                     return ScenarioHarness.RegisterUntargetedPostProcessor<SimpleUntargetedMessage>(
                         scenario,
                         token,
-                        NoOpUntargeted
+                        NoOpUntargeted,
+                        priority
                     );
                 }
                 case MessageKind.Targeted:
@@ -1975,7 +1986,8 @@ namespace DxMessaging.Tests.Editor.Allocations
                         scenario,
                         token,
                         StableTarget,
-                        NoOpTargeted
+                        NoOpTargeted,
+                        priority
                     );
                 }
                 case MessageKind.Broadcast:
@@ -1984,19 +1996,22 @@ namespace DxMessaging.Tests.Editor.Allocations
                         scenario,
                         token,
                         StableSource,
-                        NoOpBroadcast
+                        NoOpBroadcast,
+                        priority
                     );
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
                     return token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
-                        NoOpTargetedWithoutTargeting
+                        NoOpTargetedWithoutTargeting,
+                        priority: priority
                     );
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
                     return token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
-                        NoOpBroadcastWithoutSource
+                        NoOpBroadcastWithoutSource,
+                        priority: priority
                     );
                 }
                 default:
