@@ -49,6 +49,9 @@ namespace DxMessaging.Tests.Editor
             _previousBaseCallCheckEnabled = settings._baseCallCheckEnabled;
             _baseCallCheckOverridden = true;
             settings._baseCallCheckEnabled = false;
+            // State-transition tests must not inherit asset refresh activity from the editor.
+            // Tests for transient blocking replace this seam explicitly and own their retry queue.
+            MessageAwareComponentInspectorOverlay.InspectorResolutionTransientBlocker = () => false;
         }
 
         [TearDown]
@@ -723,9 +726,22 @@ namespace DxMessaging.Tests.Editor
             Assert.That(ignoreType.enabledSelf, Is.False);
         }
 
-        [Test]
-        public void FallbackEditorCreateInspectorGUIOmitsNoneWarningViewAndHostsDefaultInspectorBody()
+        /// <remarks>
+        /// 2026-09-06: Unity 2021 CI exposed an initially visible empty warning host when
+        /// resolution was blocked. Exercise both initial states without ambient editor activity.
+        /// </remarks>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void FallbackEditorCreateInspectorGUIOmitsNoneWarningViewAndHostsDefaultInspectorBody(
+            bool transientlyBlocked
+        )
         {
+            bool blocked = transientlyBlocked;
+            List<Action> scheduledRetries = new();
+            MessageAwareComponentInspectorOverlay.InspectorResolutionTransientBlocker = () =>
+                blocked;
+            MessageAwareComponentInspectorOverlay.TransientRefreshScheduler = work =>
+                scheduledRetries.Add(work);
             MessageAwareComponent component = CreateTrackedMessageAwareComponent(
                 "FallbackEditorCreateInspectorGuiHost",
                 typeof(SerializedFieldMessageAwareComponentForFallbackTest)
@@ -754,7 +770,31 @@ namespace DxMessaging.Tests.Editor
                 MessageAwareComponentFallbackEditor.WarningHostName
             );
             Assert.That(warningHost, Is.Not.Null);
-            Assert.That(warningHost.style.display.value, Is.EqualTo(DisplayStyle.None));
+            Assert.That(
+                warningHost.style.display.value,
+                Is.EqualTo(DisplayStyle.None),
+                $"transientlyBlocked={transientlyBlocked}: an initial empty warning host must stay hidden even before a deferred refresh."
+            );
+            Assert.That(
+                scheduledRetries.Count,
+                Is.EqualTo(transientlyBlocked ? 1 : 0),
+                $"transientlyBlocked={transientlyBlocked}: only blocked resolution should schedule a retry."
+            );
+            if (transientlyBlocked)
+            {
+                blocked = false;
+                scheduledRetries[0].Invoke();
+                Assert.That(
+                    warningHost.style.display.value,
+                    Is.EqualTo(DisplayStyle.None),
+                    "transientlyBlocked=true: resolving a genuine None state after the block clears must leave the host hidden."
+                );
+                Assert.That(
+                    scheduledRetries.Count,
+                    Is.EqualTo(1),
+                    "transientlyBlocked=true: an idle retry must not schedule another refresh."
+                );
+            }
 
             VisualElement body = root.Q<VisualElement>(
                 MessageAwareComponentFallbackEditor.DefaultInspectorBodyName

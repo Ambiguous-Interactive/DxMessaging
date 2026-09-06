@@ -96,6 +96,7 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     case BusTraceOperationKind.Remove:
                     case BusTraceOperationKind.RemoveStale:
+                    case BusTraceOperationKind.RemoveForeign:
                         Remove(operation);
                         break;
                     case BusTraceOperationKind.Enable:
@@ -274,9 +275,10 @@ namespace DxMessaging.Tests.Runtime
         {
             int slot = operation.Token;
             MessageRegistrationHandle handle =
-                operation.Kind == BusTraceOperationKind.RemoveStale
-                    ? _staleHandles[slot]
-                    : _handles[slot];
+                operation.Kind == BusTraceOperationKind.RemoveStale ? _staleHandles[slot]
+                : operation.Kind == BusTraceOperationKind.RemoveForeign
+                    ? _handles[operation.HandleToken]
+                : _handles[slot];
             _tokens[slot].RemoveRegistration(handle);
             if (operation.Kind == BusTraceOperationKind.Remove)
             {

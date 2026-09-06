@@ -22,6 +22,7 @@ namespace DxMessaging.Tests.Runtime
         Trim,
         EmitNested,
         EmitWithDisable,
+        RemoveForeign,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -35,7 +36,8 @@ namespace DxMessaging.Tests.Runtime
             int priority = 0,
             int kindOffset = 0,
             int nestedToken = 0,
-            int depth = 0
+            int depth = 0,
+            int handleToken = 0
         )
         {
             Kind = kind;
@@ -46,6 +48,7 @@ namespace DxMessaging.Tests.Runtime
             KindOffset = kindOffset;
             NestedToken = nestedToken;
             Depth = depth;
+            HandleToken = handleToken;
         }
 
         internal BusTraceOperationKind Kind { get; }
@@ -58,11 +61,19 @@ namespace DxMessaging.Tests.Runtime
         internal int NestedToken { get; }
         internal int Depth { get; }
 
+        // RemoveForeign passes this owner's most recently issued handle to Token.
+        internal int HandleToken { get; }
+
         public override string ToString() =>
             $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})"
             + (
                 KindOffset != 0 || NestedToken != 0 || Depth != 0
                     ? $"[kindOffset={KindOffset},nestedToken={NestedToken},depth={Depth}]"
+                    : string.Empty
+            )
+            + (
+                Kind == BusTraceOperationKind.RemoveForeign
+                    ? $"[handleToken={HandleToken}]"
                     : string.Empty
             );
     }
@@ -70,7 +81,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 5;
+        internal const int GeneratorVersion = 6;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
@@ -217,7 +228,8 @@ namespace DxMessaging.Tests.Runtime
                         : generatorVersion == 2 ? 6U
                         : generatorVersion == 3 ? 9U
                         : generatorVersion == 4 ? 10U
-                        : 12U
+                        : generatorVersion == 5 ? 12U
+                        : 13U
                     )
                 );
                 if (index == 0)
@@ -271,6 +283,15 @@ namespace DxMessaging.Tests.Runtime
                 {
                     nestedToken = token;
                 }
+                int handleToken = kind == BusTraceOperationKind.RemoveForeign ? nestedToken : 0;
+                if (
+                    kind == BusTraceOperationKind.RemoveForeign
+                    && (handleToken == token || (!registered[handleToken] && !removed[handleToken]))
+                )
+                {
+                    kind = BusTraceOperationKind.Emit;
+                    handleToken = 0;
+                }
                 if (generatorVersion >= 5)
                 {
                     if (index < 2)
@@ -300,7 +321,8 @@ namespace DxMessaging.Tests.Runtime
                         (int)(Next(ref state) % 3) - 1,
                         kindOffset,
                         nestedToken: kind == BusTraceOperationKind.EmitNested ? nestedToken : 0,
-                        depth: depth
+                        depth: depth,
+                        handleToken: handleToken
                     )
                 );
                 if (kind == BusTraceOperationKind.Register)
@@ -353,6 +375,12 @@ namespace DxMessaging.Tests.Runtime
                     || operation.KindOffset > 2
                     || operation.NestedToken < 0
                     || operation.NestedToken >= registered.Length
+                    || operation.HandleToken < 0
+                    || operation.HandleToken >= registered.Length
+                    || (
+                        operation.Kind != BusTraceOperationKind.RemoveForeign
+                        && operation.HandleToken != 0
+                    )
                     || operation.Depth < 0
                     || operation.Depth > 10
                     || (
@@ -387,6 +415,21 @@ namespace DxMessaging.Tests.Runtime
                         }
                         registered[operation.Token] = false;
                         removed[operation.Token] = true;
+                        break;
+                    case BusTraceOperationKind.RemoveForeign:
+                        if (
+                            sequence.Version < 6
+                            || operation.Token == operation.HandleToken
+                            || (
+                                !registered[operation.HandleToken]
+                                && !removed[operation.HandleToken]
+                            )
+                        )
+                        {
+                            return false;
+                        }
+                        // Foreign cleanup owns neither the destination nor source registration.
+                        // A removed source still supplies its actual stale handle for replay.
                         break;
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:

@@ -104,6 +104,14 @@ try {
         Assert-That 'generated C# embeds the profile SHA-256' ($source.Contains($profileSha256))
     }
     $buildModifierSource = New-StandaloneBuildModifierSource -CanonicalProfileId $profile.profileId
+    $applyStart = $generatedSources[0].IndexOf('public static void Apply()')
+    $compilerPreparation = $generatedSources[0].IndexOf('DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();', $applyStart)
+    $compilationChange = $generatedSources[0].IndexOf('CompilationPipeline.codeOptimization =', $applyStart)
+    $completionMarker = $generatedSources[0].IndexOf('File.WriteAllText(markerPath,', $applyStart)
+    Assert-That 'configuration prepares compiler inputs before changing compilation settings and writing its success marker' (
+        $compilerPreparation -gt $applyStart -and $compilerPreparation -lt $compilationChange -and
+        $compilationChange -lt $completionMarker
+    )
     Assert-That 'the configurator pins OptimizeSpeed' (
         $generatedSources[0].Contains('Il2CppCodeGeneration.OptimizeSpeed')
     )

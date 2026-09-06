@@ -93,6 +93,10 @@ subclasses keep their normal inspector body; the package injects the
 same warning data through Unity's component-header hook as an IMGUI
 HelpBox so the user's editor can stay in charge of its body.
 
+While Unity imports or compiles, a new Inspector keeps its empty warning area
+hidden until it can resolve the warning state. An existing warning stays visible
+until that refresh completes.
+
 The title includes the contributing diagnostic ID. An aggregated report sorts
 and deduplicates multiple IDs before rendering them.
 
@@ -300,7 +304,7 @@ The settings asset itself lives at
 `Assets/Editor/DxMessagingSettings.asset`. The ignored-types list is
 mirrored to the sidecar
 `Assets/Editor/DxMessaging.BaseCallIgnore.txt` that the analyzer reads
-via `csc.rsp`'s `-additionalfile:` switch.
+via `Assets/csc.rsp`'s `-additionalfile:` switch.
 
 > **Note**: The Inspector overlay's **Ignore this type** / **Stop ignoring**
 > buttons read and write the same ignore-list field that Project Settings
