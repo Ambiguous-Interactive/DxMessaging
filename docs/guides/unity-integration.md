@@ -9,6 +9,21 @@ Unity-centric helpers make registration lifecycles explicit and safe.
 - Call `Configure(IMessageBus, MessageBusRebindMode)` before `Create` if you want the component to use a custom bus (e.g., one resolved from a DI container). Passing `MessageBusRebindMode.RebindActive` migrates current registrations; `PreserveRegistrations` defers the swap until the next enable.
 - Optional: set `emitMessagesWhenDisabled` if you need to emit while disabled.
 
+**Fixed in v4.0.0:** A token created before host activation starts with delivery suspended
+unless `emitMessagesWhenDisabled` is enabled. Token enable state and handler activity are
+separate; enabling a token does not activate its GameObject.
+
+Destroying an initialized `MessagingComponent` deactivates its shared handler and disposes its
+owned tokens, including tokens created by plain `MonoBehaviour` listeners. This also applies when only the
+`MessagingComponent` is removed. If a custom bus throws during deregistration, cleanup continues
+for other listeners and logs the full exception. Retain the component and listener references
+and retry `Release(listener)` after the bus recovers. An interceptor whose removal fails remains
+registered until that retry succeeds.
+
+Unity [only sends `OnDestroy` to previously active GameObjects](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/MonoBehaviour.OnDestroy.html).
+If you create tokens on a host that has never been active, call `Release(listener)` or dispose each token before discarding it. A manual
+listener removed while its messaging owner survives must also release its token.
+
 ## MessageAwareComponent
 
 - Derive for a batteries-included pattern; it manages a token for you.
@@ -54,8 +69,8 @@ public sealed class HealthComponent : MessageAwareComponent
 - If you need to opt out of string demos, prefer overriding `RegisterForStringMessages => false` rather than removing the base call.
 - **Don't hide Unity methods** with `new` (e.g., `new void OnEnable()`); always `override` and call `base.*`.
 
-!!! tip "Diagnostics & Analyzer"
-DxMessaging ships a Roslyn analyzer + Inspector overlay that catches missing base calls at compile time and surfaces them as a HelpBox at the top of the offending component's Inspector. See the [Inspector Overlay & Base-Call Warnings](inspector-overlay.md) guide for the day-to-day workflow, or the [Roslyn Analyzers & Diagnostics](../reference/analyzers.md) reference for every diagnostic id and the suppression-precedence ordering.
+> **Diagnostics and analyzer:**
+> DxMessaging ships a Roslyn analyzer + Inspector overlay that catches missing base calls at compile time and surfaces them as a HelpBox at the top of the offending component's Inspector. See the [Inspector Overlay & Base-Call Warnings](inspector-overlay.md) guide for the day-to-day workflow, or the [Roslyn Analyzers & Diagnostics](../reference/analyzers.md) reference for every diagnostic id and the suppression-precedence ordering.
 
 ## Registration timing
 
@@ -87,6 +102,7 @@ public sealed class InventoryUI : UnityEngine.MonoBehaviour
 
     private void OnEnable() => _token.Enable();
     private void OnDisable() => _token.Disable();
+    private void OnDestroy() => _messaging.Release(this);
 
     private void OnWorld(in WorldRegenerated m) { /* update UI */ }
     private void OnDamage(in ApplyDamage m) { /* apply damage */ }

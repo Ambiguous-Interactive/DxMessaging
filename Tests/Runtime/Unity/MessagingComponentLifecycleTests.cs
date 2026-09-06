@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Unity
 {
     using System;
+    using System.Text.RegularExpressions;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -13,6 +14,7 @@ namespace DxMessaging.Tests.Runtime.Unity
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEngine;
+    using UnityEngine.TestTools;
 
     /// <summary>
     /// Covers <see cref="MessagingComponent"/> lifecycle surface not exercised elsewhere:
@@ -31,6 +33,425 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessagingComponentLifecycleTests : MessagingTestBase
     {
+        [Test]
+        public void DestroyingMessagingOwnerDisposesManualTokens(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool emitWhenDisabled,
+            [Values(false, true)] bool destroyWholeHost
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, emitWhenDisabled={emitWhenDisabled}, destroyWholeHost={destroyWholeHost}]";
+            GameObject host = new(
+                nameof(DestroyingMessagingOwnerDisposesManualTokens),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            messaging.emitMessagesWhenDisabled = emitWhenDisabled;
+            InstanceId route = host;
+
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                MessageRegistrationToken token = listener.RequestToken(messaging);
+                try
+                {
+                    int calls = 0;
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        token,
+                        route,
+                        () => ++calls
+                    );
+                    token.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(calls, Is.EqualTo(1), $"{context} Control must deliver once.");
+
+                    if (destroyWholeHost)
+                    {
+                        _spawned.Remove(host);
+                        UnityEngine.Object.DestroyImmediate(host);
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(messaging);
+                    }
+
+                    Assert.That(
+                        messaging == null,
+                        Is.True,
+                        $"{context} Messaging owner must be destroyed."
+                    );
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(1),
+                        $"{context} Destroyed messaging owners must stop delivery."
+                    );
+                    Assert.That(
+                        token.Enabled,
+                        Is.False,
+                        $"{context} Destroying the owner must dispose its tokens."
+                    );
+                    Assert.That(
+                        watcher.LeakedRegistrations,
+                        Is.Zero,
+                        $"{context} Destruction must remove bus registrations."
+                    );
+                    Assert.That(
+                        messaging._registeredListeners.Count,
+                        Is.Zero,
+                        $"{context} Destruction must release retained listener references."
+                    );
+                }
+                finally
+                {
+                    token.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void DestructionFailureRetainsRetryWithoutBlockingSiblingCleanup(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            AssertCleanupFailureRetainsRetryableListener(scenario, destroyOwner: true);
+        }
+
+#if UNITY_EDITOR
+        [Test]
+        public void EditorResetFailureRetainsRetryWithoutBlockingSiblingCleanup(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            AssertCleanupFailureRetainsRetryableListener(scenario, destroyOwner: false);
+        }
+#endif
+
+        private void AssertCleanupFailureRetainsRetryableListener(
+            MessageScenario scenario,
+            bool destroyOwner
+        )
+        {
+            string context = $"[{scenario.Kind}, destroyOwner={destroyOwner}]";
+            GameObject host = new(
+                nameof(AssertCleanupFailureRetainsRetryableListener),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
+            ManualListenerComponent sibling = host.AddComponent<ManualListenerComponent>();
+            MessageBus innerBus = new();
+            ThrowOnceDeregistrationBus bus = new(innerBus);
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            messaging.emitMessagesWhenDisabled = true;
+            InstanceId route = host;
+
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                MessageRegistrationToken firstToken = first.RequestToken(messaging);
+                MessageRegistrationToken siblingToken = sibling.RequestToken(messaging);
+                try
+                {
+                    int calls = 0;
+                    firstToken.DiagnosticMode = true;
+                    siblingToken.DiagnosticMode = true;
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        firstToken,
+                        route,
+                        () => ++calls
+                    );
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        siblingToken,
+                        route,
+                        () => ++calls
+                    );
+                    firstToken.Enable();
+                    siblingToken.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(2),
+                        $"{context} Both listeners must deliver before cleanup."
+                    );
+
+                    LogAssert.Expect(
+                        LogType.Warning,
+                        new Regex(
+                            @"\[DxMessaging\] Disposing listener token failed\. System.InvalidOperationException: Deregistration failure\."
+                        )
+                    );
+                    if (destroyOwner)
+                    {
+                        UnityEngine.Object.DestroyImmediate(messaging);
+                        messaging.ToggleMessageHandler(true);
+                        messaging.OnEnable();
+                        Assert.Throws<ObjectDisposedException>(
+                            () => messaging.Create(first),
+                            $"{context} A destroyed owner must reject new tokens."
+                        );
+                    }
+#if UNITY_EDITOR
+                    else
+                    {
+                        Assert.That(
+                            messaging.EditorResetRuntimeState(),
+                            Is.False,
+                            $"{context} A failed reset must not report success."
+                        );
+                    }
+#endif
+
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(2),
+                        $"{context} Failed cleanup must leave the old handler inactive."
+                    );
+                    Assert.That(
+                        firstToken.Enabled,
+                        Is.True,
+                        $"{context} Failed token must remain retryable."
+                    );
+                    Assert.That(
+                        siblingToken.Enabled,
+                        Is.False,
+                        $"{context} Failure must not block sibling disposal."
+                    );
+                    Assert.That(
+                        messaging._registeredListeners.Count,
+                        Is.EqualTo(1),
+                        $"{context} Only failed cleanup may retain a listener."
+                    );
+                    Assert.That(
+                        siblingToken._metadata.Count,
+                        Is.Zero,
+                        $"{context} Successful disposal must clear metadata."
+                    );
+                    Assert.That(
+                        siblingToken._callCounts.Count,
+                        Is.Zero,
+                        $"{context} Successful disposal must clear call counts."
+                    );
+                    Assert.That(
+                        siblingToken._emissionBuffer.Count,
+                        Is.Zero,
+                        $"{context} Successful disposal must clear history."
+                    );
+
+                    if (destroyOwner)
+                    {
+                        Assert.That(
+                            messaging.Release(first),
+                            Is.True,
+                            $"{context} Retained destroyed owner must support explicit cleanup retry."
+                        );
+                    }
+#if UNITY_EDITOR
+                    else
+                    {
+                        Assert.That(
+                            messaging.EditorResetRuntimeState(),
+                            Is.True,
+                            $"{context} Reset retry must complete cleanup."
+                        );
+                    }
+#endif
+
+                    Assert.That(
+                        firstToken.Enabled,
+                        Is.False,
+                        $"{context} Retry must dispose the retained token."
+                    );
+                    Assert.That(
+                        firstToken._metadata.Count,
+                        Is.Zero,
+                        $"{context} Retry must clear metadata."
+                    );
+                    Assert.That(
+                        firstToken._callCounts.Count,
+                        Is.Zero,
+                        $"{context} Retry must clear call counts."
+                    );
+                    Assert.That(
+                        firstToken._emissionBuffer.Count,
+                        Is.Zero,
+                        $"{context} Retry must clear history."
+                    );
+                    Assert.That(
+                        messaging._registeredListeners.Count,
+                        Is.Zero,
+                        $"{context} Retry must release listener references."
+                    );
+                    Assert.That(
+                        watcher.LeakedRegistrations,
+                        Is.Zero,
+                        $"{context} Retry must remove remaining registrations."
+                    );
+                }
+                finally
+                {
+                    firstToken.Dispose();
+                    siblingToken.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void ExplicitReleaseCleansTokenAfterNeverActivatedHostDestruction(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            string context = $"[{scenario.Kind}]";
+            GameObject host = new(
+                nameof(ExplicitReleaseCleansTokenAfterNeverActivatedHostDestruction)
+            );
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent messaging = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            messaging.emitMessagesWhenDisabled = true;
+            InstanceId route = host;
+
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                MessageRegistrationToken token = listener.RequestToken(messaging);
+                try
+                {
+                    int calls = 0;
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        token,
+                        route,
+                        () => ++calls
+                    );
+                    token.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(1),
+                        $"{context} Explicit opt-in must deliver before host activation."
+                    );
+
+                    _spawned.Remove(host);
+                    UnityEngine.Object.DestroyImmediate(host);
+                    Assert.That(
+                        host == null,
+                        Is.True,
+                        $"{context} Never-activated host must be destroyed."
+                    );
+                    messaging.Release(listener);
+
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(1),
+                        $"{context} Explicit release must stop delivery after destruction."
+                    );
+                    Assert.That(
+                        token.Enabled,
+                        Is.False,
+                        $"{context} Explicit release must dispose the token."
+                    );
+                    Assert.That(
+                        messaging._registeredListeners.Count,
+                        Is.Zero,
+                        $"{context} Explicit release must drop retained listeners."
+                    );
+                    Assert.That(
+                        watcher.LeakedRegistrations,
+                        Is.Zero,
+                        $"{context} Explicit release must remove bus registrations."
+                    );
+                }
+                finally
+                {
+                    token.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void TokenCreatedBeforeHostActivationRespectsHandlerState(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool emitWhenDisabled,
+            [Values(false, true)] bool componentEnabled
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, emitWhenDisabled={emitWhenDisabled}, componentEnabled={componentEnabled}]";
+            GameObject host = new(nameof(TokenCreatedBeforeHostActivationRespectsHandlerState));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent messaging = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            messaging.enabled = componentEnabled;
+            messaging.emitMessagesWhenDisabled = emitWhenDisabled;
+            MessageBus bus = new();
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            InstanceId route = host;
+
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                MessageRegistrationToken token = listener.RequestToken(messaging);
+                try
+                {
+                    int calls = 0;
+                    _ = ScenarioCallbacks.RegisterCountingHandler(
+                        scenario,
+                        token,
+                        route,
+                        () => ++calls
+                    );
+                    token.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    int expectedCalls = emitWhenDisabled ? 1 : 0;
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(expectedCalls),
+                        $"{context} A new handler must respect the inactive host."
+                    );
+
+                    host.SetActive(true);
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    expectedCalls += emitWhenDisabled || componentEnabled ? 1 : 0;
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(expectedCalls),
+                        $"{context} Host activation must respect the component state."
+                    );
+
+                    messaging.enabled = true;
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(expectedCalls + 1),
+                        $"{context} Enabling the host and component must resume delivery."
+                    );
+                }
+                finally
+                {
+                    messaging.Release(listener);
+                }
+            }
+        }
+
         [Test]
         public void ToggleMessageHandlerFalseSuspendsDeliveryUntilToggledTrue()
         {
@@ -674,6 +1095,25 @@ namespace DxMessaging.Tests.Runtime.Unity
                     failingBus.AllowDeregistrations();
                     token.Dispose();
                 }
+            }
+        }
+
+        private sealed class ThrowOnceDeregistrationBus : DelegatingMessageBus
+        {
+            private bool _throwOnDeregistration = true;
+
+            internal ThrowOnceDeregistrationBus(IMessageBus inner)
+                : base(inner) { }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                if (_throwOnDeregistration)
+                {
+                    _throwOnDeregistration = false;
+                    throw new InvalidOperationException("Deregistration failure.");
+                }
+
+                base.Deregister<T>(in registration);
             }
         }
 

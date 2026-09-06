@@ -36,6 +36,7 @@ namespace DxMessaging.Unity
         private MessageBusProviderHandle _serializedProviderHandle;
 
         private MessageHandler _messageHandler;
+        private bool _destroyed;
 
         [NonSerialized]
         private IMessageBus _messageBusOverride;
@@ -81,8 +82,21 @@ namespace DxMessaging.Unity
         /// <returns>A <see cref="Core.MessageRegistrationToken"/> bound to the underlying <see cref="Core.MessageHandler"/>.</returns>
         /// <exception cref="ArgumentNullException">If <paramref name="listener"/> is null.</exception>
         /// <exception cref="ArgumentException">If <paramref name="listener"/> is not attached to this GameObject.</exception>
+        /// <exception cref="ObjectDisposedException">If Unity has invoked this owner's destruction callback.</exception>
+        /// <remarks>
+        /// A newly created handler respects the component and GameObject active state unless
+        /// <see cref="emitMessagesWhenDisabled"/> is true. Explicitly release tokens created before
+        /// first activation if the host is destroyed without ever becoming active: Unity does not
+        /// invoke <c>OnDestroy</c> for that host.
+        /// <para><b>Fixed in v4.0.0.</b></para>
+        /// </remarks>
         public MessageRegistrationToken Create(MonoBehaviour listener)
         {
+            if (_destroyed)
+            {
+                throw new ObjectDisposedException(nameof(MessagingComponent));
+            }
+
             if (listener == null)
             {
                 throw new ArgumentNullException(nameof(listener));
@@ -263,15 +277,68 @@ namespace DxMessaging.Unity
         }
 
         /// <summary>
+        /// Stops delivery and disposes retained tokens when Unity destroys this owner.
+        /// </summary>
+        /// <remarks>
+        /// Failed cleanup remains available through <see cref="Release"/> for an explicit retry.
+        /// Unity only sends this callback to hosts that were previously active. Owners of tokens
+        /// created before first activation must release them when abandoning a never-activated host.
+        /// <para><b>Fixed in v4.0.0.</b></para>
+        /// </remarks>
+        private void OnDestroy()
+        {
+            _destroyed = true;
+            if (_messageHandler != null)
+            {
+                _messageHandler.active = false;
+            }
+
+            DisposeRetainedListeners();
+        }
+
+        /// <summary>
+        /// Releases independent listeners while retaining failed cleanup for a later retry.
+        /// </summary>
+        private void DisposeRetainedListeners()
+        {
+            if (_registeredListeners.Count == 0)
+            {
+                return;
+            }
+
+            foreach (MonoBehaviour listener in _registeredListeners.Keys.ToArray())
+            {
+                try
+                {
+                    Release(listener);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning(
+                        $"[DxMessaging] Disposing listener token failed. {exception}",
+                        this
+                    );
+                }
+            }
+        }
+
+        /// <summary>
         /// Explicitly toggle the underlying handler's active state.
         /// </summary>
         /// <param name="newActive">Desired active state.</param>
         /// <remarks>
-        /// Explicit calls always win: unlike the Unity lifecycle, this method is never gated by
-        /// <see cref="emitMessagesWhenDisabled"/>.
+        /// Explicit calls always win while the owner is alive: unlike the Unity enable/disable
+        /// lifecycle, this method is never gated by <see cref="emitMessagesWhenDisabled"/>.
+        /// Calls after this owner's destruction callback have no effect.
+        /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
         public void ToggleMessageHandler(bool newActive)
         {
+            if (_destroyed)
+            {
+                return;
+            }
+
             if (_messageHandler != null && _messageHandler.active != newActive)
             {
                 _messageHandler.active = newActive;
@@ -300,7 +367,10 @@ namespace DxMessaging.Unity
         private MessageHandler CreateMessageHandler()
         {
             IMessageBus resolvedBus = ResolveConfiguredBus();
-            MessageHandler handler = new(gameObject, resolvedBus) { active = true };
+            MessageHandler handler = new(gameObject, resolvedBus)
+            {
+                active = emitMessagesWhenDisabled || isActiveAndEnabled,
+            };
             return handler;
         }
 
@@ -402,6 +472,12 @@ namespace DxMessaging.Unity
             {
                 Debug.Log($"[DxMessaging] Cleared runtime state for '{name}'.");
             }
+            else if (_registeredListeners.Count > 0)
+            {
+                Debug.LogWarning(
+                    $"[DxMessaging] Runtime state for '{name}' still has listener tokens awaiting cleanup. Retry the reset."
+                );
+            }
             else
             {
                 Debug.Log($"[DxMessaging] No runtime state to clear on '{name}'.");
@@ -412,28 +488,19 @@ namespace DxMessaging.Unity
         {
             bool cleared = false;
 
+            if (_messageHandler != null)
+            {
+                _messageHandler.active = false;
+            }
+
             if (_registeredListeners.Count > 0)
             {
-                foreach (MessageRegistrationToken token in _registeredListeners.Values.ToArray())
+                DisposeRetainedListeners();
+                if (_registeredListeners.Count > 0)
                 {
-                    try
-                    {
-                        if (token.Enabled)
-                        {
-                            token.Disable();
-                        }
-
-                        token.Dispose();
-                    }
-                    catch (Exception exception)
-                    {
-                        Debug.LogWarning(
-                            $"[DxMessaging] Disposing stale token on {name} failed. {exception}"
-                        );
-                    }
+                    return false;
                 }
 
-                _registeredListeners.Clear();
                 cleared = true;
             }
 
