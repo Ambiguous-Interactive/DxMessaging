@@ -360,7 +360,8 @@ function serializedShadows(text) {
 }
 function addSensitiveData(found, shadows) {
   for (const shadow of shadows) {
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(shadow)) found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(shadow))
+      found.set(STRUCTURE_FINDING.id, { ...STRUCTURE_FINDING, reason: "encoded-format-control" });
     for (const entry of [...findCredentials(shadow), ...findIdentifiers(shadow)])
       found.set(entry.id, entry);
   }
@@ -489,13 +490,63 @@ function redactPatterns(text, patterns) {
 function redactCredentials(text) {
   return redactPatterns(text, CREDENTIAL_PATTERNS);
 }
-function structuredText(text, visit, format, depth = 0) {
-  const invalid = () => {
-    throw new Error("Unsupported structured artifact.");
+// Format-control characters, including through encoded escape chains, become visible [cf:xxxx]
+// markers so an uploaded artifact carries no invisible character; callers count every rewrite.
+function neutralizeFormatControls(value, counts) {
+  let replaced = 0;
+  const isFormatControl = (point) =>
+    (point >= 0xd800 && point <= 0xdfff) || /[\p{Cf}]/u.test(String.fromCodePoint(point));
+  const marker = (point) => {
+    replaced += 1;
+    return `[cf:${point.toString(16).padStart(4, "0")}]`;
   };
-  if (depth > 8) invalid();
+  let text = value.replace(/[\p{Cf}\uD800-\uDFFF]/gu, (char) => marker(char.codePointAt(0)));
+  // Escapes decode to the same characters through the shadow chain, so rewrite every level of
+  // each escape run until no encoded form can produce an invisible character either.
+  for (;;) {
+    const next = text
+      .replace(/(?:\\u[0-9a-fA-F]{4})+/g, (run) => {
+        const halves = run
+          .match(/\\u([0-9a-fA-F]{4})/g)
+          .map((half) => Number.parseInt(half.slice(2), 16));
+        let out = "";
+        for (let index = 0; index < halves.length;) {
+          const high = halves[index];
+          const paired =
+            high >= 0xd800 &&
+            high <= 0xdbff &&
+            halves[index + 1] >= 0xdc00 &&
+            halves[index + 1] <= 0xdfff;
+          const width = paired ? 2 : 1;
+          const point = paired
+            ? (high - 0xd800) * 0x400 + halves[index + 1] - 0xdc00 + 0x10000
+            : high;
+          out += isFormatControl(point) ? marker(point) : run.slice(index * 6, (index + width) * 6);
+          index += width;
+        }
+        return out;
+      })
+      .replace(/&(amp;)*#(?:x([0-9a-fA-F]+)|([0-9]+));/g, (escape, _, hex, decimal) => {
+        const point = Number.parseInt(hex ?? decimal, hex !== undefined ? 16 : 10);
+        // decodeSerialized leaves out-of-range entities verbatim, so they cannot decode to an
+        // invisible character and must never reach fromCodePoint as a crash.
+        if (point > 0x10ffff) return escape;
+        return isFormatControl(point) ? marker(point) : escape;
+      });
+    if (next === text) break;
+    text = next;
+  }
+  if (replaced > 0)
+    counts.set("scalar-format-control", (counts.get("scalar-format-control") ?? 0) + replaced);
+  return text;
+}
+class StructuredArtifactError extends Error {}
+function structuredText(text, visit, format, depth = 0) {
+  const invalid = (reason = "unsupported-structure") => {
+    throw new StructuredArtifactError(reason);
+  };
+  if (depth > 8) invalid("nested-structure-depth");
   const scalar = (value, key, element) => {
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid();
     if (contextualPattern(key, value, element)) return visit(value, key, element);
     return (
       (/^[\[\{"<]/.test(value.trimStart())
@@ -507,7 +558,8 @@ function structuredText(text, visit, format, depth = 0) {
   const names = new Set();
   const name = (value) => {
     if (names.has(value)) return;
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value) || findRawSensitiveData(value).length) invalid();
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid("name-format-control");
+    if (findRawSensitiveData(value).length) invalid("sensitive-structure-name");
     if (names.size < 4096 && value.length <= 256) names.add(value);
   };
   if (format === ".jsonl")
@@ -533,7 +585,7 @@ function structuredText(text, visit, format, depth = 0) {
       return value;
     };
     const parse = (source) =>
-      new DOMParser({ onError: invalid }).parseFromString(
+      new DOMParser({ onError: () => invalid("xml-syntax") }).parseFromString(
         source.replace(/^\ufeff/, ""),
         "application/xml"
       );
@@ -603,23 +655,24 @@ function structuredText(text, visit, format, depth = 0) {
   try {
     value = JSON.parse(text.replace(/^\ufeff/, ""));
   } catch {
-    if (format === ".json") invalid();
+    if (format === ".json") invalid("json-syntax");
     else return undefined;
   }
   // Native JSON parsing discards earlier duplicate keys, including hidden secrets.
-  if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length) invalid();
+  if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length)
+    invalid("json-key-validation");
   const walk = (value, key = "") => {
     if (typeof value === "string") return scalar(value, key);
     // Containers under sensitive keys have ambiguous ownership; scalars retain their JSON type.
     const context = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
-    if (key && contextualPattern(key, context)) invalid();
+    if (key && contextualPattern(key, context)) invalid("sensitive-nonstring-value");
     if (
       typeof value === "number" &&
       (!Number.isFinite(value) ||
         Object.is(value, -0) ||
         (Number.isInteger(value) && !Number.isSafeInteger(value)))
     )
-      invalid();
+      invalid("json-number-precision");
     if (Array.isArray(value)) return value.map((item) => walk(item));
     if (value !== null && typeof value === "object") {
       for (const key of Object.keys(value)) {
@@ -666,8 +719,11 @@ function findSensitiveData(text, format) {
   try {
     const output = structuredText(text, inspect, format);
     if (output === undefined) return findRawSensitiveData(text.replace(/^\ufeff/, ""));
-  } catch {
-    found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+  } catch (error) {
+    found.set(STRUCTURE_FINDING.id, {
+      ...STRUCTURE_FINDING,
+      reason: error instanceof StructuredArtifactError ? error.message : "structured-parser-failure"
+    });
   }
   return [...found.values()];
 }
@@ -697,11 +753,21 @@ function redactSensitiveData(text, format) {
           result = redactPatterns(value, SENSITIVE_PATTERNS);
         }
         for (const [id, count] of result.counts) counts.set(id, (counts.get(id) ?? 0) + count);
-        return result.redacted;
+        return neutralizeFormatControls(result.redacted, counts);
       },
       format
     );
-    if (output === undefined) return redactPatterns(text, SENSITIVE_PATTERNS);
+    if (output === undefined) {
+      // A UTF-16 byte-order mark arrives as the first decoded character; it is an encoding
+      // marker at document level, so neutralization must leave it exactly where it was.
+      const bom = text.startsWith("\ufeff") ? "\ufeff" : "";
+      const plain = redactPatterns(text, SENSITIVE_PATTERNS);
+      for (const [id, count] of plain.counts) counts.set(id, (counts.get(id) ?? 0) + count);
+      return {
+        redacted: bom + neutralizeFormatControls(plain.redacted.slice(bom.length), counts),
+        counts
+      };
+    }
     return { redacted: counts.size ? output : text, counts };
   } catch {
     return { redacted: text, counts: new Map() };

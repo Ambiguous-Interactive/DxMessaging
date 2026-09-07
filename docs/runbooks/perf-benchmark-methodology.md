@@ -288,8 +288,31 @@ metrics because the Release player strips the required profiler recorder (see
   profile and fails on a missing, extra, mistyped, or different value. Each
   evidence file must also name the exact Unity version requested by the runner.
   Standalone validation requires `-ExpectedUnityVersion` when checking evidence;
-  `-ProfileOnly` validates the shared profile without selecting an editor. The
-  `DXM perf config:` log line and each row's platform
+  `-ProfileOnly` validates the shared profile without selecting an editor.
+
+  Both profiled builders retain `native-build-inputs/manifest.json` with the
+  JSON graph and input-data companions of the exact player DAG named by Bee in
+  the completed build's log. Cached builds need no graph regeneration. When the
+  build program runs, its graph/input pair must agree with the backend DAG.
+  The manifest records that distinction and the logged binary DAG's hash; it
+  does not claim a cached JSON companion was regenerated or passed directly to
+  the backend. The binary DAG itself is not uploaded.
+  The capture also retains numeric Bee response file paths observed in the log,
+  renamed with a `.txt` suffix for credential scanning. Missing or empty inputs,
+  conflicting graphs, more than 256 retained files, or more than 64 MiB of total
+  source input bytes stop capture. This reads existing inputs; it adds no build,
+  player launch, benchmark window, or recursive cache scan.
+  The source manifest binds the profile, editor, original log hash, and original
+  input hashes. The existing artifact redactor creates `retained-manifest.json`
+  with hashes of the safely scanned bytes during its normal pass. Missing,
+  duplicated, unsafe, or unscanned file references prevent finalization. Artifact
+  upload still requires that entire redaction step to pass.
+  `responseFileScope: build-log-references-only` means this is not a complete response
+  dependency closure. Native executable hashes and versions, nested response inputs,
+  and immutable remote restoration still need campaign evidence. The editor compiler
+  version printed in `unity.log` does not identify the player compiler.
+
+  The `DXM perf config:` log line and each row's platform
   string (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) remain
   diagnostic surfaces; a published `x64 Debug` row is a configuration bug. A Release player
   strips the `GC.Alloc` profiler recorder, so the Standalone leg cannot measure

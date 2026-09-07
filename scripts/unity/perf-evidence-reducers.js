@@ -1,5 +1,6 @@
 "use strict";
 const { isDeepStrictEqual } = require("node:util");
+const { extractRows, buildCsv, deriveScope } = require("./extract-perf-baseline.js");
 const { reducePairedBracket } = require("./reduce-paired-bracket.js");
 // Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
@@ -56,6 +57,53 @@ function reducePairedThroughputScreen(contents, { sourceCommit } = {}) {
   if (sourceCommit !== undefined && sourceCommit !== result.provenance[0].commit)
     throw new Error("Paired screen sourceCommit must match the first run's commit.");
   return result;
+}
+// Retain aggregate probe observations, not campaign intervals or an allocation verdict.
+function reduceSubUnsubObservations(contents, { sourceCommit } = {}) {
+  const csv = requireBytes(contents, "comparison-baseline.csv")
+    .toString("utf8")
+    .replaceAll("\r\n", "\n");
+  const rows = extractRows(csv);
+  // The extractor tolerates log noise, duplicates, legacy columns, and numeric prefixes.
+  // Round-trip admission ensures none of those concessions silently discards CSV evidence.
+  if (!rows.length || buildCsv(rows) !== csv)
+    throw new Error("comparison-baseline.csv must be canonical non-empty eight-column CSV.");
+  const raw = requireBytes(contents, "comparison-output.log").toString("utf8");
+  if (buildCsv(extractRows(raw)) !== csv)
+    throw new Error("comparison-baseline.csv disagrees with retained comparison-output.log rows.");
+  const platform = rows[0].platform;
+  const scope = deriveScope(platform);
+  if (!scope || platform.match(/\b(?:Standalone|PlayMode|EditMode)\b/g).length !== 1)
+    throw new Error("comparison-baseline.csv has an unknown or ambiguous execution scope.");
+  const identities = new Set();
+  for (const row of rows) {
+    if (row.commit !== sourceCommit)
+      throw new Error(`${row.scenario} commit must match sourceCommit.`);
+    if (row.platform !== platform)
+      throw new Error(`${row.scenario} platform must match every retained row.`);
+    const identity = `${row.scenario}:${row.runIndex}`;
+    if (identities.has(identity)) throw new Error(`${identity} duplicates a run identity.`);
+    identities.add(identity);
+    if (
+      ["runIndex", "gcAllocations", "gcAllocatedBytes"].some(
+        (field) => !Number.isSafeInteger(Number(row[field])) || Number(row[field]) < -1
+      ) ||
+      Number(row.emitsPerSecond) < 0 ||
+      Number(row.wallClockMs) <= 0
+    )
+      throw new Error(`${identity} has an invalid measurement or sentinel.`);
+  }
+  const observations = rows.filter((row) => row.scenario.endsWith("_SubUnsub"));
+  if (!observations.some((row) => row.scenario === "Comparison_DxMessaging_SubUnsub"))
+    throw new Error("comparison-baseline.csv requires Comparison_DxMessaging_SubUnsub.");
+  return {
+    schemaVersion: 1,
+    measurementClass: "observation",
+    sourceCommit,
+    platform,
+    scope,
+    rows: observations
+  };
 }
 function requireValue(source, field, relativePath) {
   const value = source?.[field];
@@ -168,6 +216,7 @@ module.exports = {
   CELL_EVIDENCE_SUFFIX,
   MATRIX_EVIDENCE_NAME,
   reducePairedThroughputScreen,
+  reduceSubUnsubObservations,
   reduceShippingFidelityMatrix,
   summarizeByStrippingLevel
 };

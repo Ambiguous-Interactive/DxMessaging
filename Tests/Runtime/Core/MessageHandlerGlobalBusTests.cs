@@ -389,43 +389,41 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageHandler.GlobalMessageBusScope[] scopes =
                 new MessageHandler.GlobalMessageBusScope[scopeCount];
             GlobalMessageBus overrideBus = new GlobalMessageBus();
-            try
-            {
-                for (int i = 0; i < scopes.Length; ++i)
-                {
-                    scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
-                }
-
-                Array blocks = (Array)blocksField.GetValue(null);
-                int realizedBlockCount = 0;
-                foreach (Array block in blocks)
-                {
-                    if (block == null)
-                    {
-                        continue;
-                    }
-
-                    ++realizedBlockCount;
-                    Assert.AreEqual(
-                        expectedBlockSize,
-                        block.Length,
-                        "Every realized override-state segment must use the fixed block size."
-                    );
-                }
-
-                Assert.GreaterOrEqual(
-                    realizedBlockCount,
-                    3,
-                    "Crossing two boundaries must realize at least three fixed-size blocks."
-                );
-            }
-            finally
+            using CleanupScope cleanup = new(() =>
             {
                 for (int i = scopes.Length - 1; i >= 0; --i)
                 {
                     scopes[i].Dispose();
                 }
+            });
+
+            for (int i = 0; i < scopes.Length; ++i)
+            {
+                scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
             }
+
+            Array blocks = (Array)blocksField.GetValue(null);
+            int realizedBlockCount = 0;
+            foreach (Array block in blocks)
+            {
+                if (block == null)
+                {
+                    continue;
+                }
+
+                ++realizedBlockCount;
+                Assert.AreEqual(
+                    expectedBlockSize,
+                    block.Length,
+                    "Every realized override-state segment must use the fixed block size."
+                );
+            }
+
+            Assert.GreaterOrEqual(
+                realizedBlockCount,
+                3,
+                "Crossing two boundaries must realize at least three fixed-size blocks."
+            );
         }
 
         [Test]
@@ -445,30 +443,32 @@ namespace DxMessaging.Tests.Runtime.Core
             int originalSlotCount = (int)slotCountField.GetValue(null);
             int originalFreeHead = (int)freeHeadField.GetValue(null);
 
-            try
-            {
-                slotCountField.SetValue(null, int.MaxValue);
-                freeHeadField.SetValue(null, -1);
-
-                Assert.Throws<InvalidOperationException>(
-                    () => MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus()),
-                    "A fresh slot outside the representable range must fail closed."
-                );
-                Assert.AreSame(
-                    current,
-                    MessageHandler.MessageBus,
-                    "Slot-index exhaustion must not change the active global bus."
-                );
-            }
-            finally
+            using CleanupScope restoreFields = new(() =>
             {
                 slotCountField.SetValue(null, originalSlotCount);
                 freeHeadField.SetValue(null, originalFreeHead);
-            }
+            });
+
+            slotCountField.SetValue(null, int.MaxValue);
+            freeHeadField.SetValue(null, -1);
+
+            Assert.Throws<InvalidOperationException>(
+                () => MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus()),
+                "A fresh slot outside the representable range must fail closed."
+            );
+            Assert.AreSame(
+                current,
+                MessageHandler.MessageBus,
+                "Slot-index exhaustion must not change the active global bus."
+            );
         }
 
-        [Test]
-        public void ExhaustedGenerationSlotIsBurnedAndStaleCopyCannotEndReplacement()
+        [TestCase(0L)]
+        [TestCase(long.MaxValue)]
+        [TestCase(-2L)]
+        public void OverrideGenerationBoundariesPreserveStaleCopiesAndRetireExhaustedSlots(
+            long generation
+        )
         {
             GlobalMessageBus original = new GlobalMessageBus();
             GlobalMessageBus replacementBus = new GlobalMessageBus();
@@ -478,49 +478,59 @@ namespace DxMessaging.Tests.Runtime.Core
             int exhaustedSlot = GetScopeSlot(bootstrap);
             bootstrap.Dispose();
             long originalGeneration = GetOverrideStateGeneration(exhaustedSlot);
-            SetOverrideStateGeneration(exhaustedSlot, -2);
             MessageHandler.GlobalMessageBusScope exhaustedScope = default;
             MessageHandler.GlobalMessageBusScope replacement = default;
 
-            try
-            {
-                exhaustedScope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
-                Assert.AreEqual(
-                    exhaustedSlot,
-                    GetScopeSlot(exhaustedScope),
-                    "The prepared slot must issue its final nonzero generation."
-                );
-                MessageHandler.GlobalMessageBusScope staleCopy = exhaustedScope;
-                exhaustedScope.Dispose();
-
-                replacement = MessageHandler.OverrideGlobalMessageBus(replacementBus);
-                Assert.AreNotEqual(
-                    exhaustedSlot,
-                    GetScopeSlot(replacement),
-                    "A slot that issued generation -1 must be burned instead of wrapping."
-                );
-
-                staleCopy.Dispose();
-                Assert.AreSame(
-                    replacementBus,
-                    MessageHandler.MessageBus,
-                    "The exhausted stale scope must not end the replacement scope."
-                );
-
-                replacement.Dispose();
-                Assert.AreSame(
-                    original,
-                    MessageHandler.MessageBus,
-                    "The replacement scope must restore the original bus."
-                );
-            }
-            finally
+            using CleanupScope restoreGeneration = new(() =>
             {
                 MessageHandler.SetGlobalMessageBus(original);
                 exhaustedScope.Dispose();
                 replacement.Dispose();
-                RestoreBurnedOverrideSlot(exhaustedSlot, originalGeneration);
-            }
+                if (generation == -2)
+                {
+                    RestoreBurnedOverrideSlot(exhaustedSlot, originalGeneration);
+                }
+                else
+                {
+                    SetOverrideStateGeneration(exhaustedSlot, originalGeneration);
+                }
+            });
+
+            SetOverrideStateGeneration(exhaustedSlot, generation);
+            exhaustedScope = MessageHandler.OverrideGlobalMessageBus(new GlobalMessageBus());
+            Assert.AreEqual(
+                exhaustedSlot,
+                GetScopeSlot(exhaustedScope),
+                $"generation={generation}: the prepared slot must issue the next generation."
+            );
+            Assert.AreEqual(
+                unchecked(generation + 1),
+                GetOverrideStateGeneration(exhaustedSlot),
+                $"generation={generation}: zero-start, signed wrap, and final issuance must retain all nonzero values."
+            );
+            MessageHandler.GlobalMessageBusScope staleCopy = exhaustedScope;
+            exhaustedScope.Dispose();
+
+            replacement = MessageHandler.OverrideGlobalMessageBus(replacementBus);
+            Assert.AreEqual(
+                generation != -2,
+                exhaustedSlot == GetScopeSlot(replacement),
+                $"generation={generation}: reusable slots must be reused; the exhausted slot must be retired before zero wraps."
+            );
+
+            staleCopy.Dispose();
+            Assert.AreSame(
+                replacementBus,
+                MessageHandler.MessageBus,
+                $"generation={generation}: the stale scope must not end the replacement scope."
+            );
+
+            replacement.Dispose();
+            Assert.AreSame(
+                original,
+                MessageHandler.MessageBus,
+                $"generation={generation}: the replacement scope must restore the original bus."
+            );
         }
 
         [TestCase(false, false)]

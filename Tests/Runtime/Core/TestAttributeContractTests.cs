@@ -1043,6 +1043,12 @@ namespace DxMessaging.Tests.Runtime.Core
                         continue;
                     }
 
+                    // The exact attribute regex requires this literal in every match.
+                    if (text.IndexOf("[UnityTest]", StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
                     foreach (Match attribute in StandaloneUnityTestAttributePattern.Matches(text))
                     {
                         if (UnityTestBodyHasYieldReturn(text, attribute.Index, out string method))

@@ -14,6 +14,19 @@ namespace DxMessaging.Tests.Runtime
         private readonly IMessageBus _bus;
         private readonly IMessageBus _emitter;
         private readonly Action _reset;
+        private GlobalBusScope _globalScope;
+        private MessageBus _alternateGlobalBus;
+        private LeakWatcher _alternateGlobalLeaks;
+        private MessageHandler.GlobalMessageBusScope[] _globalOverrides;
+        private IMessageBus Emitter
+        {
+            get
+            {
+                IMessageBus selected = _globalScope == null ? _bus : MessageHandler.MessageBus;
+                // Preserve the primary bus's emission wrapper without changing actual global selection.
+                return ReferenceEquals(selected, _bus) ? _emitter : selected;
+            }
+        }
         private BusTraceOperation? _resetOperation;
         private BusTraceOperation? _throwOperation;
         private BusTraceOperation? _disableOperation;
@@ -121,6 +134,12 @@ namespace DxMessaging.Tests.Runtime
             {
                 switch (operation.Kind)
                 {
+                    case BusTraceOperationKind.AcquireGlobalOverride:
+                    case BusTraceOperationKind.CopyGlobalOverride:
+                    case BusTraceOperationKind.DisposeGlobalOverride:
+                    case BusTraceOperationKind.ReplaceGlobalBus:
+                        ExecuteGlobalOverride(operation);
+                        break;
                     case BusTraceOperationKind.Register:
                         Register(operation);
                         break;
@@ -254,7 +273,18 @@ namespace DxMessaging.Tests.Runtime
             }
             string state =
                 $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; handlerActive={handlerActive}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}"
-                + DescribeAdapterState();
+                + DescribeAdapterState()
+                + (
+                    _globalScope == null
+                        ? string.Empty
+                        : "; globalBus="
+                            + (
+                                ReferenceEquals(MessageHandler.MessageBus, _bus) ? "primary"
+                                : ReferenceEquals(MessageHandler.MessageBus, _alternateGlobalBus)
+                                    ? "alternate"
+                                : "external"
+                            )
+                );
             return new BusTraceObservation(
                 _callbacks,
                 state,
@@ -313,11 +343,77 @@ namespace DxMessaging.Tests.Runtime
             {
                 errors.Add(error);
             }
+            if (_globalScope != null)
+            {
+                using (_globalScope)
+                {
+                    try
+                    {
+                        foreach (MessageHandler.GlobalMessageBusScope scope in _globalOverrides)
+                        {
+                            scope.Dispose();
+                        }
+                        _alternateGlobalBus.Trim(force: true);
+                        _alternateGlobalLeaks.Dispose();
+                    }
+                    catch (Exception error)
+                    {
+                        errors.Add(error);
+                    }
+                }
+                _globalScope = null;
+            }
             if (errors.Count > 0)
             {
                 throw new AggregateException("Differential replay cleanup failed.", errors);
             }
         }
+
+        private void ExecuteGlobalOverride(BusTraceOperation operation)
+        {
+            if (_globalScope == null)
+            {
+                _globalScope = GlobalBusScope.Capture();
+                _alternateGlobalBus = MessageBus.CreateForInternalUse(
+                    new FakeClock(),
+                    idleEvictionTicks: 0,
+                    idleEvictionEnabled: false,
+                    trimApiEnabled: true
+                );
+                _alternateGlobalBus.DiagnosticsMode = false;
+                _alternateGlobalLeaks = LeakWatcher.WatchWithSlots(
+                    _alternateGlobalBus,
+                    label: "Differential alternate global bus"
+                );
+                _globalOverrides = new MessageHandler.GlobalMessageBusScope[
+                    BusTraceSequence.TokenCount
+                ];
+                MessageHandler.SetGlobalMessageBus(_bus);
+            }
+            switch (operation.Kind)
+            {
+                case BusTraceOperationKind.AcquireGlobalOverride:
+                    _globalOverrides[operation.LeaseSlot] = MessageHandler.OverrideGlobalMessageBus(
+                        operation.Context == 0 ? _bus : _alternateGlobalBus
+                    );
+                    break;
+                case BusTraceOperationKind.CopyGlobalOverride:
+                    _globalOverrides[operation.LeaseSlot] = _globalOverrides[
+                        operation.SourceLeaseSlot
+                    ];
+                    break;
+                case BusTraceOperationKind.DisposeGlobalOverride:
+                    DisposeGlobalOverride(operation.LeaseSlot);
+                    break;
+                case BusTraceOperationKind.ReplaceGlobalBus:
+                    MessageHandler.SetGlobalMessageBus(
+                        operation.Context == 0 ? _bus : _alternateGlobalBus
+                    );
+                    break;
+            }
+        }
+
+        protected virtual void DisposeGlobalOverride(int slot) => _globalOverrides[slot].Dispose();
 
         protected virtual void DisposeToken(int slot) => _tokens[slot].Dispose();
 
@@ -591,7 +687,7 @@ namespace DxMessaging.Tests.Runtime
                         UntargetedPayload untargeted = new(operation.Value);
                         try
                         {
-                            _emitter.UntargetedBroadcast(ref untargeted);
+                            Emitter.UntargetedBroadcast(ref untargeted);
                         }
                         finally
                         {
@@ -604,7 +700,7 @@ namespace DxMessaging.Tests.Runtime
                         TargetedPayload targeted = new(operation.Value);
                         try
                         {
-                            _emitter.TargetedBroadcast(ref context, ref targeted);
+                            Emitter.TargetedBroadcast(ref context, ref targeted);
                         }
                         finally
                         {
@@ -617,7 +713,7 @@ namespace DxMessaging.Tests.Runtime
                         BroadcastPayload broadcast = new(operation.Value);
                         try
                         {
-                            _emitter.SourcedBroadcast(ref context, ref broadcast);
+                            Emitter.SourcedBroadcast(ref context, ref broadcast);
                         }
                         finally
                         {

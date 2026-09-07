@@ -231,166 +231,113 @@ function runMain(root, command) {
 
 const LONG_NAME = "a".repeat(65);
 
+const skillRule = (label, lines, ...errors) => ({
+  label,
+  skills: { alpha: frontmatter(lines) },
+  expected: errors.map((error) => `.llm/skills/alpha/SKILL.md: ${error}`)
+});
 const RULE_FIXTURES = [
-  {
-    label: "rejects an uppercase name",
-    skills: { Alpha: validSkill("Alpha") },
-    expected: [`.llm/skills/Alpha/SKILL.md: name "Alpha" ${NAME_RULE}`]
-  },
-  {
-    label: "rejects a leading hyphen in name",
-    skills: { "-alpha": validSkill("-alpha") },
-    expected: [`.llm/skills/-alpha/SKILL.md: name "-alpha" ${NAME_RULE}`]
-  },
-  {
-    label: "rejects a trailing hyphen in name",
-    skills: { "alpha-": validSkill("alpha-") },
-    expected: [`.llm/skills/alpha-/SKILL.md: name "alpha-" ${NAME_RULE}`]
-  },
-  {
-    label: "rejects consecutive hyphens in name",
-    skills: { "alpha--beta": validSkill("alpha--beta") },
-    expected: [`.llm/skills/alpha--beta/SKILL.md: name "alpha--beta" ${NAME_RULE}`]
-  },
-  {
-    label: "rejects a name longer than 64 characters",
-    skills: { [LONG_NAME]: validSkill(LONG_NAME) },
-    expected: [`.llm/skills/${LONG_NAME}/SKILL.md: name "${LONG_NAME}" ${NAME_RULE}`]
-  },
-  {
-    label: "rejects a name that does not match its directory",
-    skills: { alpha: validSkill("beta") },
-    expected: ['.llm/skills/alpha/SKILL.md: name "beta" must match the directory name "alpha"']
-  },
-  {
-    label: "rejects a missing name",
-    skills: { alpha: frontmatter(["description: Covers alpha. Use when working on alpha."]) },
-    expected: [".llm/skills/alpha/SKILL.md: missing required frontmatter field: name"]
-  },
-  {
-    label: "rejects a blank name",
-    skills: { alpha: frontmatter(['name: ""', "description: Covers alpha."]) },
-    expected: [
-      ".llm/skills/alpha/SKILL.md: missing required frontmatter field: name",
-      `.llm/skills/alpha/SKILL.md: name "" ${NAME_RULE}`,
-      '.llm/skills/alpha/SKILL.md: name "" must match the directory name "alpha"'
+  ...[
+    ["rejects an uppercase name", "Alpha"],
+    ["rejects a leading hyphen in name", "-alpha"],
+    ["rejects a trailing hyphen in name", "alpha-"],
+    ["rejects consecutive hyphens in name", "alpha--beta"],
+    ["rejects a name longer than 64 characters", LONG_NAME]
+  ].map(([label, name]) => ({
+    label,
+    skills: { [name]: validSkill(name) },
+    expected: [`.llm/skills/${name}/SKILL.md: name "${name}" ${NAME_RULE}`]
+  })),
+  ...[
+    [
+      "rejects a name that does not match its directory",
+      validSkill("beta"),
+      'name "beta" must match the directory name "alpha"'
+    ],
+    ["rejects a SKILL.md with no frontmatter", "# Alpha\n", "missing YAML frontmatter"],
+    [
+      "rejects a SKILL.md over the 200-line cap",
+      validSkill("alpha") + repeatLines(195),
+      "201 lines (max 200); move detail into references/"
     ]
-  },
-  {
-    label: "rejects a missing description",
-    skills: { alpha: frontmatter(["name: alpha"]) },
-    expected: [".llm/skills/alpha/SKILL.md: missing required frontmatter field: description"]
-  },
-  {
-    label: "rejects a description over 1024 characters",
-    skills: { alpha: frontmatter(["name: alpha", `description: ${"d".repeat(1025)}`]) },
-    expected: [".llm/skills/alpha/SKILL.md: description is 1025 characters (max 1024)"]
-  },
-  {
-    label: "rejects a newline inside description",
-    skills: { alpha: frontmatter(["name: alpha", 'description: "one\\ntwo"']) },
-    expected: [
-      ".llm/skills/alpha/SKILL.md: description must be a single line; it contains a newline"
+  ].map(([label, skill, error]) => ({
+    label,
+    skills: { alpha: skill },
+    expected: [`.llm/skills/alpha/SKILL.md: ${error}`]
+  })),
+  skillRule(
+    "rejects a missing name",
+    ["description: Covers alpha. Use when working on alpha."],
+    "missing required frontmatter field: name"
+  ),
+  skillRule(
+    "rejects a blank name",
+    ['name: ""', "description: Covers alpha."],
+    "missing required frontmatter field: name",
+    `name "" ${NAME_RULE}`,
+    'name "" must match the directory name "alpha"'
+  ),
+  skillRule(
+    "rejects a missing description",
+    ["name: alpha"],
+    "missing required frontmatter field: description"
+  ),
+  skillRule(
+    "rejects a description over 1024 characters",
+    ["name: alpha", `description: ${"d".repeat(1025)}`],
+    "description is 1025 characters (max 1024)"
+  ),
+  skillRule(
+    "rejects a newline inside description",
+    ["name: alpha", 'description: "one\\ntwo"'],
+    "description must be a single line; it contains a newline"
+  ),
+  ...[
+    [
+      "rejects compatibility over 500 characters",
+      [`compatibility: ${"c".repeat(501)}`],
+      "compatibility is 501 characters (must be 1-500)"
+    ],
+    [
+      "rejects an empty compatibility",
+      ['compatibility: ""'],
+      "compatibility is 0 characters (must be 1-500)"
+    ],
+    [
+      "rejects a non-scalar compatibility",
+      ["compatibility:", "  unity: 2022"],
+      "compatibility must be a string"
+    ],
+    ["rejects a non-string license", ["license: 2"], "license must be a string"],
+    [
+      "rejects allowed-tools declared as a YAML list",
+      ["allowed-tools:", "  - Read", "  - Bash"],
+      "allowed-tools must be a space-separated string"
+    ],
+    [
+      "rejects metadata that is not a mapping",
+      ["metadata:", "  - one", "  - two"],
+      "metadata must be a mapping"
+    ],
+    [
+      "rejects non-string metadata values",
+      ["metadata:", "  version: 1.5", "  tags: [a, b]", "  nested: { deep: true }"],
+      "metadata.version must be a string, not number",
+      "metadata.tags must be a string, not array",
+      "metadata.nested must be a string, not object"
     ]
-  },
-  {
-    label: "rejects compatibility over 500 characters",
-    skills: {
-      alpha: frontmatter([
-        "name: alpha",
-        "description: Covers alpha.",
-        `compatibility: ${"c".repeat(501)}`
-      ])
-    },
-    expected: [".llm/skills/alpha/SKILL.md: compatibility is 501 characters (must be 1-500)"]
-  },
-  {
-    label: "rejects an empty compatibility",
-    skills: {
-      alpha: frontmatter(["name: alpha", "description: Covers alpha.", 'compatibility: ""'])
-    },
-    expected: [".llm/skills/alpha/SKILL.md: compatibility is 0 characters (must be 1-500)"]
-  },
-  {
-    label: "rejects a non-scalar compatibility",
-    skills: {
-      alpha: frontmatter([
-        "name: alpha",
-        "description: Covers alpha.",
-        "compatibility:",
-        "  unity: 2022"
-      ])
-    },
-    expected: [".llm/skills/alpha/SKILL.md: compatibility must be a string"]
-  },
-  {
-    label: "rejects a non-string license",
-    skills: { alpha: frontmatter(["name: alpha", "description: Covers alpha.", "license: 2"]) },
-    expected: [".llm/skills/alpha/SKILL.md: license must be a string"]
-  },
-  {
-    label: "rejects allowed-tools declared as a YAML list",
-    skills: {
-      alpha: frontmatter([
-        "name: alpha",
-        "description: Covers alpha.",
-        "allowed-tools:",
-        "  - Read",
-        "  - Bash"
-      ])
-    },
-    expected: [".llm/skills/alpha/SKILL.md: allowed-tools must be a space-separated string"]
-  },
-  {
-    label: "rejects metadata that is not a mapping",
-    skills: {
-      alpha: frontmatter([
-        "name: alpha",
-        "description: Covers alpha.",
-        "metadata:",
-        "  - one",
-        "  - two"
-      ])
-    },
-    expected: [".llm/skills/alpha/SKILL.md: metadata must be a mapping"]
-  },
-  {
-    label: "rejects non-string metadata values",
-    skills: {
-      alpha: frontmatter([
-        "name: alpha",
-        "description: Covers alpha.",
-        "metadata:",
-        "  version: 1.5",
-        "  tags: [a, b]",
-        "  nested: { deep: true }"
-      ])
-    },
-    expected: [
-      ".llm/skills/alpha/SKILL.md: metadata.version must be a string, not number",
-      ".llm/skills/alpha/SKILL.md: metadata.tags must be a string, not array",
-      ".llm/skills/alpha/SKILL.md: metadata.nested must be a string, not object"
-    ]
-  },
+  ].map(([label, fields, ...errors]) =>
+    skillRule(label, ["name: alpha", "description: Covers alpha.", ...fields], ...errors)
+  ),
   {
     label: "rejects a skill directory with no SKILL.md",
     skills: { alpha: { skill: null } },
     expected: [".llm/skills/alpha/SKILL.md: missing SKILL.md"]
   },
   {
-    label: "rejects a SKILL.md with no frontmatter",
-    skills: { alpha: "# Alpha\n" },
-    expected: [".llm/skills/alpha/SKILL.md: missing YAML frontmatter"]
-  },
-  {
     label: "rejects malformed YAML frontmatter",
     skills: { alpha: "---\n: :\n---\n" },
     pattern: /^\.llm\/skills\/alpha\/SKILL\.md: invalid YAML frontmatter: /
-  },
-  {
-    label: "rejects a SKILL.md over the 200-line cap",
-    skills: { alpha: validSkill("alpha") + repeatLines(195) },
-    expected: [".llm/skills/alpha/SKILL.md: 201 lines (max 200); move detail into references/"]
   },
   {
     label: "rejects a reference over the 500-line cap",

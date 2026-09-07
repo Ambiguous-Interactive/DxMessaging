@@ -712,3 +712,120 @@ test("shipping reducer preserves explicit failed outcomes and ignores row order"
   writeJson(file, matrix);
   assert.equal(sealBundle(root, SEAL_OPTIONS).normalized.completedCellCount, 0);
 });
+
+const { buildCsv } = require("../unity/extract-perf-baseline.js");
+const SUBUNSUB_OPTIONS = {
+  ...SEAL_OPTIONS,
+  experimentId: "subunsub-observations",
+  artifactClass: "allocation-subunsub-observations",
+  reducer: "allocation-subunsub-observations-v1"
+};
+function subunsubRows() {
+  return ["DxMessaging", "CsEvent"].map((technology, index) => ({
+    scenario: `Comparison_${technology}_SubUnsub`,
+    platform: "PlayMode Mono (LinuxEditor; Unity 6000.5.2f1)",
+    commit: SEAL_OPTIONS.sourceCommit,
+    runIndex: "-1",
+    emitsPerSecond: "1000.000",
+    gcAllocations: index ? "-1" : "12",
+    wallClockMs: "5000.000",
+    gcAllocatedBytes: index ? "-1" : "384"
+  }));
+}
+test("SubUnsub observations replay measured and unmeasured allocation fields exactly", (t) => {
+  const root = temporaryDirectory();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const rows = subunsubRows();
+  const input = path.join(root, "comparison-baseline.csv");
+  for (const [newline, calls, bytes] of [
+    ["\n", "12", "384"],
+    ["\r\n", "-1", "0"],
+    ["\n", "0", "-1"]
+  ]) {
+    Object.assign(rows[0], { gcAllocations: calls, gcAllocatedBytes: bytes });
+    fs.writeFileSync(path.join(root, "comparison-output.log"), buildCsv(rows));
+    fs.writeFileSync(input, buildCsv(rows).replaceAll("\n", newline));
+    const manifest = sealBundle(root, SUBUNSUB_OPTIONS);
+    const manifestPath = writeBundleManifest(root, manifest);
+    assert.deepEqual(replayBundle(manifestPath).normalized.rows, rows);
+    assert.equal(manifest.normalized.measurementClass, "observation");
+    assert.equal(manifest.normalized.scope, "PlayMode");
+    manifest.normalized.rows[0].gcAllocations = "999999";
+    manifest.bundleDigest = bundleDigest(manifest);
+    writeJson(manifestPath, manifest);
+    assert.throws(() => replayBundle(manifestPath), /different normalized/);
+    fs.rmSync(manifestPath);
+  }
+});
+for (const [label, change, expected] of [
+  ["missing CSV", () => null, /comparison-baseline.csv is required/],
+  ["empty CSV", () => buildCsv([]), /canonical non-empty/],
+  ["malformed row", (rows) => buildCsv(rows) + "broken,row\n", /canonical non-empty/],
+  [
+    "unknown scenario",
+    (rows) => Object.assign(rows[0], { scenario: "Unknown" }),
+    /canonical non-empty/
+  ],
+  ["duplicate row", (rows) => rows.push(rows[0]), /canonical non-empty/],
+  ["duplicate run identity", (rows) => rows.push({ ...rows[0], gcAllocations: "13" }), /duplicate/],
+  ["no DxMessaging SubUnsub", (rows) => rows.shift(), /DxMessaging_SubUnsub/],
+  ["mixed source", (rows) => Object.assign(rows[1], { commit: "f".repeat(40) }), /sourceCommit/],
+  [
+    "mixed platform",
+    (rows) => Object.assign(rows[1], { platform: rows[1].platform + " changed" }),
+    /platform/
+  ],
+  [
+    "unknown scope",
+    (rows) => rows.forEach((row) => Object.assign(row, { platform: "unknown" })),
+    /scope/
+  ],
+  [
+    "ambiguous scope",
+    (rows) => rows.forEach((row) => Object.assign(row, { platform: "PlayMode Standalone" })),
+    /scope/
+  ],
+  ...["gcAllocations", "gcAllocatedBytes", "runIndex"].flatMap((field) =>
+    ["-2", "9007199254740992"].map((value) => [
+      `${field}=${value}`,
+      (rows) => Object.assign(rows[0], { [field]: value }),
+      /invalid/
+    ])
+  ),
+  ["negative rate", (rows) => Object.assign(rows[0], { emitsPerSecond: "-1.000" }), /invalid/],
+  ["zero window", (rows) => Object.assign(rows[0], { wallClockMs: "0.000" }), /invalid/],
+  ["numeric junk", (rows) => buildCsv(rows).replace("1000.000", "1000junk"), /canonical non-empty/],
+  [
+    "legacy missing byte column",
+    (rows) => buildCsv(rows).replace(",384", ""),
+    /canonical non-empty/
+  ]
+]) {
+  test(`SubUnsub observations reject ${label}`, (t) => {
+    const root = temporaryDirectory();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const rows = subunsubRows();
+    const changed = change(rows);
+    fs.writeFileSync(path.join(root, "comparison-output.log"), buildCsv(rows));
+    if (changed !== null)
+      fs.writeFileSync(
+        path.join(root, "comparison-baseline.csv"),
+        typeof changed === "string" ? changed : buildCsv(rows)
+      );
+    else fs.writeFileSync(path.join(root, "placeholder.txt"), "missing CSV");
+    assert.throws(() => sealBundle(root, SUBUNSUB_OPTIONS), expected);
+  });
+}
+
+for (const [label, raw] of [
+  ["missing output", null],
+  ["changed output", "ordinary log\n"]
+]) {
+  test(`SubUnsub observations reject ${label}`, (t) => {
+    const root = temporaryDirectory();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(root, "comparison-baseline.csv"), buildCsv(subunsubRows()));
+    if (raw !== null) fs.writeFileSync(path.join(root, "comparison-output.log"), raw);
+    assert.throws(() => sealBundle(root, SUBUNSUB_OPTIONS), /comparison-output.log/);
+  });
+}

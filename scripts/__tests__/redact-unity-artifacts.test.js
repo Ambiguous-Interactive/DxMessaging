@@ -946,6 +946,84 @@ test("tracked IL2CPP profiles survive artifact preparation unchanged", (t) => {
     assert.ok(isSerializedRedactionSafe(source, source, ".json"), file);
   }
 });
+test("native retained manifests use only scanned files and remove stale success on failure", (t) => {
+  for (const mutation of [
+    "none",
+    "traversal",
+    "absolute",
+    "missing",
+    "duplicate",
+    "unsafe",
+    "opaque",
+    "inventory-link",
+    "inventory-read",
+    "later-missing",
+    "later-unsafe",
+    "later-write"
+  ]) {
+    const root = temporaryDirectory();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const directory = path.join(root, "native-build-inputs");
+    fs.mkdirSync(path.join(directory, "Library/Bee"), { recursive: true });
+    const graph = "Library/Bee/Player123abc.dag.json";
+    const input = "Library/Bee/Player123abc-inputdata.json";
+    for (const file of [graph, input]) fs.writeFileSync(path.join(directory, file), "{}");
+    const manifest = { files: [{ retainedPath: graph }, { retainedPath: input }] };
+    const source = path.join(directory, "manifest.json");
+    const retained = path.join(directory, "retained-manifest.json");
+    fs.writeFileSync(source, JSON.stringify(manifest));
+    assert.equal(invokeCli(root), 0, mutation);
+    assert.equal(JSON.parse(fs.readFileSync(retained)).captureState, "redacted");
+    if (mutation === "traversal") manifest.files[0].retainedPath = "../outside.json";
+    if (mutation === "absolute") manifest.files[0].retainedPath = path.join(directory, graph);
+    if (mutation === "missing") fs.unlinkSync(path.join(directory, graph));
+    if (mutation === "duplicate") manifest.files[1].retainedPath = graph;
+    if (mutation === "unsafe")
+      fs.writeFileSync(path.join(directory, graph), '{"accessToken":{"nested":"fake-value"}}');
+    if (mutation === "opaque")
+      fs.writeFileSync(path.join(directory, graph), Buffer.from("MZ\0\0\0\0\0\0"));
+    if (mutation === "inventory-link") {
+      fs.symlinkSync(root, path.join(root, "a-linked"), "junction");
+      fs.writeFileSync(path.join(directory, graph), '{"accessToken":{"nested":"fake-value"}}');
+    }
+    const blockedDirectory = path.join(root, "a-unreadable");
+    if (mutation === "inventory-read") fs.mkdirSync(blockedDirectory);
+    const later = path.join(root, "z/native-build-inputs");
+    if (mutation.startsWith("later-")) {
+      fs.cpSync(directory, later, { recursive: true });
+      if (mutation === "later-missing") fs.unlinkSync(path.join(later, graph));
+      if (mutation === "later-unsafe")
+        fs.writeFileSync(path.join(later, graph), '{"accessToken":{"nested":"fake-value"}}');
+    }
+    fs.writeFileSync(source, JSON.stringify(manifest));
+    if (mutation === "none") {
+      const before = fs.readFileSync(retained);
+      assert.equal(invokeCli(root), 0);
+      assert.deepEqual(fs.readFileSync(retained), before, "finalization is idempotent");
+    } else {
+      let rejected = false;
+      const method = mutation === "inventory-read" ? "readdirSync" : "writeFileSync";
+      const original = fs[method];
+      const mock = ["inventory-read", "later-write"].includes(mutation)
+        ? t.mock.method(fs, method, (file, ...args) => {
+            if (file === blockedDirectory || file === path.join(later, "retained-manifest.json"))
+              throw new Error("Simulated native evidence filesystem failure.");
+            return original(file, ...args);
+          })
+        : undefined;
+      try {
+        rejected = invokeCli(root) !== 0;
+      } catch {
+        rejected = true;
+      } finally {
+        mock?.mock.restore();
+      }
+      assert.ok(rejected, mutation);
+      assert.equal(fs.existsSync(retained), false, mutation);
+      assert.equal(fs.existsSync(path.join(later, "retained-manifest.json")), false, mutation);
+    }
+  }
+});
 for (const [
   label,
   source,
@@ -964,7 +1042,7 @@ for (const [
     assert.equal(isSerializedRedactionSafe(source, expected.slice(0, -1), extension), false);
   });
 }
-for (const [label, extension, source] of VECTORS.invalidStructures) {
+for (const [label, extension, source, reason] of VECTORS.invalidStructures) {
   test(`structured redaction refuses ${label}`, (t) => {
     const { root, target } = artifactFile(source, `results${extension}`);
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -972,6 +1050,8 @@ for (const [label, extension, source] of VECTORS.invalidStructures) {
     assert.equal(invokeCli(root, written), 2);
     assert.equal(fs.readFileSync(target, "utf8"), source);
     assert.doesNotMatch(written.join(""), /FAKE_PRIVATE/);
+    assert.ok(written.join("").includes(`${Buffer.byteLength(source)} bytes;`));
+    if (reason) assert.ok(written.join("").includes(reason), label);
     assert.equal(isSerializedRedactionSafe(source, source, extension), false);
   });
 }

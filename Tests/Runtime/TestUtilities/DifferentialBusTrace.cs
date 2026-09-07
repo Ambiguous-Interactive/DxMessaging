@@ -27,6 +27,10 @@ namespace DxMessaging.Tests.Runtime
         EmitWithHandlerActive,
         DuplicateRegistration,
         CopyHandle,
+        AcquireGlobalOverride,
+        CopyGlobalOverride,
+        DisposeGlobalOverride,
+        ReplaceGlobalBus,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -45,7 +49,9 @@ namespace DxMessaging.Tests.Runtime
             int handlerToken = 0,
             bool handlerActive = false,
             int handleSlot = -1,
-            int sourceHandleSlot = -1
+            int sourceHandleSlot = -1,
+            int leaseSlot = -1,
+            int sourceLeaseSlot = -1
         )
         {
             Kind = kind;
@@ -61,6 +67,8 @@ namespace DxMessaging.Tests.Runtime
             HandlerActive = handlerActive;
             _handleSlot = handleSlot + 1;
             _sourceHandleSlot = sourceHandleSlot + 1;
+            _leaseSlot = leaseSlot + 1;
+            _sourceLeaseSlot = sourceLeaseSlot + 1;
         }
 
         internal BusTraceOperationKind Kind { get; }
@@ -88,6 +96,11 @@ namespace DxMessaging.Tests.Runtime
         internal int HandleSlot => _handleSlot - 1;
         internal int SourceHandleSlot => _sourceHandleSlot - 1;
 
+        private readonly int _leaseSlot;
+        private readonly int _sourceLeaseSlot;
+        internal int LeaseSlot => _leaseSlot - 1;
+        internal int SourceLeaseSlot => _sourceLeaseSlot - 1;
+
         public override string ToString() =>
             $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})"
             + (
@@ -107,6 +120,11 @@ namespace DxMessaging.Tests.Runtime
                     : string.Empty
             )
             + (
+                LeaseSlot >= 0
+                    ? $"[leaseSlot={LeaseSlot},sourceLeaseSlot={SourceLeaseSlot}]"
+                    : string.Empty
+            )
+            + (
                 HandleSlot >= 0
                     ? $"[handleSlot={HandleSlot},sourceHandleSlot={SourceHandleSlot}]"
                     : string.Empty
@@ -116,7 +134,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 9;
+        internal const int GeneratorVersion = 10;
         internal const int HandleSlotCount = 8;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
@@ -263,6 +281,10 @@ namespace DxMessaging.Tests.Runtime
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
             }
+            if (generatorVersion == 10)
+            {
+                return GenerateGlobalOverrides(scenario, seed, length);
+            }
             if (generatorVersion == 8 || generatorVersion == 9)
             {
                 return GenerateHandleSlots(scenario, seed, length, generatorVersion);
@@ -402,6 +424,152 @@ namespace DxMessaging.Tests.Runtime
                 }
             }
             return new BusTraceSequence(scenario, seed, operations, generatorVersion);
+        }
+
+        private static BusTraceSequence GenerateGlobalOverrides(
+            MessageScenario scenario,
+            uint seed,
+            int length
+        )
+        {
+            // Earlier handle and callback inputs keep their own independent identity lanes.
+            List<BusTraceOperation> operations = new(
+                Generate(scenario, seed, Math.Min(length, Math.Max(4, length / 2)), 9).Operations
+            );
+            BusTraceOperation[] prefix =
+            {
+                new(BusTraceOperationKind.AcquireGlobalOverride, context: 1, leaseSlot: 0),
+                new(BusTraceOperationKind.CopyGlobalOverride, leaseSlot: 1, sourceLeaseSlot: 0),
+                new(BusTraceOperationKind.AcquireGlobalOverride, leaseSlot: 2),
+                new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: 0),
+                new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: 2),
+                new(BusTraceOperationKind.AcquireGlobalOverride, context: 1, leaseSlot: 0),
+                new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: 1),
+                new(BusTraceOperationKind.Emit, value: 11),
+                new(BusTraceOperationKind.ReplaceGlobalBus),
+                new(BusTraceOperationKind.AcquireGlobalOverride, context: 1, leaseSlot: 2),
+                new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: 0),
+                new(BusTraceOperationKind.Emit, value: 13),
+                new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: 2),
+            };
+            GlobalOverrideDependencies leases = new();
+            foreach (BusTraceOperation operation in prefix)
+            {
+                if (operations.Count == length)
+                {
+                    break;
+                }
+                if (IsGlobalOverride(operation.Kind))
+                {
+                    leases.Apply(operation);
+                }
+                operations.Add(operation);
+            }
+            uint state = seed == 0 ? 0x9e3779b9u : seed;
+            while (operations.Count < length)
+            {
+                int choice = (int)(Next(ref state) % 5);
+                int slot = (int)(Next(ref state) % BusTraceSequence.TokenCount);
+                int source = (int)(Next(ref state) % BusTraceSequence.TokenCount);
+                int context = (int)(Next(ref state) % 2);
+                BusTraceOperation operation = choice switch
+                {
+                    0 => new(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: context,
+                        leaseSlot: slot
+                    ),
+                    1 => new(
+                        BusTraceOperationKind.CopyGlobalOverride,
+                        leaseSlot: slot,
+                        sourceLeaseSlot: source
+                    ),
+                    2 => new(BusTraceOperationKind.DisposeGlobalOverride, leaseSlot: slot),
+                    3 => new(BusTraceOperationKind.ReplaceGlobalBus, context: context),
+                    _ => new(
+                        BusTraceOperationKind.Emit,
+                        context: context,
+                        value: unchecked((int)Next(ref state))
+                    ),
+                };
+                if (IsGlobalOverride(operation.Kind) && !leases.Apply(operation))
+                {
+                    operation = new(
+                        BusTraceOperationKind.Emit,
+                        value: unchecked((int)Next(ref state))
+                    );
+                }
+                operations.Add(operation);
+            }
+            return new BusTraceSequence(scenario, seed, operations, 10);
+        }
+
+        internal static bool IsGlobalOverride(BusTraceOperationKind kind) =>
+            kind == BusTraceOperationKind.AcquireGlobalOverride
+            || kind == BusTraceOperationKind.CopyGlobalOverride
+            || kind == BusTraceOperationKind.DisposeGlobalOverride
+            || kind == BusTraceOperationKind.ReplaceGlobalBus;
+
+        // Only logical issuance and alias dependencies are modeled, never the production
+        // override stack, physical slots, generations, current bus, or dispatch results.
+        private sealed class GlobalOverrideDependencies
+        {
+            private readonly int[] _identities = new int[BusTraceSequence.TokenCount];
+            private readonly bool[] _live = new bool[BusTraceSequence.MaxOperations + 1];
+            private int _nextIdentity;
+
+            internal bool Apply(BusTraceOperation operation)
+            {
+                int slot = operation.LeaseSlot;
+                int source = operation.SourceLeaseSlot;
+                if (operation.Kind == BusTraceOperationKind.ReplaceGlobalBus)
+                {
+                    if (slot != -1 || source != -1)
+                    {
+                        return false;
+                    }
+                    Array.Clear(_live, 0, _live.Length);
+                    return true;
+                }
+                if (slot < 0 || slot >= _identities.Length)
+                {
+                    return false;
+                }
+                if (operation.Kind == BusTraceOperationKind.DisposeGlobalOverride)
+                {
+                    if (source != -1 || _identities[slot] == 0)
+                    {
+                        return false;
+                    }
+                    _live[_identities[slot]] = false;
+                    return true;
+                }
+                if (_live[_identities[slot]])
+                {
+                    return false;
+                }
+                if (operation.Kind == BusTraceOperationKind.CopyGlobalOverride)
+                {
+                    if (
+                        source < 0
+                        || source >= _identities.Length
+                        || source == slot
+                        || _identities[source] == 0
+                    )
+                    {
+                        return false;
+                    }
+                    _identities[slot] = _identities[source];
+                    return true;
+                }
+                if (operation.Kind != BusTraceOperationKind.AcquireGlobalOverride || source != -1)
+                {
+                    return false;
+                }
+                _identities[slot] = ++_nextIdentity;
+                _live[_nextIdentity] = true;
+                return true;
+            }
         }
 
         private static BusTraceSequence GenerateHandleSlots(
@@ -644,6 +812,7 @@ namespace DxMessaging.Tests.Runtime
             bool[] registered = new bool[BusTraceSequence.TokenCount];
             bool[] removed = new bool[BusTraceSequence.TokenCount];
             HandleDependencies handles = new();
+            GlobalOverrideDependencies leases = new();
             foreach (BusTraceOperation operation in sequence.Operations)
             {
                 if (
@@ -696,6 +865,22 @@ namespace DxMessaging.Tests.Runtime
                         && (operation.NestedToken != 0 || operation.Depth != 0)
                     )
                 )
+                {
+                    return false;
+                }
+                if (IsGlobalOverride(operation.Kind))
+                {
+                    if (
+                        sequence.Version < 10
+                        || operation.HandleSlot != -1
+                        || !leases.Apply(operation)
+                    )
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                if (operation.LeaseSlot != -1 || operation.SourceLeaseSlot != -1)
                 {
                     return false;
                 }

@@ -13,7 +13,8 @@ const {
 } = require("./credential-patterns.js");
 const {
   reduceShippingFidelityMatrix,
-  reducePairedThroughputScreen
+  reducePairedThroughputScreen,
+  reduceSubUnsubObservations
 } = require("./perf-evidence-reducers.js");
 const { isDirectDirectory } = require("../lib/path-classifier.js");
 const SCHEMA_VERSION = 1;
@@ -23,6 +24,10 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 const REDUCERS = Object.freeze({
+  "allocation-subunsub-observations-v1": {
+    artifactClass: "allocation-subunsub-observations",
+    reduce: reduceSubUnsubObservations
+  },
   "paired-throughput-screen-v1": {
     artifactClass: "paired-throughput-screen",
     reduce: reducePairedThroughputScreen

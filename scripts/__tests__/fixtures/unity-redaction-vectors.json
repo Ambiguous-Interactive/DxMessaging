@@ -107,7 +107,9 @@
     ["protocol-relative profile URL", "//cdn/Users/Alice/avatar\n"],
     ["regex backslash pair", "regex \\\\d+\\w+\n"],
     ["terminal localhost file URI", "{\"uri\":\"file://localhost\"}"],
-    ["localhost file URI in prose", "opened file://localhost successfully\n"]
+    ["localhost file URI in prose", "opened file://localhost successfully\n"],
+    ["an out-of-range hex numeric entity", "&#x110000;\n"],
+    ["an out-of-range decimal numeric entity", "&#4294967295;\n"]
   ],
   "accountBoundaries": [
     ["/home/alice completed in 12 ms\n", "/home/[redacted:account-home-path] completed in 12 ms\n"],
@@ -509,7 +511,13 @@
     [
       "Unity serial in a log carrying a stray NUL",
       "boot\n\u0000\nserial SC-FAKE-FAKE-FAKE-FAKE-FAKE\n"
-    ]
+    ],
+    ["an escaped JSON format control", "{\"message\":\"ordinary\\u202ediagnostic\"}"],
+    ["an XML entity format control", "<a>ordinary&#x202e;diagnostic</a>"],
+    ["an escaped JSON format-control host", "{\"url\":\"https://runner\\u202e.local/path\"}"],
+    ["an XML entity format-control host", "<url>https://runner&#x2060;.local/path</url>"],
+    ["JSON escaped leading byte order mark in value", "{\"message\":\"\\\\ufeffordinary\"}"],
+    ["XML nested entity byte order mark in value", "<a>&amp;#xfeff;ordinary</a>"]
   ],
   "unsupportedArtifactClasses": [
     "paired-throughput",
@@ -797,6 +805,42 @@
       "typed connection flags beside nested credentials",
       "{\"buildOptions\":{\"connectToHost\":false},\"enabled\":{\"connectToHost\":true},\"nested\":\"{\\\"connectToHost\\\":false,\\\"PASSWORD\\\":\\\"fake-private-password\\\"}\"}",
       "{\"buildOptions\":{\"connectToHost\":false},\"enabled\":{\"connectToHost\":true},\"nested\":\"{\\\"connectToHost\\\":false,\\\"PASSWORD\\\":\\\"[redacted:password-assignment]\\\"}\"}"
+    ],
+    [
+      "an escaped JSON format control",
+      "{\"message\":\"ordinary\\u202ediagnostic\"}",
+      "{\"message\":\"ordinary[cf:202e]diagnostic\"}",
+      ".json"
+    ],
+    [
+      "an XML entity format control",
+      "<a>ordinary&#x202e;diagnostic</a>",
+      "<a>ordinary[cf:202e]diagnostic</a>",
+      ".xml"
+    ],
+    [
+      "an escaped JSON format-control host",
+      "{\"url\":\"https://runner\\u202e.local/path\"}",
+      "{\"url\":\"https://[redacted:web-hostname]/path\"}",
+      ".json"
+    ],
+    [
+      "an XML entity format-control host",
+      "<url>https://runner&#x2060;.local/path</url>",
+      "<url>https://[redacted:web-hostname]/path</url>",
+      ".xml"
+    ],
+    [
+      "a JSON escape chain to a byte order mark",
+      "{\"message\":\"\\\\ufeffordinary\"}",
+      "{\"message\":\"[cf:feff]ordinary\"}",
+      ".json"
+    ],
+    [
+      "an XML escape chain to a byte order mark",
+      "<a>&amp;#xfeff;ordinary</a>",
+      "<a>[cf:feff]ordinary</a>",
+      ".xml"
     ]
   ],
   "invalidStructures": [
@@ -815,11 +859,21 @@
     ["private JSON property name", ".json", "{\"/Users/FAKE_PRIVATE/project\":1}"],
     ["numeric JSON credential", ".json", "{\"TOKEN\":1234567890123456,\"name\":\"FAKE_PRIVATE\"}"],
     ["boolean JSON password", ".json", "{\"PASSWORD\":false,\"name\":\"FAKE_PRIVATE\"}"],
-    ["unsafe JSON count", ".json", "{\"total\":9007199254740993,\"name\":\"FAKE_PRIVATE\"}"],
-    ["truncated JSON", ".json", "{\"message\":\"FAKE_PRIVATE"],
+    [
+      "unsafe JSON count",
+      ".json",
+      "{\"total\":9007199254740993,\"name\":\"FAKE_PRIVATE\"}",
+      "json-number-precision"
+    ],
+    ["truncated JSON", ".json", "{\"message\":\"FAKE_PRIVATE", "json-syntax"],
     ["non-XML text with XML extension", ".xml", "FAKE_PRIVATE"],
     ["non-JSON text with JSON extension", ".json", "FAKE_PRIVATE"],
-    ["duplicate JSON credential", ".json", "{\"TOKEN\":\"FAKE_PRIVATE_SECRET\",\"TOKEN\":\"***\"}"],
+    [
+      "duplicate JSON credential",
+      ".json",
+      "{\"TOKEN\":\"FAKE_PRIVATE_SECRET\",\"TOKEN\":\"***\"}",
+      "json-key-validation"
+    ],
     [
       "escaped duplicate JSON credential",
       ".json",
@@ -845,35 +899,17 @@
       ".xml",
       "<PASSWORD><value>FAKE_PRIVATE_PASSWORD</value></PASSWORD>"
     ],
-    ["escaped JSON format control", ".json", "{\"message\":\"ordinary\\u202ediagnostic\"}"],
     ["escaped JSON key format control", ".json", "{\"PASS\\u200bWORD\":\"FAKE_PRIVATE_PASSWORD\"}"],
-    ["XML entity format control", ".xml", "<a>ordinary&#x202e;diagnostic</a>"],
     ["XML surrogate reference", ".xml", "<a x=\"&#xD800;\"/>"],
     ["XML out of range reference", ".xml", "<a x=\"&#x110000;\"/>"],
     ["JSON negative zero", ".json", "{\"value\":-0,\"TOKEN\":\"FAKE_PRIVATE_SECRET\"}"],
     ["truncated JSONL record", ".jsonl", "{\"total\":1}\n{\"name\":\"FAKE_PRIVATE"],
-    [
-      "encoded private host format control in json",
-      ".json",
-      "{\"url\":\"https://runner\\u202e.local/path\"}"
-    ],
-    [
-      "encoded private host format control in xml",
-      ".xml",
-      "<url>https://runner&#x2060;.local/path</url>"
-    ],
     [
       "ambiguous mixed XML assignment",
       ".xml",
       "<result><![CDATA[TOKEN=abcdefghijklmnop]]><total>1</total></result>"
     ],
     ["XML inline element token", ".xml", "<a>ghp_<b>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</b></a>"],
-    [
-      "JSON escaped leading byte order mark in value",
-      ".json",
-      "{\"message\":\"\\\\ufeffordinary\"}"
-    ],
-    ["XML nested entity byte order mark in value", ".xml", "<a>&amp;#xfeff;ordinary</a>"],
     ["object JSON credential", ".json", "{\"TOKEN\":{\"value\":\"FAKE_PRIVATE_SECRET\"}}"],
     ["array JSON credential", ".json", "{\"TOKEN\":[\"FAKE_PRIVATE_SECRET\"]}"],
     [

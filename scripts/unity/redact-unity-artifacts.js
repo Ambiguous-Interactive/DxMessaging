@@ -1,6 +1,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { createHash } = require("node:crypto");
 const { TextDecoder } = require("node:util");
 const { isDirectDirectory } = require("../lib/path-classifier.js");
 const {
@@ -30,19 +31,38 @@ function safeDisplayPath(value) {
 }
 function listFiles(root) {
   const found = [];
+  let inventoryError;
   const walk = (directory) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort()) {
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      inventoryError ??= error;
+      return;
+    }
+    for (const entry of entries) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         walk(absolute);
       } else if (entry.isFile()) {
-        found.push(absolute);
+        if (absolute.endsWith(path.join("native-build-inputs", "retained-manifest.json"))) {
+          try {
+            fs.unlinkSync(absolute);
+          } catch (error) {
+            inventoryError ??= error;
+          }
+        } else found.push(absolute);
       } else {
-        fail("Artifact tree contains a symbolic link or non-regular entry.");
+        inventoryError ??= new Error(
+          "Artifact tree contains a symbolic link or non-regular entry."
+        );
       }
     }
   };
+  // Finish reachable siblings so an unsafe entry cannot preserve an earlier
+  // acceptance manifest. Never follow links to finish that invalidation.
   walk(root);
+  if (inventoryError) throw inventoryError;
   return found.sort();
 }
 function decodeStrictText(bytes) {
@@ -65,8 +85,10 @@ function redactDirectory(root) {
   const changed = [];
   const skipped = [];
   const totals = new Map();
+  const nativeFiles = new Map();
   let binaryCount = 0;
-  for (const absolute of listFiles(root)) {
+  const files = listFiles(root);
+  for (const absolute of files) {
     const relative = toPosixPath(path.relative(root, absolute));
     const pathFindings = findSensitiveData(relative);
     if (pathFindings.length > 0 || /\p{Cf}/u.test(relative)) {
@@ -150,12 +172,23 @@ function redactDirectory(root) {
     ) {
       skipped.push({
         path: relative,
-        reason: "contains encoded sensitive data or format controls that cannot be safely rewritten"
+        reason: `contains encoded sensitive data or format controls that cannot be safely rewritten (${size} bytes; ${
+          findSensitiveData(redacted, extension)
+            .map((entry) => entry.reason ?? entry.id)
+            .join(", ") || "serialized-integrity"
+        })`
       });
       continue;
     }
     if (nulCount > 0) {
       counts.set("stray-nul-byte", nulCount);
+    }
+    if (absolute.split(path.sep).includes("native-build-inputs")) {
+      const retained = counts.size === 0 ? bytes : encodeText(redacted, decoded.encoding);
+      nativeFiles.set(absolute, {
+        retainedLength: retained.length,
+        retainedSha256: createHash("sha256").update(retained).digest("hex")
+      });
     }
     if (counts.size === 0) {
       continue;
@@ -172,6 +205,45 @@ function redactDirectory(root) {
       totals.set(id, (totals.get(id) ?? 0) + count);
     }
     changed.push({ path: relative, counts: [...counts.keys()].sort() });
+  }
+  const retainedManifests = new Map();
+  if (skipped.length === 0)
+    for (const absolute of nativeFiles.keys()) {
+      if (!absolute.endsWith(path.join("native-build-inputs", "manifest.json"))) continue;
+      const manifest = JSON.parse(fs.readFileSync(absolute, "utf8"));
+      if (
+        !Array.isArray(manifest.files) ||
+        manifest.files.length < 2 ||
+        manifest.files.length > 256
+      )
+        fail("Native build input manifest must list 2 to 256 files.");
+      const seen = new Set();
+      for (const record of manifest.files) {
+        if (
+          typeof record.retainedPath !== "string" ||
+          !/^Library\/Bee\/(?:Player[0-9a-f]+(?:\.dag|-inputdata)\.json|artifacts\/rsp\/[0-9]+\.rsp\.txt)$/.test(
+            record.retainedPath
+          )
+        )
+          fail("Native build input manifest has an unsupported retained path.");
+        const file = path.join(path.dirname(absolute), record.retainedPath);
+        if (!nativeFiles.has(file) || seen.has(file))
+          fail("Native build input was not scanned safely or was listed twice.");
+        seen.add(file);
+        Object.assign(record, nativeFiles.get(file));
+      }
+      manifest.captureState = "redacted";
+      retainedManifests.set(
+        path.join(path.dirname(absolute), "retained-manifest.json"),
+        `${JSON.stringify(manifest, null, 2)}\n`
+      );
+    }
+  let finalized = false;
+  try {
+    for (const [file, contents] of retainedManifests) fs.writeFileSync(file, contents);
+    finalized = true;
+  } finally {
+    if (!finalized) for (const file of retainedManifests.keys()) fs.rmSync(file, { force: true });
   }
   return { changed, skipped, totals, binaryCount };
 }

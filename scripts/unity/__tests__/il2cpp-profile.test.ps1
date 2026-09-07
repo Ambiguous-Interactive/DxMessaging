@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+# cspell:ignore DNDEBUG
 [CmdletBinding()]
 param()
 
@@ -78,6 +79,7 @@ try {
         'Get-ComparisonSourceEvidence',
         'Get-StandalonePlayerManifest',
         'Write-JsonArtifact',
+        'Write-NativeBuildInputEvidence',
         'New-ConfiguratorSource',
         'New-StandaloneBuildModifierSource',
         'New-ShippingFidelityBuilderSource',
@@ -96,6 +98,96 @@ try {
         }
         Invoke-Expression $definition.Extent.Text
     }
+
+    $nativeProject = Join-Path $fixtureRoot 'native-project'
+    $nativeArtifacts = Join-Path $fixtureRoot 'native-artifacts'
+    $nativeLog = Join-Path $fixtureRoot 'native-build.log'
+    $nativeGraph = 'Library/Bee/Player123abc.dag.json'
+    $nativeInput = 'Library/Bee/Player123abc-inputdata.json'
+    $nativeDag = 'Library/Bee/Player123abc.dag'
+    $nativeBackend = 'Starting: C:\Editor\bee_backend.exe --ipc --dagfile="' + $nativeDag + '" --profile="Library/Bee/backend1.traceevents" Player'
+    $nativeResponse = 'Library/Bee/artifacts/rsp/123456789.rsp'
+    New-Item -ItemType Directory -Force -Path (Join-Path $nativeProject 'Library/Bee/artifacts/rsp') | Out-Null
+    $nativeInvocation = 'Starting: C:\Editor\netcorerun.exe "C:\Editor\WinPlayerBuildProgram.exe" "C:/Editor/Bee" "' + $nativeGraph + '" "' + $nativeInput + '" "Library/Bee/buildprogram0.traceevents"'
+    [IO.File]::WriteAllText((Join-Path $nativeProject $nativeGraph), '{"Nodes":[{"Action":"cl.exe @Library/Bee/artifacts/rsp/123456789.rsp"}]}')
+    [IO.File]::WriteAllText((Join-Path $nativeProject $nativeDag), 'opaque graph fixture; hashed only')
+    [IO.File]::WriteAllText((Join-Path $nativeProject $nativeInput), '{"BuildTarget":"StandaloneWindows64"}')
+    [IO.File]::WriteAllText((Join-Path $nativeProject $nativeResponse), '/O2 /DNDEBUG')
+    [IO.File]::WriteAllText($nativeLog, "$nativeInvocation`n[1/2 0s] WriteResponseFile $nativeResponse`n$nativeInvocation`n$nativeBackend`n")
+    $nativeArguments = @{
+        Project = $nativeProject; LogPath = $nativeLog; Artifacts = $nativeArtifacts
+        ProfileId = $profile.profileId; ProfileSha256 = $profileSha256; UnityVersion = $testUnityVersion
+    }
+    Write-NativeBuildInputEvidence @nativeArguments
+    & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $nativeArtifacts
+    Assert-That 'native artifact scan succeeds' ($LASTEXITCODE -eq 0)
+    $nativeManifest = Get-Content -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/retained-manifest.json') -Raw | ConvertFrom-Json
+    Assert-That 'native evidence retains one repeated graph pair and only observed response files' (
+        @($nativeManifest.files).Count -eq 3 -and $nativeManifest.responseFileScope -ceq 'build-log-references-only'
+    )
+    foreach ($record in $nativeManifest.files) {
+        Assert-That 'retained native bytes agree with source and retained hashes when no redaction is needed' (
+            $record.sourceSha256 -ceq $record.retainedSha256 -and
+            $record.retainedSha256 -ceq (Get-FileHash -LiteralPath (Join-Path $nativeArtifacts ('native-build-inputs/' + $record.retainedPath)) -Algorithm SHA256).Hash.ToLowerInvariant()
+        )
+    }
+    Assert-That 'native evidence binds the requested editor, profile and original build log' (
+        $nativeManifest.unityVersion -ceq $testUnityVersion -and $nativeManifest.profileSha256 -ceq $profileSha256 -and
+        $nativeManifest.profileId -ceq $profile.profileId -and
+        $nativeManifest.unredactedBuildLogSha256 -ceq (Get-FileHash -LiteralPath $nativeLog -Algorithm SHA256).Hash.ToLowerInvariant()
+    )
+    $responseText = [IO.File]::ReadAllText((Join-Path $nativeProject $nativeResponse))
+    [IO.File]::WriteAllText((Join-Path $nativeProject $nativeResponse), $responseText + ' --access-token=fixture-secret-value')
+    Write-NativeBuildInputEvidence @nativeArguments
+    & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $nativeArtifacts
+    Assert-That 'native artifact scan succeeds' ($LASTEXITCODE -eq 0)
+    $redactedManifest = Get-Content -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/retained-manifest.json') -Raw | ConvertFrom-Json
+    $responseRecord = @($redactedManifest.files | Where-Object { $_.sourcePath -ceq $nativeResponse })[0]
+    $retainedResponse = Join-Path $nativeArtifacts ('native-build-inputs/' + $responseRecord.retainedPath)
+    Assert-That 'native response text is scanned before hashing retained bytes' (
+        $responseRecord.sourceSha256 -cne $responseRecord.retainedSha256 -and
+        $responseRecord.retainedSha256 -ceq (Get-FileHash -LiteralPath $retainedResponse -Algorithm SHA256).Hash.ToLowerInvariant() -and
+        -not ([IO.File]::ReadAllText($retainedResponse).Contains('fixture-secret-value'))
+    )
+    [IO.File]::WriteAllText((Join-Path $nativeProject $nativeResponse), $responseText)
+    foreach ($mutation in @('missing-graph', 'missing-response', 'no-invocation', 'ambiguous-graph', 'mismatched-pair', 'backend-conflict', 'backend-generator-conflict', 'empty-input', 'oversize-input', 'too-many-inputs')) {
+        $savedLog = [IO.File]::ReadAllText($nativeLog)
+        $savedGraph = [IO.File]::ReadAllText((Join-Path $nativeProject $nativeGraph))
+        $savedResponse = [IO.File]::ReadAllText((Join-Path $nativeProject $nativeResponse))
+        switch ($mutation) {
+            'missing-graph' { Remove-Item -LiteralPath (Join-Path $nativeProject $nativeGraph) }
+            'missing-response' { Remove-Item -LiteralPath (Join-Path $nativeProject $nativeResponse) }
+            'no-invocation' { [IO.File]::WriteAllText($nativeLog, 'No player build graph was recorded.') }
+            'ambiguous-graph' { [IO.File]::AppendAllText($nativeLog, $nativeInvocation.Replace('123abc', '456def')) }
+            'mismatched-pair' { [IO.File]::WriteAllText($nativeLog, $nativeInvocation.Replace('Player123abc-inputdata', 'Player456def-inputdata')) }
+            'backend-conflict' { [IO.File]::AppendAllText($nativeLog, $nativeBackend.Replace('123abc', '456def')) }
+            'backend-generator-conflict' { [IO.File]::WriteAllText($nativeLog, "$nativeInvocation`n" + $nativeBackend.Replace('123abc', '456def')) }
+            'empty-input' { [IO.File]::WriteAllText((Join-Path $nativeProject $nativeGraph), '') }
+            'oversize-input' {
+                $stream = [IO.File]::OpenWrite((Join-Path $nativeProject $nativeGraph))
+                try { $stream.SetLength(64MB + 1) } finally { $stream.Dispose() }
+            }
+            'too-many-inputs' { [IO.File]::AppendAllLines($nativeLog, [string[]]@(1..256 | ForEach-Object { "Library/Bee/artifacts/rsp/$_.rsp" })) }
+        }
+        Assert-Fails "native evidence rejects $mutation" -ExpectedMessage 'Native build input' { Write-NativeBuildInputEvidence @nativeArguments }
+        Assert-That 'failed native capture leaves no success manifest' (-not (Test-Path -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/manifest.json')))
+        [IO.File]::WriteAllText($nativeLog, $savedLog)
+        [IO.File]::WriteAllText((Join-Path $nativeProject $nativeGraph), $savedGraph)
+        [IO.File]::WriteAllText((Join-Path $nativeProject $nativeResponse), $savedResponse)
+    }
+    [IO.File]::WriteAllText($nativeLog, $nativeBackend.Replace('/', '\') + "`r`n")
+    Write-NativeBuildInputEvidence @nativeArguments
+    & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $nativeArtifacts
+    Assert-That 'native artifact scan succeeds' ($LASTEXITCODE -eq 0)
+    $noResponseManifest = Get-Content -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/retained-manifest.json') -Raw | ConvertFrom-Json
+    Assert-That 'Windows separators and zero observed response references preserve both graph inputs' (@($noResponseManifest.files).Count -eq 2 -and $noResponseManifest.graphSelection -ceq 'cached-backend-dag-companions')
+
+    $nativeCallSites = @($runnerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+            $node.GetCommandName() -ceq 'Write-NativeBuildInputEvidence'
+    }, $true))
+    Assert-That 'shipping and canonical standalone both retain native inputs after their build' ($nativeCallSites.Count -eq 2)
 
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
