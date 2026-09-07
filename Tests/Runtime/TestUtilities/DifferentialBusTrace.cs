@@ -81,6 +81,8 @@ namespace DxMessaging.Tests.Runtime
 
         // -1 retains the version-one through seven token-associated handle lane.
         // Nonnegative slots hold independent handles, including aliases and duplicates.
+        // Version nine callback actions use HandleSlot as their trigger identity;
+        // EmitNested uses SourceHandleSlot as its alternating nested registration.
         private readonly int _handleSlot;
         private readonly int _sourceHandleSlot;
         internal int HandleSlot => _handleSlot - 1;
@@ -114,7 +116,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 8;
+        internal const int GeneratorVersion = 9;
         internal const int HandleSlotCount = 8;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
@@ -261,9 +263,9 @@ namespace DxMessaging.Tests.Runtime
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
             }
-            if (generatorVersion == 8)
+            if (generatorVersion == 8 || generatorVersion == 9)
             {
-                return GenerateHandleSlots(scenario, seed, length);
+                return GenerateHandleSlots(scenario, seed, length, generatorVersion);
             }
             List<BusTraceOperation> operations = new(length);
             bool[] registered = new bool[BusTraceSequence.TokenCount];
@@ -405,7 +407,8 @@ namespace DxMessaging.Tests.Runtime
         private static BusTraceSequence GenerateHandleSlots(
             MessageScenario scenario,
             uint seed,
-            int length
+            int length,
+            int version
         )
         {
             List<BusTraceOperation> operations = new(length);
@@ -448,7 +451,7 @@ namespace DxMessaging.Tests.Runtime
                 int slot = (int)(Next(ref state) % BusTraceSequence.HandleSlotCount);
                 int source = (int)(Next(ref state) % BusTraceSequence.HandleSlotCount);
                 int owner = (int)(Next(ref state) % BusTraceSequence.TokenCount);
-                int choice = (int)(Next(ref state) % 8);
+                int choice = (int)(Next(ref state) % (version == 8 ? 8U : 13U));
                 int value = unchecked((int)Next(ref state));
                 BusTraceOperation operation = choice switch
                 {
@@ -485,7 +488,27 @@ namespace DxMessaging.Tests.Runtime
                     ),
                     5 => new(BusTraceOperationKind.Enable, token: owner),
                     6 => new(BusTraceOperationKind.Disable, token: owner),
-                    _ => new(BusTraceOperationKind.Trim, value: value & 1),
+                    7 => new(BusTraceOperationKind.Trim, value: value & 1),
+                    _ => new(
+                        choice switch
+                        {
+                            8 => BusTraceOperationKind.EmitWithReset,
+                            9 => BusTraceOperationKind.EmitWithThrow,
+                            10 => BusTraceOperationKind.EmitWithDisable,
+                            11 => BusTraceOperationKind.EmitWithHandlerActive,
+                            _ => BusTraceOperationKind.EmitNested,
+                        },
+                        token: handles.Owner(slot),
+                        context: handles.Registration(slot).Context,
+                        value: value,
+                        kindOffset: handles.Registration(slot).KindOffset,
+                        nestedToken: choice == 12 ? handles.Owner(source) : 0,
+                        depth: choice == 12 ? 1 + (int)(Next(ref state) % 10) : 0,
+                        handlerToken: choice == 11 ? owner : 0,
+                        handlerActive: choice == 11 && (value & 1) != 0,
+                        handleSlot: slot,
+                        sourceHandleSlot: choice == 12 ? source : -1
+                    ),
                 };
                 if (operation.HandleSlot >= 0 && !handles.Apply(operation))
                 {
@@ -493,7 +516,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 operations.Add(operation);
             }
-            return new BusTraceSequence(scenario, seed, operations, 8);
+            return new BusTraceSequence(scenario, seed, operations, version);
         }
 
         // Tracks issued identities and aliases only. Never predicts delivery or bus storage.
@@ -502,15 +525,35 @@ namespace DxMessaging.Tests.Runtime
             private readonly int[] _identities = new int[BusTraceSequence.HandleSlotCount];
             private readonly int[] _owners = new int[BusTraceSequence.HandleSlotCount];
             private readonly bool[] _live = new bool[BusTraceSequence.MaxOperations + 1];
+            private readonly BusTraceOperation[] _registrations = new BusTraceOperation[
+                BusTraceSequence.HandleSlotCount
+            ];
             private int _nextIdentity;
 
             internal int Owner(int slot) => _owners[slot];
+
+            internal BusTraceOperation Registration(int slot) => _registrations[slot];
 
             internal bool Apply(BusTraceOperation operation)
             {
                 int slot = operation.HandleSlot;
                 int source = operation.SourceHandleSlot;
                 int identity = _identities[slot];
+                if (IsCallbackAction(operation.Kind))
+                {
+                    // Only issued dependencies are checked. Callback cleanup may or may not
+                    // execute, depending on production dispatch, activity, and routing.
+                    return _live[identity]
+                        && _owners[slot] == operation.Token
+                        && (
+                            operation.Kind == BusTraceOperationKind.EmitNested
+                                ? operation.Depth > 0
+                                    && source >= 0
+                                    && _live[_identities[source]]
+                                    && _owners[source] == operation.NestedToken
+                                : source == -1
+                        );
+                }
                 if (operation.Kind == BusTraceOperationKind.Remove)
                 {
                     if (source != -1 || identity == 0 || _owners[slot] != operation.Token)
@@ -552,6 +595,7 @@ namespace DxMessaging.Tests.Runtime
                     {
                         _identities[slot] = _identities[source];
                         _owners[slot] = operation.Token;
+                        _registrations[slot] = _registrations[source];
                         return true;
                     }
                 }
@@ -559,12 +603,20 @@ namespace DxMessaging.Tests.Runtime
                 {
                     return false;
                 }
+                _registrations[slot] = source < 0 ? operation : _registrations[source];
                 _identities[slot] = ++_nextIdentity;
                 _owners[slot] = operation.Token;
                 _live[_nextIdentity] = true;
                 return true;
             }
         }
+
+        internal static bool IsCallbackAction(BusTraceOperationKind kind) =>
+            kind == BusTraceOperationKind.EmitWithReset
+            || kind == BusTraceOperationKind.EmitWithThrow
+            || kind == BusTraceOperationKind.EmitWithDisable
+            || kind == BusTraceOperationKind.EmitWithHandlerActive
+            || kind == BusTraceOperationKind.EmitNested;
 
         /// <summary>Checks handle existence and input bounds only; never predicts which callbacks should execute.</summary>
         internal static bool IsValid(BusTraceSequence sequence)
@@ -649,7 +701,10 @@ namespace DxMessaging.Tests.Runtime
                 }
                 if (operation.HandleSlot >= 0)
                 {
-                    if (!handles.Apply(operation))
+                    if (
+                        (sequence.Version < 9 && IsCallbackAction(operation.Kind))
+                        || !handles.Apply(operation)
+                    )
                     {
                         return false;
                     }

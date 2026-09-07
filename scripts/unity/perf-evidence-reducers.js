@@ -1,4 +1,5 @@
 "use strict";
+const { isDeepStrictEqual } = require("node:util");
 // Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
 const CELL_EVIDENCE_SUFFIX = "/shipping-cell-evidence.json";
@@ -58,16 +59,6 @@ function requireStringArray(value, label) {
   )
     throw new Error(`${label} must be an array of unique non-empty strings.`);
   return [...value].sort();
-}
-function assertMatrixRowAgrees(row, cell, cellId) {
-  for (const field of [...CELL_FIELDS, ...TIMING_FIELDS]) {
-    const value = TIMING_FIELDS.includes(field) ? row.timings?.[field] : row[field];
-    if (value !== cell[field]) {
-      throw new Error(
-        `${MATRIX_EVIDENCE_NAME} reports ${field}=${JSON.stringify(value)} for cell ${cellId} but its own evidence says ${JSON.stringify(cell[field])}.`
-      );
-    }
-  }
 }
 // Summarize integer sizes by stripping level in ordinal order.
 function summarizeByStrippingLevel(cells) {
@@ -135,11 +126,11 @@ function reduceShippingFidelityMatrix(contents) {
         cellPath
       );
     }
-    const row = rows.get(cellId);
-    if (row === undefined) {
-      throw new Error(`${MATRIX_EVIDENCE_NAME} does not list completed cell ${cellId}.`);
-    }
-    assertMatrixRowAgrees(row, cell, cellId);
+    // Read-ShippingCellEvidence copies every raw field, overriding only cellId.
+    if (!isDeepStrictEqual(rows.get(cellId), { ...evidence, cellId }))
+      throw new Error(
+        `${MATRIX_EVIDENCE_NAME} reports fields for cell ${cellId} that disagree with its raw cell.`
+      );
     cells.push(cell);
   }
   return {

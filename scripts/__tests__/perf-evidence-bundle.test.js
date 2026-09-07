@@ -46,6 +46,7 @@ function cellEvidence(level, topologyId, messageTypeCount, index) {
     messageTypeCount,
     unityVersion: "6000.5.2f1",
     libraryState: "cold",
+    diagnostics: ["first", "second"],
     buildDurationMs: 120000 + index,
     editorBuildWallClockMs: 130000 + index,
     playerTotalBytes: 40000000 + index * 1000,
@@ -264,7 +265,7 @@ test("replay rejects a bundle whose sealed bytes no longer produce the published
   verifyBundle(manifestPath);
   assert.throws(
     () => replayBundle(manifestPath),
-    /reports playerTotalBytes=\d+ for cell high-semantic-18 but its own evidence says/,
+    /shipping-matrix-evidence\.json.*high-semantic-18.*raw cell/,
     "a summary that disagrees with its own per-cell evidence must not replay"
   );
 });
@@ -628,19 +629,21 @@ test("sealing refuses malformed byte-order-marked UTF-16", () => {
   );
 });
 
-for (const [target, field, value] of VECTORS.invalidShippingInputs) {
+for (const [target, field, value, remove] of VECTORS.invalidShippingInputs) {
   test(`shipping reducer rejects ${target} ${field}=${JSON.stringify(value)}`, () => {
     const root = writeMatrixBundle(temporaryDirectory());
     const file = path.join(
       root,
-      target === "matrix"
+      ["matrix", "summary"].includes(target)
         ? "shipping-matrix-evidence.json"
         : "high-semantic-18/shipping-cell-evidence.json"
     );
     const input = JSON.parse(fs.readFileSync(file, "utf8"));
     const keys = field.split(".");
-    const holder = keys.length === 1 ? input : input[keys[0]];
-    holder[keys.at(-1)] = value;
+    const subject = target === "summary" ? input.cells[0] : input;
+    const holder = keys.length === 1 ? subject : subject[keys[0]];
+    if (remove) delete holder[keys.at(-1)];
+    else holder[keys.at(-1)] = value;
     writeJson(file, input);
     if (target === "cell") {
       const summaryPath = path.join(root, "shipping-matrix-evidence.json");
@@ -680,6 +683,12 @@ test("shipping reducer preserves explicit failed outcomes and ignores row order"
   const matrix = JSON.parse(fs.readFileSync(file, "utf8"));
   const expected = reduceShippingFidelityMatrix(contentsOf(root));
   matrix.cells.reverse();
+  matrix.cells = matrix.cells.map((row) => Object.fromEntries(Object.entries(row).reverse()));
+  const cellPath = path.join(root, "high-semantic-18/shipping-cell-evidence.json");
+  const raw = JSON.parse(fs.readFileSync(cellPath, "utf8"));
+  raw.cellId = "ignored-by-the-matrix-producer";
+  raw.timings = Object.fromEntries(Object.entries(raw.timings).reverse());
+  writeJson(cellPath, raw);
   writeJson(file, matrix);
   assert.deepEqual(reduceShippingFidelityMatrix(contentsOf(root)), expected);
   matrix.cellCount += 2;

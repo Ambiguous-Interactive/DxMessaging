@@ -9,6 +9,7 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScript
 $validatorPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'validate-il2cpp-profile.ps1'
 $runnerPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'run-ci-tests.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/perf-numbers.yml'
+$testUnityVersion = '6000.3.16f1'
 $sourceProfilePath = Join-Path $repoRoot '.github/perf/canonical-il2cpp-profile.v1.json'
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dxm-il2cpp-profile-{0}" -f [guid]::NewGuid().ToString('N'))
 
@@ -142,6 +143,28 @@ try {
     foreach ($kind in @('configuration', 'buildOptions', 'runtime')) {
         Assert-That "the runner validates $kind evidence" ($runnerText.Contains("-EvidenceKind $kind"))
     }
+    $evidenceCommands = @($runnerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+            $node.CommandElements[0].Extent.Text -eq '$profileValidatorPath' -and
+            @($node.CommandElements | Where-Object {
+                $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+                    $_.ParameterName -eq 'EvidenceKind'
+            }).Count -gt 0
+    }, $true))
+    Assert-That 'the runner contains profile evidence validation calls' ($evidenceCommands.Count -gt 0)
+    foreach ($command in $evidenceCommands) {
+        $elements = @($command.CommandElements)
+        $versionArguments = @(for ($index = 1; $index -lt $elements.Count - 1; ++$index) {
+            if ($elements[$index] -is [System.Management.Automation.Language.CommandParameterAst] -and
+                $elements[$index].ParameterName -eq 'ExpectedUnityVersion') {
+                $elements[$index + 1].Extent.Text
+            }
+        })
+        Assert-That "profile evidence validation at line $($command.Extent.StartLineNumber) binds the requested editor" (
+            $versionArguments.Count -eq 1 -and $versionArguments[0] -ceq '$UnityVersion'
+        )
+    }
     Assert-That 'the performance standalone leg passes the canonical profile' (
         $workflowText.Contains("CanonicalProfilePath = '.github/perf/canonical-il2cpp-profile.v1.json'")
     )
@@ -197,15 +220,30 @@ try {
             profileId = $profile.profileId
             profileSha256 = $profileSha256
             evidenceKind = $kind
-            unityVersion = '6000.3.16f1'
+            unityVersion = $testUnityVersion
             values = Copy-JsonValue -Value $profile.$kind
         }
         Write-TestJson -Path $evidencePath -Value $evidence
         & $validatorPath `
             -ProfilePath $profilePath `
             -EvidencePath $evidencePath `
-            -EvidenceKind $kind `
+            -EvidenceKind $kind -ExpectedUnityVersion $testUnityVersion `
             -ExpectedSha256 $profileSha256
+
+        foreach ($wrongVersion in @('2021.3.45f1', '6000.3.16F1', '6000.3.16f1 ')) {
+            $wrongVersionEvidence = Copy-JsonValue -Value $evidence
+            $wrongVersionEvidence.unityVersion = $wrongVersion
+            Write-TestJson -Path $evidencePath -Value $wrongVersionEvidence
+            Assert-Fails "$kind evidence from a different editor ($wrongVersion)" -ExpectedMessage "$kind.unityVersion differs" {
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind -ExpectedUnityVersion $testUnityVersion
+            }
+        }
+        Write-TestJson -Path $evidencePath -Value $evidence
+        foreach ($missingExpectedVersion in @($null, '', ' ')) {
+            Assert-Fails "$kind missing expected editor version" -ExpectedMessage 'ExpectedUnityVersion is required' {
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind -ExpectedUnityVersion $missingExpectedVersion
+            }
+        }
 
         foreach ($property in $profile.$kind.PSObject.Properties) {
             $mutated = Copy-JsonValue -Value $evidence
@@ -216,7 +254,7 @@ try {
             }
             Write-TestJson -Path $evidencePath -Value $mutated
             Assert-Fails "$kind.$($property.Name) drift" {
-                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind -ExpectedUnityVersion $testUnityVersion
             }
         }
 
@@ -225,14 +263,14 @@ try {
         $missing.values.PSObject.Properties.Remove($firstPropertyName)
         Write-TestJson -Path $evidencePath -Value $missing
         Assert-Fails "$kind missing value" {
-            & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind
+            & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind -ExpectedUnityVersion $testUnityVersion
         }
 
         $extra = Copy-JsonValue -Value $evidence
         $extra.values | Add-Member -NotePropertyName unexpected -NotePropertyValue $true
         Write-TestJson -Path $evidencePath -Value $extra
         Assert-Fails "$kind extra value" {
-            & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind
+            & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind $kind -ExpectedUnityVersion $testUnityVersion
         }
     }
 
@@ -242,20 +280,20 @@ try {
         profileId = $profile.profileId
         profileSha256 = $profileSha256
         evidenceKind = 'runtime'
-        unityVersion = '6000.3.16f1'
+        unityVersion = $testUnityVersion
         values = [ordered]@{ debugBuild = $false }
     }
     $runtimeEvidence.unexpected = $true
     Write-TestJson -Path $runtimeEvidencePath -Value $runtimeEvidence
     Assert-Fails 'extra evidence property' {
-        & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime
+        & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime -ExpectedUnityVersion $testUnityVersion
     }
 
     $runtimeEvidence.Remove('unexpected')
     $runtimeEvidence.schemaVersion = '1'
     Write-TestJson -Path $runtimeEvidencePath -Value $runtimeEvidence
     Assert-Fails 'string evidence schema version' {
-        & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime
+        & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime -ExpectedUnityVersion $testUnityVersion
     }
 
     $runtimeEvidence.schemaVersion = 1
@@ -264,7 +302,7 @@ try {
         $missingMetadata.PSObject.Properties.Remove($metadataField)
         Write-TestJson -Path $runtimeEvidencePath -Value $missingMetadata
         Assert-Fails "missing evidence $metadataField" -ExpectedMessage "missing=$metadataField" {
-            & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime
+            & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime -ExpectedUnityVersion $testUnityVersion
         }
     }
     $wrongMetadataValues = [ordered]@{
@@ -279,14 +317,14 @@ try {
         $wrongMetadata.$metadataField = $wrongMetadataValues[$metadataField]
         Write-TestJson -Path $runtimeEvidencePath -Value $wrongMetadata
         Assert-Fails "wrong evidence $metadataField" {
-            & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime
+            & $validatorPath -ProfilePath $profilePath -EvidencePath $runtimeEvidencePath -EvidenceKind runtime -ExpectedUnityVersion $testUnityVersion
         }
     }
     Assert-Fails 'missing evidence file' -ExpectedMessage 'does not exist' {
         & $validatorPath `
             -ProfilePath $profilePath `
             -EvidencePath (Join-Path $fixtureRoot 'missing-evidence.json') `
-            -EvidenceKind runtime
+            -EvidenceKind runtime -ExpectedUnityVersion $testUnityVersion
     }
 
     Assert-Fails 'wrong expected profile hash' {

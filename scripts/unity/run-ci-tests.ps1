@@ -6870,6 +6870,7 @@ try {
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $configuredProfileEvidencePath `
                 -EvidenceKind configuration `
+                -ExpectedUnityVersion $UnityVersion `
                 -ExpectedSha256 $canonicalProfileSha256
         } elseif (
             $isShippingFidelity -and
@@ -6999,12 +7000,14 @@ try {
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $shippingBuildConfigurationPath `
                 -EvidenceKind configuration `
+                -ExpectedUnityVersion $UnityVersion `
                 -ExpectedSha256 $canonicalProfileSha256
         }
         & $profileValidatorPath `
             -ProfilePath $resolvedCanonicalProfilePath `
             -EvidencePath $buildOptionsProfileEvidencePath `
             -EvidenceKind buildOptions `
+            -ExpectedUnityVersion $UnityVersion `
             -ExpectedSha256 $canonicalProfileSha256
         Test-ShippingAssemblyEvidence `
             -Path $shippingAssemblyEvidencePath `
@@ -7061,6 +7064,7 @@ try {
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $shippingRun.RuntimePath `
                 -EvidenceKind runtime `
+                -ExpectedUnityVersion $UnityVersion `
                 -ExpectedSha256 $canonicalProfileSha256
             if ($shippingPlayerResult.TimedOut -or $shippingPlayerResult.ExitCode -ne 0) {
                 Write-UnityBenignExitWarning `
@@ -7217,12 +7221,14 @@ try {
                     -ProfilePath $resolvedCanonicalProfilePath `
                     -EvidencePath $buildConfigurationEvidencePath `
                     -EvidenceKind configuration `
+                    -ExpectedUnityVersion $UnityVersion `
                     -ExpectedSha256 $canonicalProfileSha256
             }
             & $profileValidatorPath `
                 -ProfilePath $resolvedCanonicalProfilePath `
                 -EvidencePath $buildOptionsProfileEvidencePath `
                 -EvidenceKind buildOptions `
+                -ExpectedUnityVersion $UnityVersion `
                 -ExpectedSha256 $canonicalProfileSha256
         }
 
@@ -7357,6 +7363,7 @@ try {
                     -ProfilePath $resolvedCanonicalProfilePath `
                     -EvidencePath $currentRuntimeProfilePath `
                     -EvidenceKind runtime `
+                    -ExpectedUnityVersion $UnityVersion `
                     -ExpectedSha256 $canonicalProfileSha256
             }
 

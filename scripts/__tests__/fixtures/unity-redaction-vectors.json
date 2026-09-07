@@ -667,7 +667,19 @@
     ["cell", "timings.firstTypedDispatchUs", -1],
     ["cell", "timings.firstTypedDispatchUs", "40"],
     ["cell", "timings.dispatchLoopShape", ""],
-    ["cell", "timings.dispatchLoopShape", true]
+    ["cell", "timings.dispatchLoopShape", true],
+    ["summary", "schemaVersion", 2],
+    ["summary", "profileId", "different-profile"],
+    [
+      "summary",
+      "profileSha256",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    ["summary", "profileId", null, true],
+    ["summary", "unknownSummaryField", true],
+    ["raw", "unknownRawField", true],
+    ["summary", "timings.dispatchLoopCount", 2],
+    ["summary", "diagnostics", ["second", "first"]]
   ],
   "structuredValues": [
     [

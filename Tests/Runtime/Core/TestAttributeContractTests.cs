@@ -18,6 +18,15 @@ namespace DxMessaging.Tests.Runtime.Core
         private const string TestAssemblyNamePrefix = "WallstopStudios.DxMessaging.Tests";
         private const string TestNamespacePrefix = "DxMessaging.Tests";
 
+        private MethodInfo[] _testMethods;
+
+        [OneTimeSetUp]
+        public void ResetMethodSnapshot()
+        {
+            // Rediscover for each fixture run, including repeated runs without domain reload.
+            _testMethods = null;
+        }
+
         /// <summary>
         /// Matches the C# 9 target-typed pattern <c>GameObject identifier = new(...)</c>.
         /// Used by <see cref="FixturesUsingMessagingTestBaseUseSpawnedCleanupPattern"/>
@@ -1298,7 +1307,7 @@ namespace DxMessaging.Tests.Runtime.Core
             return roots;
         }
 
-        private static IEnumerable<MethodInfo> FindMethods(Func<MethodInfo, bool> predicate)
+        private IEnumerable<MethodInfo> FindMethods(Func<MethodInfo, bool> predicate)
         {
             return GetDxMessagingTestMethods().Where(predicate);
         }
@@ -1312,7 +1321,13 @@ namespace DxMessaging.Tests.Runtime.Core
         /// sibling test assemblies), so contract tests apply uniformly across
         /// the test surface and not just the assembly that hosts this fixture.
         /// </summary>
-        private static IEnumerable<MethodInfo> GetDxMessagingTestMethods()
+        private IEnumerable<MethodInfo> GetDxMessagingTestMethods()
+        {
+            // Every contract applies its own predicate to the same complete method snapshot.
+            return _testMethods ??= CollectDxMessagingTestMethods().ToArray();
+        }
+
+        private static IEnumerable<MethodInfo> CollectDxMessagingTestMethods()
         {
             BindingFlags methodFlags =
                 BindingFlags.Instance
@@ -1352,7 +1367,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private static bool HasAttribute<TAttribute>(MemberInfo method)
             where TAttribute : Attribute
         {
-            return method.GetCustomAttributes(typeof(TAttribute), inherit: false).Length > 0;
+            return method.IsDefined(typeof(TAttribute), inherit: false);
         }
 
         private static string FormatMethod(MethodInfo method)

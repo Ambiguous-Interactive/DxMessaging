@@ -14,9 +14,9 @@ namespace DxMessaging.Tests.Runtime
         private readonly IMessageBus _bus;
         private readonly IMessageBus _emitter;
         private readonly Action _reset;
-        private int _resetOnCallbackToken = -1;
-        private int _throwOnCallbackToken = -1;
-        private int _disableOnCallbackToken = -1;
+        private BusTraceOperation? _resetOperation;
+        private BusTraceOperation? _throwOperation;
+        private BusTraceOperation? _disableOperation;
         private BusTraceOperation? _handlerActiveOperation;
         private BusTraceOperation? _nestedOperation;
         private int _depth;
@@ -39,6 +39,12 @@ namespace DxMessaging.Tests.Runtime
             new MessageRegistrationHandle[BusTraceSequence.HandleSlotCount];
         private readonly Func<MessageRegistrationHandle>[] _registrationFactories =
             new Func<MessageRegistrationHandle>[BusTraceSequence.HandleSlotCount];
+        private readonly int[] _explicitCallbackIdentities = new int[
+            BusTraceSequence.HandleSlotCount
+        ];
+        private readonly BusTraceOperation[] _explicitRegistrations = new BusTraceOperation[
+            BusTraceSequence.HandleSlotCount
+        ];
         private int _nextCallbackIdentity;
         private readonly List<string> _callbacks = new();
         private readonly List<string> _finalEmissions = new();
@@ -172,25 +178,25 @@ namespace DxMessaging.Tests.Runtime
                         }
                         break;
                     case BusTraceOperationKind.EmitWithDisable:
-                        _disableOnCallbackToken = operation.Token;
+                        _disableOperation = operation;
                         try
                         {
                             Emit(operation);
                         }
                         finally
                         {
-                            _disableOnCallbackToken = -1;
+                            _disableOperation = null;
                         }
                         break;
                     case BusTraceOperationKind.EmitWithThrow:
-                        _throwOnCallbackToken = operation.Token;
+                        _throwOperation = operation;
                         try
                         {
                             Emit(operation);
                         }
                         finally
                         {
-                            _throwOnCallbackToken = -1;
+                            _throwOperation = null;
                         }
                         break;
                     case BusTraceOperationKind.EmitWithReset:
@@ -200,7 +206,7 @@ namespace DxMessaging.Tests.Runtime
                                 "This adapter has no local reset action."
                             );
                         }
-                        _resetOnCallbackToken = operation.Token;
+                        _resetOperation = operation;
                         try
                         {
                             Emit(operation);
@@ -208,7 +214,7 @@ namespace DxMessaging.Tests.Runtime
                         finally
                         {
                             // A disabled or differently routed trigger may never receive a callback.
-                            _resetOnCallbackToken = -1;
+                            _resetOperation = null;
                         }
                         break;
                     default:
@@ -341,6 +347,7 @@ namespace DxMessaging.Tests.Runtime
             _registrationFactories[operation.HandleSlot] = _registrationFactories[
                 operation.SourceHandleSlot
             ];
+            CopyRegistrationIdentity(operation);
         }
 
         protected virtual void DuplicateRegistration(BusTraceOperation operation)
@@ -350,6 +357,17 @@ namespace DxMessaging.Tests.Runtime
             ];
             _explicitHandles[operation.HandleSlot] = register();
             _registrationFactories[operation.HandleSlot] = register;
+            CopyRegistrationIdentity(operation);
+        }
+
+        private void CopyRegistrationIdentity(BusTraceOperation operation)
+        {
+            _explicitCallbackIdentities[operation.HandleSlot] = _explicitCallbackIdentities[
+                operation.SourceHandleSlot
+            ];
+            _explicitRegistrations[operation.HandleSlot] = _explicitRegistrations[
+                operation.SourceHandleSlot
+            ];
         }
 
         protected virtual void Remove(BusTraceOperation operation)
@@ -374,6 +392,18 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void CleanupThrowingCallback(int slot) =>
             _tokens[slot].RemoveRegistration(_handles[slot]);
+
+        protected virtual void CleanupThrowingCallback(BusTraceOperation operation)
+        {
+            if (operation.HandleSlot >= 0)
+            {
+                Remove(operation);
+            }
+            else
+            {
+                CleanupThrowingCallback(operation.Token);
+            }
+        }
 
         // Mutants change real callback behavior here; observation construction remains shared.
         protected virtual void OnCallback(int slot, IMessage message) { }
@@ -442,6 +472,8 @@ namespace DxMessaging.Tests.Runtime
         )
         {
             int callbackIdentity = _nextCallbackIdentity++;
+            _explicitCallbackIdentities[operation.HandleSlot] = callbackIdentity;
+            _explicitRegistrations[operation.HandleSlot] = operation;
             MessageScenario scenario = Scenario(operation.KindOffset);
             MessageRegistrationToken token = _tokens[operation.Token];
             InstanceId context = new(2000 + operation.Context);
@@ -622,32 +654,40 @@ namespace DxMessaging.Tests.Runtime
                     )
             );
             OnCallback(token, message);
-            // Versions one through seven address the token-associated registration.
-            // Explicit sibling callbacks must not consume that registration's trigger.
-            if (handleSlot >= 0)
-            {
-                return;
-            }
-            if (_handlerActiveOperation.HasValue && token == _handlerActiveOperation.Value.Token)
+            if (
+                _handlerActiveOperation.HasValue
+                && MatchesCallback(_handlerActiveOperation.Value, token, callbackIdentity)
+            )
             {
                 BusTraceOperation operation = _handlerActiveOperation.Value;
                 _handlerActiveOperation = null;
                 SetHandlerActive(operation.HandlerToken, operation.HandlerActive);
             }
-            if (token == _disableOnCallbackToken)
+            if (
+                _disableOperation.HasValue
+                && MatchesCallback(_disableOperation.Value, token, callbackIdentity)
+            )
             {
-                _disableOnCallbackToken = -1;
+                _disableOperation = null;
                 DisableFromCallback(token);
             }
             if (_nestedOperation.HasValue)
             {
                 BusTraceOperation nested = _nestedOperation.Value;
-                int trigger = (_depth & 1) == 0 ? nested.Token : nested.NestedToken;
-                if (token == trigger && _depth < nested.Depth)
+                bool useNested = (_depth & 1) != 0;
+                if (
+                    MatchesCallback(nested, token, callbackIdentity, useNested)
+                    && _depth < nested.Depth
+                )
                 {
                     long emission = _bus.EmissionId;
                     int next = (_depth & 1) == 0 ? nested.NestedToken : nested.Token;
-                    BusTraceOperation registration = _registrations[next];
+                    BusTraceOperation registration =
+                        nested.HandleSlot >= 0
+                            ? _explicitRegistrations[
+                                useNested ? nested.HandleSlot : nested.SourceHandleSlot
+                            ]
+                            : _registrations[next];
                     _callbacks.Add($"nested-enter:depth={_depth},emission={emission}");
                     ++_depth;
                     try
@@ -669,23 +709,53 @@ namespace DxMessaging.Tests.Runtime
                     }
                 }
             }
-            if (token == _throwOnCallbackToken)
+            if (
+                _throwOperation.HasValue
+                && MatchesCallback(_throwOperation.Value, token, callbackIdentity)
+            )
             {
-                _throwOnCallbackToken = -1;
+                BusTraceOperation operation = _throwOperation.Value;
+                _throwOperation = null;
                 try
                 {
                     throw new InvalidOperationException("intentional trace callback failure");
                 }
                 finally
                 {
-                    CleanupThrowingCallback(token);
+                    CleanupThrowingCallback(operation);
                 }
             }
-            if (token == _resetOnCallbackToken)
+            if (
+                _resetOperation.HasValue
+                && MatchesCallback(_resetOperation.Value, token, callbackIdentity)
+            )
             {
-                _resetOnCallbackToken = -1;
+                _resetOperation = null;
                 _reset();
             }
+        }
+
+        protected virtual bool MatchesCallback(
+            BusTraceOperation operation,
+            int token,
+            int callbackIdentity,
+            bool useNested = false
+        )
+        {
+            int owner = useNested ? operation.NestedToken : operation.Token;
+            if (token != owner)
+            {
+                return false;
+            }
+            if (operation.HandleSlot < 0)
+            {
+                return callbackIdentity < 0;
+            }
+            int slot = useNested ? operation.SourceHandleSlot : operation.HandleSlot;
+            // Copies and duplicates retain delegate identity even after the original slot
+            // is reused. Actual token state excludes handles consumed by callback cleanup.
+            return callbackIdentity == _explicitCallbackIdentities[slot]
+                && _tokens[owner]._metadata.ContainsKey(_explicitHandles[slot]);
         }
 
         internal readonly struct UntargetedPayload : IUntargetedMessage<UntargetedPayload>

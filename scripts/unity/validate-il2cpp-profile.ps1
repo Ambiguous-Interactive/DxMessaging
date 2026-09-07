@@ -11,6 +11,8 @@ param(
 
     [string]$ExpectedSha256,
 
+    [string]$ExpectedUnityVersion,
+
     [switch]$ProfileOnly
 )
 
@@ -240,6 +242,10 @@ if ([string]::IsNullOrWhiteSpace($EvidencePath) -or [string]::IsNullOrWhiteSpace
     throw 'EvidencePath and EvidenceKind are required unless ProfileOnly is set.'
 }
 
+if ([string]::IsNullOrWhiteSpace($ExpectedUnityVersion)) {
+    throw 'ExpectedUnityVersion is required when validating profile evidence.'
+}
+
 $evidence = Get-RequiredJsonObject -Path $EvidencePath -Label "$EvidenceKind profile evidence"
 
 Assert-ExactProperties `
@@ -264,6 +270,11 @@ if ($evidence.evidenceKind -isnot [string] -or $evidence.evidenceKind -cne $Evid
 if ($evidence.unityVersion -isnot [string] -or [string]::IsNullOrWhiteSpace($evidence.unityVersion)) {
     throw "$EvidenceKind profile evidence unityVersion must be a non-empty string."
 }
+
+Assert-EquivalentJsonValue `
+    -Expected $ExpectedUnityVersion `
+    -Actual $evidence.unityVersion `
+    -Path "$EvidenceKind.unityVersion"
 
 $expectedValues = $profile.$EvidenceKind
 Assert-ExactProperties `
