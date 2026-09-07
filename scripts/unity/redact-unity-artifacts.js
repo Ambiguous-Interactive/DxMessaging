@@ -172,7 +172,11 @@ function redactDirectory(root) {
     ) {
       skipped.push({
         path: relative,
-        reason: "contains encoded sensitive data or format controls that cannot be safely rewritten"
+        reason: `contains encoded sensitive data or format controls that cannot be safely rewritten (${size} bytes; ${
+          findSensitiveData(redacted, extension)
+            .map((entry) => entry.reason ?? entry.id)
+            .join(", ") || "serialized-integrity"
+        })`
       });
       continue;
     }

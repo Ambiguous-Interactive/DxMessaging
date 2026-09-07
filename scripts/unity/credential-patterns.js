@@ -489,13 +489,14 @@ function redactPatterns(text, patterns) {
 function redactCredentials(text) {
   return redactPatterns(text, CREDENTIAL_PATTERNS);
 }
+class StructuredArtifactError extends Error {}
 function structuredText(text, visit, format, depth = 0) {
-  const invalid = () => {
-    throw new Error("Unsupported structured artifact.");
+  const invalid = (reason = "unsupported-structure") => {
+    throw new StructuredArtifactError(reason);
   };
-  if (depth > 8) invalid();
+  if (depth > 8) invalid("nested-structure-depth");
   const scalar = (value, key, element) => {
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid();
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid("scalar-format-control");
     if (contextualPattern(key, value, element)) return visit(value, key, element);
     return (
       (/^[\[\{"<]/.test(value.trimStart())
@@ -507,7 +508,8 @@ function structuredText(text, visit, format, depth = 0) {
   const names = new Set();
   const name = (value) => {
     if (names.has(value)) return;
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value) || findRawSensitiveData(value).length) invalid();
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid("name-format-control");
+    if (findRawSensitiveData(value).length) invalid("sensitive-structure-name");
     if (names.size < 4096 && value.length <= 256) names.add(value);
   };
   if (format === ".jsonl")
@@ -533,7 +535,7 @@ function structuredText(text, visit, format, depth = 0) {
       return value;
     };
     const parse = (source) =>
-      new DOMParser({ onError: invalid }).parseFromString(
+      new DOMParser({ onError: () => invalid("xml-syntax") }).parseFromString(
         source.replace(/^\ufeff/, ""),
         "application/xml"
       );
@@ -603,23 +605,24 @@ function structuredText(text, visit, format, depth = 0) {
   try {
     value = JSON.parse(text.replace(/^\ufeff/, ""));
   } catch {
-    if (format === ".json") invalid();
+    if (format === ".json") invalid("json-syntax");
     else return undefined;
   }
   // Native JSON parsing discards earlier duplicate keys, including hidden secrets.
-  if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length) invalid();
+  if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length)
+    invalid("json-key-validation");
   const walk = (value, key = "") => {
     if (typeof value === "string") return scalar(value, key);
     // Containers under sensitive keys have ambiguous ownership; scalars retain their JSON type.
     const context = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
-    if (key && contextualPattern(key, context)) invalid();
+    if (key && contextualPattern(key, context)) invalid("sensitive-nonstring-value");
     if (
       typeof value === "number" &&
       (!Number.isFinite(value) ||
         Object.is(value, -0) ||
         (Number.isInteger(value) && !Number.isSafeInteger(value)))
     )
-      invalid();
+      invalid("json-number-precision");
     if (Array.isArray(value)) return value.map((item) => walk(item));
     if (value !== null && typeof value === "object") {
       for (const key of Object.keys(value)) {
@@ -666,8 +669,11 @@ function findSensitiveData(text, format) {
   try {
     const output = structuredText(text, inspect, format);
     if (output === undefined) return findRawSensitiveData(text.replace(/^\ufeff/, ""));
-  } catch {
-    found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+  } catch (error) {
+    found.set(STRUCTURE_FINDING.id, {
+      ...STRUCTURE_FINDING,
+      reason: error instanceof StructuredArtifactError ? error.message : "structured-parser-failure"
+    });
   }
   return [...found.values()];
 }

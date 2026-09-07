@@ -1042,7 +1042,7 @@ for (const [
     assert.equal(isSerializedRedactionSafe(source, expected.slice(0, -1), extension), false);
   });
 }
-for (const [label, extension, source] of VECTORS.invalidStructures) {
+for (const [label, extension, source, reason] of VECTORS.invalidStructures) {
   test(`structured redaction refuses ${label}`, (t) => {
     const { root, target } = artifactFile(source, `results${extension}`);
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -1050,6 +1050,8 @@ for (const [label, extension, source] of VECTORS.invalidStructures) {
     assert.equal(invokeCli(root, written), 2);
     assert.equal(fs.readFileSync(target, "utf8"), source);
     assert.doesNotMatch(written.join(""), /FAKE_PRIVATE/);
+    assert.ok(written.join("").includes(`${Buffer.byteLength(source)} bytes;`));
+    if (reason) assert.ok(written.join("").includes(reason), label);
     assert.equal(isSerializedRedactionSafe(source, source, extension), false);
   });
 }

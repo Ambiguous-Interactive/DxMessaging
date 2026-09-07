@@ -815,11 +815,21 @@
     ["private JSON property name", ".json", "{\"/Users/FAKE_PRIVATE/project\":1}"],
     ["numeric JSON credential", ".json", "{\"TOKEN\":1234567890123456,\"name\":\"FAKE_PRIVATE\"}"],
     ["boolean JSON password", ".json", "{\"PASSWORD\":false,\"name\":\"FAKE_PRIVATE\"}"],
-    ["unsafe JSON count", ".json", "{\"total\":9007199254740993,\"name\":\"FAKE_PRIVATE\"}"],
-    ["truncated JSON", ".json", "{\"message\":\"FAKE_PRIVATE"],
+    [
+      "unsafe JSON count",
+      ".json",
+      "{\"total\":9007199254740993,\"name\":\"FAKE_PRIVATE\"}",
+      "json-number-precision"
+    ],
+    ["truncated JSON", ".json", "{\"message\":\"FAKE_PRIVATE", "json-syntax"],
     ["non-XML text with XML extension", ".xml", "FAKE_PRIVATE"],
     ["non-JSON text with JSON extension", ".json", "FAKE_PRIVATE"],
-    ["duplicate JSON credential", ".json", "{\"TOKEN\":\"FAKE_PRIVATE_SECRET\",\"TOKEN\":\"***\"}"],
+    [
+      "duplicate JSON credential",
+      ".json",
+      "{\"TOKEN\":\"FAKE_PRIVATE_SECRET\",\"TOKEN\":\"***\"}",
+      "json-key-validation"
+    ],
     [
       "escaped duplicate JSON credential",
       ".json",
