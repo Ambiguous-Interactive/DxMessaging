@@ -1,97 +1,123 @@
-[
-  {
-    "name": "fresh container with a reachable registry",
-    "setup": {
-      "latest": "1.2.3"
+{
+  "installerCases": [
+    {
+      "name": "fresh container with a reachable registry",
+      "setup": {
+        "latest": "1.2.3"
+      },
+      "status": 0,
+      "stdout": [
+        "installing {package}@1\\.2\\.3 \\(current: missing\\)",
+        "{package}@1\\.2\\.3 is ready\\."
+      ],
+      "stderr": [],
+      "installsPerPackage": 1,
+      "commandsPresent": true
     },
-    "status": 0,
-    "stdout": [
-      "installing {package}@1\\.2\\.3 \\(current: missing\\)",
-      "{package}@1\\.2\\.3 is ready\\."
+    {
+      "name": "every CLI already at the latest version",
+      "setup": {
+        "latest": "4.5.6",
+        "installed": "4.5.6"
+      },
+      "status": 0,
+      "stdout": ["{package}@4\\.5\\.6 is current\\."],
+      "stderr": [],
+      "installsPerPackage": 0,
+      "commandsPresent": true
+    },
+    {
+      "name": "unreachable registry with the CLI already installed",
+      "setup": {
+        "installed": "7.8.9",
+        "viewFails": true
+      },
+      "status": 0,
+      "stdout": ["registry unavailable; keeping {package}@7\\.8\\.9\\."],
+      "stderr": [],
+      "installsPerPackage": 0,
+      "commandsPresent": true
+    },
+    {
+      "name": "unreachable registry with the CLI absent",
+      "setup": {
+        "viewFails": true
+      },
+      "status": 1,
+      "stdout": [],
+      "stderr": [
+        "registry unavailable and {package} is not installed\\.",
+        "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+      ],
+      "installsPerPackage": 0,
+      "commandsPresent": false
+    },
+    {
+      "name": "npm install that never succeeds",
+      "setup": {
+        "latest": "2.0.0",
+        "installFails": true
+      },
+      "status": 1,
+      "stdout": [],
+      "stderr": [
+        "{package} install attempt 3/3 failed\\.",
+        "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+      ],
+      "installsPerPackage": 3,
+      "commandsPresent": false
+    },
+    {
+      "name": "successful install that leaves an old CLI on PATH",
+      "setup": {
+        "latest": "2.0.0",
+        "installed": "1.0.0",
+        "installNoop": true
+      },
+      "status": 1,
+      "stdout": [],
+      "stderr": [
+        "{package} install attempt 3/3 failed\\.",
+        "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+      ],
+      "installsPerPackage": 3,
+      "commandsPresent": true
+    },
+    {
+      "name": "malformed registry version",
+      "setup": {
+        "latest": "bad version",
+        "installed": "1.0.0"
+      },
+      "status": 1,
+      "stdout": [],
+      "stderr": ["Registry returned an invalid version for {package}\\."],
+      "installsPerPackage": 0,
+      "commandsPresent": true
+    }
+  ],
+  "wiring": [
+    ["Dockerfile", "npm install --global"],
+    ["Dockerfile", "@openai/codex@latest"],
+    ["Dockerfile", "opencode-ai@latest"],
+    ["Dockerfile", "@nanocollective/nanocoder@latest"],
+    ["Dockerfile", "NPM_CONFIG_PREFIX=\"/home/vscode/.local\""],
+    ["post-start.sh", "nohup bash \"${installer}\""],
+    ["post-start.sh", "cache_contract_repair_permissions"],
+    ["post-create.sh", "bash \"${installer}\""],
+    ["post-create.sh", "unity-mcp.mjs\" configure --offline"],
+    ["devcontainer.json", "\"waitFor\": \"updateContentCommand\""],
+    [
+      "devcontainer.json",
+      "\"updateContentCommand\": \"bash .devcontainer/post-start.sh --prepare\""
     ],
-    "stderr": [],
-    "installsPerPackage": 1,
-    "commandsPresent": true
-  },
-  {
-    "name": "every CLI already at the latest version",
-    "setup": {
-      "latest": "4.5.6",
-      "installed": "4.5.6"
-    },
-    "status": 0,
-    "stdout": ["{package}@4\\.5\\.6 is current\\."],
-    "stderr": [],
-    "installsPerPackage": 0,
-    "commandsPresent": true
-  },
-  {
-    "name": "unreachable registry with the CLI already installed",
-    "setup": {
-      "installed": "7.8.9",
-      "viewFails": true
-    },
-    "status": 0,
-    "stdout": ["registry unavailable; keeping {package}@7\\.8\\.9\\."],
-    "stderr": [],
-    "installsPerPackage": 0,
-    "commandsPresent": true
-  },
-  {
-    "name": "unreachable registry with the CLI absent",
-    "setup": {
-      "viewFails": true
-    },
-    "status": 1,
-    "stdout": [],
-    "stderr": [
-      "registry unavailable and {package} is not installed\\.",
-      "3 agent CLI refresh\\(es\\) failed; see messages above\\."
-    ],
-    "installsPerPackage": 0,
-    "commandsPresent": false
-  },
-  {
-    "name": "npm install that never succeeds",
-    "setup": {
-      "latest": "2.0.0",
-      "installFails": true
-    },
-    "status": 1,
-    "stdout": [],
-    "stderr": [
-      "{package} install attempt 3/3 failed\\.",
-      "3 agent CLI refresh\\(es\\) failed; see messages above\\."
-    ],
-    "installsPerPackage": 3,
-    "commandsPresent": false
-  },
-  {
-    "name": "successful install that leaves an old CLI on PATH",
-    "setup": {
-      "latest": "2.0.0",
-      "installed": "1.0.0",
-      "installNoop": true
-    },
-    "status": 1,
-    "stdout": [],
-    "stderr": [
-      "{package} install attempt 3/3 failed\\.",
-      "3 agent CLI refresh\\(es\\) failed; see messages above\\."
-    ],
-    "installsPerPackage": 3,
-    "commandsPresent": true
-  },
-  {
-    "name": "malformed registry version",
-    "setup": {
-      "latest": "bad version",
-      "installed": "1.0.0"
-    },
-    "status": 1,
-    "stdout": [],
-    "stderr": ["Registry returned an invalid version for {package}\\."],
-    "installsPerPackage": 0,
-    "commandsPresent": true
-  }
-]
+    ["devcontainer.json", "\"postAttachCommand\": \"bash .devcontainer/post-start.sh\""],
+    ["devcontainer.json", "\"userEnvProbe\": \"none\""],
+    ["devcontainer.json", "\"COPILOT_HOME\": \"${containerWorkspaceFolder}/.copilot\""],
+    ["devcontainer.json", "host.docker.internal:host-gateway"],
+    [
+      "devcontainer.json",
+      "\"NANOCODER_MCPSERVERS_FILE\": \"${containerWorkspaceFolder}/.nanocoder/mcp.json\""
+    ]
+  ]
+}

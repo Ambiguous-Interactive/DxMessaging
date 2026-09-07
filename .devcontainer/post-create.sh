@@ -93,7 +93,7 @@ install_agent_clis() {
 
 # `waitFor: updateContentCommand` lets post-create and post-start overlap, and both configure the
 # MCP clients. Without a lock, two runs starting from an .env.local with no bearer token would each
-# mint one and write different values into the six generated client configs. The second waiter sees
+# mint one and write different values into the generated client configs. The second waiter sees
 # the token the first wrote and is a no-op.
 MCP_CONFIGURE_LOCK="${TMPDIR:-/tmp}/dxm-mcp-configure.lock"
 
@@ -345,7 +345,8 @@ main() {
     run_optional "Ensuring ~/.zshrc exports ~/.local/bin" ensure_path_line "$HOME/.zshrc"
     run_optional "Ensuring ~/.profile exports ~/.local/bin" ensure_path_line "$HOME/.profile"
 
-    run_optional "Refreshing Codex, OpenCode, and Nanocoder" install_agent_clis &
+    # updateContentCommand already permits attach; own this refresh until it finishes.
+    run_optional "Refreshing Codex, OpenCode, and Nanocoder" install_agent_clis
 
     # Step 3: workspace bootstrap.
     log_header "Bootstrapping Workspace"
@@ -381,4 +382,6 @@ main() {
     return "${exit_code}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

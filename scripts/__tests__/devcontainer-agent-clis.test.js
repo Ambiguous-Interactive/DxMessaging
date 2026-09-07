@@ -1,6 +1,7 @@
 "use strict";
 
 // Execute the installer against a hermetic npm/CLI fixture.
+// cspell:ignore mcps
 
 const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
@@ -120,41 +121,28 @@ function runInstaller(t, setup) {
   return { result, prefixBin, calls };
 }
 
-const CASES = require("./devcontainer-agent-cli-vectors.json");
+const { installerCases: CASES, wiring: WIRING } = require("./devcontainer-agent-cli-vectors.json");
 
 for (const testCase of CASES) {
   test(`install-agent-clis.sh handles ${testCase.name}`, { skip: !CAN_RUN_SHELL }, (t) => {
     const { result, prefixBin, calls } = runInstaller(t, testCase.setup);
-    assert.equal(
-      result.status,
-      testCase.status,
-      `${testCase.name}: unexpected exit status (stdout: ${result.stdout}, stderr: ${result.stderr})`
-    );
+    assert.equal(result.status, testCase.status, result.stdout + result.stderr);
     for (const [stream, patterns] of [
       ["stdout", testCase.stdout],
       ["stderr", testCase.stderr]
     ]) {
       for (const pattern of patterns) {
         for (const [packageName] of pattern.includes("{package}") ? PACKAGES : [[""]]) {
-          assert.match(
-            result[stream],
-            new RegExp(pattern.replace("{package}", packageName)),
-            `${testCase.name}: ${stream} must report "${pattern}" for ${packageName || "the run"}`
-          );
+          const expected = new RegExp(pattern.replace("{package}", packageName));
+          assert.match(result[stream], expected, packageName || testCase.name);
         }
       }
     }
     for (const [packageName, command] of PACKAGES) {
-      assert.equal(
-        calls.filter((call) => call.startsWith(`install -g ${packageName}@`)).length,
-        testCase.installsPerPackage,
-        `${testCase.name}: unexpected npm install attempt count for ${packageName} (calls: ${calls})`
-      );
-      assert.equal(
-        fs.existsSync(path.join(prefixBin, command)),
-        testCase.commandsPresent,
-        `${testCase.name}: ${command} presence in the npm prefix does not match expectations`
-      );
+      const installs = calls.filter((call) => call.startsWith(`install -g ${packageName}@`)).length;
+      assert.equal(installs, testCase.installsPerPackage, `${packageName}: ${calls}`);
+      const present = fs.existsSync(path.join(prefixBin, command));
+      assert.equal(present, testCase.commandsPresent, `${command} presence`);
     }
   });
 }
@@ -185,26 +173,6 @@ test("devcontainer agent scripts have valid bash syntax", { skip: !CAN_RUN_SHELL
   }
 });
 
-// Wiring checks complement the executing installer and permission tests.
-const WIRING = [
-  ["Dockerfile", "npm install --global"],
-  ...PACKAGES.map(([name]) => ["Dockerfile", `${name}@latest`]),
-  ["Dockerfile", 'NPM_CONFIG_PREFIX="/home/vscode/.local"'],
-  ["post-start.sh", 'nohup bash "${installer}"'],
-  ["post-start.sh", "cache_contract_repair_permissions"],
-  ["post-create.sh", 'bash "${installer}"'],
-  ["post-create.sh", 'unity-mcp.mjs" configure --offline'],
-  ["devcontainer.json", '"waitFor": "updateContentCommand"'],
-  ["devcontainer.json", '"updateContentCommand": "bash .devcontainer/post-start.sh --prepare"'],
-  ["devcontainer.json", '"postAttachCommand": "bash .devcontainer/post-start.sh"'],
-  ["devcontainer.json", '"userEnvProbe": "none"'],
-  ["devcontainer.json", '"COPILOT_HOME": "${containerWorkspaceFolder}/.copilot"'],
-  ["devcontainer.json", "host.docker.internal:host-gateway"],
-  [
-    "devcontainer.json",
-    '"NANOCODER_MCPSERVERS_FILE": "${containerWorkspaceFolder}/.nanocoder/mcp.json"'
-  ]
-];
 for (const [file, text] of WIRING) {
   test(`${file} includes ${text}`, () => assert.ok(read(file).includes(text)));
 }
@@ -212,31 +180,65 @@ test("launch does not block on Git LFS downloads", () => {
   assert.doesNotMatch(read("post-start.sh"), /^\s*git lfs pull/m);
 });
 
-test(
-  "repair fixes a root-owned child beneath a writable npm directory",
-  { skip: !CAN_RUN_SHELL },
-  (t) => {
-    if (childProcess.spawnSync("sudo", ["-n", "true"]).status !== 0)
-      return t.skip("requires passwordless container sudo");
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-npm-owner-"));
+test("post-create owns its CLI refresh", { skip: !CAN_RUN_SHELL }, (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-bootstrap-order-"));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const script = `source "$1"
+    for stub in fix_volume_permissions ensure_path_line dotnet configure_agent_mcps git pre-commit ensure_pinned_sdk validate_dotnet validate_workspace print_summary; do
+      eval "$stub() { :; }"
+    done
+    install_agent_clis() { printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/refresh-scope"; }
+    npm() {
+      if [[ "$*" == "config get prefix" ]]; then echo "$HOME/.local";
+      elif [[ "$1" == install ]]; then printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/npm-scope"; fi
+    }
+    main
+    wait
+    cmp "$TMPDIR/refresh-scope" "$TMPDIR/npm-scope"`;
+  const result = childProcess.spawnSync("bash", ["-c", script, "bash", dev("post-create.sh")], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: temp, TMPDIR: temp }
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+for (const [label, mode, foreign, repair, expected] of [
+  ["root-owned child beneath writable cache", 0o644, true, "directory", 0],
+  ["writable foreign file with unsupported chown", 0o666, true, "reject", 0],
+  ["unwritable foreign file repaired by chown", 0o644, true, "real", 0],
+  ["unwritable owned file", 0o444, false, "real", 1],
+  ["unwritable foreign file with no-op chown", 0o644, true, "noop", 1],
+  ["missing npm manifests", null, false, "reject", 0]
+]) {
+  test(`cache permissions handle ${label}`, { skip: !CAN_RUN_SHELL }, (t) => {
+    if (childProcess.spawnSync("sudo", ["-n", "true"]).status !== 0 || process.getuid() === 0)
+      return t.skip("requires an unprivileged user with passwordless sudo");
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-file-owner-"));
     t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
-    const child = path.join(temp, "nested");
-    fs.mkdirSync(child);
-    fs.writeFileSync(path.join(child, "cache"), "old");
-    childProcess.execFileSync("sudo", ["-n", "chown", "-R", "0:0", child]);
-    const repaired = childProcess.spawnSync(
+    const file = path.join(temp, repair === "directory" ? "nested/cache" : "package.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (mode !== null) {
+      fs.writeFileSync(file, "{}");
+      fs.chmodSync(file, mode);
+      const target = repair === "directory" ? path.dirname(file) : file;
+      if (foreign) childProcess.execFileSync("sudo", ["-n", "chown", "-R", "0:0", target]);
+    }
+    const script = `source "$1"
+      if [[ "$REPAIR" == directory ]]; then cache_contract_repair_directory "$WORKSPACE_FOLDER" "$(id -u)" "$(id -g)"; exit; fi
+      cache_contract_repair_directory() { :; }
+      sudo() { case "$2" in chown) case "$3" in -h) :;; *) return 99;; esac;; *) return 99;; esac
+        case "$REPAIR" in real) command sudo "$@";; noop) return 0;; *) return 1;; esac; }
+      cache_contract_repair_permissions`;
+    const result = childProcess.spawnSync(
       "bash",
-      [
-        "-c",
-        'source "$1"; cache_contract_repair_directory "$2" "$(id -u)" "$(id -g)"',
-        "bash",
-        dev("cache-contract.sh"),
-        temp
-      ],
-      { encoding: "utf8" }
+      ["-c", script, "bash", dev("cache-contract.sh")],
+      {
+        encoding: "utf8",
+        env: { ...process.env, HOME: temp, WORKSPACE_FOLDER: temp, REPAIR: repair }
+      }
     );
-    assert.equal(repaired.status, 0, repaired.stderr);
-    assert.equal(fs.statSync(path.join(child, "cache")).uid, process.getuid());
-    fs.writeFileSync(path.join(child, "cache"), "writable without sudo");
-  }
-);
+    assert.equal(result.status, expected, `${label}: ${result.stderr}`);
+    if (expected) assert.match(result.stderr, /not writable/);
+    if (mode !== null && expected === 0) fs.writeFileSync(file, "writable without sudo");
+    if (repair === "directory") assert.equal(fs.statSync(file).uid, process.getuid());
+  });
+}

@@ -134,8 +134,13 @@ cache_contract_repair_permissions() {
     done
     for target in "${HOME}/.npmrc" "${CACHE_WORKSPACE_ROOT}/package-lock.json" \
         "${CACHE_WORKSPACE_ROOT}/package.json"; do
-        if [[ -f "$target" && ! -O "$target" ]]; then
-            sudo -n chown -h "$current_uid:$current_gid" "$target" || return 1
+        if [[ -f "$target" && ! -w "$target" ]]; then
+            # Host bind mounts can be writable without supporting ownership changes.
+            sudo -n chown -h "$current_uid:$current_gid" "$target" || true
+            if [[ ! -w "$target" ]]; then
+                echo "[cache] $target is not writable; fix its host permissions." >&2
+                return 1
+            fi
         fi
     done
     probe="${CACHE_WORKSPACE_ROOT}/.dxm-write-probe-$$"

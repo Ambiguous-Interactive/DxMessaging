@@ -7,11 +7,12 @@ MCP server over authenticated HTTP. Unity stays on the host.
 ## Container startup
 
 Rebuild the container to install the updated image. The image includes Codex,
-OpenCode, and Nanocoder from npm's `latest` tags. Creation, startup, and VS Code
-attachment check those tags again in the background. Existing binaries remain
-available during a refresh or registry outage. Check `/tmp/dxm-agent-cli-refresh.log`
-for the installed versions or a failed update. A cached Docker layer can contain an
-older CLI; the lifecycle refresh handles that case.
+OpenCode, and Nanocoder from npm's `latest` tags. Creation checks those tags before
+installing workspace dependencies and reports updates in the bootstrap output.
+Startup and VS Code attachment check them in the background; check
+`/tmp/dxm-agent-cli-refresh.log` for those updates. Existing binaries remain available
+during a refresh or registry outage. A cached Docker layer can contain an older CLI;
+the lifecycle refresh handles that case.
 
 Before the initial attach, `updateContentCommand` repairs cache ownership and writes
 MCP configs without network access. The image includes the configuration dependencies,
@@ -22,8 +23,10 @@ context contains only image inputs. `.env` files never enter the build context.
 Both local `npm install` and global `npm install -g` run as `vscode`. Global installs
 use `/home/vscode/.local`, which comes first on PATH. Permission repair checks nested
 cache files left by earlier `sudo npm` commands, the npm prefix, and npm's manifest,
-lock, and config files. It does not recursively change the host checkout. A host
-checkout that is itself read-only must be repaired on the host.
+lock, and config files. Writable npm files keep their existing ownership, including
+host bind mounts that do not support `chown`. Unwritable files must become writable
+after repair or startup fails with their path. Repair does not recursively change the
+host checkout. A host checkout that is itself read-only must be repaired on the host.
 
 ## Credentials
 
