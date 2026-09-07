@@ -311,8 +311,8 @@ RUN set -eux; \
         arm64) LYCHEE_ARCH="aarch64-unknown-linux-gnu" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
-    wget -q "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-${LYCHEE_ARCH}.tar.gz" -O lychee.tar.gz || \
-    wget -q "https://github.com/lycheeverse/lychee/releases/download/v${LYCHEE_VERSION}/lychee-${LYCHEE_ARCH}.tar.gz" -O lychee.tar.gz; \
+    curl --fail --location --show-error --retry 3 --retry-delay 2 \
+        --output lychee.tar.gz "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-${LYCHEE_ARCH}.tar.gz"; \
     tar -xzf lychee.tar.gz; \
     cp lychee /usr/local/bin/lychee; \
     chmod +x /usr/local/bin/lychee; \
