@@ -4,9 +4,6 @@ The devcontainer configures Codex, Claude Code, Copilot CLI, VS Code Copilot Cha
 OpenCode, Nanocoder, and Cursor. The same Node entry point publishes the host Unity
 MCP server over authenticated HTTP. Unity stays on the host.
 
-For the incident findings and a portable setup checklist, use the
-[Pipeline MCP setup handoff](PIPELINE-SETUP-HANDOFF.md).
-
 ## Container startup
 
 Rebuild the container to install the updated image. The image includes Codex,
