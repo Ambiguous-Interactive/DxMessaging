@@ -66,18 +66,18 @@ bytes. Cite a result only after `replay` succeeds.
 
 ## What fails, and what it means
 
-| Failure                                                   | Cause                                                           |
-| --------------------------------------------------------- | --------------------------------------------------------------- |
-| `hashes to ... but the manifest declares ...`             | A raw file changed after sealing                                |
-| `is declared by the manifest but could not be read`       | A required artifact is missing or unreachable                   |
-| `Undeclared files are present in the bundle`              | Something was added after sealing                               |
-| `does not match its own contents`                         | The manifest itself was edited, including its normalized result |
-| `is already sealed as ... but these bytes seal as ...`    | An overwrite of sealed evidence; publish a new revision instead |
-| `looks like it contains ...; scrub it before sealing`     | Sensitive data is still present; see below                      |
-| `does not use a reviewed text evidence extension ...`     | The artifact class has no approved inspection rule              |
-| `is not valid UTF-8 or byte-order-marked UTF-16 text ...` | The file has malformed or opaque bytes                          |
-| `contains non-text control bytes` or `too many NUL bytes` | The file does not meet the reviewed-text contract               |
-| `reports ... for cell ... but its own evidence says ...`  | The matrix summary disagrees with the per-cell evidence         |
+| Failure                                                       | Cause                                                           |
+| ------------------------------------------------------------- | --------------------------------------------------------------- |
+| `hashes to ... but the manifest declares ...`                 | A raw file changed after sealing                                |
+| `is declared by the manifest but could not be read`           | A required artifact is missing or unreachable                   |
+| `Undeclared files are present in the bundle`                  | Something was added after sealing                               |
+| `does not match its own contents`                             | The manifest itself was edited, including its normalized result |
+| `is already sealed as ... but these bytes seal as ...`        | An overwrite of sealed evidence; publish a new revision instead |
+| `looks like it contains ...; scrub it before sealing`         | Sensitive data is still present; see below                      |
+| `does not use a reviewed text evidence extension ...`         | The artifact class has no approved inspection rule              |
+| `is not valid UTF-8 or byte-order-marked UTF-16 text ...`     | The file has malformed or opaque bytes                          |
+| `contains non-text control bytes` or `too many NUL bytes`     | The file does not meet the reviewed-text contract               |
+| `reports fields for cell ... that disagree with its raw cell` | The matrix summary disagrees with the per-cell evidence         |
 
 ## Sensitive-data refusal
 
@@ -163,7 +163,9 @@ reviewer's machine. Order every array by an ordinal key rather than by directory
 
 Register it in `REDUCERS` in `scripts/unity/perf-evidence-bundle.js` and add cases to
 `scripts/__tests__/perf-evidence-bundle.test.js` covering a missing input, a corrupted input, and a
-summary that disagrees with the raw rows it claims to describe.
+summary that disagrees with the raw rows it claims to describe. Compare every copied
+field, including profile identity and nested fields, while allowing object-key order
+and the producer's `cellId` override.
 
 ## Where bundles are produced
 

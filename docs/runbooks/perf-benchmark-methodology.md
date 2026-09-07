@@ -276,7 +276,10 @@ metrics because the Release player strips the required profiler recorder (see
   and inside the actual build process. `build-options-profile.json` records
   Unity's final post-build options, and `runtime-profile.json` records
   `Debug.isDebugBuild`. The runner compares every field with the archived
-  profile and fails on a missing, extra, mistyped, or different value. The
+  profile and fails on a missing, extra, mistyped, or different value. Each
+  evidence file must also name the exact Unity version requested by the runner.
+  Standalone validation requires `-ExpectedUnityVersion` when checking evidence;
+  `-ProfileOnly` validates the shared profile without selecting an editor. The
   `DXM perf config:` log line and each row's platform
   string (`Standalone IL2CPP x64 Release (WindowsPlayer; ...)`) remain
   diagnostic surfaces; a published `x64 Debug` row is a configuration bug. A Release player
