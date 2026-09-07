@@ -21,7 +21,7 @@ LABEL unity.note="Local Unity verification runs via the unity-mcp-remote MCP ser
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
-ENV PATH="/home/vscode/.local/bin:${PATH}"
+ENV PATH="/home/vscode/.local/bin:/usr/local/bin:/usr/bin:${PATH}"
 
 # ------------------------------------------------------------------------------
 # Fix expired Yarn GPG key issue
@@ -78,6 +78,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && chmod +x /tmp/dotnet-install.sh \
     && /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet \
     && apt-get autoremove -y
+
+COPY SourceGenerators/global.json /tmp/dxm-global.json
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --jsonfile /tmp/dxm-global.json --install-dir /usr/share/dotnet \
+    && rm /tmp/dotnet-install.sh /tmp/dxm-global.json
 
 # Create a temporary directory for downloads
 WORKDIR /tmp/tools
@@ -389,15 +394,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ------------------------------------------------------------------------------
 # A rebuild resolves npm's latest tags. The user-scoped launch updater can then
 # refresh them without sudo while keeping these copies as the offline fallback.
-RUN npm install --global \
+RUN npm install --global --prefix /usr/local \
         @openai/codex@latest \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
+        @z_ai/mcp-server@latest \
+        mcp-remote@0.8.3 \
         --no-fund \
         --no-audit \
     && codex --version \
     && opencode --version \
     && nanocoder --version
+
+# MCP configuration must work before the workspace's volume has dependencies.
+# jq (installed in the APT layer above) extracts the exact devDependencies the
+# MCP scripts need. The length guard fails the build when a required package is
+# missing from the workspace manifest instead of emitting a null version that
+# breaks npm install with a confusing error.
+COPY package.json /tmp/dxm-tooling-package.json
+RUN mkdir -p /opt/dxm-mcp \
+    && jq '{private: true, dependencies: (.devDependencies | with_entries(select(.key as $k | ["@modelcontextprotocol/sdk", "smol-toml", "jsonc-parser"] | index($k))))}' /tmp/dxm-tooling-package.json > /opt/dxm-mcp/package.json \
+    && test "$(jq '.dependencies | length' /opt/dxm-mcp/package.json)" -eq 3 \
+    && npm install --prefix /opt/dxm-mcp --no-fund --no-audit \
+    && rm /tmp/dxm-tooling-package.json
+
+# The build-time CLIs above are system fallbacks. All user installs use this prefix.
+ENV NPM_CONFIG_PREFIX="/home/vscode/.local"
+ENV NPM_CONFIG_CACHE="/home/vscode/.npm"
 
 # ------------------------------------------------------------------------------
 # Install yamllint via pip
@@ -420,6 +443,8 @@ RUN pip3 install --no-cache-dir pre-commit --break-system-packages && pre-commit
 # https://docs.astral.sh/uv/
 # ------------------------------------------------------------------------------
 RUN pip3 install --no-cache-dir uv --break-system-packages && uv --version
+RUN UV_TOOL_DIR=/opt/dxm-mcp/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool install mcp-server-git \
+    && UV_TOOL_DIR=/opt/dxm-mcp/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool install mcp-server-fetch
 
 # ------------------------------------------------------------------------------
 # Configure Git Defaults for Unity-style Repositories

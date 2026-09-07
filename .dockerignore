@@ -1,0 +1,10 @@
+# Only build inputs enter the context. Excludes credentials, Unity caches,
+# node_modules, Git history, and local test artifacts even when nested.
+**
+!.devcontainer/
+!.devcontainer/**
+!SourceGenerators/
+SourceGenerators/**
+!SourceGenerators/global.json
+!package.json
+**/.env*

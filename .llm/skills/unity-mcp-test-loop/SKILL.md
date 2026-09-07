@@ -1,6 +1,6 @@
 ---
 name: unity-mcp-test-loop
-description: "Running Unity EditMode and PlayMode tests locally from the Linux devcontainer against the Windows host editor over the unity-mcp MCP server: the scripts/mcp/unity-mcp.mjs entry point and its npm run unity:mcp:bridge / :probe / :configure commands, endpoint discovery and bearer-token auth, the DxMcpTestRunner.Run bridge with its JSON result and .status sidecar, Unity_RunCommand sandbox restrictions, and using durationSeconds to measure suite speed. Use when running Unity tests locally, when the MCP endpoint is unreachable or unauthorized, when the DxMcpTestRunner bridge is missing, or when capturing a local perf baseline."
+description: "Running Unity EditMode and PlayMode tests locally from the Linux devcontainer against the host editor over the unity-mcp MCP server: the scripts/mcp/unity-mcp.mjs entry point and its npm run unity:mcp:bridge / :probe / :configure commands, endpoint discovery and bearer-token auth, the DxMcpTestRunner.Run bridge with its JSON result and .status sidecar, Pipeline and legacy relay tool selection, and using durationSeconds to measure suite speed. Use when running Unity tests locally, when the MCP endpoint is unreachable or unauthorized, when the DxMcpTestRunner bridge is missing, or when capturing a local perf baseline."
 metadata:
   category: "unity"
   tags: "unity, testing, mcp, devcontainer, test-runner"
@@ -8,7 +8,7 @@ metadata:
 
 # Unity MCP Test Loop
 
-Local Unity verification runs against the host editor through the `unity-mcp` MCP server, driven by `Unity_RunCommand`. The devcontainer ships no Unity build; there is no docker or ephemeral-editor local runner.
+Local Unity verification runs against the host editor through the `unity-mcp` MCP server, using Pipeline `eval` or legacy `Unity_RunCommand` after discovering the live catalog. The devcontainer ships no Unity build; there is no docker or ephemeral-editor local runner.
 
 ## When to use
 
@@ -26,21 +26,25 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 
 `scripts/mcp/unity-mcp.mjs` is the single entry point. The former shell scripts (`start-unity-mcp-bridge.ps1`, `configure-unity-mcp-endpoint.sh`, `probe-unity-mcp-endpoint.sh`, `install-claude-desktop-config.sh`) no longer exist; do not reference them.
 
-| Command                       | Runs on      | Purpose                                                  |
-| ----------------------------- | ------------ | -------------------------------------------------------- |
-| `npm run unity:mcp:bridge`    | Windows host | Spawn the relay and serve it over authenticated HTTP     |
-| `npm run unity:mcp:probe`     | Devcontainer | Find an endpoint a live editor is answering behind       |
-| `npm run unity:mcp:configure` | Devcontainer | Discover, then write every MCP client config in the repo |
+| Command                       | Runs on      | Purpose                                                     |
+| ----------------------------- | ------------ | ----------------------------------------------------------- |
+| `npm run unity:mcp:bridge`    | Host         | Serve Unity CLI or the legacy relay over authenticated HTTP |
+| `npm run unity:mcp:probe`     | Devcontainer | Find an endpoint a live editor is answering behind          |
+| `npm run unity:mcp:configure` | Devcontainer | Discover, then write every MCP client config in the repo    |
 
-- Start the bridge on the host with `npm run unity:mcp:bridge -- --project 'D:\Path\To\HostUnityProject'`. `--project` is required for this command only and names a HOST filesystem path. The relay is discovered under `~/.unity/relay/`; override with `--relay <path>` or `UNITY_MCP_RELAY_PATH`.
-- The bridge requires a bearer token and generates one into `.env.local` at the repository root if none is set. Both sides must present the same `UNITY_MCP_BEARER_TOKEN`; copy it across or pass `--token` when host and container do not share `.env.local`. Add a Windows firewall rule for the port if the container cannot reach it.
-- From the container run `npm run unity:mcp:configure` then `npm run unity:mcp:probe`. Discovery pins
-  MCP `2025-11-25`. Configure selects the first initialized endpoint without inspecting tools, or
-  writes the configured/default endpoint if none initializes. Probe follows `tools/list` pages,
-  requires `Unity_RunCommand`, and then asks `Unity_ManageEditor` for editor state, because the
-  relay keeps advertising its whole registry after the editor's discovery record goes stale and a
-  registry read alone reports green through a window where nothing editor-backed works (#418). A
-  relay that advertises no editor tool keeps the tools-level verdict and the probe says so.
+- Start the host bridge with `npm run unity:mcp:bridge -- --project /absolute/host/project`.
+  The host can run Windows, macOS, or Linux; use that host's absolute path, or set
+  `UNITY_PROJECT_PATH` in `.env.local`. The default backend runs `unity mcp --project-path`.
+  `--backend relay` retains Assistant compatibility and discovers the relay under `~/.unity/relay/`;
+  override that executable with `--relay` or `UNITY_MCP_RELAY_PATH`.
+- The bridge generates a bearer token in `.env.local` if none is set. Host and container must share
+  `UNITY_MCP_BEARER_TOKEN`. Allow the bridge port through the host firewall when needed.
+- Run `npm run unity:mcp:configure -- --offline` in the container, then `npm run unity:mcp:probe`.
+  Offline configuration writes local files without contacting the host. Normal configure discovers
+  initialized endpoints. Probe negotiates MCP `2025-11-25`, follows tool-list pages, and calls
+  Pipeline `editor_status` or legacy `Unity_ManageEditor` to check the editor. A legacy registry
+  advertising only `Unity_RunCommand` gets a tools-level verdict, which does not prove editor readiness.
+  An initialized connection or empty catalog alone is insufficient.
 - Discovery walks hosts in order - `host.docker.internal`, `127.0.0.1`, `nameserver` entries in
   `/etc/resolv.conf`, then default-route gateways - and ports `9020` then `9003`. An explicit
   `--host` or `--port` replaces the fallbacks on that axis. `--no-discover` uses only the configured
@@ -48,20 +52,15 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 - Failure statuses classify the fix: `unreachable` (nothing accepted TCP), `transport-error` (a
   request timed out or ended before an HTTP response), `unauthorized` (token rejected), `http-error`
   (an operation returned non-success HTTP), `jsonrpc-error` (valid server error), `malformed`
-  (invalid media type, result, status, version, or cursor), and `not-ready` (`Unity_RunCommand` was
-  not advertised). The SDK transport streams SSE, validates schemas, and uses one lifecycle deadline;
+  (invalid media type, result, status, version, or cursor), and `not-ready` (required Unity tools or live editor state are missing). The SDK transport streams SSE, validates schemas, and uses one lifecycle deadline;
   a session-bearing HTTP 404 restarts initialization once without resetting that deadline.
 - A session-bearing probe always attempts bounded `DELETE` cleanup and releases its response. HTTP
   405 is allowed; other cleanup failures warn without changing the readiness result.
-- `configure` writes `.mcp.json` (`mcpServers`), `.cursor/mcp.json` (`mcpServers`),
-  `.vscode/mcp.json` (`servers`), `.codex/config.toml` (`mcp_servers`), `opencode.jsonc`
-  (`mcp`), and `.nanocoder/mcp.json` (`mcpServers`) in one transaction with rollback. All six are
-  machine-local, mode `0600`, and gitignored. The `unity-mcp` and hosted `github` entries are
-  rewritten; other servers are preserved. The devcontainer points `NANOCODER_MCPSERVERS_FILE` at
-  the Nanocoder-specific schema.
-- The devcontainer runs `configure --no-discover` on create and in the background on each start.
-  Put a distinct `UNITY_MCP_BRIDGE_PORT` and bearer token in each checkout's `.env.local` when
-  pairing several host editors and devcontainers.
+- Configure writes seven private, gitignored client files transactionally, including Copilot CLI.
+  It manages Unity, GitHub, local Git/Fetch, and optional Z.AI entries while preserving unrelated
+  settings. See the [MCP setup guide](../../../scripts/mcp/README.md#generated-client-configs).
+- The devcontainer runs offline configuration before initial attachment and on subsequent starts
+  and attachments. Pair different host projects with distinct bridge ports and matching tokens.
 - Local overrides go in `.env.local` or the matching flag: `UNITY_MCP_BRIDGE_HOST`, `UNITY_MCP_BRIDGE_PORT`, `UNITY_MCP_BRIDGE_PATH`, `UNITY_MCP_BEARER_TOKEN`, `UNITY_PROJECT_PATH`. `node scripts/mcp/unity-mcp.mjs --help` lists every flag.
 
 ### Topology
@@ -71,19 +70,24 @@ The devcontainer workspace is the same directory as the embedded package inside 
 ### The loop
 
 1. **Edit** files in the container.
-1. **Preflight.** Prefer passive `GetState`, `GetPrefabStage`, `GetActive`, and a fresh observer
-   snapshot for framework activity, editor flags, stage, and every open scene's dirty flag.
-   If the observer is absent or incomplete, available flags are idle/clean, and no test is known
-   active, use a minimal `Unity_RunCommand` inspection to fill the gaps. It refreshes before
-   the snippet; this bootstrap cannot prove the prior refresh safe. Missing fields alone do not
-   require user confirmation. Follow the [bootstrap procedure](./references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer)
-   and preserve tool approval gates. Wait for active tests or editor work; stop for dirty scenes.
-1. **Compile** with `Unity_ValidateScript` for changed C# under `Assets/`, then execute the
-   `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator rejects embedded
-   `Packages/` paths, so package edits must use the refresh plus fresh-assembly proof. Wait for
-   compilation to settle before trusting tests. Do not use `AssetDatabase.Refresh()` through
-   `Unity_RunCommand`; a modal prompt blocks the editor and only the developer can dismiss it.
-1. **Run** `DxMcpTestRunner.Run(testMode, assemblyNames, testNames, categoryNames, resultPath)` through `Unity_RunCommand`, locating the type by scanning `AppDomain` assemblies. Arguments are semicolon-separated lists and `null` means no filter. `testMode` is `EditMode` or `PlayMode`. `testNames` accepts a full fixture type name such as `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests` for a single-fixture red-green loop.
+1. **Discover tools.** Pipeline exposes `editor_status`, `list_open_scenes`, `eval`, and `menu`;
+   the legacy relay exposes `Unity_*` tools. Read the connected schemas and use the
+   [backend mapping](./references/mcp-test-loop.md#tool-selection) rather than guessing names.
+1. **Preflight.** Prefer passive editor and scene queries plus a fresh observer snapshot for
+   framework activity, editor flags, stage, and every scene's dirty flag. If the observer is
+   incomplete, available flags are idle/clean, and no test is known active, follow the
+   [bootstrap procedure](./references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer).
+   Legacy `Unity_RunCommand` refreshes before snippets; Pipeline `eval` refresh behavior has not
+   been established. Neither is a polling tool during an active run. Missing fields alone do not
+   require confirmation. Preserve tool approval gates; wait for editor work and stop for dirty scenes.
+1. **Compile** by executing `Assets/Refresh` through Pipeline `menu` or legacy
+   `Unity_ManageMenuItem` after the safe preflight. Legacy `Unity_ValidateScript` accepts changed
+   C# under `Assets/`, not embedded `Packages/`. Prove the changed assembly is loaded before
+   trusting tests. Do not invoke `AssetDatabase.Refresh()` inside a code-evaluation snippet.
+1. **Run** `DxMcpTestRunner.Run(testMode, assemblyNames, testNames, categoryNames, resultPath)`
+   through Pipeline `eval` or legacy `Unity_RunCommand`, locating the type in `AppDomain`
+   assemblies. Use the tool's own code/result schema. Arguments are semicolon-separated lists;
+   `null` means no filter. Mode is `EditMode` or `PlayMode`; `testNames` accepts a full fixture name.
 1. **Poll** the `.status` and `.cleanup.status` sidecars next to `resultPath` from bash.
    The first records raw result capture; only the second establishes passive cleanup.
    Retain the returned Execute GUID and its `.run.json` identity record. The JSON result
@@ -92,8 +96,8 @@ The devcontainer workspace is the same directory as the embedded package inside 
    and matching GUID/path in the cleanup record before accepting a run.
 1. **Wait for framework cleanup before another run or scene mutation.** `RunFinished` can write
    `done` before Unity restores its temporary scenes. Check the installed Test Framework's active
-   job state and run-scoped framework errors through a passive host observer; do not poll
-   `Unity_RunCommand` during tests because it refreshes assets before executing the snippet.
+   job state and run-scoped framework errors through a passive host observer; poll files only
+   during tests. Legacy `Unity_RunCommand` refreshes assets before executing the snippet.
    See the [framework cleanup gate](./references/mcp-test-loop.md#framework-cleanup-gate).
    A stale `running` sidecar alone is not a live job. Inspect framework state and errors before
    treating an observation timeout as completion or starting another run.
@@ -124,6 +128,9 @@ PNG writer when testing the whole Editor assembly. See
 
 ### Sandbox restrictions
 
+Pipeline `eval` and legacy `Unity_RunCommand` have separate implementations and schemas.
+Do not assume legacy restrictions or output helpers apply to Pipeline. Respect either tool's gates.
+
 - `using System.Reflection;` is rejected in `Unity_RunCommand`. Qualify allowed reflection types;
   qualification does not bypass member restrictions. Prefer public APIs when `BindingFlags` is rejected.
 - Inside `DxMessaging.*` namespaces the bare identifier `Unity` binds to `DxMessaging.Unity`. Use a `global::`-qualified alias when that ambiguity bites.
@@ -135,7 +142,7 @@ the host's `Assets/Editor/DxMcpTestRunner.cs`, so cleaning the host can remove i
 After the safe-state preflight, follow the
 [maintained runner installation flow](../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
 Copy that source verbatim through supported MCP editing, back up existing source and metadata
-outside `Assets`, preserve unreviewed host changes, and refresh through `Unity_ManageMenuItem`.
+outside `Assets`, preserve unreviewed host changes, and refresh through the connected backend's menu tool.
 Verify the loaded assembly and fresh passive snapshots. Use the bootstrap procedure when the
 missing observer leaves preflight fields unavailable; do not generate a replacement runner.
 

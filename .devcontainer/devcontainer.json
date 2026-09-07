@@ -52,19 +52,25 @@
   // Forward host-side env vars into the container. Use ${localEnv:VAR} so
   // the host value (or empty string) is captured at attach time.
   "remoteEnv": {
+    "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}",
+    "Z_AI_API_KEY": "${localEnv:Z_AI_API_KEY}",
+    "ZAI_API_KEY": "${localEnv:ZAI_API_KEY}",
     "WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
     "GH_TOKEN": "${localEnv:GH_TOKEN}",
     "GITHUB_PERSONAL_ACCESS_TOKEN": "${localEnv:GITHUB_PERSONAL_ACCESS_TOKEN}",
     "GITHUB_PAT": "${localEnv:GITHUB_PAT}",
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "COPILOT_HOME": "${containerWorkspaceFolder}/.copilot",
     "NANOCODER_MCPSERVERS_FILE": "${containerWorkspaceFolder}/.nanocoder/mcp.json"
   },
   // -------------------------------------------------------------------------
   // Lifecycle Commands
   // -------------------------------------------------------------------------
+  "updateContentCommand": "bash .devcontainer/post-start.sh --prepare",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "postStartCommand": "bash .devcontainer/post-start.sh",
+  "postAttachCommand": "bash .devcontainer/post-start.sh",
   "waitFor": "updateContentCommand",
   // -------------------------------------------------------------------------
   // Host Requirements
@@ -77,6 +83,9 @@
   // -------------------------------------------------------------------------
   // Container User
   // -------------------------------------------------------------------------
+  "init": true,
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "userEnvProbe": "none",
   "updateRemoteUserUID": true,
   "remoteUser": "vscode",
   // -------------------------------------------------------------------------
@@ -116,6 +125,12 @@
         "terminal.integrated.suggest.enabled": true,
         "terminal.integrated.suggest.quickSuggestions": true,
         "terminal.integrated.suggest.suggestOnTriggerCharacters": true,
+        "files.watcherExclude": {
+          "**/node_modules/**": true,
+          "**/.artifacts/**": true,
+          "**/Library/**": true,
+          "**/.git/objects/**": true
+        },
         "dotnet.defaultSolution": "disable",
         "dotnet.suppressDotnetRestoreNotification": true,
         "dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "openFiles",

@@ -2,19 +2,225 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
     using System.Text;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEngine;
+    using UnityEngine.SceneManagement;
+    using UnityEngine.TestTools;
 
-    /// <summary>Replays version-seven activity inputs through native host activation and production owner tokens.</summary>
+    /// <summary>Replays activity inputs and native scene transitions through production owner tokens.</summary>
     public sealed class DifferentialHostTraceTests : UnityFixtureBase
     {
+        private static readonly bool[] PersistenceMutations = { false, true };
         private DiagnosticsScope _diagnostics;
+        private Scene _ownedScene;
+        private AsyncOperation _sceneUnload;
+
+        [UnityTearDown]
+        public IEnumerator UnloadOwnedScene()
+        {
+            if (_sceneUnload == null && _ownedScene.IsValid() && _ownedScene.isLoaded)
+            {
+                _sceneUnload = SceneManager.UnloadSceneAsync(_ownedScene);
+            }
+            if (_sceneUnload != null && !_sceneUnload.isDone)
+            {
+                yield return _sceneUnload;
+            }
+            Assert.That(
+                !_ownedScene.IsValid() || !_ownedScene.isLoaded,
+                Is.True,
+                "Native differential replay must unload its owned scene during cleanup."
+            );
+            _ownedScene = default;
+            _sceneUnload = null;
+        }
+
+        [UnityTest]
+        [Category("UnityRuntime")]
+        public IEnumerator SceneUnloadReplayPreservesPersistentOwnersAndDetectsLostPersistence(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [ValueSource(nameof(PersistenceMutations))] bool omitPersistence
+        )
+        {
+            // This native protocol has an explicit asynchronous boundary. It supplements
+            // version-seven generation; the managed generator does not claim scene coverage.
+            const int unloadOperation = 6;
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1, priority: -1),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 2, priority: 1),
+                    new BusTraceOperation(BusTraceOperationKind.SetDiagnostics, value: 1),
+                    new BusTraceOperation(BusTraceOperationKind.SetDiagnostics, token: 1, value: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 11),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 13),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Disable),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 19),
+                    new BusTraceOperation(BusTraceOperationKind.Enable),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 23),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 29),
+                    new BusTraceOperation(BusTraceOperationKind.Disable),
+                }
+            );
+            List<BusTraceObservation> control = new();
+            List<BusTraceObservation> candidate = new();
+            yield return ReplaySceneUnload(sequence, unloadOperation, false, control);
+            yield return ReplaySceneUnload(sequence, unloadOperation, omitPersistence, candidate);
+            string report =
+                $"nativeProtocol=scene-unload-v1; unloadOperation={unloadOperation}; triggerToken=1; persistentToken=0; omitPersistence={omitPersistence}\n"
+                + Report(sequence, control);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            Assert.That(
+                candidate.All(item => item.Exception == null),
+                Is.True,
+                report + "\nCandidate trace:\n" + Report(sequence, candidate)
+            );
+            foreach (int index in new[] { 5, 6 })
+            {
+                int value = sequence.Operations[index].Value;
+                CollectionAssert.AreEqual(
+                    new[]
+                    {
+                        $"token=1,value={value}",
+                        $"token=0,value={value}",
+                        $"token=2,value={value}",
+                    },
+                    control[index].Callbacks,
+                    report
+                );
+            }
+            foreach (int index in new[] { 7, 12 })
+            {
+                int value = sequence.Operations[index].Value;
+                CollectionAssert.AreEqual(
+                    new[] { $"token=0,value={value}", $"token=2,value={value}" },
+                    control[index].Callbacks,
+                    report
+                );
+            }
+            foreach (int index in new[] { 10, 15 })
+            {
+                CollectionAssert.AreEqual(
+                    new[] { $"token=2,value={sequence.Operations[index].Value}" },
+                    control[index].Callbacks,
+                    report
+                );
+            }
+            StringAssert.Contains("host[1]=destroyed/0", control[7].State, report);
+            StringAssert.Contains("enabled=1011", control[7].State, report);
+            StringAssert.Contains(
+                "tokenMetadataCallsHistory=1/3/3,0/0/0,1/0/0,0/0/0,",
+                control[7].State,
+                report
+            );
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(control, candidate);
+            if (omitPersistence)
+            {
+                Assert.That(mismatch, Is.Not.Null, report);
+                report += "\n" + mismatch.BuildReport(sequence);
+                Assert.That(mismatch.Index, Is.EqualTo(unloadOperation + 1), report);
+                Assert.That(mismatch.Category, Is.EqualTo("callbacks"), report);
+                CollectionAssert.AreEqual(
+                    new[] { "token=2,value=17" },
+                    candidate[7].Callbacks,
+                    report
+                );
+            }
+            else
+            {
+                Assert.That(mismatch, Is.Null, mismatch?.BuildReport(sequence) ?? report);
+            }
+        }
+
+        private IEnumerator ReplaySceneUnload(
+            BusTraceSequence sequence,
+            int unloadOperation,
+            bool omitPersistence,
+            List<BusTraceObservation> observations
+        )
+        {
+            Assert.That(
+                DifferentialBusTrace.IsValid(sequence),
+                Is.True,
+                "Scene replay inputs must remain valid."
+            );
+            Scene originalScene = SceneManager.GetActiveScene();
+            _sceneUnload = null;
+            _ownedScene = SceneManager.CreateScene("DifferentialScene-" + sequence.Scenario.Kind);
+            yield return null;
+            bool requestUnload = false;
+            using (
+                NativeHostAdapter adapter = CreateAdapter(
+                    sequence.Scenario,
+                    configureHost: (slot, host) =>
+                    {
+                        if (slot < 2)
+                        {
+                            SceneManager.MoveGameObjectToScene(host, _ownedScene);
+                            Assert.That(
+                                host.scene,
+                                Is.EqualTo(_ownedScene),
+                                "The ordinary and persistent owners must start in the unloaded scene."
+                            );
+                            if (slot == 0 && !omitPersistence)
+                            {
+                                UnityEngine.Object.DontDestroyOnLoad(host);
+                            }
+                        }
+                    },
+                    onCallback: slot =>
+                    {
+                        if (requestUnload && slot == 1)
+                        {
+                            requestUnload = false;
+                            _sceneUnload = SceneManager.UnloadSceneAsync(_ownedScene);
+                        }
+                    }
+                )
+            )
+            {
+                for (int index = 0; index < sequence.Operations.Count; ++index)
+                {
+                    requestUnload = index == unloadOperation;
+                    observations.Add(adapter.Execute(sequence.Operations[index]));
+                    if (index == unloadOperation)
+                    {
+                        Assert.That(
+                            _sceneUnload,
+                            Is.Not.Null,
+                            "The registered callback must request scene unload."
+                        );
+                        yield return _sceneUnload;
+                        Assert.That(
+                            !_ownedScene.IsValid() || !_ownedScene.isLoaded,
+                            Is.True,
+                            "Native scene unload must finish before the next operation."
+                        );
+                        Assert.That(
+                            SceneManager.GetActiveScene(),
+                            Is.EqualTo(originalScene),
+                            "Replay must preserve the runner's active scene."
+                        );
+                    }
+                }
+            }
+        }
 
         [SetUp]
         public void SetUp() =>
@@ -261,7 +467,9 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageScenario scenario,
             bool ignoreDisable = false,
             bool startsActive = true,
-            bool receiveWhileDisabled = false
+            bool receiveWhileDisabled = false,
+            Action<int, GameObject> configureHost = null,
+            Action<int> onCallback = null
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
@@ -273,11 +481,18 @@ namespace DxMessaging.Tests.Runtime.Core
             bus.DiagnosticsMode = false;
             NativeOwners owners = new(
                 bus,
-                slot => Track(new GameObject($"DifferentialHost-{scenario.Kind}-{slot}")),
+                slot =>
+                {
+                    GameObject host = Track(
+                        new GameObject($"DifferentialHost-{scenario.Kind}-{slot}")
+                    );
+                    configureHost?.Invoke(slot, host);
+                    return host;
+                },
                 startsActive,
                 receiveWhileDisabled
             );
-            return new NativeHostAdapter(scenario, bus, owners, ignoreDisable);
+            return new NativeHostAdapter(scenario, bus, owners, ignoreDisable, onCallback);
         }
 
         private static string Report(
@@ -324,18 +539,24 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             private readonly NativeOwners _owners;
             private readonly bool _ignoreDisable;
+            private readonly Action<int> _onCallback;
 
             internal NativeHostAdapter(
                 MessageScenario scenario,
                 MessageBus bus,
                 NativeOwners owners,
-                bool ignoreDisable
+                bool ignoreDisable,
+                Action<int> onCallback
             )
                 : base(scenario, bus, reset: bus.ResetState, tokenFactory: owners.CreateToken)
             {
                 _owners = owners;
                 _ignoreDisable = ignoreDisable;
+                _onCallback = onCallback;
             }
+
+            protected override void OnCallback(int slot, IMessage message) =>
+                _onCallback?.Invoke(slot);
 
             protected override void SetHandlerActive(int slot, bool active)
             {
@@ -358,6 +579,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 for (int slot = 0; slot < _owners.Components.Length; ++slot)
                 {
                     MessagingComponent owner = _owners.Components[slot];
+                    if (owner == null)
+                    {
+                        state.Append(
+                            $"; host[{slot}]=destroyed/{owner._registeredListeners.Count}"
+                        );
+                        continue;
+                    }
                     GameObject host = owner.gameObject;
                     state.Append(
                         $"; host[{slot}]={(host.activeSelf ? 1 : 0)}/{(host.activeInHierarchy ? 1 : 0)}/{(owner.isActiveAndEnabled ? 1 : 0)}/{owner._registeredListeners.Count}"
@@ -379,7 +607,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 try
                 {
                     MessagingComponent owner = _owners.Components[slot];
-                    owner.Release(owner);
+                    if (owner != null)
+                    {
+                        owner.Release(owner);
+                    }
+                    // For a destroyed host, observe OnDestroy cleanup without repairing it.
                     Assert.That(
                         owner._registeredListeners,
                         Is.Empty,

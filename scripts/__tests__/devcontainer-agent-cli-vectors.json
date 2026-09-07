@@ -46,7 +46,7 @@
     "stdout": [],
     "stderr": [
       "registry unavailable and {package} is not installed\\.",
-      "3 agent CLI installation\\(s\\) remain unavailable\\."
+      "3 agent CLI refresh\\(es\\) failed; see messages above\\."
     ],
     "installsPerPackage": 0,
     "commandsPresent": false
@@ -61,9 +61,37 @@
     "stdout": [],
     "stderr": [
       "{package} install attempt 3/3 failed\\.",
-      "3 agent CLI installation\\(s\\) remain unavailable\\."
+      "3 agent CLI refresh\\(es\\) failed; see messages above\\."
     ],
     "installsPerPackage": 3,
     "commandsPresent": false
+  },
+  {
+    "name": "successful install that leaves an old CLI on PATH",
+    "setup": {
+      "latest": "2.0.0",
+      "installed": "1.0.0",
+      "installNoop": true
+    },
+    "status": 1,
+    "stdout": [],
+    "stderr": [
+      "{package} install attempt 3/3 failed\\.",
+      "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+    ],
+    "installsPerPackage": 3,
+    "commandsPresent": true
+  },
+  {
+    "name": "malformed registry version",
+    "setup": {
+      "latest": "bad version",
+      "installed": "1.0.0"
+    },
+    "status": 1,
+    "stdout": [],
+    "stderr": ["Registry returned an invalid version for {package}\\."],
+    "installsPerPackage": 0,
+    "commandsPresent": true
   }
 ]

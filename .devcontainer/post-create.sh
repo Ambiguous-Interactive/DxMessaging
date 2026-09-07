@@ -98,7 +98,7 @@ install_agent_clis() {
 MCP_CONFIGURE_LOCK="${TMPDIR:-/tmp}/dxm-mcp-configure.lock"
 
 configure_agent_mcps() {
-    local configure=(node "${WORKSPACE_DIR}/scripts/mcp/unity-mcp.mjs" configure --no-discover --timeout 750)
+    local configure=(node "${WORKSPACE_DIR}/scripts/mcp/unity-mcp.mjs" configure --offline)
 
     if command -v flock >/dev/null 2>&1; then
         flock -w 180 "${MCP_CONFIGURE_LOCK}" "${configure[@]}"
@@ -144,54 +144,7 @@ source "${SCRIPT_DIR}/cache-contract.sh" || fail "failed to source cache-contrac
 # -----------------------------------------------------------------------------
 
 fix_volume_permissions() {
-    log_header "Fixing Volume Mount Permissions"
-
-    if ! cache_contract_validate_shape; then
-        log_error "Cache mount contract is invalid (sources/targets length mismatch)."
-        return 1
-    fi
-
-    local current_uid
-    local current_gid
-    current_uid="$(id -u)"
-    current_gid="$(id -g)"
-
-    # Docker named volumes only inherit ownership from image content on first
-    # attach. Existing named volumes may be root-owned after rebuilds, so
-    # verify and fix each mount target.
-    for i in "${!CACHE_MOUNT_TARGETS[@]}"; do
-        local source_name="${CACHE_MOUNT_SOURCES[$i]}"
-        local target_dir="${CACHE_MOUNT_TARGETS[$i]}"
-
-        mkdir -p "${target_dir}" 2>/dev/null || true
-
-        local owner_uid
-        owner_uid="$(cache_contract_get_owner_uid "${target_dir}" 2>/dev/null || echo "unknown")"
-        local foreign_entry=""
-        foreign_entry="$(find "${target_dir}" -xdev ! -uid "${current_uid}" -print -quit 2>/dev/null || true)"
-        if [[ "${owner_uid}" != "${current_uid}" ]] || [[ -n "${foreign_entry}" ]]; then
-            log_info "Fixing ownership of ${target_dir} (source=${source_name}, owner=${owner_uid}, expected=${current_uid})..."
-            if sudo chown -R "${current_uid}:${current_gid}" "${target_dir}" 2>/dev/null; then
-                owner_uid="$(cache_contract_get_owner_uid "${target_dir}" 2>/dev/null || echo "unknown")"
-            else
-                log_warning "Could not fix ownership of ${target_dir}"
-            fi
-        fi
-
-        if [[ "${owner_uid}" == "${current_uid}" ]]; then
-            log_success "${target_dir} ownership OK (source=${source_name}, uid=${owner_uid})"
-        else
-            log_error "${target_dir} ownership remains ${owner_uid} (expected ${current_uid}); sudo chown appears to have failed silently"
-        fi
-
-        local write_probe="${target_dir}/.dxm-write-probe-$$"
-        if touch "${write_probe}" 2>/dev/null; then
-            rm -f "${write_probe}"
-        else
-            log_error "${target_dir} is not writable by uid ${current_uid}"
-            return 1
-        fi
-    done
+    cache_contract_repair_permissions
 }
 
 # -----------------------------------------------------------------------------
@@ -392,7 +345,7 @@ main() {
     run_optional "Ensuring ~/.zshrc exports ~/.local/bin" ensure_path_line "$HOME/.zshrc"
     run_optional "Ensuring ~/.profile exports ~/.local/bin" ensure_path_line "$HOME/.profile"
 
-    run_optional "Refreshing Codex, OpenCode, and Nanocoder" install_agent_clis
+    run_optional "Refreshing Codex, OpenCode, and Nanocoder" install_agent_clis &
 
     # Step 3: workspace bootstrap.
     log_header "Bootstrapping Workspace"
@@ -402,8 +355,7 @@ main() {
     cd "${WORKSPACE_DIR}"
 
     run_optional "Restoring .NET local tools" dotnet tool restore
-    # `npm ci` cannot be used here: package-lock.json is gitignored, so a fresh clone has no
-    # lockfile and `npm ci` fails with EUSAGE before installing anything.
+    # npm install reuses the persistent modules tree; npm ci would remove it.
     run_optional "Installing workspace npm dependencies" npm install --prefer-offline --no-audit --no-fund
     run_optional "Configuring GitHub and Unity MCP for every agent" configure_agent_mcps
     run_optional "Pulling Git LFS content" git lfs pull
@@ -414,7 +366,7 @@ main() {
     if [[ "$(git config --local core.hooksPath 2>/dev/null || true)" == *scripts/hooks* ]]; then
         run_optional "Clearing stale core.hooksPath" git config --local --unset core.hooksPath
     fi
-    run_optional "Installing pre-commit hooks" pre-commit install --install-hooks
+    run_optional "Installing pre-commit hooks" pre-commit install
 
     # Step 4: make the SDK pinned by SourceGenerators/global.json resolvable
     # so `npm run validate:all` (check:analyzers) works out of the box.

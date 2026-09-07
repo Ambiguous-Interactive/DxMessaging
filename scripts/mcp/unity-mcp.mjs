@@ -1,16 +1,6 @@
 #!/usr/bin/env node
-/**
- * Unity MCP endpoint discovery, client auto-configuration, and streamable-HTTP bridge.
- *
- *   node scripts/mcp/unity-mcp.mjs probe       Find an endpoint advertising Unity_RunCommand.
- *   node scripts/mcp/unity-mcp.mjs configure   Discover, then write every MCP client config.
- *   node scripts/mcp/unity-mcp.mjs bridge      Serve the Unity relay over authenticated HTTP.
- *
- * Topology: the Unity editor and its relay binary run on the host; agents run in the devcontainer.
- * `bridge` runs beside Unity, `probe` and `configure` run beside the agent. Only `bridge` needs the
- * Unity project directory, which is why `--project` is validated for that command alone -- the
- * project path names a host filesystem location that does not exist inside the container.
- */
+// Host: bridge exposes Unity CLI (or the legacy relay) over authenticated HTTP.
+// Container: configure writes MCP clients; probe checks editor readiness.
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
@@ -20,15 +10,36 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import {
-  StreamableHTTPClientTransport,
-  StreamableHTTPError
-} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { parse as parseToml } from "smol-toml";
+import { createRequire } from "node:module";
+// The image copy keeps configuration available before workspace npm install finishes.
+const require = createRequire(import.meta.url);
+const dependency = (name) =>
+  import(
+    pathToFileURL(
+      require.resolve(name, {
+        paths: [path.dirname(fileURLToPath(import.meta.url)), "/opt/dxm-mcp"]
+      })
+    ).href
+  );
+const [
+  { Client },
+  { StreamableHTTPClientTransport, StreamableHTTPError },
+  { Server },
+  { StreamableHTTPServerTransport },
+  { isInitializeRequest, McpError },
+  { parse: parseToml, stringify: stringifyToml },
+  { parse: parseJsonc }
+] = await Promise.all(
+  [
+    "@modelcontextprotocol/sdk/client/index.js",
+    "@modelcontextprotocol/sdk/client/streamableHttp.js",
+    "@modelcontextprotocol/sdk/server/index.js",
+    "@modelcontextprotocol/sdk/server/streamableHttp.js",
+    "@modelcontextprotocol/sdk/types.js",
+    "smol-toml",
+    "jsonc-parser"
+  ].map(dependency)
+);
 export const REPO_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
 export const DEFAULTS = Object.freeze({
@@ -47,12 +58,9 @@ export const DEFAULTS = Object.freeze({
   bodyTimeout: 15_000,
   maxSessions: 8
 });
-// Ports tried during discovery, after any explicitly configured one. 9020 is the bridge default;
-// 9003 is the port the retired supergateway bridge used, kept so an already-running host keeps working.
+// Bridge default and the retired supergateway port. Explicit settings replace these.
 export const FALLBACK_PORTS = Object.freeze([9020, 9003]);
-// Hosts tried during discovery, after any explicitly configured one. host.docker.internal is the
-// Docker Desktop bridge; the resolv.conf nameserver and default gateway cover WSL2 and plain Linux
-// bridge networking respectively; localhost covers running the agent on the same box as Unity.
+// Docker Desktop and same-host defaults; discovery also checks WSL and Linux gateways.
 export const FALLBACK_HOSTS = Object.freeze(["host.docker.internal", "127.0.0.1"]);
 const OPTION_NAMES = new Set([
   "bind",
@@ -61,6 +69,8 @@ const OPTION_NAMES = new Set([
   "path",
   "project",
   "relay",
+  "backend",
+  "cli",
   "request-timeout",
   "session-timeout",
   "timeout",
@@ -69,9 +79,10 @@ const OPTION_NAMES = new Set([
   "protocol-version",
   "log-level",
   "token",
-  "no-discover"
+  "no-discover",
+  "offline"
 ]);
-const FLAG_NAMES = new Set(["no-discover"]);
+const FLAG_NAMES = new Set(["no-discover", "offline"]);
 const ENV_KEYS = Object.freeze({
   bindHost: "UNITY_MCP_BIND_HOST",
   host: "UNITY_MCP_BRIDGE_HOST",
@@ -79,6 +90,8 @@ const ENV_KEYS = Object.freeze({
   endpointPath: "UNITY_MCP_BRIDGE_PATH",
   projectPath: "UNITY_PROJECT_PATH",
   relayPath: "UNITY_MCP_RELAY_PATH",
+  backend: "UNITY_MCP_BACKEND",
+  cliPath: "UNITY_CLI_PATH",
   requestTimeout: "UNITY_MCP_REQUEST_TIMEOUT",
   sessionTimeout: "UNITY_MCP_SESSION_TIMEOUT",
   timeout: "UNITY_MCP_PROBE_TIMEOUT",
@@ -105,13 +118,9 @@ export function parseArgs(argv) {
     }
     const separator = token.indexOf("=");
     const name = token.slice(2, separator === -1 ? undefined : separator);
-    if (!OPTION_NAMES.has(name)) {
-      fail(`Unknown option: --${name}`);
-    }
+    if (!OPTION_NAMES.has(name)) fail(`Unknown option: --${name}`);
     if (FLAG_NAMES.has(name)) {
-      if (separator !== -1) {
-        fail(`--${name} does not take a value`);
-      }
+      if (separator !== -1) fail(`--${name} does not take a value`);
       result[name] = true;
       continue;
     }
@@ -119,16 +128,12 @@ export function parseArgs(argv) {
     if (value === undefined || value.startsWith("--")) {
       fail(`Missing value for --${name}`);
     }
-    if (value === "") {
-      fail(`--${name} requires a non-empty value`);
-    }
+    if (value === "") fail(`--${name} requires a non-empty value`);
     result[name] = value;
   }
   return result;
 }
-// A quoted value runs to the last quote that leaves only whitespace or a comment behind. The
-// alternation lets the engine backtrack over a trailing backslash, so a Windows path written as
-// "D:\Program Files\Proj\" parses while an escaped quote inside the value ("say \"hi\"") still does.
+// Match through the last closing quote; allow trailing backslashes in Windows paths.
 const QUOTED_VALUE = Object.freeze({
   '"': /^"((?:\\"|[^"])*)"\s*(?:#.*)?$/,
   "'": /^'((?:\\'|[^'])*)'\s*(?:#.*)?$/
@@ -137,57 +142,40 @@ export function parseDotEnv(raw, source = ".env.local") {
   const values = {};
   for (const [index, original] of raw.split(/\r?\n/).entries()) {
     const line = original.trim();
-    if (!line || line.startsWith("#")) {
-      continue;
-    }
+    if (!line || line.startsWith("#")) continue;
     const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (!match) {
-      fail(`Invalid ${source} entry on line ${index + 1}`);
-    }
+    if (!match) fail(`Invalid ${source} entry on line ${index + 1}`);
     let value = match[2].trim();
     const quote = QUOTED_VALUE[value[0]] ? value[0] : undefined;
     if (quote) {
       const quoted = QUOTED_VALUE[quote].exec(value);
-      if (!quoted) {
-        fail(`Invalid quoted value in ${source} on line ${index + 1}`);
-      }
+      if (!quoted) fail(`Invalid quoted value in ${source} on line ${index + 1}`);
       // Only double quotes carry escapes, matching POSIX shell and dotenv semantics.
       value = quote === '"' ? quoted[1].replace(/\\(["\\])/g, "$1") : quoted[1];
     } else {
       const comment = value.search(/\s+#/);
-      if (comment !== -1) {
-        value = value.slice(0, comment).trimEnd();
-      }
+      if (comment !== -1) value = value.slice(0, comment).trimEnd();
     }
     values[match[1]] = value;
   }
   return values;
 }
-/**
- * `.env.local` is shared with unrelated tooling, so one line this parser cannot read must not abort
- * `probe`, `configure`, or `bridge`. Each line is parsed on its own and a bad one is warned about and
- * skipped; `parseDotEnv` itself stays strict.
- */
+// Skip unrelated malformed dotenv lines, with line-number-only diagnostics.
 export function readLocalEnv(repoRoot) {
   const envPath = path.join(repoRoot, ".env.local");
-  if (!fs.existsSync(envPath)) {
-    return {};
-  }
+  if (!fs.existsSync(envPath)) return {};
   const values = {};
   for (const [index, line] of fs.readFileSync(envPath, "utf8").split(/\r?\n/).entries()) {
     try {
       Object.assign(values, parseDotEnv(line, envPath));
     } catch {
-      console.warn(`unity-mcp: ignoring unparsable ${envPath} line ${index + 1}: ${line.trim()}`);
+      console.warn(`unity-mcp: ignoring unparsable ${envPath} line ${index + 1}`);
     }
   }
   return values;
 }
-// Validation
 function integer(value, name, minimum, maximum) {
-  if (!/^\d+$/.test(String(value))) {
-    fail(`${name} must be an integer`);
-  }
+  if (!/^\d+$/.test(String(value))) fail(`${name} must be an integer`);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
     fail(`${name} must be between ${minimum} and ${maximum}`);
@@ -195,16 +183,12 @@ function integer(value, name, minimum, maximum) {
   return parsed;
 }
 function validateText(value, name) {
-  if (/[\0\r\n]/.test(value)) {
-    fail(`${name} contains an invalid control character`);
-  }
+  if (/[\0\r\n]/.test(value)) fail(`${name} contains an invalid control character`);
   return value;
 }
 export function validateHost(value, name = "Host") {
   validateText(value, name);
-  if (net.isIP(value)) {
-    return value;
-  }
+  if (net.isIP(value)) return value;
   const candidate = value.endsWith(".") ? value.slice(0, -1) : value;
   const labels = candidate.split(".");
   const labelPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
@@ -239,9 +223,7 @@ export function validateEndpointPath(value) {
   return normalized;
 }
 function validateToken(value) {
-  if (value === undefined) {
-    return undefined;
-  }
+  if (value === undefined) return undefined;
   if (!/^[A-Za-z0-9._~-]{32,256}$/.test(value)) {
     fail("Bearer token must be 32-256 URL-safe characters");
   }
@@ -250,23 +232,19 @@ function validateToken(value) {
 function githubToken(environment, local) {
   const keys = ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN", "GITHUB_PAT"];
   const value = first(...keys.map((key) => environment[key]), ...keys.map((key) => local[key]));
-  if (value?.length > 1_024) {
-    fail("GitHub token must not exceed 1024 characters");
-  }
+  if (value?.length > 1_024) fail("GitHub token must not exceed 1024 characters");
   return value === undefined ? value : validateText(value, "GitHub token");
 }
-// Option resolution
-
-/**
- * `repoRoot` is where MCP client configs and `.env.local` live; it is always this repository.
- * `projectPath` is the Unity project the relay opens and is only meaningful on the host, so it is
- * resolved lazily and validated by `requireProjectPath` from the `bridge` command alone.
- */
+// Host project paths are validated only by bridge; they do not exist in the container.
 export function resolveOptions(args, environment = process.env, localValues, repoRoot = REPO_ROOT) {
   const local = localValues ?? readLocalEnv(repoRoot);
   const get = (argName, key, fallback) =>
     first(args[argName], environment[ENV_KEYS[key]], local[ENV_KEYS[key]], fallback);
 
+  const number = (arg, key, max, fallback = DEFAULTS[key]) => {
+    const label = arg[0].toUpperCase() + arg.slice(1).replaceAll("-", " ");
+    return integer(get(arg, key, fallback), label, 1, max);
+  };
   const explicitHost = first(args.host, environment[ENV_KEYS.host], local[ENV_KEYS.host]);
   const explicitPort = first(args.port, environment[ENV_KEYS.port], local[ENV_KEYS.port]);
   const projectPath = first(
@@ -284,32 +262,14 @@ export function resolveOptions(args, environment = process.env, localValues, rep
     explicitPort: explicitPort === undefined ? undefined : integer(explicitPort, "Port", 1, 65_535),
     endpointPath: validateEndpointPath(get("path", "endpointPath", DEFAULTS.endpointPath)),
     projectPath: projectPath === undefined ? undefined : path.resolve(projectPath),
+    backend: get("backend", "backend", "cli"),
+    cliPath: get("cli", "cliPath", "unity"),
     relayPath: first(args.relay, environment[ENV_KEYS.relayPath], local[ENV_KEYS.relayPath]),
-    requestTimeout: integer(
-      get("request-timeout", "requestTimeout", DEFAULTS.requestTimeout),
-      "Request timeout",
-      1,
-      86_400_000
-    ),
-    sessionTimeout: integer(
-      get("session-timeout", "sessionTimeout", DEFAULTS.sessionTimeout),
-      "Session timeout",
-      1,
-      86_400_000
-    ),
-    timeout: integer(get("timeout", "timeout", DEFAULTS.probeTimeout), "Probe timeout", 1, 300_000),
-    connectTimeout: integer(
-      get("connect-timeout", "connectTimeout", DEFAULTS.connectTimeout),
-      "Connect timeout",
-      1,
-      60_000
-    ),
-    maxSessions: integer(
-      get("max-sessions", "maxSessions", DEFAULTS.maxSessions),
-      "Max sessions",
-      1,
-      1_024
-    ),
+    requestTimeout: number("request-timeout", "requestTimeout", 86_400_000),
+    sessionTimeout: number("session-timeout", "sessionTimeout", 86_400_000),
+    timeout: number("timeout", "timeout", 300_000, DEFAULTS.probeTimeout),
+    connectTimeout: number("connect-timeout", "connectTimeout", 60_000),
+    maxSessions: number("max-sessions", "maxSessions", 1_024),
     protocolVersion: validateText(
       get("protocol-version", "protocolVersion", DEFAULTS.protocolVersion),
       "Protocol version"
@@ -317,12 +277,19 @@ export function resolveOptions(args, environment = process.env, localValues, rep
     logLevel: get("log-level", "logLevel", "info"),
     bearerToken: validateToken(get("token", "bearerToken", undefined)),
     githubToken: githubToken(environment, local),
+    zaiToken: first(
+      environment.Z_AI_API_KEY,
+      environment.ZAI_API_KEY,
+      local.Z_AI_API_KEY,
+      local.ZAI_API_KEY
+    ),
+    offline: args.offline === true,
     discover: args["no-discover"] !== true
   };
 
-  if (options.relayPath) {
-    options.relayPath = path.resolve(options.repoRoot, options.relayPath);
-  }
+  if (!["cli", "relay"].includes(options.backend)) fail("Backend must be cli or relay");
+  if (options.zaiToken) validateText(options.zaiToken, "Z.AI key");
+  if (options.relayPath) options.relayPath = path.resolve(options.repoRoot, options.relayPath);
   if (!/^(?:debug|info|none)$/.test(options.logLevel)) {
     fail("Log level must be debug, info, or none");
   }
@@ -396,11 +363,7 @@ function readTextOrEmpty(filePath) {
   }
 }
 
-/**
- * Candidate endpoints in priority order, de-duplicated. An explicitly configured host or port is the
- * ONLY candidate on that axis, so discovery can never override a deliberate setting: `--host X`
- * probes X against the fallback ports, and `--host X --port Y` yields exactly one candidate.
- */
+// Explicit host/port settings replace discovery defaults on that axis.
 export function endpointCandidates(options, runtime = {}) {
   const readFile = runtime.readFile ?? readTextOrEmpty;
   const hosts = options.explicitHost
@@ -443,20 +406,11 @@ export function tcpReachable(host, port, timeout) {
   });
 }
 
-/**
- * The tool that proves a live editor is behind the relay, and the read-only action to ask it for.
- * The relay keeps advertising its whole registry after the editor's discovery record goes stale,
- * so `tools/list` alone reports green while every editor-backed call answers "Unity not detected"
- * (#418). This one is a pure read: no scene, asset, or play-state change, and no modal.
- */
+// Read-only state proves the relay's advertised tools reach a live Editor (#418).
 const EDITOR_READY_TOOL = "Unity_ManageEditor";
 const EDITOR_READY_ARGUMENTS = { Action: "GetState" };
 
-/**
- * Complete the pinned MCP lifecycle and optionally inspect the editor tool registry.
- * `readiness` is `false` (lifecycle only), `"tools"` (Unity_RunCommand is advertised), or
- * `"editor"` (a live editor answered as well).
- */
+// Readiness: false = handshake, "tools" = registry, "editor" = live state.
 export async function probeEndpoint(candidate, options, fetchImpl = fetch, readiness = false) {
   const url = endpointUrl(candidate);
   const classify = (status, detail) => ({ ...candidate, url, ok: false, status, detail });
@@ -568,19 +522,38 @@ export async function probeEndpoint(candidate, options, fetchImpl = fetch, readi
         const cursors = new Set();
         let cursor;
         let toolCount = 0;
+        let commandAdvertised = false;
         let editorToolAdvertised = false;
+        let editorTool = EDITOR_READY_TOOL;
         operation = "tools/list";
         for (let page = 0; page < 100; page += 1) {
           const params = cursor === undefined ? {} : { cursor };
           const listed = await awaited(client.listTools(params, { signal: lifecycleSignal }));
           toolCount += listed.tools.length;
-          editorToolAdvertised ||= listed.tools.some((t) => t.name === EDITOR_READY_TOOL);
-          if (listed.tools.some((tool) => tool.name === "Unity_RunCommand")) {
-            result = succeed({ sessionId, protocolVersion, toolCount, editorToolAdvertised });
+          if (listed.tools.some((t) => t.name === "editor_status")) editorTool = "editor_status";
+          editorToolAdvertised ||= listed.tools.some((t) => t.name === editorTool);
+          commandAdvertised ||= listed.tools.some(
+            (tool) => tool.name === "Unity_RunCommand" || tool.name === "editor_status"
+          );
+          // Editor readiness must search later pages before settling for a registry-only result.
+          if (
+            commandAdvertised &&
+            (readiness !== "editor" || editorToolAdvertised || listed.nextCursor === undefined)
+          ) {
+            result = succeed({
+              sessionId,
+              protocolVersion,
+              toolCount,
+              editorToolAdvertised,
+              editorTool
+            });
             break;
           }
           if (listed.nextCursor === undefined) {
-            result = classify("not-ready", "Unity_RunCommand was not advertised");
+            result = classify(
+              "not-ready",
+              "Neither Unity_RunCommand nor editor_status was advertised"
+            );
             break;
           }
           if (cursors.has(listed.nextCursor)) {
@@ -597,7 +570,10 @@ export async function probeEndpoint(candidate, options, fetchImpl = fetch, readi
           operation = "tools/call";
           const call = await awaited(
             client.callTool(
-              { name: EDITOR_READY_TOOL, arguments: EDITOR_READY_ARGUMENTS },
+              {
+                name: editorTool,
+                arguments: editorTool === EDITOR_READY_TOOL ? EDITOR_READY_ARGUMENTS : {}
+              },
               undefined,
               { signal: lifecycleSignal }
             )
@@ -606,10 +582,17 @@ export async function probeEndpoint(candidate, options, fetchImpl = fetch, readi
             .map((part) => part.text ?? "")
             .join(" ")
             .trim();
-          if (call.isError || !/"IsCompiling"/.test(reply)) {
+          if (
+            call.isError ||
+            !(
+              editorTool === EDITOR_READY_TOOL
+                ? /"IsCompiling"/
+                : /"compiling"\s*:\s*(?:true|false)/
+            ).test(reply)
+          ) {
             result = classify(
               "not-ready",
-              `${EDITOR_READY_TOOL}: ${reply.slice(0, 160) || "returned no editor state"}`
+              `${editorTool}: ${reply.slice(0, 160) || "returned no editor state"}`
             );
           }
         }
@@ -639,9 +622,7 @@ export async function discoverEndpoint(options, runtime = {}) {
     log(options, "debug", `  ${result.status}: ${result.detail ?? "ok"}`);
     if (result.cleanupWarning) console.warn(`${result.url}: ${result.cleanupWarning}`);
     attempts.push(result);
-    if (result.ok) {
-      return { found: result, attempts };
-    }
+    if (result.ok) return { found: result, attempts };
   }
   return { found: undefined, attempts };
 }
@@ -679,15 +660,8 @@ function atomicWrite(filePath, content, mode) {
   }
 }
 
-/**
- * Write several files as one unit. Every file is staged before any is committed, and a failure part
- * way through rolls back the files already renamed, so a crash cannot leave one agent pointed at a
- * new endpoint while another still holds the old one.
- *
- * Rollback is itself failure-safe: every restore is attempted even when an earlier one fails (Windows
- * `rename` returns EPERM whenever an editor holds the destination open, which is exactly these four
- * config files), and the ORIGINAL error is rethrown with the rollback failures attached as `cause`.
- */
+// Stage every config first. Roll back all commits on failure, collecting rollback
+// errors without hiding the original failure (Windows can hold config files open).
 export function transactionalWrite(writes, beforeCommit = () => {}) {
   const changed = writes.filter(
     ([filePath, content]) =>
@@ -741,9 +715,9 @@ export function transactionalWrite(writes, beforeCommit = () => {}) {
 }
 
 function ensureBearerToken(options) {
-  if (options.bearerToken) {
-    return options;
-  }
+  if (options.bearerToken) return options;
+  const saved = readLocalEnv(options.repoRoot)[ENV_KEYS.bearerToken];
+  if (saved) return { ...options, bearerToken: validateToken(saved) };
   const bearerToken = randomBytes(32).toString("hex");
   const envPath = path.join(options.repoRoot, ".env.local");
   const current = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -752,61 +726,12 @@ function ensureBearerToken(options) {
   return { ...options, bearerToken };
 }
 
-/**
- * Strip `//` and block comments plus trailing commas so JSONC parses. `.vscode/mcp.json` is JSONC and
- * VS Code's own "MCP: Add Server" scaffolding writes a comment into it, so refusing JSONC means
- * `configure` cannot run at all for those users. String contents are tracked so a `//` inside a URL
- * or a comma inside a string value is never mistaken for syntax.
- */
+// Reject parser recovery: malformed configs must never be overwritten.
 export function stripJsonComments(raw) {
-  let out = "";
-  let inString = false;
-  let escaped = false;
-  // Index of the last non-whitespace character already in `out`. Re-scanning `out` with a regex on
-  // every closing bracket flattens the rope V8 builds from `out += char`, which makes the pass
-  // quadratic in the number of closing brackets: a 364 KB config took 9 s, a 1.5 MB one took 150 s.
-  let lastNonSpace = -1;
-  // The character at `lastNonSpace`, carried separately: `out[lastNonSpace]` would flatten the same
-  // rope the regex did, which is most of the remaining cost.
-  let lastNonSpaceChar = "";
-  const append = (text) => {
-    if (text.trim() !== "") {
-      lastNonSpace = out.length + text.length - 1;
-      lastNonSpaceChar = text[text.length - 1];
-    }
-    out += text;
-  };
-  for (let index = 0; index < raw.length; index += 1) {
-    const char = raw[index];
-    if (inString) {
-      append(char);
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-    } else if (char === "/" && raw[index + 1] === "/") {
-      const end = raw.indexOf("\n", index + 2);
-      index = end === -1 ? raw.length : end - 1;
-      continue;
-    } else if (char === "/" && raw[index + 1] === "*") {
-      const end = raw.indexOf("*/", index + 2);
-      index = end === -1 ? raw.length : end + 1;
-      continue;
-    } else if ((char === "}" || char === "]") && lastNonSpaceChar === ",") {
-      // Drop a trailing comma in place. Valid JSON never takes this branch. `append` below restores
-      // `lastNonSpace` to the closing bracket, so a nested `[1,],}` still sees its own comma.
-      out = out.slice(0, lastNonSpace) + out.slice(lastNonSpace + 1);
-    }
-    append(char);
-  }
-  return out;
+  const errors = [];
+  const parsed = parseJsonc(raw, errors, { allowTrailingComma: true });
+  if (errors.length) fail(`Invalid JSONC at offset ${errors[0].offset}`);
+  return JSON.stringify(parsed);
 }
 
 function readJsonObject(filePath) {
@@ -825,7 +750,7 @@ function readJsonObject(filePath) {
   return parsed;
 }
 
-export function prepareJsonServers(filePath, collection, servers) {
+export function prepareJsonServers(filePath, collection, servers, removed = []) {
   const document = readJsonObject(filePath);
   const existing = document[collection];
   if (
@@ -835,103 +760,43 @@ export function prepareJsonServers(filePath, collection, servers) {
     fail(`Expected ${collection} to be an object in ${filePath}`);
   }
   document[collection] = { ...(existing ?? {}), ...servers };
+  for (const name of removed) delete document[collection][name];
   return `${JSON.stringify(document, null, 2)}\n`;
 }
 
-function tomlString(value) {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-/**
- * Decide whether a TOML header line opens the table this tool owns. Parsing the single line with a
- * sentinel key is how a `[mcp_servers.unity-mcp]` header is told apart from any other header without
- * hand-writing a TOML grammar.
- */
-function classifyTomlHeader(line, serverName = "unity-mcp") {
-  if (!line.trimStart().startsWith("[")) {
-    return undefined;
-  }
-  const marker = "__dxm_mcp_table_marker_7d0f__";
-  try {
-    const parsed = parseToml(`${line}\n${marker} = true\n`);
-    const owned = parsed.mcp_servers?.[serverName]?.[marker] === true;
-    const hasMarker = JSON.stringify(parsed).includes(`"${marker}":true`);
-    return hasMarker ? { owned } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-const CODEX_AMBIGUOUS_MESSAGE = (reason, serverName = "unity-mcp") =>
-  `${reason} in .codex/config.toml, so this tool cannot tell which lines it owns. ` +
-  `Delete the [mcp_servers.${serverName}] table from .codex/config.toml (or move it to the end of the ` +
-  "file, after every multi-line value) and re-run configure.";
 export function mergeCodexToml(raw, url, bearerToken, serverName = "unity-mcp") {
-  const ambiguous = (reason) => CODEX_AMBIGUOUS_MESSAGE(reason, serverName);
-  const block = [
-    `[mcp_servers.${serverName}]`,
-    `url = ${tomlString(url)}`,
-    ...(bearerToken
-      ? [`http_headers = { Authorization = ${tomlString(`Bearer ${bearerToken}`)} }`]
-      : []),
-    "startup_timeout_sec = 20",
-    "tool_timeout_sec = 120",
-    "enabled = true",
-    ""
-  ].join("\n");
-  let parsed;
+  let document;
   try {
-    parsed = raw.trim() ? parseToml(raw) : {};
-  } catch (error) {
-    fail(`Invalid TOML in Codex config: ${error.message}`);
-  }
-  // Normalize line endings once so both the append and the replace path emit LF only; mixing CRLF
-  // input with an LF block would otherwise leave the file churning on every run under Windows.
-  const normalized = raw.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  const owned = lines
-    .map((line, index) => ({ index, header: classifyTomlHeader(line, serverName) }))
-    .filter((item) => item.header?.owned)
-    .map((item) => item.index);
-  if (owned.length > 1) {
-    fail(ambiguous(`Duplicate ${serverName} table`));
-  }
-  if (owned.length === 0) {
-    if (parsed.mcp_servers?.[serverName] !== undefined) {
-      fail(`Unsupported inline or dotted ${serverName} definition in Codex config`);
-    }
-    return `${normalized.trimEnd()}${normalized.trim() ? "\n\n" : ""}${block}`;
-  }
-
-  const start = owned[0];
-  // A `[mcp_servers.unity-mcp]` line inside a multi-line string is not a table header. Everything
-  // before a real header is itself complete TOML, so a prefix that will not parse proves the line
-  // scanner is about to splice through a string literal.
-  try {
-    parseToml(lines.slice(0, start).join("\n"));
+    document = raw.trim() ? parseToml(raw) : {};
   } catch {
-    fail(ambiguous(`A ${serverName} header line appears inside a multi-line value`));
+    fail("Invalid TOML in .codex/config.toml; fix the syntax and re-run configure");
   }
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (classifyTomlHeader(lines[index], serverName)) {
-      end = index;
-      break;
-    }
-  }
-  lines.splice(start, end - start, ...block.trimEnd().split("\n"), "");
-  const result = lines.join("\n").replace(/\n*$/, "\n");
-  try {
-    parseToml(result);
-  } catch {
-    fail(ambiguous(`Rewriting the ${serverName} table produced invalid TOML`));
-  }
-  return result;
+  const servers = document.mcp_servers ?? {};
+  if (typeof servers !== "object" || Array.isArray(servers)) fail("mcp_servers must be a table");
+  const config =
+    typeof url === "string"
+      ? {
+          url,
+          ...(bearerToken ? { http_headers: { Authorization: `Bearer ${bearerToken}` } } : {})
+        }
+      : url;
+  document.mcp_servers = servers;
+  if (config === null) delete servers[serverName];
+  else
+    servers[serverName] = {
+      ...config,
+      startup_timeout_sec: 30,
+      tool_timeout_sec: 300,
+      enabled: true
+    };
+  return stringifyToml(document);
 }
 
 /** Every MCP client config this repository owns, keyed by the schema each client expects. */
 export function clientConfigPaths(repoRoot) {
   return {
     claudeCode: path.join(repoRoot, ".mcp.json"),
+    copilot: path.join(repoRoot, ".copilot", "mcp-config.json"),
     cursor: path.join(repoRoot, ".cursor", "mcp.json"),
     vscode: path.join(repoRoot, ".vscode", "mcp.json"),
     codex: path.join(repoRoot, ".codex", "config.toml"),
@@ -939,79 +804,94 @@ export function clientConfigPaths(repoRoot) {
     nanocoder: path.join(repoRoot, ".nanocoder", "mcp.json")
   };
 }
-/** The Unity bridge is on the LAN; the hosted GitHub server is across the internet. */
-const REQUEST_TIMEOUT_MS = Object.freeze({ "unity-mcp": 20_000, github: 30_000 });
+const ZAI_SERVERS = ["web-search-prime", "web-reader", "zread", "zai-mcp-server"];
 
-function authorizationHeaders(token) {
-  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-}
-
-/**
- * Build the `unity-mcp` and `github` entries in one client's own schema. The three shapes are not
- * interchangeable: Nanocoder's loader reads `transport` where Claude Code, Cursor, and VS Code read
- * `type`; OpenCode names the same transport `remote`; and OpenCode publishes `McpRemoteConfig` with
- * `additionalProperties: false`, so a key that schema does not declare rejects the whole config.
- * `oauth: false` suppresses OpenCode's OAuth auto-detection once an explicit bearer token exists.
- * Omitting it leaves interactive GitHub OAuth available to a user who has no token.
- */
-function clientServers(kind, unityUrl, unityToken, githubToken) {
-  const server = (name, url, token) => {
-    const timeout = REQUEST_TIMEOUT_MS[name];
-    switch (kind) {
-      case "standard":
-        return { type: "http", url, ...authorizationHeaders(token) };
-      case "openCode":
-        return {
-          type: "remote",
-          url,
-          enabled: true,
-          timeout,
-          ...(token ? { oauth: false } : {}),
-          ...authorizationHeaders(token)
-        };
-      case "nanocoder":
-        return { transport: "http", url, timeout, ...authorizationHeaders(token) };
-      default:
-        return fail(`Unknown MCP client kind ${kind}`);
+// One catalog, rendered in each client's documented schema.
+function clientServers(kind, options, url) {
+  const catalog = {
+    "unity-mcp": { url, token: options.bearerToken },
+    github: { url: GITHUB_MCP_URL, token: options.githubToken },
+    git: { command: "mcp-server-git", args: ["--repository", options.repoRoot] },
+    fetch: { command: "mcp-server-fetch", args: [] }
+  };
+  if (options.zaiToken) {
+    for (const [name, endpoint] of [
+      ["web-search-prime", "web_search_prime"],
+      ["web-reader", "web_reader"],
+      ["zread", "zread"]
+    ]) {
+      catalog[name] = { url: `https://api.z.ai/api/mcp/${endpoint}/mcp`, token: options.zaiToken };
     }
-  };
-  return {
-    "unity-mcp": server("unity-mcp", unityUrl, unityToken),
-    github: server("github", GITHUB_MCP_URL, githubToken)
-  };
+    catalog["zai-mcp-server"] = {
+      command: "zai-mcp-server",
+      args: [],
+      env: { Z_AI_API_KEY: options.zaiToken, Z_AI_MODE: "ZAI" }
+    };
+  }
+  return Object.fromEntries(
+    Object.entries(catalog).map(([name, { url, token, command, args, env }]) => {
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      let config;
+      if (kind === "codex") {
+        // ZAI returns an empty 200 without Content-Type for initialized notifications.
+        // Codex's HTTP transport rejects it; the SDK-based adapter accepts it.
+        config =
+          url && ZAI_SERVERS.includes(name)
+            ? {
+                command: "mcp-remote",
+                args: [
+                  url,
+                  "--transport",
+                  "http-only",
+                  "--header",
+                  "Authorization:${ZAI_AUTH_HEADER}",
+                  "--silent"
+                ],
+                env: { ZAI_AUTH_HEADER: `Bearer ${token}` }
+              }
+            : url
+              ? { url, ...(headers ? { http_headers: headers } : {}) }
+              : { command, args, ...(env ? { env } : {}) };
+      } else if (kind === "openCode") {
+        config = url
+          ? { type: "remote", url, ...(headers ? { headers, oauth: false } : {}) }
+          : { type: "local", command: [command, ...args], ...(env ? { environment: env } : {}) };
+        Object.assign(config, { enabled: true, timeout: 30000 });
+      } else {
+        config = url
+          ? { url, ...(headers ? { headers } : {}) }
+          : { command, args, ...(env ? { env } : {}) };
+        config[kind === "nanocoder" ? "transport" : "type"] = url ? "http" : "stdio";
+        if (kind === "copilot") config.tools = ["*"];
+      }
+      return [name, config];
+    })
+  );
 }
 export function configure(inputOptions, endpoint, beforeCommit) {
   const options = ensureBearerToken(inputOptions);
   const url = endpointUrl(endpoint);
-  const standardServers = clientServers("standard", url, options.bearerToken, options.githubToken);
-  const openCodeServers = clientServers("openCode", url, options.bearerToken, options.githubToken);
-  const nanocoderServers = clientServers(
-    "nanocoder",
-    url,
-    options.bearerToken,
-    options.githubToken
-  );
   const paths = clientConfigPaths(options.repoRoot);
-  const codexRaw = fs.existsSync(paths.codex) ? fs.readFileSync(paths.codex, "utf8") : "";
-  const codexWithUnity = mergeCodexToml(codexRaw, url, options.bearerToken);
-  const written = transactionalWrite(
-    [
-      [paths.claudeCode, prepareJsonServers(paths.claudeCode, "mcpServers", standardServers)],
-      [paths.cursor, prepareJsonServers(paths.cursor, "mcpServers", standardServers)],
-      [paths.vscode, prepareJsonServers(paths.vscode, "servers", standardServers)],
-      [paths.codex, mergeCodexToml(codexWithUnity, GITHUB_MCP_URL, options.githubToken, "github")],
-      [paths.openCode, prepareJsonServers(paths.openCode, "mcp", openCodeServers)],
-      [paths.nanocoder, prepareJsonServers(paths.nanocoder, "mcpServers", nanocoderServers)]
-    ],
-    beforeCommit
-  );
-  for (const filePath of Object.values(paths)) {
-    fs.chmodSync(filePath, 0o600);
-  }
+  const removed = options.zaiToken ? [] : ZAI_SERVERS;
+  const writes = Object.entries(paths).map(([kind, file]) => {
+    const servers = clientServers(kind, options, url);
+    if (kind === "codex") {
+      let raw = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+      for (const [name, config] of [
+        ...Object.entries(servers),
+        ...removed.map((name) => [name, null])
+      ]) {
+        raw = mergeCodexToml(raw, config, undefined, name);
+      }
+      return [file, raw];
+    }
+    const collection = kind === "vscode" ? "servers" : kind === "openCode" ? "mcp" : "mcpServers";
+    return [file, prepareJsonServers(file, collection, servers, removed)];
+  });
+  const written = transactionalWrite(writes, beforeCommit);
+  for (const filePath of Object.values(paths)) fs.chmodSync(filePath, 0o600);
   return { url, written };
 }
-
-// Relay discovery and the bridge server
 
 export function relayCandidates({
   platform = process.platform,
@@ -1039,17 +919,14 @@ export function relayCandidates({
 export function findRelay(override, runtime = {}) {
   const candidates = override ? [path.resolve(override)] : relayCandidates(runtime);
   const found = candidates.find((candidate) => {
-    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
+    try {
+      if (!fs.statSync(candidate).isFile()) return false;
+      if ((runtime.platform ?? process.platform) !== "win32")
+        fs.accessSync(candidate, fs.constants.X_OK);
+      return true;
+    } catch {
       return false;
     }
-    if ((runtime.platform ?? process.platform) !== "win32") {
-      try {
-        fs.accessSync(candidate, fs.constants.X_OK);
-      } catch {
-        return false;
-      }
-    }
-    return true;
   });
   if (!found) {
     fail(
@@ -1089,10 +966,7 @@ function log(options, level, message) {
   (level === "error" ? console.error : console.log)(message);
 }
 
-/**
- * Client-caused body failures carry the HTTP status and JSON-RPC error to report. Without this a
- * malformed body came back as HTTP 500 / -32603 "internal error", which clients retry forever.
- */
+// Preserve client-error status codes instead of reporting retryable HTTP 500 errors.
 function bodyError(message, httpStatus, code, rpcMessage) {
   return Object.assign(new Error(message), { httpStatus, rpc: { code, message: rpcMessage } });
 }
@@ -1159,7 +1033,10 @@ function sendJson(response, statusCode, payload, closeConnection = false) {
 export async function startBridge(inputOptions, runtime = {}) {
   const options = ensureBearerToken(inputOptions);
   const projectPath = requireProjectPath(options);
-  const relayPath = findRelay(options.relayPath, runtime.relayRuntime);
+  const relayPath =
+    options.backend === "relay"
+      ? findRelay(options.relayPath, runtime.relayRuntime)
+      : (options.cliPath ?? "unity");
   await assertPortAvailable(options.port, options.bindHost);
 
   const maxSessions = options.maxSessions ?? DEFAULTS.maxSessions;
@@ -1169,9 +1046,7 @@ export async function startBridge(inputOptions, runtime = {}) {
   let starting = 0;
 
   const disposeSession = async (session) => {
-    if (!session || session.disposed) {
-      return;
-    }
+    if (!session || session.disposed) return;
     log(options, "debug", `Disposing session ${session.sessionId ?? "(provisional)"}`);
     session.disposed = true;
     provisionalSessions.delete(session);
@@ -1194,29 +1069,20 @@ export async function startBridge(inputOptions, runtime = {}) {
     await session.transport.close().catch(() => {});
   };
 
-  const touch = (sessionId) => {
+  const armTimeout = (sessionId, timeout, idleOnly = false) => {
     const session = sessions.get(sessionId);
-    if (!session || session.pendingRequests.size) {
+    if (!session || (idleOnly && session.pendingRequests.size)) {
       return;
     }
     clearTimeout(session.timer);
     session.timer = setTimeout(() => {
       disposeSession(session).catch(() => {});
-    }, options.sessionTimeout);
+    }, timeout);
     session.timer.unref();
   };
 
-  const armRequestTimeout = (sessionId) => {
-    const session = sessions.get(sessionId);
-    if (!session) {
-      return;
-    }
-    clearTimeout(session.timer);
-    session.timer = setTimeout(() => {
-      disposeSession(session).catch(() => {});
-    }, options.requestTimeout);
-    session.timer.unref();
-  };
+  const touch = (id) => armTimeout(id, options.sessionTimeout, true);
+  const armRequestTimeout = (id) => armTimeout(id, options.requestTimeout);
 
   const createSession = async () => {
     let sessionId;
@@ -1237,13 +1103,17 @@ export async function startBridge(inputOptions, runtime = {}) {
       { capabilities: {} }
     );
     await server.connect(transport);
-    const relayArgs = buildRelayArgs(projectPath);
+    const relayArgs =
+      options.backend === "relay"
+        ? buildRelayArgs(projectPath)
+        : ["mcp", "--project-path", projectPath];
     log(options, "debug", `Spawning relay: ${relayPath} ${relayArgs.join(" ")}`);
     const child = runtime.spawnRelay
       ? runtime.spawnRelay(relayPath, relayArgs)
       : spawn(relayPath, relayArgs, {
           stdio: ["pipe", "pipe", "pipe"],
           shell: false,
+          cwd: projectPath,
           windowsHide: true
         });
     const session = {
@@ -1254,7 +1124,7 @@ export async function startBridge(inputOptions, runtime = {}) {
       stopping: false,
       disposed: false,
       sessionId: undefined,
-      pendingRequests: new Set()
+      pendingRequests: new Map()
     };
     provisionalSessions.add(session);
     // A session that never reaches `onsessioninitialized` holds a live relay child, so it gets the
@@ -1270,17 +1140,25 @@ export async function startBridge(inputOptions, runtime = {}) {
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
       for (const line of lines) {
-        if (!line.trim()) {
-          continue;
-        }
+        if (!line.trim()) continue;
         try {
           const message = JSON.parse(line);
           if (message.id !== undefined && !message.method) {
-            session.pendingRequests.delete(`${typeof message.id}:${message.id}`);
+            const requestKey = `${typeof message.id}:${message.id}`;
+            if (
+              session.pendingRequests.get(requestKey) === "tools/list" &&
+              message.result?.tools?.length === 0 &&
+              message.result.nextCursor === undefined
+            ) {
+              delete message.result;
+              message.error = {
+                code: -32002,
+                message: `Unity has no tools for ${projectPath}. Check that Pipeline is loaded and running in this Editor, then reconnect. Run unity:mcp:probe to verify editor readiness.`
+              };
+            }
+            session.pendingRequests.delete(requestKey);
           }
-          if (sessionId) {
-            touch(sessionId);
-          }
+          if (sessionId) touch(sessionId);
           Promise.resolve(transport.send(message)).catch((error) =>
             log(options, "error", `Relay response failed: ${error.message}`)
           );
@@ -1301,16 +1179,19 @@ export async function startBridge(inputOptions, runtime = {}) {
       disposeSession(session).catch(() => {});
     });
     child.once("exit", () => {
-      if (!session.stopping) {
-        disposeSession(session).catch(() => {});
-      }
+      if (!session.stopping) disposeSession(session).catch(() => {});
     });
 
     transport.onmessage = (message) => {
       const startsRequest = message.id !== undefined && message.method;
       const wasIdle = session.pendingRequests.size === 0;
       if (startsRequest) {
-        session.pendingRequests.add(`${typeof message.id}:${message.id}`);
+        session.pendingRequests.set(
+          `${typeof message.id}:${message.id}`,
+          message.method === "tools/list" && message.params?.cursor !== undefined
+            ? "tools/list/page"
+            : message.method
+        );
       }
       child.stdin.write(`${JSON.stringify(message)}\n`);
       if (sessionId && startsRequest && wasIdle && session.pendingRequests.size) {
@@ -1390,9 +1271,7 @@ export async function startBridge(inputOptions, runtime = {}) {
         });
         return;
       }
-      if (sessionId) {
-        touch(sessionId);
-      }
+      if (sessionId) touch(sessionId);
       await transport.handleRequest(request, response, body);
     } catch (error) {
       const status = error.httpStatus ?? 500;
@@ -1453,11 +1332,7 @@ export async function startBridge(inputOptions, runtime = {}) {
 
 // Commands
 
-/**
- * `--no-discover` narrows the candidate list to the configured endpoint; it does not skip the
- * readiness check. Returning early without probing left `runProbe` with no `found` and empty attempts
- * list, so `probe --no-discover` always failed and said nothing about why.
- */
+// --no-discover narrows candidates but still checks readiness.
 async function resolveEndpoint(options, runtime = {}) {
   const configured = {
     host: options.host,
@@ -1488,21 +1363,19 @@ export async function runProbe(options, runtime = {}) {
       `No Unity MCP endpoint is ready for editor-backed calls. Attempts:\n${describeAttempts(attempts)}`
     );
   }
-  // Say which of the two things was actually proven. A bridge that advertises Unity_RunCommand
-  // without an editor tool cannot be asked the second question, and claiming otherwise is the
-  // false green #418 is about.
+  // Report only the readiness level actually verified.
   const proven = found.editorToolAdvertised
-    ? `is ready for editor-backed calls (${EDITOR_READY_TOOL} answered)`
+    ? `is ready for editor-backed calls (${found.editorTool} answered)`
     : `advertises Unity_RunCommand, but has no ${EDITOR_READY_TOOL} to prove an editor is behind it`;
   console.log(`Unity MCP at ${found.url} ${proven} (protocol ${found.protocolVersion}).`);
   return found;
 }
 
 export async function runConfigure(options, runtime = {}) {
-  const { endpoint, attempts, found } = await resolveEndpoint(options, runtime);
-  // `unauthorized` means a bridge IS running there and only the token is wrong. Falling back to the
-  // default endpoint and minting a fresh token would guarantee a 401 and persist the bogus token
-  // into .env.local and every client config, so this refuses to write anything.
+  const { endpoint, attempts, found } = options.offline
+    ? { endpoint: options, attempts: [] }
+    : await resolveEndpoint(options, runtime);
+  // Never mint a replacement token when a running bridge rejected the current one.
   const unauthorized = found ? undefined : attempts.find((a) => a.status === "unauthorized");
   if (unauthorized) {
     fail(
@@ -1517,7 +1390,7 @@ export async function runConfigure(options, runtime = {}) {
     port: options.port,
     endpointPath: options.endpointPath
   };
-  if (!found) {
+  if (!found && !options.offline) {
     console.warn(
       `No Unity MCP endpoint completed initialization; configuring ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
     );
@@ -1526,7 +1399,9 @@ export async function runConfigure(options, runtime = {}) {
   const summary = written.length
     ? written.map((filePath) => path.relative(options.repoRoot, filePath)).join(", ")
     : "no changes";
-  console.log(`Configured GitHub MCP and Unity MCP endpoint ${url} (${summary}).`);
+  console.log(`Configured agent MCP servers; Unity endpoint ${url} (${summary}).`);
+  if (!options.zaiToken)
+    console.log("Z.AI servers need Z_AI_API_KEY or ZAI_API_KEY in .env.local.");
   return url;
 }
 
@@ -1550,17 +1425,20 @@ function usage() {
   return [
     "Usage: node scripts/mcp/unity-mcp.mjs <probe|configure|bridge> [options]",
     "",
-    "  probe      Discover an endpoint that advertises Unity_RunCommand.",
-    "  configure  Discover Unity, then configure GitHub and Unity for every supported agent.",
-    "  bridge     Serve the Unity relay over authenticated streamable HTTP (run next to Unity).",
+    "  probe      Discover Unity tools and check editor readiness.",
+    "  configure  Configure agent MCP servers, discovering Unity unless --offline is set.",
+    "  bridge     Serve Unity CLI or the legacy relay over authenticated HTTP on the host.",
     "",
     "Options:",
     "  --host HOST                 Endpoint host; the only host discovery probes",
     "  --port PORT                 Endpoint port; the only port discovery probes",
     "  --path PATH                 Streamable HTTP path (default: /mcp)",
+    "  --offline                   Write configs without network access (configure only)",
     "  --no-discover               Probe only the configured host/port, not the fallbacks",
     "  --bind HOST                 Bridge bind interface (default: 0.0.0.0)",
     "  --project PATH              Unity project directory (bridge only)",
+    "  --backend cli|relay         Host backend (default: cli; relay supports Assistant)",
+    "  --cli PATH                  Unity CLI executable (default: unity on host PATH)",
     "  --relay PATH                Unity relay executable override",
     "  --token TOKEN               32-256 character bearer token (generated into .env.local if omitted)",
     "  --timeout MS                Per-endpoint MCP lifecycle deadline (default: 5000)",
@@ -1574,12 +1452,13 @@ function usage() {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  const commands = { probe: runProbe, configure: runConfigure, bridge: runBridge };
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") {
     console.log(usage());
     return;
   }
-  if (!["bridge", "configure", "probe"].includes(command)) {
+  if (!Object.hasOwn(commands, command)) {
     fail(`Unknown command: ${command}`);
   }
   if (rest.includes("--help") || rest.includes("-h")) {
@@ -1591,15 +1470,8 @@ export async function main(argv = process.argv.slice(2)) {
     fail(`Unexpected argument: ${args._[0]}`);
   }
   const options = resolveOptions(args);
-  if (command === "probe") {
-    await runProbe(options);
-  }
-  if (command === "configure") {
-    await runConfigure(options);
-  }
-  if (command === "bridge") {
-    await runBridge(options);
-  }
+  if (options.offline && command !== "configure") fail("--offline is only valid for configure");
+  await commands[command](options);
 }
 
 const entry = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : "";

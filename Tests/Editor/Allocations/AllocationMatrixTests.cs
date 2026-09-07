@@ -939,15 +939,19 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// <remarks>
         /// 2026-09-06: Duplicate registrations at priority zero shared one post-processor
         /// entry. Use distinct priorities and verify both exist before measuring allocation.
+        /// 2026-09-07: Cover every message kind and retain bus state after a failed window.
+        /// This does not attribute the intermittent allocation reported in issue #545.
         /// </remarks>
         [Test]
         [Category("Allocation")]
-        public void EmitWithFullStackIsZeroAlloc()
+        public void EmitWithFullStackIsZeroAlloc(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
+            )]
+                MessageScenario scenario
+        )
         {
-            // Untargeted is the cheapest dispatch and the most common in
-            // production code; using a single kind keeps the combinatorial
-            // surface small while still exercising the full handler chain.
-            MessageScenario scenario = MessageScenario.Untargeted();
             RunWithFreshHarness(
                 scenario,
                 (token, bus) =>
@@ -962,11 +966,18 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Assert.That(
                         bus.RegisteredPostProcessors,
                         Is.EqualTo(2),
-                        "Full-stack allocation coverage requires two distinct post-processor priorities."
+                        $"[{scenario.Kind}] Full-stack allocation coverage requires two distinct post-processor priorities."
                     );
                     AllocationAssertions.AssertNoAllocations(
                         $"EmitFullStack-{scenario.Kind}",
-                        emit
+                        emit,
+                        failureContext: () =>
+                            $"kind={scenario.Kind}; emissionId={bus.EmissionId}; tokenEnabled={token.Enabled}; "
+                            + $"diagnostics={IMessageBus.GlobalDiagnosticsTargets}; stackTraces={IMessageBus.GlobalDiagnosticsStackTraces}; "
+                            + $"busDiagnostics={bus.DiagnosticsMode}; tokenDiagnostics={token.DiagnosticMode}; "
+                            + $"registrations=[untargeted={bus.RegisteredUntargeted}, targeted={bus.RegisteredTargeted}, "
+                            + $"broadcast={bus.RegisteredBroadcast}, interceptors={bus.RegisteredInterceptors}, "
+                            + $"posts={bus.RegisteredPostProcessors}, global={bus.RegisteredGlobalAcceptAll}]"
                     );
                 }
             );
@@ -1896,6 +1907,17 @@ namespace DxMessaging.Tests.Editor.Allocations
                     return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
                         scenario,
                         token,
+                        AllowBroadcast
+                    );
+                }
+                // Context-free subscriptions still use their message kind's interceptor.
+                case MessageKind.TargetedWithoutTargeting:
+                {
+                    return token.RegisterTargetedInterceptor<SimpleTargetedMessage>(AllowTargeted);
+                }
+                case MessageKind.BroadcastWithoutSource:
+                {
+                    return token.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
                         AllowBroadcast
                     );
                 }

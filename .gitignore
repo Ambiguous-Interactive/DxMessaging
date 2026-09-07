@@ -418,6 +418,7 @@ progress.meta
 .cursor/mcp.json
 .codex/config.toml
 .nanocoder/
+.copilot/
 .env.local
 
 # The generated OpenCode config carries the relay bearer token, so it is never
@@ -473,3 +474,4 @@ OLD-PLAN.md*
 relay_win.lnk*
 GOAL.md
 GOAL.md.meta
+scripts/mcp/PIPELINE_SETUP_HANDOFF.md*
