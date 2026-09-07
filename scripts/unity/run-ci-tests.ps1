@@ -4560,10 +4560,10 @@ function Invoke-ProcessWithTreeKillTimeout {
     # System.Diagnostics.Process + ProcessStartInfo, drains BOTH stdout and stderr
     # from a MAIN-THREAD ReadLineAsync poll loop (live echo via Write-Host + Tee to
     # $LogPath), enforces an absolute UTC deadline, and on a breach $proc.Kill($true)
-    # tree-kills the whole process tree (the Unity editor build spawns child
-    # processes -- IL2CPP/bee -- and the player may too, so a bare Kill() would orphan
-    # them). The process is held in a try/finally that kills it on ANY throw between
-    # launch and reap, so a pwsh cancellation cannot leave an orphaned editor/player.
+    # requests termination of the process tree (Unity builds spawn IL2CPP/bee).
+    # A parent that already exited cannot own a reparented descendant: fail closed
+    # in that case instead of treating a passing result as proof of safe cleanup.
+    # The try/finally also requests termination on exceptions before reap.
     #
     # WHY a Process and NOT `& <exe>`: the call operator cannot be interrupted -- a
     # hung child runs until the whole job is killed. WHY the main-thread poll loop:
@@ -4584,6 +4584,8 @@ function Invoke-ProcessWithTreeKillTimeout {
         [int]$TimeoutSeconds = 1800,
         [Parameter(Mandatory = $true)][string]$LogPath,
         [Parameter(Mandatory = $true)][string]$Label,
+        [string]$CompletionPattern,
+        [ValidateRange(1, 300)][int]$ShutdownTimeoutSeconds = 30,
         [ValidateRange(0, [long]::MaxValue)][long]$ProcessorAffinityMask = 0,
         [ValidateSet('Normal', 'AboveNormal', 'High')][string]$PriorityClass = 'Normal'
     )
@@ -4623,6 +4625,9 @@ function Invoke-ProcessWithTreeKillTimeout {
     $proc = $null
     $exit = -1
     $timedOut = $false
+    $terminationUnconfirmed = $false
+    $completionObserved = $false
+    $shutdownDeadline = [DateTime]::MaxValue
     $reaped = $false
     $processId = $null
     $observedProcessorAffinityMask = $null
@@ -4699,7 +4704,9 @@ function Invoke-ProcessWithTreeKillTimeout {
 
         $oDone = $false
         $eDone = $false
-        while (-not ($oDone -and $eDone)) {
+        # EOF alone is not process completion: an editor can close both streams
+        # before finishing its work. Keep its original deadlines until it exits.
+        while (-not ($oDone -and $eDone) -or -not $proc.HasExited) {
             $progressed = $false
 
             if (-not $oDone -and $oTask.Wait(0)) {
@@ -4709,6 +4716,10 @@ function Invoke-ProcessWithTreeKillTimeout {
                 } else {
                     Write-Host $line
                     $buffer.Add([string]$line)
+                    if (-not $completionObserved -and $CompletionPattern -and $line -cmatch $CompletionPattern) {
+                        $completionObserved = $true
+                        $shutdownDeadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
+                    }
                     $oTask = $outReader.ReadLineAsync()
                 }
                 $progressed = $true
@@ -4721,18 +4732,32 @@ function Invoke-ProcessWithTreeKillTimeout {
                 } else {
                     Write-Host $line
                     $buffer.Add([string]$line)
+                    if (-not $completionObserved -and $CompletionPattern -and $line -cmatch $CompletionPattern) {
+                        $completionObserved = $true
+                        $shutdownDeadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
+                    }
                     $eTask = $errReader.ReadLineAsync()
                 }
                 $progressed = $true
             }
 
-            if ([DateTime]::UtcNow -ge $deadline) {
-                # HUNG (or a quick-exit child whose grandchild still holds the pipe
-                # open, so EOF never arrives): tree-kill the WHOLE process tree.
+            # Completion observed on this iteration wins an expired deadline.
+            # Otherwise the final EOFs could falsely classify an exited root as orphaned.
+            if ($oDone -and $eDone -and $proc.HasExited) { break }
+
+            if ([DateTime]::UtcNow -ge $deadline -or [DateTime]::UtcNow -ge $shutdownDeadline) {
+                # A quick-exit parent cannot identify a reparented descendant that
+                # still holds a pipe. Mirror ensure-editor.ps1: preserve diagnostics
+                # but never report this as confirmed tree cleanup or allow retry.
                 $timedOut = $true
+                $terminationUnconfirmed = [bool]$proc.HasExited
+                if ($completionObserved -and $shutdownDeadline -le $deadline) {
+                    Write-Host "::warning::$Label did not close its process/output streams within $ShutdownTimeoutSeconds seconds of its terminal message; requesting process-tree termination. Results can be accepted only after confirmed cleanup."
+                }
                 try {
                     $proc.Kill($true)
                 } catch {
+                    $terminationUnconfirmed = $true
                     try { $proc.Kill() } catch { }
                 }
                 break
@@ -4745,19 +4770,33 @@ function Invoke-ProcessWithTreeKillTimeout {
 
         # Reap so ExitCode is valid; bounded so a stuck reap cannot hang the harness.
         $reaped = $proc.WaitForExit(5000)
+        if (-not $reaped) { $terminationUnconfirmed = $true }
 
-        # Drain any reads that completed during/after the kill so no pre-kill output
-        # is dropped.
-        foreach ($pending in @($oTask, $eTask)) {
+        # Drain buffered output to EOF within one bounded window per stream.
+        # A parent can exit between HasExited and Kill(true); pipes still open
+        # after the reap expose that race instead of falsely confirming cleanup.
+        foreach ($stream in @(
+            @{ Reader = $outReader; Pending = $oTask; Done = $oDone },
+            @{ Reader = $errReader; Pending = $eTask; Done = $eDone }
+        )) {
+            $drainDeadline = [DateTime]::UtcNow.AddSeconds(2)
             try {
-                if ($pending.Wait(2000) -and $null -ne $pending.Result) {
-                    $line = $pending.Result
-                    Write-Host $line
-                    $buffer.Add([string]$line)
+                while (-not $stream.Done) {
+                    $remaining = [int][Math]::Ceiling(($drainDeadline - [DateTime]::UtcNow).TotalMilliseconds)
+                    if ($remaining -le 0 -or -not $stream.Pending.Wait($remaining)) { break }
+                    $line = $stream.Pending.Result
+                    if ($null -eq $line) {
+                        $stream.Done = $true
+                    } else {
+                        Write-Host $line
+                        $buffer.Add([string]$line)
+                        $stream.Pending = $stream.Reader.ReadLineAsync()
+                    }
                 }
             } catch {
-                # A faulted/cancelled read on a killed pipe carries nothing to add.
+                # Faulted reads cannot prove that inherited handles closed.
             }
+            if (-not $stream.Done) { $terminationUnconfirmed = $true }
         }
 
         if ($timedOut) {
@@ -4777,10 +4816,15 @@ function Invoke-ProcessWithTreeKillTimeout {
         $buffer.Add($message)
         $exit = -1
     } finally {
-        # If we are unwinding on a throw/cancellation and the process is still alive,
-        # tree-kill it so a cancelled step never orphans the editor/player.
-        if ($proc -and -not $proc.HasExited) {
-            try { $proc.Kill($true) } catch { }
+        # Bound exception-path cleanup too. A failed tree request or reap must not
+        # be hidden by a valid results file or start another UPM attempt.
+        if ($proc -and $null -ne $processId -and -not $proc.HasExited) {
+            try {
+                $proc.Kill($true)
+                if (-not $proc.WaitForExit(5000)) { $terminationUnconfirmed = $true }
+            } catch {
+                $terminationUnconfirmed = $true
+            }
         }
         if ($proc) { $proc.Dispose() }
     }
@@ -4794,9 +4838,18 @@ function Invoke-ProcessWithTreeKillTimeout {
         Write-Host "::warning::Could not persist '$Label' log to ${LogPath}: $($_.Exception.Message)"
     }
 
+    if ($terminationUnconfirmed) {
+        $message = "Process watchdog '$Label': safe process-tree termination could not be confirmed. A parent may have exited while a descendant retained its output pipe, or termination/reap failed. Preserved log: $LogPath. Do not retry while a process may still own the project."
+        Write-Host "::error::$message"
+        $exception = [System.InvalidOperationException]::new($message)
+        $exception.Data['DxMessagingNonRetryable'] = $true
+        throw $exception
+    }
+
     return @{
         ExitCode = $exit
         TimedOut = [bool]$timedOut
+        CompletionObserved = [bool]$completionObserved
         ProcessId = $processId
         ProcessorAffinityMask = $observedProcessorAffinityMask
         ProcessorAffinityError = $processorAffinityError
@@ -4937,33 +4990,30 @@ function Invoke-UnityEditor {
         [Parameter(Mandatory = $true)][string]$EditorPath,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [Parameter(Mandatory = $true)][string]$Label,
-        [Parameter(Mandatory = $true)][string]$LogPath
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        # The shortest caller has a 30-minute step and at most two UPM attempts.
+        # Ten minutes per attempt leaves ten minutes for setup and license cleanup.
+        [ValidateRange(0, [int]::MaxValue)][int]$TimeoutSeconds = 600,
+        [ValidateRange(1, 300)][int]$ShutdownTimeoutSeconds = 30
     )
 
-    # Unity.exe is a Windows GUI-subsystem binary. PowerShell's `&` launches such
-    # executables ASYNCHRONOUSLY: it does NOT wait for them and does NOT set
-    # $LASTEXITCODE. Callers therefore pass `-logFile -` (Unity logs to stdout) so
-    # that consuming the process's stdout via the pipeline forces PowerShell to
-    # BLOCK until the process exits AND reliably sets $LASTEXITCODE. Tee-Object both
-    # streams the log live to the CI console and persists it to $LogPath.
-    $logDir = Split-Path -Parent $LogPath
-    if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
-        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    }
-
-    Write-Host "::group::$Label"
-    Write-Host "`"$EditorPath`" $($Arguments -join ' ')"
-    # Stream Unity's output LIVE to the console AND persist it to $LogPath, but route
-    # it to the HOST (Out-Host) so it never enters this function's success stream:
-    # the function RETURNS the exit code, and a bare `| Tee-Object` would otherwise
-    # collect every streamed log line into the caller's `$x = Invoke-UnityEditor`
-    # capture (turning the return value into an Object[] of log lines + the code).
-    # Consuming the process's stdout via the pipeline still forces PowerShell to
-    # BLOCK until the GUI-subsystem Unity.exe exits and to set $LASTEXITCODE.
-    & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
-    $exitCode = $LASTEXITCODE
+    # A native pipeline can remain blocked in shutdown (or on a descendant's
+    # inherited stdout) after NUnit has completed. Own the process and both pipes
+    # so the harness returns before the outer GitHub step timeout cancels cleanup.
+    # Exact, case-sensitive whole-line terminal messages start a 30-second shutdown
+    # deadline. Results written earlier do not start it: framework cleanup still runs.
+    # The existing caller validates the fresh result/marker even after a forced exit.
+    $completionPattern = '^(?:Test run completed\. Exiting with code [0-9]+ \([^\r\n]+\)\. Run completed\.|Batchmode quit successfully invoked - shutting down!)$'
+    $processResult = Invoke-ProcessWithTreeKillTimeout `
+        -FilePath $EditorPath `
+        -Arguments $Arguments `
+        -TimeoutSeconds $TimeoutSeconds `
+        -ShutdownTimeoutSeconds $ShutdownTimeoutSeconds `
+        -CompletionPattern $completionPattern `
+        -LogPath $LogPath `
+        -Label $Label
+    $exitCode = $processResult.ExitCode
     Clear-NonFatalNativeExitCode -Context $Label
-    Write-Host "::endgroup::"
     if ($exitCode -ne 0) {
         # Proactively surface catastrophic compile-time failure patterns
         # (PrecompiledAssemblyException, CompilationFailedException, CS####,
@@ -5109,8 +5159,8 @@ function Write-UnityBenignExitWarning {
         [string]$LogPath
     )
 
-    $cause = if ($TimedOut) {
-        'was tree-killed by the watchdog (likely a deferred Application.Quit)'
+    $cause = if ($TimedOut -or $ExitCode -eq 124) {
+        'did not finish process/output-stream shutdown before the watchdog deadline'
     } else {
         $description = Get-NativeExitCodeDescription -ExitCode $ExitCode
         $crashNote = if (Test-NativeCrashExitCode -ExitCode $ExitCode) { ' (a native crash code)' } else { '' }
@@ -6787,6 +6837,7 @@ try {
             -EditorPath $UnityEditorPath `
             -Arguments $configureArgs `
             -Label "Configure $configurationScope IL2CPP project" `
+            -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
             -LogPath $configureLogPath
         # The configurator has run; drop the marker-path env var so it cannot be
         # inherited by the later build/player child processes (only Apply reads it,

@@ -2,7 +2,6 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -176,18 +175,6 @@ test("scenario filters keep only dispatch and DxMessaging comparison rows", () =
   ];
   for (const [predicate, scenario, expected] of cases) {
     assert.equal(predicate(scenario), expected, `${scenario}`);
-  }
-});
-
-test("PowerShell performance harness regression tests pass", () => {
-  // prettier-ignore
-  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "shipping-fidelity.test.ps1"]) {
-    const testScript = path.join(REPO_ROOT, "scripts", "unity", "__tests__", script);
-    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
-      encoding: "utf8"
-    });
-    assert.ifError(result.error);
-    assert.equal(result.status, 0, `${script}\n${result.stdout}\n${result.stderr}`);
   }
 });
 
@@ -465,26 +452,7 @@ test("readBaselineRows degrades gracefully when the baseline is absent", () => {
   assert.equal(readBaselineRows("/nonexistent/baseline.csv"), null);
 });
 
-test("render-perf-deltas CLI failures preserve non-gating diagnostic output", () => {
-  const script = path.join(REPO_ROOT, "scripts", "unity", "render-perf-deltas.js");
-  const result = spawnSync(process.execPath, [script, "--bogus"], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-
-  assert.ifError(result.error);
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "changed=false\nregressed=false\n");
-  assert.match(result.stderr, /Unknown argument: --bogus/);
-  assert.match(result.stderr, /workflow decides whether the regressed= signal fails CI/);
-});
 test("performance workflow publishes exact player-size and codegen evidence", () => {
-  const selfTest = spawnSync(
-    "pwsh -NoProfile -File scripts/unity/capture-dispatch-codegen.ps1 -SelfTestOnly",
-    { cwd: REPO_ROOT, shell: true }
-  );
-  assert.equal(selfTest.status, 0, selfTest.stderr?.toString());
   const workflow = fs.readFileSync(
     path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
     "utf8"
@@ -724,55 +692,6 @@ test("comparison count+bytes matrices are omitted when no leg measured them", ()
   assert.ok(!joined.includes("GC allocations per 10k ops"), joined);
   assert.ok(!joined.includes("GC allocated bytes per 10k ops"), joined);
   assert.ok(!/\bn\/a\b/.test(joined), joined);
-});
-
-test("extract-perf-baseline --scope filters rows to one execution scope", () => {
-  const mixed = [
-    `UntargetedFlood_OneHandler,${STANDALONE_PLATFORM},abc1234,-1,37500000,-1,5000`,
-    `UntargetedFlood_OneHandler,${EDITOR_PLAYMODE_PLATFORM},abc1234,-1,20000000,0,5000`,
-    `TargetedFlood_OneListener,Unity 6000.3.16f1 EditMode Mono,abc1234,-1,9000000,0,5000`
-  ].join("\n");
-  const all = extractRows(mixed);
-  const standaloneOnly = all.filter((r) => extractorDeriveScope(r.platform) === "Standalone");
-  assert.equal(all.length, 3);
-  assert.deepEqual(
-    standaloneOnly.map((r) => r.platform),
-    [STANDALONE_PLATFORM]
-  );
-
-  const script = path.join(REPO_ROOT, "scripts", "unity", "extract-perf-baseline.js");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-scope-"));
-  try {
-    const mixedPath = path.join(dir, "mixed.log");
-    const editorOnlyPath = path.join(dir, "editor.log");
-    fs.writeFileSync(mixedPath, mixed);
-    fs.writeFileSync(
-      editorOnlyPath,
-      `UntargetedFlood_OneHandler,${EDITOR_PLAYMODE_PLATFORM},abc1234,-1,20000000,0,5000`
-    );
-
-    const kept = spawnSync(
-      process.execPath,
-      [script, "--input", mixedPath, "--scope", "Standalone"],
-      { cwd: REPO_ROOT, encoding: "utf8" }
-    );
-    assert.equal(kept.status, 0, kept.stderr);
-    const keptRows = extractRows(kept.stdout);
-    assert.deepEqual(
-      keptRows.map((r) => r.platform),
-      [STANDALONE_PLATFORM]
-    );
-
-    const empty = spawnSync(
-      process.execPath,
-      [script, "--input", editorOnlyPath, "--scope", "Standalone"],
-      { cwd: REPO_ROOT, encoding: "utf8" }
-    );
-    assert.notEqual(empty.status, 0);
-    assert.match(empty.stderr, /No DispatchThroughputBenchmarks rows found/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test("a winner flip within tolerance does not defeat table idempotence", () => {

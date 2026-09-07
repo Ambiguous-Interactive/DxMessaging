@@ -29,16 +29,12 @@ the host editor; the container only edits files and drives the editor over MCP.
 ## The Loop
 
 1. **Edit** files in the container as usual.
-1. **Preflight before any refresh-capable command or test.** Use dedicated query actions
-   whose installed implementation does not refresh assets, or an already-installed passive
-   observer, to establish framework idleness, editor flags, current stage, loaded-scene count,
-   and every scene's path and dirty flag. `Unity_ManageEditor GetState` and `GetPrefabStage`
-   plus `Unity_ManageScene GetActive` suffice only when their responses provide all that
-   evidence. With multiple loaded scenes, an active-scene result alone is insufficient.
-   Do not use `Unity_RunCommand` to fill missing fields: its implicit refresh runs before any
-   guard in the supplied code. Report missing evidence or an unsafe state without refreshing,
-   installing a new observer, or changing scenes. A tool's read-only name does not prove its
-   implementation has no import side effects.
+1. **Preflight.** Prefer passive `Unity_ManageEditor GetState` and `GetPrefabStage`,
+   `Unity_ManageScene GetActive`, and a fresh observer snapshot. Establish framework idleness,
+   idle editor flags, the main stage, loaded-scene count, and every scene's path and dirty flag.
+   An active-scene response alone cannot prove other scenes are clean. When the observer is
+   absent or incomplete, use the [bootstrap procedure](#bootstrap-without-a-complete-passive-observer)
+   below. A tool's read-only name does not prove its implementation has no import side effects.
 1. **Compile**: validate changed C# under `Assets/` with `Unity_ValidateScript`, then
    execute the `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator
    rejects embedded `Packages/` paths, so package edits rely on the refresh plus the
@@ -84,49 +80,72 @@ testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type b
    - `testNames` accepts a fixture's full type name (for example
      `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests`) to run just that
      fixture -- handy for a fast red-green loop on a single contract test.
-1. **Poll**: read the `.status` sidecar next to `resultPath` from bash in the
-   container. It moves `running` -> `done` (or `error: <message>`). The JSON result
-   carries `{ passCount, failCount, skipCount, inconclusiveCount, durationSeconds,
-failures[] }`.
+1. **Poll** through files only. With the maintained bridge, `.status` describes raw result
+   availability and `.cleanup.status` describes passive framework completion. Require `done` in
+   both files, positive passes, zero failed/inconclusive cases, and matching GUID/path companions.
+   Keep expected skips visible. Read the complete tree in the result JSON for individual outcomes.
 
-The bridge survives domain reloads via `[InitializeOnLoad]` + `SessionState`, so a
-recompile mid-run does not lose the result.
+The maintained bridge survives domain reloads through `[InitializeOnLoad]` and `SessionState`.
+Its source, installation, artifact contract, and preflight snapshot are documented in
+[Maintain the local Unity test runner](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+
+## Bootstrap without a complete passive observer
+
+Missing observer fields alone do not require user confirmation or prevent local verification.
+First read the passive editor, stage, and active-scene queries and any existing snapshot. If the
+available flags show idle editor state, the main stage, and a clean scene, and no test is known
+active, use a minimal `Unity_RunCommand` inspection to read `TestRunnerApi.IsRunActive`, current
+editor flags and stage, every open scene's path/loading/dirty state through
+`SceneManager.sceneCount` and `GetSceneAt`, and the runner SessionState ownership keys listed in
+the installation guide. Do not mutate scenes, launch tests, or install source in that inspection.
+Use the installed framework's available API; `IsRunActive` may be nonpublic and unavailable to a
+direct snippet call. Resolve API compatibility failures with a minimal inspection sequence using
+supported public metadata or installed runner APIs. A compile or lookup failure does not prove
+framework inactivity.
+
+`Unity_RunCommand` refreshes assets before executing the snippet. State that limitation honestly:
+the inspection bootstraps missing evidence; its result cannot prove that preceding refresh was
+safe. Preserve tool approval gates. If a tool rejects the inspection or installation, report its
+reason and do not switch transports or tools to bypass the rejection. Wait for actual framework
+activity, compilation, imports, or play-mode transitions. Stop for dirty or unnamed scenes or a
+non-main stage; never save, discard, or switch the developer's scenes to force progress.
+
+Once the inspection shows inactive framework/editor state and saved, clean scenes, install or
+update the maintained source through supported MCP editing, following the
+[backup and installation flow](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+Validate, refresh through `Unity_ManageMenuItem`, and verify the loaded assembly and fresh passive
+snapshots before testing. If supported inspection cannot resolve the required state, report the
+specific failure. During a known or owned test, poll its files and passive snapshots only,
+including after an observation timeout; never use bootstrap inspection as a polling loop.
 
 ## Framework cleanup gate
 
-`DxMcpTestRunner` writes its result during `RunFinished`. Unity Test Framework can still be
-restoring scenes after that callback, even when `EditorApplication.isPlaying` is false. Starting
-another run in that interval can capture a temporary scene that the previous run then deletes.
-Session 266 observed `Invalid SceneManagerSetup` followed by `ReloadScene cannot be used with a
-scene without a SceneAsset` during repeated local runs.
+`RunFinished` makes a result available before Unity Test Framework necessarily finishes restoring
+scenes. Session 266 observed `Invalid SceneManagerSetup` and a missing temporary scene after a new
+run started during that cleanup interval. A raw passing result is not cleanup evidence.
 
-Do not poll `Unity_RunCommand` during a test run. The inspected MCP implementation calls
-`AssetDatabase.Refresh` before executing the supplied code, including read-only snippets. During
-local runtime tests that refresh imported malformed host assets and produced unrelated test
-failures. Use filesystem polling for the active run.
+The maintained `DxMcpTestRunner` retains the Execute GUID, owns a fresh result path, records
+`IErrorCallbacks.OnError`, and observes framework inactivity from `EditorApplication.update`.
+It writes `.cleanup.json` and `.cleanup.status` after verifying the original scene setup. Missing
+results and late framework errors produce terminal errors; failed observations retain ownership.
+An observation timeout never authorizes cancellation or a replacement launch.
 
-Before repeated runs, prepare a host-side observer while the editor is safe. It must retain the
-current result path across reloads, capture `IErrorCallbacks.OnError` for that run, and use
-`EditorApplication.update` to observe framework cleanup without refreshing assets. On the
-inspected framework the active-job query is the internal static `TestRunnerApi.IsRunActive`.
-Inspect the installed source if that API changes; missing state is not proof of idleness.
+Do not poll `Unity_RunCommand` during a test run. Its installed implementation refreshes assets
+before executing even read-only snippets. Use filesystem polling and the bridge's passive
+`editor-state.json` for subsequent preflight, requiring current timestamps and complete safe-state
+fields. Missing, stale, or temporarily malformed files prove no state; continue observing the same
+job without refreshing assets.
 
-The observer must write a separate terminal marker only after the framework reports inactive.
-Capture errors through that point: cleanup can fail after `RunFinished` has already written a
-passing result. Require both successful framework completion and a result with a positive pass
-count, zero failures, and zero inconclusive cases. Keep expected skips visible. Check editor flags
-and every scene's dirtiness again before the next refresh, run, or scene change.
+For a host that still has the earlier simple bridge, retain its reviewed
+`DxMcpObservedTestRunner` until migration is safe. That observer writes `.observer.status`;
+require its terminal `done` alongside the raw result. An old terminal file is historical evidence,
+not a fresh editor preflight. The simple bridge alone can leave `running` without a result after
+framework setup fails. Prove inactivity before classifying that as terminal or recovering scenes.
+Never discard an unnamed or dirty user scene.
 
-The simple bridge implements only `ICallbacks`, so a framework-level `RunFailed` can leave its
-sidecar at `running` without a result. Inactive framework state with no result is a terminal
-framework failure, not a live test or a pass. Preserve that failed attempt and inspect the error
-before recovery. Restore the original saved scene only after verifying that the editor is idle
-and all scenes are clean. Never restart solely because polling timed out, cancel a run to resolve
-an observation timeout, or discard an unnamed scene containing unreviewed work.
-
-This is local orchestration. Add no delays, retries, or extra test launches to CI. Durable bridge
-ownership and regeneration are tracked in
-[issue #544](https://github.com/Ambiguous-Interactive/DxMessaging/issues/544).
+This is local orchestration. It adds no delays, retries, or test launches to CI.
+[Issue #544](https://github.com/Ambiguous-Interactive/DxMessaging/issues/544) tracks native acceptance
+of maintained bridge ownership and regeneration.
 
 ## Shared Editor Safety
 
@@ -198,19 +217,21 @@ benchmark run, since the editor process is already up. See
 
 `Unity_RunCommand` snippets run in a restricted compile sandbox:
 
-- `using System.Reflection;` is REJECTED. Fully qualify instead
-  (`System.Reflection.Assembly`, `System.Reflection.BindingFlags`, ...).
+- `using System.Reflection;` is rejected. Qualify allowed types such as
+  `System.Reflection.Assembly`; qualification does not bypass member restrictions. Some installed
+  sandboxes also reject `System.Reflection.BindingFlags` members. Prefer public APIs or supported
+  script editing within existing tool permissions; do not bypass a tool rejection.
 - Inside `DxMessaging.*` namespaces the bare identifier `Unity` binds to
   `DxMessaging.Unity`, not `UnityEngine`-adjacent types; use a `global::`-qualified
   alias when that ambiguity bites.
 
 ## If the Bridge Is Missing
 
-The `DxMcpTestRunner` bridge lives in the host project (under its `Assets/Editor/`),
-NOT in this package repo, so a clean of the host project drops it. Regenerate it via
-`Unity_RunCommand` (`System.IO.File.WriteAllText` of the bridge source), then run the
-safe-state preflight and execute `Assets/Refresh` through `Unity_ManageMenuItem`. It
-wraps `TestRunnerApi` and writes the JSON result plus the `.status` sidecar.
+The installed bridge lives under the host's `Assets/Editor/`, outside this package. Regenerate it
+from the maintained `scripts/mcp/DxMcpTestRunner.cs.txt`, following the
+[installation and preflight contract](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
+Use the bootstrap procedure above if passive evidence is incomplete. Do not invent a replacement
+bridge or describe the bootstrap's implicit refresh as proven safe.
 
 ## CI vs Local
 

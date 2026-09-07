@@ -42,7 +42,8 @@ namespace DxMessaging.Tests.Runtime
             MessageScenario scenario,
             IMessageBus bus,
             IMessageBus emitter = null,
-            Action reset = null
+            Action reset = null,
+            Func<int, MessageRegistrationToken> tokenFactory = null
         )
         {
             _scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
@@ -58,12 +59,19 @@ namespace DxMessaging.Tests.Runtime
             {
                 for (int slot = 0; slot < _tokens.Length; ++slot)
                 {
-                    MessageHandler handler = new(new InstanceId(1000 + slot), bus)
+                    if (tokenFactory == null)
                     {
-                        active = true,
-                    };
-                    _handlers[slot] = handler;
-                    _tokens[slot] = MessageRegistrationToken.Create(handler, bus);
+                        MessageHandler handler = new(new InstanceId(1000 + slot), bus)
+                        {
+                            active = true,
+                        };
+                        _handlers[slot] = handler;
+                        _tokens[slot] = MessageRegistrationToken.Create(handler, bus);
+                    }
+                    else
+                    {
+                        _tokens[slot] = tokenFactory(slot);
+                    }
                     _tokens[slot].DiagnosticMode = false;
                     _tokens[slot].Enable();
                 }
@@ -200,11 +208,7 @@ namespace DxMessaging.Tests.Runtime
             {
                 enabled += token.Enabled ? "1" : "0";
             }
-            string handlerActive = string.Empty;
-            foreach (MessageHandler handler in _handlers)
-            {
-                handlerActive += handler.active ? "1" : "0";
-            }
+            string handlerActive = DescribeHandlerActivity();
             string diagnostics = string.Empty;
             string retainedMessages = string.Empty;
             foreach (MessageRegistrationToken token in _tokens)
@@ -226,7 +230,8 @@ namespace DxMessaging.Tests.Runtime
                 retainedMessages += $"{references},";
             }
             string state =
-                $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; handlerActive={handlerActive}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}";
+                $"counts={_bus.RegisteredUntargeted},{_bus.RegisteredTargeted},{_bus.RegisteredBroadcast},{_bus.RegisteredInterceptors},{_bus.RegisteredPostProcessors},{_bus.RegisteredGlobalAcceptAll}; slots={_bus.OccupiedTypeSlots},{_bus.OccupiedTargetSlots}; enabled={enabled}; handlerActive={handlerActive}; diagnostics={_bus.DiagnosticsMode}; tokenMetadataCallsHistory={diagnostics}; retainedMessages={retainedMessages}"
+                + DescribeAdapterState();
             return new BusTraceObservation(
                 _callbacks,
                 state,
@@ -241,15 +246,16 @@ namespace DxMessaging.Tests.Runtime
         public void Dispose()
         {
             List<Exception> errors = new();
-            foreach (MessageRegistrationToken token in _tokens)
+            for (int slot = 0; slot < _tokens.Length; ++slot)
             {
+                MessageRegistrationToken token = _tokens[slot];
                 try
                 {
                     if (token == null)
                     {
                         continue;
                     }
-                    token.Dispose();
+                    DisposeToken(slot);
                     if (
                         token._metadata.Count != 0
                         || token._callCounts.Count != 0
@@ -287,6 +293,20 @@ namespace DxMessaging.Tests.Runtime
                 throw new AggregateException("Differential replay cleanup failed.", errors);
             }
         }
+
+        protected virtual void DisposeToken(int slot) => _tokens[slot].Dispose();
+
+        protected virtual string DescribeHandlerActivity()
+        {
+            string activity = string.Empty;
+            foreach (MessageHandler handler in _handlers)
+            {
+                activity += handler.active ? "1" : "0";
+            }
+            return activity;
+        }
+
+        protected virtual string DescribeAdapterState() => string.Empty;
 
         protected MessageRegistrationToken Token(int slot) => _tokens[slot];
 

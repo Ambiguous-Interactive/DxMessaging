@@ -3,6 +3,8 @@ namespace DxMessaging.Tests.Runtime
 {
     using System;
     using NUnit.Framework;
+    using NUnit.Framework.Constraints;
+    using NUnit.Framework.Internal;
     using UnityEngine.TestTools.Constraints;
     using Is = NUnit.Framework.Is;
 
@@ -20,7 +22,7 @@ namespace DxMessaging.Tests.Runtime
         /// <summary>
         /// Runs <paramref name="action"/> a handful of times to JIT it, then
         /// asserts that running it <paramref name="measuredIterations"/> more
-        /// times allocates zero managed bytes. Both the inner action and the
+        /// times makes zero managed allocations. Both the inner action and the
         /// outer assertion lambda are warmed before measurement so first-call
         /// JIT overhead does not pollute the result.
         /// </summary>
@@ -61,10 +63,24 @@ namespace DxMessaging.Tests.Runtime
 
             // Warm the wrapper lambda itself once so the first invocation's
             // delegate-creation / JIT cost does not show up inside the
-            // Is.Not.AllocatingGCMemory measurement below.
+            // AllocatingGCMemoryConstraint measurement below.
             lambdaUnderTest();
 
-            Assert.That(lambdaUnderTest, Is.Not.AllocatingGCMemory(), label);
+            ConstraintResult measurement = new AllocatingGCMemoryConstraint().ApplyTo(
+                lambdaUnderTest
+            );
+            if (measurement.IsSuccess)
+            {
+                // Negating the constraint hides its allocation count in NUnit's failure
+                // message. Render the original result after the recorder has stopped.
+                TextMessageWriter writer = new TextMessageWriter();
+                measurement.WriteMessageTo(writer);
+                Assert.Fail(
+                    $"{label}: expected zero GC allocations across {measuredIterations} iterations.\n{writer}"
+                );
+            }
+
+            Assert.That(measurement.IsSuccess, Is.False, label);
         }
     }
 }
