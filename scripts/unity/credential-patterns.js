@@ -528,6 +528,9 @@ function neutralizeFormatControls(value, counts) {
       })
       .replace(/&(amp;)*#(?:x([0-9a-fA-F]+)|([0-9]+));/g, (escape, _, hex, decimal) => {
         const point = Number.parseInt(hex ?? decimal, hex !== undefined ? 16 : 10);
+        // decodeSerialized leaves out-of-range entities verbatim, so they cannot decode to an
+        // invisible character and must never reach fromCodePoint as a crash.
+        if (point > 0x10ffff) return escape;
         return isFormatControl(point) ? marker(point) : escape;
       });
     if (next === text) break;

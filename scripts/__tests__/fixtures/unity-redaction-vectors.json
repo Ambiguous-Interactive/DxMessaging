@@ -107,7 +107,9 @@
     ["protocol-relative profile URL", "//cdn/Users/Alice/avatar\n"],
     ["regex backslash pair", "regex \\\\d+\\w+\n"],
     ["terminal localhost file URI", "{\"uri\":\"file://localhost\"}"],
-    ["localhost file URI in prose", "opened file://localhost successfully\n"]
+    ["localhost file URI in prose", "opened file://localhost successfully\n"],
+    ["an out-of-range hex numeric entity", "&#x110000;\n"],
+    ["an out-of-range decimal numeric entity", "&#4294967295;\n"]
   ],
   "accountBoundaries": [
     ["/home/alice completed in 12 ms\n", "/home/[redacted:account-home-path] completed in 12 ms\n"],

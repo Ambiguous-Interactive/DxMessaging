@@ -192,8 +192,8 @@ const path = require("path");
 //     that decode to them are now rewritten into visible [cf:xxxx] markers and counted, with a
 //     document-level UTF-16 byte-order mark preserved and encoded-Cf shadows still refusing
 //     sealing. Vector rows moved from refusal to exact-byte acceptance; the marker passes reuse
-//     the existing data-driven loops: 24060.
-const TOTAL_BUDGET = 24060;
+//     the existing data-driven loops: 24063.
+const TOTAL_BUDGET = 24063;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
