@@ -161,13 +161,17 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Actual ordered callback observations and post-operation state, not a predicted routing result.</summary>
     internal sealed class BusTraceObservation
     {
+        internal const int SchemaVersion = 2;
+
         internal BusTraceObservation(
             IEnumerable<string> callbacks,
             string state,
             string exception,
             IMessageBus.TrimResult? trimResult = null,
             int occupiedTypeSlots = 0,
-            int occupiedTargetSlots = 0
+            int occupiedTargetSlots = 0,
+            IEnumerable<string> finalEmissions = null,
+            IEnumerable<string> unmatchedDiagnostics = null
         )
         {
             Callbacks = new List<string>(callbacks).AsReadOnly();
@@ -176,9 +180,19 @@ namespace DxMessaging.Tests.Runtime
             TrimResult = trimResult;
             OccupiedTypeSlots = occupiedTypeSlots;
             OccupiedTargetSlots = occupiedTargetSlots;
+            FinalEmissions = new List<string>(finalEmissions ?? Array.Empty<string>()).AsReadOnly();
+            UnmatchedDiagnostics = new List<string>(
+                unmatchedDiagnostics ?? Array.Empty<string>()
+            ).AsReadOnly();
         }
 
         internal ReadOnlyCollection<string> Callbacks { get; }
+
+        /// <summary>Caller-visible typed ref snapshots in completion order; call ordinals start at zero per operation.</summary>
+        internal ReadOnlyCollection<string> FinalEmissions { get; }
+
+        /// <summary>Actual unmatched Info messages tagged by call. No report does not imply that a handler was found.</summary>
+        internal ReadOnlyCollection<string> UnmatchedDiagnostics { get; }
         internal string State { get; }
         internal string Exception { get; }
         internal IMessageBus.TrimResult? TrimResult { get; }
@@ -186,7 +200,7 @@ namespace DxMessaging.Tests.Runtime
         internal int OccupiedTargetSlots { get; }
 
         public override string ToString() =>
-            $"callbacks=[{string.Join(",", Callbacks)}]; state={State}; exception={Exception ?? "none"}; trim={TrimResult?.ToString() ?? "none"}; occupiedSlots={OccupiedTypeSlots},{OccupiedTargetSlots}";
+            $"callbacks=[{string.Join(",", Callbacks)}]; state={State}; exception={Exception ?? "none"}; trim={TrimResult?.ToString() ?? "none"}; occupiedSlots={OccupiedTypeSlots},{OccupiedTargetSlots}; finalEmissions=[{string.Join(";", FinalEmissions)}]; unmatchedDiagnostics=[{string.Join(";", UnmatchedDiagnostics)}]";
     }
 
     /// <summary>Owns isolated implementation state for one complete replay.</summary>
@@ -220,7 +234,7 @@ namespace DxMessaging.Tests.Runtime
         {
             StringBuilder report = new();
             report.Append(
-                $"generator={sequence.Version}, seed={sequence.Seed}, kind={sequence.Scenario.Kind}, firstMismatch={Index}, category={Category}\noperation={sequence.Operations[Index]}\ncontrol: {Control}\ncandidate: {Candidate}\nsequenceLength={sequence.Operations.Count}"
+                $"observationSchema={BusTraceObservation.SchemaVersion}, generator={sequence.Version}, seed={sequence.Seed}, kind={sequence.Scenario.Kind}, firstMismatch={Index}, category={Category}\noperation={sequence.Operations[Index]}\ncontrol: {Control}\ncandidate: {Candidate}\nsequenceLength={sequence.Operations.Count}"
             );
             // The immutable sequence caps this complete replay input at MaxOperations.
             // A minimized or hand-written trace cannot be reconstructed from its seed alone.
@@ -846,6 +860,10 @@ namespace DxMessaging.Tests.Runtime
                     : expected.OccupiedTypeSlots != actual.OccupiedTypeSlots
                     || expected.OccupiedTargetSlots != actual.OccupiedTargetSlots
                         ? "storage"
+                    : !SameEntries(expected.FinalEmissions, actual.FinalEmissions)
+                        ? "final-emission"
+                    : !SameEntries(expected.UnmatchedDiagnostics, actual.UnmatchedDiagnostics)
+                        ? "unmatched-diagnostic"
                     : null;
                 if (category != null)
                 {
@@ -853,6 +871,25 @@ namespace DxMessaging.Tests.Runtime
                 }
             }
             return null;
+        }
+
+        private static bool SameEntries(
+            IReadOnlyList<string> expected,
+            IReadOnlyList<string> actual
+        )
+        {
+            if (expected.Count != actual.Count)
+            {
+                return false;
+            }
+            for (int index = 0; index < expected.Count; ++index)
+            {
+                if (!string.Equals(expected[index], actual[index], StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// <summary>Finds a deterministic one-deletion-minimal trace while preserving validity and mismatch category.</summary>

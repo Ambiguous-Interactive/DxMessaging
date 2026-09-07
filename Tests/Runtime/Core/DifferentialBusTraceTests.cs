@@ -27,6 +27,385 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TearDown() => _diagnostics.Dispose();
 
         [Test]
+        public void EmissionObservationScopesRestoreGlobalsAfterCompletionThrowResetAndNestedUnmatched(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("Emit", "EmitWithThrow", "EmitWithReset", "EmitNested", "NestedThrow")]
+                string operationName,
+            [Values(false, true)] bool initiallyEnabled
+        )
+        {
+            BusTraceOperationKind operationKind =
+                operationName == "NestedThrow"
+                    ? BusTraceOperationKind.EmitNested
+                    : (BusTraceOperationKind)
+                        Enum.Parse(typeof(BusTraceOperationKind), operationName);
+            bool savedEnabled = MessagingDebug.enabled;
+            Action<LogLevel, string> savedLog = MessagingDebug.LogFunction;
+            Action<LogLevel, string> sentinel = (_, _) =>
+                Assert.Fail("An emission escaped its scoped collector.");
+            string report =
+                $"kind={scenario.Kind}, operation={operationName}, initiallyEnabled={initiallyEnabled}";
+            try
+            {
+                MessagingDebug.enabled = initiallyEnabled;
+                MessagingDebug.LogFunction = sentinel;
+                using MessageBusTraceAdapter adapter = CreateAdapter(
+                    scenario,
+                    false,
+                    throwAfterEmit: operationName == "NestedThrow"
+                );
+                adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Register));
+                adapter.Execute(
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 1,
+                        context: 1,
+                        kindOffset: 1
+                    )
+                );
+                adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Disable, token: 1));
+                BusTraceObservation observation = adapter.Execute(
+                    new BusTraceOperation(operationKind, value: 11, nestedToken: 1, depth: 1)
+                );
+                Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
+                Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
+                Assert.That(
+                    observation.Exception != null,
+                    Is.EqualTo(
+                        operationKind == BusTraceOperationKind.EmitWithThrow
+                            || operationName == "NestedThrow"
+                    ),
+                    report + observation
+                );
+                int expectedFinalCount = operationKind == BusTraceOperationKind.EmitNested ? 2 : 1;
+                Assert.That(
+                    observation.FinalEmissions.Count,
+                    Is.EqualTo(expectedFinalCount),
+                    report + observation
+                );
+                string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
+                Assert.That(
+                    observation.FinalEmissions[expectedFinalCount - 1],
+                    Is.EqualTo($"call=0,kind={scenario.Kind},value=11,context={context}"),
+                    report + observation
+                );
+                if (operationKind == BusTraceOperationKind.EmitNested)
+                {
+                    MessageKind inner = (MessageKind)(((int)scenario.Kind + 1) % 3);
+                    string innerContext = inner == MessageKind.Untargeted ? "none" : "2001";
+                    Assert.That(
+                        observation.FinalEmissions[0],
+                        Is.EqualTo($"call=1,kind={inner},value=12,context={innerContext}"),
+                        report + observation
+                    );
+                    Assert.That(
+                        observation.UnmatchedDiagnostics.Count,
+                        Is.EqualTo(1),
+                        report + observation
+                    );
+                    StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
+                }
+                // A later unmatched call gets a fresh ordinal and cannot mutate the prior snapshot.
+                BusTraceObservation later = adapter.Execute(
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Emit,
+                        value: 31,
+                        context: 2,
+                        kindOffset: 2
+                    )
+                );
+                Assert.That(later.FinalEmissions.Count, Is.EqualTo(1), report + later);
+                StringAssert.StartsWith("call=0,", later.FinalEmissions[0], report);
+                Assert.That(later.UnmatchedDiagnostics.Count, Is.EqualTo(1), report + later);
+                StringAssert.StartsWith("call=0;", later.UnmatchedDiagnostics[0], report);
+                CollectionAssert.Contains(
+                    observation.FinalEmissions,
+                    $"call=0,kind={scenario.Kind},value=11,context={context}",
+                    report + observation
+                );
+                if (operationKind == BusTraceOperationKind.EmitNested)
+                {
+                    StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
+                }
+                Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
+                Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
+            }
+            finally
+            {
+                MessagingDebug.LogFunction = savedLog;
+                MessagingDebug.enabled = savedEnabled;
+            }
+        }
+
+        [Test]
+        public void MissingNestedUnmatchedEmitIsDetectedWithoutChangingCallbacks(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                641,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 1,
+                        context: 1,
+                        kindOffset: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Disable, token: 1),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.EmitNested,
+                        value: 11,
+                        nestedToken: 1,
+                        depth: 1
+                    ),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateMutant(kind, "nested")
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            CollectionAssert.AreEqual(control[3].Callbacks, candidate[3].Callbacks, report);
+            Assert.That(candidate[3].State, Is.EqualTo(control[3].State), report);
+            Assert.That(control[3].FinalEmissions.Count, Is.EqualTo(2), report);
+            Assert.That(candidate[3].FinalEmissions.Count, Is.EqualTo(1), report);
+            Assert.That(control[3].UnmatchedDiagnostics.Count, Is.EqualTo(1), report);
+            Assert.That(candidate[3].UnmatchedDiagnostics, Is.Empty, report);
+            Assert.That(
+                DifferentialBusTrace.Compare(control, candidate)?.Category,
+                Is.EqualTo("final-emission"),
+                report
+            );
+        }
+
+        [Test]
+        public void UnmatchedDiagnosticReportsAreIndependentOfCallbackCountsAndVetoes(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("empty", "global", "bare", "veto")] string setup
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionEnabled: false
+            );
+            using DiagnosticCalibrationAdapter adapter = new(scenario, bus);
+            adapter.Configure(setup);
+            Action<LogLevel, string> savedLog = MessagingDebug.LogFunction;
+            List<(LogLevel, string)> forwarded = new();
+            Action<LogLevel, string> original = (level, message) => forwarded.Add((level, message));
+            try
+            {
+                MessagingDebug.LogFunction = original;
+                BusTraceObservation observation = adapter.Execute(
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17)
+                );
+                string report = $"kind={scenario.Kind}, setup={setup}: {observation}";
+                Assert.That(observation.Exception, Is.Null, report);
+                Assert.That(observation.Callbacks, Is.Empty, report);
+                Assert.That(adapter.GlobalCalls, Is.EqualTo(setup == "global" ? 1 : 0), report);
+                Assert.That(adapter.VetoCalls, Is.EqualTo(setup == "veto" ? 1 : 0), report);
+                // Global-only delivery can log unmatched; a bare bus bucket can suppress it
+                // without invoking a delegate; veto stops before any unmatched report.
+                Assert.That(
+                    observation.UnmatchedDiagnostics.Count,
+                    Is.EqualTo(setup == "empty" || setup == "global" ? 1 : 0),
+                    report
+                );
+                (LogLevel, string)[] expected =
+                    setup == "global"
+                        ? new[]
+                        {
+                            (LogLevel.Info, (string)null),
+                            (LogLevel.Info, "unrelated {0} diagnostic"),
+                            (LogLevel.Error, "unrelated error"),
+                            (
+                                LogLevel.Warn,
+                                "Could not find a matching untargeted broadcast handler noise"
+                            ),
+                        }
+                        : Array.Empty<(LogLevel, string)>();
+                CollectionAssert.AreEqual(expected, forwarded, report);
+                Assert.That(MessagingDebug.LogFunction, Is.SameAs(original), report);
+            }
+            finally
+            {
+                MessagingDebug.LogFunction = savedLog;
+            }
+        }
+
+        [Test]
+        public void TypedFinalPayloadObservationsDetectRealMutationAndShrink(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool throwAfterEmit
+        )
+        {
+            VerifyFinalMutation(scenario, "payload", throwAfterEmit);
+        }
+
+        [Test]
+        public void TypedFinalContextObservationsDetectRealMutationAndShrink(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.KindsWithComponentTarget)
+            )]
+                MessageScenario scenario
+        )
+        {
+            VerifyFinalMutation(scenario, "context", false);
+        }
+
+        private static void VerifyFinalMutation(
+            MessageScenario scenario,
+            string fault,
+            bool throwAfterEmit
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                619,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind =>
+                    CreateAdapter(
+                        kind,
+                        false,
+                        observationFault: null,
+                        throwAfterEmit: throwAfterEmit
+                    )
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind =>
+                    CreateAdapter(
+                        kind,
+                        false,
+                        observationFault: fault,
+                        throwAfterEmit: throwAfterEmit
+                    )
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            CollectionAssert.AreEqual(control[1].Callbacks, candidate[1].Callbacks, report);
+            Assert.That(candidate[1].State, Is.EqualTo(control[1].State), report);
+            Assert.That(candidate[1].Exception, Is.EqualTo(control[1].Exception), report);
+            Assert.That(control[1].Exception == null, Is.EqualTo(!throwAfterEmit), report);
+            CollectionAssert.AreEqual(
+                control[1].UnmatchedDiagnostics,
+                candidate[1].UnmatchedDiagnostics,
+                report
+            );
+            string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
+            CollectionAssert.AreEqual(
+                new[] { $"call=0,kind={scenario.Kind},value=17,context={context}" },
+                control[1].FinalEmissions,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    $"call=0,kind={scenario.Kind},value={(fault == "payload" ? 117 : 17)},context={(fault == "context" ? "2100" : context)}",
+                },
+                candidate[1].FinalEmissions,
+                report
+            );
+            BusTraceMismatch EvaluateFinal(BusTraceSequence input) =>
+                DifferentialBusTrace.Compare(
+                    DifferentialBusTrace.Replay(
+                        input,
+                        kind => CreateAdapter(kind, false, throwAfterEmit: throwAfterEmit)
+                    ),
+                    DifferentialBusTrace.Replay(
+                        input,
+                        kind =>
+                            CreateAdapter(
+                                kind,
+                                false,
+                                observationFault: fault,
+                                throwAfterEmit: throwAfterEmit
+                            )
+                    )
+                );
+            BusTraceMismatch mismatch = EvaluateFinal(sequence);
+            Assert.That(mismatch?.Category, Is.EqualTo("final-emission"), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, EvaluateFinal);
+            Assert.That(minimal.Operations.Count, Is.EqualTo(1), report);
+            Assert.That(minimal.Operations[0].Kind, Is.EqualTo(BusTraceOperationKind.Emit), report);
+            Assert.That(minimal.Version, Is.EqualTo(8), report);
+            StringAssert.Contains("observationSchema=2", mismatch.BuildReport(sequence), report);
+        }
+
+        [Test]
+        public void UnmatchedDiagnosticsDetectEmptyBusEmissionWithoutInventingFoundResult(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                631,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 29),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, true)
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            Assert.That(control[1].Callbacks, Is.Empty, report);
+            Assert.That(candidate[1].Callbacks, Is.Empty, report);
+            Assert.That(candidate[1].State, Is.EqualTo(control[1].State), report);
+            CollectionAssert.AreEqual(
+                control[1].FinalEmissions,
+                candidate[1].FinalEmissions,
+                report
+            );
+            Assert.That(control[1].UnmatchedDiagnostics.Count, Is.EqualTo(1), report);
+            StringAssert.StartsWith(
+                "call=0;Could not find a matching ",
+                control[1].UnmatchedDiagnostics[0],
+                report
+            );
+            Assert.That(candidate[1].UnmatchedDiagnostics, Is.Empty, report);
+            Assert.That(
+                Evaluate(sequence, true)?.Category,
+                Is.EqualTo("unmatched-diagnostic"),
+                report
+            );
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                sequence,
+                input => Evaluate(input, true)
+            );
+            Assert.That(minimal.Operations.Count, Is.EqualTo(1), report);
+            Assert.That(minimal.Operations[0].Kind, Is.EqualTo(BusTraceOperationKind.Emit), report);
+        }
+
+        [Test]
         public void GeneratorVersionPinsKnownSeedPrefix(
             [Values(1, 2, 3, 4, 5, 6, 7, 8)] int version
         )
@@ -2976,7 +3355,9 @@ namespace DxMessaging.Tests.Runtime.Core
         private static MessageBusTraceAdapter CreateAdapter(
             MessageScenario scenario,
             bool dropEmits,
-            bool deferReset = false
+            bool deferReset = false,
+            string observationFault = null,
+            bool throwAfterEmit = false
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
@@ -2990,9 +3371,195 @@ namespace DxMessaging.Tests.Runtime.Core
             return new MessageBusTraceAdapter(
                 scenario,
                 bus,
-                dropEmits ? new DropEmitsBus(bus) : delayed,
+                dropEmits ? new DropEmitsBus(bus)
+                    : observationFault != null || throwAfterEmit
+                        ? new FinalValueEmitter(bus, observationFault, throwAfterEmit)
+                    : delayed,
                 delayed != null ? delayed.RequestReset : bus.ResetState
             );
+        }
+
+        private sealed class DiagnosticCalibrationAdapter : MessageBusTraceAdapter
+        {
+            private readonly MessageKind _kind;
+            private MessageBusRegistration _bareRegistration;
+            internal int GlobalCalls { get; private set; }
+            internal int VetoCalls { get; private set; }
+
+            internal DiagnosticCalibrationAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState)
+            {
+                _kind = scenario.Kind;
+            }
+
+            internal void Configure(string setup)
+            {
+                if (setup == "global")
+                {
+                    Token(0)
+                        .RegisterGlobalAcceptAll(
+                            (IUntargetedMessage _) => RecordGlobalCall(),
+                            (InstanceId _, ITargetedMessage __) => RecordGlobalCall(),
+                            (InstanceId _, IBroadcastMessage __) => RecordGlobalCall()
+                        );
+                }
+                else if (setup == "bare")
+                {
+                    MessageHandler handler = new(new InstanceId(9876), Bus) { active = true };
+                    _bareRegistration = _kind switch
+                    {
+                        MessageKind.Untargeted => Bus.RegisterUntargeted<UntargetedPayload>(
+                            handler
+                        ),
+                        MessageKind.Targeted => Bus.RegisterTargeted<TargetedPayload>(
+                            new InstanceId(2000),
+                            handler
+                        ),
+                        MessageKind.Broadcast => Bus.RegisterSourcedBroadcast<BroadcastPayload>(
+                            new InstanceId(2000),
+                            handler
+                        ),
+                        _ => throw new ArgumentOutOfRangeException(),
+                    };
+                }
+                else if (setup == "veto")
+                {
+                    switch (_kind)
+                    {
+                        case MessageKind.Untargeted:
+                            Token(0)
+                                .RegisterUntargetedInterceptor<UntargetedPayload>(
+                                    (ref UntargetedPayload _) =>
+                                    {
+                                        ++VetoCalls;
+                                        return false;
+                                    }
+                                );
+                            break;
+                        case MessageKind.Targeted:
+                            Token(0)
+                                .RegisterTargetedInterceptor<TargetedPayload>(
+                                    (ref InstanceId _, ref TargetedPayload __) =>
+                                    {
+                                        ++VetoCalls;
+                                        return false;
+                                    }
+                                );
+                            break;
+                        case MessageKind.Broadcast:
+                            Token(0)
+                                .RegisterBroadcastInterceptor<BroadcastPayload>(
+                                    (ref InstanceId _, ref BroadcastPayload __) =>
+                                    {
+                                        ++VetoCalls;
+                                        return false;
+                                    }
+                                );
+                            break;
+                    }
+                }
+            }
+
+            private void RecordGlobalCall()
+            {
+                ++GlobalCalls;
+                // Unrelated and null log messages must not become unmatched observations or exceptions.
+                MessagingDebug.Log(LogLevel.Info, null);
+                MessagingDebug.Log(LogLevel.Info, "unrelated {0} diagnostic");
+                MessagingDebug.Log(LogLevel.Error, "unrelated error");
+                MessagingDebug.Log(
+                    LogLevel.Warn,
+                    "Could not find a matching untargeted broadcast handler noise"
+                );
+            }
+
+            protected override void DisposeToken(int slot)
+            {
+                if (slot == 0)
+                {
+                    switch (_kind)
+                    {
+                        case MessageKind.Untargeted:
+                            Bus.Deregister<UntargetedPayload>(_bareRegistration);
+                            break;
+                        case MessageKind.Targeted:
+                            Bus.Deregister<TargetedPayload>(_bareRegistration);
+                            break;
+                        case MessageKind.Broadcast:
+                            Bus.Deregister<BroadcastPayload>(_bareRegistration);
+                            break;
+                    }
+                }
+                base.DisposeToken(slot);
+            }
+        }
+
+        // Mutate the real ref arguments after production dispatch; never edit observations.
+        private sealed class FinalValueEmitter : DelegatingMessageBus
+        {
+            private readonly string _fault;
+            private readonly bool _throwAfter;
+
+            internal FinalValueEmitter(IMessageBus bus, string fault, bool throwAfter)
+                : base(bus)
+            {
+                _fault = fault;
+                _throwAfter = throwAfter;
+            }
+
+            private void Complete<TMessage>(ref TMessage message)
+            {
+                if (_fault == "payload")
+                {
+                    object changed = message switch
+                    {
+                        MessageBusTraceAdapter.UntargetedPayload value =>
+                            new MessageBusTraceAdapter.UntargetedPayload(value.Value + 100),
+                        MessageBusTraceAdapter.TargetedPayload value =>
+                            new MessageBusTraceAdapter.TargetedPayload(value.Value + 100),
+                        MessageBusTraceAdapter.BroadcastPayload value =>
+                            new MessageBusTraceAdapter.BroadcastPayload(value.Value + 100),
+                        _ => throw new InvalidOperationException("Unsupported trace payload."),
+                    };
+                    message = (TMessage)changed;
+                }
+                if (_throwAfter)
+                {
+                    throw new InvalidOperationException("intentional post-emission failure");
+                }
+            }
+
+            public override void UntargetedBroadcast<TMessage>(ref TMessage message)
+            {
+                base.UntargetedBroadcast(ref message);
+                Complete(ref message);
+            }
+
+            public override void TargetedBroadcast<TMessage>(
+                ref InstanceId target,
+                ref TMessage message
+            )
+            {
+                base.TargetedBroadcast(ref target, ref message);
+                if (_fault == "context")
+                {
+                    target = new InstanceId(target.Id + 100);
+                }
+                Complete(ref message);
+            }
+
+            public override void SourcedBroadcast<TMessage>(
+                ref InstanceId source,
+                ref TMessage message
+            )
+            {
+                base.SourcedBroadcast(ref source, ref message);
+                if (_fault == "context")
+                {
+                    source = new InstanceId(source.Id + 100);
+                }
+                Complete(ref message);
+            }
         }
 
         /// <summary>Intentional mutant: postpones a real reset request until the enclosing emission returns.</summary>

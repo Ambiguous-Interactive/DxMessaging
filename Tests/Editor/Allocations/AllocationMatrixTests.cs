@@ -180,7 +180,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         [SetUp]
         public void CaptureDiagnosticsState()
         {
-            _diagnosticsScope = new DiagnosticsScope();
+            _diagnosticsScope = new DiagnosticsScope(diagnosticsTargets: DiagnosticsTarget.Off);
             _savedLogFunction = MessagingDebug.LogFunction;
             // Stray Debug.Log calls would allocate strings and contaminate the
             // assertion. Mute the messaging logger for the duration of the
@@ -194,6 +194,62 @@ namespace DxMessaging.Tests.Editor.Allocations
             _diagnosticsScope?.Dispose();
             _diagnosticsScope = null;
             MessagingDebug.LogFunction = _savedLogFunction;
+        }
+
+        [Test]
+        public void FixtureDiagnosticsDefaultsOffAndPreservesExplicitOptIn(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool enableDiagnostics
+        )
+        {
+            using DiagnosticsScope callerState = new(
+                DiagnosticsTarget.All,
+                messageBufferSize: 7,
+                diagnosticsStackTraces: true
+            );
+            AllocationMatrixTests fixture = new();
+            string report = $"[{scenario.Kind}] explicitDiagnostics={enableDiagnostics}";
+            try
+            {
+                fixture.CaptureDiagnosticsState();
+                Assert.That(
+                    IMessageBus.GlobalDiagnosticsTargets,
+                    Is.EqualTo(DiagnosticsTarget.Off),
+                    $"{report}: fixture setup must override the caller's enabled diagnostics."
+                );
+                if (enableDiagnostics)
+                {
+                    IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
+                }
+                fixture.RunWithFreshHarness(
+                    scenario,
+                    (token, bus) =>
+                    {
+                        Assert.That(bus.DiagnosticsMode, Is.EqualTo(enableDiagnostics), report);
+                        Assert.That(token.DiagnosticMode, Is.EqualTo(enableDiagnostics), report);
+                    }
+                );
+            }
+            finally
+            {
+                fixture.RestoreDiagnosticsState();
+            }
+            Assert.That(
+                IMessageBus.GlobalDiagnosticsTargets,
+                Is.EqualTo(DiagnosticsTarget.All),
+                $"{report}: fixture teardown must restore the caller's diagnostics target."
+            );
+            Assert.That(
+                IMessageBus.GlobalDiagnosticsStackTraces,
+                Is.True,
+                $"{report}: fixture teardown must preserve the caller's stack-trace setting."
+            );
+            Assert.That(
+                IMessageBus.GlobalMessageBufferSize,
+                Is.EqualTo(7),
+                $"{report}: fixture teardown must preserve the caller's message buffer size."
+            );
         }
 
         /// <summary>
