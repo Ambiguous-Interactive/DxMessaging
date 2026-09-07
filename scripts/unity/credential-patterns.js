@@ -489,6 +489,18 @@ function redactPatterns(text, patterns) {
 function redactCredentials(text) {
   return redactPatterns(text, CREDENTIAL_PATTERNS);
 }
+// Format-control scalars become visible [cf:xxxx] markers; a leading UTF-16 BOM is preserved.
+function neutralizeFormatControls(value, counts) {
+  let replaced = 0;
+  const body = value.replace(/[\p{Cf}\uD800-\uDFFF]/gu, (char, offset) => {
+    if (offset === 0 && char === "\ufeff") return char;
+    replaced += 1;
+    return `[cf:${char.codePointAt(0).toString(16).padStart(4, "0")}]`;
+  });
+  if (replaced === 0) return value;
+  counts.set("scalar-format-control", (counts.get("scalar-format-control") ?? 0) + replaced);
+  return body;
+}
 class StructuredArtifactError extends Error {}
 function structuredText(text, visit, format, depth = 0) {
   const invalid = (reason = "unsupported-structure") => {
@@ -496,7 +508,6 @@ function structuredText(text, visit, format, depth = 0) {
   };
   if (depth > 8) invalid("nested-structure-depth");
   const scalar = (value, key, element) => {
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) invalid("scalar-format-control");
     if (contextualPattern(key, value, element)) return visit(value, key, element);
     return (
       (/^[\[\{"<]/.test(value.trimStart())
@@ -703,11 +714,15 @@ function redactSensitiveData(text, format) {
           result = redactPatterns(value, SENSITIVE_PATTERNS);
         }
         for (const [id, count] of result.counts) counts.set(id, (counts.get(id) ?? 0) + count);
-        return result.redacted;
+        return neutralizeFormatControls(result.redacted, counts);
       },
       format
     );
-    if (output === undefined) return redactPatterns(text, SENSITIVE_PATTERNS);
+    if (output === undefined) {
+      const plain = redactPatterns(text, SENSITIVE_PATTERNS);
+      for (const [id, count] of plain.counts) counts.set(id, (counts.get(id) ?? 0) + count);
+      return { redacted: neutralizeFormatControls(plain.redacted, counts), counts };
+    }
     return { redacted: counts.size ? output : text, counts };
   } catch {
     return { redacted: text, counts: new Map() };

@@ -509,7 +509,11 @@
     [
       "Unity serial in a log carrying a stray NUL",
       "boot\n\u0000\nserial SC-FAKE-FAKE-FAKE-FAKE-FAKE\n"
-    ]
+    ],
+    ["an escaped JSON format control", "{\"message\":\"ordinary\\u202ediagnostic\"}"],
+    ["an XML entity format control", "<a>ordinary&#x202e;diagnostic</a>"],
+    ["an escaped JSON format-control host", "{\"url\":\"https://runner\\u202e.local/path\"}"],
+    ["an XML entity format-control host", "<url>https://runner&#x2060;.local/path</url>"]
   ],
   "unsupportedArtifactClasses": [
     "paired-throughput",
@@ -797,6 +801,30 @@
       "typed connection flags beside nested credentials",
       "{\"buildOptions\":{\"connectToHost\":false},\"enabled\":{\"connectToHost\":true},\"nested\":\"{\\\"connectToHost\\\":false,\\\"PASSWORD\\\":\\\"fake-private-password\\\"}\"}",
       "{\"buildOptions\":{\"connectToHost\":false},\"enabled\":{\"connectToHost\":true},\"nested\":\"{\\\"connectToHost\\\":false,\\\"PASSWORD\\\":\\\"[redacted:password-assignment]\\\"}\"}"
+    ],
+    [
+      "an escaped JSON format control",
+      "{\"message\":\"ordinary\\u202ediagnostic\"}",
+      "{\"message\":\"ordinary[cf:202e]diagnostic\"}",
+      ".json"
+    ],
+    [
+      "an XML entity format control",
+      "<a>ordinary&#x202e;diagnostic</a>",
+      "<a>ordinary[cf:202e]diagnostic</a>",
+      ".xml"
+    ],
+    [
+      "an escaped JSON format-control host",
+      "{\"url\":\"https://runner\\u202e.local/path\"}",
+      "{\"url\":\"https://[redacted:web-hostname]/path\"}",
+      ".json"
+    ],
+    [
+      "an XML entity format-control host",
+      "<url>https://runner&#x2060;.local/path</url>",
+      "<url>https://[redacted:web-hostname]/path</url>",
+      ".xml"
     ]
   ],
   "invalidStructures": [
@@ -855,23 +883,11 @@
       ".xml",
       "<PASSWORD><value>FAKE_PRIVATE_PASSWORD</value></PASSWORD>"
     ],
-    ["escaped JSON format control", ".json", "{\"message\":\"ordinary\\u202ediagnostic\"}"],
     ["escaped JSON key format control", ".json", "{\"PASS\\u200bWORD\":\"FAKE_PRIVATE_PASSWORD\"}"],
-    ["XML entity format control", ".xml", "<a>ordinary&#x202e;diagnostic</a>"],
     ["XML surrogate reference", ".xml", "<a x=\"&#xD800;\"/>"],
     ["XML out of range reference", ".xml", "<a x=\"&#x110000;\"/>"],
     ["JSON negative zero", ".json", "{\"value\":-0,\"TOKEN\":\"FAKE_PRIVATE_SECRET\"}"],
     ["truncated JSONL record", ".jsonl", "{\"total\":1}\n{\"name\":\"FAKE_PRIVATE"],
-    [
-      "encoded private host format control in json",
-      ".json",
-      "{\"url\":\"https://runner\\u202e.local/path\"}"
-    ],
-    [
-      "encoded private host format control in xml",
-      ".xml",
-      "<url>https://runner&#x2060;.local/path</url>"
-    ],
     [
       "ambiguous mixed XML assignment",
       ".xml",
