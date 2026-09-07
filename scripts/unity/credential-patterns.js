@@ -360,7 +360,8 @@ function serializedShadows(text) {
 }
 function addSensitiveData(found, shadows) {
   for (const shadow of shadows) {
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(shadow)) found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+    if (/[\p{Cf}\uD800-\uDFFF]/u.test(shadow))
+      found.set(STRUCTURE_FINDING.id, { ...STRUCTURE_FINDING, reason: "encoded-format-control" });
     for (const entry of [...findCredentials(shadow), ...findIdentifiers(shadow)])
       found.set(entry.id, entry);
   }
@@ -489,17 +490,52 @@ function redactPatterns(text, patterns) {
 function redactCredentials(text) {
   return redactPatterns(text, CREDENTIAL_PATTERNS);
 }
-// Format-control scalars become visible [cf:xxxx] markers; a leading UTF-16 BOM is preserved.
+// Format-control characters, including through encoded escape chains, become visible [cf:xxxx]
+// markers so an uploaded artifact carries no invisible character; callers count every rewrite.
 function neutralizeFormatControls(value, counts) {
   let replaced = 0;
-  const body = value.replace(/[\p{Cf}\uD800-\uDFFF]/gu, (char, offset) => {
-    if (offset === 0 && char === "\ufeff") return char;
+  const isFormatControl = (point) =>
+    (point >= 0xd800 && point <= 0xdfff) || /[\p{Cf}]/u.test(String.fromCodePoint(point));
+  const marker = (point) => {
     replaced += 1;
-    return `[cf:${char.codePointAt(0).toString(16).padStart(4, "0")}]`;
-  });
-  if (replaced === 0) return value;
-  counts.set("scalar-format-control", (counts.get("scalar-format-control") ?? 0) + replaced);
-  return body;
+    return `[cf:${point.toString(16).padStart(4, "0")}]`;
+  };
+  let text = value.replace(/[\p{Cf}\uD800-\uDFFF]/gu, (char) => marker(char.codePointAt(0)));
+  // Escapes decode to the same characters through the shadow chain, so rewrite every level of
+  // each escape run until no encoded form can produce an invisible character either.
+  for (;;) {
+    const next = text
+      .replace(/(?:\\u[0-9a-fA-F]{4})+/g, (run) => {
+        const halves = run
+          .match(/\\u([0-9a-fA-F]{4})/g)
+          .map((half) => Number.parseInt(half.slice(2), 16));
+        let out = "";
+        for (let index = 0; index < halves.length;) {
+          const high = halves[index];
+          const paired =
+            high >= 0xd800 &&
+            high <= 0xdbff &&
+            halves[index + 1] >= 0xdc00 &&
+            halves[index + 1] <= 0xdfff;
+          const width = paired ? 2 : 1;
+          const point = paired
+            ? (high - 0xd800) * 0x400 + halves[index + 1] - 0xdc00 + 0x10000
+            : high;
+          out += isFormatControl(point) ? marker(point) : run.slice(index * 6, (index + width) * 6);
+          index += width;
+        }
+        return out;
+      })
+      .replace(/&(amp;)*#(?:x([0-9a-fA-F]+)|([0-9]+));/g, (escape, _, hex, decimal) => {
+        const point = Number.parseInt(hex ?? decimal, hex !== undefined ? 16 : 10);
+        return isFormatControl(point) ? marker(point) : escape;
+      });
+    if (next === text) break;
+    text = next;
+  }
+  if (replaced > 0)
+    counts.set("scalar-format-control", (counts.get("scalar-format-control") ?? 0) + replaced);
+  return text;
 }
 class StructuredArtifactError extends Error {}
 function structuredText(text, visit, format, depth = 0) {
@@ -719,9 +755,15 @@ function redactSensitiveData(text, format) {
       format
     );
     if (output === undefined) {
+      // A UTF-16 byte-order mark arrives as the first decoded character; it is an encoding
+      // marker at document level, so neutralization must leave it exactly where it was.
+      const bom = text.startsWith("\ufeff") ? "\ufeff" : "";
       const plain = redactPatterns(text, SENSITIVE_PATTERNS);
       for (const [id, count] of plain.counts) counts.set(id, (counts.get(id) ?? 0) + count);
-      return { redacted: neutralizeFormatControls(plain.redacted, counts), counts };
+      return {
+        redacted: bom + neutralizeFormatControls(plain.redacted.slice(bom.length), counts),
+        counts
+      };
     }
     return { redacted: counts.size ? output : text, counts };
   } catch {

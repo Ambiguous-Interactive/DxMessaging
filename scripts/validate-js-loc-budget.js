@@ -185,7 +185,15 @@ const path = require("path");
 //     Rejection coverage and shared-scan finalization add evidence without extra Unity runs.
 //     Equivalent-input fixture factoring removes 53 lines; independent review accepts
 //     the remaining increase instead of unrelated test refactors: 24010.
-const TOTAL_BUDGET = 24010;
+// 087 Upload native perf evidence that carries Unicode format-control characters. A Windows Bee
+//     build-graph scalar held one literal invisible character, so the redactor refused the whole
+//     artifact tree and #506 native retention stayed blocked; a Unity log with a single soft
+//     hyphen would do the same. Literal characters, lone surrogates, and JSON/XML escape chains
+//     that decode to them are now rewritten into visible [cf:xxxx] markers and counted, with a
+//     document-level UTF-16 byte-order mark preserved and encoded-Cf shadows still refusing
+//     sealing. Vector rows moved from refusal to exact-byte acceptance; the marker passes reuse
+//     the existing data-driven loops: 24060.
+const TOTAL_BUDGET = 24060;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

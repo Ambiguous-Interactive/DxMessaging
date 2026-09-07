@@ -513,7 +513,9 @@
     ["an escaped JSON format control", "{\"message\":\"ordinary\\u202ediagnostic\"}"],
     ["an XML entity format control", "<a>ordinary&#x202e;diagnostic</a>"],
     ["an escaped JSON format-control host", "{\"url\":\"https://runner\\u202e.local/path\"}"],
-    ["an XML entity format-control host", "<url>https://runner&#x2060;.local/path</url>"]
+    ["an XML entity format-control host", "<url>https://runner&#x2060;.local/path</url>"],
+    ["JSON escaped leading byte order mark in value", "{\"message\":\"\\\\ufeffordinary\"}"],
+    ["XML nested entity byte order mark in value", "<a>&amp;#xfeff;ordinary</a>"]
   ],
   "unsupportedArtifactClasses": [
     "paired-throughput",
@@ -825,6 +827,18 @@
       "<url>https://runner&#x2060;.local/path</url>",
       "<url>https://[redacted:web-hostname]/path</url>",
       ".xml"
+    ],
+    [
+      "a JSON escape chain to a byte order mark",
+      "{\"message\":\"\\\\ufeffordinary\"}",
+      "{\"message\":\"[cf:feff]ordinary\"}",
+      ".json"
+    ],
+    [
+      "an XML escape chain to a byte order mark",
+      "<a>&amp;#xfeff;ordinary</a>",
+      "<a>[cf:feff]ordinary</a>",
+      ".xml"
     ]
   ],
   "invalidStructures": [
@@ -894,12 +908,6 @@
       "<result><![CDATA[TOKEN=abcdefghijklmnop]]><total>1</total></result>"
     ],
     ["XML inline element token", ".xml", "<a>ghp_<b>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</b></a>"],
-    [
-      "JSON escaped leading byte order mark in value",
-      ".json",
-      "{\"message\":\"\\\\ufeffordinary\"}"
-    ],
-    ["XML nested entity byte order mark in value", ".xml", "<a>&amp;#xfeff;ordinary</a>"],
     ["object JSON credential", ".json", "{\"TOKEN\":{\"value\":\"FAKE_PRIVATE_SECRET\"}}"],
     ["array JSON credential", ".json", "{\"TOKEN\":[\"FAKE_PRIVATE_SECRET\"]}"],
     [
