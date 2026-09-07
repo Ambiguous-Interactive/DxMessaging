@@ -28,16 +28,18 @@ declares:
 
 Each reducer accepts only its registered artifact class:
 
-| Artifact class             | Reducer                       |
-| -------------------------- | ----------------------------- |
-| `shipping-fidelity-matrix` | `shipping-fidelity-matrix-v1` |
-| `paired-throughput-screen` | `paired-throughput-screen-v1` |
+| Artifact class                     | Reducer                               |
+| ---------------------------------- | ------------------------------------- |
+| `shipping-fidelity-matrix`         | `shipping-fidelity-matrix-v1`         |
+| `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
+| `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
 supply confirmatory intervals, native binaries, or the full paired-throughput campaign contract.
-Allocation-heavy SubUnsub, cold latency, frame/queue latency, WPR/PMU native mapping, and ARM64
-energy still need their own complete raw-input contracts and reducers under #508.
+The SubUnsub class retains individual benchmark observations, including unmeasured allocation
+probes. Allocation-heavy SubUnsub campaigns, cold latency, frame/queue latency, WPR/PMU native
+mapping, and ARM64 energy still need their complete raw-input contracts and reducers under #508.
 
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
 Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode
@@ -186,6 +188,40 @@ reproducing effects and the `accepted`, `rejected`, or `uninterpretable` screen 
 a rejected or uninterpretable screen succeeds when its original decision is reproduced. Missing
 inputs, changed bytes, or a different decision fail. These files do not prove native payload
 retention, independent build replication, or immutable remote restoration.
+
+## Retaining SubUnsub allocation observations
+
+Retain the original benchmark output in `comparison-output.log`. For an MCP result, copy the
+selected test leaf's `output` string without editing its metric lines. Keep the source result and
+its SHA-256 in the local experiment record; inspect any full result before publication because
+suite names can contain private paths. Extract the CSV with the production extractor:
+
+```bash
+node scripts/unity/extract-perf-baseline.js \
+  --input .artifacts/subunsub/comparison-output.log \
+  --output .artifacts/subunsub/comparison-baseline.csv
+node scripts/unity/perf-evidence-bundle.js seal .artifacts/subunsub \
+  --experiment-id subunsub-observations-example \
+  --artifact-class allocation-subunsub-observations \
+  --reducer allocation-subunsub-observations-v1 \
+  --source-commit "$MEASURED_SOURCE_COMMIT"
+node scripts/unity/perf-evidence-bundle.js replay .artifacts/subunsub/evidence-manifest.json
+```
+
+The reducer requires the current canonical eight-column CSV and an exact match with rows
+extracted from the retained output. Unknown or malformed CSV rows, duplicate run identities,
+legacy missing byte columns, unsafe integer measurements, and invalid negative values fail.
+Every retained row must share the declared source commit and exact platform string, with one
+recognized execution scope. At least one `Comparison_DxMessaging_SubUnsub` row is required.
+The normalized result copies all SubUnsub rows in source order, including their run identities,
+throughput, window duration, allocation call counts, and informational allocated bytes.
+
+`gcAllocations` and `gcAllocatedBytes` retain their producer's `-1` unmeasured sentinel
+independently. A measured zero remains zero; neither field is inferred from the other.
+These are aggregate benchmark observations. The CSV does not carry probe sample distributions,
+operation denominators, independent build identities, workload schedules, or confirmatory
+intervals. Do not infer per-operation allocation costs or campaign acceptance from this class.
+Local Mono observations retain their scope and cannot establish a Standalone IL2CPP headline.
 
 ## Adding a reducer
 
