@@ -467,8 +467,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        [Test]
-        public void ExhaustedGenerationSlotIsBurnedAndStaleCopyCannotEndReplacement()
+        [TestCase(0L)]
+        [TestCase(long.MaxValue)]
+        [TestCase(-2L)]
+        public void OverrideGenerationBoundariesPreserveStaleCopiesAndRetireExhaustedSlots(
+            long generation
+        )
         {
             GlobalMessageBus original = new GlobalMessageBus();
             GlobalMessageBus replacementBus = new GlobalMessageBus();
@@ -478,7 +482,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int exhaustedSlot = GetScopeSlot(bootstrap);
             bootstrap.Dispose();
             long originalGeneration = GetOverrideStateGeneration(exhaustedSlot);
-            SetOverrideStateGeneration(exhaustedSlot, -2);
+            SetOverrideStateGeneration(exhaustedSlot, generation);
             MessageHandler.GlobalMessageBusScope exhaustedScope = default;
             MessageHandler.GlobalMessageBusScope replacement = default;
 
@@ -488,30 +492,35 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.AreEqual(
                     exhaustedSlot,
                     GetScopeSlot(exhaustedScope),
-                    "The prepared slot must issue its final nonzero generation."
+                    $"generation={generation}: the prepared slot must issue the next generation."
+                );
+                Assert.AreEqual(
+                    unchecked(generation + 1),
+                    GetOverrideStateGeneration(exhaustedSlot),
+                    $"generation={generation}: zero-start, signed wrap, and final issuance must retain all nonzero values."
                 );
                 MessageHandler.GlobalMessageBusScope staleCopy = exhaustedScope;
                 exhaustedScope.Dispose();
 
                 replacement = MessageHandler.OverrideGlobalMessageBus(replacementBus);
-                Assert.AreNotEqual(
-                    exhaustedSlot,
-                    GetScopeSlot(replacement),
-                    "A slot that issued generation -1 must be burned instead of wrapping."
+                Assert.AreEqual(
+                    generation != -2,
+                    exhaustedSlot == GetScopeSlot(replacement),
+                    $"generation={generation}: reusable slots must be reused; the exhausted slot must be retired before zero wraps."
                 );
 
                 staleCopy.Dispose();
                 Assert.AreSame(
                     replacementBus,
                     MessageHandler.MessageBus,
-                    "The exhausted stale scope must not end the replacement scope."
+                    $"generation={generation}: the stale scope must not end the replacement scope."
                 );
 
                 replacement.Dispose();
                 Assert.AreSame(
                     original,
                     MessageHandler.MessageBus,
-                    "The replacement scope must restore the original bus."
+                    $"generation={generation}: the replacement scope must restore the original bus."
                 );
             }
             finally
@@ -519,7 +528,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageHandler.SetGlobalMessageBus(original);
                 exhaustedScope.Dispose();
                 replacement.Dispose();
-                RestoreBurnedOverrideSlot(exhaustedSlot, originalGeneration);
+                if (generation == -2)
+                {
+                    RestoreBurnedOverrideSlot(exhaustedSlot, originalGeneration);
+                }
+                else
+                {
+                    SetOverrideStateGeneration(exhaustedSlot, originalGeneration);
+                }
             }
         }
 

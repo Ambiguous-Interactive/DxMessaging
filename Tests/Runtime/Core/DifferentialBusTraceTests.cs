@@ -408,7 +408,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void GeneratorVersionPinsKnownSeedPrefix(
-            [Values(1, 2, 3, 4, 5, 6, 7, 8, 9)] int version
+            [Values(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -419,7 +419,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 BusTraceSequence.GeneratorVersion,
-                Is.EqualTo(9),
+                Is.EqualTo(10),
                 "Changing generation requires a new version and a reviewed replay fixture."
             );
             CollectionAssert.AreEqual(
@@ -481,6 +481,471 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(version),
                 $"version={version}: replay identity must preserve the requested generator."
             );
+        }
+
+        [Test]
+        public void GlobalOverrideReplayPreservesCopiesOutOfOrderDisposalReuseAndReplacement(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: 1,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyGlobalOverride,
+                        leaseSlot: 1,
+                        sourceLeaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        leaseSlot: 2
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 11),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 2
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: 1,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 13),
+                    new BusTraceOperation(BusTraceOperationKind.ReplaceGlobalBus),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: 1,
+                        leaseSlot: 2
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 2
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 19),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 2
+                    ),
+                }
+            );
+            IMessageBus original = MessageHandler.MessageBus;
+            IReadOnlyList<BusTraceObservation> observations = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report =
+                $"[{scenario.Kind}] generator={sequence.Version}, seed={sequence.Seed}\n"
+                + string.Join("\n", observations);
+            Assert.That(MessageHandler.MessageBus, Is.SameAs(original), report);
+            Assert.That(observations.All(item => item.Exception == null), Is.True, report);
+            Assert.That(
+                DifferentialBusTrace.Compare(
+                    observations,
+                    DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false))
+                ),
+                Is.Null,
+                report
+            );
+            foreach (int index in new[] { 5, 15 })
+            {
+                CollectionAssert.AreEqual(
+                    new[] { $"token=0,value={sequence.Operations[index].Value}" },
+                    observations[index].Callbacks,
+                    report
+                );
+                StringAssert.Contains("globalBus=primary", observations[index].State, report);
+            }
+            foreach (int index in new[] { 9, 13 })
+            {
+                Assert.That(observations[index].Callbacks, Is.Empty, report);
+                Assert.That(observations[index].UnmatchedDiagnostics.Count, Is.EqualTo(1), report);
+                StringAssert.Contains("globalBus=alternate", observations[index].State, report);
+            }
+            StringAssert.Contains("globalBus=primary", observations[6].State, report);
+            StringAssert.Contains("globalBus=primary", observations[16].State, report);
+        }
+
+        [Test]
+        public void GlobalOverrideReplayPreservesSelectedPrimaryEmitterMutations(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("drop", "payload", "deferred-reset")] string mutation
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                271,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: 1,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 11),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        leaseSlot: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.EmitWithReset, value: 13),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 19),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind =>
+                    CreateAdapter(
+                        kind,
+                        mutation == "drop",
+                        deferReset: mutation == "deferred-reset",
+                        observationFault: mutation == "payload" ? "payload" : null
+                    )
+            );
+            string report = $"mutation={mutation}\n" + DescribeReplay(sequence, control, candidate);
+            Assert.That(DifferentialBusTrace.IsValid(sequence), Is.True, report);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            Assert.That(candidate.All(item => item.Exception == null), Is.True, report);
+            Assert.That(
+                DifferentialBusTrace.Compare(
+                    control.Take(5).ToArray(),
+                    candidate.Take(5).ToArray()
+                ),
+                Is.Null,
+                "An alternate global bus must not use the primary emitter. " + report
+            );
+            foreach (int index in new[] { 3, 7 })
+            {
+                Assert.That(candidate[index].Callbacks, Is.Empty, report);
+                StringAssert.Contains("globalBus=alternate", candidate[index].State, report);
+            }
+            foreach (int index in new[] { 5, 9 })
+            {
+                StringAssert.Contains("globalBus=primary", candidate[index].State, report);
+            }
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(control, candidate);
+            Assert.That(mismatch?.Index, Is.EqualTo(5), report);
+            Assert.That(
+                mismatch?.Category,
+                Is.EqualTo(mutation == "payload" ? "final-emission" : "callbacks"),
+                report
+            );
+            Assert.That(
+                candidate[5].Callbacks.Count,
+                Is.EqualTo(
+                    mutation == "drop" ? 0
+                    : mutation == "deferred-reset" ? 2
+                    : 1
+                ),
+                report
+            );
+            if (mutation == "deferred-reset")
+            {
+                Assert.That(candidate[5].State, Is.EqualTo(control[5].State), report);
+                Assert.That(candidate[9].Callbacks, Is.Empty, report);
+            }
+        }
+
+        [Test]
+        public void GlobalOverrideAliasMutationIsDetectedAndShrunk(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Enable, token: 3),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: 1,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyGlobalOverride,
+                        leaseSlot: 1,
+                        sourceLeaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        context: 1,
+                        leaseSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 1
+                    ),
+                }
+            );
+            BusTraceMismatch EvaluateOverride(BusTraceSequence input) =>
+                DifferentialBusTrace.Compare(
+                    DifferentialBusTrace.Replay(input, kind => CreateAdapter(kind, false)),
+                    DifferentialBusTrace.Replay(
+                        input,
+                        kind => new GlobalOverrideFaultAdapter(kind, wrongAlias: true)
+                    )
+                );
+            BusTraceMismatch mismatch = EvaluateOverride(sequence);
+            Assert.That(
+                mismatch,
+                Is.Not.Null,
+                $"[{scenario.Kind}] stale copy disposal must expose a generation ownership fault."
+            );
+            string report = mismatch.BuildReport(sequence);
+            Assert.That(mismatch.Category, Is.EqualTo("state"), report);
+            Assert.That(mismatch.Index, Is.EqualTo(5), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, EvaluateOverride);
+            Assert.That(minimal.Version, Is.EqualTo(10), report);
+            Assert.That(minimal.Operations.Count, Is.EqualTo(5), report);
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(EvaluateOverride(minimal)?.Category, Is.EqualTo("state"), report);
+            for (int index = 0; index < minimal.Operations.Count; ++index)
+            {
+                BusTraceSequence deletion = new(
+                    scenario,
+                    minimal.Seed,
+                    minimal.Operations.Where((_, position) => position != index),
+                    minimal.Version
+                );
+                Assert.That(
+                    !DifferentialBusTrace.IsValid(deletion) || EvaluateOverride(deletion) == null,
+                    Is.True,
+                    report + $"\ndeleted={index}"
+                );
+            }
+        }
+
+        [Test]
+        public void GlobalOverrideGenerationRetainsAllOperationsAndValidPrefixes(
+            [Values(0, 17, 42)] int seed
+        )
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            BusTraceSequence sequence = DifferentialBusTrace.Generate(scenario, (uint)seed, 64, 10);
+            string report = $"seed={seed}, version=10";
+            foreach (
+                BusTraceOperationKind kind in new[]
+                {
+                    BusTraceOperationKind.AcquireGlobalOverride,
+                    BusTraceOperationKind.CopyGlobalOverride,
+                    BusTraceOperationKind.DisposeGlobalOverride,
+                    BusTraceOperationKind.ReplaceGlobalBus,
+                }
+            )
+            {
+                Assert.That(
+                    sequence.Operations.Any(operation => operation.Kind == kind),
+                    Is.True,
+                    report + $", operation={kind}"
+                );
+            }
+            for (int length = 0; length <= sequence.Operations.Count; ++length)
+            {
+                BusTraceSequence prefix = new(
+                    scenario,
+                    (uint)seed,
+                    sequence.Operations.Take(length),
+                    10
+                );
+                Assert.That(
+                    DifferentialBusTrace.IsValid(prefix),
+                    Is.True,
+                    report + $", length={length}"
+                );
+            }
+        }
+
+        [Test]
+        public void GlobalOverrideValidationRejectsMissingAndOverwrittenDependencies(
+            [Values(
+                "missing-copy",
+                "missing-dispose",
+                "overwrite-live",
+                "copy-over-live",
+                "invalid-slot",
+                "invalid-source",
+                "foreign-fields",
+                "legacy-version"
+            )]
+                string fault
+        )
+        {
+            BusTraceOperation acquire = new(
+                BusTraceOperationKind.AcquireGlobalOverride,
+                leaseSlot: 0
+            );
+            BusTraceOperation copy = new(
+                BusTraceOperationKind.CopyGlobalOverride,
+                leaseSlot: 1,
+                sourceLeaseSlot: 0
+            );
+            BusTraceOperation[] operations = fault switch
+            {
+                "missing-copy" => new[] { copy },
+                "missing-dispose" => new[]
+                {
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DisposeGlobalOverride,
+                        leaseSlot: 0
+                    ),
+                },
+                "overwrite-live" => new[] { acquire, acquire },
+                "copy-over-live" => new[] { acquire, copy, copy },
+                "invalid-slot" => new[]
+                {
+                    new BusTraceOperation(
+                        BusTraceOperationKind.AcquireGlobalOverride,
+                        leaseSlot: BusTraceSequence.TokenCount
+                    ),
+                },
+                "invalid-source" => new[]
+                {
+                    acquire,
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyGlobalOverride,
+                        leaseSlot: 1,
+                        sourceLeaseSlot: BusTraceSequence.TokenCount
+                    ),
+                },
+                "foreign-fields" => new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Emit, leaseSlot: 0),
+                },
+                _ => new[] { acquire },
+            };
+            BusTraceSequence sequence = new(
+                MessageScenario.Untargeted(),
+                509,
+                operations,
+                fault == "legacy-version" ? 9 : 10
+            );
+            Assert.That(
+                DifferentialBusTrace.IsValid(sequence),
+                Is.False,
+                $"fault={fault}: invalid lease dependencies must not reach production replay."
+            );
+        }
+
+        [Test]
+        public void GlobalOverrideReplayRestoresOriginalBusWhenTokenCleanupFails(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            IMessageBus original = MessageHandler.MessageBus;
+            GlobalOverrideFaultAdapter adapter = new(scenario, failCleanup: true);
+            adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Register));
+            adapter.Execute(
+                new BusTraceOperation(
+                    BusTraceOperationKind.AcquireGlobalOverride,
+                    context: 1,
+                    leaseSlot: 0
+                )
+            );
+            AggregateException error = Assert.Throws<AggregateException>(
+                adapter.Dispose,
+                $"[{scenario.Kind}] cleanup faults must be reported."
+            );
+            StringAssert.Contains(
+                "intentional override cleanup failure",
+                error.ToString(),
+                $"[{scenario.Kind}] original cleanup error must survive."
+            );
+            Assert.That(
+                MessageHandler.MessageBus,
+                Is.SameAs(original),
+                $"[{scenario.Kind}] cleanup failures must restore global routing."
+            );
+            Assert.That(
+                adapter.CleanedTokens,
+                Is.EqualTo(BusTraceSequence.TokenCount),
+                $"[{scenario.Kind}] all tokens must be cleaned despite a prior failure."
+            );
+        }
+
+        private sealed class GlobalOverrideFaultAdapter : MessageBusTraceAdapter
+        {
+            private readonly bool _wrongAlias;
+            private readonly bool _failCleanup;
+            internal int CleanedTokens { get; private set; }
+
+            internal GlobalOverrideFaultAdapter(
+                MessageScenario scenario,
+                bool wrongAlias = false,
+                bool failCleanup = false
+            )
+                : base(scenario, NewBus())
+            {
+                _wrongAlias = wrongAlias;
+                _failCleanup = failCleanup;
+            }
+
+            private static MessageBus NewBus()
+            {
+                MessageBus bus = MessageBus.CreateForInternalUse(
+                    new FakeClock(),
+                    idleEvictionTicks: 0,
+                    idleEvictionEnabled: false,
+                    trimApiEnabled: true
+                );
+                bus.DiagnosticsMode = false;
+                return bus;
+            }
+
+            protected override void DisposeGlobalOverride(int slot) =>
+                base.DisposeGlobalOverride(_wrongAlias && slot == 1 ? 0 : slot);
+
+            protected override void DisposeToken(int slot)
+            {
+                base.DisposeToken(slot);
+                ++CleanedTokens;
+                if (_failCleanup && slot == 0)
+                {
+                    throw new InvalidOperationException("intentional override cleanup failure");
+                }
+            }
         }
 
         [Test]
@@ -964,7 +1429,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
             CollectionAssert.AreEquivalent(
-                Enum.GetValues(typeof(BusTraceOperationKind)),
+                Enum.GetValues(typeof(BusTraceOperationKind))
+                    .Cast<BusTraceOperationKind>()
+                    .Where(kind => !DifferentialBusTrace.IsGlobalOverride(kind)),
                 kinds,
                 "Version eight must retain every existing operation and add duplicates/copies."
             );
@@ -1081,7 +1548,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(minimal.Operations.Count, Is.LessThan(sequence.Operations.Count), report);
-            Assert.That(minimal.Version, Is.EqualTo(9), report);
+            Assert.That(minimal.Version, Is.EqualTo(sequence.Version), report);
             Assert.That(
                 EvaluateMutant(minimal, "explicit-callback")?.Category,
                 Is.EqualTo(mismatch.Category),
@@ -1414,7 +1881,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
             CollectionAssert.AreEquivalent(
-                Enum.GetValues(typeof(BusTraceOperationKind)),
+                Enum.GetValues(typeof(BusTraceOperationKind))
+                    .Cast<BusTraceOperationKind>()
+                    .Where(kind => !DifferentialBusTrace.IsGlobalOverride(kind)),
                 all,
                 "Version nine retains the full operation vocabulary."
             );
@@ -2408,7 +2877,7 @@ namespace DxMessaging.Tests.Runtime.Core
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
             [Values(17, 42)] int seed,
-            [Values(3, 4, 5, 6, 7, 8, 9)] int version
+            [Values(3, 4, 5, 6, 7, 8, 9, 10)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -3002,7 +3471,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(10)]
+        [TestCase(11)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
