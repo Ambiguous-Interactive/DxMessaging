@@ -180,7 +180,7 @@ namespace DxMessaging.Tests.Editor.Allocations
         [SetUp]
         public void CaptureDiagnosticsState()
         {
-            _diagnosticsScope = new DiagnosticsScope();
+            _diagnosticsScope = new DiagnosticsScope(diagnosticsTargets: DiagnosticsTarget.Off);
             _savedLogFunction = MessagingDebug.LogFunction;
             // Stray Debug.Log calls would allocate strings and contaminate the
             // assertion. Mute the messaging logger for the duration of the
@@ -194,6 +194,62 @@ namespace DxMessaging.Tests.Editor.Allocations
             _diagnosticsScope?.Dispose();
             _diagnosticsScope = null;
             MessagingDebug.LogFunction = _savedLogFunction;
+        }
+
+        [Test]
+        public void FixtureDiagnosticsDefaultsOffAndPreservesExplicitOptIn(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool enableDiagnostics
+        )
+        {
+            using DiagnosticsScope callerState = new(
+                DiagnosticsTarget.All,
+                messageBufferSize: 7,
+                diagnosticsStackTraces: true
+            );
+            AllocationMatrixTests fixture = new();
+            string report = $"[{scenario.Kind}] explicitDiagnostics={enableDiagnostics}";
+            try
+            {
+                fixture.CaptureDiagnosticsState();
+                Assert.That(
+                    IMessageBus.GlobalDiagnosticsTargets,
+                    Is.EqualTo(DiagnosticsTarget.Off),
+                    $"{report}: fixture setup must override the caller's enabled diagnostics."
+                );
+                if (enableDiagnostics)
+                {
+                    IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
+                }
+                fixture.RunWithFreshHarness(
+                    scenario,
+                    (token, bus) =>
+                    {
+                        Assert.That(bus.DiagnosticsMode, Is.EqualTo(enableDiagnostics), report);
+                        Assert.That(token.DiagnosticMode, Is.EqualTo(enableDiagnostics), report);
+                    }
+                );
+            }
+            finally
+            {
+                fixture.RestoreDiagnosticsState();
+            }
+            Assert.That(
+                IMessageBus.GlobalDiagnosticsTargets,
+                Is.EqualTo(DiagnosticsTarget.All),
+                $"{report}: fixture teardown must restore the caller's diagnostics target."
+            );
+            Assert.That(
+                IMessageBus.GlobalDiagnosticsStackTraces,
+                Is.True,
+                $"{report}: fixture teardown must preserve the caller's stack-trace setting."
+            );
+            Assert.That(
+                IMessageBus.GlobalMessageBufferSize,
+                Is.EqualTo(7),
+                $"{report}: fixture teardown must preserve the caller's message buffer size."
+            );
         }
 
         /// <summary>
@@ -939,15 +995,19 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// <remarks>
         /// 2026-09-06: Duplicate registrations at priority zero shared one post-processor
         /// entry. Use distinct priorities and verify both exist before measuring allocation.
+        /// 2026-09-07: Cover every message kind and retain bus state after a failed window.
+        /// This does not attribute the intermittent allocation reported in issue #545.
         /// </remarks>
         [Test]
         [Category("Allocation")]
-        public void EmitWithFullStackIsZeroAlloc()
+        public void EmitWithFullStackIsZeroAlloc(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.AllKindsIncludingWithoutContext)
+            )]
+                MessageScenario scenario
+        )
         {
-            // Untargeted is the cheapest dispatch and the most common in
-            // production code; using a single kind keeps the combinatorial
-            // surface small while still exercising the full handler chain.
-            MessageScenario scenario = MessageScenario.Untargeted();
             RunWithFreshHarness(
                 scenario,
                 (token, bus) =>
@@ -962,11 +1022,18 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Assert.That(
                         bus.RegisteredPostProcessors,
                         Is.EqualTo(2),
-                        "Full-stack allocation coverage requires two distinct post-processor priorities."
+                        $"[{scenario.Kind}] Full-stack allocation coverage requires two distinct post-processor priorities."
                     );
                     AllocationAssertions.AssertNoAllocations(
                         $"EmitFullStack-{scenario.Kind}",
-                        emit
+                        emit,
+                        failureContext: () =>
+                            $"kind={scenario.Kind}; emissionId={bus.EmissionId}; tokenEnabled={token.Enabled}; "
+                            + $"diagnostics={IMessageBus.GlobalDiagnosticsTargets}; stackTraces={IMessageBus.GlobalDiagnosticsStackTraces}; "
+                            + $"busDiagnostics={bus.DiagnosticsMode}; tokenDiagnostics={token.DiagnosticMode}; "
+                            + $"registrations=[untargeted={bus.RegisteredUntargeted}, targeted={bus.RegisteredTargeted}, "
+                            + $"broadcast={bus.RegisteredBroadcast}, interceptors={bus.RegisteredInterceptors}, "
+                            + $"posts={bus.RegisteredPostProcessors}, global={bus.RegisteredGlobalAcceptAll}]"
                     );
                 }
             );
@@ -1896,6 +1963,17 @@ namespace DxMessaging.Tests.Editor.Allocations
                     return ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
                         scenario,
                         token,
+                        AllowBroadcast
+                    );
+                }
+                // Context-free subscriptions still use their message kind's interceptor.
+                case MessageKind.TargetedWithoutTargeting:
+                {
+                    return token.RegisterTargetedInterceptor<SimpleTargetedMessage>(AllowTargeted);
+                }
+                case MessageKind.BroadcastWithoutSource:
+                {
+                    return token.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
                         AllowBroadcast
                     );
                 }

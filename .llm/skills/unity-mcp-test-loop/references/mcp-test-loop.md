@@ -3,7 +3,7 @@
 # Unity MCP Test Loop
 
 > **One-line summary**: Local Unity verification runs through the `unity-mcp-remote`
-> MCP server (the host editor), driven by `Unity_RunCommand`. The devcontainer ships
+> MCP server (the host editor), using Pipeline or the legacy relay. The devcontainer ships
 > no local Unity build; there is no docker / ephemeral-editor runner anymore.
 
 ## When to Use
@@ -26,29 +26,57 @@ same directory as the embedded package inside the host Unity project. Edits made
 in-container are instantly visible to the host editor. Compilation and tests run in
 the host editor; the container only edits files and drives the editor over MCP.
 
+## Tool selection
+
+Discover the connected MCP catalog before choosing tool names. The host bridge defaults to
+`unity mcp` with an explicit host project path. Pipeline tools differ from the legacy Assistant
+relay selected by `--backend relay`; both can reach the maintained `DxMcpTestRunner`.
+Host paths can be Windows, macOS, or Linux paths and never refer to the container mount.
+
+| Operation                    | Pipeline                                                           | Legacy relay                                                                  |
+| ---------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Editor state                 | `editor_status`                                                    | `Unity_ManageEditor` with `GetState`                                          |
+| Open scenes                  | `list_open_scenes`                                                 | `Unity_ManageScene` with `GetActive`, plus observer evidence for other scenes |
+| Stage                        | Fresh observer snapshot; fill missing state through idle bootstrap | `Unity_ManageEditor` with `GetPrefabStage`                                    |
+| Invoke maintained runner     | `eval` with `code`                                                 | `Unity_RunCommand` with its advertised snippet schema                         |
+| Compile after safe preflight | `menu` with `path: Assets/Refresh`                                 | `Unity_ManageMenuItem` with `Assets/Refresh`                                  |
+| Console errors               | `console`                                                          | `Unity_ReadConsole`                                                           |
+
+Read the actual schemas: legacy `result.Log` output helpers and sandbox restrictions are not a
+Pipeline contract. Pipeline `eval` has invoked the maintained runner successfully for EditMode
+allocation and PlayMode fixtures, with matching result and cleanup artifacts. This verifies
+runner invocation, not arbitrary API compatibility or implicit asset-refresh behavior.
+
+Legacy `Unity_RunCommand` refreshes assets before executing snippets. Pipeline `eval` refresh
+behavior has not been established. For both backends, prefer passive state queries and fresh
+observer files before evaluation, and poll only files while a test is running. Never change
+transports to bypass a rejected operation. See the [MCP setup guide](../../../../scripts/mcp/README.md)
+for endpoint, authentication, and client configuration.
+
 ## The Loop
 
 1. **Edit** files in the container as usual.
-1. **Preflight.** Prefer passive `Unity_ManageEditor GetState` and `GetPrefabStage`,
-   `Unity_ManageScene GetActive`, and a fresh observer snapshot. Establish framework idleness,
+1. **Preflight.** Use the backend's editor and scene queries from the table above,
+   together with a fresh observer snapshot. Establish framework idleness,
    idle editor flags, the main stage, loaded-scene count, and every scene's path and dirty flag.
    An active-scene response alone cannot prove other scenes are clean. When the observer is
    absent or incomplete, use the [bootstrap procedure](#bootstrap-without-a-complete-passive-observer)
    below. A tool's read-only name does not prove its implementation has no import side effects.
-1. **Compile**: validate changed C# under `Assets/` with `Unity_ValidateScript`, then
-   execute the `Assets/Refresh` menu item through `Unity_ManageMenuItem`. The validator
-   rejects embedded `Packages/` paths, so package edits rely on the refresh plus the
-   fresh-assembly proof below. Wait for the recompile to settle before running tests.
-   Do not call `AssetDatabase.Refresh()` from `Unity_RunCommand`.
+1. **Compile**: after the safe preflight, execute `Assets/Refresh` through Pipeline `menu`
+   or legacy `Unity_ManageMenuItem`. Legacy `Unity_ValidateScript` can validate changed C# under
+   `Assets/` but rejects embedded `Packages/` paths. Package edits rely on refresh plus the
+   fresh-assembly proof below. Wait for compilation to settle before running tests.
+   Do not call `AssetDatabase.Refresh()` from an evaluation snippet.
 1. **Prove the assembly is fresh before you trust a green run.** When a package
    assembly fails to compile, Unity keeps the last good DLL loaded and
    `DxMcpTestRunner` happily runs it, so an edit that does not compile reports the
-   previous run's passing numbers. `Unity_ReadConsole` can come back empty in that
+   previous run's passing numbers. Console tools can come back empty in that
    state, and the host editor may have Auto Refresh disabled
    (`EditorPrefs.GetInt("kAutoRefreshMode") == 0`), which makes it permanent. Assert a
    symbol you just added actually resolves, and compare
    `System.IO.File.GetLastWriteTimeUtc(type.Assembly.Location)` against the source
-   file's write time:
+   file's write time. This example uses the legacy `result.Log` helper; with Pipeline, return
+   the equivalent values from `eval` using its own result schema:
 
    ```csharp
    System.Type fixture = null;
@@ -67,8 +95,8 @@ the host editor; the container only edits files and drives the editor over MCP.
    belongs to that editor or print the entire log.
 
 1. **Run**: invoke the host bridge `DxMcpTestRunner.Run(testMode, assemblyNames,
-testNames, categoryNames, resultPath)` via `Unity_RunCommand`. Locate the type by
-   scanning `AppDomain` assemblies. Arguments are semicolon-separated lists; `null`
+testNames, categoryNames, resultPath)` via Pipeline `eval` or legacy `Unity_RunCommand`.
+   Locate the type by scanning `AppDomain` assemblies. Arguments are semicolon-separated lists; `null`
    means "no filter".
    - `testMode`: `EditMode` or `PlayMode`.
    - `resultPath` resolves relative to the HOST Unity project root (the editor's
@@ -92,10 +120,10 @@ Its source, installation, artifact contract, and preflight snapshot are document
 ## Bootstrap without a complete passive observer
 
 Missing observer fields alone do not require user confirmation or prevent local verification.
-First read the passive editor, stage, and active-scene queries and any existing snapshot. If the
-available flags show idle editor state, the main stage, and a clean scene, and no test is known
-active, use a minimal `Unity_RunCommand` inspection to read `TestRunnerApi.IsRunActive`, current
-editor flags and stage, every open scene's path/loading/dirty state through
+First read the available passive editor/scene queries and any existing snapshot. If available
+flags are idle/clean, no non-main stage is known, and no test is known active, use a minimal
+inspection through Pipeline `eval` or legacy `Unity_RunCommand` to read
+`TestRunnerApi.IsRunActive`, current editor flags and stage, every open scene's path/loading/dirty state through
 `SceneManager.sceneCount` and `GetSceneAt`, and the runner SessionState ownership keys listed in
 the installation guide. Do not mutate scenes, launch tests, or install source in that inspection.
 Use the installed framework's available API; `IsRunActive` may be nonpublic and unavailable to a
@@ -103,18 +131,19 @@ direct snippet call. Resolve API compatibility failures with a minimal inspectio
 supported public metadata or installed runner APIs. A compile or lookup failure does not prove
 framework inactivity.
 
-`Unity_RunCommand` refreshes assets before executing the snippet. State that limitation honestly:
+Legacy `Unity_RunCommand` refreshes assets before executing the snippet. State that limitation honestly:
 the inspection bootstraps missing evidence; its result cannot prove that preceding refresh was
-safe. Preserve tool approval gates. If a tool rejects the inspection or installation, report its
-reason and do not switch transports or tools to bypass the rejection. Wait for actual framework
+safe. Pipeline `eval` has no established refresh guarantee; do not infer one from the
+legacy implementation or its absence from the tool description. Preserve tool approval gates.
+If a tool rejects the inspection or installation, report its reason and do not switch transports or tools to bypass the rejection. Wait for actual framework
 activity, compilation, imports, or play-mode transitions. Stop for dirty or unnamed scenes or a
 non-main stage; never save, discard, or switch the developer's scenes to force progress.
 
 Once the inspection shows inactive framework/editor state and saved, clean scenes, install or
 update the maintained source through supported MCP editing, following the
 [backup and installation flow](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
-Validate, refresh through `Unity_ManageMenuItem`, and verify the loaded assembly and fresh passive
-snapshots before testing. If supported inspection cannot resolve the required state, report the
+Validate as supported, refresh through the backend's menu tool, and verify the loaded assembly
+and fresh passive snapshots before testing. If supported inspection cannot resolve the required state, report the
 specific failure. During a known or owned test, poll its files and passive snapshots only,
 including after an observation timeout; never use bootstrap inspection as a polling loop.
 
@@ -130,9 +159,9 @@ It writes `.cleanup.json` and `.cleanup.status` after verifying the original sce
 results and late framework errors produce terminal errors; failed observations retain ownership.
 An observation timeout never authorizes cancellation or a replacement launch.
 
-Do not poll `Unity_RunCommand` during a test run. Its installed implementation refreshes assets
-before executing even read-only snippets. Use filesystem polling and the bridge's passive
-`editor-state.json` for subsequent preflight, requiring current timestamps and complete safe-state
+Do not poll through code evaluation during a test run on either backend. Legacy `Unity_RunCommand`
+refreshes assets before even read-only snippets; Pipeline `eval` refresh behavior is unverified.
+Use filesystem polling and the bridge's passive `editor-state.json` for subsequent preflight, requiring current timestamps and complete safe-state
 fields. Missing, stale, or temporarily malformed files prove no state; continue observing the same
 job without refreshing assets.
 
@@ -215,7 +244,8 @@ benchmark run, since the editor process is already up. See
 
 ## Sandbox Restrictions
 
-`Unity_RunCommand` snippets run in a restricted compile sandbox:
+Legacy `Unity_RunCommand` snippets run in a restricted compile sandbox. Pipeline `eval` has its
+own implementation; inspect its current schema and errors instead of applying legacy rules blindly:
 
 - `using System.Reflection;` is rejected. Qualify allowed types such as
   `System.Reflection.Assembly`; qualification does not bypass member restrictions. Some installed
@@ -231,7 +261,8 @@ The installed bridge lives under the host's `Assets/Editor/`, outside this packa
 from the maintained `scripts/mcp/DxMcpTestRunner.cs.txt`, following the
 [installation and preflight contract](../../../../scripts/mcp/README.md#maintain-the-local-unity-test-runner).
 Use the bootstrap procedure above if passive evidence is incomplete. Do not invent a replacement
-bridge or describe the bootstrap's implicit refresh as proven safe.
+bridge or describe a legacy bootstrap's implicit refresh as proven safe. Do not assume Pipeline
+`eval` performs or avoids that refresh.
 
 ## CI vs Local
 

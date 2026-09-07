@@ -1,174 +1,239 @@
-# Unity MCP in a Linux devcontainer with a Windows host
+# Agent MCP setup and host Unity tooling
 
-Unity and its relay binary run on the Windows host; agents run inside the Linux devcontainer. The
-relay speaks stdio, which a container cannot reach, so the host publishes it over authenticated
-streamable HTTP and container clients point at that endpoint.
+The devcontainer configures Codex, Claude Code, Copilot CLI, VS Code Copilot Chat,
+OpenCode, Nanocoder, and Cursor. The same Node entry point publishes the host Unity
+MCP server over authenticated HTTP. Unity stays on the host.
 
-`scripts/mcp/unity-mcp.mjs` is the single entry point for all three steps.
+## Container startup
 
-| Command                       | Runs on | Purpose                                                   |
-| ----------------------------- | ------- | --------------------------------------------------------- |
-| `npm run unity:mcp:bridge`    | Host    | Spawn the relay and serve it over HTTP                    |
-| `npm run unity:mcp:probe`     | Agent   | Find an endpoint a live editor is answering behind        |
-| `npm run unity:mcp:configure` | Agent   | Discover, then write every MCP client config in this repo |
+Rebuild the container to install the updated image. The image includes Codex,
+OpenCode, and Nanocoder from npm's `latest` tags. Creation checks those tags before
+installing workspace dependencies and reports updates in the bootstrap output.
+Startup and VS Code attachment check them in the background; check
+`/tmp/dxm-agent-cli-refresh.log` for those updates. Existing binaries remain available
+during a refresh or registry outage. A cached Docker layer can contain an older CLI;
+the lifecycle refresh handles that case.
 
-## Start the bridge on the Windows host
+Before the initial attach, `updateContentCommand` repairs cache ownership and writes
+MCP configs without network access. The image includes the configuration dependencies,
+so this works while workspace dependencies are still installing. Login-shell probing
+is disabled, generated trees are excluded from file watching, and the Docker build
+context contains only image inputs. `.env` files never enter the build context.
 
-```powershell
-npm run unity:mcp:bridge -- --project 'D:\Path\To\HostUnityProject'
+Both local `npm install` and global `npm install -g` run as `vscode`. Global installs
+use `/home/vscode/.local`, which comes first on PATH. Permission repair checks nested
+cache files left by earlier `sudo npm` commands, the npm prefix, and npm's manifest,
+lock, and config files. Writable npm files keep their existing ownership, including
+host bind mounts that do not support `chown`. Unwritable files must become writable
+after repair or startup fails with their path. Repair does not recursively change the
+host checkout. A host checkout that is itself read-only must be repaired on the host.
+
+## Credentials
+
+Create `.env.local` at the repository root. Values from the process environment take
+precedence over values in this file; empty forwarded variables do not hide file values.
+The file is parsed as data, never sourced as shell code. For example:
+
+```dotenv
+GITHUB_PERSONAL_ACCESS_TOKEN=your_github_token
+Z_AI_API_KEY=your_zai_key
+UNITY_PROJECT_PATH=/absolute/host/project/path
+UNITY_MCP_BRIDGE_PORT=9020
 ```
 
-The relay executable is discovered under `~/.unity/relay/`. Override it with `--relay <path>` or
-`UNITY_MCP_RELAY_PATH` when it lives elsewhere. `--project` is required for this command only: the
-relay opens that Unity project, and the path names a host filesystem location.
+`GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PERSONAL_ACCESS_TOKEN`, and `GITHUB_PAT` are supported,
+in that order. Z.AI accepts `Z_AI_API_KEY` or `ZAI_API_KEY`. The configurator adds all
+four Z.AI servers when a key is present and removes its Z.AI entries when the key is
+removed. Available tools still depend on the account's access and quota.
 
-The bridge requires a bearer token. If none is configured it generates one and appends it to
-`.env.local` at the repository root. Both sides must present the same token, so when the host and
-the container do not share `.env.local`, copy `UNITY_MCP_BEARER_TOKEN` across or pass `--token`.
+After editing credentials while an agent is open, run `npm run unity:mcp:configure -- --offline`
+and restart its MCP connections. Reattaching VS Code also regenerates configuration.
+Generated configs are gitignored and use mode `0600`; they contain credentials.
+Unrelated server definitions and settings survive. JSONC and TOML are parsed and
+serialized, so comments and formatting are not retained. Malformed config files are
+rejected before any client config is replaced.
 
-Add a Windows firewall rule for the chosen port if the container cannot reach it.
+| Server             | Source                                                                                  | Credential                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `github`           | [GitHub hosted MCP](https://github.com/github/github-mcp-server)                        | GitHub token, or interactive OAuth in clients that support it |
+| `web-search-prime` | [Z.AI Web Search](https://docs.z.ai/devpack/mcp/search-mcp-server)                      | Z.AI key                                                      |
+| `web-reader`       | [Z.AI Web Reader](https://docs.z.ai/devpack/mcp/reader-mcp-server)                      | Z.AI key                                                      |
+| `zread`            | [Z.AI Zread](https://docs.z.ai/devpack/mcp/zread-mcp-server)                            | Z.AI key                                                      |
+| `zai-mcp-server`   | [Z.AI Vision](https://docs.z.ai/devpack/mcp/vision-mcp-server)                          | Z.AI key                                                      |
+| `git`              | [MCP Git server](https://github.com/modelcontextprotocol/servers/tree/main/src/git)     | Local repository access                                       |
+| `fetch`            | [MCP Fetch server](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) | None                                                          |
+| `unity-mcp`        | Host bridge in this repository                                                          | Shared bridge token                                           |
 
-### Bridge request handling
+Git, Fetch, and Vision executables are installed in the image. MCP startup does not
+need to download them. Client trust prompts and account sign-in remain client-managed;
+the container does not auto-approve tool calls.
 
-Every MCP session owns one relay child process, so concurrency is capped: `--max-sessions` (default
-`8`) rejects a further `initialize` with HTTP `503` and JSON-RPC `-32000` instead of spawning an
-unbounded number of relays. A session that never completes its handshake is reaped after the idle
-`--session-timeout` rather than after the much longer `--request-timeout`.
-
-Client mistakes are reported as client errors, so a well-behaved client stops retrying:
-
-| Condition                                  | Response                                        |
-| ------------------------------------------ | ----------------------------------------------- |
-| Missing or wrong bearer token              | `401` with `WWW-Authenticate: Bearer`           |
-| Body over 1 MiB                            | `413` with `-32600`, then the connection closes |
-| Body stalled (15s, or `--session-timeout`) | `408` with `-32001`, then the connection closes |
-| Body that is not JSON                      | `400` with `-32700 Parse error`                 |
-| Unknown path or method                     | `404`                                           |
-| Session cap reached                        | `503` with `-32000`                             |
-
-Both of the closing cases send a real response first; neither resets the connection under the
-client, which is what turns a diagnosable `413` into an opaque `ECONNRESET`.
-
-`GET /healthz` returns `200 ok` and is deliberately **not** authenticated: it reveals nothing, and a
-liveness probe an orchestrator has to hold the token for is not usable as a liveness probe.
-
-## Configure and verify from the devcontainer
-
-```bash
-npm run unity:mcp:configure
-npm run unity:mcp:probe
-```
-
-Discovery completes MCP initialization against each reachable candidate. `configure` selects the
-first initialized endpoint without inspecting its tools; if none completes initialization, it keeps
-the explicitly configured or default endpoint. `probe` instead fails unless a candidate advertises
-`Unity_RunCommand`. Both commands pin MCP `2025-11-25`.
-
-Discovery walks every combination of candidate host and port:
-
-- **Hosts** - the explicitly configured host if there is one; otherwise `host.docker.internal`,
-  `127.0.0.1`, the `nameserver` entries in `/etc/resolv.conf` (the Windows host under WSL2), and the
-  default-route gateways in `/proc/net/route`.
-- **Ports** - the explicitly configured port if there is one; otherwise `9020`, then `9003`.
-
-An explicit `--host` or `--port` replaces the fallback list on that axis rather than being prepended
-to it, so discovery can never override a deliberate setting: `--host X` probes only `X` (against the
-fallback ports), and `--host X --port Y` yields exactly one candidate. Pass `--no-discover` to probe only
-the configured host and port without walking the fallbacks. It narrows the candidate list; it does
-not skip the protocol check.
-
-Failed attempts are reported with a classification, because the fixes differ:
-
-| Status            | Meaning                                                         |
-| ----------------- | --------------------------------------------------------------- |
-| `unreachable`     | Nothing accepted a TCP connection                               |
-| `transport-error` | An MCP request timed out or ended without an HTTP response      |
-| `unauthorized`    | A bridge is running but rejected the bearer token               |
-| `http-error`      | An MCP operation returned a non-success HTTP status             |
-| `jsonrpc-error`   | The server returned a valid JSON-RPC error                      |
-| `malformed`       | MCP returned an invalid result, status, version, or page cursor |
-| `not-ready`       | The endpoint did not advertise `Unity_RunCommand`               |
-
-`not-ready` detects the empty tool-registry window that can follow an editor refresh. A successful
-probe confirms only that `Unity_RunCommand` was advertised; it does not execute that tool or prove
-that Unity's discovery heartbeat remains fresh. The SDK transport validates response media types
-and result schemas, streams SSE events including pings and event IDs, rejects cursor cycles and
-more than 100 pages, and applies `--timeout` as one deadline across the full lifecycle. A
-session-bearing HTTP 404 restarts initialization once within that same deadline.
-
-When a server creates a session, the probe sends `DELETE` after every result and releases the
-response. HTTP 405 is an allowed refusal. Other cleanup failures produce a warning without changing
-the endpoint result, including when discovery later succeeds elsewhere; the server's idle-session
-timeout remains the cleanup fallback.
-
-`unauthorized` is special-cased by `configure`: a bridge IS running at that endpoint and only the
-token is wrong, so `configure` writes nothing, generates no token, and fails naming the endpoint it
-found. Copy `UNITY_MCP_BEARER_TOKEN` from the host's `.env.local` or pass `--token`, then re-run.
+Codex connects to the three remote Z.AI servers through the image-installed
+`mcp-remote` adapter. Z.AI returns an empty HTTP 200 without Content-Type for
+initialized notifications; Codex's HTTP client rejects that response. The adapter
+handles it and supplies the header from an environment variable, keeping the key
+out of process arguments. Other clients use the direct HTTP endpoints. After a
+configuration repair, reconnect MCP servers or restart the client to reload them.
 
 ## Generated client configs
 
-`configure` writes all six in one transaction. Every file is staged before any is committed and a
-mid-write failure rolls back, so no agent is ever left pointing at a stale endpoint:
+| Client                   | File                       | Schema key    |
+| ------------------------ | -------------------------- | ------------- |
+| Claude Code              | `.mcp.json`                | `mcpServers`  |
+| Copilot CLI              | `.copilot/mcp-config.json` | `mcpServers`  |
+| Cursor                   | `.cursor/mcp.json`         | `mcpServers`  |
+| VS Code and Copilot Chat | `.vscode/mcp.json`         | `servers`     |
+| Codex CLI and extension  | `.codex/config.toml`       | `mcp_servers` |
+| OpenCode                 | `opencode.jsonc`           | `mcp`         |
+| Nanocoder                | `.nanocoder/mcp.json`      | `mcpServers`  |
 
-| Client                      | File                  | Schema key    |
-| --------------------------- | --------------------- | ------------- |
-| Claude Code and Copilot CLI | `.mcp.json`           | `mcpServers`  |
-| Cursor                      | `.cursor/mcp.json`    | `mcpServers`  |
-| VS Code and Copilot Chat    | `.vscode/mcp.json`    | `servers`     |
-| Codex                       | `.codex/config.toml`  | `mcp_servers` |
-| OpenCode                    | `opencode.jsonc`      | `mcp`         |
-| Nanocoder                   | `.nanocoder/mcp.json` | `mcpServers`  |
+The seven files are written as one transaction, with rollback if a write fails.
+The devcontainer sets `COPILOT_HOME` to its dedicated `.copilot` directory, including
+explicit tool selections. This also supports CLI versions whose `mcp list` command
+reads only the user configuration. Nanocoder's `NANOCODER_MCPSERVERS_FILE` selects
+its dedicated transport schema.
+OpenCode gets local command arrays and remote entries in its own schema.
+Codex uses project configuration once the repository is trusted. See the
+[Codex MCP documentation](https://developers.openai.com/codex/mcp),
+[Copilot CLI MCP documentation](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers),
+[OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/), and
+[Nanocoder MCP documentation](https://github.com/Nano-Collective/nanocoder/blob/main/docs/configuration/mcp-configuration.md).
 
-All six are machine-local and gitignored. The devcontainer points `NANOCODER_MCPSERVERS_FILE` at
-its dedicated file because Nanocoder uses `transport: "http"` while Claude and Copilot use
-`type: "http"`. Existing unrelated servers are preserved. The configurator owns the `unity-mcp`
-and `github` entries.
+## Unity CLI migration
 
-The `github` entry uses GitHub's hosted server. If `GITHUB_TOKEN`, `GH_TOKEN`,
-`GITHUB_PERSONAL_ACCESS_TOKEN`, or `GITHUB_PAT` is available, the generated files include its
-bearer header. Without a token, clients that support GitHub OAuth can authenticate on first use.
-Generated files use mode `0600` because they can contain bearer tokens.
+Unity now provides `unity mcp` and the `com.unity.pipeline` package. The CLI selects
+a running editor by `--project-path`, including when several editors are open.
+It reads that editor's discovery record and authentication token on the host.
+The container does not need access to the host's private discovery files.
+See [Unity's CLI guide](https://docs.unity.com/en-us/unity-cli/use-unity-cli) and
+[Unity's editor selection and MCP reference](https://github.com/Unity-Technologies/skills/blob/main/skills/unity-cli/references/integration-advanced.md).
 
-### What `configure` owns
+The transport was checked on 2026-09-07 with the published Unity CLI
+`1.0.0-beta.8`: initialization through this HTTP bridge negotiated MCP `2025-11-25`.
+The registry listed Pipeline `0.6.0-exp.1`, requiring Unity `6000.0` or newer.
+The CLI and package still carry beta and experimental version labels. An empty
+CLI tool list correctly fails the readiness probe. A live host editor cutover
+must also pass the checks below before Assistant is removed.
 
-The `unity-mcp` entry is regenerated wholesale, not merged key by key:
+### Prepare the host
 
-- In each JSON file, `unity-mcp` and `github` inside the client-specific server collection are
-  replaced. Sibling servers and every unrelated top-level key survive.
-- In `.codex/config.toml`, the whole `[mcp_servers.unity-mcp]` table is replaced. **Keys you add
-  inside that table are dropped on the next run**, so a hand-raised `startup_timeout_sec` reverts.
-  Put per-machine Codex overrides in a different table, or re-apply them after `configure`.
-- The JSON files are read as JSONC, so the `//` comments VS Code's own "MCP: Add Server" command
-  writes into `.vscode/mcp.json` no longer make `configure` fail. Comments are **not** preserved:
-  the file is rewritten as plain JSON.
-- If `configure` cannot tell which lines of `.codex/config.toml` it owns (a `[mcp_servers.unity-mcp]`
-  line appearing inside a multi-line string, or a genuinely duplicated table), it refuses rather than
-  splicing, and names the file and the fix.
+Install the [official Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli)
+on the host, using a release that provides `unity mcp`. With the intended project
+open and its work saved, run these commands in a host terminal:
 
-Writes are transactional: every file is staged, then committed, and a failure part way through rolls
-every committed file back to its previous content and permissions. Rollback is itself failure safe,
-which matters on Windows where `rename` returns `EPERM` while an editor holds a config file open: a
-failed restore is collected and attached to the original error rather than replacing it.
+```bash
+unity --version
+unity pipeline install --project-path /absolute/host/project/path
+unity list --project-path /absolute/host/project/path --format json
+unity command editor_status --project-path /absolute/host/project/path --format json
+```
+
+Use the corresponding Windows path when the host is Windows. Install host Node.js
+and run `npm install` in the host checkout if its bridge dependencies are absent.
+The container's Linux `node_modules` volume is separate from host dependencies.
+
+Keep Assistant installed until Pipeline answers for the intended editor. Then start
+the bridge, which defaults to the CLI backend:
+
+```bash
+npm run unity:mcp:bridge -- --project /absolute/host/project/path
+```
+
+Alternatively set `UNITY_PROJECT_PATH` in `.env.local` and omit `--project`.
+`UNITY_CLI_PATH` or `--cli` can select a CLI executable outside host PATH. The bridge
+starts each session as `unity mcp --project-path <selected-project>` with that project
+as its working directory. It never chooses an arbitrary running editor.
+
+Verify from the container:
+
+```bash
+npm run unity:mcp:probe
+```
+
+The Pipeline probe calls the read-only `editor_status` tool. Check the host project
+identity, then exercise the test runner through Pipeline's `eval` command before
+removing `com.unity.ai.assistant` from that host project's Package Manager. This
+repository does not declare Assistant as a package dependency. Removing it from the
+host has not been automated: transport verification alone does not prove editor
+command and test-runner compatibility.
+
+For rollback, run the bridge with `--backend relay` or set `UNITY_MCP_BACKEND=relay`.
+The relay backend discovers Assistant under `~/.unity/relay/`; `--relay` or
+`UNITY_MCP_RELAY_PATH` overrides its path.
+
+An initialized connection does not prove the Editor provides tools. If the selected
+project has no running Pipeline server, the CLI can return an empty tool registry.
+The bridge reports this as an error. Run `npm run unity:mcp:probe` from the container
+and `unity list --project-path <host-project> --format json` on the host. Confirm
+Pipeline has loaded in that Editor before using the CLI backend. An installed
+package on disk alone is insufficient; the Assistant relay remains available with
+`--backend relay --relay <relay-executable>` while completing the migration.
+
+If Pipeline is installed but absent from `unity status`, check compilation before
+changing the project path. Assistant 2.9.0-pre.2 can override Pipeline 0.6.0-exp.1's
+`System.Reflection.Metadata.dll` with an explicitly referenced copy. Pipeline's
+interpreter then fails with CS0234/CS0246 errors and its server never loads. In a
+project containing both packages, add `EXCLUDE_REFLECTION_METADATA` to the active
+target's Scripting Define Symbols. Assistant's importer supports this exclusion,
+so Pipeline supplies the shared assembly. Recompile and verify `unity list` and
+the container readiness probe before selecting `UNITY_MCP_BACKEND=cli`.
+Legacy probes use `Unity_ManageEditor` and
+`Unity_RunCommand`. Pipeline exposes its own command names; agents must discover
+the live catalog instead of assuming the legacy names still exist.
+
+### Host lifetime, multiple projects, and connectivity
+
+Keep the bridge running under the host user's service manager (Task Scheduler on
+Windows, launchd on macOS, or systemd on Linux) if it must survive terminal closure
+or host restarts. Its command is host `node` plus the absolute path to
+`scripts/mcp/unity-mcp.mjs bridge`, with the chosen project in `.env.local`.
+Container attachment configures clients; it cannot start a process on another OS.
+
+Run one bridge per selected project on a distinct port. Give each checkout its own
+`UNITY_PROJECT_PATH` and `UNITY_MCP_BRIDGE_PORT`. The same `unity-mcp` name in each
+checkout then reaches that checkout's editor. Avoid sharing a port between projects.
+
+The bridge generates `UNITY_MCP_BEARER_TOKEN` in `.env.local` if absent. Host and
+container must share that file or use matching token values. The bridge listens on
+`0.0.0.0:9020` by default; allow the container network through the host firewall.
+The devcontainer maps `host.docker.internal` to the host gateway on Linux too.
+Use `UNITY_MCP_BRIDGE_HOST`, `--host`, `--port`, and `--path` to override routing.
+
+`configure --offline` writes only local files. Normal `configure` probes candidate
+endpoints and refuses to replace credentials if a running bridge rejects the token.
+Explicit host and port settings restrict discovery; defaults try ports `9020` and
+`9003` with Docker, loopback, DNS, and gateway candidates. `--no-discover` probes only
+the configured endpoint. `probe` checks editor readiness as well as initialization.
+
+The bridge caps sessions at eight and authenticates every MCP request. Idle sessions
+expire after 60 seconds, active requests after 300 seconds. `--max-sessions`,
+`--session-timeout`, and `--request-timeout` adjust those limits. Bodies over 1 MiB
+receive `413`, stalled bodies receive `408`, bad tokens receive `401`, and excess
+sessions receive `503`. `GET /healthz` is an unauthenticated liveness check.
 
 ## Maintain the local Unity test runner
 
-The HTTP relay above transports requests. The maintained Editor test runner is
+The HTTP bridge above transports requests through either host backend. The maintained Editor test runner is
 [DxMcpTestRunner.cs.txt](./DxMcpTestRunner.cs.txt). Copy that file verbatim to the host project's
 `Assets/Editor/DxMcpTestRunner.cs`; the `.txt` source stays outside package compilation and CI
 test execution. The same source is compiled and exercised by `.docs-tests/UnityMcpBridgeTests.cs`.
 
-Before installing or replacing it, prefer passive `GetState`, `GetPrefabStage`, `GetActive`, and
-a fresh observer snapshot for framework inactivity, idle editor flags, the main stage, and every
-loaded scene's saved, clean state. If the observer is absent or incomplete, available flags are
-idle/clean, and no test is known active, use a minimal `Unity_RunCommand` inspection for
-`TestRunnerApi.IsRunActive`, every open scene, and ownership keys. It refreshes before the snippet;
-this bootstrap cannot prove the prior refresh safe. Missing fields alone do not require user
-confirmation. Follow the [bootstrap procedure](../../.llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer).
+Discover the live tools before installing or replacing the runner. Pipeline provides
+`editor_status`, `list_open_scenes`, `eval`, and `menu`; the legacy relay provides `Unity_*`
+tools. Prefer passive editor/scene queries and a fresh observer snapshot for framework
+inactivity, idle editor flags, the main stage, and every loaded scene's saved, clean state.
+If the observer is incomplete, available flags are idle/clean, and no test is known active,
+use the [bootstrap procedure](../../.llm/skills/unity-mcp-test-loop/references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer)
+to inspect framework activity, every open scene, and ownership keys. Legacy `Unity_RunCommand`
+refreshes before snippets, so its bootstrap cannot prove that preceding refresh safe.
+Pipeline `eval` refresh behavior has not been established. Missing fields alone do not require
+user confirmation. Poll active tests through files on either backend.
 
 After inspection confirms inactivity and saved, clean scenes, preserve any existing runner source
 and metadata outside `Assets`, review local changes, and copy the maintained source through
 supported MCP editing. Keep existing `.meta` identity when replacing an owned script. Validate
-with `Unity_ValidateScript`, refresh through `Unity_ManageMenuItem` with `Assets/Refresh`, then
+with the available backend tools, refresh through Pipeline `menu` or legacy `Unity_ManageMenuItem`
+with `Assets/Refresh`, then
 verify the loaded assembly, fresh passive snapshots, and unchanged scenes. Respect tool approval
 gates; do not bypass a rejected operation through another transport. Remove an old
 `DxMcpObservedTestRunner` only after its ownership scope is empty and its source is backed up.
@@ -192,7 +257,8 @@ a known or owned run, keep polling its files without invoking an asset-refreshin
 launch another test because observation timed out. Outside an active run, use the bootstrap
 procedure above if the observer is absent or incomplete.
 
-`DxMcpTestRunner.Run(mode, assemblies, tests, categories, resultPath)` returns the exact GUID from
+Invoke `DxMcpTestRunner.Run(mode, assemblies, tests, categories, resultPath)` through Pipeline
+`eval` or legacy `Unity_RunCommand`. It returns the exact GUID from
 `TestRunnerApi.Execute`. Filters use semicolon-separated strings. Use a fresh result path under
 `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/`; existing result or companion
 files are refused. The runner owns that path until passive framework cleanup ends.

@@ -1,8 +1,7 @@
 "use strict";
 
-// Executes .devcontainer/install-agent-clis.sh against a stub npm on PATH so the
-// refresh logic (skip-when-current, offline fallback, retry budget) is verified
-// by running it, not by grepping the shell source.
+// Execute the installer against a hermetic npm/CLI fixture.
+// cspell:ignore mcps
 
 const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
@@ -11,20 +10,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 
-// The installer is the Linux devcontainer bootstrap script. Windows runners have no
-// bash and no POSIX PATH, so the executing cases are skipped there; the static wiring
-// assertions below still run on every platform.
+// The devcontainer shell requires POSIX; structural tests run on Windows too.
 const CAN_RUN_SHELL = process.platform !== "win32";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 
-/**
- * The only system tools the installer calls. The sandbox links exactly these and nothing else, so
- * a real agent CLI installed on the image can never satisfy the script under test. Putting
- * `/usr/bin:/bin` on the sandbox PATH looked hermetic and was not: the devcontainer image installs
- * all three CLIs globally, so the "fresh container" and "CLI absent" cases silently found real
- * binaries and asserted against the wrong world.
- */
+// Expose only these system tools so image-provided CLIs cannot satisfy the fixture.
 const SYSTEM_TOOLS = ["bash", "sh", "mkdir", "grep", "head", "tr", "cat", "rm", "chmod", "flock"];
 
 function resolveTool(name) {
@@ -48,6 +39,7 @@ case "$1" in
         ;;
     install)
         if [[ -n "\${NPM_INSTALL_FAILS}" ]]; then exit 1; fi
+        if [[ -n "\${NPM_INSTALL_NOOP}" ]]; then exit 0; fi
         spec="$3"
         case "\${spec%@*}" in
             @openai/codex) shim="codex" ;;
@@ -78,8 +70,7 @@ function runInstaller(t, setup) {
   fs.mkdirSync(stubBin, { recursive: true });
   writeExecutable(path.join(stubBin, "npm"), NPM_STUB);
   writeExecutable(path.join(stubBin, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
-  // macOS ships no `timeout`, so without this stub every bounded call in the
-  // installer would fail as "command not found" and look like an offline registry.
+  // macOS lacks timeout; emulate it without adding latency to fixture retries.
   writeExecutable(path.join(stubBin, "timeout"), '#!/usr/bin/env bash\nshift\nexec "$@"\n');
   if (setup.installed) {
     for (const [, command] of PACKAGES) {
@@ -100,9 +91,7 @@ function runInstaller(t, setup) {
   const sandboxPath = `${prefixBin}:${stubBin}:${systemBin}`;
   if (!setup.installed) {
     for (const [, command] of PACKAGES) {
-      // Probe with the real environment so the shell itself resolves, overriding PATH only for
-      // the lookup under test.
-      // `command -v` reports "not found" as 1 in bash and 127 in dash, so assert on success only.
+      // Resolve the shell first; assert non-success (bash returns 1, dash 127).
       assert.notEqual(
         childProcess.spawnSync("sh", ["-c", `PATH="${sandboxPath}" command -v ${command}`], {
           encoding: "utf8"
@@ -124,76 +113,49 @@ function runInstaller(t, setup) {
       NPM_CALL_LOG: callLog,
       NPM_LATEST: setup.latest || "",
       NPM_VIEW_FAILS: setup.viewFails ? "1" : "",
-      NPM_INSTALL_FAILS: setup.installFails ? "1" : ""
+      NPM_INSTALL_FAILS: setup.installFails ? "1" : "",
+      NPM_INSTALL_NOOP: setup.installNoop ? "1" : ""
     }
   });
   const calls = fs.readFileSync(callLog, "utf8").split("\n").filter(Boolean);
   return { result, prefixBin, calls };
 }
 
-const CASES = require("./devcontainer-agent-cli-vectors.json");
+const { installerCases: CASES, wiring: WIRING } = require("./devcontainer-agent-cli-vectors.json");
 
 for (const testCase of CASES) {
   test(`install-agent-clis.sh handles ${testCase.name}`, { skip: !CAN_RUN_SHELL }, (t) => {
     const { result, prefixBin, calls } = runInstaller(t, testCase.setup);
-    assert.equal(
-      result.status,
-      testCase.status,
-      `${testCase.name}: unexpected exit status (stdout: ${result.stdout}, stderr: ${result.stderr})`
-    );
+    assert.equal(result.status, testCase.status, result.stdout + result.stderr);
     for (const [stream, patterns] of [
       ["stdout", testCase.stdout],
       ["stderr", testCase.stderr]
     ]) {
       for (const pattern of patterns) {
         for (const [packageName] of pattern.includes("{package}") ? PACKAGES : [[""]]) {
-          assert.match(
-            result[stream],
-            new RegExp(pattern.replace("{package}", packageName)),
-            `${testCase.name}: ${stream} must report "${pattern}" for ${packageName || "the run"}`
-          );
+          const expected = new RegExp(pattern.replace("{package}", packageName));
+          assert.match(result[stream], expected, packageName || testCase.name);
         }
       }
     }
     for (const [packageName, command] of PACKAGES) {
-      assert.equal(
-        calls.filter((call) => call.startsWith(`install -g ${packageName}@`)).length,
-        testCase.installsPerPackage,
-        `${testCase.name}: unexpected npm install attempt count for ${packageName} (calls: ${calls})`
-      );
-      assert.equal(
-        fs.existsSync(path.join(prefixBin, command)),
-        testCase.commandsPresent,
-        `${testCase.name}: ${command} presence in the npm prefix does not match expectations`
-      );
+      const installs = calls.filter((call) => call.startsWith(`install -g ${packageName}@`)).length;
+      assert.equal(installs, testCase.installsPerPackage, `${packageName}: ${calls}`);
+      const present = fs.existsSync(path.join(prefixBin, command));
+      assert.equal(present, testCase.commandsPresent, `${command} presence`);
     }
   });
 }
 
-// `waitFor: updateContentCommand` lets post-create and post-start overlap, and both configure the
-// MCP clients. Two unlocked runs starting with no bearer token would each mint one and leave the
-// six generated client configs disagreeing about which token is real.
-test("both lifecycle scripts serialize MCP configuration on one lock", () => {
-  const lock = "dxm-mcp-configure.lock";
-  for (const name of ["post-create.sh", "post-start.sh"]) {
+// Lifecycle hooks share a lock because each can create the shared bearer token.
+for (const name of ["post-create.sh", "post-start.sh"]) {
+  test(`${name} serializes MCP configuration`, () => {
     const source = read(name);
-    assert.match(
-      source,
-      new RegExp(`\\$\\{TMPDIR:-/tmp\\}/${lock.replace(/\./g, "\\.")}`),
-      `${name} must use the shared MCP configure lock path`
-    );
-    assert.match(
-      source,
-      /flock -w \d+ "\$\{(MCP_CONFIGURE_LOCK|mcp_lock)\}"/,
-      `${name} must take the lock with a bounded wait before configuring`
-    );
-    assert.match(
-      source,
-      /command -v flock/,
-      `${name} must degrade rather than fail when flock is unavailable`
-    );
-  }
-});
+    assert.match(source, /\$\{TMPDIR:-\/tmp\}\/dxm-mcp-configure\.lock/);
+    assert.match(source, /flock -w \d+ "\$\{(MCP_CONFIGURE_LOCK|mcp_lock)\}"/);
+    assert.match(source, /command -v flock/);
+  });
+}
 
 test("the root tooling lock is available to clean checkouts", () => {
   const ignored = childProcess.spawnSync("git", ["check-ignore", "package-lock.json"], {
@@ -211,51 +173,72 @@ test("devcontainer agent scripts have valid bash syntax", { skip: !CAN_RUN_SHELL
   }
 });
 
-test("devcontainer wiring keeps the offline fallback and a non-blocking attach", () => {
-  const dockerfile = read("Dockerfile");
-  assert.match(
-    dockerfile,
-    /npm install --global/,
-    "Dockerfile must install the agent CLIs at image build time so an offline launch still has them"
-  );
-  for (const [packageName] of PACKAGES) {
-    assert.match(
-      dockerfile,
-      new RegExp(`\\s${packageName}@latest`),
-      `Dockerfile must bake ${packageName}@latest into the image`
-    );
-  }
-  const start = read("post-start.sh");
-  assert.match(
-    start,
-    /nohup bash "\$\{installer\}"/,
-    "post-start.sh must background the agent CLI refresh so it cannot delay VS Code attach"
-  );
-  assert.doesNotMatch(
-    start,
-    /^\s*git lfs pull/m,
-    "post-start.sh must not run git lfs pull synchronously on every attach"
-  );
-  const create = read("post-create.sh");
-  assert.match(
-    create,
-    /bash "\$\{installer\}"/,
-    "post-create.sh must run install-agent-clis.sh during first-time setup"
-  );
-  assert.match(
-    create,
-    /unity-mcp\.mjs" configure --no-discover --timeout 750/,
-    "post-create.sh must run the Unity MCP configurator"
-  );
-  const config = read("devcontainer.json");
-  assert.match(
-    config,
-    /"waitFor": "updateContentCommand"/,
-    "devcontainer.json must wait only for updateContentCommand"
-  );
-  assert.match(
-    config,
-    /"NANOCODER_MCPSERVERS_FILE": "\$\{containerWorkspaceFolder\}\/\.nanocoder\/mcp\.json"/,
-    "devcontainer.json must point NANOCODER_MCPSERVERS_FILE at .nanocoder/mcp.json"
-  );
+for (const [file, text] of WIRING) {
+  test(`${file} includes ${text}`, () => assert.ok(read(file).includes(text)));
+}
+test("launch does not block on Git LFS downloads", () => {
+  assert.doesNotMatch(read("post-start.sh"), /^\s*git lfs pull/m);
 });
+
+test("post-create owns its CLI refresh", { skip: !CAN_RUN_SHELL }, (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-bootstrap-order-"));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const script = `source "$1"
+    for stub in fix_volume_permissions ensure_path_line dotnet configure_agent_mcps git pre-commit ensure_pinned_sdk validate_dotnet validate_workspace print_summary; do
+      eval "$stub() { :; }"
+    done
+    install_agent_clis() { printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/refresh-scope"; }
+    npm() {
+      if [[ "$*" == "config get prefix" ]]; then echo "$HOME/.local";
+      elif [[ "$1" == install ]]; then printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/npm-scope"; fi
+    }
+    main
+    wait
+    cmp "$TMPDIR/refresh-scope" "$TMPDIR/npm-scope"`;
+  const result = childProcess.spawnSync("bash", ["-c", script, "bash", dev("post-create.sh")], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: temp, TMPDIR: temp }
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+for (const [label, mode, foreign, repair, expected] of [
+  ["root-owned child beneath writable cache", 0o644, true, "directory", 0],
+  ["writable foreign file with unsupported chown", 0o666, true, "reject", 0],
+  ["unwritable foreign file repaired by chown", 0o644, true, "real", 0],
+  ["unwritable owned file", 0o444, false, "real", 1],
+  ["unwritable foreign file with no-op chown", 0o644, true, "noop", 1],
+  ["missing npm manifests", null, false, "reject", 0]
+]) {
+  test(`cache permissions handle ${label}`, { skip: !CAN_RUN_SHELL }, (t) => {
+    if (childProcess.spawnSync("sudo", ["-n", "true"]).status !== 0 || process.getuid() === 0)
+      return t.skip("requires an unprivileged user with passwordless sudo");
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-file-owner-"));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+    const file = path.join(temp, repair === "directory" ? "nested/cache" : "package.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (mode !== null) {
+      fs.writeFileSync(file, "{}");
+      fs.chmodSync(file, mode);
+      const target = repair === "directory" ? path.dirname(file) : file;
+      if (foreign) childProcess.execFileSync("sudo", ["-n", "chown", "-R", "0:0", target]);
+    }
+    const script = `source "$1"
+      if [[ "$REPAIR" == directory ]]; then cache_contract_repair_directory "$WORKSPACE_FOLDER" "$(id -u)" "$(id -g)"; exit; fi
+      cache_contract_repair_directory() { :; }
+      sudo() { case "$2" in chown) case "$3" in -h) :;; *) return 99;; esac;; *) return 99;; esac
+        case "$REPAIR" in real) command sudo "$@";; noop) return 0;; *) return 1;; esac; }
+      cache_contract_repair_permissions`;
+    const result = childProcess.spawnSync(
+      "bash",
+      ["-c", script, "bash", dev("cache-contract.sh")],
+      {
+        encoding: "utf8",
+        env: { ...process.env, HOME: temp, WORKSPACE_FOLDER: temp, REPAIR: repair }
+      }
+    );
+    assert.equal(result.status, expected, `${label}: ${result.stderr}`);
+    if (expected) assert.match(result.stderr, /not writable/);
+    if (mode !== null && expected === 0) fs.writeFileSync(file, "writable without sudo");
+    if (repair === "directory") assert.equal(fs.statSync(file).uid, process.getuid());
+  });
+}

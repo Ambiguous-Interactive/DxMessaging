@@ -55,6 +55,7 @@ namespace DxMessaging.Tests.Editor.Allocations
 
             const string label = "Deliberate allocation diagnostic";
             int calls = 0;
+            int reports = 0;
             byte[] sink = null;
             Action allocate = () =>
             {
@@ -63,9 +64,25 @@ namespace DxMessaging.Tests.Editor.Allocations
             };
 
             AssertionException failure = Assert.Throws<AssertionException>(() =>
-                AllocationAssertions.AssertNoAllocations(label, allocate, 0, iterations)
+                AllocationAssertions.AssertNoAllocations(
+                    label,
+                    allocate,
+                    0,
+                    iterations,
+                    () =>
+                    {
+                        ++reports;
+                        Assert.IsFalse(
+                            RecorderEnabled,
+                            $"iterations={iterations}: context is outside measurement."
+                        );
+                        return $"calls={calls}; reporting complete";
+                    }
+                )
             );
             StringAssert.Contains(label, failure.Message, $"iterations={iterations}");
+            Assert.AreEqual(1, reports, $"iterations={iterations}: report once on failure.");
+            StringAssert.Contains($"calls={iterations * 2}; reporting complete", failure.Message);
             System.Text.RegularExpressions.Match count = System.Text.RegularExpressions.Regex.Match(
                 failure.Message,
                 @"made (\d+) GC allocation\(s\)"
@@ -101,11 +118,18 @@ namespace DxMessaging.Tests.Editor.Allocations
         )
         {
             int calls = 0;
+            int reports = 0;
             AllocationAssertions.AssertNoAllocations(
                 "Nonallocating control",
                 () => ++calls,
                 warmup,
-                iterations
+                iterations,
+                () => (++reports).ToString()
+            );
+            Assert.AreEqual(
+                0,
+                reports,
+                $"warmup={warmup}, iterations={iterations}: passing windows need no report."
             );
             Assert.AreEqual(
                 warmup + iterations * 2,

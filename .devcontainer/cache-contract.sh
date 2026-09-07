@@ -121,3 +121,43 @@ cache_contract_is_container_runtime() {
 
     return 1
 }
+
+# Repair only managed caches and npm's own files. Never recursively chown the
+# host bind mount. A user-owned root can still contain files from sudo npm.
+cache_contract_repair_permissions() {
+    local current_uid current_gid target probe
+    current_uid="$(id -u)"
+    current_gid="$(id -g)"
+    cache_contract_validate_shape || return 1
+    for target in "${CACHE_MOUNT_TARGETS[@]}" "${HOME}/.local"; do
+        cache_contract_repair_directory "$target" "$current_uid" "$current_gid" || return 1
+    done
+    for target in "${HOME}/.npmrc" "${CACHE_WORKSPACE_ROOT}/package-lock.json" \
+        "${CACHE_WORKSPACE_ROOT}/package.json"; do
+        if [[ -f "$target" && ! -w "$target" ]]; then
+            # Host bind mounts can be writable without supporting ownership changes.
+            sudo -n chown -h "$current_uid:$current_gid" "$target" || true
+            if [[ ! -w "$target" ]]; then
+                echo "[cache] $target is not writable; fix its host permissions." >&2
+                return 1
+            fi
+        fi
+    done
+    probe="${CACHE_WORKSPACE_ROOT}/.dxm-write-probe-$$"
+    if ! touch "$probe"; then
+        echo "[cache] Workspace is not writable; fix the host checkout's ownership." >&2
+        return 1
+    fi
+    rm -f "$probe"
+}
+
+cache_contract_repair_directory() {
+    local target="$1" current_uid="$2" current_gid="$3" probe
+    if [[ ! -d "$target" ]]; then
+        sudo -n install -d -o "$current_uid" -g "$current_gid" "$target" || return 1
+    fi
+    sudo -n find "$target" -xdev ! -uid "$current_uid" \
+        -exec chown -h "$current_uid:$current_gid" {} + || return 1
+    probe="$target/.dxm-write-probe-$$"
+    touch "$probe" && rm -f "$probe"
+}

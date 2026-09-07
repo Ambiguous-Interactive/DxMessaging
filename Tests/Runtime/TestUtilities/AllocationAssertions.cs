@@ -24,13 +24,15 @@ namespace DxMessaging.Tests.Runtime
         /// asserts that running it <paramref name="measuredIterations"/> more
         /// times makes zero managed allocations. Both the inner action and the
         /// outer assertion lambda are warmed before measurement so first-call
-        /// JIT overhead does not pollute the result.
+        /// JIT overhead does not pollute the result. Optional failure context is rendered
+        /// once, after recording stops, without repeating the measured action.
         /// </summary>
         public static void AssertNoAllocations(
             string label,
             Action action,
             int warmupIterations = DefaultWarmupIterations,
-            int measuredIterations = DefaultMeasuredIterations
+            int measuredIterations = DefaultMeasuredIterations,
+            Func<string> failureContext = null
         )
         {
             if (action == null)
@@ -75,6 +77,10 @@ namespace DxMessaging.Tests.Runtime
                 // message. Render the original result after the recorder has stopped.
                 TextMessageWriter writer = new TextMessageWriter();
                 measurement.WriteMessageTo(writer);
+                if (failureContext != null)
+                {
+                    writer.WriteLine(failureContext());
+                }
                 Assert.Fail(
                     $"{label}: expected zero GC allocations across {measuredIterations} iterations.\n{writer}"
                 );

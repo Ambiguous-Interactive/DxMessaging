@@ -35,7 +35,15 @@ namespace DxMessaging.Tests.Runtime
         private readonly MessageRegistrationHandle[] _handles = new MessageRegistrationHandle[
             BusTraceSequence.TokenCount
         ];
+        private readonly MessageRegistrationHandle[] _explicitHandles =
+            new MessageRegistrationHandle[BusTraceSequence.HandleSlotCount];
+        private readonly Func<MessageRegistrationHandle>[] _registrationFactories =
+            new Func<MessageRegistrationHandle>[BusTraceSequence.HandleSlotCount];
+        private int _nextCallbackIdentity;
         private readonly List<string> _callbacks = new();
+        private readonly List<string> _finalEmissions = new();
+        private readonly List<string> _unmatchedDiagnostics = new();
+        private int _nextEmissionOrdinal;
         private readonly LeakWatcher _leaks;
 
         internal MessageBusTraceAdapter(
@@ -98,6 +106,9 @@ namespace DxMessaging.Tests.Runtime
         public BusTraceObservation Execute(BusTraceOperation operation)
         {
             _callbacks.Clear();
+            _finalEmissions.Clear();
+            _unmatchedDiagnostics.Clear();
+            _nextEmissionOrdinal = 0;
             string exception = null;
             IMessageBus.TrimResult? trimResult = null;
             try
@@ -106,6 +117,12 @@ namespace DxMessaging.Tests.Runtime
                 {
                     case BusTraceOperationKind.Register:
                         Register(operation);
+                        break;
+                    case BusTraceOperationKind.DuplicateRegistration:
+                        DuplicateRegistration(operation);
+                        break;
+                    case BusTraceOperationKind.CopyHandle:
+                        CopyHandle(operation);
                         break;
                     case BusTraceOperationKind.Remove:
                     case BusTraceOperationKind.RemoveStale:
@@ -238,7 +255,9 @@ namespace DxMessaging.Tests.Runtime
                 exception,
                 trimResult,
                 _bus.OccupiedTypeSlots,
-                _bus.OccupiedTargetSlots
+                _bus.OccupiedTargetSlots,
+                _finalEmissions,
+                _unmatchedDiagnostics
             );
         }
 
@@ -316,8 +335,30 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual IMessageBus.TrimResult Trim(bool force) => _bus.Trim(force);
 
+        protected virtual void CopyHandle(BusTraceOperation operation)
+        {
+            _explicitHandles[operation.HandleSlot] = _explicitHandles[operation.SourceHandleSlot];
+            _registrationFactories[operation.HandleSlot] = _registrationFactories[
+                operation.SourceHandleSlot
+            ];
+        }
+
+        protected virtual void DuplicateRegistration(BusTraceOperation operation)
+        {
+            Func<MessageRegistrationHandle> register = _registrationFactories[
+                operation.SourceHandleSlot
+            ];
+            _explicitHandles[operation.HandleSlot] = register();
+            _registrationFactories[operation.HandleSlot] = register;
+        }
+
         protected virtual void Remove(BusTraceOperation operation)
         {
+            if (operation.HandleSlot >= 0)
+            {
+                _tokens[operation.Token].RemoveRegistration(_explicitHandles[operation.HandleSlot]);
+                return;
+            }
             int slot = operation.Token;
             MessageRegistrationHandle handle =
                 operation.Kind == BusTraceOperationKind.RemoveStale ? _staleHandles[slot]
@@ -351,6 +392,13 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void Register(BusTraceOperation operation)
         {
+            if (operation.HandleSlot >= 0)
+            {
+                Func<MessageRegistrationHandle> register = CreateRegistrationFactory(operation);
+                _explicitHandles[operation.HandleSlot] = register();
+                _registrationFactories[operation.HandleSlot] = register;
+                return;
+            }
             int slot = operation.Token;
             MessageRegistrationToken token = _tokens[slot];
             _registrations[slot] = operation;
@@ -389,33 +437,197 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
+        private Func<MessageRegistrationHandle> CreateRegistrationFactory(
+            BusTraceOperation operation
+        )
+        {
+            int callbackIdentity = _nextCallbackIdentity++;
+            MessageScenario scenario = Scenario(operation.KindOffset);
+            MessageRegistrationToken token = _tokens[operation.Token];
+            InstanceId context = new(2000 + operation.Context);
+            // A duplicate invokes this same factory, retaining the original route, priority,
+            // and delegate identity. All reference counting remains production behavior.
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    MessageHandler.FastHandler<UntargetedPayload> untargeted = (
+                        in UntargetedPayload message
+                    ) =>
+                        Record(
+                            operation.Token,
+                            message.Value,
+                            message,
+                            operation.HandleSlot,
+                            callbackIdentity
+                        );
+                    return () =>
+                        ScenarioHarness.RegisterUntargeted(
+                            scenario,
+                            token,
+                            untargeted,
+                            operation.Priority
+                        );
+                case MessageKind.Targeted:
+                    MessageHandler.FastHandler<TargetedPayload> targeted = (
+                        in TargetedPayload message
+                    ) =>
+                        Record(
+                            operation.Token,
+                            message.Value,
+                            message,
+                            operation.HandleSlot,
+                            callbackIdentity
+                        );
+                    return () =>
+                        ScenarioHarness.RegisterTargeted(
+                            scenario,
+                            token,
+                            context,
+                            targeted,
+                            operation.Priority
+                        );
+                case MessageKind.Broadcast:
+                    MessageHandler.FastHandler<BroadcastPayload> broadcast = (
+                        in BroadcastPayload message
+                    ) =>
+                        Record(
+                            operation.Token,
+                            message.Value,
+                            message,
+                            operation.HandleSlot,
+                            callbackIdentity
+                        );
+                    return () =>
+                        ScenarioHarness.RegisterBroadcast(
+                            scenario,
+                            token,
+                            context,
+                            broadcast,
+                            operation.Priority
+                        );
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(operation));
+            }
+        }
+
         private void Emit(BusTraceOperation operation)
         {
             MessageScenario scenario = Scenario(operation.KindOffset);
             InstanceId context = new(2000 + operation.Context);
-            switch (scenario.Kind)
+            int ordinal = _nextEmissionOrdinal++;
+            bool previousEnabled = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            // Capture only this synchronous emission. A nested scope restores this collector,
+            // without forwarding its unmatched reports into its parent's observations.
+            MessagingDebug.enabled = true;
+            MessagingDebug.LogFunction = (level, message) =>
             {
-                case MessageKind.Untargeted:
-                    UntargetedPayload untargeted = new(operation.Value);
-                    ScenarioHarness.EmitUntargeted(scenario, ref untargeted, _emitter);
-                    break;
-                case MessageKind.Targeted:
-                    TargetedPayload targeted = new(operation.Value);
-                    ScenarioHarness.EmitTargeted(scenario, ref targeted, context, _emitter);
-                    break;
-                case MessageKind.Broadcast:
-                    BroadcastPayload broadcast = new(operation.Value);
-                    ScenarioHarness.EmitBroadcast(scenario, ref broadcast, context, _emitter);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(_scenario));
+                if (
+                    level == LogLevel.Info
+                    && message != null
+                    && (
+                        message.StartsWith(
+                            "Could not find a matching untargeted broadcast handler ",
+                            StringComparison.Ordinal
+                        )
+                        || message.StartsWith(
+                            "Could not find a matching targeted broadcast handler ",
+                            StringComparison.Ordinal
+                        )
+                        || message.StartsWith(
+                            "Could not find a matching sourced broadcast handler ",
+                            StringComparison.Ordinal
+                        )
+                    )
+                )
+                {
+                    _unmatchedDiagnostics.Add($"call={ordinal};{message}");
+                }
+                else
+                {
+                    // Keep unrelated logging behavior, including nulls and literal braces.
+                    previousLog?.Invoke(level, message);
+                }
+            };
+            try
+            {
+                // These are caller-visible typed ref values, including when dispatch throws.
+                // Untyped APIs and extension methods' value-context boundaries are not observed here.
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                        UntargetedPayload untargeted = new(operation.Value);
+                        try
+                        {
+                            _emitter.UntargetedBroadcast(ref untargeted);
+                        }
+                        finally
+                        {
+                            _finalEmissions.Add(
+                                $"call={ordinal},kind={scenario.Kind},value={untargeted.Value},context=none"
+                            );
+                        }
+                        break;
+                    case MessageKind.Targeted:
+                        TargetedPayload targeted = new(operation.Value);
+                        try
+                        {
+                            _emitter.TargetedBroadcast(ref context, ref targeted);
+                        }
+                        finally
+                        {
+                            _finalEmissions.Add(
+                                $"call={ordinal},kind={scenario.Kind},value={targeted.Value},context={context.Id}"
+                            );
+                        }
+                        break;
+                    case MessageKind.Broadcast:
+                        BroadcastPayload broadcast = new(operation.Value);
+                        try
+                        {
+                            _emitter.SourcedBroadcast(ref context, ref broadcast);
+                        }
+                        finally
+                        {
+                            _finalEmissions.Add(
+                                $"call={ordinal},kind={scenario.Kind},value={broadcast.Value},context={context.Id}"
+                            );
+                        }
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(_scenario));
+                }
+            }
+            finally
+            {
+                MessagingDebug.LogFunction = previousLog;
+                MessagingDebug.enabled = previousEnabled;
             }
         }
 
-        private void Record(int token, int value, IMessage message)
+        private void Record(
+            int token,
+            int value,
+            IMessage message,
+            int handleSlot = -1,
+            int callbackIdentity = -1
+        )
         {
-            _callbacks.Add($"token={token},value={value}");
+            _callbacks.Add(
+                $"token={token},value={value}"
+                    + (
+                        handleSlot >= 0
+                            ? $",registration={handleSlot},callback={callbackIdentity}"
+                            : string.Empty
+                    )
+            );
             OnCallback(token, message);
+            // Versions one through seven address the token-associated registration.
+            // Explicit sibling callbacks must not consume that registration's trigger.
+            if (handleSlot >= 0)
+            {
+                return;
+            }
             if (_handlerActiveOperation.HasValue && token == _handlerActiveOperation.Value.Token)
             {
                 BusTraceOperation operation = _handlerActiveOperation.Value;
@@ -476,7 +688,7 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private readonly struct UntargetedPayload : IUntargetedMessage<UntargetedPayload>
+        internal readonly struct UntargetedPayload : IUntargetedMessage<UntargetedPayload>
         {
             internal UntargetedPayload(int value)
             {
@@ -486,7 +698,7 @@ namespace DxMessaging.Tests.Runtime
             internal int Value { get; }
         }
 
-        private readonly struct TargetedPayload : ITargetedMessage<TargetedPayload>
+        internal readonly struct TargetedPayload : ITargetedMessage<TargetedPayload>
         {
             internal TargetedPayload(int value)
             {
@@ -496,7 +708,7 @@ namespace DxMessaging.Tests.Runtime
             internal int Value { get; }
         }
 
-        private readonly struct BroadcastPayload : IBroadcastMessage<BroadcastPayload>
+        internal readonly struct BroadcastPayload : IBroadcastMessage<BroadcastPayload>
         {
             internal BroadcastPayload(int value)
             {

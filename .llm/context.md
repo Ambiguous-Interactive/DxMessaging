@@ -97,20 +97,20 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 
 - The devcontainer workspace IS the embedded package inside the host Unity project,
   so edits in-container are instantly visible to the editor.
-- Preflight: prefer passive `GetState`, `GetPrefabStage`, `GetActive`, and a fresh observer snapshot.
-  If the observer is absent or incomplete, available flags are idle/clean, and no test is known
-  active, use a minimal `Unity_RunCommand` inspection for framework activity and every open
-  scene. It refreshes before the snippet; this bootstrap does not prove the prior refresh safe.
-  Follow the [bootstrap procedure](./skills/unity-mcp-test-loop/references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer);
-  missing fields alone do not require confirmation. Respect tool approval gates. Once idle with
-  clean scenes, compile through `Unity_ManageMenuItem` with `Assets/Refresh`.
+- Discover the live catalog: Pipeline provides `editor_status`, `list_open_scenes`, `eval`, and
+  `menu`; the legacy relay provides `Unity_*` tools. Prefer passive editor/scene queries plus a
+  fresh observer snapshot. If fields are incomplete, available flags are idle/clean, and no test
+  is known active, follow the [bootstrap procedure](./skills/unity-mcp-test-loop/references/mcp-test-loop.md#bootstrap-without-a-complete-passive-observer).
+  Legacy `Unity_RunCommand` refreshes before snippets; Pipeline `eval` refresh behavior is
+  unverified. Missing fields alone do not require confirmation. Respect tool approval gates.
+  Once idle with clean scenes, compile using the backend's menu tool with `Assets/Refresh`.
 - Poll active tests through files only. Require passive framework cleanup and error checks after
   the raw result reports `done`; never restart solely because observation timed out. See the
   [framework cleanup gate](./skills/unity-mcp-test-loop/references/mcp-test-loop.md#framework-cleanup-gate).
-- Run tests: call the host bridge `DxMcpTestRunner.Run(testMode, assemblies, tests, categories, resultPath)` via `Unity_RunCommand`, then poll the `.status` sidecar from the container. `resultPath` resolves against the HOST project root, so it MUST be prefixed `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`; a bare `.artifacts/unity-mcp/<name>.json` lands where the container cannot see it and the poll waits forever next to stale files.
+- Run tests: call the host bridge `DxMcpTestRunner.Run(testMode, assemblies, tests, categories, resultPath)` via Pipeline `eval` or legacy `Unity_RunCommand`, then poll the `.status` sidecar from the container. `resultPath` resolves against the HOST project root, so it MUST be prefixed `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`; a bare `.artifacts/unity-mcp/<name>.json` lands where the container cannot see it and the poll waits forever next to stale files.
 - EditMode assemblies: `WallstopStudios.DxMessaging.Tests.Editor`, `...Tests.Editor.Allocations`, `...Tests.00.Editor.Benchmarks`. PlayMode: `...Tests.Runtime`, `...Tests.00.Runtime.Benchmarks` (category `PerfBench`), `...Tests.00.Runtime.Comparisons`, DI integrations (Reflex/VContainer/Zenject).
 - Perf baselines: the benchmark CSV defaults to `.artifacts/perf-baseline.csv` (override env `DX_PERF_BASELINE`; `DX_PERF_COMMIT` stamps the commit column).
-- Sandbox restriction: `using System.Reflection;` is rejected in `Unity_RunCommand` snippets;
+- Legacy sandbox restriction: `using System.Reflection;` is rejected in `Unity_RunCommand` snippets;
   qualify allowed types (`System.Reflection.Assembly`). Qualification does not bypass member restrictions.
 - The published IL2CPP-Release headline comes from the CI leg (self-hosted Windows, `scripts/unity/run-ci-tests.ps1`), not the local MCP loop; the MCP loop is the local Mono/editor signal. CI keeps short, scope-isolated host projects under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/<version>-<mode>/` so each fixed runner can reuse its own `Library` without transferring it over the network -- see [UPM Test Harness](./skills/unity-test-execution/references/upm-test-harness.md).
 - License (CI only): see [Unity License Bootstrap](./skills/unity-licensing/references/unity-license-bootstrap.md). CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and guarantees a `-returnlicense` on every exit path.

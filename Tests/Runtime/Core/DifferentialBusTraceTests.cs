@@ -27,7 +27,388 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TearDown() => _diagnostics.Dispose();
 
         [Test]
-        public void GeneratorVersionPinsKnownSeedPrefix([Values(1, 2, 3, 4, 5, 6, 7)] int version)
+        public void EmissionObservationScopesRestoreGlobalsAfterCompletionThrowResetAndNestedUnmatched(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("Emit", "EmitWithThrow", "EmitWithReset", "EmitNested", "NestedThrow")]
+                string operationName,
+            [Values(false, true)] bool initiallyEnabled
+        )
+        {
+            BusTraceOperationKind operationKind =
+                operationName == "NestedThrow"
+                    ? BusTraceOperationKind.EmitNested
+                    : (BusTraceOperationKind)
+                        Enum.Parse(typeof(BusTraceOperationKind), operationName);
+            bool savedEnabled = MessagingDebug.enabled;
+            Action<LogLevel, string> savedLog = MessagingDebug.LogFunction;
+            Action<LogLevel, string> sentinel = (_, _) =>
+                Assert.Fail("An emission escaped its scoped collector.");
+            string report =
+                $"kind={scenario.Kind}, operation={operationName}, initiallyEnabled={initiallyEnabled}";
+            try
+            {
+                MessagingDebug.enabled = initiallyEnabled;
+                MessagingDebug.LogFunction = sentinel;
+                using MessageBusTraceAdapter adapter = CreateAdapter(
+                    scenario,
+                    false,
+                    throwAfterEmit: operationName == "NestedThrow"
+                );
+                adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Register));
+                adapter.Execute(
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 1,
+                        context: 1,
+                        kindOffset: 1
+                    )
+                );
+                adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Disable, token: 1));
+                BusTraceObservation observation = adapter.Execute(
+                    new BusTraceOperation(operationKind, value: 11, nestedToken: 1, depth: 1)
+                );
+                Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
+                Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
+                Assert.That(
+                    observation.Exception != null,
+                    Is.EqualTo(
+                        operationKind == BusTraceOperationKind.EmitWithThrow
+                            || operationName == "NestedThrow"
+                    ),
+                    report + observation
+                );
+                int expectedFinalCount = operationKind == BusTraceOperationKind.EmitNested ? 2 : 1;
+                Assert.That(
+                    observation.FinalEmissions.Count,
+                    Is.EqualTo(expectedFinalCount),
+                    report + observation
+                );
+                string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
+                Assert.That(
+                    observation.FinalEmissions[expectedFinalCount - 1],
+                    Is.EqualTo($"call=0,kind={scenario.Kind},value=11,context={context}"),
+                    report + observation
+                );
+                if (operationKind == BusTraceOperationKind.EmitNested)
+                {
+                    MessageKind inner = (MessageKind)(((int)scenario.Kind + 1) % 3);
+                    string innerContext = inner == MessageKind.Untargeted ? "none" : "2001";
+                    Assert.That(
+                        observation.FinalEmissions[0],
+                        Is.EqualTo($"call=1,kind={inner},value=12,context={innerContext}"),
+                        report + observation
+                    );
+                    Assert.That(
+                        observation.UnmatchedDiagnostics.Count,
+                        Is.EqualTo(1),
+                        report + observation
+                    );
+                    StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
+                }
+                // A later unmatched call gets a fresh ordinal and cannot mutate the prior snapshot.
+                BusTraceObservation later = adapter.Execute(
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Emit,
+                        value: 31,
+                        context: 2,
+                        kindOffset: 2
+                    )
+                );
+                Assert.That(later.FinalEmissions.Count, Is.EqualTo(1), report + later);
+                StringAssert.StartsWith("call=0,", later.FinalEmissions[0], report);
+                Assert.That(later.UnmatchedDiagnostics.Count, Is.EqualTo(1), report + later);
+                StringAssert.StartsWith("call=0;", later.UnmatchedDiagnostics[0], report);
+                CollectionAssert.Contains(
+                    observation.FinalEmissions,
+                    $"call=0,kind={scenario.Kind},value=11,context={context}",
+                    report + observation
+                );
+                if (operationKind == BusTraceOperationKind.EmitNested)
+                {
+                    StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
+                }
+                Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
+                Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
+            }
+            finally
+            {
+                MessagingDebug.LogFunction = savedLog;
+                MessagingDebug.enabled = savedEnabled;
+            }
+        }
+
+        [Test]
+        public void MissingNestedUnmatchedEmitIsDetectedWithoutChangingCallbacks(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                641,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 1,
+                        context: 1,
+                        kindOffset: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Disable, token: 1),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.EmitNested,
+                        value: 11,
+                        nestedToken: 1,
+                        depth: 1
+                    ),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateMutant(kind, "nested")
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            CollectionAssert.AreEqual(control[3].Callbacks, candidate[3].Callbacks, report);
+            Assert.That(candidate[3].State, Is.EqualTo(control[3].State), report);
+            Assert.That(control[3].FinalEmissions.Count, Is.EqualTo(2), report);
+            Assert.That(candidate[3].FinalEmissions.Count, Is.EqualTo(1), report);
+            Assert.That(control[3].UnmatchedDiagnostics.Count, Is.EqualTo(1), report);
+            Assert.That(candidate[3].UnmatchedDiagnostics, Is.Empty, report);
+            Assert.That(
+                DifferentialBusTrace.Compare(control, candidate)?.Category,
+                Is.EqualTo("final-emission"),
+                report
+            );
+        }
+
+        [Test]
+        public void UnmatchedDiagnosticReportsAreIndependentOfCallbackCountsAndVetoes(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("empty", "global", "bare", "veto")] string setup
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionEnabled: false
+            );
+            using DiagnosticCalibrationAdapter adapter = new(scenario, bus);
+            adapter.Configure(setup);
+            Action<LogLevel, string> savedLog = MessagingDebug.LogFunction;
+            List<(LogLevel, string)> forwarded = new();
+            Action<LogLevel, string> original = (level, message) => forwarded.Add((level, message));
+            try
+            {
+                MessagingDebug.LogFunction = original;
+                BusTraceObservation observation = adapter.Execute(
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17)
+                );
+                string report = $"kind={scenario.Kind}, setup={setup}: {observation}";
+                Assert.That(observation.Exception, Is.Null, report);
+                Assert.That(observation.Callbacks, Is.Empty, report);
+                Assert.That(adapter.GlobalCalls, Is.EqualTo(setup == "global" ? 1 : 0), report);
+                Assert.That(adapter.VetoCalls, Is.EqualTo(setup == "veto" ? 1 : 0), report);
+                // Global-only delivery can log unmatched; a bare bus bucket can suppress it
+                // without invoking a delegate; veto stops before any unmatched report.
+                Assert.That(
+                    observation.UnmatchedDiagnostics.Count,
+                    Is.EqualTo(setup == "empty" || setup == "global" ? 1 : 0),
+                    report
+                );
+                (LogLevel, string)[] expected =
+                    setup == "global"
+                        ? new[]
+                        {
+                            (LogLevel.Info, (string)null),
+                            (LogLevel.Info, "unrelated {0} diagnostic"),
+                            (LogLevel.Error, "unrelated error"),
+                            (
+                                LogLevel.Warn,
+                                "Could not find a matching untargeted broadcast handler noise"
+                            ),
+                        }
+                        : Array.Empty<(LogLevel, string)>();
+                CollectionAssert.AreEqual(expected, forwarded, report);
+                Assert.That(MessagingDebug.LogFunction, Is.SameAs(original), report);
+            }
+            finally
+            {
+                MessagingDebug.LogFunction = savedLog;
+            }
+        }
+
+        [Test]
+        public void TypedFinalPayloadObservationsDetectRealMutationAndShrink(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool throwAfterEmit
+        )
+        {
+            VerifyFinalMutation(scenario, "payload", throwAfterEmit);
+        }
+
+        [Test]
+        public void TypedFinalContextObservationsDetectRealMutationAndShrink(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.KindsWithComponentTarget)
+            )]
+                MessageScenario scenario
+        )
+        {
+            VerifyFinalMutation(scenario, "context", false);
+        }
+
+        private static void VerifyFinalMutation(
+            MessageScenario scenario,
+            string fault,
+            bool throwAfterEmit
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                619,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind =>
+                    CreateAdapter(
+                        kind,
+                        false,
+                        observationFault: null,
+                        throwAfterEmit: throwAfterEmit
+                    )
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind =>
+                    CreateAdapter(
+                        kind,
+                        false,
+                        observationFault: fault,
+                        throwAfterEmit: throwAfterEmit
+                    )
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            CollectionAssert.AreEqual(control[1].Callbacks, candidate[1].Callbacks, report);
+            Assert.That(candidate[1].State, Is.EqualTo(control[1].State), report);
+            Assert.That(candidate[1].Exception, Is.EqualTo(control[1].Exception), report);
+            Assert.That(control[1].Exception == null, Is.EqualTo(!throwAfterEmit), report);
+            CollectionAssert.AreEqual(
+                control[1].UnmatchedDiagnostics,
+                candidate[1].UnmatchedDiagnostics,
+                report
+            );
+            string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
+            CollectionAssert.AreEqual(
+                new[] { $"call=0,kind={scenario.Kind},value=17,context={context}" },
+                control[1].FinalEmissions,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    $"call=0,kind={scenario.Kind},value={(fault == "payload" ? 117 : 17)},context={(fault == "context" ? "2100" : context)}",
+                },
+                candidate[1].FinalEmissions,
+                report
+            );
+            BusTraceMismatch EvaluateFinal(BusTraceSequence input) =>
+                DifferentialBusTrace.Compare(
+                    DifferentialBusTrace.Replay(
+                        input,
+                        kind => CreateAdapter(kind, false, throwAfterEmit: throwAfterEmit)
+                    ),
+                    DifferentialBusTrace.Replay(
+                        input,
+                        kind =>
+                            CreateAdapter(
+                                kind,
+                                false,
+                                observationFault: fault,
+                                throwAfterEmit: throwAfterEmit
+                            )
+                    )
+                );
+            BusTraceMismatch mismatch = EvaluateFinal(sequence);
+            Assert.That(mismatch?.Category, Is.EqualTo("final-emission"), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, EvaluateFinal);
+            Assert.That(minimal.Operations.Count, Is.EqualTo(1), report);
+            Assert.That(minimal.Operations[0].Kind, Is.EqualTo(BusTraceOperationKind.Emit), report);
+            Assert.That(minimal.Version, Is.EqualTo(8), report);
+            StringAssert.Contains("observationSchema=2", mismatch.BuildReport(sequence), report);
+        }
+
+        [Test]
+        public void UnmatchedDiagnosticsDetectEmptyBusEmissionWithoutInventingFoundResult(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                631,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 29),
+                    new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, true)
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            Assert.That(control[1].Callbacks, Is.Empty, report);
+            Assert.That(candidate[1].Callbacks, Is.Empty, report);
+            Assert.That(candidate[1].State, Is.EqualTo(control[1].State), report);
+            CollectionAssert.AreEqual(
+                control[1].FinalEmissions,
+                candidate[1].FinalEmissions,
+                report
+            );
+            Assert.That(control[1].UnmatchedDiagnostics.Count, Is.EqualTo(1), report);
+            StringAssert.StartsWith(
+                "call=0;Could not find a matching ",
+                control[1].UnmatchedDiagnostics[0],
+                report
+            );
+            Assert.That(candidate[1].UnmatchedDiagnostics, Is.Empty, report);
+            Assert.That(
+                Evaluate(sequence, true)?.Category,
+                Is.EqualTo("unmatched-diagnostic"),
+                report
+            );
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                sequence,
+                input => Evaluate(input, true)
+            );
+            Assert.That(minimal.Operations.Count, Is.EqualTo(1), report);
+            Assert.That(minimal.Operations[0].Kind, Is.EqualTo(BusTraceOperationKind.Emit), report);
+        }
+
+        [Test]
+        public void GeneratorVersionPinsKnownSeedPrefix(
+            [Values(1, 2, 3, 4, 5, 6, 7, 8)] int version
+        )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
                 MessageScenario.Untargeted(),
@@ -37,11 +418,19 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 BusTraceSequence.GeneratorVersion,
-                Is.EqualTo(7),
+                Is.EqualTo(8),
                 "Changing generation requires a new version and a reviewed replay fixture."
             );
             CollectionAssert.AreEqual(
-                version == 7
+                version == 8
+                        ? new[]
+                        {
+                            "Register(token=0,context=0,value=0,priority=0)[handleSlot=0,sourceHandleSlot=-1]",
+                            "DuplicateRegistration(token=0,context=0,value=0,priority=0)[handleSlot=1,sourceHandleSlot=0]",
+                            "CopyHandle(token=0,context=0,value=0,priority=0)[handleSlot=2,sourceHandleSlot=0]",
+                            "Emit(token=0,context=0,value=0,priority=0)",
+                        }
+                    : version == 7
                         ? new[]
                         {
                             "Register(token=0,context=0,value=1409999377,priority=1)",
@@ -90,6 +479,493 @@ namespace DxMessaging.Tests.Runtime.Core
                 sequence.Version,
                 Is.EqualTo(version),
                 $"version={version}: replay identity must preserve the requested generator."
+            );
+        }
+
+        [Test]
+        public void IndependentHandlesPreserveDuplicatesCopiesAndOutOfOrderRemoval(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool removeCopy,
+            [Values(false, true)] bool duplicateFirst
+        )
+        {
+            int original = removeCopy ? 2 : 0;
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Enable),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 3,
+                        context: 1,
+                        priority: -1,
+                        handleSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DuplicateRegistration,
+                        token: 3,
+                        handleSlot: 1,
+                        sourceHandleSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyHandle,
+                        token: 3,
+                        handleSlot: 2,
+                        sourceHandleSlot: 0
+                    ),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 3,
+                        context: 1,
+                        priority: 1,
+                        handleSlot: 3
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 11),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Remove,
+                        token: 3,
+                        handleSlot: duplicateFirst ? 1 : original
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 13),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Remove,
+                        token: 3,
+                        handleSlot: duplicateFirst ? original : 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 17),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        token: 3,
+                        context: 1,
+                        priority: -1,
+                        handleSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 3, handleSlot: 2),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 19),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 3, handleSlot: 3),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 23),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 3, handleSlot: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 3, handleSlot: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, context: 1, value: 29),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report =
+                $"removeCopy={removeCopy}; duplicateFirst={duplicateFirst}; "
+                + DescribeReplay(sequence, control, candidate);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            Assert.That(DifferentialBusTrace.Compare(control, candidate), Is.Null, report);
+            foreach (int index in new[] { 5, 7, 12 })
+            {
+                int value = sequence.Operations[index].Value;
+                CollectionAssert.AreEqual(
+                    new[]
+                    {
+                        $"token=3,value={value},registration=0,callback={(index == 12 ? 2 : 0)}",
+                        $"token=3,value={value},registration=3,callback=1",
+                    },
+                    control[index].Callbacks,
+                    report
+                );
+            }
+            CollectionAssert.AreEqual(
+                new[] { "token=3,value=17,registration=3,callback=1" },
+                control[9].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=3,value=23,registration=0,callback=2" },
+                control[14].Callbacks,
+                report
+            );
+            Assert.That(control[17].Callbacks, Is.Empty, report);
+            StringAssert.Contains(
+                "tokenMetadataCallsHistory=0/0/0,0/0/0,0/0/0,3/0/0,",
+                control[5].State,
+                report
+            );
+        }
+
+        [Test]
+        public void IndependentHandleMutantsAreDetectedAndShrunk(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool duplicateAsCopy
+        )
+        {
+            List<BusTraceOperation> operations = new()
+            {
+                new(BusTraceOperationKind.Enable, token: 3),
+                new(BusTraceOperationKind.Register, handleSlot: 0),
+            };
+            if (duplicateAsCopy)
+            {
+                operations.Add(
+                    new(
+                        BusTraceOperationKind.DuplicateRegistration,
+                        handleSlot: 1,
+                        sourceHandleSlot: 0
+                    )
+                );
+            }
+            else
+            {
+                operations.Add(new(BusTraceOperationKind.Register, priority: 1, handleSlot: 1));
+                operations.Add(
+                    new(BusTraceOperationKind.CopyHandle, handleSlot: 2, sourceHandleSlot: 1)
+                );
+                operations.Add(new(BusTraceOperationKind.Remove, handleSlot: 2));
+            }
+            operations.Add(new(BusTraceOperationKind.Emit, value: 11));
+            BusTraceSequence sequence = new(scenario, 509, operations);
+            string fault = duplicateAsCopy ? "duplicate-as-copy" : "wrong-independent-handle";
+            BusTraceMismatch mismatch = EvaluateMutant(sequence, fault);
+            Assert.That(mismatch, Is.Not.Null, $"[{scenario.Kind}] {fault}");
+            string report = mismatch.BuildReport(sequence);
+            Assert.That(
+                mismatch.Category,
+                Is.EqualTo(duplicateAsCopy ? "state" : "callbacks"),
+                report
+            );
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                sequence,
+                candidate => EvaluateMutant(candidate, fault)
+            );
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(minimal.Operations.Count, Is.EqualTo(duplicateAsCopy ? 2 : 5), report);
+            Assert.That(
+                EvaluateMutant(minimal, fault)?.Category,
+                Is.EqualTo(mismatch.Category),
+                report
+            );
+            Assert.That(Evaluate(minimal, false), Is.Null, report);
+            for (int index = 0; index < minimal.Operations.Count; ++index)
+            {
+                List<BusTraceOperation> remaining = new(minimal.Operations);
+                remaining.RemoveAt(index);
+                BusTraceSequence deletion = new(scenario, minimal.Seed, remaining, minimal.Version);
+                Assert.That(
+                    !DifferentialBusTrace.IsValid(deletion)
+                        || EvaluateMutant(deletion, fault)?.Category != mismatch.Category,
+                    Is.True,
+                    $"{report}; deletion={index}"
+                );
+            }
+        }
+
+        [Test]
+        public void ReusedHandleSlotKeepsOldDuplicateCallbackIdentityAndOrder(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register, handleSlot: 0),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.DuplicateRegistration,
+                        handleSlot: 1,
+                        sourceHandleSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, handleSlot: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Register, handleSlot: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 11),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> candidate = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateMutant(kind, "reused-callback-order")
+            );
+            string report = DescribeReplay(sequence, control, candidate);
+            Assert.That(control.All(item => item.Exception == null), Is.True, report);
+            Assert.That(candidate.All(item => item.Exception == null), Is.True, report);
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    "token=0,value=11,registration=0,callback=0",
+                    "token=0,value=11,registration=0,callback=1",
+                },
+                control[4].Callbacks,
+                report
+            );
+            CollectionAssert.AreEqual(
+                control.Select(item => item.State),
+                candidate.Select(item => item.State),
+                report
+            );
+            CollectionAssert.AreEqual(
+                control[4].Callbacks.Reverse(),
+                candidate[4].Callbacks,
+                report
+            );
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(control, candidate);
+            Assert.That(mismatch?.Category, Is.EqualTo("callbacks"), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                sequence,
+                replay => EvaluateMutant(replay, "reused-callback-order")
+            );
+            Assert.That(minimal.Operations.Count, Is.EqualTo(5), report);
+            Assert.That(
+                EvaluateMutant(minimal, "reused-callback-order")?.Category,
+                Is.EqualTo("callbacks"),
+                report
+            );
+        }
+
+        [Test]
+        public void LegacyCallbackCleanupTargetsItsRegistrationWithExplicitSiblings(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                509,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register, priority: 1),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        priority: -1,
+                        handleSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.EmitWithThrow, value: 11),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 13),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyHandle,
+                        handleSlot: 1,
+                        sourceHandleSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, handleSlot: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.Register, priority: 1),
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        priority: -1,
+                        handleSlot: 0
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, handleSlot: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> observations = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report = $"[{scenario.Kind}] " + string.Join("\n", observations);
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=11,registration=0,callback=0", "token=0,value=11" },
+                observations[2].Callbacks,
+                report
+            );
+            StringAssert.Contains(
+                "intentional trace callback failure",
+                observations[2].Exception,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=13,registration=0,callback=0" },
+                observations[3].Callbacks,
+                report
+            );
+            Assert.That(observations[3].Exception, Is.Null, report);
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=17,registration=0,callback=1", "token=0,value=17" },
+                observations[10].Callbacks,
+                report
+            );
+            for (int index = 4; index < observations.Count; ++index)
+            {
+                Assert.That(observations[index].Exception, Is.Null, $"{report}; operation={index}");
+            }
+        }
+
+        [Test]
+        public void DefaultOperationPreservesLegacyHandleSemantics()
+        {
+            BusTraceOperation operation = default;
+            Assert.That(
+                operation.HandleSlot,
+                Is.EqualTo(-1),
+                "The default struct keeps the legacy token-associated handle."
+            );
+            Assert.That(
+                operation.SourceHandleSlot,
+                Is.EqualTo(-1),
+                "The default struct must not acquire a copied-handle source."
+            );
+            Assert.That(
+                operation.ToString(),
+                Is.EqualTo(new BusTraceOperation(BusTraceOperationKind.Register).ToString()),
+                "Default and explicitly constructed Register inputs must agree."
+            );
+            for (int version = 1; version <= BusTraceSequence.GeneratorVersion; ++version)
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(
+                        new(MessageScenario.Untargeted(), 509, new[] { operation }, version)
+                    ),
+                    Is.True,
+                    $"version={version}: default Register remains supported."
+                );
+            }
+        }
+
+        [Test]
+        public void IndependentHandleValidityRequiresIssuedOwnersAndPreservesAliases()
+        {
+            MessageScenario scenario = MessageScenario.Untargeted();
+            BusTraceOperation register = new(
+                BusTraceOperationKind.Register,
+                token: 3,
+                handleSlot: 0
+            );
+            BusTraceOperation copy = new(
+                BusTraceOperationKind.CopyHandle,
+                token: 3,
+                handleSlot: 1,
+                sourceHandleSlot: 0
+            );
+            BusTraceOperation remove = new(BusTraceOperationKind.Remove, token: 3, handleSlot: 1);
+            BusTraceOperation duplicate = new(
+                BusTraceOperationKind.DuplicateRegistration,
+                token: 3,
+                handleSlot: 2,
+                sourceHandleSlot: 0
+            );
+            BusTraceOperation[][] invalid =
+            {
+                new[] { copy },
+                new[] { duplicate },
+                new[] { remove },
+                new[] { register, register },
+                new[] { register, copy, remove, duplicate },
+                new[]
+                {
+                    register,
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyHandle,
+                        handleSlot: 1,
+                        sourceHandleSlot: 0
+                    ),
+                },
+                new[]
+                {
+                    register,
+                    new BusTraceOperation(BusTraceOperationKind.Remove, handleSlot: 0),
+                },
+                new[] { new BusTraceOperation(BusTraceOperationKind.Register, handleSlot: -2) },
+                new[]
+                {
+                    new BusTraceOperation(
+                        BusTraceOperationKind.Register,
+                        handleSlot: BusTraceSequence.HandleSlotCount
+                    ),
+                },
+                new[]
+                {
+                    register,
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyHandle,
+                        token: 3,
+                        handleSlot: 1,
+                        sourceHandleSlot: BusTraceSequence.HandleSlotCount
+                    ),
+                },
+                new[]
+                {
+                    register,
+                    new BusTraceOperation(BusTraceOperationKind.Emit, handleSlot: 0),
+                },
+                new[] { new BusTraceOperation(BusTraceOperationKind.CopyHandle) },
+            };
+            foreach (BusTraceOperation[] operations in invalid)
+            {
+                Assert.That(
+                    DifferentialBusTrace.IsValid(new(scenario, 509, operations)),
+                    Is.False,
+                    string.Join(";", operations)
+                );
+            }
+            BusTraceSequence valid = new(
+                scenario,
+                509,
+                new[]
+                {
+                    register,
+                    copy,
+                    remove,
+                    register,
+                    remove,
+                    new BusTraceOperation(
+                        BusTraceOperationKind.CopyHandle,
+                        token: 3,
+                        handleSlot: 2,
+                        sourceHandleSlot: 1
+                    ),
+                    new BusTraceOperation(BusTraceOperationKind.Remove, token: 3, handleSlot: 2),
+                }
+            );
+            Assert.That(
+                DifferentialBusTrace.IsValid(valid),
+                Is.True,
+                "Copies retain their issued stale identity after another slot is reused."
+            );
+            Assert.That(
+                DifferentialBusTrace.IsValid(new(scenario, 509, valid.Operations, 7)),
+                Is.False,
+                "Version seven cannot claim independent handle semantics."
+            );
+        }
+
+        [Test]
+        public void VersionEightGeneratesIndependentHandleOperationsAndPreservesLegacyCoverage()
+        {
+            HashSet<BusTraceOperationKind> kinds = new();
+            for (uint seed = 0; seed < 32; ++seed)
+            {
+                BusTraceSequence sequence = DifferentialBusTrace.Generate(
+                    MessageScenario.Untargeted(),
+                    seed,
+                    256,
+                    8
+                );
+                Assert.That(
+                    DifferentialBusTrace.IsValid(sequence),
+                    Is.True,
+                    $"seed={seed}: handle generation must preserve dependencies."
+                );
+                CollectionAssert.AreEqual(
+                    sequence.Operations,
+                    DifferentialBusTrace.Generate(sequence.Scenario, seed, 256, 8).Operations,
+                    $"seed={seed}: generation must be deterministic."
+                );
+                foreach (BusTraceOperation operation in sequence.Operations)
+                {
+                    kinds.Add(operation.Kind);
+                }
+            }
+            CollectionAssert.AreEquivalent(
+                Enum.GetValues(typeof(BusTraceOperationKind)),
+                kinds,
+                "Version eight must retain every existing operation and add duplicates/copies."
             );
         }
 
@@ -1069,7 +1945,7 @@ namespace DxMessaging.Tests.Runtime.Core
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
             [Values(17, 42)] int seed,
-            [Values(3, 4, 5, 6, 7)] int version
+            [Values(3, 4, 5, 6, 7, 8)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -1441,7 +2317,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(8)]
+        [TestCase(9)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
@@ -1956,6 +2832,9 @@ namespace DxMessaging.Tests.Runtime.Core
             return fault switch
             {
                 "order" => new EqualPriorityReorderAdapter(scenario, bus),
+                "duplicate-as-copy" => new DuplicateAsCopyAdapter(scenario, bus),
+                "reused-callback-order" => new ReusedCallbackOrderAdapter(scenario, bus),
+                "wrong-independent-handle" => new WrongIndependentHandleAdapter(scenario, bus),
                 "stale" => new StaleHandleReuseAdapter(scenario, bus),
                 "foreign" => new ForeignHandleAliasAdapter(scenario, bus),
                 "exception-cleanup" => new SkippedExceptionCleanupAdapter(scenario, bus),
@@ -1972,6 +2851,61 @@ namespace DxMessaging.Tests.Runtime.Core
 
         // Each mutant changes a real operation before the shared observer reads production state.
         // None rewrites observations or implements message routing.
+        private sealed class ReusedCallbackOrderAdapter : MessageBusTraceAdapter
+        {
+            private bool _registered;
+
+            internal ReusedCallbackOrderAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Register(BusTraceOperation operation)
+            {
+                base.Register(operation);
+                if (operation.HandleSlot != 0)
+                {
+                    return;
+                }
+                if (_registered)
+                {
+                    base.Remove(new BusTraceOperation(BusTraceOperationKind.Remove, handleSlot: 1));
+                    base.DuplicateRegistration(
+                        new BusTraceOperation(
+                            BusTraceOperationKind.DuplicateRegistration,
+                            handleSlot: 1,
+                            sourceHandleSlot: 1
+                        )
+                    );
+                }
+                _registered = true;
+            }
+        }
+
+        private sealed class DuplicateAsCopyAdapter : MessageBusTraceAdapter
+        {
+            internal DuplicateAsCopyAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void DuplicateRegistration(BusTraceOperation operation) =>
+                CopyHandle(operation);
+        }
+
+        private sealed class WrongIndependentHandleAdapter : MessageBusTraceAdapter
+        {
+            internal WrongIndependentHandleAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState) { }
+
+            protected override void Remove(BusTraceOperation operation) =>
+                base.Remove(
+                    operation.HandleSlot >= 0
+                        ? new BusTraceOperation(
+                            BusTraceOperationKind.Remove,
+                            token: operation.Token,
+                            handleSlot: 0
+                        )
+                        : operation
+                );
+        }
+
         private sealed class ThrowOnceInNestedCallbackAdapter : MessageBusTraceAdapter
         {
             private long _throwAtEmission;
@@ -2421,7 +3355,9 @@ namespace DxMessaging.Tests.Runtime.Core
         private static MessageBusTraceAdapter CreateAdapter(
             MessageScenario scenario,
             bool dropEmits,
-            bool deferReset = false
+            bool deferReset = false,
+            string observationFault = null,
+            bool throwAfterEmit = false
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
@@ -2435,9 +3371,195 @@ namespace DxMessaging.Tests.Runtime.Core
             return new MessageBusTraceAdapter(
                 scenario,
                 bus,
-                dropEmits ? new DropEmitsBus(bus) : delayed,
+                dropEmits ? new DropEmitsBus(bus)
+                    : observationFault != null || throwAfterEmit
+                        ? new FinalValueEmitter(bus, observationFault, throwAfterEmit)
+                    : delayed,
                 delayed != null ? delayed.RequestReset : bus.ResetState
             );
+        }
+
+        private sealed class DiagnosticCalibrationAdapter : MessageBusTraceAdapter
+        {
+            private readonly MessageKind _kind;
+            private MessageBusRegistration _bareRegistration;
+            internal int GlobalCalls { get; private set; }
+            internal int VetoCalls { get; private set; }
+
+            internal DiagnosticCalibrationAdapter(MessageScenario scenario, MessageBus bus)
+                : base(scenario, bus, reset: bus.ResetState)
+            {
+                _kind = scenario.Kind;
+            }
+
+            internal void Configure(string setup)
+            {
+                if (setup == "global")
+                {
+                    Token(0)
+                        .RegisterGlobalAcceptAll(
+                            (IUntargetedMessage _) => RecordGlobalCall(),
+                            (InstanceId _, ITargetedMessage __) => RecordGlobalCall(),
+                            (InstanceId _, IBroadcastMessage __) => RecordGlobalCall()
+                        );
+                }
+                else if (setup == "bare")
+                {
+                    MessageHandler handler = new(new InstanceId(9876), Bus) { active = true };
+                    _bareRegistration = _kind switch
+                    {
+                        MessageKind.Untargeted => Bus.RegisterUntargeted<UntargetedPayload>(
+                            handler
+                        ),
+                        MessageKind.Targeted => Bus.RegisterTargeted<TargetedPayload>(
+                            new InstanceId(2000),
+                            handler
+                        ),
+                        MessageKind.Broadcast => Bus.RegisterSourcedBroadcast<BroadcastPayload>(
+                            new InstanceId(2000),
+                            handler
+                        ),
+                        _ => throw new ArgumentOutOfRangeException(),
+                    };
+                }
+                else if (setup == "veto")
+                {
+                    switch (_kind)
+                    {
+                        case MessageKind.Untargeted:
+                            Token(0)
+                                .RegisterUntargetedInterceptor<UntargetedPayload>(
+                                    (ref UntargetedPayload _) =>
+                                    {
+                                        ++VetoCalls;
+                                        return false;
+                                    }
+                                );
+                            break;
+                        case MessageKind.Targeted:
+                            Token(0)
+                                .RegisterTargetedInterceptor<TargetedPayload>(
+                                    (ref InstanceId _, ref TargetedPayload __) =>
+                                    {
+                                        ++VetoCalls;
+                                        return false;
+                                    }
+                                );
+                            break;
+                        case MessageKind.Broadcast:
+                            Token(0)
+                                .RegisterBroadcastInterceptor<BroadcastPayload>(
+                                    (ref InstanceId _, ref BroadcastPayload __) =>
+                                    {
+                                        ++VetoCalls;
+                                        return false;
+                                    }
+                                );
+                            break;
+                    }
+                }
+            }
+
+            private void RecordGlobalCall()
+            {
+                ++GlobalCalls;
+                // Unrelated and null log messages must not become unmatched observations or exceptions.
+                MessagingDebug.Log(LogLevel.Info, null);
+                MessagingDebug.Log(LogLevel.Info, "unrelated {0} diagnostic");
+                MessagingDebug.Log(LogLevel.Error, "unrelated error");
+                MessagingDebug.Log(
+                    LogLevel.Warn,
+                    "Could not find a matching untargeted broadcast handler noise"
+                );
+            }
+
+            protected override void DisposeToken(int slot)
+            {
+                if (slot == 0)
+                {
+                    switch (_kind)
+                    {
+                        case MessageKind.Untargeted:
+                            Bus.Deregister<UntargetedPayload>(_bareRegistration);
+                            break;
+                        case MessageKind.Targeted:
+                            Bus.Deregister<TargetedPayload>(_bareRegistration);
+                            break;
+                        case MessageKind.Broadcast:
+                            Bus.Deregister<BroadcastPayload>(_bareRegistration);
+                            break;
+                    }
+                }
+                base.DisposeToken(slot);
+            }
+        }
+
+        // Mutate the real ref arguments after production dispatch; never edit observations.
+        private sealed class FinalValueEmitter : DelegatingMessageBus
+        {
+            private readonly string _fault;
+            private readonly bool _throwAfter;
+
+            internal FinalValueEmitter(IMessageBus bus, string fault, bool throwAfter)
+                : base(bus)
+            {
+                _fault = fault;
+                _throwAfter = throwAfter;
+            }
+
+            private void Complete<TMessage>(ref TMessage message)
+            {
+                if (_fault == "payload")
+                {
+                    object changed = message switch
+                    {
+                        MessageBusTraceAdapter.UntargetedPayload value =>
+                            new MessageBusTraceAdapter.UntargetedPayload(value.Value + 100),
+                        MessageBusTraceAdapter.TargetedPayload value =>
+                            new MessageBusTraceAdapter.TargetedPayload(value.Value + 100),
+                        MessageBusTraceAdapter.BroadcastPayload value =>
+                            new MessageBusTraceAdapter.BroadcastPayload(value.Value + 100),
+                        _ => throw new InvalidOperationException("Unsupported trace payload."),
+                    };
+                    message = (TMessage)changed;
+                }
+                if (_throwAfter)
+                {
+                    throw new InvalidOperationException("intentional post-emission failure");
+                }
+            }
+
+            public override void UntargetedBroadcast<TMessage>(ref TMessage message)
+            {
+                base.UntargetedBroadcast(ref message);
+                Complete(ref message);
+            }
+
+            public override void TargetedBroadcast<TMessage>(
+                ref InstanceId target,
+                ref TMessage message
+            )
+            {
+                base.TargetedBroadcast(ref target, ref message);
+                if (_fault == "context")
+                {
+                    target = new InstanceId(target.Id + 100);
+                }
+                Complete(ref message);
+            }
+
+            public override void SourcedBroadcast<TMessage>(
+                ref InstanceId source,
+                ref TMessage message
+            )
+            {
+                base.SourcedBroadcast(ref source, ref message);
+                if (_fault == "context")
+                {
+                    source = new InstanceId(source.Id + 100);
+                }
+                Complete(ref message);
+            }
         }
 
         /// <summary>Intentional mutant: postpones a real reset request until the enclosing emission returns.</summary>

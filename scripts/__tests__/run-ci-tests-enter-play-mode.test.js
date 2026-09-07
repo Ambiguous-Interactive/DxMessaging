@@ -8,10 +8,14 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { stripVTControlCharacters } = require("node:util");
 
-const { extractRows, deriveScope: extractorDeriveScope } = require("../unity/extract-perf-baseline.js");
+const {
+  extractRows,
+  deriveScope: extractorDeriveScope
+} = require("../unity/extract-perf-baseline.js");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const STANDALONE_PLATFORM = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)";
-const EDITOR_PLAYMODE_PLATFORM = "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
+const EDITOR_PLAYMODE_PLATFORM =
+  "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1");
 // prettier-ignore
 const ROSLYNATOR_ANALYZER_FILES = ["Roslynator.CSharp.Analyzers.dll", "Roslynator_Analyzers_Roslynator.Common.dll", "Roslynator_Analyzers_Roslynator.Core.dll", "Roslynator_Analyzers_Roslynator.CSharp.dll"];
@@ -62,8 +66,15 @@ function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
   if (options.cachePath) args.push("-CachePath", options.cachePath);
   args.push("-GenerateOnly");
 
+  const started = performance.now();
   const result = spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 120000 });
-  assert.ifError(result.error);
+  if (result.error) {
+    // #549: preserve partial output and process state before the fixture is removed.
+    throw new Error(
+      `GenerateOnly subprocess failed after ${(performance.now() - started).toFixed(0)}ms; pid=${result.pid}, status=${result.status}, signal=${result.signal}, node=${process.version}, platform=${process.platform}/${process.arch}\ncwd=${stagingRoot}\nargs=${JSON.stringify(args)}\nstdout:\n${result.stdout ?? ""}\nstderr:\n${result.stderr ?? ""}`,
+      { cause: result.error }
+    );
+  }
   return result;
 }
 
@@ -269,9 +280,14 @@ test("PowerShell performance harness regression tests pass", () => {
     assert.ifError(result.error);
     assert.equal(result.status, 0, `${script}\n${result.stdout}\n${result.stderr}`);
   }
-  const result = spawnSync("pwsh", ["-NoProfile", "-File", "scripts/unity/capture-dispatch-codegen.ps1", "-SelfTestOnly"], {
-    cwd: REPO_ROOT, encoding: "utf8"
-  });
+  const result = spawnSync(
+    "pwsh",
+    ["-NoProfile", "-File", "scripts/unity/capture-dispatch-codegen.ps1", "-SelfTestOnly"],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf8"
+    }
+  );
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
 });

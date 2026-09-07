@@ -63,7 +63,7 @@ for index in "${!PACKAGES[@]}"; do
     package_name="${PACKAGES[$index]}"
     command_name="${COMMANDS[$index]}"
     installed="$(command_version "${command_name}" || true)"
-    latest="$(timeout 20 npm view "${package_name}" version 2>/dev/null | tr -d '[:space:]' || true)"
+    latest="$(timeout 20 npm view "${package_name}@latest" version 2>/dev/null | tr -d '[:space:]' || true)"
 
     if [[ -z "${latest}" ]]; then
         if command -v "${command_name}" >/dev/null 2>&1; then
@@ -80,11 +80,17 @@ for index in "${!PACKAGES[@]}"; do
         continue
     fi
 
+    if [[ ! "${latest}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+        warn "Registry returned an invalid version for ${package_name}."
+        ((failures += 1))
+        continue
+    fi
+
     log "installing ${package_name}@${latest} (current: ${installed:-missing})..."
     installed_ok=false
     for attempt in 1 2 3; do
         if timeout 180 npm install -g "${package_name}@${latest}" --silent --no-fund --no-audit; then
-            if command -v "${command_name}" >/dev/null 2>&1; then
+            if [[ "$(command_version "${command_name}" || true)" == "${latest}" ]]; then
                 installed_ok=true
                 break
             fi
@@ -101,6 +107,6 @@ for index in "${!PACKAGES[@]}"; do
 done
 
 if [[ "${failures}" -gt 0 ]]; then
-    warn "${failures} agent CLI installation(s) remain unavailable."
+    warn "${failures} agent CLI refresh(es) failed; see messages above."
     exit 1
 fi

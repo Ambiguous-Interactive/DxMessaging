@@ -23,7 +23,7 @@ Docker named volumes have a subtle ownership rule: when a volume is attached to 
 The fix has two parts:
 
 1. The Dockerfile pre-creates each target with `vscode:vscode` ownership before any volume can attach.
-1. `post-start.sh` re-runs `chown` on every container start, so an ownership drift (rare but possible after host upgrades) self-heals on the next attach.
+1. The lifecycle scripts repair foreign-owned cache entries before initial attachment and on every container start, so an ownership drift (rare but possible after host upgrades) self-heals on the next attach.
 
 `cache-contract.sh` is the table the devcontainer prongs read from. If a target is missing from the contract or misaligned by index, the validator fails loud rather than the developer hitting "permission denied" three minutes into a build.
 
@@ -140,3 +140,11 @@ Remove in the inverse order: devcontainer.json first (so a fresh build does not 
 - Docker volumes: https://docs.docker.com/storage/volumes/
 - Devcontainer JSON reference: https://containers.dev/implementors/json_reference/
 - Source: `.devcontainer/cache-contract.sh`
+
+## Agent startup
+
+`updateContentCommand` runs `post-start.sh --prepare` before the initial attach.
+It repairs nested cache ownership and writes MCP configs without network access.
+The same script runs on start and attach, then launches the CLI updater in the
+background. Image dependencies under `/opt/dxm-mcp` keep the configurator usable
+before workspace npm dependencies are installed. See [Agent MCP setup](../../../../scripts/mcp/README.md).
