@@ -181,7 +181,11 @@ const path = require("path");
 // 085 Refuse private runner identity in performance evidence. Data-driven cases cover runner and
 //     network identifiers; bounded record scans prevent large-log leaks and memory exhaustion. A
 //     real 441-file bundle was scrubbed, independently inventoried, sealed, and replayed: 23730.
-const TOTAL_BUDGET = 23730;
+// 086 Retain raw SubUnsub allocation observations and native build-input hashes.
+//     Rejection coverage and shared-scan finalization add evidence without extra Unity runs.
+//     Equivalent-input fixture factoring removes 53 lines; independent review accepts
+//     the remaining increase instead of unrelated test refactors: 24010.
+const TOTAL_BUDGET = 24010;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

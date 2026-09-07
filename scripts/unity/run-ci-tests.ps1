@@ -4542,6 +4542,119 @@ function Get-StandalonePlayerManifest {
     }
 }
 
+function Write-NativeBuildInputEvidence {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][string]$Artifacts,
+        [Parameter(Mandatory = $true)][string]$ProfileId,
+        [Parameter(Mandatory = $true)][string]$ProfileSha256,
+        [Parameter(Mandatory = $true)][string]$UnityVersion
+    )
+
+    # Retain only files named by this completed build's log. Bee can regenerate
+    # one graph repeatedly; different graph identities are ambiguous. Do not
+    # select a cached graph by directory order or mistake the editor's compiler
+    # version for the compiler that produced GameAssembly.dll.
+    $destination = Join-Path $Artifacts 'native-build-inputs'
+    if (Test-Path -LiteralPath $destination) {
+        Remove-Item -LiteralPath $destination -Recurse -Force
+    }
+    $logItem = Get-Item -LiteralPath $LogPath -ErrorAction Stop
+    if ($logItem.Length -gt 64MB) {
+        throw 'Native build input log exceeds the 64 MiB capture limit.'
+    }
+    $logText = [IO.File]::ReadAllText($LogPath).Replace('\', '/')
+    $invocations = @([regex]::Matches($logText, '(?m)^Starting: [^\r\n]*?/WinPlayerBuildProgram\.exe"[^\r\n]*'))
+    $pairs = @{}
+    foreach ($invocation in $invocations) {
+        $pair = [regex]::Match($invocation.Value, '"(?<graph>Library/Bee/(?<stem>Player[0-9a-f]+)\.dag\.json)" "(?<input>Library/Bee/\k<stem>-inputdata\.json)"')
+        if (-not $pair.Success) {
+            throw 'Native build input invocation has an unsupported or mismatched graph/input pair.'
+        }
+        $pairs[$pair.Groups['graph'].Value] = $pair.Groups['input'].Value
+    }
+    # A cached graph needs only bee_backend, without another build-program run.
+    # Retain its JSON companions without claiming they were regenerated or
+    # passed directly to this invocation; hash the actual logged binary DAG too.
+    $backendGraphs = @([regex]::Matches($logText, '(?m)^Starting: [^\r\n]*?/bee_backend\.exe [^\r\n]*?--dagfile="(?<dag>Library/Bee/Player[0-9a-f]+\.dag)"[^\r\n]* Player\r?$') |
+        ForEach-Object { $_.Groups['dag'].Value } | Sort-Object -Unique)
+    if ($backendGraphs.Count -ne 1) {
+        throw "Native build input log must identify exactly one player backend graph (found $($backendGraphs.Count))."
+    }
+    $backendDag = $backendGraphs[0]
+    $companionGraph = "$backendDag.json"
+    $companionInput = $backendDag.Substring(0, $backendDag.Length - 4) + '-inputdata.json'
+    if ($pairs.Count -gt 0 -and ($pairs.Count -ne 1 -or -not $pairs.ContainsKey($companionGraph))) {
+        throw 'Native build input generator and backend graph identities conflict.'
+    }
+    $graphSelection = if ($pairs.Count -eq 0) { 'cached-backend-dag-companions' } else { 'generator-and-backend-agree' }
+    $pairs[$companionGraph] = $companionInput
+    $backendDagPath = Join-Path $Project $backendDag
+    if (-not (Test-Path -LiteralPath $backendDagPath -PathType Leaf)) {
+        throw "Native build input named in the build log is missing: $backendDag"
+    }
+    $paths = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($entry in $pairs.GetEnumerator()) {
+        [void]$paths.Add($entry.Key)
+        [void]$paths.Add($entry.Value)
+    }
+    # These are observed log references, not a claim of complete graph/response
+    # closure. The full graph and input JSON stay available for that later audit.
+    foreach ($response in [regex]::Matches($logText, '(?<![A-Za-z0-9_./-])Library/Bee/artifacts/rsp/[0-9]+\.rsp\b')) {
+        [void]$paths.Add($response.Value)
+    }
+    if ($paths.Count -gt 256) {
+        throw 'Native build input capture exceeds the 256-file limit.'
+    }
+    $records = [Collections.Generic.List[object]]::new()
+    $dagItem = Get-Item -LiteralPath $backendDagPath
+    $totalBytes = [long]$dagItem.Length
+    if ($totalBytes -eq 0 -or $totalBytes -gt 64MB -or ($dagItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Native build input backend DAG is empty, linked, or exceeds the 64 MiB limit.'
+    }
+    foreach ($relative in $paths) {
+        $source = Join-Path $Project $relative
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Native build input named in the build log is missing: $relative"
+        }
+        $item = Get-Item -LiteralPath $source
+        $totalBytes += $item.Length
+        if ($item.Length -eq 0 -or $totalBytes -gt 64MB -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Native build input is empty, exceeds the 64 MiB total limit, or is a linked file: $relative"
+        }
+        # .txt lets the existing artifact scanner inspect response text. Keep
+        # its original name separately; a renamed extension changes no bytes.
+        $retained = if ($relative.EndsWith('.rsp', [StringComparison]::Ordinal)) { "$relative.txt" } else { $relative }
+        $target = Join-Path $destination $retained
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        Copy-Item -LiteralPath $source -Destination $target
+        $records.Add([ordered]@{
+            sourcePath = $relative
+            retainedPath = $retained
+            sourceLength = $item.Length
+            sourceSha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+        })
+    }
+    # The mandatory final artifact redactor records retained hashes during its
+    # existing scan. Do not scan these potentially large inputs a second time.
+    Write-JsonArtifact -Path (Join-Path $destination 'manifest.json') -Value ([ordered]@{
+        schemaVersion = 1
+        captureState = 'pending-redaction'
+        profileId = $ProfileId
+        profileSha256 = $ProfileSha256
+        unityVersion = $UnityVersion
+        evidenceKind = 'native-build-inputs'
+        graphSelection = $graphSelection
+        backendDagPath = $backendDag
+        backendDagSha256 = (Get-FileHash -LiteralPath $backendDagPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        responseFileScope = 'build-log-references-only'
+        unredactedBuildLogSha256 = (Get-FileHash -LiteralPath $LogPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        files = @($records.ToArray())
+    })
+}
+
 function Write-JsonArtifact {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -7071,6 +7184,10 @@ try {
             -EvidenceKind buildOptions `
             -ExpectedUnityVersion $UnityVersion `
             -ExpectedSha256 $canonicalProfileSha256
+        Write-NativeBuildInputEvidence `
+            -Project $ProjectPath -LogPath $logPath -Artifacts $ArtifactsPath `
+            -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+            -UnityVersion $UnityVersion
         Test-ShippingAssemblyEvidence `
             -Path $shippingAssemblyEvidencePath `
             -ExpectedProfileId $canonicalProfileId `
@@ -7292,6 +7409,10 @@ try {
                 -EvidenceKind buildOptions `
                 -ExpectedUnityVersion $UnityVersion `
                 -ExpectedSha256 $canonicalProfileSha256
+            Write-NativeBuildInputEvidence `
+                -Project $ProjectPath -LogPath $logPath -Artifacts $ArtifactsPath `
+                -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                -UnityVersion $UnityVersion
         }
 
         # MISSED-CASE GUARD: even when the exe exists, scan the build log for the
