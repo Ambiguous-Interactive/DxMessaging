@@ -35,6 +35,11 @@ namespace DxMessaging.Tests.Runtime
         private readonly MessageRegistrationHandle[] _handles = new MessageRegistrationHandle[
             BusTraceSequence.TokenCount
         ];
+        private readonly MessageRegistrationHandle[] _explicitHandles =
+            new MessageRegistrationHandle[BusTraceSequence.HandleSlotCount];
+        private readonly Func<MessageRegistrationHandle>[] _registrationFactories =
+            new Func<MessageRegistrationHandle>[BusTraceSequence.HandleSlotCount];
+        private int _nextCallbackIdentity;
         private readonly List<string> _callbacks = new();
         private readonly LeakWatcher _leaks;
 
@@ -106,6 +111,12 @@ namespace DxMessaging.Tests.Runtime
                 {
                     case BusTraceOperationKind.Register:
                         Register(operation);
+                        break;
+                    case BusTraceOperationKind.DuplicateRegistration:
+                        DuplicateRegistration(operation);
+                        break;
+                    case BusTraceOperationKind.CopyHandle:
+                        CopyHandle(operation);
                         break;
                     case BusTraceOperationKind.Remove:
                     case BusTraceOperationKind.RemoveStale:
@@ -316,8 +327,30 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual IMessageBus.TrimResult Trim(bool force) => _bus.Trim(force);
 
+        protected virtual void CopyHandle(BusTraceOperation operation)
+        {
+            _explicitHandles[operation.HandleSlot] = _explicitHandles[operation.SourceHandleSlot];
+            _registrationFactories[operation.HandleSlot] = _registrationFactories[
+                operation.SourceHandleSlot
+            ];
+        }
+
+        protected virtual void DuplicateRegistration(BusTraceOperation operation)
+        {
+            Func<MessageRegistrationHandle> register = _registrationFactories[
+                operation.SourceHandleSlot
+            ];
+            _explicitHandles[operation.HandleSlot] = register();
+            _registrationFactories[operation.HandleSlot] = register;
+        }
+
         protected virtual void Remove(BusTraceOperation operation)
         {
+            if (operation.HandleSlot >= 0)
+            {
+                _tokens[operation.Token].RemoveRegistration(_explicitHandles[operation.HandleSlot]);
+                return;
+            }
             int slot = operation.Token;
             MessageRegistrationHandle handle =
                 operation.Kind == BusTraceOperationKind.RemoveStale ? _staleHandles[slot]
@@ -351,6 +384,13 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void Register(BusTraceOperation operation)
         {
+            if (operation.HandleSlot >= 0)
+            {
+                Func<MessageRegistrationHandle> register = CreateRegistrationFactory(operation);
+                _explicitHandles[operation.HandleSlot] = register();
+                _registrationFactories[operation.HandleSlot] = register;
+                return;
+            }
             int slot = operation.Token;
             MessageRegistrationToken token = _tokens[slot];
             _registrations[slot] = operation;
@@ -389,6 +429,79 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
+        private Func<MessageRegistrationHandle> CreateRegistrationFactory(
+            BusTraceOperation operation
+        )
+        {
+            int callbackIdentity = _nextCallbackIdentity++;
+            MessageScenario scenario = Scenario(operation.KindOffset);
+            MessageRegistrationToken token = _tokens[operation.Token];
+            InstanceId context = new(2000 + operation.Context);
+            // A duplicate invokes this same factory, retaining the original route, priority,
+            // and delegate identity. All reference counting remains production behavior.
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    MessageHandler.FastHandler<UntargetedPayload> untargeted = (
+                        in UntargetedPayload message
+                    ) =>
+                        Record(
+                            operation.Token,
+                            message.Value,
+                            message,
+                            operation.HandleSlot,
+                            callbackIdentity
+                        );
+                    return () =>
+                        ScenarioHarness.RegisterUntargeted(
+                            scenario,
+                            token,
+                            untargeted,
+                            operation.Priority
+                        );
+                case MessageKind.Targeted:
+                    MessageHandler.FastHandler<TargetedPayload> targeted = (
+                        in TargetedPayload message
+                    ) =>
+                        Record(
+                            operation.Token,
+                            message.Value,
+                            message,
+                            operation.HandleSlot,
+                            callbackIdentity
+                        );
+                    return () =>
+                        ScenarioHarness.RegisterTargeted(
+                            scenario,
+                            token,
+                            context,
+                            targeted,
+                            operation.Priority
+                        );
+                case MessageKind.Broadcast:
+                    MessageHandler.FastHandler<BroadcastPayload> broadcast = (
+                        in BroadcastPayload message
+                    ) =>
+                        Record(
+                            operation.Token,
+                            message.Value,
+                            message,
+                            operation.HandleSlot,
+                            callbackIdentity
+                        );
+                    return () =>
+                        ScenarioHarness.RegisterBroadcast(
+                            scenario,
+                            token,
+                            context,
+                            broadcast,
+                            operation.Priority
+                        );
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(operation));
+            }
+        }
+
         private void Emit(BusTraceOperation operation)
         {
             MessageScenario scenario = Scenario(operation.KindOffset);
@@ -412,10 +525,29 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private void Record(int token, int value, IMessage message)
+        private void Record(
+            int token,
+            int value,
+            IMessage message,
+            int handleSlot = -1,
+            int callbackIdentity = -1
+        )
         {
-            _callbacks.Add($"token={token},value={value}");
+            _callbacks.Add(
+                $"token={token},value={value}"
+                    + (
+                        handleSlot >= 0
+                            ? $",registration={handleSlot},callback={callbackIdentity}"
+                            : string.Empty
+                    )
+            );
             OnCallback(token, message);
+            // Versions one through seven address the token-associated registration.
+            // Explicit sibling callbacks must not consume that registration's trigger.
+            if (handleSlot >= 0)
+            {
+                return;
+            }
             if (_handlerActiveOperation.HasValue && token == _handlerActiveOperation.Value.Token)
             {
                 BusTraceOperation operation = _handlerActiveOperation.Value;

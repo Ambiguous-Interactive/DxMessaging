@@ -25,6 +25,8 @@ namespace DxMessaging.Tests.Runtime
         RemoveForeign,
         SetHandlerActive,
         EmitWithHandlerActive,
+        DuplicateRegistration,
+        CopyHandle,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -41,7 +43,9 @@ namespace DxMessaging.Tests.Runtime
             int depth = 0,
             int handleToken = 0,
             int handlerToken = 0,
-            bool handlerActive = false
+            bool handlerActive = false,
+            int handleSlot = -1,
+            int sourceHandleSlot = -1
         )
         {
             Kind = kind;
@@ -55,6 +59,8 @@ namespace DxMessaging.Tests.Runtime
             HandleToken = handleToken;
             HandlerToken = handlerToken;
             HandlerActive = handlerActive;
+            _handleSlot = handleSlot + 1;
+            _sourceHandleSlot = sourceHandleSlot + 1;
         }
 
         internal BusTraceOperationKind Kind { get; }
@@ -73,6 +79,13 @@ namespace DxMessaging.Tests.Runtime
         internal int HandlerToken { get; }
         internal bool HandlerActive { get; }
 
+        // -1 retains the version-one through seven token-associated handle lane.
+        // Nonnegative slots hold independent handles, including aliases and duplicates.
+        private readonly int _handleSlot;
+        private readonly int _sourceHandleSlot;
+        internal int HandleSlot => _handleSlot - 1;
+        internal int SourceHandleSlot => _sourceHandleSlot - 1;
+
         public override string ToString() =>
             $"{Kind}(token={Token},context={Context},value={Value},priority={Priority})"
             + (
@@ -90,13 +103,19 @@ namespace DxMessaging.Tests.Runtime
                 || Kind == BusTraceOperationKind.EmitWithHandlerActive
                     ? $"[handlerToken={HandlerToken},handlerActive={HandlerActive}]"
                     : string.Empty
+            )
+            + (
+                HandleSlot >= 0
+                    ? $"[handleSlot={HandleSlot},sourceHandleSlot={SourceHandleSlot}]"
+                    : string.Empty
             );
     }
 
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 7;
+        internal const int GeneratorVersion = 8;
+        internal const int HandleSlotCount = 8;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
 
@@ -227,6 +246,10 @@ namespace DxMessaging.Tests.Runtime
             if (length < 0 || length > BusTraceSequence.MaxOperations)
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (generatorVersion == 8)
+            {
+                return GenerateHandleSlots(scenario, seed, length);
             }
             List<BusTraceOperation> operations = new(length);
             bool[] registered = new bool[BusTraceSequence.TokenCount];
@@ -365,6 +388,170 @@ namespace DxMessaging.Tests.Runtime
             return new BusTraceSequence(scenario, seed, operations, generatorVersion);
         }
 
+        private static BusTraceSequence GenerateHandleSlots(
+            MessageScenario scenario,
+            uint seed,
+            int length
+        )
+        {
+            List<BusTraceOperation> operations = new(length);
+            HandleDependencies handles = new();
+            BusTraceOperation[] prefix =
+            {
+                new(BusTraceOperationKind.Register, handleSlot: 0),
+                new(
+                    BusTraceOperationKind.DuplicateRegistration,
+                    handleSlot: 1,
+                    sourceHandleSlot: 0
+                ),
+                new(BusTraceOperationKind.CopyHandle, handleSlot: 2, sourceHandleSlot: 0),
+                new(BusTraceOperationKind.Emit),
+            };
+            foreach (BusTraceOperation operation in prefix)
+            {
+                if (operations.Count == length)
+                {
+                    break;
+                }
+                operations.Add(operation);
+                if (operation.HandleSlot >= 0)
+                {
+                    handles.Apply(operation);
+                }
+            }
+            // Retain the complete earlier operation vocabulary in each longer campaign.
+            // Its token-associated handles are independent of the new explicit handle slots.
+            operations.AddRange(
+                Generate(scenario, seed, (length - operations.Count) / 2, 7).Operations
+            );
+            uint state = seed ^ 0x9e3779b9u;
+            if (state == 0)
+            {
+                state = 1;
+            }
+            while (operations.Count < length)
+            {
+                int slot = (int)(Next(ref state) % BusTraceSequence.HandleSlotCount);
+                int source = (int)(Next(ref state) % BusTraceSequence.HandleSlotCount);
+                int owner = (int)(Next(ref state) % BusTraceSequence.TokenCount);
+                int choice = (int)(Next(ref state) % 8);
+                int value = unchecked((int)Next(ref state));
+                BusTraceOperation operation = choice switch
+                {
+                    0 => new(
+                        BusTraceOperationKind.Register,
+                        token: owner,
+                        context: (value & 1),
+                        priority: value % 3,
+                        kindOffset: (int)(Next(ref state) % 3),
+                        handleSlot: slot
+                    ),
+                    1 => new(
+                        BusTraceOperationKind.DuplicateRegistration,
+                        token: handles.Owner(source),
+                        handleSlot: slot,
+                        sourceHandleSlot: source
+                    ),
+                    2 => new(
+                        BusTraceOperationKind.CopyHandle,
+                        token: handles.Owner(source),
+                        handleSlot: slot,
+                        sourceHandleSlot: source
+                    ),
+                    3 => new(
+                        BusTraceOperationKind.Remove,
+                        token: handles.Owner(slot),
+                        handleSlot: slot
+                    ),
+                    4 => new(
+                        BusTraceOperationKind.Emit,
+                        context: value & 1,
+                        value: value,
+                        kindOffset: (int)(Next(ref state) % 3)
+                    ),
+                    5 => new(BusTraceOperationKind.Enable, token: owner),
+                    6 => new(BusTraceOperationKind.Disable, token: owner),
+                    _ => new(BusTraceOperationKind.Trim, value: value & 1),
+                };
+                if (operation.HandleSlot >= 0 && !handles.Apply(operation))
+                {
+                    operation = new BusTraceOperation(BusTraceOperationKind.Emit, value: value);
+                }
+                operations.Add(operation);
+            }
+            return new BusTraceSequence(scenario, seed, operations, 8);
+        }
+
+        // Tracks issued identities and aliases only. Never predicts delivery or bus storage.
+        private sealed class HandleDependencies
+        {
+            private readonly int[] _identities = new int[BusTraceSequence.HandleSlotCount];
+            private readonly int[] _owners = new int[BusTraceSequence.HandleSlotCount];
+            private readonly bool[] _live = new bool[BusTraceSequence.MaxOperations + 1];
+            private int _nextIdentity;
+
+            internal int Owner(int slot) => _owners[slot];
+
+            internal bool Apply(BusTraceOperation operation)
+            {
+                int slot = operation.HandleSlot;
+                int source = operation.SourceHandleSlot;
+                int identity = _identities[slot];
+                if (operation.Kind == BusTraceOperationKind.Remove)
+                {
+                    if (source != -1 || identity == 0 || _owners[slot] != operation.Token)
+                    {
+                        return false;
+                    }
+                    _live[identity] = false;
+                    return true;
+                }
+                if (_live[identity])
+                {
+                    return false;
+                }
+                if (operation.Kind == BusTraceOperationKind.Register)
+                {
+                    if (source != -1)
+                    {
+                        return false;
+                    }
+                }
+                else if (
+                    operation.Kind == BusTraceOperationKind.DuplicateRegistration
+                    || operation.Kind == BusTraceOperationKind.CopyHandle
+                )
+                {
+                    if (
+                        source < 0
+                        || _identities[source] == 0
+                        || _owners[source] != operation.Token
+                        || (
+                            operation.Kind == BusTraceOperationKind.DuplicateRegistration
+                            && !_live[_identities[source]]
+                        )
+                    )
+                    {
+                        return false;
+                    }
+                    if (operation.Kind == BusTraceOperationKind.CopyHandle)
+                    {
+                        _identities[slot] = _identities[source];
+                        _owners[slot] = operation.Token;
+                        return true;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+                _identities[slot] = ++_nextIdentity;
+                _owners[slot] = operation.Token;
+                _live[_nextIdentity] = true;
+                return true;
+            }
+        }
+
         /// <summary>Checks handle existence and input bounds only; never predicts which callbacks should execute.</summary>
         internal static bool IsValid(BusTraceSequence sequence)
         {
@@ -390,10 +577,20 @@ namespace DxMessaging.Tests.Runtime
             }
             bool[] registered = new bool[BusTraceSequence.TokenCount];
             bool[] removed = new bool[BusTraceSequence.TokenCount];
+            HandleDependencies handles = new();
             foreach (BusTraceOperation operation in sequence.Operations)
             {
                 if (
-                    operation.Token < 0
+                    operation.HandleSlot < -1
+                    || operation.HandleSlot >= BusTraceSequence.HandleSlotCount
+                    || operation.SourceHandleSlot < -1
+                    || operation.SourceHandleSlot >= BusTraceSequence.HandleSlotCount
+                    || (
+                        sequence.Version < 8
+                        && (operation.HandleSlot != -1 || operation.SourceHandleSlot != -1)
+                    )
+                    || (operation.HandleSlot == -1 && operation.SourceHandleSlot != -1)
+                    || operation.Token < 0
                     || operation.Token >= registered.Length
                     || operation.Context < 0
                     || operation.Context > 1
@@ -435,6 +632,14 @@ namespace DxMessaging.Tests.Runtime
                 )
                 {
                     return false;
+                }
+                if (operation.HandleSlot >= 0)
+                {
+                    if (!handles.Apply(operation))
+                    {
+                        return false;
+                    }
+                    continue;
                 }
                 switch (operation.Kind)
                 {
