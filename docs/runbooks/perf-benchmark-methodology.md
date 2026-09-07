@@ -275,7 +275,16 @@ metrics because the Release player strips the required profiler recorder (see
   `postbuild-profile.json` record the effective settings after configuration
   and inside the actual build process. `build-options-profile.json` records
   Unity's final post-build options, and `runtime-profile.json` records
-  `Debug.isDebugBuild`. The runner compares every field with the archived
+  `Debug.isDebugBuild`. Build-options evidence schema 2 also records `buildProvenance`:
+  `playerBuildKind` is `clean` when the final report includes `CleanBuildCache`,
+  otherwise `incremental`. Before each build, both builders observe the `Library`,
+  `Library/Bee`, `Library/Il2cppBuildCache`, and player output directories as
+  `missing`, `empty`, or `populated`. The observations do not enumerate recursively
+  or change cache contents. Missing provenance, inconsistent directory states,
+  populated player output, and incremental options fail the reviewed clean profiles.
+  Schema 1 build-options evidence cannot establish this provenance and is rejected.
+  Configuration and runtime evidence remain schema 1, and profile hashes remain unchanged.
+  The runner compares every pinned field with the archived
   profile and fails on a missing, extra, mistyped, or different value. Each
   evidence file must also name the exact Unity version requested by the runner.
   Standalone validation requires `-ExpectedUnityVersion` when checking evidence;
@@ -341,8 +350,14 @@ metrics because the Release player strips the required profiler recorder (see
   struct, so the table prints the shape beside the rate. Every IL2CPP build in
   this leg is a clean build: the builder always sets
   `BuildOptions.CleanBuildCache`, and each profile pins `cleanBuildCache` so a
-  build that drops it fails validation. Only the editor Library cache state
-  varies between runs, and the evidence records it. This correctness slice does
+  build that drops it fails validation. This means a clean player build cache;
+  it does not mean a fresh imported Library or freshly installed toolchain.
+  `libraryState` in each shipping cell describes the Library at runner startup;
+  `buildProvenance` records directories later, immediately before the player build.
+  Keep those observations separate when comparing build times. An incremental
+  experiment needs a preregistered profile variant and separate analysis; do not
+  pool its outputs with independent clean builds or infer its factor from a warm Library.
+  This correctness slice does
   not contribute benchmark rows or change the published performance profile.
 
 - **EditMode leg (not published)** also runs in-editor under Mono with

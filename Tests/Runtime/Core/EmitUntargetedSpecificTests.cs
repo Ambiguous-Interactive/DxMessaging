@@ -185,11 +185,18 @@ namespace DxMessaging.Tests.Runtime.Core
                         int previous = received[priority]++;
                         for (int j = priority - 1; j >= 0; --j)
                         {
-                            Assert.AreEqual(previous + 1, received[j]);
+                            // Keep every comparison; construct NUnit diagnostics only on failure.
+                            if (received[j] != previous + 1)
+                            {
+                                Assert.AreEqual(previous + 1, received[j]);
+                            }
                         }
                         for (int j = priority + 1; j < received.Length; ++j)
                         {
-                            Assert.AreEqual(previous, received[j]);
+                            if (received[j] != previous)
+                            {
+                                Assert.AreEqual(previous, received[j]);
+                            }
                         }
                     },
                     priority: priority
@@ -201,11 +208,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         Assert.AreEqual(1, previous % 2);
                         for (int j = priority - 1; j >= 0; --j)
                         {
-                            Assert.AreEqual(previous + 1, received[j]);
+                            if (received[j] != previous + 1)
+                            {
+                                Assert.AreEqual(previous + 1, received[j]);
+                            }
                         }
                         for (int j = priority + 1; j < received.Length; ++j)
                         {
-                            Assert.AreEqual(previous, received[j]);
+                            if (received[j] != previous)
+                            {
+                                Assert.AreEqual(previous, received[j]);
+                            }
                         }
                     },
                     priority: priority
@@ -248,11 +261,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         int previous = received[priority]++;
                         for (int j = priority - 1; j >= 0; --j)
                         {
-                            Assert.AreEqual(previous + 1, received[j]);
+                            if (received[j] != previous + 1)
+                            {
+                                Assert.AreEqual(previous + 1, received[j]);
+                            }
                         }
                         for (int j = priority + 1; j < received.Length; ++j)
                         {
-                            Assert.AreEqual(previous, received[j]);
+                            if (received[j] != previous)
+                            {
+                                Assert.AreEqual(previous, received[j]);
+                            }
                         }
 
                         return true;

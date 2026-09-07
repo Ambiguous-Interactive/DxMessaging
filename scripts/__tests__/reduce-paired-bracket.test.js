@@ -7,6 +7,12 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const test = require("node:test");
 const PERF_TEST_VECTORS = require("./perf-test-vectors.json");
+const {
+  sealBundle,
+  writeBundleManifest,
+  replayBundle
+} = require("../unity/perf-evidence-bundle.js");
+const { reducePairedThroughputScreen } = require("../unity/perf-evidence-reducers.js");
 
 const {
   manifestSha256,
@@ -31,7 +37,11 @@ const DEFAULT_ROWS = PERF_TEST_VECTORS.defaultRows;
 const DEFAULT_FACTORS = Object.fromEntries(DEFAULT_ROWS.map((row) => [row.scenario, 1]));
 DEFAULT_FACTORS[TARGET] = 1.06;
 DEFAULT_FACTORS[AFFECTED] = 0.99;
-const COMMITS = ["1".repeat(40), "2".repeat(40), "3".repeat(40)];
+const COMMITS = [
+  "98b47536a0eb1445fcd2a9700899aab0be24897f",
+  "261b1867e052723517db8a77048c209a20108204",
+  "da5439ac21e60d5e04e4f453e3766e03daff0486"
+];
 const OUTER_TREE = "a".repeat(40);
 const CENTER_TREE = "b".repeat(40);
 const OUTER_CANDIDATE_SOURCE = "c".repeat(64);
@@ -137,6 +147,96 @@ function makeBracket({
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function mutateField(target, field, value) {
+  const parts = field.split(".");
+  const key = parts.pop();
+  const owner = parts.reduce((current, part) => current[part], target);
+  if (value === undefined) {
+    delete owner[key];
+  } else {
+    owner[key] = Array.isArray(value) ? [...value] : value;
+  }
+}
+
+test("paired bundle reducer requires all positions and validates retained raw cycles", () => {
+  const bracket = makeBracket();
+  const contents = new Map([
+    ["bracket-manifest.json", bracket.manifestBytes],
+    ...["first.json", "center.json", "last.json"].map((file, index) => [
+      file,
+      Buffer.from(JSON.stringify(bracket.summaries[index]))
+    ])
+  ]);
+  assert.deepEqual(
+    reducePairedThroughputScreen(new Map([...contents].reverse())),
+    reducePairedBracket(bracket.manifestBytes, bracket.summaries)
+  );
+  for (const file of contents.keys()) {
+    const missing = new Map(contents);
+    missing.delete(file);
+    assert.throws(() => reducePairedThroughputScreen(missing), /is required by this reducer/);
+  }
+  for (const bytes of ["{", "null", "[]"]) {
+    assert.throws(
+      () => reducePairedThroughputScreen(new Map(contents).set("first.json", Buffer.from(bytes))),
+      /first.json/
+    );
+  }
+  const changed = clone(bracket.summaries[0]);
+  changed.rows[0].cycleRatios[0] *= 1.1;
+  assert.throws(
+    () =>
+      reducePairedThroughputScreen(
+        new Map(contents).set("first.json", Buffer.from(JSON.stringify(changed)))
+      ),
+    /raw|cycle|ratio/i
+  );
+  const swapped = new Map(contents);
+  swapped.set("first.json", contents.get("center.json"));
+  swapped.set("center.json", contents.get("first.json"));
+  assert.throws(() => reducePairedThroughputScreen(swapped), /outer|tree|source/i);
+});
+
+for (const [status, options] of [
+  ["accepted", {}],
+  ["rejected", { factors: { [TARGET]: 1 } }],
+  ["uninterpretable", { spreads: { first: { [TARGET]: 5 } } }]
+]) {
+  test(`sealed paired screens replay ${status} decisions from retained cycles`, (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paired-evidence-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const bracket = makeBracket(options);
+    fs.writeFileSync(path.join(root, "bracket-manifest.json"), bracket.manifestBytes);
+    for (const [index, position] of ["first", "center", "last"].entries()) {
+      fs.writeFileSync(
+        path.join(root, `${position}.json`),
+        JSON.stringify(bracket.summaries[index])
+      );
+    }
+    const manifest = sealBundle(root, {
+      experimentId: "paired-screen-test",
+      artifactClass: "paired-throughput-screen",
+      reducer: "paired-throughput-screen-v1",
+      sourceCommit: COMMITS[0]
+    });
+    assert.equal(manifest.normalized.status, status);
+    assert.throws(
+      () => sealBundle(root, { ...manifest, sourceCommit: COMMITS[1] }),
+      /sourceCommit must match the first run/
+    );
+    assert.deepEqual(
+      manifest.normalized,
+      reducePairedBracket(bracket.manifestBytes, bracket.summaries)
+    );
+    const manifestPath = writeBundleManifest(root, manifest);
+    assert.deepEqual(replayBundle(manifestPath).normalized, manifest.normalized);
+    const firstPath = path.join(root, "first.json");
+    bracket.summaries[0].rows[0].cycleRatios[0] *= 1.1;
+    fs.writeFileSync(firstPath, JSON.stringify(bracket.summaries[0]));
+    assert.throws(() => replayBundle(manifestPath), /first.json/);
+  });
 }
 
 function writeBracket(directory, bracket) {
@@ -518,54 +618,19 @@ test("summary validation rejects omitted, extra, reordered, and mismatched-manif
 
 test("summary validation recomputes headline and spread from four retained cycle ratios", async (t) => {
   const bracket = makeBracket();
+  const row = bracket.summaries[0].rows[0];
   const cases = [
-    [
-      "missing cycles",
-      (row) => {
-        delete row.cycleRatios;
-      },
-      /exactly 4/
-    ],
-    [
-      "short cycles",
-      (row) => {
-        row.cycleRatios.pop();
-      },
-      /exactly 4/
-    ],
-    [
-      "non-positive cycle",
-      (row) => {
-        row.cycleRatios[0] = 0;
-      },
-      /must be positive/
-    ],
-    [
-      "non-finite cycle",
-      (row) => {
-        row.cycleRatios[0] = Number.NaN;
-      },
-      /finite number/
-    ],
-    [
-      "fabricated headline",
-      (row) => {
-        row.firstToSecondRatio *= 1.01;
-      },
-      /geometric mean/
-    ],
-    [
-      "fabricated spread",
-      (row) => {
-        row.cycleRatioSpreadPercent = 0;
-      },
-      /spread does not match/
-    ]
+    ["missing cycles", "cycleRatios", undefined, /exactly 4/],
+    ["short cycles", "cycleRatios", row.cycleRatios.slice(0, -1), /exactly 4/],
+    ["non-positive cycle", "cycleRatios.0", 0, /must be positive/],
+    ["non-finite cycle", "cycleRatios.0", Number.NaN, /finite number/],
+    ["fabricated headline", "firstToSecondRatio", row.firstToSecondRatio * 1.01, /geometric mean/],
+    ["fabricated spread", "cycleRatioSpreadPercent", 0, /spread does not match/]
   ];
-  for (const [name, mutate, pattern] of cases) {
+  for (const [name, field, value, pattern] of cases) {
     await t.test(name, () => {
       const summaries = clone(bracket.summaries);
-      mutate(summaries[0].rows[0]);
+      mutateField(summaries[0].rows[0], field, value);
       assert.throws(() => reducePairedBracket(bracket.manifestBytes, summaries), pattern);
     });
   }
@@ -604,144 +669,35 @@ test("extreme finite inputs cannot overflow or underflow into an accepted verdic
 test("three consistently wrong summaries cannot define their own profile or protocol", async (t) => {
   const bracket = makeBracket();
   const cases = [
-    [
-      "missing commit",
-      (summary) => {
-        delete summary.commit;
-      },
-      /summary commit/
-    ],
-    [
-      "missing source tree",
-      (summary) => {
-        delete summary.sourceTree;
-      },
-      /sourceTree/
-    ],
-    [
-      "missing candidate source",
-      (summary) => {
-        delete summary.candidateSourceSha256;
-      },
-      /candidateSourceSha256/
-    ],
-    [
-      "Mono platform",
-      (summary) => {
-        summary.platform = "PlayMode Mono";
-      },
-      /platform/
-    ],
-    [
-      "missing profile",
-      (summary) => {
-        delete summary.executionProfile;
-      },
-      /execution profile/
-    ],
-    [
-      "CPU model",
-      (summary) => {
-        summary.executionProfile.cpuModel = "other";
-      },
-      /profile topology/
-    ],
-    [
-      "missing CPU model",
-      (summary) => {
-        delete summary.executionProfile.cpuModel;
-      },
-      /must contain exactly/
-    ],
-    [
-      "profile source",
-      (summary) => {
-        summary.executionProfile.source = "other";
-      },
-      /profile topology/
-    ],
-    [
-      "selection policy",
-      (summary) => {
-        summary.executionProfile.selectionPolicy = "other";
-      },
-      /profile topology/
-    ],
-    [
-      "efficiency class",
-      (summary) => {
-        summary.executionProfile.selectedEfficiencyClass = -1;
-      },
-      /profile topology/
-    ],
+    ["missing commit", "commit", undefined, /summary commit/],
+    ["missing source tree", "sourceTree", undefined, /sourceTree/],
+    ["missing candidate source", "candidateSourceSha256", undefined, /candidateSourceSha256/],
+    ["Mono platform", "platform", "PlayMode Mono", /platform/],
+    ["missing profile", "executionProfile", undefined, /execution profile/],
+    ["CPU model", "executionProfile.cpuModel", "other", /profile topology/],
+    ["missing CPU model", "executionProfile.cpuModel", undefined, /must contain exactly/],
+    ["profile source", "executionProfile.source", "other", /profile topology/],
+    ["selection policy", "executionProfile.selectionPolicy", "other", /profile topology/],
+    ["efficiency class", "executionProfile.selectedEfficiencyClass", -1, /profile topology/],
     [
       "logical processors",
-      (summary) => {
-        summary.executionProfile.selectedLogicalProcessorIndices = [1, 2];
-      },
+      "executionProfile.selectedLogicalProcessorIndices",
+      [1, 2],
       /profile topology/
     ],
-    [
-      "profile",
-      (summary) => {
-        summary.executionProfile.id = "other";
-      },
-      /execution profile/
-    ],
-    [
-      "affinity",
-      (summary) => {
-        summary.executionProfile.affinityMask = "0xFFFFFFFF";
-      },
-      /execution profile/
-    ],
-    [
-      "priority",
-      (summary) => {
-        summary.executionProfile.priorityClass = "High";
-      },
-      /execution profile/
-    ],
-    [
-      "missing protocol",
-      (summary) => {
-        delete summary.protocol;
-      },
-      /protocol constants/
-    ],
-    [
-      "protocol",
-      (summary) => {
-        summary.protocol = "other";
-      },
-      /protocol constants/
-    ],
-    [
-      "cycles",
-      (summary) => {
-        summary.cycles = 1;
-      },
-      /protocol constants/
-    ],
-    [
-      "active time",
-      (summary) => {
-        summary.minimumCycleActiveMilliseconds = 1;
-      },
-      /protocol constants/
-    ],
-    [
-      "batch",
-      (summary) => {
-        summary.batchOperations = 1;
-      },
-      /protocol constants/
-    ]
+    ["profile", "executionProfile.id", "other", /execution profile/],
+    ["affinity", "executionProfile.affinityMask", "0xFFFFFFFF", /execution profile/],
+    ["priority", "executionProfile.priorityClass", "High", /execution profile/],
+    ["missing protocol", "protocol", undefined, /protocol constants/],
+    ["protocol", "protocol", "other", /protocol constants/],
+    ["cycles", "cycles", 1, /protocol constants/],
+    ["active time", "minimumCycleActiveMilliseconds", 1, /protocol constants/],
+    ["batch", "batchOperations", 1, /protocol constants/]
   ];
-  for (const [name, mutate, pattern] of cases) {
+  for (const [name, field, value, pattern] of cases) {
     await t.test(name, () => {
       const summaries = clone(bracket.summaries);
-      summaries.forEach(mutate);
+      summaries.forEach((summary) => mutateField(summary, field, value));
       assert.throws(() => reducePairedBracket(bracket.manifestBytes, summaries), pattern);
     });
   }

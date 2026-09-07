@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
@@ -2675,6 +2676,205 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                 }
             }
+        }
+
+        [Test]
+        public void ResetGenerationWrapPreservesCopiedHandlesAndReplacementRegistrations(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(long.MaxValue, -1L)] long initialGeneration
+        )
+        {
+            BusTraceSequence sequence = ResetGenerationBoundarySequence(scenario);
+            List<long> generations = new();
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            IReadOnlyList<BusTraceObservation> boundary = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateResetGenerationAdapter(kind, initialGeneration, generations)
+            );
+            string report =
+                $"initialResetGeneration={initialGeneration}; "
+                + DescribeReplay(sequence, control, boundary);
+            Assert.That(boundary.All(item => item.Exception == null), Is.True, report);
+            Assert.That(DifferentialBusTrace.Compare(control, boundary), Is.Null, report);
+            CollectionAssert.AreEqual(
+                new[] { unchecked(initialGeneration + 1), unchecked(initialGeneration + 2) },
+                generations,
+                report
+            );
+            CollectionAssert.AreEqual(
+                new[] { "token=0,value=13,registration=0,callback=0" },
+                boundary[5].Callbacks,
+                report
+            );
+            foreach (int index in new[] { 6, 25 })
+            {
+                Assert.That(boundary[index].Callbacks, Is.Empty, report);
+            }
+            foreach (int index in new[] { 12, 14 })
+            {
+                int value = sequence.Operations[index].Value;
+                CollectionAssert.AreEqual(
+                    new[]
+                    {
+                        $"token=0,value={value},registration=0,callback=3",
+                        $"token=1,value={value},registration=4,callback=2",
+                    },
+                    boundary[index].Callbacks,
+                    report
+                );
+            }
+            foreach (int index in new[] { 17, 21 })
+            {
+                CollectionAssert.AreEqual(
+                    new[]
+                    {
+                        $"token=0,value={sequence.Operations[index].Value},registration=0,callback=3",
+                    },
+                    boundary[index].Callbacks,
+                    report
+                );
+            }
+            Assert.That(boundary[24].OccupiedTypeSlots, Is.Zero, report);
+            Assert.That(boundary[24].OccupiedTargetSlots, Is.Zero, report);
+        }
+
+        [Test]
+        public void RejectedResetGenerationWrapIsDetectedAndShrunk(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(long.MaxValue, -1L)] long initialGeneration
+        )
+        {
+            BusTraceSequence sequence = ResetGenerationBoundarySequence(scenario);
+            BusTraceMismatch EvaluateBoundary(BusTraceSequence replay) =>
+                DifferentialBusTrace.Compare(
+                    DifferentialBusTrace.Replay(
+                        replay,
+                        kind => CreateResetGenerationAdapter(kind, initialGeneration)
+                    ),
+                    DifferentialBusTrace.Replay(
+                        replay,
+                        kind =>
+                            CreateResetGenerationAdapter(kind, initialGeneration, rejectWrap: true)
+                    )
+                );
+            BusTraceMismatch mismatch = EvaluateBoundary(sequence);
+            string report =
+                $"initialResetGeneration={initialGeneration}; " + mismatch?.BuildReport(sequence);
+            Assert.That(mismatch, Is.Not.Null, report);
+            Assert.That(mismatch.Index, Is.EqualTo(5), report);
+            Assert.That(mismatch.Category, Is.EqualTo("callbacks"), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, EvaluateBoundary);
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(minimal.Version, Is.EqualTo(sequence.Version), report);
+            Assert.That(minimal.Seed, Is.EqualTo(sequence.Seed), report);
+            Assert.That(minimal.Operations.Count, Is.LessThan(sequence.Operations.Count), report);
+            Assert.That(EvaluateBoundary(minimal)?.Category, Is.EqualTo("callbacks"), report);
+            Assert.That(
+                minimal.Operations.Any(operation =>
+                    operation.Kind == BusTraceOperationKind.EmitWithReset
+                ),
+                Is.True,
+                report
+            );
+            for (int index = 0; index < minimal.Operations.Count; ++index)
+            {
+                List<BusTraceOperation> remaining = new(minimal.Operations);
+                remaining.RemoveAt(index);
+                BusTraceSequence deletion = new(scenario, minimal.Seed, remaining, minimal.Version);
+                Assert.That(
+                    !DifferentialBusTrace.IsValid(deletion)
+                        || EvaluateBoundary(deletion)?.Category != mismatch.Category,
+                    Is.True,
+                    $"{report}; deletion={index}"
+                );
+            }
+        }
+
+        private static BusTraceSequence ResetGenerationBoundarySequence(MessageScenario scenario) =>
+            new(
+                scenario,
+                509,
+                new BusTraceOperation[]
+                {
+                    new(BusTraceOperationKind.Register, priority: -1, handleSlot: 0),
+                    new(
+                        BusTraceOperationKind.DuplicateRegistration,
+                        handleSlot: 1,
+                        sourceHandleSlot: 0
+                    ),
+                    new(BusTraceOperationKind.CopyHandle, handleSlot: 2, sourceHandleSlot: 0),
+                    new(BusTraceOperationKind.Register, token: 1, priority: 1, handleSlot: 3),
+                    new(BusTraceOperationKind.Emit, value: 11),
+                    new(BusTraceOperationKind.EmitWithReset, value: 13, handleSlot: 2),
+                    new(BusTraceOperationKind.Emit, value: 17),
+                    new(BusTraceOperationKind.Register, token: 1, priority: 1, handleSlot: 4),
+                    new(BusTraceOperationKind.Remove, token: 1, handleSlot: 3),
+                    new(BusTraceOperationKind.Remove, handleSlot: 2),
+                    new(BusTraceOperationKind.Register, priority: -1, handleSlot: 0),
+                    new(BusTraceOperationKind.Remove, handleSlot: 2),
+                    new(BusTraceOperationKind.Emit, value: 19),
+                    new(BusTraceOperationKind.Remove, handleSlot: 1),
+                    new(BusTraceOperationKind.Emit, value: 23),
+                    new(BusTraceOperationKind.Disable),
+                    new(BusTraceOperationKind.Enable),
+                    new(BusTraceOperationKind.EmitWithReset, value: 29, handleSlot: 0),
+                    new(BusTraceOperationKind.Remove, token: 1, handleSlot: 4),
+                    new(BusTraceOperationKind.Disable),
+                    new(BusTraceOperationKind.Enable),
+                    new(BusTraceOperationKind.Emit, value: 31),
+                    new(BusTraceOperationKind.Remove, handleSlot: 0),
+                    new(BusTraceOperationKind.Remove, token: 1, handleSlot: 3),
+                    new(BusTraceOperationKind.Trim, value: 1),
+                    new(BusTraceOperationKind.Emit, value: 37),
+                }
+            );
+
+        private static MessageBusTraceAdapter CreateResetGenerationAdapter(
+            MessageScenario scenario,
+            long initialGeneration,
+            List<long> generations = null,
+            bool rejectWrap = false
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            bus.DiagnosticsMode = false;
+            // Fault injection seeds only this isolated bus before any registrations exist.
+            // Actual ResetState performs each increment, teardown, and snapshot invalidation.
+            FieldInfo field = typeof(MessageBus).GetField(
+                "_resetGeneration",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(
+                field,
+                Is.Not.Null,
+                "The reset boundary fixture must seed the production generation."
+            );
+            field.SetValue(bus, initialGeneration);
+            return new MessageBusTraceAdapter(
+                scenario,
+                bus,
+                reset: () =>
+                {
+                    // Mutation: a boundary guard wrongly rejects signed overflow or zero.
+                    // It changes the operation, never the oracle's observations.
+                    if (rejectWrap && MessageBus.GetResetGeneration(bus) == initialGeneration)
+                    {
+                        return;
+                    }
+                    bus.ResetState();
+                    generations?.Add(MessageBus.GetResetGeneration(bus));
+                }
+            );
         }
 
         [Test]

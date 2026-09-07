@@ -1504,12 +1504,66 @@ public static class DxmCiTestConfigurator
     [Serializable]
     private sealed class BuildOptionsEvidence
     {
-        public int schemaVersion = 1;
+        public int schemaVersion = 2;
         public string profileId = "$CanonicalProfileId";
         public string profileSha256 = "$CanonicalProfileSha256";
         public string evidenceKind = "buildOptions";
         public string unityVersion = Application.unityVersion;
         public BuildOptionsValues values = new BuildOptionsValues();
+        public BuildProvenance buildProvenance;
+    }
+
+    [Serializable]
+    private sealed class BuildProvenance
+    {
+        public string playerBuildKind;
+        public string libraryStateBeforeBuild;
+        public string beeStateBeforeBuild;
+        public string il2cppCacheStateBeforeBuild;
+        public string playerOutputStateBeforeBuild;
+    }
+
+    private static BuildProvenance s_BuildProvenance;
+
+    internal static void CaptureBuildProvenance(string playerOutputPath)
+    {
+        string library = Path.Combine(Application.dataPath, "..", "Library");
+        s_BuildProvenance = new BuildProvenance
+        {
+            libraryStateBeforeBuild = GetDirectoryState(library),
+            beeStateBeforeBuild = GetDirectoryState(Path.Combine(library, "Bee")),
+            il2cppCacheStateBeforeBuild = GetDirectoryState(Path.Combine(library, "Il2cppBuildCache")),
+            playerOutputStateBeforeBuild = GetDirectoryState(Path.GetDirectoryName(playerOutputPath))
+        };
+    }
+
+    private static string GetDirectoryState(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            throw new InvalidOperationException("Build provenance requires a directory path.");
+        }
+        FileAttributes attributes;
+        try
+        {
+            attributes = File.GetAttributes(path);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return "missing";
+        }
+        catch (FileNotFoundException)
+        {
+            return "missing";
+        }
+        if ((attributes & FileAttributes.Directory) == 0)
+        {
+            throw new InvalidOperationException("Build provenance expected a directory: " + path);
+        }
+        using (var entries = Directory.EnumerateFileSystemEntries(path).GetEnumerator())
+        {
+            return entries.MoveNext() ? "populated" : "empty";
+        }
     }
 
     [Serializable]
@@ -1688,6 +1742,12 @@ public static class DxmCiTestConfigurator
         evidence.values.connectWithProfiler = Has(options, BuildOptions.ConnectWithProfiler);
         evidence.values.cleanBuildCache = Has(options, BuildOptions.CleanBuildCache);
         evidence.values.detailedBuildReport = Has(options, BuildOptions.DetailedBuildReport);
+        if (s_BuildProvenance == null)
+        {
+            throw new InvalidOperationException("Build provenance was not captured before the build.");
+        }
+        evidence.buildProvenance = s_BuildProvenance;
+        evidence.buildProvenance.playerBuildKind = evidence.values.cleanBuildCache ? "clean" : "incremental";
         WriteJson(profilePath, evidence);
     }
 
@@ -1797,6 +1857,7 @@ $developmentOption
             }
             playerOptions.locationPathName = outPath;
         }
+        DxmCiTestConfigurator.CaptureBuildProvenance(playerOptions.locationPathName);
         DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_PREBUILD_CONFIG_PROFILE_PATH"));
         return playerOptions;
@@ -3138,6 +3199,7 @@ public static class DxmShippingFidelityBuilder
         DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_PREBUILD_CONFIG_PROFILE_PATH"));
         DateTime buildStartedUtc = DateTime.UtcNow;
+        DxmCiTestConfigurator.CaptureBuildProvenance(options.locationPathName);
         System.Diagnostics.Stopwatch buildStopwatch = System.Diagnostics.Stopwatch.StartNew();
         BuildReport report = BuildPipeline.BuildPlayer(options);
         buildStopwatch.Stop();

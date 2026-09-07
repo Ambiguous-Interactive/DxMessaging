@@ -11,7 +11,10 @@ const {
   isSerializedRedactionSafe,
   redactSensitiveData
 } = require("./credential-patterns.js");
-const { reduceShippingFidelityMatrix } = require("./perf-evidence-reducers.js");
+const {
+  reduceShippingFidelityMatrix,
+  reducePairedThroughputScreen
+} = require("./perf-evidence-reducers.js");
 const { isDirectDirectory } = require("../lib/path-classifier.js");
 const SCHEMA_VERSION = 1;
 const MANIFEST_NAME = "evidence-manifest.json";
@@ -20,6 +23,10 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 const REDUCERS = Object.freeze({
+  "paired-throughput-screen-v1": {
+    artifactClass: "paired-throughput-screen",
+    reduce: reducePairedThroughputScreen
+  },
   "shipping-fidelity-matrix-v1": {
     artifactClass: "shipping-fidelity-matrix",
     reduce: reduceShippingFidelityMatrix
@@ -254,6 +261,7 @@ function readDeclaredFiles(root, files) {
   return contents;
 }
 function sealBundle(root, options) {
+  const sourceCommit = requireSourceCommit(options.sourceCommit);
   const experimentId = requireExperimentId(options.experimentId);
   const reducerName = requireString(options.reducer, "reducer");
   const reducer = requireReducer(reducerName, options.artifactClass);
@@ -281,9 +289,9 @@ function sealBundle(root, options) {
     revision,
     artifactClass: options.artifactClass,
     reducer: reducerName,
-    sourceCommit: requireSourceCommit(options.sourceCommit),
+    sourceCommit,
     files,
-    normalized: reducer(contents),
+    normalized: reducer(contents, { sourceCommit }),
     bundleDigest: ""
   };
   manifest.bundleDigest = bundleDigest(manifest);
@@ -433,7 +441,9 @@ function verifyBundle(manifestPath, root = path.dirname(manifestPath)) {
 }
 function replayBundle(manifestPath, root = path.dirname(manifestPath)) {
   const { manifest, contents } = verifyBundle(manifestPath, root);
-  const replayed = requireReducer(manifest.reducer, manifest.artifactClass)(contents);
+  const replayed = requireReducer(manifest.reducer, manifest.artifactClass)(contents, {
+    sourceCommit: manifest.sourceCommit
+  });
   const replayedJson = JSON.stringify(replayed);
   const publishedJson = JSON.stringify(manifest.normalized);
   if (replayedJson !== publishedJson) {
