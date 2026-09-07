@@ -80,6 +80,7 @@ try {
         'Write-JsonArtifact',
         'New-ConfiguratorSource',
         'New-StandaloneBuildModifierSource',
+        'New-ShippingFidelityBuilderSource',
         'New-StandaloneTestCallbackSource'
     )) {
         $definition = $runnerAst.FindAll(
@@ -105,6 +106,74 @@ try {
         Assert-That 'generated C# embeds the profile SHA-256' ($source.Contains($profileSha256))
     }
     $buildModifierSource = New-StandaloneBuildModifierSource -CanonicalProfileId $profile.profileId
+    $shippingBuilderSource = New-ShippingFidelityBuilderSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256 -ManagedStrippingLevel High -ShippingTopology semantic -ShippingMessageTypeCount 18
+    Assert-That 'standalone captures directory state before returning options for the build' (
+        $buildModifierSource.IndexOf('CaptureBuildProvenance(playerOptions.locationPathName)') -gt 0 -and
+        $buildModifierSource.IndexOf('CaptureBuildProvenance(playerOptions.locationPathName)') -lt $buildModifierSource.IndexOf('return playerOptions;')
+    )
+    Assert-That 'shipping captures directory state before BuildPipeline starts' (
+        $shippingBuilderSource.IndexOf('CaptureBuildProvenance(options.locationPathName)') -gt 0 -and
+        $shippingBuilderSource.IndexOf('CaptureBuildProvenance(options.locationPathName)') -lt $shippingBuilderSource.IndexOf('BuildPipeline.BuildPlayer(options)')
+    )
+    Assert-That 'build kind comes from effective final options' (
+        $generatedSources[0].Contains('evidence.buildProvenance.playerBuildKind = evidence.values.cleanBuildCache ? "clean" : "incremental";')
+    )
+    # Compile and execute the real generated directory observer. Only the Unity
+    # dataPath property and the test entry point are supplied by the fixture.
+    $observerSources = @(foreach ($lineEnding in @("`n", "`r`n")) {
+        $normalizedSource = $generatedSources[0].Replace("`r`n", "`n").Replace("`n", $lineEnding).Replace("`r`n", "`n")
+        $observerStart = $normalizedSource.IndexOf("    [Serializable]`n    private sealed class BuildProvenance")
+        $observerEnd = $normalizedSource.IndexOf("    [Serializable]`n    private sealed class BuildOptionsValues", $observerStart)
+        Assert-That 'the generated observer can be extracted from LF and CRLF without copying its implementation' ($observerStart -ge 0 -and $observerEnd -gt $observerStart)
+        $normalizedSource.Substring($observerStart, $observerEnd - $observerStart)
+    })
+    Assert-That 'LF and CRLF produce the same observer source' ($observerSources[0] -ceq $observerSources[1])
+    $observerSource = $observerSources[0]
+    Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+public static class DxmBuildProvenanceFixture
+{
+    private static class Application { public static string dataPath; }
+$observerSource
+    public static string[] Observe(string project, string output)
+    {
+        Application.dataPath = Path.Combine(project, "Assets");
+        CaptureBuildProvenance(Path.Combine(output, "Player.exe"));
+        s_BuildProvenance.playerBuildKind = "clean";
+        return new[] { s_BuildProvenance.libraryStateBeforeBuild,
+            s_BuildProvenance.beeStateBeforeBuild, s_BuildProvenance.il2cppCacheStateBeforeBuild,
+            s_BuildProvenance.playerOutputStateBeforeBuild };
+    }
+}
+"@
+    $observerProject = Join-Path $fixtureRoot 'observer-project'
+    $observerOutput = Join-Path $observerProject 'output'
+    $observerLibrary = Join-Path $observerProject 'Library'
+    New-Item -ItemType Directory -Force -Path (Join-Path $observerProject 'Assets') | Out-Null
+    Assert-That 'the observer records missing caches and output without creating them' (
+        ([DxmBuildProvenanceFixture]::Observe($observerProject, $observerOutput) -join ',') -ceq 'missing,missing,missing,missing' -and
+        -not (Test-Path -LiteralPath $observerLibrary)
+    )
+    New-Item -ItemType Directory -Force -Path $observerLibrary, $observerOutput | Out-Null
+    Assert-That 'the observer distinguishes empty directories' (
+        ([DxmBuildProvenanceFixture]::Observe($observerProject, $observerOutput) -join ',') -ceq 'empty,missing,missing,empty'
+    )
+    foreach ($cache in @('Bee', 'Il2cppBuildCache')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $observerLibrary $cache) | Out-Null
+    }
+    [System.IO.File]::WriteAllText((Join-Path $observerLibrary 'Bee/input'), 'existing native input')
+    foreach ($name in @('Player.exe', 'GameAssembly.dll')) {
+        [System.IO.File]::WriteAllText((Join-Path $observerOutput $name), 'existing output')
+    }
+    Assert-That 'the observer distinguishes populated caches and stale player output' (
+        ([DxmBuildProvenanceFixture]::Observe($observerProject, $observerOutput) -join ',') -ceq 'populated,populated,empty,populated'
+    )
+    $invalidOutput = Join-Path $observerProject 'output-file'
+    [System.IO.File]::WriteAllText($invalidOutput, 'not a directory')
+    Assert-Fails 'the observer fails closed on a file where a directory is required' -ExpectedMessage 'expected a directory' {
+        [DxmBuildProvenanceFixture]::Observe($observerProject, $invalidOutput)
+    }
     $applyStart = $generatedSources[0].IndexOf('public static void Apply()')
     $compilerPreparation = $generatedSources[0].IndexOf('DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();', $applyStart)
     $compilationChange = $generatedSources[0].IndexOf('CompilationPipeline.codeOptimization =', $applyStart)
@@ -222,6 +291,80 @@ try {
             evidenceKind = $kind
             unityVersion = $testUnityVersion
             values = Copy-JsonValue -Value $profile.$kind
+        }
+        if ($kind -ceq 'buildOptions') {
+            $evidence.schemaVersion = 2
+            Write-TestJson -Path $evidencePath -Value $evidence
+            Assert-Fails 'clean build requires observed cache provenance' -ExpectedMessage 'missing=buildProvenance' {
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+            }
+            $evidence.buildProvenance = [ordered]@{
+                playerBuildKind = 'clean'
+                libraryStateBeforeBuild = 'populated'
+                beeStateBeforeBuild = 'populated'
+                il2cppCacheStateBeforeBuild = 'missing'
+                playerOutputStateBeforeBuild = 'empty'
+            }
+            $changed = Copy-JsonValue -Value $evidence
+            $changed.schemaVersion = 1
+            Write-TestJson -Path $evidencePath -Value $changed
+            Assert-Fails 'build provenance requires evidence schema 2' -ExpectedMessage 'buildOptions.schemaVersion differs' {
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+            }
+            $changed = Copy-JsonValue -Value $evidence
+            $changed.buildProvenance | Add-Member -NotePropertyName unverified -NotePropertyValue 'clean'
+            Write-TestJson -Path $evidencePath -Value $changed
+            Assert-Fails 'build provenance rejects extra declarations' -ExpectedMessage 'extra=unverified' {
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+            }
+            foreach ($mutation in @(
+                @{ Field = 'playerBuildKind'; Value = 'incremental' },
+                @{ Field = 'playerBuildKind'; Value = 'Clean' },
+                @{ Field = 'playerOutputStateBeforeBuild'; Value = 'populated' },
+                @{ Field = 'libraryStateBeforeBuild'; Value = 'missing' },
+                @{ Field = 'libraryStateBeforeBuild'; Value = 'empty' }
+            )) {
+                $changed = Copy-JsonValue -Value $evidence
+                $changed.buildProvenance.($mutation.Field) = $mutation.Value
+                Write-TestJson -Path $evidencePath -Value $changed
+                Assert-Fails "build provenance rejects $($mutation.Field)=$($mutation.Value)" -ExpectedMessage 'buildProvenance' {
+                    & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+                }
+            }
+            foreach ($field in $evidence.buildProvenance.Keys) {
+                foreach ($invalid in @($null, $false, 1, @(), 'unknown', 'empty ')) {
+                    $changed = Copy-JsonValue -Value $evidence
+                    $changed.buildProvenance.$field = $invalid
+                    Write-TestJson -Path $evidencePath -Value $changed
+                    Assert-Fails "build provenance rejects invalid $field" {
+                        & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+                    }
+                }
+                $changed = Copy-JsonValue -Value $evidence
+                $changed.buildProvenance.PSObject.Properties.Remove($field)
+                Write-TestJson -Path $evidencePath -Value $changed
+                Assert-Fails "build provenance requires $field" -ExpectedMessage "missing=$field" {
+                    & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+                }
+            }
+            foreach ($state in @('missing', 'empty', 'populated')) {
+                $changed = Copy-JsonValue -Value $evidence
+                $changed.buildProvenance.libraryStateBeforeBuild = $state
+                $changed.buildProvenance.beeStateBeforeBuild = 'missing'
+                $changed.buildProvenance.il2cppCacheStateBeforeBuild = 'missing'
+                $changed.buildProvenance.playerOutputStateBeforeBuild = 'missing'
+                Write-TestJson -Path $evidencePath -Value $changed
+                & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+            }
+            foreach ($claimedKind in @('clean', 'incremental')) {
+                $changed = Copy-JsonValue -Value $evidence
+                $changed.values.cleanBuildCache = $false
+                $changed.buildProvenance.playerBuildKind = $claimedKind
+                Write-TestJson -Path $evidencePath -Value $changed
+                Assert-Fails "incremental output cannot pass clean profile when labeled $claimedKind" -ExpectedMessage 'buildOptions.cleanBuildCache differs' {
+                    & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
+                }
+            }
         }
         Write-TestJson -Path $evidencePath -Value $evidence
         & $validatorPath `

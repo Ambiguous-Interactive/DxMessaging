@@ -26,12 +26,18 @@ declares:
 | `normalized`    | The machine-readable result a decision cites                                    |
 | `bundleDigest`  | SHA-256 over the identity, the file inventory, and `normalized`                 |
 
-Each reducer accepts only its registered artifact class. Schema 1 currently supports
-`shipping-fidelity-matrix` with `shipping-fidelity-matrix-v1`. Seal, verify, replay, and manifest
-writes reject a different class, even when its digest was recomputed. Paired throughput,
-allocation-heavy SubUnsub, cold latency, frame/queue latency, WPR/PMU native mapping, and ARM64
-energy still need their own complete raw-input contracts and reducers under #508. Renaming shipping
-evidence or retaining a text summary does not provide those classes or their required native files.
+Each reducer accepts only its registered artifact class:
+
+| Artifact class             | Reducer                       |
+| -------------------------- | ----------------------------- |
+| `shipping-fidelity-matrix` | `shipping-fidelity-matrix-v1` |
+| `paired-throughput-screen` | `paired-throughput-screen-v1` |
+
+Seal, verify, replay, and manifest writes reject a different class, even when its digest was
+recomputed. The paired screen retains the existing exploratory bracket decision. It does not
+supply confirmatory intervals, native binaries, or the full paired-throughput campaign contract.
+Allocation-heavy SubUnsub, cold latency, frame/queue latency, WPR/PMU native mapping, and ARM64
+energy still need their own complete raw-input contracts and reducers under #508.
 
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
 Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode
@@ -154,12 +160,43 @@ row requires its raw cell file. Failed and unreadable outcomes must be explicit,
 separate from completed cells. A partial run can retain those outcomes without presenting missing
 cells as completed evidence.
 
+## Retaining a paired screen
+
+Copy the original bracket declaration to `bracket-manifest.json` without rewriting its bytes.
+The bundle's `sourceCommit` must match the first run; `normalized.provenance` retains all three
+measured commits and source trees. Record the analysis source revision separately.
+Copy each run's `paired-comparison-summary.json` to `first.json`, `center.json`, and `last.json`
+in declared run order. Each summary must retain its raw cycle ratios, source identities, protocol,
+execution profile, and matching declaration digest. Keep other reviewed text evidence alongside
+these inputs; the bundle inventory hashes every retained file.
+
+```bash
+node scripts/unity/perf-evidence-bundle.js seal .artifacts/paired-screen \
+  --experiment-id paired-screen-example \
+  --artifact-class paired-throughput-screen \
+  --reducer paired-throughput-screen-v1 \
+  --source-commit "$FIRST_RUN_COMMIT"
+node scripts/unity/perf-evidence-bundle.js replay \
+  .artifacts/paired-screen/evidence-manifest.json
+```
+
+The adapter calls `reduce-paired-bracket.js` directly. It validates all three positions, raw cycle
+consistency, source relationships, declaration identity, and the shared execution profile before
+reproducing effects and the `accepted`, `rejected`, or `uninterpretable` screen decision. Replaying
+a rejected or uninterpretable screen succeeds when its original decision is reproduced. Missing
+inputs, changed bytes, or a different decision fail. These files do not prove native payload
+retention, independent build replication, or immutable remote restoration.
+
 ## Adding a reducer
 
 A reducer must be a pure function of the bundle's bytes. Read only from the supplied content map,
-never from disk, the clock, or the environment. Copy measured values verbatim and derive only exact
-integer comparisons, so no floating-point rounding can differ between the sealing runner and a
-reviewer's machine. Order every array by an ordinal key rather than by directory-walk order.
+never from disk, the clock, or the environment. Copy measured values verbatim. Order arrays by an
+ordinal key or a declared experimental position rather than by directory-walk order. The shipping
+reducer derives only integer comparisons. The paired screen reuses the existing floating-point
+analysis without rounding or tolerances in replay: a different normalized result fails replay.
+Retain the analysis source revision and Node.js version with a paired experiment to diagnose any
+engine-dependent arithmetic difference. Such a mismatch is failed restoration, not permission to
+replace the sealed result.
 
 Register it in `REDUCERS` in `scripts/unity/perf-evidence-bundle.js` and add cases to
 `scripts/__tests__/perf-evidence-bundle.test.js` covering a missing input, a corrupted input, and a
@@ -226,9 +263,9 @@ and [repository immutability settings API](https://docs.github.com/en/rest/repos
 
 Use a reviewer environment with no runner artifact cache. Clone the repository into a new directory,
 check out the full verifier commit from the reviewed index, and require an empty
-`git status --porcelain`. Do not copy scripts or dependencies from the producing checkout. The
-bundle commands use Node.js built-ins and checked-in modules; they do not require Unity or npm
-installation.
+`git status --porcelain`. Run `npm ci --ignore-scripts` to install the pinned verifier dependencies.
+The credential scanner uses XML and YAML parsers from the lockfile. Do not copy scripts or
+dependencies from the producing checkout. The bundle commands do not require Unity.
 
 1. Retrieve the indexed release and exact asset from GitHub, using the supported authentication
    path when needed. Require the immutable release metadata above. A 401, 403, 404, timeout,

@@ -248,13 +248,17 @@ if ([string]::IsNullOrWhiteSpace($ExpectedUnityVersion)) {
 
 $evidence = Get-RequiredJsonObject -Path $EvidencePath -Label "$EvidenceKind profile evidence"
 
+$evidenceProperties = @('schemaVersion', 'profileId', 'profileSha256', 'evidenceKind', 'unityVersion', 'values')
+if ($EvidenceKind -ceq 'buildOptions') {
+    $evidenceProperties += 'buildProvenance'
+}
 Assert-ExactProperties `
     -Value $evidence `
-    -Expected @('schemaVersion', 'profileId', 'profileSha256', 'evidenceKind', 'unityVersion', 'values') `
+    -Expected $evidenceProperties `
     -Label "$EvidenceKind profile evidence"
 
 Assert-EquivalentJsonValue `
-    -Expected $profile.schemaVersion `
+    -Expected $(if ($EvidenceKind -ceq 'buildOptions') { 2 } else { $profile.schemaVersion }) `
     -Actual $evidence.schemaVersion `
     -Path "$EvidenceKind.schemaVersion"
 Assert-EquivalentJsonValue `
@@ -287,6 +291,29 @@ foreach ($property in $expectedValues.PSObject.Properties) {
         -Expected $property.Value `
         -Actual $evidence.values.($property.Name) `
         -Path "$EvidenceKind.$($property.Name)"
+}
+
+if ($EvidenceKind -ceq 'buildOptions') {
+    # Clean means Unity's final BuildReport includes CleanBuildCache. Imported
+    # Library contents and native-cache presence are separate observed factors;
+    # neither a warm Library nor an empty output directory proves a clean build.
+    $provenance = $evidence.buildProvenance
+    $directoryFields = @('libraryStateBeforeBuild', 'beeStateBeforeBuild', 'il2cppCacheStateBeforeBuild', 'playerOutputStateBeforeBuild')
+    Assert-ExactProperties -Value $provenance -Expected (@('playerBuildKind') + $directoryFields) -Label 'buildProvenance'
+    $expectedBuildKind = if ($evidence.values.cleanBuildCache) { 'clean' } else { 'incremental' }
+    Assert-EquivalentJsonValue -Expected $expectedBuildKind -Actual $provenance.playerBuildKind -Path 'buildProvenance.playerBuildKind'
+    foreach ($field in $directoryFields) {
+        if ($provenance.$field -isnot [string] -or @('missing', 'empty', 'populated') -cnotcontains $provenance.$field) {
+            throw "buildProvenance.$field must be missing, empty, or populated."
+        }
+    }
+    if ($provenance.libraryStateBeforeBuild -cne 'populated' -and
+        ($provenance.beeStateBeforeBuild -cne 'missing' -or $provenance.il2cppCacheStateBeforeBuild -cne 'missing')) {
+        throw 'buildProvenance contains cache directories inside a missing or empty Library.'
+    }
+    if ($provenance.playerOutputStateBeforeBuild -ceq 'populated') {
+        throw 'buildProvenance records reused player output; this runner requires empty or missing output before building.'
+    }
 }
 
 Write-Host "Validated $EvidenceKind profile evidence for $($profile.profileId) ($profileSha256)."

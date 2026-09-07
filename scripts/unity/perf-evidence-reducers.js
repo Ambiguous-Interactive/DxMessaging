@@ -1,5 +1,6 @@
 "use strict";
 const { isDeepStrictEqual } = require("node:util");
+const { reducePairedBracket } = require("./reduce-paired-bracket.js");
 // Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
 const CELL_EVIDENCE_SUFFIX = "/shipping-cell-evidence.json";
@@ -21,11 +22,15 @@ const TIMING_FIELDS = Object.freeze([
   "dispatchLoopNsPerOp",
   "dispatchLoopShape"
 ]);
-function parseJsonObject(contents, relativePath) {
+function requireBytes(contents, relativePath) {
   const bytes = contents.get(relativePath);
   if (bytes === undefined) {
     throw new Error(`${relativePath} is required by this reducer but is not in the bundle.`);
   }
+  return bytes;
+}
+function parseJsonObject(contents, relativePath, characterization = true) {
+  const bytes = requireBytes(contents, relativePath);
   let parsed;
   try {
     parsed = JSON.parse(bytes.toString("utf8"));
@@ -35,9 +40,22 @@ function parseJsonObject(contents, relativePath) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`${relativePath} must contain a JSON object.`);
   }
-  if (parsed.schemaVersion !== 1 || parsed.measurementClass !== "characterization")
+  if (
+    characterization &&
+    (parsed.schemaVersion !== 1 || parsed.measurementClass !== "characterization")
+  )
     throw new Error(`${relativePath} must use characterization schema version 1.`);
   return parsed;
+}
+// Preserve the existing exploratory screen, including every negative or invalid verdict.
+function reducePairedThroughputScreen(contents, { sourceCommit } = {}) {
+  const result = reducePairedBracket(
+    requireBytes(contents, "bracket-manifest.json"),
+    ["first.json", "center.json", "last.json"].map((file) => parseJsonObject(contents, file, false))
+  );
+  if (sourceCommit !== undefined && sourceCommit !== result.provenance[0].commit)
+    throw new Error("Paired screen sourceCommit must match the first run's commit.");
+  return result;
 }
 function requireValue(source, field, relativePath) {
   const value = source?.[field];
@@ -149,6 +167,7 @@ function reduceShippingFidelityMatrix(contents) {
 module.exports = {
   CELL_EVIDENCE_SUFFIX,
   MATRIX_EVIDENCE_NAME,
+  reducePairedThroughputScreen,
   reduceShippingFidelityMatrix,
   summarizeByStrippingLevel
 };
