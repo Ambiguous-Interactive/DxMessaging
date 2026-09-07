@@ -2727,28 +2727,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
-        private sealed class CleanupScope : IDisposable
-        {
-            private readonly Action _cleanup;
-            private bool _disposed;
-
-            public CleanupScope(Action cleanup)
-            {
-                _cleanup = cleanup;
-            }
-
-            public void Dispose()
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
-                _cleanup();
-            }
-        }
-
         private static readonly Type[] RegistrationFloodMarkerTypes =
         {
             typeof(RegistrationFloodMarker00),

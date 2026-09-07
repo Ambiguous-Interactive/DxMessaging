@@ -345,24 +345,23 @@ namespace DxMessaging.Tests.Runtime
             }
             if (_globalScope != null)
             {
-                try
+                using (_globalScope)
                 {
-                    foreach (MessageHandler.GlobalMessageBusScope scope in _globalOverrides)
+                    try
                     {
-                        scope.Dispose();
+                        foreach (MessageHandler.GlobalMessageBusScope scope in _globalOverrides)
+                        {
+                            scope.Dispose();
+                        }
+                        _alternateGlobalBus.Trim(force: true);
+                        _alternateGlobalLeaks.Dispose();
                     }
-                    _alternateGlobalBus.Trim(force: true);
-                    _alternateGlobalLeaks.Dispose();
+                    catch (Exception error)
+                    {
+                        errors.Add(error);
+                    }
                 }
-                catch (Exception error)
-                {
-                    errors.Add(error);
-                }
-                finally
-                {
-                    _globalScope.Dispose();
-                    _globalScope = null;
-                }
+                _globalScope = null;
             }
             if (errors.Count > 0)
             {

@@ -47,96 +47,94 @@ namespace DxMessaging.Tests.Runtime.Core
                 Assert.Fail("An emission escaped its scoped collector.");
             string report =
                 $"kind={scenario.Kind}, operation={operationName}, initiallyEnabled={initiallyEnabled}";
-            try
-            {
-                MessagingDebug.enabled = initiallyEnabled;
-                MessagingDebug.LogFunction = sentinel;
-                using MessageBusTraceAdapter adapter = CreateAdapter(
-                    scenario,
-                    false,
-                    throwAfterEmit: operationName == "NestedThrow"
-                );
-                adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Register));
-                adapter.Execute(
-                    new BusTraceOperation(
-                        BusTraceOperationKind.Register,
-                        token: 1,
-                        context: 1,
-                        kindOffset: 1
-                    )
-                );
-                adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Disable, token: 1));
-                BusTraceObservation observation = adapter.Execute(
-                    new BusTraceOperation(operationKind, value: 11, nestedToken: 1, depth: 1)
-                );
-                Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
-                Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
-                Assert.That(
-                    observation.Exception != null,
-                    Is.EqualTo(
-                        operationKind == BusTraceOperationKind.EmitWithThrow
-                            || operationName == "NestedThrow"
-                    ),
-                    report + observation
-                );
-                int expectedFinalCount = operationKind == BusTraceOperationKind.EmitNested ? 2 : 1;
-                Assert.That(
-                    observation.FinalEmissions.Count,
-                    Is.EqualTo(expectedFinalCount),
-                    report + observation
-                );
-                string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
-                Assert.That(
-                    observation.FinalEmissions[expectedFinalCount - 1],
-                    Is.EqualTo($"call=0,kind={scenario.Kind},value=11,context={context}"),
-                    report + observation
-                );
-                if (operationKind == BusTraceOperationKind.EmitNested)
-                {
-                    MessageKind inner = (MessageKind)(((int)scenario.Kind + 1) % 3);
-                    string innerContext = inner == MessageKind.Untargeted ? "none" : "2001";
-                    Assert.That(
-                        observation.FinalEmissions[0],
-                        Is.EqualTo($"call=1,kind={inner},value=12,context={innerContext}"),
-                        report + observation
-                    );
-                    Assert.That(
-                        observation.UnmatchedDiagnostics.Count,
-                        Is.EqualTo(1),
-                        report + observation
-                    );
-                    StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
-                }
-                // A later unmatched call gets a fresh ordinal and cannot mutate the prior snapshot.
-                BusTraceObservation later = adapter.Execute(
-                    new BusTraceOperation(
-                        BusTraceOperationKind.Emit,
-                        value: 31,
-                        context: 2,
-                        kindOffset: 2
-                    )
-                );
-                Assert.That(later.FinalEmissions.Count, Is.EqualTo(1), report + later);
-                StringAssert.StartsWith("call=0,", later.FinalEmissions[0], report);
-                Assert.That(later.UnmatchedDiagnostics.Count, Is.EqualTo(1), report + later);
-                StringAssert.StartsWith("call=0;", later.UnmatchedDiagnostics[0], report);
-                CollectionAssert.Contains(
-                    observation.FinalEmissions,
-                    $"call=0,kind={scenario.Kind},value=11,context={context}",
-                    report + observation
-                );
-                if (operationKind == BusTraceOperationKind.EmitNested)
-                {
-                    StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
-                }
-                Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
-                Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
-            }
-            finally
+            using CleanupScope restoreLogging = new(() =>
             {
                 MessagingDebug.LogFunction = savedLog;
                 MessagingDebug.enabled = savedEnabled;
+            });
+
+            MessagingDebug.enabled = initiallyEnabled;
+            MessagingDebug.LogFunction = sentinel;
+            using MessageBusTraceAdapter adapter = CreateAdapter(
+                scenario,
+                false,
+                throwAfterEmit: operationName == "NestedThrow"
+            );
+            adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Register));
+            adapter.Execute(
+                new BusTraceOperation(
+                    BusTraceOperationKind.Register,
+                    token: 1,
+                    context: 1,
+                    kindOffset: 1
+                )
+            );
+            adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Disable, token: 1));
+            BusTraceObservation observation = adapter.Execute(
+                new BusTraceOperation(operationKind, value: 11, nestedToken: 1, depth: 1)
+            );
+            Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
+            Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
+            Assert.That(
+                observation.Exception != null,
+                Is.EqualTo(
+                    operationKind == BusTraceOperationKind.EmitWithThrow
+                        || operationName == "NestedThrow"
+                ),
+                report + observation
+            );
+            int expectedFinalCount = operationKind == BusTraceOperationKind.EmitNested ? 2 : 1;
+            Assert.That(
+                observation.FinalEmissions.Count,
+                Is.EqualTo(expectedFinalCount),
+                report + observation
+            );
+            string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
+            Assert.That(
+                observation.FinalEmissions[expectedFinalCount - 1],
+                Is.EqualTo($"call=0,kind={scenario.Kind},value=11,context={context}"),
+                report + observation
+            );
+            if (operationKind == BusTraceOperationKind.EmitNested)
+            {
+                MessageKind inner = (MessageKind)(((int)scenario.Kind + 1) % 3);
+                string innerContext = inner == MessageKind.Untargeted ? "none" : "2001";
+                Assert.That(
+                    observation.FinalEmissions[0],
+                    Is.EqualTo($"call=1,kind={inner},value=12,context={innerContext}"),
+                    report + observation
+                );
+                Assert.That(
+                    observation.UnmatchedDiagnostics.Count,
+                    Is.EqualTo(1),
+                    report + observation
+                );
+                StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
             }
+            // A later unmatched call gets a fresh ordinal and cannot mutate the prior snapshot.
+            BusTraceObservation later = adapter.Execute(
+                new BusTraceOperation(
+                    BusTraceOperationKind.Emit,
+                    value: 31,
+                    context: 2,
+                    kindOffset: 2
+                )
+            );
+            Assert.That(later.FinalEmissions.Count, Is.EqualTo(1), report + later);
+            StringAssert.StartsWith("call=0,", later.FinalEmissions[0], report);
+            Assert.That(later.UnmatchedDiagnostics.Count, Is.EqualTo(1), report + later);
+            StringAssert.StartsWith("call=0;", later.UnmatchedDiagnostics[0], report);
+            CollectionAssert.Contains(
+                observation.FinalEmissions,
+                $"call=0,kind={scenario.Kind},value=11,context={context}",
+                report + observation
+            );
+            if (operationKind == BusTraceOperationKind.EmitNested)
+            {
+                StringAssert.StartsWith("call=1;", observation.UnmatchedDiagnostics[0], report);
+            }
+            Assert.That(MessagingDebug.enabled, Is.EqualTo(initiallyEnabled), report);
+            Assert.That(MessagingDebug.LogFunction, Is.SameAs(sentinel), report);
         }
 
         [Test]
@@ -204,44 +202,39 @@ namespace DxMessaging.Tests.Runtime.Core
             Action<LogLevel, string> savedLog = MessagingDebug.LogFunction;
             List<(LogLevel, string)> forwarded = new();
             Action<LogLevel, string> original = (level, message) => forwarded.Add((level, message));
-            try
-            {
-                MessagingDebug.LogFunction = original;
-                BusTraceObservation observation = adapter.Execute(
-                    new BusTraceOperation(BusTraceOperationKind.Emit, value: 17)
-                );
-                string report = $"kind={scenario.Kind}, setup={setup}: {observation}";
-                Assert.That(observation.Exception, Is.Null, report);
-                Assert.That(observation.Callbacks, Is.Empty, report);
-                Assert.That(adapter.GlobalCalls, Is.EqualTo(setup == "global" ? 1 : 0), report);
-                Assert.That(adapter.VetoCalls, Is.EqualTo(setup == "veto" ? 1 : 0), report);
-                // Global-only delivery can log unmatched; a bare bus bucket can suppress it
-                // without invoking a delegate; veto stops before any unmatched report.
-                Assert.That(
-                    observation.UnmatchedDiagnostics.Count,
-                    Is.EqualTo(setup == "empty" || setup == "global" ? 1 : 0),
-                    report
-                );
-                (LogLevel, string)[] expected =
-                    setup == "global"
-                        ? new[]
-                        {
-                            (LogLevel.Info, (string)null),
-                            (LogLevel.Info, "unrelated {0} diagnostic"),
-                            (LogLevel.Error, "unrelated error"),
-                            (
-                                LogLevel.Warn,
-                                "Could not find a matching untargeted broadcast handler noise"
-                            ),
-                        }
-                        : Array.Empty<(LogLevel, string)>();
-                CollectionAssert.AreEqual(expected, forwarded, report);
-                Assert.That(MessagingDebug.LogFunction, Is.SameAs(original), report);
-            }
-            finally
-            {
-                MessagingDebug.LogFunction = savedLog;
-            }
+            using CleanupScope restoreLogging = new(() => MessagingDebug.LogFunction = savedLog);
+
+            MessagingDebug.LogFunction = original;
+            BusTraceObservation observation = adapter.Execute(
+                new BusTraceOperation(BusTraceOperationKind.Emit, value: 17)
+            );
+            string report = $"kind={scenario.Kind}, setup={setup}: {observation}";
+            Assert.That(observation.Exception, Is.Null, report);
+            Assert.That(observation.Callbacks, Is.Empty, report);
+            Assert.That(adapter.GlobalCalls, Is.EqualTo(setup == "global" ? 1 : 0), report);
+            Assert.That(adapter.VetoCalls, Is.EqualTo(setup == "veto" ? 1 : 0), report);
+            // Global-only delivery can log unmatched; a bare bus bucket can suppress it
+            // without invoking a delegate; veto stops before any unmatched report.
+            Assert.That(
+                observation.UnmatchedDiagnostics.Count,
+                Is.EqualTo(setup == "empty" || setup == "global" ? 1 : 0),
+                report
+            );
+            (LogLevel, string)[] expected =
+                setup == "global"
+                    ? new[]
+                    {
+                        (LogLevel.Info, (string)null),
+                        (LogLevel.Info, "unrelated {0} diagnostic"),
+                        (LogLevel.Error, "unrelated error"),
+                        (
+                            LogLevel.Warn,
+                            "Could not find a matching untargeted broadcast handler noise"
+                        ),
+                    }
+                    : Array.Empty<(LogLevel, string)>();
+            CollectionAssert.AreEqual(expected, forwarded, report);
+            Assert.That(MessagingDebug.LogFunction, Is.SameAs(original), report);
         }
 
         [Test]
