@@ -347,6 +347,159 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void UntypedEmitBoundaryMatchesTypedDispatchAndRecordsCallerVisibleValues(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool keepRegistration
+        )
+        {
+            // Registration roots the concrete type's untyped dispatch bridge under AOT
+            // before any untyped emit; the removed case keeps that rooting while emptying
+            // the bus so the untyped unmatched path is exercised on every backend.
+            BusTraceSequence sequence = new(
+                scenario,
+                811,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    keepRegistration
+                        ? new BusTraceOperation(BusTraceOperationKind.EmitUntyped, value: 17)
+                        : new BusTraceOperation(BusTraceOperationKind.Remove),
+                    new BusTraceOperation(BusTraceOperationKind.EmitUntyped, value: 29),
+                }
+            );
+            IReadOnlyList<BusTraceObservation> untyped = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            BusTraceSequence typedSequence = new(
+                scenario,
+                811,
+                sequence
+                    .Operations.Select(operation =>
+                        operation.Kind == BusTraceOperationKind.EmitUntyped
+                            ? new BusTraceOperation(
+                                BusTraceOperationKind.Emit,
+                                value: operation.Value,
+                                context: operation.Context
+                            )
+                            : operation
+                    )
+                    .ToArray()
+            );
+            IReadOnlyList<BusTraceObservation> typed = DifferentialBusTrace.Replay(
+                typedSequence,
+                kind => CreateAdapter(kind, false)
+            );
+            string report =
+                $"kind={scenario.Kind}, keepRegistration={keepRegistration}\n"
+                + string.Join("\n", untyped);
+            Assert.That(untyped.All(item => item.Exception == null), Is.True, report);
+            string context = scenario.Kind == MessageKind.Untargeted ? "none" : "2000";
+            for (int index = 0; index < untyped.Count; ++index)
+            {
+                BusTraceObservation untypedObservation = untyped[index];
+                BusTraceObservation typedObservation = typed[index];
+                Assert.That(
+                    untypedObservation.Exception,
+                    Is.EqualTo(typedObservation.Exception),
+                    report
+                );
+                CollectionAssert.AreEqual(
+                    typedObservation.Callbacks,
+                    untypedObservation.Callbacks,
+                    report
+                );
+                CollectionAssert.AreEqual(
+                    typedObservation.UnmatchedDiagnostics,
+                    untypedObservation.UnmatchedDiagnostics,
+                    report
+                );
+                Assert.That(untypedObservation.State, Is.EqualTo(typedObservation.State), report);
+            }
+            for (int index = 0; index < untyped.Count; ++index)
+            {
+                if (sequence.Operations[index].Kind != BusTraceOperationKind.EmitUntyped)
+                {
+                    continue;
+                }
+                int value = sequence.Operations[index].Value;
+                CollectionAssert.AreEqual(
+                    new[]
+                    {
+                        $"call=0,kind={scenario.Kind},route=untyped,value={value},context={context}",
+                    },
+                    untyped[index].FinalEmissions,
+                    report
+                );
+                CollectionAssert.AreEqual(
+                    new[] { $"call=0,kind={scenario.Kind},value={value},context={context}" },
+                    typed[index].FinalEmissions,
+                    report
+                );
+            }
+            if (keepRegistration)
+            {
+                CollectionAssert.AreEqual(
+                    new[] { "token=0,value=17" },
+                    untyped[1].Callbacks,
+                    report
+                );
+                CollectionAssert.AreEqual(
+                    new[] { "token=0,value=29" },
+                    untyped[2].Callbacks,
+                    report
+                );
+                Assert.That(untyped[1].UnmatchedDiagnostics, Is.Empty, report);
+            }
+            else
+            {
+                Assert.That(untyped[1].Callbacks, Is.Empty, report);
+                Assert.That(untyped[2].Callbacks, Is.Empty, report);
+                Assert.That(untyped[2].UnmatchedDiagnostics.Count, Is.EqualTo(1), report);
+                StringAssert.StartsWith("call=0;", untyped[2].UnmatchedDiagnostics[0], report);
+            }
+        }
+
+        [Test]
+        public void UntypedRouteMutantsAreDetectedAndShrinkToTheirEmission(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("drop", "wrong-value")] string fault
+        )
+        {
+            BusTraceSequence sequence = new(
+                scenario,
+                823,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register),
+                    new BusTraceOperation(BusTraceOperationKind.EmitUntyped, value: 17),
+                }
+            );
+            BusTraceMismatch mismatch = EvaluateUntypedFault(sequence, fault);
+            Assert.That(mismatch, Is.Not.Null, $"[{scenario.Kind}] fault={fault}");
+            string report = mismatch.BuildReport(sequence);
+            Assert.That(mismatch.Category, Is.EqualTo("callbacks"), report);
+            Assert.That(mismatch.Index, Is.EqualTo(1), report);
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                sequence,
+                input => EvaluateUntypedFault(input, fault)
+            );
+            CollectionAssert.AreEqual(
+                new[] { BusTraceOperationKind.Register, BusTraceOperationKind.EmitUntyped },
+                minimal.Operations.Select(operation => operation.Kind),
+                report
+            );
+            Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
+            Assert.That(
+                EvaluateUntypedFault(minimal, fault)?.Category,
+                Is.EqualTo("callbacks"),
+                report
+            );
+        }
+
+        [Test]
         public void UnmatchedDiagnosticsDetectEmptyBusEmissionWithoutInventingFoundResult(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
@@ -1424,7 +1577,10 @@ namespace DxMessaging.Tests.Runtime.Core
             CollectionAssert.AreEquivalent(
                 Enum.GetValues(typeof(BusTraceOperationKind))
                     .Cast<BusTraceOperationKind>()
-                    .Where(kind => !DifferentialBusTrace.IsGlobalOverride(kind)),
+                    .Where(kind =>
+                        !DifferentialBusTrace.IsGlobalOverride(kind)
+                        && !DifferentialBusTrace.IsSupplementary(kind)
+                    ),
                 kinds,
                 "Version eight must retain every existing operation and add duplicates/copies."
             );
@@ -1876,7 +2032,10 @@ namespace DxMessaging.Tests.Runtime.Core
             CollectionAssert.AreEquivalent(
                 Enum.GetValues(typeof(BusTraceOperationKind))
                     .Cast<BusTraceOperationKind>()
-                    .Where(kind => !DifferentialBusTrace.IsGlobalOverride(kind)),
+                    .Where(kind =>
+                        !DifferentialBusTrace.IsGlobalOverride(kind)
+                        && !DifferentialBusTrace.IsSupplementary(kind)
+                    ),
                 all,
                 "Version nine retains the full operation vocabulary."
             );
@@ -4531,6 +4690,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             );
 
+        private static BusTraceMismatch EvaluateUntypedFault(
+            BusTraceSequence sequence,
+            string fault
+        ) =>
+            DifferentialBusTrace.Compare(
+                DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false)),
+                DifferentialBusTrace.Replay(
+                    sequence,
+                    kind => CreateUntypedFaultAdapter(kind, fault)
+                )
+            );
+
         private static MessageBusTraceAdapter CreateAdapter(
             MessageScenario scenario,
             bool dropEmits,
@@ -4556,6 +4727,21 @@ namespace DxMessaging.Tests.Runtime.Core
                     : delayed,
                 delayed != null ? delayed.RequestReset : bus.ResetState
             );
+        }
+
+        private static MessageBusTraceAdapter CreateUntypedFaultAdapter(
+            MessageScenario scenario,
+            string fault
+        )
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            bus.DiagnosticsMode = false;
+            return new MessageBusTraceAdapter(scenario, bus, new UntypedRouteEmitter(bus, fault));
         }
 
         private sealed class DiagnosticCalibrationAdapter : MessageBusTraceAdapter
@@ -4738,6 +4924,86 @@ namespace DxMessaging.Tests.Runtime.Core
                     source = new InstanceId(source.Id + 100);
                 }
                 Complete(ref message);
+            }
+        }
+
+        // Intentional mutants for the untyped boundary: the untyped route must stay
+        // observable through the same callbacks, diagnostics, and final values as the
+        // typed route. "drop" skips the production emission; "wrong-value" dispatches
+        // a payload that differs from the caller's argument.
+        private sealed class UntypedRouteEmitter : DelegatingMessageBus
+        {
+            private readonly string _fault;
+
+            internal UntypedRouteEmitter(IMessageBus bus, string fault)
+                : base(bus)
+            {
+                _fault = fault;
+            }
+
+            public override void UntypedUntargetedBroadcast(IUntargetedMessage typedMessage)
+            {
+                if (_fault == "drop")
+                {
+                    return;
+                }
+                if (
+                    typedMessage is MessageBusTraceAdapter.UntargetedPayload payload
+                    && _fault == "wrong-value"
+                )
+                {
+                    base.UntypedUntargetedBroadcast(
+                        new MessageBusTraceAdapter.UntargetedPayload(payload.Value + 100)
+                    );
+                    return;
+                }
+                base.UntypedUntargetedBroadcast(typedMessage);
+            }
+
+            public override void UntypedTargetedBroadcast(
+                InstanceId target,
+                ITargetedMessage typedMessage
+            )
+            {
+                if (_fault == "drop")
+                {
+                    return;
+                }
+                if (
+                    typedMessage is MessageBusTraceAdapter.TargetedPayload payload
+                    && _fault == "wrong-value"
+                )
+                {
+                    base.UntypedTargetedBroadcast(
+                        target,
+                        new MessageBusTraceAdapter.TargetedPayload(payload.Value + 100)
+                    );
+                    return;
+                }
+                base.UntypedTargetedBroadcast(target, typedMessage);
+            }
+
+            public override void UntypedSourcedBroadcast(
+                InstanceId source,
+                IBroadcastMessage typedMessage
+            )
+            {
+                if (_fault == "drop")
+                {
+                    return;
+                }
+                if (
+                    typedMessage is MessageBusTraceAdapter.BroadcastPayload payload
+                    && _fault == "wrong-value"
+                )
+                {
+                    base.UntypedSourcedBroadcast(
+                        source,
+                        new MessageBusTraceAdapter.BroadcastPayload(payload.Value + 100)
+                    );
+                    return;
+                }
+                base.UntypedSourcedBroadcast(source, typedMessage);
             }
         }
 

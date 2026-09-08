@@ -31,6 +31,7 @@ namespace DxMessaging.Tests.Runtime
         CopyGlobalOverride,
         DisposeGlobalOverride,
         ReplaceGlobalBus,
+        EmitUntyped,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -510,6 +511,10 @@ namespace DxMessaging.Tests.Runtime
             || kind == BusTraceOperationKind.DisposeGlobalOverride
             || kind == BusTraceOperationKind.ReplaceGlobalBus;
 
+        /// <summary>Hand-written supplementary operations that no versioned generator emits.</summary>
+        internal static bool IsSupplementary(BusTraceOperationKind kind) =>
+            kind == BusTraceOperationKind.EmitUntyped;
+
         // Only logical issuance and alias dependencies are modeled, never the production
         // override stack, physical slots, generations, current bus, or dispatch results.
         private sealed class GlobalOverrideDependencies
@@ -930,6 +935,7 @@ namespace DxMessaging.Tests.Runtime
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:
                     case BusTraceOperationKind.Emit:
+                    case BusTraceOperationKind.EmitUntyped:
                         break;
                     case BusTraceOperationKind.EmitNested:
                         if (
