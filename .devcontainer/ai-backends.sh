@@ -201,6 +201,8 @@ install_launchers() {
     script_path="$(realpath "${BASH_SOURCE[0]}")"
     mkdir -p "${bin_dir}"
 
+    # Validate every destination first so a refusal cannot leave a partially
+    # applied install behind.
     for launcher in codex-zai claude-zai codex-openrouter claude-openrouter; do
         target="${bin_dir}/${launcher}"
         if [ -e "${target}" ] && [ ! -L "${target}" ]; then
@@ -213,7 +215,10 @@ install_launchers() {
                 die "Refusing to replace launcher symlink pointing elsewhere: ${target}"
             fi
         fi
-        ln -sfn "${script_path}" "${target}"
+    done
+
+    for launcher in codex-zai claude-zai codex-openrouter claude-openrouter; do
+        ln -sfn "${script_path}" "${bin_dir}/${launcher}"
     done
 }
 
@@ -362,11 +367,10 @@ launch_claude_gateway() {
     done
     for arg in "${env_pairs[@]}"; do
         case "${arg}" in
-            [A-Za-z_]*=*) ;;
+            [A-Za-z_][A-Za-z0-9_]*=*) ;;
             *) die "Internal launcher error: expected NAME=VALUE after '--', got '${arg}'." ;;
         esac
     done
-
     mkdir -p "${config_dir}"
     chmod 700 "${config_dir}"
 
