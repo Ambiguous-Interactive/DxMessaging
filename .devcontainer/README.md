@@ -117,11 +117,14 @@ gateway endpoint, and unset the raw provider key after transferring it to
 | `AI_BACKENDS_CONTAINER_MODE`          | `auto` (`auto`, `yes`, `no`)              | both Claude launchers |
 | `CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB` | `auto` (`auto`, `0`, `1`)                 | both Claude launchers |
 
-Reinstall the launchers manually after moving the checkout:
+After moving the checkout, remove the four stale launcher symlinks from their installation
+directory. Then reinstall them:
 
 ```bash
 bash .devcontainer/ai-backends.sh install
 ```
+
+The installer refuses dangling symlinks because it cannot prove who created them.
 
 ### Claude subprocess isolation
 
