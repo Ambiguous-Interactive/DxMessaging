@@ -10,6 +10,7 @@ readonly ZAI_RESPONSES_URL="https://api.z.ai/api/v1"
 readonly ZAI_ANTHROPIC_URL="https://api.z.ai/api/anthropic"
 readonly OPENROUTER_RESPONSES_URL="https://openrouter.ai/api/v1"
 readonly OPENROUTER_ANTHROPIC_URL="https://openrouter.ai/api"
+declare -a installed_launcher_paths=()
 
 die() {
     printf '[ai-backends] ERROR: %s\n' "$*" >&2
@@ -49,13 +50,24 @@ resolve_openrouter_key() {
     die "Set OPENROUTER_API_KEY before launching an OpenRouter backend."
 }
 
+validate_codex_profile_path() {
+    local profile_path="$1"
+    if [ -L "${profile_path}" ] || { [ -e "${profile_path}" ] && [ ! -f "${profile_path}" ]; }; then
+        die "Refusing unsupported Codex profile path: ${profile_path}"
+    fi
+}
+
 install_codex_zai_profile() {
-    local codex_home catalog_file catalog_path_toml catalog_tmp profile_tmp
-    codex_home="${CODEX_HOME:-${HOME}/.codex}"
+    local catalog_config_home codex_home catalog_file catalog_path_toml catalog_tmp profile_tmp
+    codex_home="${1:-${CODEX_HOME:-${HOME}/.codex}}"
+    catalog_config_home="${2:-${codex_home}}"
     catalog_file="${codex_home}/${PROFILE_ZAI}-models.json"
     local profile_file="${codex_home}/${PROFILE_ZAI}.config.toml"
-    catalog_path_toml="${catalog_file//\\/\\\\}"
+    catalog_path_toml="${catalog_config_home}/${PROFILE_ZAI}-models.json"
+    catalog_path_toml="${catalog_path_toml//\\/\\\\}"
     catalog_path_toml="${catalog_path_toml//\"/\\\"}"
+    validate_codex_profile_path "${catalog_file}"
+    validate_codex_profile_path "${profile_file}"
 
     mkdir -p "${codex_home}"
     chmod 700 "${codex_home}"
@@ -142,8 +154,9 @@ TOML
 
 install_codex_openrouter_profile() {
     local codex_home profile_tmp
-    codex_home="${CODEX_HOME:-${HOME}/.codex}"
+    codex_home="${1:-${CODEX_HOME:-${HOME}/.codex}}"
     local profile_file="${codex_home}/${PROFILE_OPENROUTER}.config.toml"
+    validate_codex_profile_path "${profile_file}"
 
     mkdir -p "${codex_home}"
     chmod 700 "${codex_home}"
@@ -184,48 +197,252 @@ TOML
     trap - RETURN
 }
 
-install_launchers() {
-    local bin_dir codex_command launcher script_path target
-    if [ -n "${AI_BACKENDS_BIN_DIR:-}" ]; then
-        bin_dir="${AI_BACKENDS_BIN_DIR}"
-    elif case ":${PATH}:" in *":${HOME}/.local/bin:"*) true ;; *) false ;; esac; then
-        bin_dir="${HOME}/.local/bin"
-    else
-        codex_command="$(command -v codex || true)"
-        if [ -n "${codex_command}" ] && [ -w "$(dirname "${codex_command}")" ]; then
-            bin_dir="$(dirname "${codex_command}")"
-        else
-            bin_dir="${HOME}/.local/bin"
-        fi
-    fi
-    script_path="$(realpath "${BASH_SOURCE[0]}")"
-    mkdir -p "${bin_dir}"
+validate_codex_profile_destinations() {
+    local codex_home="$1" profile_path
+    for profile_path in \
+        "${codex_home}/${PROFILE_ZAI}-models.json" \
+        "${codex_home}/${PROFILE_ZAI}.config.toml" \
+        "${codex_home}/${PROFILE_OPENROUTER}.config.toml"; do
+        validate_codex_profile_path "${profile_path}"
+    done
+}
 
-    # Validate every destination first so a refusal cannot leave a partially
-    # applied install behind.
-    for launcher in codex-zai claude-zai codex-openrouter claude-openrouter; do
-        target="${bin_dir}/${launcher}"
-        if [ -e "${target}" ] && [ ! -L "${target}" ]; then
-            die "Refusing to replace non-symlink launcher: ${target}"
+verify_codex_profile_destinations() {
+    local codex_home="$1" profile_path
+    for profile_path in \
+        "${codex_home}/${PROFILE_ZAI}-models.json" \
+        "${codex_home}/${PROFILE_ZAI}.config.toml" \
+        "${codex_home}/${PROFILE_OPENROUTER}.config.toml"; do
+        if [ ! -f "${profile_path}" ] || [ -L "${profile_path}" ]; then
+            printf '[ai-backends] ERROR: Codex profile was not installed as a regular file: %s\n' \
+                "${profile_path}" >&2
+            return 1
         fi
-        if [ -L "${target}" ] && [ -e "${target}" ]; then
-            # Own earlier launchers may dangle after a repository move; a symlink
-            # that still resolves to some other live file is not ours to replace.
-            if [ "$(realpath "${target}")" != "${script_path}" ]; then
-                die "Refusing to replace launcher symlink pointing elsewhere: ${target}"
-            fi
+    done
+}
+
+restore_codex_profiles() {
+    local backup_dir codex_home="$2" name restore_failed=0 staged_home="$1"
+    local -a names=(
+        "${PROFILE_ZAI}-models.json"
+        "${PROFILE_ZAI}.config.toml"
+        "${PROFILE_OPENROUTER}.config.toml"
+    )
+    backup_dir="${staged_home}/backups"
+    for name in "${names[@]}"; do
+        if ! rm -f "${codex_home}/${name}"; then
+            restore_failed=1
+            continue
+        fi
+        if [ -f "${backup_dir}/${name}" ]; then
+            cp -p "${backup_dir}/${name}" "${codex_home}/${name}" \
+                || restore_failed=1
+        fi
+    done
+    return "${restore_failed}"
+}
+
+commit_staged_codex_profiles() {
+    local backup_dir codex_home="$2" name staged_home="$1"
+    local -a names=(
+        "${PROFILE_ZAI}-models.json"
+        "${PROFILE_ZAI}.config.toml"
+        "${PROFILE_OPENROUTER}.config.toml"
+    )
+    backup_dir="${staged_home}/backups"
+    mkdir -p "${backup_dir}" || return 1
+
+    for name in "${names[@]}"; do
+        if [ -f "${codex_home}/${name}" ]; then
+            cp -p "${codex_home}/${name}" "${backup_dir}/${name}" || return 1
         fi
     done
 
+    for name in "${names[@]}"; do
+        if ! mv "${staged_home}/${name}" "${codex_home}/${name}"; then
+            if ! restore_codex_profiles "${staged_home}" "${codex_home}"; then
+                printf '[ai-backends] ERROR: Codex profile rollback was incomplete; backups remain in %s.\n' \
+                    "${backup_dir}" >&2
+                return 2
+            fi
+            return 1
+        fi
+    done
+}
+
+resolve_launcher_bin_dir() {
+    local codex_command
+    if [ -n "${AI_BACKENDS_BIN_DIR:-}" ]; then
+        printf '%s\n' "${AI_BACKENDS_BIN_DIR}"
+    elif case ":${PATH}:" in *":${HOME}/.local/bin:"*) true ;; *) false ;; esac; then
+        printf '%s\n' "${HOME}/.local/bin"
+    else
+        codex_command="$(command -v codex || true)"
+        if [ -n "${codex_command}" ] && [ -w "$(dirname "${codex_command}")" ]; then
+            dirname "${codex_command}"
+        else
+            printf '%s\n' "${HOME}/.local/bin"
+        fi
+    fi
+}
+
+validate_launcher_destinations() {
+    local bin_dir="$1" launcher script_path="$2" target
+
+    # Validate every destination before changing profiles or launchers so a
+    # refusal cannot leave a partially applied install behind.
     for launcher in codex-zai claude-zai codex-openrouter claude-openrouter; do
-        ln -sfn "${script_path}" "${bin_dir}/${launcher}"
+        target="${bin_dir}/${launcher}"
+        if [ -L "${target}" ]; then
+            if [ ! -e "${target}" ]; then
+                die "Refusing to replace dangling launcher symlink: ${target}"
+            fi
+            if [ "$(realpath "${target}")" != "${script_path}" ]; then
+                die "Refusing to replace launcher symlink pointing elsewhere: ${target}"
+            fi
+        elif [ -e "${target}" ]; then
+            die "Refusing to replace non-symlink launcher: ${target}"
+        fi
+    done
+}
+
+rollback_installed_launchers() {
+    local created_target script_path="$1"
+    for created_target in "${installed_launcher_paths[@]}"; do
+        if [ -L "${created_target}" ] && [ -e "${created_target}" ] \
+            && [ "$(realpath "${created_target}")" = "${script_path}" ]; then
+            rm -f "${created_target}"
+        fi
+    done
+    installed_launcher_paths=()
+}
+
+nearest_existing_path() {
+    local current="$1" parent
+    while [ ! -e "${current}" ] && [ ! -L "${current}" ]; do
+        parent="$(dirname "${current}")"
+        [ "${parent}" != "${current}" ] || break
+        current="${parent}"
+    done
+    printf '%s\n' "${current}"
+}
+
+prune_empty_directories() {
+    local anchor="$2" current="$1" parent
+    while [ "${current}" != "${anchor}" ]; do
+        if [ -e "${current}" ] || [ -L "${current}" ]; then
+            rmdir "${current}" 2>/dev/null || break
+        fi
+        parent="$(dirname "${current}")"
+        [ "${parent}" != "${current}" ] || break
+        current="${parent}"
+    done
+}
+
+cleanup_created_install_directories() {
+    local bin_anchor="$2" bin_dir="$1" codex_anchor="$4" codex_home="$3"
+    prune_empty_directories "${codex_home}" "${codex_anchor}"
+    prune_empty_directories "${bin_dir}" "${bin_anchor}"
+}
+
+write_launchers() {
+    local bin_dir="$1" launcher script_path="$2" target
+    installed_launcher_paths=()
+
+    for launcher in codex-zai claude-zai codex-openrouter claude-openrouter; do
+        target="${bin_dir}/${launcher}"
+        if [ -L "${target}" ] && [ -e "${target}" ] \
+            && [ "$(realpath "${target}")" = "${script_path}" ]; then
+            continue
+        fi
+        if ! ln -s "${script_path}" "${target}"; then
+            rollback_installed_launchers "${script_path}"
+            printf '[ai-backends] ERROR: Unable to create launcher without replacing an existing path: %s\n' \
+                "${target}" >&2
+            return 1
+        fi
+        installed_launcher_paths+=("${target}")
     done
 }
 
 install_backend_support() {
-    install_codex_zai_profile
-    install_codex_openrouter_profile
-    install_launchers
+    local bin_anchor bin_dir codex_anchor codex_home script_path staged_home
+    bin_dir="$(resolve_launcher_bin_dir)"
+    codex_home="${CODEX_HOME:-${HOME}/.codex}"
+    script_path="$(realpath "${BASH_SOURCE[0]}")"
+    if [ -e "${bin_dir}" ] && [ ! -d "${bin_dir}" ]; then
+        die "Refusing unsupported launcher directory: ${bin_dir}"
+    fi
+    if [ -e "${codex_home}" ] && [ ! -d "${codex_home}" ]; then
+        die "Refusing unsupported CODEX_HOME: ${codex_home}"
+    fi
+    validate_launcher_destinations "${bin_dir}" "${script_path}"
+    validate_codex_profile_destinations "${codex_home}"
+    bin_anchor="$(nearest_existing_path "${bin_dir}")"
+    codex_anchor="$(nearest_existing_path "${codex_home}")"
+    if ! mkdir -p "${bin_dir}"; then
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        die "Unable to create launcher directory: ${bin_dir}"
+    fi
+    if ! mkdir -p "${codex_home}"; then
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        die "Unable to create CODEX_HOME: ${codex_home}"
+    fi
+    if ! staged_home="$(mktemp -d "${codex_home}/.ai-backends-install.XXXXXX")"; then
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        die "Unable to create the Codex profile staging directory."
+    fi
+    if ! (
+        set -e
+        install_codex_zai_profile "${staged_home}" "${codex_home}"
+        install_codex_openrouter_profile "${staged_home}"
+    ); then
+        rm -rf "${staged_home}"
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        die "Codex profile staging failed."
+    fi
+    if ! write_launchers "${bin_dir}" "${script_path}"; then
+        rm -rf "${staged_home}"
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        die "Launcher installation was rolled back."
+    fi
+    local commit_status=0 restore_status=0
+    commit_staged_codex_profiles "${staged_home}" "${codex_home}" || commit_status=$?
+    if [ "${commit_status}" -ne 0 ]; then
+        rollback_installed_launchers "${script_path}"
+        if [ "${commit_status}" -eq 1 ]; then
+            rm -rf "${staged_home}"
+        fi
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        if [ "${commit_status}" -eq 2 ]; then
+            die "Codex profile installation and rollback failed; profile backups were preserved."
+        fi
+        die "Codex profile installation failed and launcher installation was rolled back."
+    fi
+    if ! verify_codex_profile_destinations "${codex_home}" \
+        || ! chmod 700 "${codex_home}"; then
+        restore_codex_profiles "${staged_home}" "${codex_home}" || restore_status=$?
+        rollback_installed_launchers "${script_path}"
+        if [ "${restore_status}" -eq 0 ]; then
+            rm -rf "${staged_home}"
+        fi
+        cleanup_created_install_directories \
+            "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        if [ "${restore_status}" -ne 0 ]; then
+            printf '[ai-backends] ERROR: Codex profile rollback was incomplete; backups remain in %s.\n' \
+                "${staged_home}/backups" >&2
+            die "Final profile installation and rollback failed; profile backups were preserved."
+        fi
+        die "Final profile installation failed and all changes were rolled back."
+    fi
+    installed_launcher_paths=()
+    rm -rf "${staged_home}"
     printf '[ai-backends] Installed codex-zai, claude-zai, codex-openrouter, and claude-openrouter launchers.\n'
 }
 
