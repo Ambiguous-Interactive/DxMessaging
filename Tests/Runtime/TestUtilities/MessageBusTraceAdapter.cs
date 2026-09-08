@@ -176,6 +176,7 @@ namespace DxMessaging.Tests.Runtime
                         }
                         break;
                     case BusTraceOperationKind.Emit:
+                    case BusTraceOperationKind.EmitUntyped:
                         Emit(operation);
                         break;
                     case BusTraceOperationKind.Trim:
@@ -638,17 +639,160 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        private void Emit(BusTraceOperation operation)
+        private void Emit(BusTraceOperation operation) =>
+            Emit(operation, untypedRoute: operation.Kind == BusTraceOperationKind.EmitUntyped);
+
+        private void Emit(BusTraceOperation operation, bool untypedRoute)
         {
             MessageScenario scenario = Scenario(operation.KindOffset);
             InstanceId context = new(2000 + operation.Context);
-            int ordinal = _nextEmissionOrdinal++;
-            bool previousEnabled = MessagingDebug.enabled;
-            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
-            // Capture only this synchronous emission. A nested scope restores this collector,
-            // without forwarding its unmatched reports into its parent's observations.
-            MessagingDebug.enabled = true;
-            MessagingDebug.LogFunction = (level, message) =>
+            using EmissionCapture capture = new(this);
+            if (untypedRoute)
+            {
+                // These are caller-visible values through the untyped boundary. The
+                // interface argument cannot marshal struct mutations back to the call
+                // site, so the recorded values pin the boundary's original payload and
+                // context, including when dispatch throws.
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                    {
+                        IUntargetedMessage boxed = new UntargetedPayload(operation.Value);
+                        try
+                        {
+                            Emitter.UntypedUntargetedBroadcast(boxed);
+                        }
+                        finally
+                        {
+                            UntargetedPayload final = (UntargetedPayload)boxed;
+                            _finalEmissions.Add(
+                                $"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context=none"
+                            );
+                        }
+                        break;
+                    }
+                    case MessageKind.Targeted:
+                    {
+                        ITargetedMessage boxed = new TargetedPayload(operation.Value);
+                        try
+                        {
+                            Emitter.UntypedTargetedBroadcast(context, boxed);
+                        }
+                        finally
+                        {
+                            TargetedPayload final = (TargetedPayload)boxed;
+                            _finalEmissions.Add(
+                                $"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context={context.Id}"
+                            );
+                        }
+                        break;
+                    }
+                    case MessageKind.Broadcast:
+                    {
+                        IBroadcastMessage boxed = new BroadcastPayload(operation.Value);
+                        try
+                        {
+                            Emitter.UntypedSourcedBroadcast(context, boxed);
+                        }
+                        finally
+                        {
+                            BroadcastPayload final = (BroadcastPayload)boxed;
+                            _finalEmissions.Add(
+                                $"call={capture.Ordinal},kind={scenario.Kind},route=untyped,value={final.Value},context={context.Id}"
+                            );
+                        }
+                        break;
+                    }
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(_scenario));
+                }
+            }
+            else
+            {
+                EmitTyped(scenario, context, operation, capture.Ordinal);
+            }
+        }
+
+        // These are caller-visible typed ref values, including when dispatch throws.
+        // Untyped APIs and extension methods' value-context boundaries are observed
+        // separately by the untyped route above.
+        private void EmitTyped(
+            MessageScenario scenario,
+            InstanceId context,
+            BusTraceOperation operation,
+            int ordinal
+        )
+        {
+            switch (scenario.Kind)
+            {
+                case MessageKind.Untargeted:
+                    UntargetedPayload untargeted = new(operation.Value);
+                    try
+                    {
+                        Emitter.UntargetedBroadcast(ref untargeted);
+                    }
+                    finally
+                    {
+                        _finalEmissions.Add(
+                            $"call={ordinal},kind={scenario.Kind},value={untargeted.Value},context=none"
+                        );
+                    }
+                    break;
+                case MessageKind.Targeted:
+                    TargetedPayload targeted = new(operation.Value);
+                    try
+                    {
+                        Emitter.TargetedBroadcast(ref context, ref targeted);
+                    }
+                    finally
+                    {
+                        _finalEmissions.Add(
+                            $"call={ordinal},kind={scenario.Kind},value={targeted.Value},context={context.Id}"
+                        );
+                    }
+                    break;
+                case MessageKind.Broadcast:
+                    BroadcastPayload broadcast = new(operation.Value);
+                    try
+                    {
+                        Emitter.SourcedBroadcast(ref context, ref broadcast);
+                    }
+                    finally
+                    {
+                        _finalEmissions.Add(
+                            $"call={ordinal},kind={scenario.Kind},value={broadcast.Value},context={context.Id}"
+                        );
+                    }
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(_scenario));
+            }
+        }
+
+        /// <summary>
+        /// Captures one synchronous emission's unmatched reports and restores the caller's
+        /// logging globals on dispose. A nested scope restores this collector, without
+        /// forwarding its unmatched reports into its parent's observations.
+        /// </summary>
+        private sealed class EmissionCapture : IDisposable
+        {
+            private readonly MessageBusTraceAdapter _adapter;
+            private readonly bool _previousEnabled;
+            private readonly Action<LogLevel, string> _previousLog;
+
+            internal int Ordinal { get; }
+
+            internal EmissionCapture(MessageBusTraceAdapter adapter)
+            {
+                _adapter = adapter;
+                Ordinal = adapter._nextEmissionOrdinal++;
+                _previousEnabled = MessagingDebug.enabled;
+                _previousLog = MessagingDebug.LogFunction;
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = CaptureUnmatched;
+            }
+
+            private void CaptureUnmatched(LogLevel level, string message)
             {
                 if (
                     level == LogLevel.Info
@@ -669,67 +813,19 @@ namespace DxMessaging.Tests.Runtime
                     )
                 )
                 {
-                    _unmatchedDiagnostics.Add($"call={ordinal};{message}");
+                    _adapter._unmatchedDiagnostics.Add($"call={Ordinal};{message}");
                 }
                 else
                 {
                     // Keep unrelated logging behavior, including nulls and literal braces.
-                    previousLog?.Invoke(level, message);
-                }
-            };
-            try
-            {
-                // These are caller-visible typed ref values, including when dispatch throws.
-                // Untyped APIs and extension methods' value-context boundaries are not observed here.
-                switch (scenario.Kind)
-                {
-                    case MessageKind.Untargeted:
-                        UntargetedPayload untargeted = new(operation.Value);
-                        try
-                        {
-                            Emitter.UntargetedBroadcast(ref untargeted);
-                        }
-                        finally
-                        {
-                            _finalEmissions.Add(
-                                $"call={ordinal},kind={scenario.Kind},value={untargeted.Value},context=none"
-                            );
-                        }
-                        break;
-                    case MessageKind.Targeted:
-                        TargetedPayload targeted = new(operation.Value);
-                        try
-                        {
-                            Emitter.TargetedBroadcast(ref context, ref targeted);
-                        }
-                        finally
-                        {
-                            _finalEmissions.Add(
-                                $"call={ordinal},kind={scenario.Kind},value={targeted.Value},context={context.Id}"
-                            );
-                        }
-                        break;
-                    case MessageKind.Broadcast:
-                        BroadcastPayload broadcast = new(operation.Value);
-                        try
-                        {
-                            Emitter.SourcedBroadcast(ref context, ref broadcast);
-                        }
-                        finally
-                        {
-                            _finalEmissions.Add(
-                                $"call={ordinal},kind={scenario.Kind},value={broadcast.Value},context={context.Id}"
-                            );
-                        }
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(_scenario));
+                    _previousLog?.Invoke(level, message);
                 }
             }
-            finally
+
+            public void Dispose()
             {
-                MessagingDebug.LogFunction = previousLog;
-                MessagingDebug.enabled = previousEnabled;
+                MessagingDebug.LogFunction = _previousLog;
+                MessagingDebug.enabled = _previousEnabled;
             }
         }
 

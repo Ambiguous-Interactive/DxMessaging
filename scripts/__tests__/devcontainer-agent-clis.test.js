@@ -24,11 +24,6 @@ function resolveTool(name) {
 }
 const dev = (name) => path.join(ROOT, ".devcontainer", name);
 const read = (name) => fs.readFileSync(dev(name), "utf8");
-const PACKAGES = [
-  ["@openai/codex", "codex"],
-  ["opencode-ai", "opencode"],
-  ["@nanocollective/nanocoder", "nanocoder"]
-];
 
 const NPM_STUB = `#!/usr/bin/env bash
 printf '%s\\n' "$*" >>"\${NPM_CALL_LOG}"
@@ -43,6 +38,7 @@ case "$1" in
         spec="$3"
         case "\${spec%@*}" in
             @openai/codex) shim="codex" ;;
+            @anthropic-ai/claude-code) shim="claude" ;;
             opencode-ai) shim="opencode" ;;
             @nanocollective/nanocoder) shim="nanocoder" ;;
             *) exit 1 ;;
@@ -121,7 +117,11 @@ function runInstaller(t, setup) {
   return { result, prefixBin, calls };
 }
 
-const { installerCases: CASES, wiring: WIRING } = require("./devcontainer-agent-cli-vectors.json");
+const {
+  installerCases: CASES,
+  wiring: WIRING,
+  packages: PACKAGES
+} = require("./devcontainer-agent-cli-vectors.json");
 
 for (const testCase of CASES) {
   test(`install-agent-clis.sh handles ${testCase.name}`, { skip: !CAN_RUN_SHELL }, (t) => {

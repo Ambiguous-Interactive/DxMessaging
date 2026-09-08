@@ -91,6 +91,17 @@ install_agent_clis() {
     return 1
 }
 
+install_backend_launchers() {
+    local launcher="${SCRIPT_DIR}/ai-backends.sh"
+
+    if [[ ! -f "${launcher}" ]]; then
+        log_warning "ai-backends.sh not found; skipping backend launcher install"
+        return 1
+    fi
+
+    bash "${launcher}" install
+}
+
 # `waitFor: updateContentCommand` lets post-create and post-start overlap, and both configure the
 # MCP clients. Without a lock, two runs starting from an .env.local with no bearer token would each
 # mint one and write different values into the generated client configs. The second waiter sees
@@ -346,7 +357,8 @@ main() {
     run_optional "Ensuring ~/.profile exports ~/.local/bin" ensure_path_line "$HOME/.profile"
 
     # updateContentCommand already permits attach; own this refresh until it finishes.
-    run_optional "Refreshing Codex, OpenCode, and Nanocoder" install_agent_clis
+    run_optional "Refreshing Codex, Claude Code, OpenCode, and Nanocoder" install_agent_clis
+    run_optional "Installing Z.ai and OpenRouter launchers" install_backend_launchers
 
     # Step 3: workspace bootstrap.
     log_header "Bootstrapping Workspace"

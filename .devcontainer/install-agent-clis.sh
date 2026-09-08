@@ -11,11 +11,13 @@ readonly NPM_PREFIX="${NPM_CONFIG_PREFIX:-${HOME}/.local}"
 readonly LOG_PREFIX="[agent-clis]"
 readonly PACKAGES=(
     "@openai/codex"
+    "@anthropic-ai/claude-code"
     "opencode-ai"
     "@nanocollective/nanocoder"
 )
 readonly COMMANDS=(
     "codex"
+    "claude"
     "opencode"
     "nanocoder"
 )
@@ -51,6 +53,7 @@ command_version() {
     local output=""
     case "${command_name}" in
         codex) output="$(timeout 10 codex --version 2>/dev/null || true)" ;;
+        claude) output="$(timeout 10 claude --version 2>/dev/null || true)" ;;
         opencode) output="$(timeout 10 opencode --version 2>/dev/null || true)" ;;
         nanocoder) output="$(timeout 10 nanocoder --version 2>/dev/null || true)" ;;
         *) return 1 ;;

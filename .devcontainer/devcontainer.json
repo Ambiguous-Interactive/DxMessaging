@@ -55,6 +55,7 @@
     "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}",
     "Z_AI_API_KEY": "${localEnv:Z_AI_API_KEY}",
     "ZAI_API_KEY": "${localEnv:ZAI_API_KEY}",
+    "OPENROUTER_API_KEY": "${localEnv:OPENROUTER_API_KEY}",
     "WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
     "GH_TOKEN": "${localEnv:GH_TOKEN}",
