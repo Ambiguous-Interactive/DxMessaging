@@ -155,6 +155,7 @@ check_tool "csharpier" "dotnet-csharpier" "--version"
 echo ""
 echo -e "${BLUE}=== AI / Agent CLIs ===${NC}"
 check_tool "codex (@openai)" "codex" "--version"
+check_tool "claude (@anthropic)" "claude" "--version"
 check_tool "OpenCode" "opencode" "--version"
 check_tool "Nanocoder" "nanocoder" "--version"
 

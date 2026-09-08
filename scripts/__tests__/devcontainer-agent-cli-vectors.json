@@ -1,4 +1,10 @@
 {
+  "packages": [
+    ["@openai/codex", "codex"],
+    ["@anthropic-ai/claude-code", "claude"],
+    ["opencode-ai", "opencode"],
+    ["@nanocollective/nanocoder", "nanocoder"]
+  ],
   "installerCases": [
     {
       "name": "fresh container with a reachable registry",
@@ -47,7 +53,7 @@
       "stdout": [],
       "stderr": [
         "registry unavailable and {package} is not installed\\.",
-        "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+        "4 agent CLI refresh\\(es\\) failed; see messages above\\."
       ],
       "installsPerPackage": 0,
       "commandsPresent": false
@@ -62,7 +68,7 @@
       "stdout": [],
       "stderr": [
         "{package} install attempt 3/3 failed\\.",
-        "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+        "4 agent CLI refresh\\(es\\) failed; see messages above\\."
       ],
       "installsPerPackage": 3,
       "commandsPresent": false
@@ -78,7 +84,7 @@
       "stdout": [],
       "stderr": [
         "{package} install attempt 3/3 failed\\.",
-        "3 agent CLI refresh\\(es\\) failed; see messages above\\."
+        "4 agent CLI refresh\\(es\\) failed; see messages above\\."
       ],
       "installsPerPackage": 3,
       "commandsPresent": true
@@ -99,8 +105,10 @@
   "wiring": [
     ["Dockerfile", "npm install --global"],
     ["Dockerfile", "@openai/codex@latest"],
+    ["Dockerfile", "@anthropic-ai/claude-code@latest"],
     ["Dockerfile", "opencode-ai@latest"],
     ["Dockerfile", "@nanocollective/nanocoder@latest"],
+    ["post-create.sh", "ai-backends.sh"],
     ["Dockerfile", "NPM_CONFIG_PREFIX=\"/home/vscode/.local\""],
     ["post-start.sh", "nohup bash \"${installer}\""],
     ["post-start.sh", "cache_contract_repair_permissions"],

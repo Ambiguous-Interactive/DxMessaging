@@ -170,6 +170,9 @@ jobs:
             echo "=== Cache-mount contract ==="
             bash .devcontainer/validate-caching.sh
 
+            echo "=== AI backend launchers ==="
+            bash .devcontainer/test-ai-backends.sh
+
             echo "=== Node script tests ==="
             node --test scripts/
 
@@ -226,6 +229,9 @@ jobs:
 
             echo "=== Cache-mount contract ==="
             bash .devcontainer/validate-caching.sh
+
+            echo "=== AI backend launchers ==="
+            bash .devcontainer/test-ai-backends.sh
 
             echo "=== Node script tests ==="
             node --test scripts/

@@ -55,6 +55,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         wget \
         ca-certificates \
         shellcheck \
+        bubblewrap \
+        socat \
         curl \
         gnupg \
         apt-transport-https \
@@ -396,6 +398,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # refresh them without sudo while keeping these copies as the offline fallback.
 RUN npm install --global --prefix /usr/local \
         @openai/codex@latest \
+        @anthropic-ai/claude-code@latest \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
@@ -403,6 +406,7 @@ RUN npm install --global --prefix /usr/local \
         --no-fund \
         --no-audit \
     && codex --version \
+    && claude --version \
     && opencode --version \
     && nanocoder --version
 
