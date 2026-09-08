@@ -58,84 +58,25 @@ jobs:
           - editmode
           - playmode
     steps:
-      - name: Remove stale Unity editor validator
-        timeout-minutes: 2
-        shell: pwsh -NoProfile -Command ". '{0}'"
-        run: |
-          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\', '/')
-          $parent = [IO.Path]::GetFullPath((Join-Path $workspace '.ci'))
-          $target = [IO.Path]::GetFullPath((Join-Path $parent 'unity-helpers'))
-          if (-not $target.StartsWith("$workspace\", [StringComparison]::OrdinalIgnoreCase)) {
-            throw 'Validator checkout path escaped the workspace.'
-          }
-          if (Test-Path -LiteralPath $parent) {
-            $parentItem = Get-Item -LiteralPath $parent -Force
-            if (($parentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-              throw 'Validator checkout parent is a reparse point.'
-            }
-          }
-          if (Test-Path -LiteralPath $target) {
-            $targetItem = Get-Item -LiteralPath $target -Force
-            if (($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-              $targetItem.Delete()
-            } else {
-              Remove-Item -LiteralPath $target -Recurse -Force
-            }
-          }
-          if (Test-Path -LiteralPath $target) {
-            throw 'Validator checkout directory could not be removed.'
-          }
-
-      - name: Checkout trusted Unity editor validator
-        timeout-minutes: 5
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        env:
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: core.hooksPath
-          GIT_CONFIG_VALUE_0: /dev/null
-          GIT_CONFIG_NOSYSTEM: 1
-          GIT_CONFIG_GLOBAL: /dev/null
-        with:
-          repository: Ambiguous-Interactive/unity-helpers
-          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
-          path: .ci/unity-helpers
-          persist-credentials: false
-          clean: true
-          set-safe-directory: false
-
+      # Contract item 3: the central immutable gate validates the runner-owned
+      # editor before any credential reference or checkout. CI never installs,
+      # repairs, or provisions an editor; a missing or unhealthy editor is an
+      # offline runner-maintenance failure. The editor check exposes its
+      # validated executable itself, so the former unity-helpers validator
+      # checkout, binding step, and diagnostics upload are gone. The profile is
+      # the reviewed static matrix.test-mode map (EditorOnly for the
+      # editmode/playmode legs).
       - name: Require manually installed Unity editor
+        id: ensure_unity_editor
         timeout-minutes: 10
-        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
-        run: |
-          & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} `
-            -DiagnosticsPath (Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation') `
-            -CiManagedOnly `
-            -RequireHealthyExisting
-
-      - name: Bind validated Unity editor
-        timeout-minutes: 2
-        shell: pwsh
-        run: |
-          # ensure-editor writes this summary from a finally block, so the evidence
-          # exists for a failed gate too, and writing it under RUNNER_TEMP keeps it
-          # out of reach of the repository checkout that follows.
-          $source = Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation\ensure-editor-summary.json'
-          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "Unity editor validation evidence was not written: $source"
-          }
-          $summary = Get-Content -LiteralPath $source -Raw | ConvertFrom-Json
-          $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'))
-          # A summary written by a failed gate can record no editor at all, and
-          # GetFullPath('') throws an ArgumentException instead of saying so.
-          $recorded = [string]$summary.editorPath
-          $actual = if ($recorded) { [IO.Path]::GetFullPath($recorded) } else { '(none recorded)' }
-          if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Validated editor '$actual' did not match the canonical editor '$expected'."
-          }
-          "UNITY_EDITOR_PATH=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@64bac446903115134dca8235410b332bc5a83547 # v1.14.0
+        with:
+          unity-version: ${{ matrix.unity-version }}
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }}
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
 
       - name: Enable Git long paths
         timeout-minutes: 2
@@ -239,28 +180,6 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact sensitive data from Unity benchmark artifacts
-        id: redact_validation
-        # Require this run's Node and dependency install, not files left by a previous run.
-        # An aborted install must also skip uploads, which require successful redaction.
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: |
-            ${{ runner.temp }}/dx-unity-editor-validation
-            .artifacts/unity
-
-      - name: Upload Unity editor validation diagnostics
-        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
-        timeout-minutes: 5
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: unity-benchmark-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: ${{ runner.temp }}/dx-unity-editor-validation
-          if-no-files-found: warn
-          retention-days: 90
-
       - name: Run Unity Test Runner
         id: run_tests
         if: ${{ steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -342,7 +261,6 @@ jobs:
         uses: ./.github/actions/redact-unity-artifacts
         with:
           paths: |
-            ${{ runner.temp }}/dx-unity-editor-validation
             .artifacts/unity
 
       - name: Upload benchmark artifacts
@@ -400,19 +318,12 @@ jobs:
         timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@64bac446903115134dca8235410b332bc5a83547
         with:
-          # A leg that aborts before `Acquire organization Unity lock` runs never
-          # took a seat, and this gate's own contract treats `acquired: false` as
-          # proof that licensed cleanup was not required. Feeding it the skipped
-          # step's EMPTY output instead made it fail closed on work that never
-          # started, so a leg with one honest failure reported two (#327).
-          #
-          # This does not weaken the gate. It reads `outcome`, not `acquired`, and
-          # only the two values that prove the step never executed map to 'false'.
-          # An acquire that RAN and failed part-way reports outcome=failure while
-          # `acquired` reads empty, so the empty value still flows through and the
-          # gate still fails -- that ambiguous shape is the seat leak the bare
-          # `if: always()` above exists to catch, and it stays caught.
-          acquired: ${{ (steps.acquire_lock.outcome == 'skipped' || steps.acquire_lock.outcome == '') && 'false' || steps.acquire_lock.outputs.acquired }}
+          # Typed binding to the one acquire step, exactly as the enrollment
+          # contract requires. A leg that aborts before acquire ran reports an
+          # empty output, and the gate itself treats missing or invalid
+          # acquisition state as fail-closed; only the literal `acquired=false`
+          # from a completed acquire marks cleanup as not applicable.
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
           cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
           cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}

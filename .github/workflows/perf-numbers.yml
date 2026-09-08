@@ -65,6 +65,26 @@ on:
       - docs/architecture/performance.md
       - docs/architecture/perf-baseline.csv
       - docs/architecture/perf-baseline-profile.json
+      # Documentation-only pull requests never reach this workflow, so they never
+      # need the licensed benchmark legs. Keep this list in lockstep with the
+      # documentation-only pattern that unity-tests.yml declares.
+      - "docs/**"
+      - ".docs-tests/**"
+      - "progress/**"
+      - ".llm/**"
+      - ".agents/**"
+      - ".claude/**"
+      - "Samples~/**/*.md"
+      - "Samples~/**/*.markdown"
+      - "AGENTS.md"
+      - "GOAL.md"
+      - "PLAN.md"
+      - "llms.txt"
+      - "mkdocs.yml"
+      - "requirements-docs.in"
+      - "requirements-docs.txt"
+      - "requirements-brand.in"
+      - "requirements-brand.txt"
   workflow_dispatch:
 
 # Serialize merge-path runs on the same ref so two post-merge push jobs from
@@ -140,19 +160,20 @@ jobs:
     name: Self-hosted runner registration preflight
     # Runs on GitHub-hosted infrastructure before the self-hosted matrix can
     # queue. The dedicated reader App makes missing inventory a hard failure.
+    #
+    # Dependabot and fork pull requests are excluded for the same reason the
+    # licensed benchmark job is: their jobs read from the separate Dependabot or
+    # fork secret store, so `secrets.BUILD_LOCK_READER_APP_ID` resolves empty
+    # and the fail-closed preflight aborts before it can check anything. This
+    # exact guard expression is the enrollment policy's trusted-revision shape
+    # and is checked verbatim by the organization audit.
     needs:
       - head-check
     if: >-
       ${{
-        needs.head-check.outputs.superseded != 'true' &&
-        needs.head-check.outputs.relevant != 'false' &&
-        (
-          github.event_name != 'pull_request' ||
-          (
-            github.event.pull_request.head.repo.full_name == github.repository &&
-            github.event.pull_request.user.login != 'dependabot[bot]'
-          )
-        )
+        github.event_name != 'pull_request' ||
+        (github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -203,14 +224,22 @@ jobs:
     name: Perf benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-suite }}
     needs:
       - runner-preflight
-    # Licensed Unity runs only for protected code, controlled dispatches, and trusted
-    # same-repository pull requests. Fork and Dependabot pull requests cannot
-    # reach this job or its Unity/build-lock credentials.
+    # Licensed Unity runs only for protected code, controlled dispatches, and
+    # trusted same-repository pull requests. Fork and Dependabot pull requests
+    # cannot reach this job or its Unity/build-lock credentials. This exact
+    # guard expression is the enrollment policy's trusted-revision shape and is
+    # checked verbatim by the organization audit. A superseded pull-request run
+    # still starts, but aborts at the `Require current PR head before
+    # self-hosted setup` guard before any expensive setup.
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
+      }}
     # Both published matrix entries use isolated Standalone IL2CPP Release players.
     # Pinned to ELI-MACHINE via the `fast` label (the only self-hosted Windows
     # runner carrying it). Keep in sync with the preflight REQUIRED_LABELS.
-    env:
-      MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
     timeout-minutes: 900
     strategy:
@@ -243,84 +272,25 @@ jobs:
           pull-request-number: ${{ github.event.pull_request.number }}
           expected-head-sha: ${{ github.event.pull_request.head.sha }}
 
-      - name: Remove stale Unity editor validator
-        timeout-minutes: 2
-        shell: pwsh -NoProfile -Command ". '{0}'"
-        run: |
-          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\', '/')
-          $parent = [IO.Path]::GetFullPath((Join-Path $workspace '.ci'))
-          $target = [IO.Path]::GetFullPath((Join-Path $parent 'unity-helpers'))
-          if (-not $target.StartsWith("$workspace\", [StringComparison]::OrdinalIgnoreCase)) {
-            throw 'Validator checkout path escaped the workspace.'
-          }
-          if (Test-Path -LiteralPath $parent) {
-            $parentItem = Get-Item -LiteralPath $parent -Force
-            if (($parentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-              throw 'Validator checkout parent is a reparse point.'
-            }
-          }
-          if (Test-Path -LiteralPath $target) {
-            $targetItem = Get-Item -LiteralPath $target -Force
-            if (($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-              $targetItem.Delete()
-            } else {
-              Remove-Item -LiteralPath $target -Recurse -Force
-            }
-          }
-          if (Test-Path -LiteralPath $target) {
-            throw 'Validator checkout directory could not be removed.'
-          }
-
-      - name: Checkout trusted Unity editor validator
-        timeout-minutes: 5
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        env:
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: core.hooksPath
-          GIT_CONFIG_VALUE_0: /dev/null
-          GIT_CONFIG_NOSYSTEM: 1
-          GIT_CONFIG_GLOBAL: /dev/null
-        with:
-          repository: Ambiguous-Interactive/unity-helpers
-          ref: 76712db791093a9c6b2eccdd9c7bd1b4f1cdb24d
-          path: .ci/unity-helpers
-          persist-credentials: false
-          clean: true
-          set-safe-directory: false
-
+      # Contract item 3: the central immutable gate validates the runner-owned
+      # editor before any credential reference or checkout. CI never installs,
+      # repairs, or provisions an editor; a missing or unhealthy editor is an
+      # offline runner-maintenance failure. The editor check exposes its
+      # validated executable itself, so the former unity-helpers validator
+      # checkout, binding step, and diagnostics upload are gone. The profile is
+      # the reviewed static matrix.test-mode map (StandaloneWindowsIl2Cpp for
+      # the standalone legs).
       - name: Require manually installed Unity editor
+        id: ensure_unity_editor
         timeout-minutes: 10
-        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
-        run: |
-          & "$env:GITHUB_WORKSPACE/.ci/unity-helpers/scripts/unity/ensure-editor.ps1" `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -InstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -ProvisioningProfile ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }} `
-            -DiagnosticsPath (Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation') `
-            -CiManagedOnly `
-            -RequireHealthyExisting
-
-      - name: Bind validated Unity editor
-        timeout-minutes: 2
-        shell: pwsh
-        run: |
-          # ensure-editor writes this summary from a finally block, so the evidence
-          # exists for a failed gate too, and writing it under RUNNER_TEMP keeps it
-          # out of reach of the repository checkout that follows.
-          $source = Join-Path $env:RUNNER_TEMP 'dx-unity-editor-validation\ensure-editor-summary.json'
-          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "Unity editor validation evidence was not written: $source"
-          }
-          $summary = Get-Content -LiteralPath $source -Raw | ConvertFrom-Json
-          $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3\${{ matrix.unity-version }}\Editor\Unity.exe'))
-          # A summary written by a failed gate can record no editor at all, and
-          # GetFullPath('') throws an ArgumentException instead of saying so.
-          $recorded = [string]$summary.editorPath
-          $actual = if ($recorded) { [IO.Path]::GetFullPath($recorded) } else { '(none recorded)' }
-          if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Validated editor '$actual' did not match the canonical editor '$expected'."
-          }
-          "UNITY_EDITOR_PATH=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@64bac446903115134dca8235410b332bc5a83547 # v1.14.0
+        with:
+          unity-version: ${{ matrix.unity-version }}
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }}
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
 
       - name: Enable Git long paths
         timeout-minutes: 2
@@ -334,6 +304,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+          MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         with:
           lfs: true
           persist-credentials: false
@@ -481,28 +452,6 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Redact sensitive data from Unity perf artifacts
-        id: redact_validation
-        # Require this run's Node and dependency install, not files left by a previous run.
-        # An aborted install must also skip uploads, which require successful redaction.
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: |
-            ${{ runner.temp }}/dx-unity-editor-validation
-            .artifacts/unity
-
-      - name: Upload Unity editor validation diagnostics
-        if: ${{ always() && steps.redact_validation.outcome == 'success' }}
-        timeout-minutes: 5
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: perf-editor-validation-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
-          path: ${{ runner.temp }}/dx-unity-editor-validation
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Run comparison contracts
         id: run_contracts
         if: ${{ matrix.benchmark-suite == 'comparisons' && steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -549,7 +498,6 @@ jobs:
         uses: ./.github/actions/redact-unity-artifacts
         with:
           paths: |
-            ${{ runner.temp }}/dx-unity-editor-validation
             .artifacts/unity
 
       - name: Upload comparison contract artifacts
@@ -584,6 +532,7 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           DX_PERF_COMMIT: ${{ env.MEASURED_SHA }}
           DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison' }}
           DXM_PERF_AFFINITY_MASK: ${{ steps.cpu_profile.outputs.affinity-mask }}
@@ -665,6 +614,8 @@ jobs:
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
+        env:
+          MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-internal'
           $playerDir = Join-Path $projectPath 'Build\DxmTestPlayer'
@@ -1250,7 +1201,6 @@ jobs:
         uses: ./.github/actions/redact-unity-artifacts
         with:
           paths: |
-            ${{ runner.temp }}/dx-unity-editor-validation
             .artifacts/unity
 
       - name: Upload perf benchmark artifacts
@@ -1308,19 +1258,12 @@ jobs:
         timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@64bac446903115134dca8235410b332bc5a83547
         with:
-          # A leg that aborts before `Acquire organization Unity lock` runs never
-          # took a seat, and this gate's own contract treats `acquired: false` as
-          # proof that licensed cleanup was not required. Feeding it the skipped
-          # step's EMPTY output instead made it fail closed on work that never
-          # started, so a leg with one honest failure reported two (#327).
-          #
-          # This does not weaken the gate. It reads `outcome`, not `acquired`, and
-          # only the two values that prove the step never executed map to 'false'.
-          # An acquire that RAN and failed part-way reports outcome=failure while
-          # `acquired` reads empty, so the empty value still flows through and the
-          # gate still fails -- that ambiguous shape is the seat leak the bare
-          # `if: always()` above exists to catch, and it stays caught.
-          acquired: ${{ (steps.acquire_lock.outcome == 'skipped' || steps.acquire_lock.outcome == '') && 'false' || steps.acquire_lock.outputs.acquired }}
+          # Typed binding to the one acquire step, exactly as the enrollment
+          # contract requires. A leg that aborts before acquire ran reports an
+          # empty output, and the gate itself treats missing or invalid
+          # acquisition state as fail-closed; only the literal `acquired=false`
+          # from a completed acquire marks cleanup as not applicable.
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
           cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
           cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
@@ -1336,37 +1279,39 @@ jobs:
 
   perf-unity-success:
     name: Performance Unity Success
+    # Exactly always() -- NEVER a falsifiable job-level if. A skipped required
+    # check counts as passing and the latest run on a SHA wins, so a guard that
+    # can be false on a pull_request could launder a red/pending gate into a
+    # false green. The step below is the enrollment policy's closed trusted-skip
+    # shape: fork and Dependabot pull requests skip both the preflight and the
+    # licensed benchmarks (neither can read the organization secrets those jobs
+    # require), and every other trusted run must have executed the benchmark
+    # matrix successfully. Documentation-only pull requests never trigger this
+    # workflow at all (the pull_request paths-ignore decides that before any
+    # job runs), and a superseded pull-request run fails its per-leg head guard
+    # before it can reach the lock.
     if: always()
     needs:
-      - head-check
       - runner-preflight
       - perf-benchmarks
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      TRUSTED_PR: >-
-        ${{
-          github.event_name != 'pull_request' ||
-          (
-            github.event.pull_request.head.repo.full_name == github.repository &&
-            github.event.pull_request.user.login != 'dependabot[bot]'
-          )
-        }}
-      SUPERSEDED: ${{ needs.head-check.outputs.superseded }}
-      RELEVANT: ${{ needs.head-check.outputs.relevant }}
     steps:
       - name: Require complete performance validation
         shell: bash
+        env:
+          RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
+          UNITY_TESTS_RESULT: ${{ needs.perf-benchmarks.result }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           set -euo pipefail
-          test "${{ needs.head-check.result }}" = success
-          if [ "${SUPERSEDED}" = "true" ] || [ "${RELEVANT}" = "false" ] || [ "${TRUSTED_PR}" != "true" ]; then
-            test "${{ needs.runner-preflight.result }}" = skipped
-            test "${{ needs.perf-benchmarks.result }}" = skipped
-            echo "Licensed performance benchmarks skip superseded, documentation-only, or untrusted pull requests."
+          if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+            test "${UNITY_TESTS_RESULT}" = skipped
           else
-            test "${{ needs.runner-preflight.result }}" = success
-            test "${{ needs.perf-benchmarks.result }}" = success
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = success
           fi
 
   comment-perf-doc:
