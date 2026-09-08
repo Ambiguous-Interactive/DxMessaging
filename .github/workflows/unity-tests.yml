@@ -290,7 +290,9 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@64bac446903115134dca8235410b332bc5a83547 # v1.14.0
         with:
           lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-all-modes
+          # Every matrix axis is part of the holder identity, so each expanded
+          # leg owns a distinct lock holder.
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}-all-modes
           runner-id: ${{ runner.name }}
           github-token: ${{ github.token }}
           pull-request-number: ${{ github.event.pull_request.number }}
@@ -694,7 +696,7 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@64bac446903115134dca8235410b332bc5a83547 # v1.14.0
         with:
           lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-all-modes
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}-all-modes
           runner-id: ${{ runner.name }}
           resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
           resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
