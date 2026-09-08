@@ -1,0 +1,84 @@
+name: Unity Docs Gate
+
+# The repository ruleset requires the "Unity CI Success" context on every pull
+# request into master. unity-tests.yml decides its documentation-only skip with
+# pull_request paths-ignore, so that workflow is absent (never red, just absent)
+# for a documentation-only pull request and the required context would hang.
+# This workflow has NO paths filter, so it is present on every pull request and
+# reports the same context name:
+#
+# - Every changed file matches the exact documentation-only allowlist that
+#   unity-tests.yml paths-ignore declares: the licensed matrix did not trigger,
+#   so this gate reports the same skip-green that the master head-check job
+#   used to decide in-band.
+# - Anything else changed: this gate fails closed. It never reports success,
+#   because the licensed matrix owns that result; unity-tests.yml reports the
+#   authoritative "Unity CI Success" check for those pull requests and the
+#   latest report wins.
+#
+# Because the two workflows share the context name, re-running this workflow
+# manually on a code pull request reports a red duplicate until the
+# unity-tests aggregate runs again. That is fail-closed and visible; it never
+# masks the licensed result.
+on:
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: unity-docs-gate-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  unity-ci-success:
+    name: Unity CI Success
+    # Exactly always() -- the required check must be present on every pull
+    # request, so this job can never carry a falsifiable condition. The
+    # documentation-only decision lives inside the single step and fails
+    # closed: a lookup failure or an unexpected listing reports red instead of
+    # a skip.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Report the documentation-only Unity result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
+            echo "::error::This gate evaluates pull requests only; refusing to infer a Unity result from ${EVENT_NAME}."
+            exit 1
+          fi
+          # Include previous_filename so a rename reports both endpoints and
+          # cannot smuggle a renamed code file past the allowlist.
+          if ! files="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)')"; then
+            echo "::error::Changed-file lookup failed; the required Unity gate cannot prove a documentation-only change."
+            exit 1
+          fi
+          if [ -z "${files}" ]; then
+            echo "::error::The changed-file listing is empty; refusing to report a documentation-only skip."
+            exit 1
+          fi
+          # SYNC: this allowlist must stay equivalent to the pull_request
+          # paths-ignore list in unity-tests.yml, so this gate reports green
+          # exactly when that workflow is absent. scripts/__tests__/ci-aggregate-workflow.test.js
+          # asserts the lockstep and the path vectors.
+          documentation_only_pattern='^(docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)$|(AGENTS|GOAL|PLAN)\.md$|llms\.txt$|mkdocs\.yml$|requirements-(docs|brand)\.(in|txt)$)'
+          non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
+          if [ -n "${non_documentation}" ]; then
+            echo "::error::Non-documentation files changed; the licensed Unity result for this pull request comes from the unity-tests workflow, not this docs gate."
+            printf '%s\n' "${non_documentation}" | sed -n '1,20p'
+            exit 1
+          fi
+          echo "::notice::Only documentation and agent-context files changed; unity-tests is path-filtered for this pull request, so this gate reports the documentation-only skip-green."

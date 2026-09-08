@@ -67,7 +67,8 @@ on:
       - docs/architecture/perf-baseline-profile.json
       # Documentation-only pull requests never reach this workflow, so they never
       # need the licensed benchmark legs. Keep this list in lockstep with the
-      # documentation-only pattern that unity-tests.yml declares.
+      # documentation-only pattern that unity-tests.yml declares and that
+      # unity-docs-gate.yml evaluates for the required Unity context.
       - "docs/**"
       - ".docs-tests/**"
       - "progress/**"
@@ -458,6 +459,7 @@ jobs:
         timeout-minutes: 30
         shell: pwsh
         env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -528,6 +530,7 @@ jobs:
         timeout-minutes: 180
         shell: pwsh
         env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}

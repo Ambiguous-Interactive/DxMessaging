@@ -6,8 +6,11 @@ on:
       - master
     # Documentation-only pull requests never reach this workflow, so they never
     # need the licensed Unity matrix: the docs-only skip that head-check used to
-    # decide in-band is now decided by the trigger itself. Keep this list in
-    # lockstep with the documentation-only pattern that perf-numbers.yml uses.
+    # decide in-band is now decided by the trigger itself. The required
+    # "Unity CI Success" context still reports for those pull requests through
+    # unity-docs-gate.yml, which evaluates the same closed documentation-only
+    # allowlist. Keep this list in lockstep with that workflow and with the
+    # documentation-only pattern that perf-numbers.yml uses.
     paths-ignore:
       - "docs/**"
       - ".docs-tests/**"
@@ -128,6 +131,15 @@ jobs:
           - 2022.3.45f1
           - 6000.3.16f1
           - 6000.5.2f1
+        # Every leg of this job also builds the standalone IL2CPP player, so the
+        # reviewed static map keeps the editor gate verifying the
+        # StandaloneWindowsIl2Cpp payload at gate time. A literal EditorOnly
+        # profile here would let a leg reach the organization lock without the
+        # IL2CPP modules its player build needs (#333). The enrollment audit
+        # accepts exactly this map expression, keyed by a literal test-mode
+        # axis, and no other dynamic form.
+        test-mode:
+          - standalone
     steps:
       - name: Require current PR head before setup
         timeout-minutes: 2
@@ -140,9 +152,10 @@ jobs:
       # Contract item 3: the central immutable gate validates the runner-owned
       # editor before any credential reference or checkout. CI never installs,
       # repairs, or provisions an editor; a missing or unhealthy editor is an
-      # offline runner-maintenance failure. The editor check exposes its
-      # validated executable itself, so the former unity-helpers validator
-      # checkout, binding step, and diagnostics upload are gone.
+      # offline runner-maintenance failure. The gate exposes the validated
+      # executable through its editor-path output, and every Unity-consuming
+      # step below binds it as UNITY_EDITOR_PATH step env, so the licensed work
+      # runs the exact editor the gate validated.
       - name: Require manually installed Unity editor
         id: ensure_unity_editor
         timeout-minutes: 10
@@ -150,7 +163,7 @@ jobs:
         with:
           unity-version: ${{ matrix.unity-version }}
           install-root: ${{ runner.tool_cache }}\u6-v3
-          provisioning-profile: EditorOnly
+          provisioning-profile: ${{ fromJSON('{"editmode":"EditorOnly","playmode":"EditorOnly","standalone":"StandaloneWindowsIl2Cpp"}')[matrix.test-mode] }}
           diagnostics-path: unity-editor-check.json
           ci-managed-only: true
           require-healthy-existing: true
@@ -300,6 +313,7 @@ jobs:
         timeout-minutes: 90
         shell: pwsh
         env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -328,6 +342,7 @@ jobs:
         timeout-minutes: 90
         shell: pwsh
         env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -356,6 +371,7 @@ jobs:
         timeout-minutes: 150
         shell: pwsh
         env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -377,7 +393,7 @@ jobs:
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
 
-      # Weekly or explicitly requested runs cover semantic and 1/16/256/1000-message
+      # Explicitly requested dispatch runs cover semantic and 1/16/256/1000-message
       # shipping topologies at every stripping level on the endpoint editors. Keep the
       # group last because each cell builds another IL2CPP player, and the
       # central cleanup action below returns the final activation before the
@@ -396,6 +412,7 @@ jobs:
         timeout-minutes: 150
         shell: pwsh
         env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -721,9 +738,10 @@ jobs:
   # licensed matrix (neither can read the organization secrets those jobs
   # require), and every other trusted run must have executed Unity
   # successfully. Documentation-only pull requests never trigger this workflow
-  # at all (the pull_request paths-ignore decides that before any job runs),
-  # and a superseded pull-request run fails its per-leg head guard before it
-  # can reach the lock.
+  # (the pull_request paths-ignore decides that before any job runs), and for
+  # those runs unity-docs-gate.yml reports the same "Unity CI Success" context
+  # green, so the required check never goes absent. A superseded pull-request
+  # run fails its per-leg head guard before it can reach the lock.
   unity-ci-success:
     name: Unity CI Success
     permissions:
