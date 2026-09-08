@@ -306,23 +306,6 @@ try {
     Assert-That 'silent child is not attributed to wall clock' (-not $result.TimedOutWallClock)
     Assert-That 'silent child exit is confirmed' $result.DirectChildExited
 
-    $noisyForever = @'
-while ($true) {
-    Write-Output 'still alive'
-    Start-Sleep -Milliseconds 100
-}
-'@
-    $result = Invoke-UnityCliCaptureWithTimeout `
-        -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $noisyForever)) `
-        -TimeoutSeconds 1 `
-        -StallSeconds 5
-    Assert-That 'endless noisy child fails' (-not $result.Success)
-    Assert-That 'endless noisy child receives wall-clock sentinel 124' ($result.ExitCode -eq 124)
-    Assert-That 'endless noisy child is not attributed to heartbeat' (-not $result.StallKilled)
-    Assert-That 'endless noisy child is attributed to wall clock' $result.TimedOutWallClock
-    Assert-That 'endless noisy child exit is confirmed' $result.DirectChildExited
-    Assert-That 'endless noisy child emitted activity before its deadline' (@($result.Output).Count -gt 0)
-
     # cspell:ignore libc
     $closedPipes = @'
 Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class NativePipeClose { [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int id); [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle); [DllImport("libc")] private static extern int close(int fd); public static void Close() { if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) { CloseHandle(GetStdHandle(-11)); CloseHandle(GetStdHandle(-12)); } else { close(1); close(2); } } }'
@@ -464,6 +447,18 @@ while ($true) {
         $wallClockProbe.Result.TimedOutWallClock
     )
     Assert-That 'wrapper wall-clock termination removes the descendant' $wallClockProbe.Removed
+
+    # 2026-09-08: Reuse the noisy tree probe for the wall-clock result contract. The former
+    # separate one-second probe could kill pwsh during startup before it emitted anything.
+    # Keep every assertion on the existing integration result without adding another process
+    # or extending either guard. Require the loop's marker, not merely any startup output.
+    $result = $wallClockProbe.Result
+    Assert-That 'endless noisy child fails' (-not $result.Success)
+    Assert-That 'endless noisy child receives wall-clock sentinel 124' ($result.ExitCode -eq 124)
+    Assert-That 'endless noisy child is not attributed to heartbeat' (-not $result.StallKilled)
+    Assert-That 'endless noisy child is attributed to wall clock' $result.TimedOutWallClock
+    Assert-That 'endless noisy child exit is confirmed' $result.DirectChildExited
+    Assert-That 'endless noisy child emitted activity before its deadline' (@($result.Output) -contains 'working')
 
     $secondAttemptSuccess = New-FakeTerminationProcess -ExitOnSecondWait $true
     $confirmation = Confirm-UnityCliDirectChildExit -Process $secondAttemptSuccess
