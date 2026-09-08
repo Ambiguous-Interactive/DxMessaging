@@ -768,10 +768,27 @@ jobs:
             npm i --no-audit --no-fund
           fi
 
-      - name: Run script tests
+      - name: Run script tests and Unity editor heartbeat guards
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: bash
-        run: node --test scripts/
+        run: |
+          # The heartbeat probes wait on isolated child processes; overlap those waits with Node tests.
+          heartbeat_log="$RUNNER_TEMP/unity-editor-heartbeat.log"
+          pwsh -NoLogo -NoProfile -File ./scripts/__tests__/test-editor-provisioning-heartbeat.ps1 -VerboseOutput > "$heartbeat_log" 2>&1 &
+          heartbeat_pid=$!
+          # Let the probes finish their descendant cleanup even if this shell exits early.
+          trap 'wait "$heartbeat_pid" || true' EXIT
+          script_status=0
+          node --test scripts/ || script_status=$?
+          heartbeat_status=0
+          wait "$heartbeat_pid" || heartbeat_status=$?
+          echo "::group::Unity editor heartbeat guards"
+          cat "$heartbeat_log"
+          echo "::endgroup::"
+          if [ "$script_status" -ne 0 ] || [ "$heartbeat_status" -ne 0 ]; then
+            echo "::error::Script tests exited $script_status; heartbeat guards exited $heartbeat_status."
+            exit 1
+          fi
 
       - name: Test Unity retry policies
         if: ${{ needs.changes.outputs.scripts != 'false' }}
@@ -782,11 +799,6 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: pwsh
         run: ./scripts/__tests__/test-msvc-toolchain.ps1 -VerboseOutput
-
-      - name: Test Unity editor heartbeat guards
-        if: ${{ needs.changes.outputs.scripts != 'false' }}
-        shell: pwsh
-        run: ./scripts/__tests__/test-editor-provisioning-heartbeat.ps1 -VerboseOutput
 
       - name: Run validators
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}

@@ -649,10 +649,10 @@ namespace DxMessaging.Tests.Runtime
             using EmissionCapture capture = new(this);
             if (untypedRoute)
             {
-                // These are caller-visible values through the untyped boundary. The
-                // interface argument cannot marshal struct mutations back to the call
-                // site, so the recorded values pin the boundary's original payload and
-                // context, including when dispatch throws.
+                // Record the original boxed struct and caller context after the untyped
+                // bus call, including when dispatch throws. Production bridges unbox a
+                // separate local and receive context by value, so this does not observe
+                // their internal final payload/context or call extension methods.
                 switch (scenario.Kind)
                 {
                     case MessageKind.Untargeted:
@@ -714,8 +714,8 @@ namespace DxMessaging.Tests.Runtime
         }
 
         // These are caller-visible typed ref values, including when dispatch throws.
-        // Untyped APIs and extension methods' value-context boundaries are observed
-        // separately by the untyped route above.
+        // The untyped route above records its caller's original box and context;
+        // internal untyped final values and extension-method boundaries remain unobserved.
         private void EmitTyped(
             MessageScenario scenario,
             InstanceId context,

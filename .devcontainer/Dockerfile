@@ -55,8 +55,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         wget \
         ca-certificates \
         shellcheck \
-        bubblewrap \
-        socat \
         curl \
         gnupg \
         apt-transport-https \
@@ -398,7 +396,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # refresh them without sudo while keeping these copies as the offline fallback.
 RUN npm install --global --prefix /usr/local \
         @openai/codex@latest \
-        @anthropic-ai/claude-code@latest \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
@@ -406,7 +403,6 @@ RUN npm install --global --prefix /usr/local \
         --no-fund \
         --no-audit \
     && codex --version \
-    && claude --version \
     && opencode --version \
     && nanocoder --version
 
@@ -604,4 +600,16 @@ ENV PATH="${PATH}:/home/vscode/.dotnet/tools"
 
 # Clean up
 WORKDIR /workspaces
+
+# Backend-only tools come last so their updates retain the shared toolchain cache.
+USER root
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        bubblewrap \
+        socat \
+    && npm install --global --prefix /usr/local --cache /tmp/dxm-backend-npm \
+        @anthropic-ai/claude-code@latest --no-fund --no-audit \
+    && rm -rf /tmp/dxm-backend-npm \
+    && claude --version
 USER vscode
