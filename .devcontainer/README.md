@@ -9,8 +9,8 @@ tools:
 - `@nanocollective/nanocoder`
 - `@z_ai/mcp-server`
 
-The image build installs the tools as user-scoped npm packages under
-`/usr/local`. Container creation and every subsequent start resolve the same
+The image build installs the tools as global npm packages under `/usr/local`.
+Container creation and every subsequent start resolve the same
 `latest` tags again and update only tools whose installed versions differ. The
 npm global prefix must stay writable by the current user; the refresh never
 invokes `sudo`.

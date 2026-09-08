@@ -135,6 +135,8 @@ TOML
     chmod 600 "${catalog_tmp}" "${profile_tmp}"
     mv "${catalog_tmp}" "${catalog_file}"
     mv "${profile_tmp}" "${profile_file}"
+    # The RETURN trap above only fires in this function's own frame (it is not
+    # inherited by other functions), so the successful mv leaves nothing to clean.
     trap - RETURN
 }
 
@@ -177,6 +179,8 @@ TOML
 
     chmod 600 "${profile_tmp}"
     mv "${profile_tmp}" "${profile_file}"
+    # The RETURN trap above only fires in this function's own frame (it is not
+    # inherited by other functions), so the successful mv leaves nothing to clean.
     trap - RETURN
 }
 
@@ -201,6 +205,13 @@ install_launchers() {
         target="${bin_dir}/${launcher}"
         if [ -e "${target}" ] && [ ! -L "${target}" ]; then
             die "Refusing to replace non-symlink launcher: ${target}"
+        fi
+        if [ -L "${target}" ] && [ -e "${target}" ]; then
+            # Own earlier launchers may dangle after a repository move; a symlink
+            # that still resolves to some other live file is not ours to replace.
+            if [ "$(realpath "${target}")" != "${script_path}" ]; then
+                die "Refusing to replace launcher symlink pointing elsewhere: ${target}"
+            fi
         fi
         ln -sfn "${script_path}" "${target}"
     done
@@ -316,7 +327,9 @@ resolve_claude_sandbox() {
 #   $1 base_url, $2 config_dir, $3 timeout_ms, $4 api_key_mode ("unset" or
 #   "blank"), $5 auth token, then the user arguments to forward to claude, then
 #   a literal "--", then NAME=VALUE environment assignments exported before
-#   exec.
+#   exec. The wrapper appends exactly one "--", so splitting at the LAST "--"
+#   forwards a user-supplied "--" to claude instead of exporting user arguments
+#   as environment variables.
 launch_claude_gateway() {
     local base_url="$1"
     local config_dir="$2"
@@ -327,17 +340,31 @@ launch_claude_gateway() {
     local -a claude_args=()
     local -a user_args=()
     local -a env_pairs=()
-    local arg collecting_pairs=0
+    local -a all_args=("$@")
+    local arg index separator=-1 total=${#all_args[@]}
 
-    while [ "$#" -gt 0 ]; do
-        if [ "${collecting_pairs}" = "0" ] && [ "$1" = "--" ]; then
-            collecting_pairs=1
-        elif [ "${collecting_pairs}" = "0" ]; then
-            user_args+=("$1")
-        else
-            env_pairs+=("$1")
+    # The wrapper appends exactly one "--", so the LAST "--" separates user
+    # arguments from the launcher's NAME=VALUE assignments. Earlier "--" values
+    # belong to the user and are forwarded verbatim.
+    for ((index = 0; index < total; ++index)); do
+        if [ "${all_args[index]}" = "--" ]; then
+            separator=${index}
         fi
-        shift
+    done
+    for ((index = 0; index < total; ++index)); do
+        if [ "${index}" -eq "${separator}" ]; then
+            continue
+        elif [ "${separator}" != "-1" ] && [ "${index}" -gt "${separator}" ]; then
+            env_pairs+=("${all_args[index]}")
+        else
+            user_args+=("${all_args[index]}")
+        fi
+    done
+    for arg in "${env_pairs[@]}"; do
+        case "${arg}" in
+            [A-Za-z_]*=*) ;;
+            *) die "Internal launcher error: expected NAME=VALUE after '--', got '${arg}'." ;;
+        esac
     done
 
     mkdir -p "${config_dir}"
@@ -474,10 +501,11 @@ CLAUDE_OPENROUTER_OPUS_MODEL and CLAUDE_OPENROUTER_SUBAGENT_MODEL
 (~anthropic/claude-sonnet-latest), CLAUDE_OPENROUTER_HAIKU_MODEL
 (~anthropic/claude-haiku-latest), CLAUDE_OPENROUTER_GATEWAY_DISCOVERY (0 or 1).
 
-Shared: ZAI_API_TIMEOUT_MS and CLAUDE_OPENROUTER_TIMEOUT_MS (default: five
-minutes), CLAUDE_ZAI_CONFIG_DIR, CLAUDE_OPENROUTER_CONFIG_DIR,
+Shared settings: CLAUDE_ZAI_CONFIG_DIR, CLAUDE_OPENROUTER_CONFIG_DIR,
 AI_BACKENDS_CONTAINER_MODE (auto, yes, or no), and
-CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB (auto, 0, or 1).
+CLAUDE_GATEWAY_SUBPROCESS_ENV_SCRUB (auto, 0, or 1). Per-launcher timeouts:
+ZAI_API_TIMEOUT_MS for claude-zai and CLAUDE_OPENROUTER_TIMEOUT_MS for
+claude-openrouter (default: five minutes).
 HELP
 }
 

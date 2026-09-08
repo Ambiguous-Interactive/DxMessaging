@@ -115,6 +115,40 @@ done
 
 [ "$(stat -c '%a' "${codex_home}/devcontainer-zai.config.toml")" = "600" ] \
     || fail "Codex Z.ai profile permissions are not 600"
+
+foreign_output="${test_root}/foreign-launcher.log"
+foreign_dir="${test_root}/foreign"
+mkdir -p "${foreign_dir}"
+printf '#!/usr/bin/env sh\nexit 0\n' >"${foreign_dir}/decoy"
+chmod 755 "${foreign_dir}/decoy"
+ln -s "${foreign_dir}/decoy" "${foreign_dir}/claude-zai"
+if AI_BACKENDS_BIN_DIR="${foreign_dir}" \
+    HOME="${test_home}" \
+    bash "${launcher_script}" install >"${foreign_output}" 2>&1; then
+    fail "install replaced a launcher symlink pointing at an unrelated program"
+fi
+grep -Eq 'Refusing to replace launcher symlink pointing elsewhere' "${foreign_output}" \
+    || fail "Foreign-symlink refusal did not provide actionable guidance"
+[ "$(readlink "${foreign_dir}/claude-zai")" = "${foreign_dir}/decoy" ] \
+    || fail "Foreign-symlink refusal modified the existing symlink"
+
+plain_output="${test_root}/plain-launcher.log"
+plain_dir="${test_root}/plain"
+mkdir -p "${plain_dir}"
+printf '#!/usr/bin/env sh\nexit 0\n' >"${plain_dir}/codex-zai"
+chmod 755 "${plain_dir}/codex-zai"
+if AI_BACKENDS_BIN_DIR="${plain_dir}" \
+    HOME="${test_home}" \
+    bash "${launcher_script}" install >"${plain_output}" 2>&1; then
+    fail "install replaced a non-symlink launcher file"
+fi
+grep -Eq 'Refusing to replace non-symlink launcher' "${plain_output}" \
+    || fail "Non-symlink refusal did not provide actionable guidance"
+if [ -f "${plain_dir}/codex-zai" ] && [ ! -L "${plain_dir}/codex-zai" ]; then
+    : # The refused launcher file must survive untouched.
+else
+    fail "Non-symlink refusal modified the existing launcher file"
+fi
 [ "$(stat -c '%a' "${codex_home}/devcontainer-openrouter.config.toml")" = "600" ] \
     || fail "Codex OpenRouter profile permissions are not 600"
 jq -e '.models[0].slug == "glm-5.3"' \
@@ -259,6 +293,21 @@ grep -Fq 'arg={"sandbox":{"enabled":false,"enableWeakerNestedSandbox":true}}' "$
 if grep -Eq 'test-secret|native-secret' "${claude_log}"; then
     fail "Claude credential leaked into arguments"
 fi
+
+# A user-supplied "--" must reach claude instead of becoming environment state,
+# while the launcher's own appended NAME=VALUE pairs still take effect.
+dash_dash_log="${test_root}/claude-dash-dash.log"
+PATH="${test_bin}:${launcher_bin}:/usr/bin:/bin" \
+HOME="${test_home}" \
+STUB_LOG="${dash_dash_log}" \
+ZAI_API_KEY="test-secret" \
+AI_BACKENDS_CONTAINER_MODE=yes \
+    "${launcher_bin}/claude-zai" -- --print "dash dash"
+tr '\n' ' ' <"${dash_dash_log}" |
+    grep -Fq 'arg=--settings arg={"sandbox":{"enabled":false,"enableWeakerNestedSandbox":true}} arg=-- arg=--print arg=dash dash' \
+    || fail "A user-supplied '--' was not forwarded verbatim to claude"
+grep -Eq '^haiku_model=glm-5.3-flash\[1m\]$' "${dash_dash_log}" \
+    || fail "Launcher NAME=VALUE pairs were lost when the user supplied '--'"
 
 claude_openrouter_log="${test_root}/claude-openrouter.log"
 PATH="${test_bin}:${launcher_bin}:/usr/bin:/bin" \
