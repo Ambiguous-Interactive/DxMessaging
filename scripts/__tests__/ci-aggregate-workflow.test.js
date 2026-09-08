@@ -9,6 +9,9 @@ const { spawnSync } = require("node:child_process");
 const { walkFiles } = require("../lib/repo-files.js");
 const {
   UNITY_LOCK_WINDOWS,
+  UNITY_EDITOR_PROFILES,
+  UNITY_EDITOR_CONSUMERS,
+  DOCS_ONLY_PATH_IGNORES,
   STATIC_CHILD_JOBS,
   CORRECTNESS_CATEGORY_FILTERS
 } = require("./workflow-test-vectors.json");
@@ -39,10 +42,11 @@ function resolveLockActionPin(actionNames) {
   return { sha: [...shas.keys()][0], comment: [...comments][0] || "" };
 }
 
-// Acquire, preflight, and the PR-head guard ship in the build-lock release.
-// Return/classify/release/require-confirmed carry the centralized cleanup policy.
+// Acquire, the editor gate, preflight, and the PR-head guard ship in the
+// build-lock release. Return/classify/release/require-confirmed carry the
+// centralized cleanup policy.
 // prettier-ignore
-const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
+const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head", "ensure-unity-editor"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
@@ -523,6 +527,13 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.equal(count, UNITY_LOCK_WINDOWS.length, action);
   }
 
+  // The central editor gate exposes the validated executable through its
+  // editor-path output. The invocation invariant: every Unity-consuming step
+  // binds that output as UNITY_EDITOR_PATH step env, so licensed work runs the
+  // exact editor the gate validated (the former "Bind validated Unity editor"
+  // run step became this typed output binding).
+  const editorPathBinding = "${{ steps.ensure_unity_editor.outputs.editor-path }}";
+
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
@@ -545,7 +556,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     }
 
     // prettier-ignore
-    const lifecycleNames = ["Require manually installed Unity editor", "Bind validated Unity editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", "Upload Unity editor validation diagnostics", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
+    const lifecycleNames = ["Require manually installed Unity editor", "Validate Unity license secrets", "Acquire organization Unity lock", "Require acquired Unity lock", licensedWorkName, "Return Unity license", "Classify Unity cleanup evidence", "Release organization Unity lock", "Require confirmed Unity cleanup"];
     const positions = lifecycleNames.map((name) => job.indexOf(`      - name: ${name}`));
     const sortedPositions = [...positions].sort((a, b) => a - b);
     assert.ok(
@@ -555,15 +566,20 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.deepEqual(positions, sortedPositions, `${label} lifecycle order`);
 
     // prettier-ignore
-    const [validationStep, bindingStep, credentialStep, acquireStep, requireStep, uploadStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
+    const [validationStep, credentialStep, acquireStep, requireStep, workStep, returnStep, classifyStep, releaseStep, gateStep] = lifecycleNames.map((name) => getStepBlock(job, name));
 
+    // The central immutable gate validates the runner-owned editor before any
+    // credential reference or checkout, stays success-dependent and
+    // failure-propagating, and refuses provisioning.
     // prettier-ignore
     const contracts = [
+      [validationStep, /\n        id: ensure_unity_editor\n/],
       [validationStep, /\n        timeout-minutes: 10\n/],
-      [validationStep, /shell: pwsh -NoProfile -NonInteractive -Command "\. '\{0\}'"/, `${label}: the gate must not inherit a runner profile`],
-      [validationStep, /\.ci\/unity-helpers\/scripts\/unity\/ensure-editor\.ps1[\s\S]*-InstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)[\s\S]*-DiagnosticsPath \(Join-Path \$env:RUNNER_TEMP 'dx-unity-editor-validation'\)[\s\S]*-CiManagedOnly[\s\S]*-RequireHealthyExisting/, `${label}: validation must pin the trusted editor root, refuse fallback installs, and write its evidence outside the workspace so a failed gate still uploads it`],
-      [bindingStep, /dx-unity-editor-validation\\ensure-editor-summary\.json'[\s\S]*ConvertFrom-Json[\s\S]*\[string\]::Equals\(\$actual, \$expected, \[StringComparison\]::OrdinalIgnoreCase\)[\s\S]*UNITY_EDITOR_PATH=\$expected/, `${label}: bind must read the preserved evidence, prove the canonical editor, then export the path`],
-      [uploadStep, /path: \$\{\{ runner\.temp \}\}\/dx-unity-editor-validation\n/, `${label}: evidence upload must not depend on a step that may never run`],
+      [validationStep, new RegExp(`uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}ensure-unity-editor@${LOCK_ACTION_SHA}([\\s\\n]|#)`)],
+      [validationStep, /install-root: \$\{\{ runner\.tool_cache \}\}\\u6-v3\n/, `${label}: the gate must pin the trusted editor root`],
+      [validationStep, /diagnostics-path: unity-editor-check\.json\n/, `${label}: the gate must write its diagnostics contract path`],
+      [validationStep, /ci-managed-only: true\n[\s\S]*require-healthy-existing: true\n/, `${label}: the gate must refuse fallback installs`],
+      [validationStep, new RegExp(`provisioning-profile: ${escapeRegExp(UNITY_EDITOR_PROFILES[file])}\\n`), `${label}: the gate must use the reviewed provisioning profile`],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
@@ -577,13 +593,32 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [gateStep, /\n        if: always\(\)\n        timeout-minutes: 2\n/],
       [gateStep, /classification-complete: \$\{\{ steps\.cleanup_classification\.outputs\.classification-complete \}\}/],
       [gateStep, /release-outcome: \$\{\{ steps\.release_unity_lock\.outcome \}\}/],
-      [getStepBlock(job, "Checkout trusted Unity editor validator"), /GIT_CONFIG_NOSYSTEM: 1[\s\S]*GIT_CONFIG_GLOBAL: \/dev\/null[\s\S]*repository: Ambiguous-Interactive\/unity-helpers[\s\S]*path: \.ci\/unity-helpers[\s\S]*persist-credentials: false[\s\S]*clean: true[\s\S]*set-safe-directory: false/, `${label}: isolated validator checkout must use the trusted closed shape`],
       ...(["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file) || jobId === "unity-checks" ? [[workStep, /-UnityInstallRoot \(Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'\)/, `${label}: licensed work and central return must use the same trusted editor root`]] : [])
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
 
-    assert.doesNotMatch(validationStep, /\n {8}if:|\b(?:install-modules|uninstall)\b/i, label);
+    assert.doesNotMatch(validationStep, /\n        if:/, `${label}: the editor gate must keep GitHub's implicit success chain`);
+    assert.doesNotMatch(validationStep, /\n        continue-on-error:/, `${label}: the editor gate must propagate failure`);
     assert.doesNotMatch(returnStep, /continue-on-error:/);
+
+    // Invocation invariant: the validated editor output reaches every
+    // Unity-consuming step as UNITY_EDITOR_PATH, in gate-then-consume order.
+    const parsedSteps = YAML.parse(job)[jobId].steps;
+    const gateIndex = parsedSteps.findIndex((step) => step.id === "ensure_unity_editor");
+    assert.ok(gateIndex >= 0, `${label}: editor gate step must exist`);
+    const consumers = UNITY_EDITOR_CONSUMERS.find(
+      ([candidateFile, candidateJobId]) => candidateFile === file && candidateJobId === jobId
+    );
+    assert.ok(consumers, `${label}: the contract must declare its Unity-consuming steps`);
+    for (const consumerId of consumers[2]) {
+      const consumerIndex = parsedSteps.findIndex((step) => step.id === consumerId);
+      assert.ok(consumerIndex > gateIndex, `${label}:${consumerId} must follow the editor gate`);
+      assert.equal(
+        parsedSteps[consumerIndex].env.UNITY_EDITOR_PATH,
+        editorPathBinding,
+        `${label}:${consumerId} must run the editor the gate validated`
+      );
+    }
 
     const acquireHolder = /holder-id-suffix: (.+)\n/.exec(acquireStep);
     const releaseHolder = /holder-id-suffix: (.+)\n/.exec(releaseStep);
@@ -637,131 +672,96 @@ test("Unity CI defers every post-activation return to the central action", () =>
 });
 
 test("licensed PR workflows fail closed and skip only documented non-code paths", () => {
-  for (const [file, aggregateId] of [
-    ["unity-tests.yml", "unity-ci-success"],
-    ["perf-numbers.yml", "perf-unity-success"]
-  ]) {
-    const source = readWorkflow(file);
-    const head = getJobBlock(source, "head-check", file);
-    const preflight = getJobBlock(source, "runner-preflight", file);
-    const aggregate = getJobBlock(source, aggregateId, file);
-    assert.match(head, /relevant: \$\{\{ steps\.head\.outputs\.relevant \}\}/);
-    assert.match(head, /Changed-file lookup failed; running licensed/);
-    assert.match(head, /echo "relevant=\$\{relevant\}" >> "\$\{GITHUB_OUTPUT\}"/);
-    const pattern = /documentation_only_pattern='([^']+)'/.exec(head);
-    const allowed = new RegExp(pattern?.[1] ?? "a^");
-    // prettier-ignore
-    for (const path of ["docs/index.md", ".docs-tests/DocsSnippetCompilationTests.cs", ".docs-tests/global.json", ".llm/context.md", "Samples~/Mini Combat/README.md", "GOAL.md", "requirements-docs.in", "requirements-docs.in.meta", "requirements-docs.txt", "requirements-docs.txt.meta", "requirements-brand.in", "requirements-brand.in.meta", "requirements-brand.txt", "requirements-brand.txt.meta"])
-      assert.match(path, allowed, `${file}: ${path}`);
-    // prettier-ignore
-    for (const path of [`.github/workflows/${file}`, "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "README.md"])
-      assert.doesNotMatch(path, allowed, `${file}: ${path}`);
-    assert.match(preflight, /needs\.head-check\.outputs\.relevant != 'false'/);
-    assert.match(aggregate, /RELEVANT: \$\{\{ needs\.head-check\.outputs\.relevant \}\}/);
-    assert.match(aggregate, /\[ "\$\{RELEVANT\}" = "false" \]/);
-    const gatedId = file === "unity-tests.yml" ? "unity-tests" : "comment-perf-doc";
-    const gated = getJobBlock(source, gatedId, file);
-    assert.match(gated, /needs\.head-check\.outputs\.relevant != 'false'/);
-  }
-  const unity = readWorkflow("unity-tests.yml");
-  const aggregate = getJobBlock(unity, "unity-ci-success", "unity-tests.yml");
-  for (const job of [
-    getJobBlock(unity, "runner-preflight", "unity-tests.yml"),
-    getJobBlock(unity, "unity-tests", "unity-tests.yml")
-  ]) {
+  // Documentation-only pull requests are skipped by the trigger filter itself.
+  // The allowlist must stay closed and mechanical.
+  const unityDocument = readWorkflowDocument("unity-tests.yml").toJS();
+  assert.deepEqual(
+    unityDocument.on.pull_request["paths-ignore"],
+    DOCS_ONLY_PATH_IGNORES
+  );
+
+  // unity-tests.yml is absent for those pull requests, so the companion gate
+  // keeps the required "Unity CI Success" context present by evaluating the
+  // same closed allowlist in-band.
+  const gateSource = readWorkflow("unity-docs-gate.yml");
+  const gateDocument = readWorkflowDocument("unity-docs-gate.yml").toJS();
+  assert.equal(gateDocument.on.pull_request.paths, undefined);
+  assert.equal(gateDocument.on.pull_request["paths-ignore"], undefined);
+  const gateJob = gateDocument.jobs["unity-ci-success"];
+  assert.equal(gateJob.name, "Unity CI Success");
+  assert.equal(gateJob.if, "${{ always() }}");
+  assert.equal(gateJob.steps.length, 1, "the docs gate is one fail-closed step");
+  const pattern = /documentation_only_pattern='([^']+)'/.exec(gateSource);
+  const allowed = new RegExp(pattern[1]);
+  // prettier-ignore
+  for (const file of ["docs/index.md", "docs/index.md.meta", ".docs-tests/DocsSnippetCompilationTests.cs", ".docs-tests/global.json", ".llm/context.md", "Samples~/Mini Combat/README.md", ".agents/skills/example/SKILL.md", ".claude/settings.json", "progress/2026-08-01-run.md", "GOAL.md", "llms.txt", "mkdocs.yml", "requirements-docs.in", "requirements-docs.txt", "requirements-brand.in", "requirements-brand.txt"])
+    assert.match(file, allowed, `docs-only ${file}`);
+  // The exact-name globs do not ignore .meta siblings: a pull request adding
+  // one of those touches a path unity-tests.yml still covers.
+  // prettier-ignore
+  for (const file of [".github/workflows/unity-tests.yml", "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "README.md", "AGENTS.md.meta", "requirements-docs.in.meta", "Samples~/Mini Combat/README.md.meta"])
+    assert.doesNotMatch(file, allowed, `non-ignored ${file}`);
+
+  // perf-numbers.yml keeps its in-band head freshness and relevance decisions.
+  const perfSource = readWorkflow("perf-numbers.yml");
+  const head = getJobBlock(perfSource, "head-check", "perf-numbers.yml");
+  assert.match(head, /relevant: \$\{\{ steps\.head\.outputs\.relevant \}\}/);
+  assert.match(head, /Changed-file lookup failed; running licensed/);
+  assert.match(head, /echo "relevant=\$\{relevant\}" >> "\$\{GITHUB_OUTPUT\}"/);
+  const perfAllowed = new RegExp(/documentation_only_pattern='([^']+)'/.exec(head)[1]);
+  assert.match("docs/index.md", perfAllowed);
+  assert.doesNotMatch("Runtime/Core/MessageBus.cs", perfAllowed);
+
+  const unitySource = readWorkflow("unity-tests.yml");
+  for (const jobId of ["runner-preflight", "unity-tests"]) {
+    const job = getJobBlock(unitySource, jobId, "unity-tests.yml");
     assert.match(job, /github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'/);
     assert.doesNotMatch(job, /github\.actor != 'dependabot\[bot\]'/);
   }
-  assert.match(
-    aggregate,
-    /DEPENDABOT_PR: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.user\.login == 'dependabot\[bot\]' \}\}/
-  );
   // prettier-ignore
-  assert.doesNotMatch(aggregate, /github\.actor == 'dependabot\[bot\]'/); assert.match(getStepBlock(getJobBlock(unity, "unity-tests", "unity-tests.yml"), "Upload shipping-fidelity artifacts"), /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/);
+  assert.doesNotMatch(getJobBlock(unitySource, "unity-ci-success", "unity-tests.yml"), /github\.actor == 'dependabot\[bot\]'/); assert.match(getStepBlock(getJobBlock(unitySource, "unity-tests", "unity-tests.yml"), "Upload shipping-fidelity artifacts"), /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/);
 });
 // prettier-ignore
-test("Unity failure diagnostics preserve the executable result gate and cost nothing on success", () => {
-  const job = readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-ci-success"];
-  const [gate, diagnostic] = job.steps;
-  assert.equal(job.if, "${{ always() }}");
-  assert.deepEqual(job.permissions, { actions: "read" });
-  assert.equal(gate.id, "result_shape");
-  assert.equal(gate["continue-on-error"], undefined);
-  assert.equal(diagnostic.if, "${{ failure() && steps.result_shape.outcome == 'failure' }}");
-  assert.equal(diagnostic.uses, "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3");
-  assert.equal(diagnostic["timeout-minutes"], 2);
-  assert.equal(job.steps.length, 2, "successful runs only execute the original shell gate");
-  const baseline = { HEAD_CHECK_RESULT: "success", RUNNER_PREFLIGHT_RESULT: "success", UNITY_TESTS_RESULT: "success" };
-  assert.equal(readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-tests"].name, "Unity ${{ matrix.unity-version }} all modes");
+test("Unity CI Success aggregates enforce the closed trusted-skip result shape", () => {
   const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe") : "bash";
-  const run = (env) => spawnSync(bash, ["-c", gate.run], { env: { ...process.env, ...Object.fromEntries(Object.keys(gate.env).map((key) => [key, "false"])), ...baseline, RELEVANT: "true", ...env } });
-  for (const flag of [null, "RELEVANT", "SUPERSEDED", "FORK_PR", "DEPENDABOT_PR"]) {
-    const env = flag ? { [flag]: flag === "RELEVANT" ? "false" : "true", RUNNER_PREFLIGHT_RESULT: "skipped", UNITY_TESTS_RESULT: "skipped" } : { RELEVANT: "true" };
-    assert.equal(run(env).status, 0, `${flag}: intended successful shape`);
-    for (const key of Object.keys(baseline)) {
-      for (const value of ["failure", "cancelled", "", "skipped", "success"].filter((value) => value !== (env[key] || baseline[key]))) {
-        assert.equal(run({ ...env, [key]: value }).status, 1, `${flag}/${key}/${value}: failed shape`);
-      }
+  for (const [file, aggregateId, preflightJob, licensedJob] of [
+    ["unity-tests.yml", "unity-ci-success", "runner-preflight", "unity-tests"],
+    ["perf-numbers.yml", "perf-unity-success", "runner-preflight", "perf-benchmarks"]
+  ]) {
+    const job = readWorkflowDocument(file).toJS().jobs[aggregateId];
+    assert.ok(
+      String(job.if) === "always()" || String(job.if) === "${{ always() }}",
+      `${file}: the aggregate must be exactly always()`
+    );
+    assert.equal(job.steps.length, 1, `${file}: the trusted-skip shape keeps exactly one gate step`);
+    const gate = job.steps[0];
+    assert.equal(gate.shell, "bash");
+    assert.equal(gate["continue-on-error"], undefined);
+    assert.deepEqual(Object.keys(gate.env), ["RUNNER_PREFLIGHT_RESULT", "UNITY_TESTS_RESULT", "FORK_PR", "DEPENDABOT_PR"]);
+    assert.equal(gate.env.RUNNER_PREFLIGHT_RESULT, `\${{ needs.${preflightJob}.result }}`);
+    assert.equal(gate.env.UNITY_TESTS_RESULT, `\${{ needs.${licensedJob}.result }}`);
+    assert.equal(gate.env.FORK_PR, "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}");
+    assert.equal(gate.env.DEPENDABOT_PR, "${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}");
+    // Execute the exact committed gate script against its truth table: the
+    // two untrusted pull-request shapes skip green, every trusted run needs
+    // both jobs green, and any other result shape fails.
+    const run = (env) => spawnSync(bash, ["-c", gate.run], { env: { ...process.env, ...env } }).status;
+    const truthTable = [
+      ["fork pull requests skip green", { FORK_PR: "true", DEPENDABOT_PR: "false", RUNNER_PREFLIGHT_RESULT: "skipped", UNITY_TESTS_RESULT: "skipped" }, 0],
+      ["dependabot pull requests skip green", { FORK_PR: "false", DEPENDABOT_PR: "true", RUNNER_PREFLIGHT_RESULT: "skipped", UNITY_TESTS_RESULT: "skipped" }, 0],
+      ["trusted runs need both jobs green", { FORK_PR: "false", DEPENDABOT_PR: "false", RUNNER_PREFLIGHT_RESULT: "success", UNITY_TESTS_RESULT: "success" }, 0],
+      ["a skipped licensed job on a trusted run is red", { FORK_PR: "false", DEPENDABOT_PR: "false", RUNNER_PREFLIGHT_RESULT: "skipped", UNITY_TESTS_RESULT: "skipped" }, 1],
+      ["a partial trusted run is red", { FORK_PR: "false", DEPENDABOT_PR: "false", RUNNER_PREFLIGHT_RESULT: "success", UNITY_TESTS_RESULT: "skipped" }, 1],
+      ["a failed licensed job is red", { FORK_PR: "false", DEPENDABOT_PR: "false", RUNNER_PREFLIGHT_RESULT: "success", UNITY_TESTS_RESULT: "failure" }, 1],
+      ["a fork run that executed licensed work is red", { FORK_PR: "true", DEPENDABOT_PR: "false", RUNNER_PREFLIGHT_RESULT: "success", UNITY_TESTS_RESULT: "success" }, 1]
+    ];
+    for (const [name, env, expected] of truthTable) {
+      assert.equal(run(env), expected, `${file}: ${name}`);
     }
   }
-});
-
-async function runUnityFailureDiagnostic(pages, { apiError = false, attempt = "1" } = {}) {
-  const job = readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-ci-success"];
-  const script = job.steps.find((step) => step.name === "Report unsuccessful Unity legs").with.script;
-  const messages = [];
-  let summary;
-  const github = { paginate: async (route, options) => {
-    assert.equal(route, "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs");
-    assert.deepEqual(options, { owner: "Ambiguous-Interactive", repo: "DxMessaging", run_id: 30926223438, attempt_number: Number(attempt), per_page: 100 });
-    if (apiError) throw new Error("request denied");
-    return Array.isArray(pages) ? pages.flat() : pages;
-  } };
-  const core = { error: (message) => messages.push(message), summary: { addRaw: (text) => ({ write: async () => { summary = text; } }) } };
-  const context = { repo: { owner: "Ambiguous-Interactive", repo: "DxMessaging" }, runId: 30926223438, serverUrl: "https://github.com" };
-  await new Function("github", "context", "core", "process", `return (async () => {${script}})();`)(github, context, core, { env: { GITHUB_RUN_ATTEMPT: attempt } });
-  assert.equal(typeof summary, "string");
-  assert.ok(messages.length, "a failed shape always produces an operator diagnostic");
-  return { messages, summary };
-}
-
-// Identity and empty steps copied from GET /actions/jobs/92049196223 on 2026-09-05.
-// GitHub no longer retains its step list. This case must keep an unknown boundary.
-const historicalUnityJob = { id: 92049196223, run_id: 30926223438, name: "Unity 2021.3.45f1 editmode", runner_name: "DAD-MACHINE", status: "completed", conclusion: "failure", steps: [] };
-const unityStep = (number, name, conclusion, status = "completed") => ({ number, name, conclusion, status });
-
-test("Unity diagnostic reports the issue-documented historical boundary without inventing a host cause", async () => {
-  // Reconstructed from #356 body/comment5182886089, not a downloaded full step list.
-  const steps = [unityStep(16, "Acquire organization Unity lock", "success"), unityStep(17, "Require acquired Unity lock", "skipped"), unityStep(18, "Upload Unity editor validation diagnostics", "success"), unityStep(19, "Run Unity Test Runner", null, "queued"), unityStep(23, "Return Unity license", null, "queued")];
-  const result = await runUnityFailureDiagnostic([[{ ...historicalUnityJob, id: 2, conclusion: "success" }], [{ ...historicalUnityJob, steps: steps.reverse() }]], { attempt: "2" });
-  assert.equal(result.messages.length, 1, "successful first page does not hide a failed later page");
-  for (const pattern of [/job 92049196223/, /runner DAD-MACHINE/, /\/actions\/runs\/30926223438\/job\/92049196223/, /Last completed step: 18:/, /First step without a recorded conclusion: 19:/, /Runner\/Worker logs/, /cause is unknown/]) assert.match(result.summary, pattern);
-  assert.doesNotMatch(result.summary, /Failed step: 17:|Last completed step: 23:|OOM|killed|leaked/);
-});
-
-test("Unity diagnostic handles retained metadata, normal failures, and unavailable evidence", async () => {
-  const cases = [
-    ["retained historical metadata", [[historicalUnityJob]], {}, /boundary is unknown/],
-    ["missing steps", [[{ ...historicalUnityJob, steps: undefined }]], {}, /boundary is unknown/],
-    ["cancelled", [[{ ...historicalUnityJob, conclusion: "cancelled" }]], {}, /completed\/cancelled/],
-    ["unexpected skip", [[{ ...historicalUnityJob, conclusion: "skipped", runner_name: "" }]], {}, /runner unassigned; completed\/skipped/],
-    ["ordinary failure", [[{ ...historicalUnityJob, steps: [unityStep(19, "Run Unity Test Runner", "failure"), unityStep(23, "Return Unity license", "success")] }]], {}, /Failed step: 19:.*Last completed step: 23:/s],
-    ["other jobs", [[{ ...historicalUnityJob, name: "Unity CI Success" }]], {}, /No unsuccessful Unity leg/],
-    ["API denied", [], { apiError: true }, /diagnostics are unavailable/],
-    ["invalid attempt", [], { attempt: "0" }, /diagnostics are unavailable/],
-    ["malformed list", {}, {}, /diagnostics are unavailable/],
-    ["wrong run", [[{ ...historicalUnityJob, run_id: 1 }]], {}, /diagnostics are unavailable/],
-    ["malformed steps", [[{ ...historicalUnityJob, steps: [null] }]], {}, /diagnostics are unavailable/]
-  ];
-  for (const [label, pages, options, pattern] of cases) {
-    const result = await runUnityFailureDiagnostic(pages, options);
-    assert.match(result.summary, pattern, label);
-    assert.doesNotMatch(result.summary, /Runner\/Worker logs/, `${label}: no invented incomplete boundary`);
-  }
-  const result = await runUnityFailureDiagnostic([[{ ...historicalUnityJob, name: "Unity 6000.5.2f1 all modes", runner_name: "<runner>&", steps: [unityStep(19, "<script>bad</script>", "failure")] }]]);
-  assert.match(result.summary, /&lt;runner&gt;&amp;/);
-  assert.match(result.summary, /&lt;script&gt;bad&lt;\/script&gt;/);
-  assert.doesNotMatch(result.summary, /<script>/);
+  const unityJob = readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-ci-success"];
+  assert.deepEqual(unityJob.permissions, { actions: "read" });
+  assert.equal(readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-tests"].name, "Unity ${{ matrix.unity-version }} all modes");
 });
 
 // prettier-ignore
