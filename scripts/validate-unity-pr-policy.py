@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
+DOCS_GATE = Path(".github/workflows/unity-docs-gate.yml")
 WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
@@ -156,6 +157,16 @@ def mutate_pin_sha(use: str) -> str:
 
 CURRENT_PR_HEAD_GUARD = resolve_action_use("require-current-pr-head")
 ACQUIRE_BUILD_LOCK = resolve_action_use("acquire-build-lock")
+ENSURE_UNITY_EDITOR = resolve_action_use("ensure-unity-editor")
+# Shipping fidelity is dispatch-only: the reviewed endpoint predicate every
+# shipping step and the terminal verdict must embed verbatim.
+SHIPPING_EVENT_PREDICATE = (
+    "github.event_name == 'workflow_dispatch' && inputs.shipping_fidelity && "
+    "(matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')"
+)
+UNITY_EDITOR_PATH_BINDING = (
+    "UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}"
+)
 
 
 def job_block(source: str, job_id: str) -> str:
@@ -695,9 +706,14 @@ def validate_cleanup_gate_not_attempted_input(job: str, label: str) -> None:
     acquisition fails part-way. Both have to hold at once (#327): a leg that
     aborts before `Acquire organization Unity lock` must report exactly one
     failure, and a leg whose acquire failed after taking the lock must still
-    fail. The distinction is `outcome`, which is empty or `skipped` only when
-    the step did not execute; gating on `acquired == 'true'` instead would
-    skip the gate in precisely the case it must never miss.
+    fail. The typed `outputs.acquired` binding carries exactly that
+    distinction: the expression is empty while the step has not executed and
+    the central gate itself treats missing or invalid acquisition state as
+    fail-closed; only the literal `acquired=false` from a completed acquire
+    marks cleanup as not applicable. Restating a skip mapping in the workflow
+    (an `outcome`-based `'false'` rewrite) would duplicate -- and could
+    disagree with -- the gate's own typing, so the input must be the raw
+    typed output.
     """
     gate = step_block(job, "Require confirmed Unity cleanup")
     require(
@@ -706,21 +722,84 @@ def validate_cleanup_gate_not_attempted_input(job: str, label: str) -> None:
     )
     acquired = re.search(r"\n          acquired: (.*)\n", gate)
     require(acquired is not None, f"{label}: the cleanup gate must pass `acquired`")
-    expression = acquired.group(1)
-    for fragment in (
-        "steps.acquire_lock.outcome == 'skipped'",
-        "steps.acquire_lock.outcome == ''",
-        "&& 'false' ||",
-        "steps.acquire_lock.outputs.acquired",
-    ):
-        require(
-            fragment in expression,
-            f"{label}: the cleanup gate's `acquired` input must map only a step that "
-            f"never executed to 'false' and pass everything else through; missing {fragment!r}",
-        )
+    expression = acquired.group(1).strip()
+    require(
+        expression == "${{ steps.acquire_lock.outputs.acquired }}",
+        f"{label}: the cleanup gate's `acquired` input must be the typed "
+        f"`steps.acquire_lock.outputs.acquired` binding so only a completed "
+        f"acquire can report not-attempted; found {expression!r}",
+    )
     require(
         "outcome == 'failure'" not in expression and "outcome != " not in expression,
         f"{label}: a failed acquire must not be laundered into a not-attempted verdict",
+    )
+
+
+def step_block_run_body(step: str) -> str:
+    """Return the step's multiline `run:` body, or '' when the step has none."""
+    marker = "        run: |\n"
+    start = step.find(marker)
+    if start < 0:
+        return ""
+    lines = []
+    for line in step[start + len(marker) :].splitlines():
+        if line and not line.startswith("          "):
+            break
+        lines.append(line[10:] if line else "")
+    return "\n".join(lines)
+
+
+def validate_editor_gate_bindings(job: str, label: str) -> None:
+    """Every Unity-consuming step must run the editor the central gate validated.
+
+    The gate sits behind the approved head guard and before any checkout or
+    credential reference, exposes the validated executable through its
+    `editor-path` output, and every step that launches Unity binds it as
+    `UNITY_EDITOR_PATH` step env. A step that launched Unity without the
+    binding could execute an editor the gate never validated.
+    """
+    editor_gate = step_block(job, "Require manually installed Unity editor")
+    require(
+        f"uses: {ENSURE_UNITY_EDITOR}" in editor_gate,
+        f"{label}: editor gate must use the pinned central ensure-unity-editor action",
+    )
+    require(
+        "ci-managed-only: true" in editor_gate and "require-healthy-existing: true" in editor_gate,
+        f"{label}: editor gate must stay CI-managed and healthy-existing fail-closed",
+    )
+    setup_guard = job.find("      - name: Require current PR head before setup\n")
+    editor_gate_offset = job.find(editor_gate)
+    checkout = job.find("      - name: Checkout\n")
+    credentials = job.find("      - name: Validate Unity license secrets\n")
+    acquire = job.find("      - name: Acquire organization Unity lock\n")
+    require(
+        editor_gate_offset < checkout < credentials < acquire,
+        f"{label}: editor gate must run before checkout, credentials, and lock acquisition",
+    )
+    # Dispatch-only windows have no pull-request head to guard; the windows
+    # that do (asserted by the dedicated guard checks in `validate`) must keep
+    # the gate behind that guard.
+    if setup_guard >= 0:
+        require(
+            setup_guard < editor_gate_offset,
+            f"{label}: editor gate must sit behind the pull-request head guard",
+        )
+    consumers = 0
+    for step in top_level_steps_through_cleanup_gate(job, label)[:-1]:
+        body = step_block_run_body(step)
+        if (
+            "./scripts/unity/run-ci-tests.ps1" in body
+            or "run-shipping-fidelity-matrix.ps1" in body
+            or "export-unitypackage.ps1" in body
+        ):
+            consumers += 1
+            require(
+                UNITY_EDITOR_PATH_BINDING in step,
+                f"{label}: a Unity-consuming step must bind the validated editor path",
+            )
+    require(
+        consumers >= 1,
+        f"{label}: expected at least one Unity-consuming step to bind the editor path",
     )
 
 
@@ -2525,7 +2604,14 @@ def validate_msvc_gate_is_reachable() -> None:
 
 
 def validate_shipping_event_policy(source: str) -> None:
-    """Require one weekly/manual predicate for every shipping action and verdict."""
+    """Require one dispatch-only endpoint predicate for every shipping action and verdict.
+
+    The weekly schedule is gone: shipping fidelity runs only when someone
+    dispatches the workflow with the boolean opt-in, on the two endpoint
+    editors. Every shipping step and the terminal verdict must embed exactly
+    the same predicate, so an execution path can never disagree with the
+    evidence the terminal gate demands.
+    """
     result = subprocess.run(
         ["node", "-e", """
 const fs = require('fs');
@@ -2539,30 +2625,24 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
     require(result.returncode == 0, f"shipping policy YAML must parse: {result.stderr}")
     workflow = json.loads(result.stdout)
     triggers = workflow["on"]
-    require(triggers.get("schedule") == [{"cron": "17 4 * * 0"}],
-            "shipping fidelity must run weekly on Sunday at 04:17 UTC")
+    require(triggers.get("schedule") is None,
+            "shipping fidelity must not run from a schedule; it is dispatch-only")
     dispatch = triggers.get("workflow_dispatch") or {}
     option = (dispatch.get("inputs") or {}).get("shipping_fidelity") or {}
     require(option.get("type") == "boolean" and option.get("default") is False,
             "manual shipping fidelity must be a boolean opt-in defaulting to false")
-    predicate = (
-        "${{ (github.event_name == 'schedule' || "
-        "(github.event_name == 'workflow_dispatch' && inputs.shipping_fidelity)) && "
-        "(matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1') }}"
-    )
-    require((workflow.get("env") or {}).get("DXM_RUN_SHIPPING") == predicate,
-            "shipping must use the shared weekly/manual endpoint predicate")
+    endpoint = SHIPPING_EVENT_PREDICATE
     conditions = {
         "Run stripped shipping-fidelity players":
-            "!cancelled() && steps.acquire_lock.outputs.acquired == 'true' && env.DXM_RUN_SHIPPING == 'true'",
+            "!cancelled() && steps.acquire_lock.outputs.acquired == 'true' && " + endpoint,
         "Dump shipping-fidelity log tail on failure or cancellation":
-            "env.DXM_RUN_SHIPPING == 'true' && (steps.run_shipping.outcome == 'failure' || cancelled())",
+            "(" + endpoint + ") && (steps.run_shipping.outcome == 'failure' || cancelled())",
         "Seal shipping-fidelity evidence bundle":
-            "env.DXM_RUN_SHIPPING == 'true' && steps.run_shipping.outcome == 'success'",
+            endpoint + " && steps.run_shipping.outcome == 'success'",
         "Upload shipping-fidelity artifacts":
             "steps.redact_tests.outcome == 'success' && steps.seal_shipping.outcome == 'success' && "
             "always() && !cancelled() && "
-            "steps.acquire_lock.outputs.acquired == 'true' && env.DXM_RUN_SHIPPING == 'true'",
+            "steps.acquire_lock.outputs.acquired == 'true' && " + endpoint,
     }
     for name, condition in conditions.items():
         matches = [step for step in workflow["steps"] if step.get("name") == name]
@@ -2572,17 +2652,20 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
                 f"{name}: shipping condition must preserve event, outcome, and cleanup gates")
     for step in workflow["steps"]:
         require("DXM_RUN_SHIPPING" not in (step.get("env") or {}),
-                "steps must not shadow the shared shipping predicate")
+                "the shared shipping predicate env is retired; steps must embed the dispatch predicate")
+    require("DXM_RUN_SHIPPING" not in source,
+            "the shared shipping predicate env is retired; every shipping condition "
+            "must embed the dispatch predicate verbatim")
     gate = next(step for step in workflow["steps"] if step.get("name") == "Require every Unity mode to pass")
-    require(gate.get("env", {}).get("SHIPPING_REQUIRED") == "${{ env.DXM_RUN_SHIPPING }}",
-            "terminal shipping requirement must use the same event predicate as execution")
+    require(gate.get("env", {}).get("SHIPPING_REQUIRED") == "${{ " + endpoint + " }}",
+            "terminal shipping requirement must use the same dispatch predicate as execution")
 
     # Execute the actual, structurally restricted workflow expression. Missing inputs
     # are falsy; typed workflow_dispatch booleans must not become truthy strings.
-    expression = workflow["env"]["DXM_RUN_SHIPPING"][3:-2].replace("github.event_name", "event").replace(
+    expression = gate["env"]["SHIPPING_REQUIRED"][3:-2].replace("github.event_name", "event").replace(
         "inputs.shipping_fidelity", "input"
     ).replace("matrix.unity-version", "version")
-    events = ("pull_request", "pull_request_target", "push", "schedule", "workflow_dispatch", "repository_dispatch")
+    events = ("pull_request", "pull_request_target", "push", "workflow_dispatch", "repository_dispatch")
     versions = ("2021.3.45f1", "2022.3.45f1", "6000.3.16f1", "6000.5.2f1")
     rows = [(event, option, version) for event in events for option in (None, False, True) for version in versions]
     evaluated = subprocess.run(
@@ -2597,7 +2680,7 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
     require(len(outcomes) == len(rows), "shipping event truth table must evaluate every row")
     for (event, option, version), actual in zip(rows, outcomes):
         expected = version in (versions[0], versions[-1]) and (
-            event == "schedule" or (event == "workflow_dispatch" and option is True)
+            event == "workflow_dispatch" and option is True
         )
         require(actual is expected,
                 f"shipping event={event}, input={option}, version={version}: expected {expected}, got {actual}")
@@ -2608,15 +2691,24 @@ def validate_grouped_unity_correctness() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     validate_shipping_event_policy(source)
     mutations = [
-        ("weekly schedule removed", '    - cron: "17 4 * * 0"', ""),
-        ("daily shipping schedule", 'cron: "17 4 * * 0"', 'cron: "17 4 * * *"'),
         ("manual shipping enabled by default", "default: false", "default: true"),
         ("manual input loses boolean typing", "type: boolean", "type: string"),
-        ("push enables shipping", "github.event_name == 'schedule'", "github.event_name == 'push'"),
+        (
+            "shipping runs on push",
+            "github.event_name == 'workflow_dispatch'",
+            "github.event_name == 'push'",
+        ),
         ("manual shipping ignores opt-in", "&& inputs.shipping_fidelity", "&& true"),
-        ("endpoint admission broadens", "matrix.unity-version == '2021.3.45f1'", "true"),
-        ("terminal shipping gate drifts", "SHIPPING_REQUIRED: ${{ env.DXM_RUN_SHIPPING }}",
-         "SHIPPING_REQUIRED: true"),
+        (
+            "endpoint admission broadens",
+            "(matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')",
+            "true",
+        ),
+        (
+            "terminal shipping gate drifts",
+            f"SHIPPING_REQUIRED: ${{{{ {SHIPPING_EVENT_PREDICATE} }}}}",
+            "SHIPPING_REQUIRED: true",
+        ),
     ]
     for name in (
         "Run stripped shipping-fidelity players",
@@ -2625,8 +2717,18 @@ def validate_grouped_unity_correctness() -> None:
         "Upload shipping-fidelity artifacts",
     ):
         original = step_block(job_block(source, "unity-tests"), name)
-        mutations.append((f"{name} bypasses event policy", original,
-                          original.replace("env.DXM_RUN_SHIPPING == 'true'", "true")))
+        mutations.append(
+            (
+                f"{name} bypasses event policy",
+                original,
+                re.sub(
+                    r"github\.event_name == 'workflow_dispatch'\s*&&\s*"
+                    r"inputs\.shipping_fidelity",
+                    "github.event_name == 'workflow_dispatch'",
+                    original,
+                ),
+            )
+        )
     for name, before, after in mutations:
         require(before in source and before != after, f"{name}: mutation target missing")
         try:
@@ -2637,14 +2739,21 @@ def validate_grouped_unity_correctness() -> None:
     job = job_block(source, "unity-tests")
     require(
         "name: Unity ${{ matrix.unity-version }} all modes" in job
-        and "matrix.test-mode" not in job,
-        "Unity correctness must use four editor-scoped jobs",
+        and re.findall(
+            r"^        test-mode:\n          - standalone\n", job, re.MULTILINE
+        )
+        == ["        test-mode:\n          - standalone\n"],
+        "Unity correctness must run one editor-grouped job per leg with a "
+        "literal standalone test-mode axis",
     )
+    editor_gate = step_block(job, "Require manually installed Unity editor")
     require(
-        "-ProvisioningProfile StandaloneWindowsIl2Cpp" in step_block(
-            job, "Require manually installed Unity editor"
-        ),
-        "grouped correctness must validate the IL2CPP-capable editor once",
+        "provisioning-profile: ${{ fromJSON('"
+        '{"editmode":"EditorOnly","playmode":"EditorOnly",'
+        '"standalone":"StandaloneWindowsIl2Cpp"}'
+        "')[matrix.test-mode] }}" in editor_gate,
+        "grouped correctness must validate the IL2CPP-capable editor once via "
+        "the reviewed static test-mode profile map",
     )
 
     mode_specs = (
@@ -2719,7 +2828,9 @@ def validate_grouped_unity_correctness() -> None:
         "id: run_shipping",
         "!cancelled()",
         "steps.acquire_lock.outputs.acquired == 'true'",
-        "env.DXM_RUN_SHIPPING == 'true'",
+        "github.event_name == 'workflow_dispatch'",
+        "inputs.shipping_fidelity",
+        "(matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')",
         "continue-on-error: true",
         "timeout-minutes: 150",
         "./scripts/unity/run-shipping-fidelity-matrix.ps1",
@@ -3599,42 +3710,52 @@ def validate_perf_pr_policy() -> None:
 
     aggregate = job_block(source, "perf-unity-success")
     aggregate_step = step_block(aggregate, "Require complete performance validation")
-    aggregate_script = run_script(aggregate_step)
-    executable_aggregate = (
-        aggregate_script.replace(
-            "${{ needs.head-check.result }}", "${HEAD_CHECK_RESULT}"
+    expected_perf_bindings = {
+        "RUNNER_PREFLIGHT_RESULT": "${{ needs.runner-preflight.result }}",
+        "UNITY_TESTS_RESULT": "${{ needs.perf-benchmarks.result }}",
+        "FORK_PR": (
+            "${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.repo.full_name != github.repository }}"
+        ),
+        "DEPENDABOT_PR": (
+            "${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.user.login == 'dependabot[bot]' }}"
+        ),
+    }
+    for variable, value in expected_perf_bindings.items():
+        require(
+            re.findall(rf"^          {variable}:.*$", aggregate_step, re.MULTILINE)
+            == [f"          {variable}: {value}"],
+            f"performance aggregate must bind exact {variable}",
         )
-        .replace(
-            "${{ needs.runner-preflight.result }}", "${RUNNER_PREFLIGHT_RESULT}"
-        )
-        .replace(
-            "${{ needs.perf-benchmarks.result }}", "${PERF_BENCHMARKS_RESULT}"
-        )
-    )
+    aggregate_script = run_script(aggregate_step).rstrip()
     require(
-        executable_aggregate != aggregate_script,
-        "performance aggregate must validate dependency results",
+        "set -euo pipefail" in aggregate_script
+        and 'if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then'
+        in aggregate_script,
+        "performance aggregate must keep the closed trusted-skip shape",
     )
+    executable_aggregate = aggregate_script
     aggregate_cases = (
-        ("relevant trusted PR", "true", "true", "success", "success", 0),
-        ("documentation-only PR", "true", "false", "skipped", "skipped", 0),
-        ("untrusted PR", "false", "true", "skipped", "skipped", 0),
-        ("superseded PR", "true", "true", "skipped", "skipped", 0),
-        ("relevant PR skipped", "true", "true", "skipped", "skipped", 1),
-        ("documentation PR ran", "true", "false", "skipped", "success", 1),
-        ("untrusted PR ran", "false", "true", "success", "success", 1),
+        ("trusted PR", "success", "success", "false", "false", 0),
+        ("fork PR", "skipped", "skipped", "true", "false", 0),
+        ("Dependabot PR", "skipped", "skipped", "false", "true", 0),
+        ("trusted PR skipped benchmarks", "success", "skipped", "false", "false", 1),
+        ("trusted PR skipped preflight", "skipped", "success", "false", "false", 1),
+        ("fork unexpectedly ran", "skipped", "success", "true", "false", 1),
+        ("Dependabot unexpectedly ran", "skipped", "success", "false", "true", 1),
+        ("fork preflight red", "failure", "skipped", "true", "false", 1),
+        ("trusted preflight red", "failure", "success", "false", "false", 1),
     )
     if os.name != "nt":
-        for name, trusted, relevant, preflight_result, benchmark_result, expected in aggregate_cases:
+        for name, preflight_result, benchmark_result, fork, dependabot, expected in aggregate_cases:
             environment = os.environ.copy()
             environment.update(
                 {
-                    "HEAD_CHECK_RESULT": "success",
-                    "TRUSTED_PR": trusted,
-                    "SUPERSEDED": "true" if name == "superseded PR" else "false",
-                    "RELEVANT": relevant,
                     "RUNNER_PREFLIGHT_RESULT": preflight_result,
-                    "PERF_BENCHMARKS_RESULT": benchmark_result,
+                    "UNITY_TESTS_RESULT": benchmark_result,
+                    "FORK_PR": fork,
+                    "DEPENDABOT_PR": dependabot,
                 }
             )
             result = subprocess.run(
@@ -3684,22 +3805,91 @@ def validate_perf_pr_policy() -> None:
         require("github-token: ${{ github.token }}" in licensed_job, f"{path}:{job_id}: acquire-build-lock requires github.token")
 
 
+DOCS_GATE_ALLOWLIST = (
+    "documentation_only_pattern='^(docs/|\\.docs-tests/|progress/|\\.llm/|\\.agents/"
+    "|\\.claude/|Samples~/.*\\.(md|markdown)$|(AGENTS|GOAL|PLAN)\\.md$|llms\\.txt$"
+    "|mkdocs\\.yml$|requirements-(docs|brand)\\.(in|txt)$)'"
+)
+
+
+def validate_unity_docs_gate() -> None:
+    """Pin the documentation-only replacement for the removed head-check relevance decision.
+
+    unity-tests.yml no longer decides documentation-only in-band: the
+    pull_request paths-ignore (pinned in `validate`) keeps that workflow
+    absent for docs-only pull requests, so the required "Unity CI Success"
+    context must still be reported -- by this gate, which is present on every
+    pull request, always runs, and fails closed unless every changed file
+    matches the exact documentation-only allowlist.
+    """
+    source = DOCS_GATE.read_text(encoding="utf-8")
+    require(
+        "name: Unity CI Success" in source,
+        "unity-docs-gate must report the same required Unity context name",
+    )
+    require(
+        re.search(r"^on:\n  pull_request:\n", source, re.MULTILINE) is not None
+        and re.search(r"^    paths", source, re.MULTILINE) is None,
+        "unity-docs-gate must trigger on every pull request with no paths filter",
+    )
+    gate = job_block(source, "unity-ci-success")
+    require(
+        "if: ${{ always() }}" in gate,
+        "the docs gate must always report; a falsifiable if would drop the required context",
+    )
+    script = run_script(step_block(gate, "Report the documentation-only Unity result"))
+    require(
+        DOCS_GATE_ALLOWLIST in script,
+        "the docs gate must evaluate the exact documentation-only allowlist",
+    )
+    for fragment in (
+        '"${EVENT_NAME}" != "pull_request"',
+        "if ! files=",
+        "The changed-file listing is empty",
+        "Non-documentation files changed",
+        "exit 1",
+    ):
+        require(
+            fragment in script,
+            f"the docs gate must fail closed; missing {fragment!r}",
+        )
+    require(
+        "--jq '.[] | .filename, (.previous_filename // empty)'" in script,
+        "the docs gate must include renamed files in its allowlist evaluation",
+    )
+
+
 def validate_unity_aggregate_steps(gate: str) -> None:
-    require(gate.count("\n      - name:") == 2, "aggregate needs one gate and one diagnostic")
+    """Pin the closed trusted-skip aggregate: one always-on, fail-closed gate step."""
+    require(gate.count("\n      - name:") == 1, "aggregate must be one closed result-shape gate")
     validation = step_block(gate, "Verify Unity CI result shape")
-    diagnostic = step_block(gate, "Report unsuccessful Unity legs")
-    require(gate.find(validation) < gate.find(diagnostic), "diagnostics must follow validation")
-    require(re.search(r"^        id:\s*result_shape\s*$", validation, re.MULTILINE) is not None,
-            "diagnostics must refer to the result gate")
+    require(
+        "    needs:\n      - runner-preflight\n      - unity-tests\n" in gate,
+        "aggregate must consume both the preflight and the licensed matrix results",
+    )
+    require(
+        re.search(r"^        shell: bash\s*$", validation, re.MULTILINE) is not None,
+        "aggregate validation must run bash",
+    )
     require("continue-on-error:" not in validation, "aggregate validation must remain fatal")
-    require(re.search(
-        r"^        if:\s*\$\{\{\s*failure\(\)\s*&&\s*"
-        r"steps\.result_shape\.outcome\s*==\s*'failure'\s*\}\}\s*$",
-        diagnostic, re.MULTILINE) is not None, "diagnostics must run only after gate failure")
-    require(re.search(r"uses:\s*actions/github-script@[0-9a-f]{40}\b", diagnostic) is not None,
-            "diagnostics must use an immutable GitHub script action")
-    require(positive_timeout(diagnostic, 8, "Unity diagnostic") <= 2,
-            "Unity diagnostics must stay bounded to two minutes")
+    require(
+        positive_timeout(gate, 4, "Unity aggregate job") <= 10,
+        "Unity aggregate must stay bounded to ten minutes",
+    )
+    script = run_script(validation)
+    require(
+        script.startswith("set -euo pipefail"),
+        "aggregate result shape must fail closed on unbound or failed probes",
+    )
+    require(
+        'if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then' in script
+        and 'test "${RUNNER_PREFLIGHT_RESULT}" = skipped' in script
+        and 'test "${UNITY_TESTS_RESULT}" = skipped' in script
+        and 'test "${RUNNER_PREFLIGHT_RESULT}" = success' in script
+        and 'test "${UNITY_TESTS_RESULT}" = success' in script,
+        "aggregate must keep the closed trusted-skip shape: untrusted pull "
+        "requests skip both jobs, everything else must have succeeded",
+    )
     permissions = re.search(r"^    permissions:\n((?:      [^\n]+\n)+)", gate, re.MULTILINE)
     require(permissions is not None and
             re.findall(r"^      ([\w-]+):\s*(\w+)\s*$", permissions[1], re.MULTILINE)
@@ -4408,6 +4598,7 @@ steps:
         window = job_block(workflow.read_text(encoding="utf-8"), job_id)
         validate_lock_window_timeout_budget(window, f"{workflow}:{job_id}")
         validate_cleanup_gate_not_attempted_input(window, f"{workflow}:{job_id}")
+        validate_editor_gate_bindings(window, f"{workflow}:{job_id}")
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)
@@ -4482,10 +4673,48 @@ steps:
     )
     require(pull_request is not None, "missing pull_request trigger")
     assert pull_request is not None
+    documentation_only_paths_ignore = (
+        '      - "docs/**"\n'
+        '      - ".docs-tests/**"\n'
+        '      - "progress/**"\n'
+        '      - ".llm/**"\n'
+        '      - ".agents/**"\n'
+        '      - ".claude/**"\n'
+        '      - "Samples~/**/*.md"\n'
+        '      - "Samples~/**/*.markdown"\n'
+        '      - "AGENTS.md"\n'
+        '      - "GOAL.md"\n'
+        '      - "PLAN.md"\n'
+        '      - "llms.txt"\n'
+        '      - "mkdocs.yml"\n'
+        '      - "requirements-docs.in"\n'
+        '      - "requirements-docs.txt"\n'
+        '      - "requirements-brand.in"\n'
+        '      - "requirements-brand.txt"\n'
+    )
+    pull_request_paths_ignore = re.search(
+        r"^    paths-ignore:\n(?P<body>.*?)(?=^    [A-Za-z0-9_-]+:|\Z)",
+        pull_request.group("body"),
+        re.MULTILINE | re.DOTALL,
+    )
     require(
-        re.search(r"^    paths(?:-ignore)?:", pull_request.group("body"), re.MULTILINE)
-        is None,
-        "pull_request trigger must remain unfiltered by paths",
+        pull_request_paths_ignore is not None,
+        "pull_request trigger must keep the documentation-only paths-ignore "
+        "so the required Unity context stays decidable",
+    )
+    assert pull_request_paths_ignore is not None
+    require(
+        pull_request_paths_ignore.group("body") == documentation_only_paths_ignore,
+        "pull_request trigger must ignore exactly the closed documentation-only "
+        "allowlist that unity-docs-gate.yml re-evaluates fail-closed",
+    )
+    paths = re.search(
+        r"^    paths:\n", pull_request.group("body"), re.MULTILINE
+    )
+    require(
+        paths is None,
+        "pull_request trigger must filter only by paths-ignore, never by an "
+        "allowlist that could silently skip code pull requests",
     )
 
     require(
@@ -4504,26 +4733,18 @@ steps:
         BLANKET_PR_REJECTION.search(licensed) is None,
         "Unity job must not reject every pull request",
     )
-    head_check = job_block(source, "head-check")
+    # The head-check job is gone from unity-tests.yml: its superseded decision
+    # moved into the per-leg `require-current-pr-head` guards (their pinning and
+    # their first-step / immediately-before-lock ordering are asserted below),
+    # and its documentation-only decision moved into the pull_request
+    # paths-ignore plus the fail-closed unity-docs-gate.yml workflow that
+    # reports the same required context.
     require(
-        re.findall(r"^    runs-on:.*$", head_check, re.MULTILINE)
-        == ["    runs-on: ubuntu-latest"]
-        and LOCK_ACTION_PREFIX not in head_check,
-        "superseded decision must never reach a self-hosted runner or the build lock",
+        re.search(r"^  head-check:\n", source, re.MULTILINE) is None,
+        "unity-tests.yml must keep its head decisions in the per-leg guards and "
+        "the docs gate, not a head-check job",
     )
-    require(
-        "      superseded: ${{ steps.head.outputs.superseded }}\n" in head_check,
-        "head-check must publish the superseded decision",
-    )
-    for job_id in ("runner-preflight", "unity-tests"):
-        require(
-            SUPERSEDED_GUARD.search(job_block(source, job_id)) is not None,
-            f"{job_id} must not schedule work for a superseded head",
-        )
-    head_script = run_script(
-        step_block(head_check, "Compare the event head against the live pull-request head")
-    )
-    validate_head_check_truth_table(head_script, "Unity")
+    validate_unity_docs_gate()
     require(
         "environment:" not in licensed,
         "Unity job must use organization secrets without an environment approval gate",
@@ -4558,10 +4779,16 @@ steps:
     require("re-actors/alls-green" not in gate and "allowed-skips" not in gate, "skips must be typed")
     validate_unity_aggregate_steps(gate)
     for before, after in (
-        ("failure() && steps.result_shape.outcome == 'failure'", "always()"),
+        ("set -euo pipefail", "set +euo pipefail"),
+        (
+            'if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then',
+            "if false; then",
+        ),
         ("      actions: read", "      actions: write"),
-        ("        id: result_shape", "        id: result_shape\n        continue-on-error: true"),
-        ("    steps:", "    steps:\n      - name: Unexpected extra step\n        run: echo extra"),
+        (
+            "    steps:",
+            "    steps:\n      - name: Unexpected extra step\n        run: echo extra",
+        ),
     ):
         require(before in gate, "aggregate mutation target must exist")
         try:
@@ -4572,11 +4799,8 @@ steps:
     aggregate_step = step_block(gate, "Verify Unity CI result shape")
     require("        shell: bash\n" in aggregate_step, "aggregate must use bash")
     expected_bindings = {
-        "HEAD_CHECK_RESULT": "${{ needs.head-check.result }}",
         "RUNNER_PREFLIGHT_RESULT": "${{ needs.runner-preflight.result }}",
         "UNITY_TESTS_RESULT": "${{ needs.unity-tests.result }}",
-        "RELEVANT": "${{ needs.head-check.outputs.relevant }}",
-        "SUPERSEDED": "${{ needs.head-check.outputs.superseded }}",
         "FORK_PR": (
             "${{ github.event_name == 'pull_request' && "
             "github.event.pull_request.head.repo.full_name != github.repository }}"
@@ -4595,8 +4819,7 @@ steps:
 
     script = run_script(aggregate_step).rstrip()
     expected_script = """set -euo pipefail
-test "${HEAD_CHECK_RESULT}" = success
-if [ "${SUPERSEDED}" = "true" ] || [ "${RELEVANT}" = "false" ] || [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
   test "${RUNNER_PREFLIGHT_RESULT}" = skipped
   test "${UNITY_TESTS_RESULT}" = skipped
 else
@@ -4604,31 +4827,25 @@ else
   test "${UNITY_TESTS_RESULT}" = success
 fi"""
     require(script == expected_script, "aggregate result-shape script drifted")
-    # name, head-check, preflight, unity, SUPERSEDED, RELEVANT, FORK_PR, DEPENDABOT_PR, exit code
+    # name, preflight, unity, FORK_PR, DEPENDABOT_PR, exit code
     cases = (
-        ("same-repository PR", "success", "success", "success", "false", "true", "false", "false", 0),
-        ("documentation-only PR", "success", "skipped", "skipped", "false", "false", "false", "false", 0),
-        ("fork PR", "success", "skipped", "skipped", "false", "true", "true", "false", 0),
-        ("Dependabot PR", "success", "skipped", "skipped", "false", "true", "false", "true", 0),
-        ("superseded PR", "success", "skipped", "skipped", "true", "true", "false", "false", 0),
-        ("same-repository PR skipped Unity", "success", "success", "skipped", "false", "true", "false", "false", 1),
-        ("documentation-only PR ran Unity", "success", "skipped", "success", "false", "false", "false", "false", 1),
-        ("fork unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "true", "false", 1),
-        ("Dependabot unexpectedly ran Unity", "success", "skipped", "success", "false", "true", "false", "true", 1),
-        ("Dependabot unexpectedly ran preflight", "success", "success", "skipped", "false", "true", "false", "true", 1),
-        ("superseded run still ran Unity", "success", "skipped", "success", "true", "true", "false", "false", 1),
-        ("current head skipped Unity after a failed decision", "failure", "skipped", "skipped", "", "", "false", "false", 1),
+        ("same-repository PR", "success", "success", "false", "false", 0),
+        ("fork PR", "skipped", "skipped", "true", "false", 0),
+        ("Dependabot PR", "skipped", "skipped", "false", "true", 0),
+        ("same-repository PR skipped Unity", "success", "skipped", "false", "false", 1),
+        ("fork unexpectedly ran Unity", "skipped", "success", "true", "false", 1),
+        ("Dependabot unexpectedly ran Unity", "skipped", "success", "false", "true", 1),
+        ("Dependabot unexpectedly ran preflight", "success", "skipped", "false", "true", 1),
+        ("fork preflight red", "failure", "skipped", "true", "false", 1),
+        ("trusted preflight red", "failure", "success", "false", "false", 1),
     )
     if os.name != "nt":
-        for name, head, preflight, unity, superseded, relevant, fork, dependabot, expected in cases:
+        for name, preflight, unity, fork, dependabot, expected in cases:
             environment = os.environ.copy()
             environment.update(
                 {
-                    "HEAD_CHECK_RESULT": head,
                     "RUNNER_PREFLIGHT_RESULT": preflight,
                     "UNITY_TESTS_RESULT": unity,
-                    "RELEVANT": relevant,
-                    "SUPERSEDED": superseded,
                     "FORK_PR": fork,
                     "DEPENDABOT_PR": dependabot,
                 }
