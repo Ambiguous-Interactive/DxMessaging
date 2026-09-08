@@ -261,7 +261,9 @@ commit_staged_codex_profiles() {
     for name in "${names[@]}"; do
         if ! mv "${staged_home}/${name}" "${codex_home}/${name}"; then
             if ! restore_codex_profiles "${staged_home}" "${codex_home}"; then
-                printf '[ai-backends] ERROR: Codex profile rollback was incomplete.\n' >&2
+                printf '[ai-backends] ERROR: Codex profile rollback was incomplete; backups remain in %s.\n' \
+                    "${backup_dir}" >&2
+                return 2
             fi
             return 1
         fi
@@ -328,7 +330,9 @@ nearest_existing_path() {
 prune_empty_directories() {
     local anchor="$2" current="$1" parent
     while [ "${current}" != "${anchor}" ]; do
-        rmdir "${current}" 2>/dev/null || break
+        if [ -e "${current}" ] || [ -L "${current}" ]; then
+            rmdir "${current}" 2>/dev/null || break
+        fi
         parent="$(dirname "${current}")"
         [ "${parent}" != "${current}" ] || break
         current="${parent}"
@@ -407,20 +411,34 @@ install_backend_support() {
             "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
         die "Launcher installation was rolled back."
     fi
-    if ! commit_staged_codex_profiles "${staged_home}" "${codex_home}"; then
+    local commit_status=0 restore_status=0
+    commit_staged_codex_profiles "${staged_home}" "${codex_home}" || commit_status=$?
+    if [ "${commit_status}" -ne 0 ]; then
         rollback_installed_launchers "${script_path}"
-        rm -rf "${staged_home}"
+        if [ "${commit_status}" -eq 1 ]; then
+            rm -rf "${staged_home}"
+        fi
         cleanup_created_install_directories \
             "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        if [ "${commit_status}" -eq 2 ]; then
+            die "Codex profile installation and rollback failed; profile backups were preserved."
+        fi
         die "Codex profile installation failed and launcher installation was rolled back."
     fi
     if ! verify_codex_profile_destinations "${codex_home}" \
         || ! chmod 700 "${codex_home}"; then
-        restore_codex_profiles "${staged_home}" "${codex_home}" || true
+        restore_codex_profiles "${staged_home}" "${codex_home}" || restore_status=$?
         rollback_installed_launchers "${script_path}"
-        rm -rf "${staged_home}"
+        if [ "${restore_status}" -eq 0 ]; then
+            rm -rf "${staged_home}"
+        fi
         cleanup_created_install_directories \
             "${bin_dir}" "${bin_anchor}" "${codex_home}" "${codex_anchor}"
+        if [ "${restore_status}" -ne 0 ]; then
+            printf '[ai-backends] ERROR: Codex profile rollback was incomplete; backups remain in %s.\n' \
+                "${staged_home}/backups" >&2
+            die "Final profile installation and rollback failed; profile backups were preserved."
+        fi
         die "Final profile installation failed and all changes were rolled back."
     fi
     installed_launcher_paths=()

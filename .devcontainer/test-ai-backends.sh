@@ -299,6 +299,38 @@ grep -Eq 'Unable to create the Codex profile staging directory' "${test_root}/mk
 [ ! -e "${mktemp_failure_codex_parent}" ] \
     || fail "Staging-directory failure left a CODEX_HOME parent behind"
 
+mkdir_failure_bin="${test_root}/mkdir-failure-bin"
+mkdir_failure_parent="${test_root}/mkdir-failure-parent"
+mkdir_failure_launchers="${mkdir_failure_parent}/deep/bin"
+mkdir_failure_codex_home="${test_root}/mkdir-failure-codex-home"
+mkdir -p "${mkdir_failure_bin}"
+cat >"${mkdir_failure_bin}/mkdir" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+last_argument="${!#}"
+if [ "${last_argument}" = "${FAIL_MKDIR_PATH:?}" ]; then
+    "${REAL_MKDIR:?}" -p "$(dirname "${last_argument}")"
+    exit 75
+fi
+exec "${REAL_MKDIR:?}" "$@"
+STUB
+chmod 755 "${mkdir_failure_bin}/mkdir"
+if PATH="${mkdir_failure_bin}:/usr/bin:/bin" \
+    REAL_MKDIR="$(command -v mkdir)" \
+    FAIL_MKDIR_PATH="${mkdir_failure_launchers}" \
+    AI_BACKENDS_BIN_DIR="${mkdir_failure_launchers}" \
+    HOME="${test_home}" \
+    CODEX_HOME="${mkdir_failure_codex_home}" \
+    bash "${launcher_script}" install >"${test_root}/mkdir-failure.log" 2>&1; then
+    fail "install accepted a partially failed launcher-directory creation"
+fi
+grep -Eq 'Unable to create launcher directory' "${test_root}/mkdir-failure.log" \
+    || fail "Partial launcher-directory failure did not provide actionable guidance"
+[ ! -e "${mkdir_failure_parent}" ] \
+    || fail "Partial launcher-directory failure left an intermediate directory behind"
+[ ! -e "${mkdir_failure_codex_home}" ] \
+    || fail "Partial launcher-directory failure created CODEX_HOME"
+
 chmod_failure_bin="${test_root}/chmod-failure-bin"
 chmod_failure_launchers="${test_root}/chmod-failure-launchers"
 chmod_failure_codex_home="${test_root}/chmod-failure-codex-home"
@@ -337,6 +369,53 @@ for profile in devcontainer-zai-models.json devcontainer-zai.config.toml devcont
 done
 [ "$(stat -c '%a' "${chmod_failure_codex_home}")" = "755" ] \
     || fail "Final chmod failure modified CODEX_HOME permissions"
+
+restore_failure_bin="${test_root}/restore-failure-bin"
+restore_failure_launchers="${test_root}/restore-failure-launchers"
+restore_failure_codex_home="${test_root}/restore-failure-codex-home"
+mkdir -p "${restore_failure_bin}" "${restore_failure_codex_home}"
+for profile in devcontainer-zai-models.json devcontainer-zai.config.toml devcontainer-openrouter.config.toml; do
+    printf 'recover-%s\n' "${profile}" >"${restore_failure_codex_home}/${profile}"
+done
+cat >"${restore_failure_bin}/chmod" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+last_argument="${!#}"
+if [ "${last_argument}" = "${FAIL_CHMOD_PATH:?}" ]; then
+    exit 76
+fi
+exec "${REAL_CHMOD:?}" "$@"
+STUB
+cat >"${restore_failure_bin}/cp" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${2:-}" in
+    *'/.ai-backends-install.'*'/backups/'*) exit 77 ;;
+esac
+exec "${REAL_CP:?}" "$@"
+STUB
+chmod 755 "${restore_failure_bin}/chmod" "${restore_failure_bin}/cp"
+if PATH="${restore_failure_bin}:/usr/bin:/bin" \
+    REAL_CHMOD="$(command -v chmod)" \
+    REAL_CP="$(PATH=/usr/bin:/bin command -v cp)" \
+    FAIL_CHMOD_PATH="${restore_failure_codex_home}" \
+    AI_BACKENDS_BIN_DIR="${restore_failure_launchers}" \
+    HOME="${test_home}" \
+    CODEX_HOME="${restore_failure_codex_home}" \
+    bash "${launcher_script}" install >"${test_root}/restore-failure.log" 2>&1; then
+    fail "install discarded profile backups after an incomplete rollback"
+fi
+grep -Eq 'rollback was incomplete; backups remain in' "${test_root}/restore-failure.log" \
+    || fail "Incomplete rollback did not report the preserved backup location"
+[ ! -e "${restore_failure_launchers}" ] \
+    || fail "Incomplete profile rollback left the launcher directory behind"
+restore_backup_dir="$(find "${restore_failure_codex_home}" -maxdepth 2 -type d -name backups -print -quit)"
+[ -n "${restore_backup_dir}" ] \
+    || fail "Incomplete rollback discarded the profile backup directory"
+for profile in devcontainer-zai-models.json devcontainer-zai.config.toml devcontainer-openrouter.config.toml; do
+    [ "$(cat "${restore_backup_dir}/${profile}")" = "recover-${profile}" ] \
+        || fail "Incomplete rollback did not preserve the original ${profile} backup"
+done
 [ "$(stat -c '%a' "${codex_home}/devcontainer-openrouter.config.toml")" = "600" ] \
     || fail "Codex OpenRouter profile permissions are not 600"
 jq -e '.models[0].slug == "glm-5.3"' \
