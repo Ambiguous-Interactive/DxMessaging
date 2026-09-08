@@ -13,7 +13,11 @@
     "perf-numbers.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}"
   },
   "UNITY_EDITOR_CONSUMERS": [
-    ["unity-tests.yml", "unity-tests", ["run_editmode", "run_playmode", "run_standalone", "run_shipping"]],
+    [
+      "unity-tests.yml",
+      "unity-tests",
+      ["run_editmode", "run_playmode", "run_standalone", "run_shipping"]
+    ],
     ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
     ["release.yml", "unity-checks", ["run_tests"]],
     ["release.yml", "unitypackage", ["export_unitypackage"]],

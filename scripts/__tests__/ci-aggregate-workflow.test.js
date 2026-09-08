@@ -60,7 +60,6 @@ const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "
 
 // cspell:ignore ACDMRT
 
-
 const readWorkflow = (file = "ci.yml") => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 
 const readWorkflowDocument = (file) => YAML.parseDocument(readWorkflow(file));
@@ -539,11 +538,24 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
     const install = getStepBlock(job, "Install artifact tooling dependencies");
-    assert.match(install, /id: install_dependencies\n[\s\S]*shell: pwsh\n[\s\S]*\bnpm ci [^\n]*--ignore-scripts --no-audit --no-fund\n/);
+    assert.match(
+      install,
+      /id: install_dependencies\n[\s\S]*shell: pwsh\n[\s\S]*\bnpm ci [^\n]*--ignore-scripts --no-audit --no-fund\n/
+    );
     assert.doesNotMatch(install, /continue-on-error:|\n        if:/);
-    assert.ok(job.indexOf("id: setup_node") < job.indexOf(install) && job.indexOf(install) < job.indexOf(acquire), `${label}: install before acquiring a license`);
-    for (const step of YAML.parse(job)[jobId].steps.filter((step) => step.uses === "./.github/actions/redact-unity-artifacts")) {
-      assert.match(step.if, /steps\.install_dependencies\.outcome == 'success'/, `${label}: failed installs cannot authorize redaction or uploads`);
+    assert.ok(
+      job.indexOf("id: setup_node") < job.indexOf(install) &&
+        job.indexOf(install) < job.indexOf(acquire),
+      `${label}: install before acquiring a license`
+    );
+    for (const step of YAML.parse(job)[jobId].steps.filter(
+      (step) => step.uses === "./.github/actions/redact-unity-artifacts"
+    )) {
+      assert.match(
+        step.if,
+        /steps\.install_dependencies\.outcome == 'success'/,
+        `${label}: failed installs cannot authorize redaction or uploads`
+      );
     }
     const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : 900;
     // prettier-ignore
@@ -597,8 +609,16 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     ];
     for (const [actual, contract, message] of contracts) assert.match(actual, contract, message);
 
-    assert.doesNotMatch(validationStep, /\n        if:/, `${label}: the editor gate must keep GitHub's implicit success chain`);
-    assert.doesNotMatch(validationStep, /\n        continue-on-error:/, `${label}: the editor gate must propagate failure`);
+    assert.doesNotMatch(
+      validationStep,
+      /\n        if:/,
+      `${label}: the editor gate must keep GitHub's implicit success chain`
+    );
+    assert.doesNotMatch(
+      validationStep,
+      /\n        continue-on-error:/,
+      `${label}: the editor gate must propagate failure`
+    );
     assert.doesNotMatch(returnStep, /continue-on-error:/);
 
     // Invocation invariant: the validated editor output reaches every
@@ -675,10 +695,7 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
   // Documentation-only pull requests are skipped by the trigger filter itself.
   // The allowlist must stay closed and mechanical.
   const unityDocument = readWorkflowDocument("unity-tests.yml").toJS();
-  assert.deepEqual(
-    unityDocument.on.pull_request["paths-ignore"],
-    DOCS_ONLY_PATH_IGNORES
-  );
+  assert.deepEqual(unityDocument.on.pull_request["paths-ignore"], DOCS_ONLY_PATH_IGNORES);
 
   // unity-tests.yml is absent for those pull requests, so the companion gate
   // keeps the required "Unity CI Success" context present by evaluating the
@@ -719,7 +736,14 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
     assert.doesNotMatch(job, /github\.actor != 'dependabot\[bot\]'/);
   }
   // prettier-ignore
-  assert.doesNotMatch(getJobBlock(unitySource, "unity-ci-success", "unity-tests.yml"), /github\.actor == 'dependabot\[bot\]'/); assert.match(getStepBlock(getJobBlock(unitySource, "unity-tests", "unity-tests.yml"), "Upload shipping-fidelity artifacts"), /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/);
+  assert.doesNotMatch(getJobBlock(unitySource, "unity-ci-success", "unity-tests.yml"), /github\.actor == 'dependabot\[bot\]'/);
+  assert.match(
+    getStepBlock(
+      getJobBlock(unitySource, "unity-tests", "unity-tests.yml"),
+      "Upload shipping-fidelity artifacts"
+    ),
+    /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/
+  );
 });
 // prettier-ignore
 test("Unity CI Success aggregates enforce the closed trusted-skip result shape", () => {
