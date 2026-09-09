@@ -153,7 +153,7 @@ jobs:
             "(\.md$|\.markdown$|^\.markdownlint\.json$|^\.markdownlint\.jsonc$|^\.markdownlint-cli2\.jsonc$|^\.markdownlintignore$|^package\.json$|$ci_workflow)"
 
           scripts_pattern='(^\.github/workflows/[^/]*\.ya?ml$'
-          scripts_pattern="$scripts_pattern"'|^\.github/actions/.*/action\.yml$'
+          scripts_pattern="$scripts_pattern"'|^\.github/actions/.*\.ya?ml$'
           scripts_pattern="$scripts_pattern"'|^\.github/ISSUE_TEMPLATE/.*\.ya?ml$'
           scripts_pattern="$scripts_pattern"'|^\.github/unity-versions\.json$'
           scripts_pattern="$scripts_pattern"'|^\.github/analyzers/'

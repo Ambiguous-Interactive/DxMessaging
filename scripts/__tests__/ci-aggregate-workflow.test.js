@@ -15,12 +15,12 @@ const {
   STATIC_CHILD_JOBS,
   CORRECTNESS_CATEGORY_FILTERS
 } = require("./workflow-test-vectors.json");
-
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIR = path.join(REPO_ROOT, ".github", "workflows");
 const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
-
+const FORBIDDEN_UNITY_HELPERS =
+  /(?:^|[^a-z0-9-])(?:ambiguous-interactive|wallstop)\/unity-helpers(?:[^a-z0-9-]|$)/i;
 // Build-lock pins are excluded from Dependabot (the github-actions ignore block
 // in .github/dependabot.yml), so humans bump them together with the docs examples
 // that copy the same immutable commits. Each group stays immutably pinned and
@@ -261,7 +261,6 @@ test("change detector considers current and previous paths", () => {
 test("script-test path detector covers harness and package contract inputs", () => {
   const source = readWorkflow();
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
-
   for (const path of [
     ".llm/index.md",
     ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
@@ -270,6 +269,7 @@ test("script-test path detector covers harness and package contract inputs", () 
     ".github/analyzers/Roslynator.CSharp.Analyzers.dll",
     ".github/analyzers/LICENSE.txt",
     ".github/comparison-packages.json",
+    ".github/actions/example/metadata.yaml",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
     "docs/ops/release-operations.md",
     ".llm/context.md",
@@ -279,7 +279,6 @@ test("script-test path detector covers harness and package contract inputs", () 
 });
 test("static child jobs always report and fail closed on bad change detection", () => {
   const source = readWorkflow();
-
   for (const [jobId, output] of STATIC_CHILD_JOBS) {
     const jobBlock = getJobBlock(source, jobId);
     assert.match(jobBlock, /\n    needs: changes\n/, `${jobId} must depend on changes`);
@@ -787,11 +786,12 @@ test("Unity CI Success aggregates enforce the closed trusted-skip result shape",
   assert.deepEqual(unityJob.permissions, { actions: "read" });
   assert.equal(readWorkflowDocument("unity-tests.yml").toJS().jobs["unity-tests"].name, "Unity ${{ matrix.unity-version }} all modes");
 });
-
 // prettier-ignore
-test("active workflows pin external actions and scope licensed credentials", () => {
+test("active automation rejects direct Unity Helpers dependencies and pins external actions", () => {
+  for (const [name, source, forbidden] of [["canonical owner", "uses: Ambiguous-Interactive/unity-helpers/action@ref", true], ["former owner case-insensitively", "uses: WALLSTOP/UNITY-HELPERS/action@ref", true], ["YAML comment", "# uses: Ambiguous-Interactive/unity-helpers/action@ref\nuses: ./local", false], ["different owner", "uses: notambiguous-interactive/unity-helpers/action@ref", false], ["different repository", "uses: wallstop/unity-helpers-fork/action@ref", false]]) assert.equal(FORBIDDEN_UNITY_HELPERS.test(JSON.stringify(YAML.parse(source))), forbidden, name);
   for (const filePath of [WORKFLOW_DIR, path.join(REPO_ROOT, ".github", "actions")].flatMap((root) => walkFiles(root, { match: (file) => /\.ya?ml$/.test(file) }))) {
     const source = fs.readFileSync(filePath, "utf8");
+    assert.doesNotMatch(JSON.stringify(YAML.parse(source)), FORBIDDEN_UNITY_HELPERS, `${path.relative(REPO_ROOT, filePath)} must not directly depend on Unity Helpers`);
     for (const match of source.matchAll(/^\s*uses:\s+([^\s#]+)(?:\s+#.*)?$/gm)) { const action = match[1]; if (!action.startsWith("./") && !action.startsWith("docker://")) assert.match(action, /@[0-9a-f]{40}$/, `${path.relative(REPO_ROOT, filePath)}: ${action} must be immutable`); }
   }
   const files = [...new Set(UNITY_LOCK_WINDOWS.map(([file]) => file))];
