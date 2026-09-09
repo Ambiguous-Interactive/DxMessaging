@@ -28,33 +28,6 @@ on:
       - ".markdownlintignore"
       - "**/.markdownlintignore"
       - "package.json"
-  pull_request_target:
-    paths:
-      - "**/*.md"
-      - "**/*.markdown"
-      - "**/*.json"
-      - "**/*.asmdef"
-      - "**/*.asmref"
-      - "**/*.yml"
-      - "**/*.yaml"
-      - ".github/workflows/**"
-      - ".prettierrc*"
-      - "**/.prettierrc*"
-      - "prettier.config.*"
-      - "**/prettier.config.*"
-      - ".prettierignore"
-      - "**/.prettierignore"
-      - ".editorconfig"
-      - "**/.editorconfig"
-      - ".gitignore"
-      - "**/.gitignore"
-      - "package.yaml"
-      - "**/package.yaml"
-      - ".markdownlint*"
-      - "**/.markdownlint*"
-      - ".markdownlintignore"
-      - "**/.markdownlintignore"
-      - "package.json"
   workflow_dispatch:
 
 concurrency:
@@ -68,7 +41,6 @@ permissions:
 jobs:
   autofix:
     name: Format and propose changes
-    if: ${{ github.event_name != 'pull_request_target' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -88,10 +60,11 @@ jobs:
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --ignore-scripts --no-audit --no-fund
           else
-            npm i --no-audit --no-fund
+            npm i --ignore-scripts --no-audit --no-fund
           fi
+          npm audit --audit-level=high
 
       - name: Run Prettier (write fixes)
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
@@ -102,7 +75,7 @@ jobs:
 
       - name: Markdownlint (auto-fix)
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
-        run: npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix
+        run: npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
 
       - name: Renormalize line endings
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
@@ -164,141 +137,3 @@ jobs:
 
       - name: Markdown lint (CI gate)
         run: npm run lint:markdown
-
-  autofix_fork:
-    name: Fork PR bot formatting PR (Dependabot only)
-    if: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && github.event.pull_request.user.login == 'dependabot[bot]' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout fork PR HEAD
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22.18.0"
-          cache: "npm"
-          cache-dependency-path: package.json
-
-      - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm i --no-audit --no-fund
-          fi
-
-      - name: Run Prettier (write fixes)
-        run: |
-          npx prettier --write "**/*.{md,markdown}"
-          npx prettier --write "**/*.{json,asmdef,asmref}"
-          npx prettier --write "**/*.{yml,yaml}"
-
-      - name: Markdownlint (auto-fix)
-        run: npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix
-
-      - name: Renormalize line endings
-        shell: bash
-        run: |
-          # Renormalize each extension separately to avoid "pathspec did not match" failures
-          # when certain file types don't exist or aren't accessible in this checkout context
-          # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in md markdown json asmdef asmref yml; do
-            if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
-              git add --renormalize -- "*.$ext" "**/*.$ext"
-            fi
-          done
-
-      - name: Detect changes
-        id: changes
-        shell: bash
-        run: |
-          if git diff --quiet; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create bot branch and push to base repo
-        if: steps.changes.outputs.has_changes == 'true'
-        shell: bash
-        env:
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          BRANCH="bot/prettier/pr-${{ github.event.pull_request.number }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$BRANCH"
-          # Stage only files we format; avoid workflows to prevent permission issues
-          # Use --renormalize to ensure line endings in git index per .gitattributes
-          # Renormalize each extension separately to avoid "pathspec did not match" failures
-          # yaml excluded: dotfiles (.pre-commit-config.yaml) match git ls-files but not git add globs
-          for ext in md markdown json asmdef asmref yml; do
-            if git ls-files "*.$ext" "**/*.$ext" | grep -q .; then
-              git add --renormalize -- "*.$ext" "**/*.$ext"
-            fi
-          done
-          git commit -m "chore(format): apply Prettier/markdownlint fixes for PR #${{ github.event.pull_request.number }}"
-          auth_header="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
-          git remote add upstream "https://github.com/${GH_REPO}.git"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch upstream
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push upstream "$BRANCH" --force
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-
-      - name: Open or update formatting PR in base repo
-        if: steps.changes.outputs.has_changes == 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            const prNumber = context.payload.pull_request.number;
-            const baseRef = context.payload.pull_request.base.ref;
-            const headBranch = `bot/prettier/pr-${prNumber}`;
-            const {owner, repo} = context.repo;
-            const title = `chore(format): Apply Prettier/markdownlint to PR #${prNumber}`;
-            const body = [
-              `This automated PR applies Prettier and markdownlint fixes to the changes from PR #${prNumber}.`,
-              '',
-              `- Source PR (fork): #${prNumber}`,
-              `- Target branch: ${baseRef}`,
-              '',
-              'If this PR is merged, it will include the contributor\'s changes plus required formatting.',
-              'You can then close the original PR or ask the author to rebase.',
-            ].join('\n');
-
-            const existing = await github.rest.pulls.list({ owner, repo, state: 'open', head: `${owner}:${headBranch}` });
-            if (existing.data.length === 0) {
-              await github.rest.pulls.create({ owner, repo, head: headBranch, base: baseRef, title, body });
-            }
-
-      - name: Comment link on original PR
-        if: steps.changes.outputs.has_changes == 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            const prNumber = context.payload.pull_request.number;
-            const {owner, repo} = context.repo;
-            const headBranch = `bot/prettier/pr-${prNumber}`;
-            const resp = await github.rest.pulls.list({ owner, repo, state: 'open', head: `${owner}:${headBranch}` });
-            if (resp.data.length > 0) {
-              const fmtPr = resp.data[0];
-              const body = `A formatting PR has been opened: #${fmtPr.number} (applies Prettier/markdownlint fixes to this PR).`;
-              const comments = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 50 });
-              const already = comments.data.some(
-                (c) =>
-                  c.body &&
-                  c.body.includes(`#${fmtPr.number}`) &&
-                  c.user &&
-                  c.user.login === 'github-actions[bot]'
-              );
-              if (!already) {
-                await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
-              }
-            }

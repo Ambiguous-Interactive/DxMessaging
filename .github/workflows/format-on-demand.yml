@@ -78,10 +78,11 @@ jobs:
         # back to npm install when it is absent (repo-standard pattern).
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --ignore-scripts --no-audit --no-fund
           else
-            npm i --no-audit --no-fund
+            npm i --ignore-scripts --no-audit --no-fund
           fi
+          npm audit --audit-level=high
       - name: Apply Prettier fixes
         run: |
           npx prettier --write "**/*.{md,markdown}"
@@ -89,7 +90,7 @@ jobs:
           npx prettier --write "**/*.{yml,yaml}"
       - name: Apply markdownlint fixes
         run: |
-          npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix
+          npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
       - name: Apply CSharpier formatting
         # The trailing "." is required: without a path, "csharpier format"
         # reads stdin (empty in a run step) and formats nothing.
@@ -201,10 +202,11 @@ jobs:
         # back to npm install when it is absent (repo-standard pattern).
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --ignore-scripts --no-audit --no-fund
           else
-            npm i --no-audit --no-fund
+            npm i --ignore-scripts --no-audit --no-fund
           fi
+          npm audit --audit-level=high
       - name: Apply Prettier fixes
         run: |
           npx prettier --write "**/*.{md,markdown}"
@@ -212,7 +214,7 @@ jobs:
           npx prettier --write "**/*.{yml,yaml}"
       - name: Apply markdownlint fixes
         run: |
-          npx --yes markdownlint-cli2@0.22.1 "**/*.md" "**/*.markdown" --fix
+          npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
       - name: Apply CSharpier formatting
         # The trailing "." is required: without a path, "csharpier format"
         # reads stdin (empty in a run step) and formats nothing.

@@ -197,8 +197,6 @@ These never gate a pull request:
   `**/*.md` etc.), so it is absent on non-matching pull requests -- the same
   hang failure mode. The dedicated `Check C# formatting`, `Lint repository
 Markdown`, and `Prettier and yamllint` gates are the correct required checks.
-  (The `_fork` jobs additionally run under `pull_request_target` for Dependabot,
-  which is a separate reason not to treat these as the gate.)
 - `deploy-docs.yml` (deploy is push-only; its PR build duplicates the
   `Validate Documentation Build` job in `ci.yml`), and the
   schedule/dispatch/release workflows, none of which have a `pull_request`
@@ -423,10 +421,9 @@ A required check is matched by literal string, so these break silently:
   every required job must keep a unique, stable `name:`.
 - **Renames.** Renaming a job's `name:` drops the old required check (which then
   never reports) without any error. Treat required-check names as an API.
-- **`pull_request_target`.** Do not require the auto-fix workflows. Their visible
-  `Format and propose changes` job is path-filtered (absent on non-matching pull
-  requests), and the `_fork` jobs run under `pull_request_target` in the
-  base-repo context. Require the dedicated lint gates instead.
+- **Path-filtered auto-fix workflows.** Do not require the auto-fix workflows. Their visible
+  `Format and propose changes` jobs are absent on non-matching pull requests. Require the
+  dedicated lint gates instead.
 
 ## Maintenance
 

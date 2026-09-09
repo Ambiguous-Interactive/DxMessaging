@@ -1793,10 +1793,11 @@ jobs:
         if: steps.default-branch.outputs.fresh == 'true'
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --ignore-scripts --no-audit --no-fund
           else
-            npm i --no-audit --no-fund
+            npm i --ignore-scripts --no-audit --no-fund
           fi
+          npm audit --audit-level=high
 
       - name: Download perf benchmark artifacts
         if: steps.default-branch.outputs.fresh == 'true'
@@ -1894,7 +1895,7 @@ jobs:
         run: |
           npx prettier --check "${PERF_DOC}"
           npx prettier --check "${PERF_BASELINE_PROFILE}"
-          npx markdownlint-cli2 "${PERF_DOC}"
+          npx --no-install markdownlint-cli2 "${PERF_DOC}"
 
       - name: Commit and push refreshed perf doc
         if: steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'
