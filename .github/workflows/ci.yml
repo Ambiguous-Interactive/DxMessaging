@@ -779,7 +779,9 @@ jobs:
           # Let the probes finish their descendant cleanup even if this shell exits early.
           trap 'wait "$heartbeat_pid" || true' EXIT
           script_status=0
-          node --test scripts/ || script_status=$?
+          # The native glob lets Node 22 run test files in separate worker processes;
+          # scripts/ resolves to scripts/index.js and registers every suite in one process.
+          node --test 'scripts/**/*.test.js' || script_status=$?
           heartbeat_status=0
           wait "$heartbeat_pid" || heartbeat_status=$?
           echo "::group::Unity editor heartbeat guards"
