@@ -82,29 +82,43 @@ every context present without allowing skipped dependencies in `CI Success`.
 ### Unity CI Success
 
 [`unity-tests.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-tests.yml)
-hosts the Unity correctness gate. Its `pull_request` trigger has no `paths:`
-filter, so the workflow always starts. Three shapes skip the licensed matrix,
-and each is validated rather than assumed:
+hosts the Unity correctness gate. Its `pull_request` trigger is filtered by
+`paths-ignore`, so a documentation-only pull request never starts the licensed
+matrix. Three shapes skip the licensed work, and each is validated rather than
+assumed:
 
+- **A documentation-only pull request.** Every changed file matches the closed
+  documentation-only allowlist in `paths-ignore`, so the workflow is absent
+  rather than running an empty matrix.
 - **A fork pull request.**
 - **A Dependabot pull request.** Both read from a different secret store, so the
   Unity serial and the build-lock App credentials resolve empty and a licensed
   leg would fail on missing credentials rather than on the change under test.
-- **A superseded head.** `concurrency` on this workflow sets
-  `cancel-in-progress: false` on purpose, because hard-cancelling a run that
-  holds the organization build lock is the scenario the license-return guarantee
-  exists to prevent. The group is keyed by pull-request head SHA so that policy
-  does not also queue the current head behind a superseded run: push runs keep
-  the `github.ref` key and stay serialized, pull-request runs partition per head,
-  and every job-level group in the file uses the same key. Nothing is cancelled,
-  and licensed work stays mutually exclusive through the organization build lock.
-  On top of that, the `head-check` job compares the event's head SHA against the
-  live pull-request head on `ubuntu-latest`, before the lock is in reach, and
-  publishes a `superseded` output that both licensed jobs gate on, so a
-  superseded run costs one cheap hosted job instead of four self-hosted ones. It
-  fails open: a lookup that returns no SHA runs the full matrix. The per-leg
-  `Require current PR head before setup` guard still covers a push that lands
-  after `head-check` has already passed.
+
+A required check must be present, never absent, so the documentation-only shape
+needs a reporter:
+[`unity-docs-gate.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-docs-gate.yml)
+triggers on every pull request into `master` with no paths filter and posts the
+same `Unity CI Success` context. Its single step lists the changed files via
+`gh api .../files` (including `previous_filename` for renames), fails closed on
+a lookup failure or an empty listing, reports success only when every changed
+file matches the exact `paths-ignore` allowlist, and reports red for anything
+else. The licensed result for those pull requests stays owned by
+`unity-tests.yml`. Re-running the docs gate manually on a code pull request
+posts a red duplicate until the Unity aggregate runs again; that is visible and
+fail-closed. `scripts/__tests__/ci-aggregate-workflow.test.js` asserts the
+lockstep between the allowlist and the gate's pattern.
+
+The `concurrency` setting keeps `cancel-in-progress: false` on purpose, because
+hard-cancelling a run that holds the organization build lock is the scenario the
+license-return guarantee exists to prevent. The group is keyed by pull-request
+head SHA so that policy does not also queue the current head behind a superseded
+run: push runs keep the `github.ref` key and stay serialized, pull-request runs
+partition per head, and every job-level group in the file uses the same key.
+Nothing is cancelled, and licensed work stays mutually exclusive through the
+organization build lock. A superseded pull-request run still starts, but each
+leg aborts at the `Require current PR head before setup` guard before any
+expensive setup, so a superseded run costs seconds instead of a license seat.
 
 The required Unity check name is the stable aggregate:
 
@@ -113,15 +127,15 @@ Unity CI Success
 ```
 
 `Unity CI Success` has `if: ${{ always() }}` and no job-level condition that can
-be false. Its one step reads the results of `head-check`, `runner-preflight`,
-and the `unity-tests` matrix, requires `head-check` itself to have succeeded,
-and then asserts that both licensed jobs are `skipped` for exactly the three
-shapes above and `success` otherwise. `re-actors/alls-green` and blanket
-allowed-skip lists are rejected by `scripts/validate-unity-pr-policy.py`, which
-also byte-pins that step's script and runs it against a truth table.
+be false. Its one step reads the results of `runner-preflight`
+and the `unity-tests` matrix and asserts that both are `skipped` for exactly the
+fork and Dependabot shapes above and `success` otherwise. That step is the
+enrollment policy's closed trusted-skip shape, byte-validated by
+`scripts/__tests__/ci-aggregate-workflow.test.js` against a truth table.
+Blanket allowed-skip lists and `re-actors/alls-green` stay rejected.
 
 Do **not** require the expanded matrix job names (`Unity <version> all modes`),
-`Unity head freshness`, or `Self-hosted runner registration preflight`. When a
+or `Self-hosted runner registration preflight`. When a
 job-level `if:` skips a matrix before expansion, GitHub can report only one
 skipped check with the literal name
 `Unity ${{ matrix.unity-version }} all modes`, so requiring the

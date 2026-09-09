@@ -773,7 +773,7 @@ jobs:
         shell: bash
         run: |
           # The heartbeat probes wait on isolated child processes; overlap those waits with Node tests.
-          heartbeat_log="$RUNNER_TEMP/unity-editor-heartbeat.log"
+          heartbeat_log="$RUNNER_TEMP/editor-provisioning-heartbeat.log"
           pwsh -NoLogo -NoProfile -File ./scripts/__tests__/test-editor-provisioning-heartbeat.ps1 -VerboseOutput > "$heartbeat_log" 2>&1 &
           heartbeat_pid=$!
           # Let the probes finish their descendant cleanup even if this shell exits early.

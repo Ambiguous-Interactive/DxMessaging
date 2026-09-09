@@ -1,0 +1,138 @@
+name: Unity Docs Gate
+
+# The repository ruleset requires the "Unity CI Success" context on every pull
+# request into master. unity-tests.yml decides its documentation-only skip with
+# pull_request paths-ignore, so that workflow is absent (never red, just absent)
+# for a documentation-only pull request and the required context would hang.
+# Positive paths start this workflow when a documentation path changes. The
+# classifier then distinguishes documentation-only changes from mixed changes:
+#
+# - Every changed file matches the exact documentation-only allowlist that
+#   unity-tests.yml paths-ignore declares: the licensed matrix did not trigger,
+#   so this gate reports the same skip-green that the master head-check job
+#   used to decide in-band.
+# - A documentation path and any non-documentation path changed: the report job
+#   uses a distinct name, so the licensed matrix remains the only owner of the
+#   required context.
+# - Changed-file lookup fails: the report keeps the required context name and
+#   fails closed.
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/**"
+      - "docs/**"
+      - ".docs-tests/**"
+      - "progress/**"
+      - ".llm/**"
+      - ".agents/**"
+      - ".claude/**"
+      - "Samples~/**/*.md"
+      - "Samples~/**/*.markdown"
+      - "AGENTS.md"
+      - "GOAL.md"
+      - "PLAN.md"
+      - "llms.txt"
+      - "mkdocs.yml"
+      - "requirements-docs.in"
+      - "requirements-docs.txt"
+      - "requirements-brand.in"
+      - "requirements-brand.txt"
+
+concurrency:
+  group: unity-docs-gate-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  classify:
+    name: Classify documentation-only Unity gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      documentation_only: ${{ steps.classify.outputs.documentation_only }}
+    steps:
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_FILE_COUNT: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
+            echo "::error::This gate evaluates pull requests only; refusing to infer a Unity result from ${EVENT_NAME}."
+            exit 1
+          fi
+          if ! [[ "${EXPECTED_FILE_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::The pull request did not declare a positive changed-file count."
+            exit 1
+          fi
+          # Emit one JSON record per API entry so the count stays independent
+          # from previous_filename. A rename still contributes both endpoints
+          # to the allowlist evaluation below.
+          if ! records="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | [.filename, (.previous_filename // null)] | @json')"; then
+            echo "::error::Changed-file lookup failed; the required Unity gate cannot prove a documentation-only change."
+            exit 1
+          fi
+          if [ -z "${records}" ]; then
+            echo "::error::The changed-file listing is empty; refusing to report a documentation-only skip."
+            exit 1
+          fi
+          listed_file_count="$(printf '%s\n' "${records}" | wc -l | tr -d '[:space:]')"
+          if [ "${listed_file_count}" != "${EXPECTED_FILE_COUNT}" ]; then
+            echo "::error::Changed-file listing is incomplete: expected ${EXPECTED_FILE_COUNT}, received ${listed_file_count}."
+            exit 1
+          fi
+          files="$(printf '%s\n' "${records}" | jq -r '.[] | select(. != null)')"
+          # SYNC: this allowlist must stay equivalent to the pull_request
+          # paths-ignore list in unity-tests.yml, so this gate reports green
+          # exactly when that workflow is absent. scripts/__tests__/ci-aggregate-workflow.test.js
+          # asserts the lockstep and the path vectors.
+          documentation_only_pattern='^(docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)$|(AGENTS|GOAL|PLAN)\.md$|llms\.txt$|mkdocs\.yml$|requirements-(docs|brand)\.(in|txt)$)'
+          non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
+          if [ -n "${non_documentation}" ]; then
+            echo "::notice::Non-documentation files also changed; the licensed Unity result comes from the unity-tests workflow."
+            printf '%s\n' "${non_documentation}" | sed -n '1,20p'
+            echo "documentation_only=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "documentation_only=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  report:
+    name: ${{ (needs.classify.result != 'success' || needs.classify.outputs.documentation_only != 'false') && 'Unity CI Success' || 'Unity docs gate not applicable' }}
+    needs:
+      - classify
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report the documentation-only Unity result
+        shell: bash
+        env:
+          CLASSIFICATION_RESULT: ${{ needs.classify.result }}
+          DOCUMENTATION_ONLY: ${{ needs.classify.outputs.documentation_only }}
+        run: |
+          set -euo pipefail
+          if [ "${CLASSIFICATION_RESULT}" != "success" ]; then
+            echo "::error::Changed-file classification failed; the required Unity gate cannot prove a documentation-only change."
+            exit 1
+          fi
+          if [ "${DOCUMENTATION_ONLY}" = "false" ]; then
+            echo "::notice::The licensed unity-tests workflow owns the required Unity result for this mixed pull request."
+            exit 0
+          fi
+          if [ "${DOCUMENTATION_ONLY}" != "true" ]; then
+            echo "::error::Changed-file classification produced an invalid result."
+            exit 1
+          fi
+          echo "::notice::Only documentation and agent-context files changed; unity-tests is path-filtered for this pull request, so this gate reports the documentation-only skip-green."

@@ -6,6 +6,42 @@
     ["release.yml", "unitypackage", "Export the .unitypackage", false],
     ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
   ],
+  "UNITY_EDITOR_PROFILES": {
+    "unity-tests.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}",
+    "unity-benchmarks.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}",
+    "release.yml": "EditorOnly",
+    "perf-numbers.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}"
+  },
+  "UNITY_EDITOR_CONSUMERS": [
+    [
+      "unity-tests.yml",
+      "unity-tests",
+      ["run_editmode", "run_playmode", "run_standalone", "run_shipping"]
+    ],
+    ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
+    ["release.yml", "unity-checks", ["run_tests"]],
+    ["release.yml", "unitypackage", ["export_unitypackage"]],
+    ["perf-numbers.yml", "perf-benchmarks", ["run_contracts", "run_tests"]]
+  ],
+  "DOCS_ONLY_PATH_IGNORES": [
+    "docs/**",
+    ".docs-tests/**",
+    "progress/**",
+    ".llm/**",
+    ".agents/**",
+    ".claude/**",
+    "Samples~/**/*.md",
+    "Samples~/**/*.markdown",
+    "AGENTS.md",
+    "GOAL.md",
+    "PLAN.md",
+    "llms.txt",
+    "mkdocs.yml",
+    "requirements-docs.in",
+    "requirements-docs.txt",
+    "requirements-brand.in",
+    "requirements-brand.txt"
+  ],
   "STATIC_CHILD_JOBS": [
     ["actionlint", "actionlint"],
     ["markdownlint", "markdown"],
