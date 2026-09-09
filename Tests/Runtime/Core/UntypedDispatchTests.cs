@@ -259,6 +259,9 @@ namespace DxMessaging.Tests.Runtime.Core
     /// this payload through a concrete typed call, which could mask the missing native target.
     /// Custom-bus rooting uses a distinct payload type. Interceptors replace readonly payloads
     /// through the ref parameter to preserve mutation coverage without an analyzer suppression.
+    /// 2026-09-09: a supplemental direct regression guard uses route-specific handlers and
+    /// post-processors to capture the bridge's typed local after payload and context mutation
+    /// while the caller's original box stays unchanged.
     /// </remarks>
     public sealed class UntypedStructPayloadTests
     {
@@ -284,23 +287,47 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId context = new(0x6A17_4002);
             NonEmptyManualMessage original = new(marker, value);
             List<(long Marker, int Value)> observed = new();
+            List<(int Context, long Marker, int Value)> postObserved = new();
             int interceptions = 0;
+            int originalRouteCalls = 0;
+            int rewrittenRouteCalls = 0;
+            InstanceId rewrittenContext = new(context.Id + 11);
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    _ = token.RegisterUntargeted<NonEmptyManualMessage>(Record);
+                    _ = token.RegisterUntargeted<NonEmptyManualMessage>(RecordOriginalRoute);
                     _ = token.RegisterUntargetedInterceptor<NonEmptyManualMessage>(Intercept);
+                    _ = token.RegisterUntargetedPostProcessor<NonEmptyManualMessage>(
+                        RecordUntargetedPost
+                    );
                     break;
                 case MessageKind.Targeted:
-                    _ = token.RegisterTargeted<NonEmptyManualMessage>(context, Record);
+                    _ = token.RegisterTargeted<NonEmptyManualMessage>(context, RecordOriginalRoute);
+                    _ = token.RegisterTargeted<NonEmptyManualMessage>(
+                        rewrittenContext,
+                        RecordRewrittenRoute
+                    );
                     _ = token.RegisterTargetedInterceptor<NonEmptyManualMessage>(
                         InterceptWithContext
                     );
+                    _ = token.RegisterTargetedWithoutTargetingPostProcessor<NonEmptyManualMessage>(
+                        RecordContextPost
+                    );
                     break;
                 case MessageKind.Broadcast:
-                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(context, Record);
+                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(
+                        context,
+                        RecordOriginalRoute
+                    );
+                    _ = token.RegisterBroadcast<NonEmptyManualMessage>(
+                        rewrittenContext,
+                        RecordRewrittenRoute
+                    );
                     _ = token.RegisterBroadcastInterceptor<NonEmptyManualMessage>(
                         InterceptWithContext
+                    );
+                    _ = token.RegisterBroadcastWithoutSourcePostProcessor<NonEmptyManualMessage>(
+                        RecordContextPost
                     );
                     break;
                 default:
@@ -318,11 +345,35 @@ namespace DxMessaging.Tests.Runtime.Core
             emit();
             string label = $"[{scenario.Kind}] aot={invokeAotBridge}, mutate={mutate}";
             (long Marker, int Value) expected = mutate ? (marker + 9, value + 7) : (marker, value);
+            int expectedContext =
+                scenario.Kind == MessageKind.Untargeted
+                    ? 0
+                    : (mutate ? rewrittenContext.Id : context.Id);
             CollectionAssert.AreEqual(
                 new[] { expected, expected },
                 observed,
                 label
-                    + ": both cold and cached dispatch must deliver the actual struct fields and interceptor changes."
+                    + ": first and repeated dispatch must deliver the actual struct fields and interceptor changes."
+            );
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    (expectedContext, expected.Marker, expected.Value),
+                    (expectedContext, expected.Marker, expected.Value),
+                },
+                postObserved,
+                label
+                    + ": post-processors must observe the bridge's internal final payload and routed context."
+            );
+            Assert.That(
+                originalRouteCalls,
+                Is.EqualTo(scenario.Kind == MessageKind.Untargeted || !mutate ? 2 : 0),
+                label + ": context mutation must stop dispatch to the original route."
+            );
+            Assert.That(
+                rewrittenRouteCalls,
+                Is.EqualTo(scenario.Kind != MessageKind.Untargeted && mutate ? 2 : 0),
+                label + ": context mutation must dispatch through the rewritten route."
             );
             Assert.That(
                 interceptions,
@@ -343,8 +394,23 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             return;
 
-            void Record(in NonEmptyManualMessage message) =>
+            void RecordOriginalRoute(in NonEmptyManualMessage message)
+            {
+                ++originalRouteCalls;
                 observed.Add((message.Marker, message.Value));
+            }
+
+            void RecordRewrittenRoute(in NonEmptyManualMessage message)
+            {
+                ++rewrittenRouteCalls;
+                observed.Add((message.Marker, message.Value));
+            }
+
+            void RecordUntargetedPost(in NonEmptyManualMessage message) =>
+                postObserved.Add((0, message.Marker, message.Value));
+
+            void RecordContextPost(in InstanceId routedContext, in NonEmptyManualMessage message) =>
+                postObserved.Add((routedContext.Id, message.Marker, message.Value));
 
             bool Intercept(ref NonEmptyManualMessage message)
             {
@@ -366,6 +432,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     Is.EqualTo(context),
                     $"[{scenario.Kind}]: the bridge must preserve the actual target/source."
                 );
+                if (mutate)
+                {
+                    routedContext = rewrittenContext;
+                }
                 return Intercept(ref message);
             }
         }
