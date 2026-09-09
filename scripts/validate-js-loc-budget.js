@@ -193,7 +193,12 @@ const path = require("path");
 //     document-level UTF-16 byte-order mark preserved and encoded-Cf shadows still refusing
 //     sealing. Vector rows moved from refusal to exact-byte acceptance; the marker passes reuse
 //     the existing data-driven loops: 24063.
-const TOTAL_BUDGET = 24063;
+// 088 Migrate the Unity workflow contract tests to the central-action lifecycle. The aggregate
+//     gate loses its head-check diagnostic step for the closed trusted-skip script (fork and
+//     Dependabot env keys only), docs-only PRs gain the unity-docs-gate allowlist vectors, and
+//     the static test-mode axis joins the holder identity, so the topology vectors and their
+//     expectations grow, plus the 5 lines this entry itself adds: 24095.
+const TOTAL_BUDGET = 24095;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 
