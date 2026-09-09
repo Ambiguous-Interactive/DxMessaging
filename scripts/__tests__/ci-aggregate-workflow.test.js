@@ -21,10 +21,7 @@ const LOCK_ACTION_PREFIX =
   "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/";
 const FORBIDDEN_UNITY_HELPERS =
   /(?:^|[^a-z0-9-])(?:ambiguous-interactive|wallstop)\/unity-helpers(?:[^a-z0-9-]|$)/i;
-// Build-lock pins are excluded from Dependabot (the github-actions ignore block
-// in .github/dependabot.yml), so humans bump them together with the docs examples
-// that copy the same immutable commits. Each group stays immutably pinned and
-// identical at every call site.
+// Build-lock pins are excluded in .github/dependabot.yml; humans bump them with the docs examples, and each group stays immutably pinned at every call site.
 // prettier-ignore
 function resolveLockActionPin(actionNames) {
   const shas = new Map(); const comments = new Set(); const label = actionNames.join(", ");
@@ -42,9 +39,7 @@ function resolveLockActionPin(actionNames) {
   return { sha: [...shas.keys()][0], comment: [...comments][0] || "" };
 }
 
-// Acquire, the editor gate, preflight, and the PR-head guard ship in the
-// build-lock release. Return/classify/release/require-confirmed carry the
-// centralized cleanup policy.
+// Acquire/editor/preflight/head-guard share the build lock; return/classify/release/require-confirmed share cleanup policy.
 // prettier-ignore
 const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head", "ensure-unity-editor"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
@@ -57,8 +52,6 @@ const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet
 
 // prettier-ignore
 const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
-
-// cspell:ignore ACDMRT
 
 const readWorkflow = (file = "ci.yml") => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 
@@ -116,8 +109,13 @@ test("active workflows keep the shared safety contract", () => {
     .sort();
 
   for (const file of workflowFiles) {
+    const source = readWorkflow(file);
     const document = readWorkflowDocument(file);
     assert.equal(document.errors.length, 0, `${file} must parse as YAML`);
+    // prettier-ignore
+    assert.doesNotMatch(source, /npx(?! --no-install markdownlint-cli2(?: |$))[^\n]*markdownlint-cli2|markdownlint-cli2@/, file);
+    // prettier-ignore
+    assert.equal(source.match(/npm audit --audit-level=high/g)?.length || 0, source.match(/npx --no-install markdownlint-cli2/g)?.length || 0, file);
 
     const keys = document.contents.items.map((item) => String(item.key.value));
     assert.deepEqual(
@@ -127,6 +125,7 @@ test("active workflows keep the shared safety contract", () => {
     );
 
     const workflow = document.toJS();
+    assert.equal(Object.hasOwn(workflow.on, "pull_request_target"), false, file);
     assert.equal(
       typeof workflow.concurrency["cancel-in-progress"],
       "boolean",

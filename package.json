@@ -102,6 +102,11 @@
     "smol-toml": "1.8.0",
     "yaml": "^2.9.0"
   },
+  "overrides": {
+    "markdownlint-cli2": {
+      "smol-toml": "$smol-toml"
+    }
+  },
   "samples": [
     {
       "displayName": "Mini Combat",
