@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "repository": "Ambiguous-Interactive/DxMessaging",
+  "rulesets": [
+    {
+      "rulesetId": 17663217,
+      "rulesetName": "Required CI - Unity Tests (default branch)",
+      "enforcement": "active",
+      "requiredContexts": [
+        "CI Success",
+        "Unity CI Success",
+        "Devcontainer CI Success"
+      ],
+      "bypassActors": [
+        { "actorType": "Integration", "actorId": 3977200, "bypassMode": "always" }
+      ]
+    }
+  ]
+}
