@@ -305,11 +305,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
-          MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         with:
           lfs: true
           persist-credentials: false
-          ref: ${{ env.MEASURED_SHA }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Print runner diagnostics
         timeout-minutes: 2
@@ -535,8 +534,7 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
-          MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          DX_PERF_COMMIT: ${{ env.MEASURED_SHA }}
+          DX_PERF_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison' }}
           DXM_PERF_AFFINITY_MASK: ${{ steps.cpu_profile.outputs.affinity-mask }}
           DXM_PERF_PRIORITY_CLASS: ${{ steps.cpu_profile.outputs.priority-class }}
@@ -617,8 +615,6 @@ jobs:
         if: ${{ matrix.test-mode == 'standalone' && matrix.benchmark-suite == 'internal' && steps.run_tests.outcome == 'success' }}
         timeout-minutes: 5
         shell: pwsh
-        env:
-          MEASURED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-standalone-internal'
           $playerDir = Join-Path $projectPath 'Build\DxmTestPlayer'
@@ -641,10 +637,11 @@ jobs:
           }
           $gameAssembly = $gameAssemblies[0]
           $metadata = $metadataFiles[0]
+          $playerExecutable = Get-Item -LiteralPath $playerExe
           [long]$totalBytes = ($files | Measure-Object -Property Length -Sum).Sum
           [long]$shippableBytes = ($shippableFiles | Measure-Object -Property Length -Sum).Sum
           $manifest = [ordered]@{
-            commit = '${{ env.MEASURED_SHA }}'
+            commit = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
             unityVersion = '${{ matrix.unity-version }}'
             scriptingBackend = 'IL2CPP'
             codeOptimization = 'Release'
@@ -652,7 +649,14 @@ jobs:
             apiCompatibility = '.NET Standard 2.1'
             totalBytes = $totalBytes
             shippableBytes = $shippableBytes
-            executableBytes = (Get-Item -LiteralPath $playerExe).Length
+            executableBytes = $playerExecutable.Length
+            executablePath = $playerExecutable.FullName.Substring($playerDir.Length).TrimStart(
+              [System.IO.Path]::DirectorySeparatorChar,
+              [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            executableSha256 = (
+              Get-FileHash -LiteralPath $playerExecutable.FullName -Algorithm SHA256
+            ).Hash
             gameAssemblyBytes = $gameAssembly.Length
             gameAssemblyPath = $gameAssembly.FullName.Substring($playerDir.Length).TrimStart(
               [System.IO.Path]::DirectorySeparatorChar,
@@ -671,6 +675,12 @@ jobs:
             ).Hash
             fileCount = $files.Count
             shippableFileCount = $shippableFiles.Count
+          }
+          if ($manifest.executablePath -cne 'DxmTestPlayer.exe') {
+            throw "Player executable path '$($manifest.executablePath)' is not the canonical relative path."
+          }
+          if ($manifest.executableSha256 -cnotmatch '^[0-9A-F]{64}$') {
+            throw 'Player executable SHA-256 is not a complete uppercase hexadecimal digest.'
           }
           $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-standalone-internal'
           $manifest |

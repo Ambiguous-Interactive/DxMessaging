@@ -366,7 +366,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         ? new BusTraceOperation(BusTraceOperationKind.EmitUntyped, value: 17)
                         : new BusTraceOperation(BusTraceOperationKind.Remove),
                     new BusTraceOperation(BusTraceOperationKind.EmitUntyped, value: 29),
-                }
+                },
+                generatorVersion: 10
             );
             IReadOnlyList<BusTraceObservation> untyped = DifferentialBusTrace.Replay(
                 sequence,
@@ -385,7 +386,8 @@ namespace DxMessaging.Tests.Runtime.Core
                             )
                             : operation
                     )
-                    .ToArray()
+                    .ToArray(),
+                generatorVersion: 10
             );
             IReadOnlyList<BusTraceObservation> typed = DifferentialBusTrace.Replay(
                 typedSequence,
@@ -554,7 +556,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
         [Test]
         public void GeneratorVersionPinsKnownSeedPrefix(
-            [Values(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)] int version
+            [Values(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -565,11 +567,19 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 BusTraceSequence.GeneratorVersion,
-                Is.EqualTo(10),
+                Is.EqualTo(11),
                 "Changing generation requires a new version and a reviewed replay fixture."
             );
             CollectionAssert.AreEqual(
-                version >= 8
+                version == 11
+                        ? new[]
+                        {
+                            "Register(token=0,context=0,value=0,priority=0)[handleSlot=0,sourceHandleSlot=-1]",
+                            "DuplicateRegistration(token=0,context=0,value=0,priority=0)[handleSlot=1,sourceHandleSlot=0]",
+                            "CopyHandle(token=0,context=0,value=0,priority=0)[handleSlot=2,sourceHandleSlot=0]",
+                            "EmitUntyped(token=0,context=0,value=0,priority=0)",
+                        }
+                    : version >= 8
                         ? new[]
                         {
                             "Register(token=0,context=0,value=0,priority=0)[handleSlot=0,sourceHandleSlot=-1]",
@@ -828,6 +838,11 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <remarks>
+        /// Investigation (2026-09-08): this historical shrinker fixture implicitly adopted
+        /// generator v11 while asserting v10. Pinning v10 preserves the replay identity that
+        /// the assertion and saved diagnostic report are designed to verify.
+        /// </remarks>
         [Test]
         public void GlobalOverrideAliasMutationIsDetectedAndShrunk(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -863,7 +878,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         BusTraceOperationKind.DisposeGlobalOverride,
                         leaseSlot: 1
                     ),
-                }
+                },
+                generatorVersion: 10
             );
             BusTraceMismatch EvaluateOverride(BusTraceSequence input) =>
                 DifferentialBusTrace.Compare(
@@ -941,6 +957,58 @@ namespace DxMessaging.Tests.Runtime.Core
                     report + $", length={length}"
                 );
             }
+        }
+
+        [Test]
+        public void VersionElevenIntegratesUntypedEmissionsWithoutChangingLegacyGeneration(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            BusTraceSequence legacy = DifferentialBusTrace.Generate(scenario, 17, 256, 10);
+            BusTraceSequence current = DifferentialBusTrace.Generate(scenario, 17, 256, 11);
+            string report = $"kind={scenario.Kind}";
+            Assert.That(DifferentialBusTrace.IsValid(current), Is.True, report);
+            Assert.That(
+                legacy.Operations.Any(operation =>
+                    operation.Kind == BusTraceOperationKind.EmitUntyped
+                ),
+                Is.False,
+                report
+            );
+            Assert.That(
+                current.Operations.Any(operation =>
+                    operation.Kind == BusTraceOperationKind.EmitUntyped
+                ),
+                Is.True,
+                report
+            );
+            Assert.That(
+                current.Operations.Any(operation => operation.Kind == BusTraceOperationKind.Emit),
+                Is.True,
+                report
+            );
+            Assert.That(current.Operations.Count, Is.EqualTo(legacy.Operations.Count), report);
+            int emitOrdinal = 0;
+            for (int index = 0; index < current.Operations.Count; ++index)
+            {
+                BusTraceOperation expected = legacy.Operations[index];
+                BusTraceOperation actual = current.Operations[index];
+                BusTraceOperationKind expectedKind =
+                    expected.Kind == BusTraceOperationKind.Emit && emitOrdinal++ % 2 == 0
+                        ? BusTraceOperationKind.EmitUntyped
+                        : expected.Kind;
+                Assert.That(
+                    OperationFingerprint(actual),
+                    Is.EqualTo(OperationFingerprint(expected, expectedKind)),
+                    report + $", index={index}"
+                );
+            }
+            CollectionAssert.AreEqual(
+                current.Operations,
+                DifferentialBusTrace.Generate(scenario, 17, 256, 11).Operations,
+                report
+            );
         }
 
         [Test]
@@ -1579,7 +1647,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     .Cast<BusTraceOperationKind>()
                     .Where(kind =>
                         !DifferentialBusTrace.IsGlobalOverride(kind)
-                        && !DifferentialBusTrace.IsSupplementary(kind)
+                        && kind != BusTraceOperationKind.EmitUntyped
                     ),
                 kinds,
                 "Version eight must retain every existing operation and add duplicates/copies."
@@ -2034,7 +2102,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     .Cast<BusTraceOperationKind>()
                     .Where(kind =>
                         !DifferentialBusTrace.IsGlobalOverride(kind)
-                        && !DifferentialBusTrace.IsSupplementary(kind)
+                        && kind != BusTraceOperationKind.EmitUntyped
                     ),
                 all,
                 "Version nine retains the full operation vocabulary."
@@ -3029,7 +3097,7 @@ namespace DxMessaging.Tests.Runtime.Core
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
             [Values(17, 42)] int seed,
-            [Values(3, 4, 5, 6, 7, 8, 9, 10)] int version
+            [Values(3, 4, 5, 6, 7, 8, 9, 10, 11)] int version
         )
         {
             BusTraceSequence sequence = DifferentialBusTrace.Generate(
@@ -3623,7 +3691,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(11)]
+        [TestCase(BusTraceSequence.GeneratorVersion + 1)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(
@@ -3631,6 +3699,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 $"version={version}: unsupported provenance must be rejected."
             );
         }
+
+        private static string OperationFingerprint(
+            BusTraceOperation operation,
+            BusTraceOperationKind? kind = null
+        ) =>
+            $"{kind ?? operation.Kind}|{operation.Token}|{operation.Context}|{operation.Value}|"
+            + $"{operation.Priority}|{operation.KindOffset}|{operation.NestedToken}|{operation.Depth}|"
+            + $"{operation.HandleToken}|{operation.HandlerToken}|{operation.HandlerActive}|"
+            + $"{operation.HandleSlot}|{operation.SourceHandleSlot}|{operation.LeaseSlot}|"
+            + operation.SourceLeaseSlot;
 
         [Test]
         public void IndependentOperationMutantsAreDetectedAndShrunk(

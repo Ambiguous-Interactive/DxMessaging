@@ -135,7 +135,7 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Immutable, versioned replay inputs; a seed identifies the original generator sequence.</summary>
     internal sealed class BusTraceSequence
     {
-        internal const int GeneratorVersion = 10;
+        internal const int GeneratorVersion = 11;
         internal const int HandleSlotCount = 8;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
@@ -281,6 +281,10 @@ namespace DxMessaging.Tests.Runtime
             if (length < 0 || length > BusTraceSequence.MaxOperations)
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (generatorVersion == 11)
+            {
+                return GenerateUntypedEmissions(scenario, seed, length);
             }
             if (generatorVersion == 10)
             {
@@ -505,15 +509,50 @@ namespace DxMessaging.Tests.Runtime
             return new BusTraceSequence(scenario, seed, operations, 10);
         }
 
+        private static BusTraceSequence GenerateUntypedEmissions(
+            MessageScenario scenario,
+            uint seed,
+            int length
+        )
+        {
+            BusTraceSequence previous = GenerateGlobalOverrides(scenario, seed, length);
+            List<BusTraceOperation> operations = new(previous.Operations.Count);
+            int emitIndex = 0;
+            foreach (BusTraceOperation operation in previous.Operations)
+            {
+                if (operation.Kind != BusTraceOperationKind.Emit || emitIndex++ % 2 != 0)
+                {
+                    operations.Add(operation);
+                    continue;
+                }
+                operations.Add(
+                    new BusTraceOperation(
+                        BusTraceOperationKind.EmitUntyped,
+                        operation.Token,
+                        operation.Context,
+                        operation.Value,
+                        operation.Priority,
+                        operation.KindOffset,
+                        operation.NestedToken,
+                        operation.Depth,
+                        operation.HandleToken,
+                        operation.HandlerToken,
+                        operation.HandlerActive,
+                        operation.HandleSlot,
+                        operation.SourceHandleSlot,
+                        operation.LeaseSlot,
+                        operation.SourceLeaseSlot
+                    )
+                );
+            }
+            return new BusTraceSequence(scenario, seed, operations, 11);
+        }
+
         internal static bool IsGlobalOverride(BusTraceOperationKind kind) =>
             kind == BusTraceOperationKind.AcquireGlobalOverride
             || kind == BusTraceOperationKind.CopyGlobalOverride
             || kind == BusTraceOperationKind.DisposeGlobalOverride
             || kind == BusTraceOperationKind.ReplaceGlobalBus;
-
-        /// <summary>Hand-written supplementary operations that no versioned generator emits.</summary>
-        internal static bool IsSupplementary(BusTraceOperationKind kind) =>
-            kind == BusTraceOperationKind.EmitUntyped;
 
         // Only logical issuance and alias dependencies are modeled, never the production
         // override stack, physical slots, generations, current bus, or dispatch results.

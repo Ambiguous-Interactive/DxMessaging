@@ -3598,11 +3598,38 @@ def validate_perf_pr_policy() -> None:
         (source, r"\n  head-check:", "head-check job"),
         (preflight, r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository", "same-repository guard"),
         (preflight, r"github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'", "Dependabot guard"),
-        (benchmark, r"MEASURED_SHA:.*github\.event\.pull_request\.head\.sha", "measured head SHA"),
         (benchmark, r"runs-on: \[self-hosted, Windows, RAM-64GB, fast\]", "pinned benchmark runner labels"),
-        (benchmark, r"ref: \$\{\{ env\.MEASURED_SHA \}\}", "exact measured checkout"),
-        (benchmark, r"DX_PERF_COMMIT: \$\{\{ env\.MEASURED_SHA \}\}", "exact result commit"),
-        (benchmark, r"commit = '\$\{\{ env\.MEASURED_SHA \}\}'", "exact player manifest commit"),
+        (
+            benchmark,
+            r"ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}",
+            "exact measured checkout",
+        ),
+        (
+            benchmark,
+            r"DX_PERF_COMMIT: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}",
+            "exact result commit",
+        ),
+        (
+            benchmark,
+            r"commit = '\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}'",
+            "exact player manifest commit",
+        ),
+        (benchmark, r"executablePath = \$playerExecutable\.FullName", "player executable path"),
+        (
+            benchmark,
+            r"executableSha256 = \([\s\S]*?Get-FileHash -LiteralPath \$playerExecutable\.FullName -Algorithm SHA256",
+            "player executable SHA-256",
+        ),
+        (
+            benchmark,
+            r"\$manifest\.executablePath -cne 'DxmTestPlayer\.exe'",
+            "canonical relative player executable path validation",
+        ),
+        (
+            benchmark,
+            r"\$manifest\.executableSha256 -cnotmatch '\^\[0-9A-F\]\{64\}\$'",
+            "complete player executable SHA-256 validation",
+        ),
         (benchmark, r"ReleaseCodeOptimization = \$true", "Release managed code optimization"),
         (benchmark, r"ReleasePlayerBuild = \$true", "non-development player build"),
         (benchmark, r"StandaloneScriptingBackend = 'IL2CPP'", "IL2CPP player backend"),
@@ -3697,6 +3724,10 @@ def validate_perf_pr_policy() -> None:
     )
     for block, pattern, label in checks:
         require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
+    require(
+        "${{ env.MEASURED_SHA }}" not in benchmark,
+        "performance PR policy: benchmark steps must not read MEASURED_SHA from their own env map",
+    )
     head_check = job_block(source, "head-check")
     require(
         "      relevant: ${{ steps.head.outputs.relevant }}\n" in head_check
@@ -3818,45 +3849,93 @@ def validate_unity_docs_gate() -> None:
     unity-tests.yml no longer decides documentation-only in-band: the
     pull_request paths-ignore (pinned in `validate`) keeps that workflow
     absent for docs-only pull requests, so the required "Unity CI Success"
-    context must still be reported -- by this gate, which is present on every
-    pull request, always runs, and fails closed unless every changed file
-    matches the exact documentation-only allowlist.
+    context must still be reported. This gate starts for documentation or
+    workflow paths, classifies the complete pull-request file set, gives mixed
+    changes a distinct report name, and fails the required context if
+    classification itself fails.
     """
     source = DOCS_GATE.read_text(encoding="utf-8")
     require(
-        "name: Unity CI Success" in source,
-        "unity-docs-gate must report the same required Unity context name",
-    )
-    require(
         re.search(r"^on:\n  pull_request:\n", source, re.MULTILINE) is not None
-        and re.search(r"^    paths", source, re.MULTILINE) is None,
-        "unity-docs-gate must trigger on every pull request with no paths filter",
+        and '      - ".github/workflows/**"' in source
+        and re.search(r"^    paths-ignore", source, re.MULTILINE) is None,
+        "unity-docs-gate must trigger for documentation and workflow paths",
     )
-    gate = job_block(source, "unity-ci-success")
+    classify = job_block(source, "classify")
+    classify_script = run_script(step_block(classify, "Classify changed paths"))
     require(
-        "if: ${{ always() }}" in gate,
-        "the docs gate must always report; a falsifiable if would drop the required context",
-    )
-    script = run_script(step_block(gate, "Report the documentation-only Unity result"))
-    require(
-        DOCS_GATE_ALLOWLIST in script,
+        DOCS_GATE_ALLOWLIST in classify_script,
         "the docs gate must evaluate the exact documentation-only allowlist",
+    )
+    require(
+        "EXPECTED_FILE_COUNT: ${{ github.event.pull_request.changed_files }}" in classify,
+        "the docs gate must bind the declared changed-file count",
     )
     for fragment in (
         '"${EVENT_NAME}" != "pull_request"',
-        "if ! files=",
+        '"${EXPECTED_FILE_COUNT}" =~ ^[1-9][0-9]*$',
+        "if ! records=",
         "The changed-file listing is empty",
-        "Non-documentation files changed",
-        "exit 1",
+        '"${listed_file_count}" != "${EXPECTED_FILE_COUNT}"',
+        "Changed-file listing is incomplete",
+        'echo "documentation_only=false" >> "${GITHUB_OUTPUT}"',
+        'echo "documentation_only=true" >> "${GITHUB_OUTPUT}"',
     ):
         require(
-            fragment in script,
-            f"the docs gate must fail closed; missing {fragment!r}",
+            fragment in classify_script,
+            f"the docs gate classifier must fail closed; missing {fragment!r}",
         )
     require(
-        "--jq '.[] | .filename, (.previous_filename // empty)'" in script,
-        "the docs gate must include renamed files in its allowlist evaluation",
+        "--jq '.[] | [.filename, (.previous_filename // null)] | @json'" in classify_script
+        and "jq -r '.[] | select(. != null)'" in classify_script,
+        "the docs gate must count entries and include renamed files in its allowlist evaluation",
     )
+    report = job_block(source, "report")
+    for fragment in (
+        "if: ${{ always() }}",
+        "needs.classify.result != 'success'",
+        "'Unity CI Success'",
+        "Unity docs gate not applicable",
+        "CLASSIFICATION_RESULT: ${{ needs.classify.result }}",
+        "DOCUMENTATION_ONLY: ${{ needs.classify.outputs.documentation_only }}",
+    ):
+        require(fragment in report, f"the docs gate report is missing {fragment!r}")
+    report_script = run_script(step_block(report, "Report the documentation-only Unity result"))
+    for fragment in (
+        '"${CLASSIFICATION_RESULT}" != "success"',
+        '"${DOCUMENTATION_ONLY}" = "false"',
+        '"${DOCUMENTATION_ONLY}" != "true"',
+        "exit 1",
+        "exit 0",
+    ):
+        require(
+            fragment in report_script,
+            f"the docs gate report must separate mixed and failed classification; missing {fragment!r}",
+        )
+    for classification_result, documentation_only, expected in (
+        ("success", "true", 0),
+        ("success", "false", 0),
+        ("success", "", 1),
+        ("failure", "", 1),
+    ):
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "CLASSIFICATION_RESULT": classification_result,
+                "DOCUMENTATION_ONLY": documentation_only,
+            }
+        )
+        result = subprocess.run(
+            ["bash", "-c", report_script],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        require(
+            result.returncode == expected,
+            "the docs gate report truth table rejected its declared classification contract",
+        )
 
 
 def validate_unity_aggregate_steps(gate: str) -> None:

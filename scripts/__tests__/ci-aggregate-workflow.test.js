@@ -698,16 +698,16 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
   assert.deepEqual(unityDocument.on.pull_request["paths-ignore"], DOCS_ONLY_PATH_IGNORES);
 
   // unity-tests.yml is absent for those pull requests, so the companion gate
-  // keeps the required "Unity CI Success" context present by evaluating the
-  // same closed allowlist in-band.
+  // keeps the required "Unity CI Success" context present. Mixed changes use
+  // a distinct report name and leave that context to the licensed workflow.
   const gateSource = readWorkflow("unity-docs-gate.yml");
   const gateDocument = readWorkflowDocument("unity-docs-gate.yml").toJS();
-  assert.equal(gateDocument.on.pull_request.paths, undefined);
-  assert.equal(gateDocument.on.pull_request["paths-ignore"], undefined);
-  const gateJob = gateDocument.jobs["unity-ci-success"];
-  assert.equal(gateJob.name, "Unity CI Success");
-  assert.equal(gateJob.if, "${{ always() }}");
-  assert.equal(gateJob.steps.length, 1, "the docs gate is one fail-closed step");
+  const { classify: classifyJob, report: reportJob } = gateDocument.jobs;
+  // prettier-ignore
+  assert.deepEqual(
+    { paths: gateDocument.on.pull_request.paths, pathsIgnore: gateDocument.on.pull_request["paths-ignore"], classifySteps: classifyJob.steps.length, classifyOutput: classifyJob.outputs.documentation_only, reportName: reportJob.name, reportIf: reportJob.if, reportSteps: reportJob.steps.length, reportNeeds: reportJob.needs },
+    { paths: [".github/workflows/**", ...DOCS_ONLY_PATH_IGNORES], pathsIgnore: undefined, classifySteps: 1, classifyOutput: "${{ steps.classify.outputs.documentation_only }}", reportName: "${{ (needs.classify.result != 'success' || needs.classify.outputs.documentation_only != 'false') && 'Unity CI Success' || 'Unity docs gate not applicable' }}", reportIf: "${{ always() }}", reportSteps: 1, reportNeeds: ["classify"] }
+  );
   const pattern = /documentation_only_pattern='([^']+)'/.exec(gateSource);
   const allowed = new RegExp(pattern[1]);
   // prettier-ignore
