@@ -13,4 +13,4 @@ description: "The four isolated backend launchers in
 
 Canonical instructions: [`.llm/skills/devcontainer-ai-backends/SKILL.md`](../../../.llm/skills/devcontainer-ai-backends/SKILL.md)
 
-Read that file and follow it. Supporting detail is in the sibling `references/` directory.
+Read that file and follow it.

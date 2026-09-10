@@ -94,6 +94,7 @@ test("mirrorContent is a pointer carrying the discovery fields", () => {
   assert.equal(data.name, "object-pooling");
   assert.match(body, /\.llm\/skills\/object-pooling\/SKILL\.md/);
   assert.ok(content.includes(GENERATED_MARKER), "a mirror must carry the generated marker");
+  assert.doesNotMatch(body, /sibling `references\/` directory/);
   // Three levels up from .claude/skills/<name>/ or .agents/skills/<name>/ reaches the repo root.
   assert.match(body, /\.\.\/\.\.\/\.\.\/\.llm/);
 });
@@ -104,13 +105,15 @@ test("mirrorContent propagates license, compatibility, and allowed-tools when de
     description: "Does x.",
     license: "MIT",
     compatibility: "Requires Unity 2022.3 or newer.",
-    allowedTools: "Read Grep Bash"
+    allowedTools: "Read Grep Bash",
+    references: [{ path: ".llm/skills/x/references/detail.md", lineCount: 1 }]
   });
   const { data, error } = parseFrontmatter(content);
   assert.equal(error, undefined);
   assert.equal(data.license, "MIT");
   assert.equal(data.compatibility, "Requires Unity 2022.3 or newer.");
   assert.equal(data["allowed-tools"], "Read Grep Bash");
+  assert.match(content, /Supporting detail is in the sibling `references\/` directory\./);
 });
 
 test("mirrorContent omits optional fields the source does not declare", () => {

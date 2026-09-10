@@ -10,4 +10,4 @@ description: Access GitHub repositories, issues, pull requests, reviews, checks,
 
 Canonical instructions: [`.llm/skills/github-access/SKILL.md`](../../../.llm/skills/github-access/SKILL.md)
 
-Read that file and follow it. Supporting detail is in the sibling `references/` directory.
+Read that file and follow it.
