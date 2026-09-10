@@ -1,5 +1,4 @@
 "use strict";
-
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -38,7 +37,6 @@ function resolveLockActionPin(actionNames) {
   assert.ok(comments.size <= 1, `${label} version comments disagree: ${[...comments]}`);
   return { sha: [...shas.keys()][0], comment: [...comments][0] || "" };
 }
-
 // Acquire/editor/preflight/head-guard share the build lock; return/classify/release/require-confirmed share cleanup policy.
 // prettier-ignore
 const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head", "ensure-unity-editor"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
@@ -46,10 +44,8 @@ const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
 const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
 // SYNC: workflow-test-vectors.json UNITY_LOCK_WINDOWS mirrors scripts/validate-unity-pr-policy.py LICENSED_LOCK_WINDOWS.
-
 // prettier-ignore
 const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet-tests.yml", "json-format-check.yml", "lint-doc-links.yml", "markdownlint.yml", "script-tests.yml", "spellcheck.yml", "validate-banner.yml", "validate-docs.yml", "validate-llms-txt.yml", "yaml-format-lint.yml"];
-
 // prettier-ignore
 const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
 
@@ -401,14 +397,19 @@ test("source marker scan is tracked-file scoped and cannot self-match workflow t
 test("script validators run once while script tests stay cross-platform", () => {
   const source = readWorkflow();
   const scriptTests = getJobBlock(source, "script-tests");
-  const setupDotnet = getStepBlock(scriptTests, "Setup .NET");
+  const runScriptTests = getStepBlock(
+    scriptTests,
+    "Run script tests and Unity editor heartbeat guards"
+  );
   const validators = getStepBlock(scriptTests, "Run validators");
 
   assert.match(
     scriptTests,
     /os:\n          - ubuntu-latest\n          - macos-latest\n          - windows-latest/
   );
-  assert.match(setupDotnet, /matrix\.os == 'ubuntu-latest'/);
+  assert.match(getStepBlock(scriptTests, "Setup .NET"), /matrix\.os == 'ubuntu-latest'/);
+  assert.match(runScriptTests, /node --test 'scripts\/\*\*\/\*\.test\.js'/);
+  assert.doesNotMatch(runScriptTests, /node --test scripts\//);
   assert.match(validators, /matrix\.os == 'ubuntu-latest'/);
   assert.match(validators, /\n        run: npm run validate:all\n/);
 });
