@@ -410,14 +410,14 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import xml.etree.ElementTree as ET
+          import xml.etree.ElementTree as ET  # cspell:ignore etree
           reports = list(Path(".artifacts/generator-coverage/raw").glob("*/coverage.cobertura.xml"))
           if len(reports) != 1:
               raise SystemExit(f"Expected one fresh coverage report, found {len(reports)}")
           root = ET.parse(reports[0]).getroot()
           expected = {"WallstopStudios.DxMessaging.SourceGenerators", "WallstopStudios.DxMessaging.Analyzer"}
           packages = {package.get("name") for package in root.findall("./packages/package")}
-          if not expected.issubset(packages) or any(int(root.get(key, "0")) <= 0 for key in ("lines-valid", "lines-covered", "branches-valid")):
+          if expected - packages or any(int(root.get(key, "0")) <= 0 for key in ("lines-valid", "lines-covered", "branches-valid")):
               raise SystemExit("Coverage must include instrumented generator and analyzer code; check portable debug symbols")
           PY
           mkdir -p artifacts/coverage
