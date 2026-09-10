@@ -253,7 +253,7 @@ workflow artifact as durable campaign evidence until that publication and restor
 
 The following contract defines the remaining #521 work; it is not a claim that publication is
 implemented. Repository maintainers own the evidence releases and a reviewed, tracked evidence
-index linked from #500. `PLAN.md` is a local notebook, not the durable index. Retain each published
+index linked from #500. `PLAN.md` is a transient routing page, not the durable index. Retain each published
 revision without an expiry date, including superseded revisions. A correction
 adds a revision and an index entry; it does not replace an asset, move a tag, or erase the previous
 entry. If privacy or access loss requires withdrawal, mark the entry unavailable and every dependent

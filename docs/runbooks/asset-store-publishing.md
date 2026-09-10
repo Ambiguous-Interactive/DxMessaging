@@ -151,9 +151,16 @@ Run this once the release workflow for the tag is green.
    `UPM-UPLOAD-CHECKLIST.md` from the artifact; do not install a working-tree
    copy.
 1. **Apply the listing.** Open `ASSET-STORE-LISTING.json` from the artifact and
-   apply its title, description, keywords, links, artwork, ordered screenshots,
+   apply its title, description, AI description, keywords, links, artwork, ordered screenshots,
    captions, version, minimum Unity version, and release notes to the Publisher
-   Portal draft. Do not copy stale values from an earlier portal version.
+   Portal draft. Set the price to Free (USD 0), matching `priceUsd`. DxMessaging remains free
+   forever, with no paid editions, paid upgrades, or feature charges. Paste `aiDescription` into
+   the portal's dedicated AI field. The public description also contains the short disclosure.
+   Read all copy before submission, confirm the AI tools and assisted content match the package,
+   and check that "over the past two years" still describes the development history accurately.
+   Describe any further human corrections and modifications accurately. Follow the
+   [Unity submission guidelines](https://marketplace.unity.com/publishing/submission-guidelines).
+   Do not copy stale values from an earlier portal version.
 1. **Submit for review.** Submit the draft and record that the version was
    submitted (date + reviewer-facing version) in the approved tracker, not in
    this repository.

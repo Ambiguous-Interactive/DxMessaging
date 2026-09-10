@@ -1,8 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "locale": "en-US",
   "title": "DxMessaging",
-  "description": "Connect gameplay systems without direct references between senders and receivers. DxMessaging provides synchronous, type-safe untargeted, targeted, and broadcast messages. Lifecycle-managed registration tokens pair subscriptions with components and dependency-injection scopes. Message Monitor, Flow Graph, Inspector overlays, and runtime diagnostics make routes visible while you develop. Struct messages keep steady-state dispatch allocation-free. Optional samples cover Zenject, VContainer, and Reflex.",
+  "description": "Connect gameplay systems without direct references between senders and receivers. DxMessaging provides synchronous, type-safe untargeted, targeted, and broadcast messages. Lifecycle-managed registration tokens pair subscriptions with components and dependency-injection scopes. Message Monitor, Flow Graph, Inspector overlays, and runtime diagnostics make routes visible while you develop. Struct messages keep steady-state dispatch allocation-free. Optional samples cover Zenject, VContainer, and Reflex.\n\nDxMessaging is free and will remain free forever. No paid editions, paid upgrades, or feature charges.\n\nAI assistance disclosure: DxMessaging began as an original project around 2014 and remains actively developed and used today. Over the past two years, I (wallstop) have been using LLMs to help improve the library's quality and performance, expand its tests, and create user-facing documentation. There is always a human in the loop: I actively review all changes and read through all user-facing copy. I share this so you can make an informed decision about using the project.",
+  "aiDescription": "OpenAI models starting with GPT-5, used through Codex, and Anthropic models starting with Opus 4, used through Claude Code, have assisted with substantial portions of the code, tests, and documentation. I (wallstop) review all changes for accuracy and correctness and read all user-facing copy. Artwork is minimal and includes AI-generated SVGs. Product screenshots show the actual editor tooling.",
+  "priceUsd": 0,
   "keywords": "unity message messaging event-bus decoupling type-safe diagnostics debugging performance zero-allocation architecture gameplay",
   "links": {
     "documentation": "https://ambiguous-interactive.github.io/DxMessaging/",

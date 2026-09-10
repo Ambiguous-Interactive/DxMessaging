@@ -121,8 +121,10 @@ artifact containing:
 - generated `CLASSIC-UPLOAD-CHECKLIST.md`, `UPM-UPLOAD-CHECKLIST.md`,
   `ASSET-STORE-LISTING.json`, `EXPECTED-UPM-FIELDS.json`, and `MANIFEST.json`
 
-`.github/asset-store-listing.json` is the canonical listing source. Release
-staging validates its exact schema, portable screenshot paths, whitespace-separated
+`.github/asset-store-listing.json` is the canonical listing source. Schema 2 adds the nonempty
+`aiDescription` and numeric `priceUsd`, which must be zero. These are operator inputs, not an
+upload API. Both upload checklists require the free price, dedicated AI field, human copy review,
+and live-listing verification. Release staging validates its exact schema, portable screenshot paths, whitespace-separated
 keywords, HTTPS links, three required key-image roles, and a 1200-pixel minimum
 screenshot width. It then adds the package version, minimum Unity version, and
 matching changelog section and writes the reviewed portal inputs and media order to

@@ -69,11 +69,11 @@ function validatePng(filePath, expectedWidth = 0, expectedHeight = 0) {
 function readListing(repoRoot, pkg, changelogSection) {
   const configPath = path.join(repoRoot, ".github", "asset-store-listing.json"); assertFile(configPath, "Asset Store listing source");
   const listing = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  const requiredStrings = ["locale", "title", "description", "keywords"];
-  const listingKeys = ["schemaVersion", ...requiredStrings, "links", "artwork", "screenshots"];
+  const requiredStrings = ["locale", "title", "description", "aiDescription", "keywords"];
+  const listingKeys = ["schemaVersion", ...requiredStrings, "priceUsd", "links", "artwork", "screenshots"];
   const linkKeys = ["documentation", "source", "support"], artworkKeys = ["icon", "card", "cover"];
   if (
-    !hasExactKeys(listing, listingKeys) || listing.schemaVersion !== 1 || listing.locale !== "en-US" ||
+    !hasExactKeys(listing, listingKeys) || listing.schemaVersion !== 2 || listing.locale !== "en-US" || listing.priceUsd !== 0 ||
     requiredStrings.some((key) => typeof listing[key] !== "string" || !listing[key].trim()) ||
     listing.keywords.length > 255 || listing.keywords.split(/\s+/).some((keyword) => !/^[a-z0-9][a-z0-9-]*$/i.test(keyword)) ||
     !hasExactKeys(listing.links, linkKeys) || Object.values(listing.links).some((url) => !isHttpsUrl(url)) ||
@@ -183,8 +183,12 @@ ${payload}
 
 ${uploadSteps}
 1. Set the listing version to the package version above.
+1. Set the price to Free (USD 0). DxMessaging has no paid editions, paid upgrades, or feature charges.
+1. Fill the portal's AI description field with \`aiDescription\` from \`ASSET-STORE-LISTING.json\`.
+1. Read all listing copy, including the AI disclosure, and confirm it describes the submitted content accurately.
 1. Paste the release notes from the changelog excerpt below.
 1. Submit for Unity review.
+1. Verify the live listing's version, free price, disclosure, links, screenshots, and downloadable package.
 
 ## Changelog Excerpt
 
