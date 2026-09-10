@@ -258,7 +258,7 @@ fallback. A failed `gh auth status` is not a blocker while either earlier path w
 - Run `npm run llm:index` after adding, renaming, or removing a skill; it regenerates `.llm/index.md` and the registry block above. `npm run llm:check` gates drift in `validate:all`.
 - Never hand-edit `.llm/index.md` or the generated registry block. All skill content and references belong under `.llm/skills/`.
 - Do not commit machine-readable skill manifests whose fields can be derived from `.llm/skills/**`. A consumer that needs structured skill metadata must parse the canonical `SKILL.md` frontmatter and directory contents.
-- The harness rejects client-specific skill directories without deleting their contents. Move any hand-authored work into `.llm/skills/` before removing the duplicate directory; retain unrelated client settings and agent entry points.
+- The harness rejects content or links under client-specific skill roots without deleting them. Empty directory trees left by Git are harmless. Move hand-authored work into `.llm/skills/`; retain unrelated client settings and agent entry points.
 
 ## See Also
 

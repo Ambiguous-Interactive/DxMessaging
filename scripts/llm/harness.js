@@ -149,6 +149,19 @@ function walk(directory) {
   return results;
 }
 
+// Empty trees left after pointer removal are harmless. Do not follow symlinks:
+// even a dangling link is content, and must not hide a second skill home.
+function hasContent(target) {
+  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (!stat) {
+    return false;
+  }
+  return (
+    !stat.isDirectory() ||
+    fs.readdirSync(target).some((entry) => hasContent(path.join(target, entry)))
+  );
+}
+
 // Spec-sanctioned resource directories are enumerated but not read because assets may be binary.
 const RESOURCE_DIRECTORIES = ["scripts", "assets"];
 
@@ -368,7 +381,7 @@ function validate() {
 
   for (const client of [".claude", ".agents", ".github", ".codex"]) {
     const relative = `${client}/skills`;
-    if (fs.existsSync(path.join(layout().root, relative))) {
+    if (hasContent(path.join(layout().root, relative))) {
       issues.push({
         path: relative,
         message: "repository skills must live only under .llm/skills; move or remove this directory"

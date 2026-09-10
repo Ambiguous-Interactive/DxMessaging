@@ -65,12 +65,19 @@ on:
       - docs/architecture/performance.md
       - docs/architecture/perf-baseline.csv
       - docs/architecture/perf-baseline-profile.json
-      # Documentation-only pull requests never reach this workflow, so they never
+      # Documentation and isolated tooling pull requests never reach this workflow, so they never
       # need the licensed benchmark legs. Keep this list in lockstep with the
       # documentation-only pattern that unity-tests.yml declares and that
       # unity-docs-gate.yml evaluates for the required Unity context.
       - "docs/**"
       - ".docs-tests/**"
+      - ".devcontainer/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "scripts/llm/**"
+      - "scripts/wiki/**"
+      - "scripts/__tests__/llm-harness.test.js"
+      - "scripts/__tests__/llm-harness.test.js.meta"
+      - "*.md"
       - "progress/**"
       - ".llm/**"
       - ".agents/**"
@@ -144,7 +151,7 @@ jobs:
             if files="$(gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
               --jq '.[] | .filename, (.previous_filename // empty)')"; then
-              documentation_only_pattern='^(docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)(\.meta)?$|(AGENTS|GOAL|PLAN)\.md(\.meta)?$|llms\.txt$|mkdocs\.yml$|requirements-(docs|brand)\.(in|txt)(\.meta)?$)'
+              documentation_only_pattern='^(\.devcontainer/|\.github/ISSUE_TEMPLATE/|scripts/(llm|wiki)/|scripts/__tests__/llm-harness\.test\.js(\.meta)?$|[^/]+\.md$|docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)(\.meta)?$|(AGENTS|GOAL|PLAN)\.md(\.meta)?$|llms\.txt$|mkdocs\.yml$|requirements-(docs|brand)\.(in|txt)(\.meta)?$)'
               non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
               if [ -n "${files}" ] && [ -z "${non_documentation}" ]; then
                 echo "::notice::Only documentation and agent-context files changed; skipping licensed performance benchmarks."

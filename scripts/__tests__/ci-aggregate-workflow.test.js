@@ -2,6 +2,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const YAML = require("yaml");
 const { spawnSync } = require("node:child_process");
@@ -715,7 +716,7 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
   // The exact-name globs do not ignore .meta siblings: a pull request adding
   // one of those touches a path unity-tests.yml still covers.
   // prettier-ignore
-  for (const file of [".github/workflows/unity-tests.yml", "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "README.md", "AGENTS.md.meta", "requirements-docs.in.meta", "Samples~/Mini Combat/README.md.meta"])
+  for (const file of [".github/workflows/unity-tests.yml", "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "AGENTS.md.meta", "requirements-docs.in.meta", "Samples~/Mini Combat/README.md.meta"])
     assert.doesNotMatch(file, allowed, `non-ignored ${file}`);
 
   // perf-numbers.yml keeps its in-band head freshness and relevance decisions.
@@ -743,6 +744,121 @@ test("licensed PR workflows fail closed and skip only documented non-code paths"
     ),
     /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/
   );
+});
+
+test("Unity-independent changes skip both licensed workflows with matching classification", () => {
+  const gate = readWorkflowDocument("unity-docs-gate.yml").toJS();
+  const allowed = new RegExp(
+    /documentation_only_pattern='([^']+)'/.exec(gate.jobs.classify.steps[0].run)[1]
+  );
+  const cases = [
+    ["README.md", true],
+    [".devcontainer/Dockerfile", true],
+    [".github/ISSUE_TEMPLATE/bug_report.yml", true],
+    ["scripts/llm/harness.js", true],
+    ["scripts/__tests__/llm-harness.test.js", true],
+    ["scripts/wiki/wiki-navigation.json", true],
+    ["package.json", false],
+    ["package-lock.json", false],
+    ["Editor/Tool.cs", false],
+    ["Tests/Runtime/EmitTests.cs", false],
+    ["SourceGenerators/Generator.cs", false],
+    ["scripts/unity/run-ci-tests.ps1", false],
+    [".github/actions/build/action.yml", false],
+    [".github/workflows/unity-tests.yml", false],
+    ["Samples~/Demo/Test.cs", false],
+    ["Runtime/README.md", false],
+    ["unknown/file.bin", false]
+  ];
+  for (const file of ["unity-tests.yml", "perf-numbers.yml"]) {
+    const filters = readWorkflowDocument(file).toJS().on.pull_request["paths-ignore"];
+    for (const [changed, expected] of cases) {
+      assert.equal(
+        filters.some((glob) => path.matchesGlob(changed, glob)),
+        expected,
+        `${file}: ${changed}`
+      );
+      assert.equal(allowed.test(changed), expected, `classifier: ${changed}`);
+    }
+  }
+});
+
+test("devcontainer classification covers build inputs and fails safe on incomplete listings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-devcontainer-filter-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workflow = readWorkflowDocument("devcontainer-test.yml").toJS();
+  const step = workflow.jobs.changes.steps[0];
+  const bash =
+    process.platform === "win32"
+      ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe")
+      : "bash";
+  const cases = [
+    ["Dockerfile", [".devcontainer/Dockerfile"], true],
+    ["workflow", [".github/workflows/ci.yml"], true],
+    ["action", [".github/actions/install-pinned-lychee/action.yml"], true],
+    ["image dependency", ["package.json"], true],
+    ["dependency lock", ["package-lock.json"], true],
+    ["smoke suite", ["scripts/__tests__/llm-harness.test.js"], true],
+    ["tool script", ["scripts/llm/harness.js"], true],
+    ["issue template", [".github/ISSUE_TEMPLATE/bug_report.yml"], false],
+    ["docs", ["docs/index.md"], false],
+    ["runtime", ["Runtime/Core/MessageBus.cs"], false],
+    ["rename out", ["docs/example.txt", ".devcontainer/old.sh"], true]
+  ];
+  assert.equal(step.env.EXPECTED_FILE_COUNT, "${{ github.event.pull_request.changed_files }}");
+  for (const [name, files, relevant] of cases) {
+    const output = path.join(root, "output");
+    fs.writeFileSync(output, "");
+    const result = spawnSync(bash, ["-c", 'gh() { printf "%s\\n" "$RECORDS"; };\n' + step.run], {
+      env: {
+        ...process.env,
+        EVENT_NAME: "pull_request",
+        EXPECTED_FILE_COUNT: "1",
+        PR_NUMBER: "1",
+        GITHUB_REPOSITORY: "test/repo",
+        RECORDS: JSON.stringify(files),
+        GITHUB_OUTPUT: output
+      }
+    });
+    assert.equal(result.status, 0, `${name}: ${result.stderr}`);
+    assert.equal(fs.readFileSync(output, "utf8").trim(), `relevant=${relevant}`, name);
+    assert.equal(
+      files.some((file) => workflow.on.push.paths.some((glob) => path.matchesGlob(file, glob))),
+      relevant,
+      `push: ${name}`
+    );
+  }
+  for (const [name, records, count, event, ghStatus] of [
+    ["empty", "", "1", "pull_request", 0],
+    ["truncated", '["docs/a.md"]', "2", "pull_request", 0],
+    ["malformed JSON", "bad", "1", "pull_request", 0],
+    ["missing count", '["docs/a.md"]', "", "pull_request", 0],
+    ["API failure", '["docs/a.md"]', "1", "pull_request", 1],
+    ["manual", "", "", "workflow_dispatch", 0]
+  ]) {
+    const output = path.join(root, "output");
+    fs.writeFileSync(output, "");
+    const result = spawnSync(
+      bash,
+      ["-c", 'gh() { printf "%s\\n" "$RECORDS"; return "$GH_STATUS"; };\n' + step.run],
+      {
+        env: {
+          ...process.env,
+          EVENT_NAME: event,
+          EXPECTED_FILE_COUNT: count,
+          PR_NUMBER: "1",
+          GITHUB_REPOSITORY: "test/repo",
+          RECORDS: records,
+          GH_STATUS: String(ghStatus),
+          GITHUB_OUTPUT: output
+        }
+      }
+    );
+    assert.ok(
+      result.status !== 0 || fs.readFileSync(output, "utf8").trim() === "relevant=true",
+      name
+    );
+  }
 });
 // prettier-ignore
 test("Unity CI Success aggregates enforce the closed trusted-skip result shape", () => {

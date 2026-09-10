@@ -26,6 +26,13 @@
   "DOCS_ONLY_PATH_IGNORES": [
     "docs/**",
     ".docs-tests/**",
+    ".devcontainer/**",
+    ".github/ISSUE_TEMPLATE/**",
+    "scripts/llm/**",
+    "scripts/wiki/**",
+    "scripts/__tests__/llm-harness.test.js",
+    "scripts/__tests__/llm-harness.test.js.meta",
+    "*.md",
     "progress/**",
     ".llm/**",
     ".agents/**",

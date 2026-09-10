@@ -467,6 +467,40 @@ test("renaming a skill updates canonical discovery without generating mirrors", 
 });
 
 for (const other of OTHER_SKILL_ROOTS) {
+  test(`a linked skill root at ${other} is rejected without following it`, (t) => {
+    const root = createFixture(t, { alpha: validSkill("alpha") });
+    const link = path.join(root, other);
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.symlinkSync(root, link, "junction");
+    const run = runMain(root, "index");
+    assert.equal(run.exitCode, 1, run.output);
+    assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+  });
+
+  for (const entry of ["", "removed-skill/references/note.md"]) {
+    test(`non-skill content at ${other}/${entry} is rejected and preserved`, (t) => {
+      const root = createFixture(t, { alpha: validSkill("alpha") });
+      const target = path.join(root, other, entry);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, "Keep this work.\n");
+      const run = runMain(root, "index");
+      assert.equal(run.exitCode, 1, run.output);
+      assert.equal(fs.readFileSync(target, "utf8"), "Keep this work.\n");
+    });
+  }
+
+  test(`empty leftover directories under ${other} do not block canonical indexing`, (t) => {
+    const root = createFixture(t, { alpha: validSkill("alpha") });
+    const empty = path.join(root, other, "removed-skill", "references");
+    fs.mkdirSync(empty, { recursive: true });
+    for (const command of ["validate", "index", "check", "index", "check"]) {
+      const run = runMain(root, command);
+      assert.equal(run.exitCode, 0, run.output);
+    }
+    assert.deepEqual(fs.readdirSync(empty), []);
+    assert.equal(fs.existsSync(path.join(root, other, "alpha", "SKILL.md")), false);
+  });
+
   for (const generated of [false, true]) {
     test(`commands reject but preserve a ${generated ? "generated" : "hand-authored"} skill under ${other}`, (t) => {
       const root = createFixture(t, { alpha: validSkill("alpha") });
@@ -633,7 +667,12 @@ test("generated skill index is deterministic and covers every skill", () => {
 });
 
 test("repository skills have only one home", () => {
+  const { issues } = validate();
   for (const other of OTHER_SKILL_ROOTS) {
-    assert.equal(fs.existsSync(path.join(ROOT, other)), false, other);
+    assert.equal(
+      issues.some((issue) => issue.path.startsWith(other)),
+      false,
+      other
+    );
   }
 });
