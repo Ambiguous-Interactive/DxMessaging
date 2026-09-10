@@ -246,14 +246,14 @@ The `unity-tests` job seals the shipping-fidelity matrix after redaction and bef
 replays it, so a bundle that cannot reproduce its own result fails the run. The manifest travels
 inside the 14-day workflow artifact.
 
-Durable GitHub prerelease publication and independent restore remain tracked by #521. Do not cite a
-workflow artifact as durable campaign evidence until that publication and restore gate exists.
+The [evidence index](#evidence-index) records immutable publications and their restore checks.
+A workflow artifact alone is not durable campaign evidence. New bundles must pass the publication
+and restore gates below before entering the index.
 
 ## Durable publication contract
 
-The following contract defines the remaining #521 work; it is not a claim that publication is
-implemented. Repository maintainers own the evidence releases and a reviewed, tracked evidence
-index linked from #500. `PLAN.md` is a transient routing page, not the durable index. Retain each published
+Repository maintainers own the evidence releases and the tracked evidence index below, linked from
+issue #500 and reviewed with its code change. `PLAN.md` is a transient routing page, not the durable index. Retain each published
 revision without an expiry date, including superseded revisions. A correction
 adds a revision and an index entry; it does not replace an asset, move a tag, or erase the previous
 entry. If privacy or access loss requires withdrawal, mark the entry unavailable and every dependent
@@ -328,4 +328,48 @@ dependencies from the producing checkout. The bundle commands do not require Uni
 
 A local archive round trip can test packaging, byte integrity, and reducer replay. It cannot prove
 GitHub retention, immutable publication, independent remote retrieval, or denied remote access.
-Keep #521 open until those remote checks have recorded evidence.
+
+## Evidence index
+
+Repository-wide immutable releases were enabled with maintainer approval on 2026-09-10. The
+authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
+an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
+
+### session271-subunsub-measured, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-10. This is a
+historical Editor PlayMode Mono x64 Debug observation on Unity 6000.4.6f1. It does not establish
+per-operation allocation cost, campaign acceptance, MessagePipe parity, or an IL2CPP headline.
+
+| Identity                        | Value                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Release                         | [Immutable observation prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session271-subunsub-measured-r1-8eb717b0)                                           |
+| Release ID                      | `386611585`                                                                                                                                                                                            |
+| Asset                           | [session271 observation archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session271-subunsub-measured-r1-8eb717b0/session271-subunsub-measured-r1.tar.gz) |
+| Exact asset name                | `session271-subunsub-measured-r1.tar.gz`                                                                                                                                                               |
+| Asset ID and size               | `555789190`, 907 bytes                                                                                                                                                                                 |
+| Archive SHA-256                 | `50ecad878a106beb1f692be41da4158e5e54323e9be560e56e7c1a4c2b6075a5`                                                                                                                                     |
+| Manifest SHA-256                | `8eb717b0a6c366de8d3d2d90b98cf1d7a71b8ed5fbd43a3429308f6732fe82b8`                                                                                                                                     |
+| Bundle digest                   | `a1638bafeddbcba88869424cf9fcfd8a3124e1d14e2cd539c05f6ba4d5bee7ac`                                                                                                                                     |
+| Measured source                 | `857c293c2e03945383652b5c269e00bbf698a11a`                                                                                                                                                             |
+| Verifier and release tag commit | `c2065e63e1d4605874dff0f7971df9f3371c6e99`                                                                                                                                                             |
+| Reducer                         | `allocation-subunsub-observations-v1`                                                                                                                                                                  |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
+the tag resolved to the verifier commit. No asset was replaced.
+
+The restore used a new remote clone at the verifier commit, `npm ci --ignore-scripts`, and
+Node.js 24.20.0. Git status was empty before and after verification. The archive was downloaded
+anonymously from the indexed GitHub URL, not copied from the producing checkout or an artifact
+cache. Its three regular files had relative paths and normalized ownership, with no links.
+Archive and manifest hashes matched the index. Both `verify` and `replay` exited zero; replay
+reproduced the exact sealed normalized result.
+
+The denied-access drill requested actual asset `555789190` through GitHub's release-asset API in a
+separate temporary process with deliberately invalid credentials. GitHub returned HTTP 401 and
+`curl --fail` exited 22. No asset file existed, verification and replay were not attempted, and
+the experiment remained incomplete. The drill did not change the release, fabricate a missing
+asset URL, or use cached evidence as a fallback. This proves the operator procedure's refusal;
+there is no automated remote restore service implied by this result.
+Keep #521 open until the evidence index is reviewed and merged.
