@@ -1599,6 +1599,8 @@ using UnityEditor;
 using UnityEditor.Build;
 using UnityEngine;
 
+namespace DxMessaging.Ci
+{
 public static class DxmCiTestConfigurator
 {
     [Serializable]
@@ -1891,6 +1893,7 @@ public static class DxmCiTestConfigurator
         File.WriteAllText(path, JsonUtility.ToJson(value, true));
     }
 }
+}
 "@
 }
 
@@ -1958,7 +1961,7 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
 
     public BuildPlayerOptions ModifyOptions(BuildPlayerOptions playerOptions)
     {
-        DxmCiTestConfigurator.WriteComparisonPackageResolution();
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteComparisonPackageResolution();
         playerOptions.options &= ~BuildOptions.AutoRunPlayer;
         playerOptions.options &= ~BuildOptions.ConnectToHost;
         playerOptions.options &= ~BuildOptions.ConnectWithProfiler;
@@ -1982,17 +1985,17 @@ $developmentOption
             }
             playerOptions.locationPathName = outPath;
         }
-        DxmCiTestConfigurator.CaptureBuildProvenance(playerOptions.locationPathName);
-        DxmCiTestConfigurator.WriteConfigurationEvidence(
+        DxMessaging.Ci.DxmCiTestConfigurator.CaptureBuildProvenance(playerOptions.locationPathName);
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_PREBUILD_CONFIG_PROFILE_PATH"));
         return playerOptions;
     }
 
     public void OnPostprocessBuild(BuildReport report)
     {
-        DxmCiTestConfigurator.WriteConfigurationEvidence(
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_POSTBUILD_CONFIG_PROFILE_PATH"));
-        DxmCiTestConfigurator.WriteBuildOptionsEvidence(
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteBuildOptionsEvidence(
             Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH"),
             report.summary.options);
     }
@@ -3321,17 +3324,17 @@ public static class DxmShippingFidelityBuilder
         options.options &= ~BuildOptions.ConnectToHost;
         options.options &= ~BuildOptions.ConnectWithProfiler;
 
-        DxmCiTestConfigurator.WriteConfigurationEvidence(
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_PREBUILD_CONFIG_PROFILE_PATH"));
         DateTime buildStartedUtc = DateTime.UtcNow;
-        DxmCiTestConfigurator.CaptureBuildProvenance(options.locationPathName);
+        DxMessaging.Ci.DxmCiTestConfigurator.CaptureBuildProvenance(options.locationPathName);
         System.Diagnostics.Stopwatch buildStopwatch = System.Diagnostics.Stopwatch.StartNew();
         BuildReport report = BuildPipeline.BuildPlayer(options);
         buildStopwatch.Stop();
         DateTime buildEndedUtc = DateTime.UtcNow;
-        DxmCiTestConfigurator.WriteConfigurationEvidence(
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteConfigurationEvidence(
             Environment.GetEnvironmentVariable("DXM_POSTBUILD_CONFIG_PROFILE_PATH"));
-        DxmCiTestConfigurator.WriteBuildOptionsEvidence(
+        DxMessaging.Ci.DxmCiTestConfigurator.WriteBuildOptionsEvidence(
             Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH"),
             report.summary.options);
         WriteBuildReportEvidence(
@@ -7133,7 +7136,7 @@ try {
             '-nographics',
             '-projectPath', $ProjectPath,
             '-buildTarget', 'StandaloneWindows64',
-            '-executeMethod', 'DxmCiTestConfigurator.Apply',
+            '-executeMethod', 'DxMessaging.Ci.DxmCiTestConfigurator.Apply',
             '-logFile', '-'
         ) + $acceleratorArgs
         $configureExit = Invoke-UnityEditor `
