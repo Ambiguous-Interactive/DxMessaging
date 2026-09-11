@@ -294,10 +294,11 @@ string logOutput = bus.Log.ToString();
 
 ### MessagingComponent
 
-Base component for objects that emit messages.
+Unity owner component that hosts registrations and message dispatch for other `MonoBehaviour`
+components on the same GameObject. `MessageAwareComponent` adds it automatically.
 
 ```csharp
-public class MessagingComponent : MonoBehaviour
+public sealed class MessagingComponent : MonoBehaviour
 {
     // When true, messages can be emitted even when component is disabled:
     // OnEnable/OnDisable leave the handler untouched while this is set

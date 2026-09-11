@@ -107,6 +107,10 @@ player builds.
 
 ## After Installation
 
-- In your project, create a GameObject and add `MessagingComponent` to start sending/receiving.
-- Optional: enable diagnostics in Editor from the MessagingComponent inspector to see live emissions.
-- Jump to [Quick Start](quick-start.md)
+- Jump to [Quick Start](quick-start.md). No bootstrap GameObject is required: DxMessaging creates
+  the default message bus automatically.
+- Add your `MessageAwareComponent` receiver to a GameObject. Unity adds its required
+  `MessagingComponent` automatically.
+- Use `MessagingComponent` directly only when another `MonoBehaviour` needs an owned registration
+  token or a configured message-bus provider.
+- Optional: enable diagnostics from the `MessagingComponent` inspector to inspect live emissions.
