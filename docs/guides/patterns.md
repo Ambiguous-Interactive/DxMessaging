@@ -83,10 +83,10 @@
 ### Important: Inheritance with MessageAwareComponent
 
 - Many examples derive from `MessageAwareComponent`. **When overriding hooks, you MUST call the base method.**
-- **Always call `base.RegisterMessageHandlers()` FIRST** in your override to preserve default string-message registrations and parent class registrations.
+- **Always call `base.RegisterMessageHandlers()` FIRST** in your override to preserve parent class registrations.
 - **CRITICAL**: Call `base.OnEnable()` / `base.OnDisable()` if you override lifecycle methods; otherwise your token may never enable/disable.
 - **CRITICAL**: Call `base.Awake()` if you override `Awake()`; otherwise your token won't be created.
-- To opt out of string demos, override `RegisterForStringMessages => false` instead of skipping the base call.
+- To opt in to the built-in string demos, override `RegisterForStringMessages => true`.
 - **Don't use `new` to hide methods** (e.g., `new void OnEnable()`); always use `override` and call `base.*`.
 
 Registration timing (pit of success)

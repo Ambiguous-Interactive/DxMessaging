@@ -23,8 +23,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
     /// <para>
     /// Severity for <c>RegisterMessageHandlers</c> is lowered to <see cref="DiagnosticSeverity.Info"/>
     /// when the same class also overrides <c>RegisterForStringMessages</c> to return the literal
-    /// <c>false</c>; that is the documented intentional opt-out for the default string-message
-    /// registrations. The diagnostic id remains <c>DXMSG006</c> so users can target it from
+    /// <c>false</c>; that is the explicit 3.x opt-out form retained for compatibility. The
+    /// diagnostic id remains <c>DXMSG006</c> so users can target it from
     /// <c>.editorconfig</c>; the lowered severity is achieved by reporting the diagnostic with an
     /// explicit effective severity via the <c>Diagnostic.Create(string id, ...)</c> overload, avoiding
     /// duplicate descriptor registrations for the same id.
@@ -161,7 +161,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             ),
             new KeyValuePair<string, string>(
                 RegisterMessageHandlersMethodName,
-                "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); default string-message handlers will not be registered (override RegisterForStringMessages to suppress this warning)."
+                "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); inherited registrations may not be registered."
             ),
             // OnApplicationFocus / OnApplicationPause are guarded prospectively. MessageAwareComponent
             // does not currently declare these methods, so the analyzer never fires DXMSG006 for

@@ -106,7 +106,7 @@ internal sealed class DocsSnippetCompilationTests
 
     private static readonly System.Text.RegularExpressions.Regex WritableHandlerRegistrationRegex =
         new(
-            @"(?is)\bRegister(?![A-Za-z0-9_]*Interceptor\b)[A-Za-z0-9_]*(?:<[^;>{}]+>)?\s*\([^;{}]{0,500}?\(\s*ref\s+",
+            @"(?is)\.\s*Register(?!MessageHandlers\b)(?![A-Za-z0-9_]*Interceptor\b)[A-Za-z0-9_]*(?:<[^;>{}]+>)?\s*\([^;{}]{0,500}?\(\s*ref\s+",
             System.Text.RegularExpressions.RegexOptions.Compiled
         );
 

@@ -570,7 +570,7 @@ namespace DxMessaging.Unity
 
     public abstract class MessageAwareComponent : MonoBehaviour
     {
-        protected virtual bool RegisterForStringMessages => true;
+        protected virtual bool RegisterForStringMessages => false;
 
         protected virtual void Awake() { }
         protected virtual void OnEnable() { }

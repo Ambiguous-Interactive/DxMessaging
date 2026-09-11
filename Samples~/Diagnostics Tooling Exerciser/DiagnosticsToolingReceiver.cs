@@ -57,8 +57,6 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 
         public int GlobalAcceptAllCount => globalAcceptAllCount;
 
-        protected override bool RegisterForStringMessages => false;
-
         protected override void Awake()
         {
             base.Awake();

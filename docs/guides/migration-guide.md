@@ -4,6 +4,17 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Opt in to inherited string demo handlers
+
+`MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one
+untargeted `GlobalStringMessage` handler by default. Most components need no migration. If a
+component overrides the inherited string handler methods, add
+`protected override bool RegisterForStringMessages => true;`.
+
+Keep calling `base.RegisterMessageHandlers()` so registrations declared by parent components run.
+
+### Update fast handlers to readonly references
+
 DxMessaging 4.0 makes fast handlers and post-processors readonly. Change explicit handler
 parameters from `ref` to `in`:
 

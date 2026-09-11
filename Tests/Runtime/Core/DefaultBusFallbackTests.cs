@@ -390,8 +390,6 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             internal int Received { get; private set; }
 
-            protected override bool RegisterForStringMessages => false;
-
             protected override void RegisterMessageHandlers()
             {
                 base.RegisterMessageHandlers();

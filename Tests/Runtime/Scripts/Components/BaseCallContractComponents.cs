@@ -59,6 +59,8 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     [DxIgnoreMissingBaseCall]
     public sealed class MissingBaseOnEnableComponent : MessageAwareComponent
     {
+        protected override bool RegisterForStringMessages => true;
+
         protected override void OnEnable()
         {
             // Intentional: do NOT call base.OnEnable().
@@ -74,6 +76,8 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     [DxIgnoreMissingBaseCall]
     public sealed class MissingBaseOnDisableComponent : MessageAwareComponent
     {
+        protected override bool RegisterForStringMessages => true;
+
         protected override void OnDisable()
         {
             // Intentional: do NOT call base.OnDisable().
@@ -97,6 +101,8 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     [DxIgnoreMissingBaseCall]
     public sealed class MissingBaseOnDestroyComponent : MessageAwareComponent
     {
+        protected override bool RegisterForStringMessages => true;
+
         protected override void OnDisable()
         {
             // Intentional: do NOT call base.OnDisable(). Without this skip,
@@ -128,6 +134,8 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     [DxIgnoreMissingBaseCall]
     public sealed class MissingBaseOnDestroyOnlyComponent : MessageAwareComponent
     {
+        protected override bool RegisterForStringMessages => true;
+
         protected override void OnDestroy()
         {
             // Intentional: do NOT call base.OnDestroy(). The inherited
@@ -141,14 +149,16 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     /// <see cref="MessageAwareComponent.RegisterMessageHandlers"/> without
     /// calling <c>base.RegisterMessageHandlers()</c>. The token is created
     /// (Awake is untouched) and the user's own handler is registered, but
-    /// the default <c>StringMessage</c> / <c>GlobalStringMessage</c> handlers
-    /// the base class normally registers are skipped.
+    /// the opted-in <c>StringMessage</c> / <c>GlobalStringMessage</c> handlers
+    /// the base class would register are skipped.
     /// </summary>
     [DxIgnoreMissingBaseCall]
     public sealed class MissingBaseRegisterMessageHandlersComponent : MessageAwareComponent
     {
         public int defaultHandlerInvocations;
         public int userHandlerInvocations;
+
+        protected override bool RegisterForStringMessages => true;
 
         protected override void RegisterMessageHandlers()
         {
@@ -180,8 +190,6 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     public sealed class CorrectBaseCallContractComponent : MessageAwareComponent
     {
         public int userHandlerInvocations;
-
-        protected override bool RegisterForStringMessages => false;
 
         protected override void Awake()
         {

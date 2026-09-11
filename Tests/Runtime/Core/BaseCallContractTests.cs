@@ -29,7 +29,7 @@ namespace DxMessaging.Tests.Runtime.Core
     /// drive the dispatch portion of the assertion through the canonical
     /// <see cref="ScenarioHarness"/> entry points so the same body covers
     /// untargeted, targeted, and broadcast registration paths. A few tests
-    /// (the ones that exercise base-class default handlers directly) run
+    /// (the ones that exercise base-class opt-in handlers directly) run
     /// once without scenario parameterization. The breadcrumb log assertion
     /// is gated on <c>UNITY_EDITOR || DEBUG</c> on the runtime side, so
     /// standalone Release players assert the token and dispatch consequences
@@ -50,10 +50,10 @@ namespace DxMessaging.Tests.Runtime.Core
         );
 
         /// <summary>
-        /// Number of default handlers
+        /// Number of opt-in handlers
         /// <see cref="DxMessaging.Unity.MessageAwareComponent.RegisterMessageHandlers"/>
         /// installs on a freshly-spawned subclass when
-        /// <c>RegisterForStringMessages</c> is left at its default <c>true</c>.
+        /// <c>RegisterForStringMessages</c> is explicitly set to <c>true</c>.
         /// Two go to <c>RegisteredTargeted</c>
         /// (<c>RegisterGameObjectTargeted&lt;StringMessage&gt;</c> and
         /// <c>RegisterComponentTargeted&lt;StringMessage&gt;</c>), one to
@@ -66,10 +66,10 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <see cref="OnDisableDuringDestroyMasksOnDestroyLeak"/>: both tests
         /// observe the bus across a spawn-then-destroy round trip and must
         /// know how many handlers the framework adds on its own. If the base
-        /// class adds or removes a default handler, update this constant in
+        /// class adds or removes an opt-in handler, update this constant in
         /// lock-step.
         /// </remarks>
-        private const int DefaultStringMessageHandlerCount = 3;
+        private const int OptedInStringMessageHandlerCount = 3;
 
         /// <summary>
         /// Skipping <c>base.Awake()</c> means the framework never creates the
@@ -270,15 +270,15 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             Assert.IsNotNull(token, "[{0}] base.Awake() must create the token.", scenario.Kind);
             Assert.AreEqual(
-                DefaultStringMessageHandlerCount,
+                OptedInStringMessageHandlerCount,
                 watcher.Snapshot,
-                "[{0}] Spawn must install all default handlers. {1}",
+                "[{0}] Spawn must install all opted-in handlers. {1}",
                 scenario.Kind,
                 watcher.DescribeDelta()
             );
 
             _ = RegisterCounter(scenario, token, host, () => { });
-            const int expectedLeak = DefaultStringMessageHandlerCount + 1;
+            const int expectedLeak = OptedInStringMessageHandlerCount + 1;
             Assert.AreEqual(
                 expectedLeak,
                 watcher.Snapshot,
@@ -359,7 +359,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // Construct the watcher BEFORE spawning the host so the baseline
             // is the truly-fresh bus (0) that MessagingTestBase.UnitySetup
             // guarantees. Capturing the baseline AFTER spawn would fold the
-            // 3 default StringMessage handlers (registered by the inherited
+            // 3 opted-in StringMessage handlers (registered by the inherited
             // MessageAwareComponent.RegisterMessageHandlers) into the
             // baseline, so the "leak" delta would be the negative of those
             // 3 handlers when base.OnDisable() drains them at destroy time.
@@ -390,11 +390,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int snapshotAfterSpawn = watcher.Snapshot;
             Assert.AreEqual(
-                DefaultStringMessageHandlerCount,
+                OptedInStringMessageHandlerCount,
                 snapshotAfterSpawn,
-                "[{0}] Spawning a MessageAwareComponent subclass that does not "
-                    + "override RegisterForStringMessages must add exactly the "
-                    + "default StringMessage handler count to the bus. {1}",
+                "[{0}] Spawning a MessageAwareComponent subclass that opts in "
+                    + "to RegisterForStringMessages must add exactly the "
+                    + "opted-in StringMessage handler count to the bus. {1}",
                 scenario.Kind,
                 watcher.DescribeDelta()
             );
@@ -413,7 +413,7 @@ namespace DxMessaging.Tests.Runtime.Core
             // the inherited base.OnDisable() runs (the override is absent on
             // this fixture) and disables the token before the broken
             // OnDestroy runs, so no registration leaks - including the
-            // default StringMessage handlers, which is what makes the masking
+            // opted-in StringMessage handlers, which is what makes the masking
             // observable end-to-end.
             UnityEngine.Object.Destroy(component);
 
@@ -439,10 +439,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 0,
                 watcher.LeakedRegistrations,
                 "[{0}] Inherited base.OnDisable() must deregister ALL handlers "
-                    + "during destroy (counter + {1} default StringMessage "
+                    + "during destroy (counter + {1} opted-in StringMessage "
                     + "handlers), masking the broken OnDestroy. {2}",
                 scenario.Kind,
-                DefaultStringMessageHandlerCount,
+                OptedInStringMessageHandlerCount,
                 watcher.DescribeDelta()
             );
 
@@ -474,14 +474,14 @@ namespace DxMessaging.Tests.Runtime.Core
         /// handlers but keeps another) cannot pass while still masking the
         /// regression. The messaging owner survives listener destruction so its cleanup
         /// cannot mask the missing listener base calls. The expected counter shape is:
-        /// Targeted == 2 (the two default StringMessage handlers) plus 1 if
+        /// Targeted == 2 (the two opted-in StringMessage handlers) plus 1 if
         /// the scenario registers a targeted counter,
         /// Untargeted == 1 (the default GlobalStringMessage handler) plus 1
         /// if the scenario registers an untargeted counter, Broadcast == 1
         /// only when the scenario registers a broadcast counter.
         /// </summary>
         [UnityTest]
-        public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksDefaultHandlersToo(
+        public IEnumerator OmitBaseOnDisableAndOnDestroyLeaksOptedInHandlersToo(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
@@ -494,7 +494,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             GameObject host = new(
-                nameof(OmitBaseOnDisableAndOnDestroyLeaksDefaultHandlersToo) + scenario.Kind,
+                nameof(OmitBaseOnDisableAndOnDestroyLeaksOptedInHandlersToo) + scenario.Kind,
                 typeof(MissingBaseOnDestroyComponent)
             );
             _spawned.Add(host);
@@ -531,8 +531,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             IMessageBus bus = MessageHandler.MessageBus;
 
-            // The two default StringMessage handlers ALWAYS land on Targeted
-            // regardless of scenario, and the default GlobalStringMessage
+            // The two opted-in StringMessage handlers ALWAYS land on Targeted
+            // regardless of scenario, and the opted-in GlobalStringMessage
             // handler ALWAYS lands on Untargeted. The counter handler lands
             // on the counter that matches the scenario kind.
             int expectedTargeted = 2 + (scenario.Kind == MessageKind.Targeted ? 1 : 0);
@@ -541,8 +541,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             string deltaDescription = watcher.DescribeDelta();
 
-            // Per-counter shape: the two default StringMessage handlers land on
-            // Targeted regardless of scenario, the default GlobalStringMessage
+            // Per-counter shape: the two opted-in StringMessage handlers land on
+            // Targeted regardless of scenario, the opted-in GlobalStringMessage
             // handler lands on Untargeted, and the user counter lands on the
             // bucket that matches scenario.Kind. Failure messages surface the
             // diverging bucket(s) directly.
@@ -576,26 +576,26 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <summary>
         /// Pins that the masking observed in
         /// <see cref="OnDisableDuringDestroyMasksOnDestroyLeak"/> covers the
-        /// default <c>StringMessage</c> / <c>GlobalStringMessage</c> handlers
+        /// opted-in <c>StringMessage</c> / <c>GlobalStringMessage</c> handlers
         /// the base class registers, not just user-added handlers. After
         /// destroy, emitting both default-handler triggers is a no-op because
-        /// every default handler was deregistered by the inherited
+        /// every opted-in handler was deregistered by the inherited
         /// <c>OnDisable</c> during the destroy lifecycle. This guards against
         /// a future regression where the framework only deregisters user
-        /// handlers in some code path, leaving default handlers stranded
+        /// handlers in some code path, leaving opted-in handlers stranded
         /// against a destroyed listener.
         /// </summary>
         [UnityTest]
-        public IEnumerator OnDisableDuringDestroyDeregistersDefaultStringHandlers()
+        public IEnumerator OnDisableDuringDestroyDeregistersOptedInStringHandlers()
         {
             using LeakWatcher watcher = new(
                 bus: MessageHandler.MessageBus,
                 throwOnLeak: false,
-                label: nameof(OnDisableDuringDestroyDeregistersDefaultStringHandlers)
+                label: nameof(OnDisableDuringDestroyDeregistersOptedInStringHandlers)
             );
 
             GameObject host = new(
-                nameof(OnDisableDuringDestroyDeregistersDefaultStringHandlers),
+                nameof(OnDisableDuringDestroyDeregistersOptedInStringHandlers),
                 typeof(MissingBaseOnDestroyOnlyComponent)
             );
             _spawned.Add(host);
@@ -608,11 +608,11 @@ namespace DxMessaging.Tests.Runtime.Core
             // cleanup cannot make the inherited-OnDisable assertion pass.
             InstanceId hostId = host;
 
-            // Sanity: spawning installs exactly the default handler count.
+            // Sanity: spawning installs exactly the opted-in handler count.
             Assert.AreEqual(
-                DefaultStringMessageHandlerCount,
+                OptedInStringMessageHandlerCount,
                 watcher.Snapshot,
-                "Spawn must add exactly the default handler count. {0}",
+                "Spawn must add exactly the opted-in handler count. {0}",
                 watcher.DescribeDelta()
             );
 
@@ -632,19 +632,19 @@ namespace DxMessaging.Tests.Runtime.Core
             IMessageBus bus = MessageHandler.MessageBus;
             Assert.Zero(
                 bus.RegisteredTargeted,
-                "Default StringMessage Targeted handlers must be removed by "
+                "Opted-in StringMessage Targeted handlers must be removed by "
                     + "the inherited base.OnDisable() during destroy. {0}",
                 watcher.DescribeDelta()
             );
             Assert.Zero(
                 bus.RegisteredUntargeted,
-                "Default GlobalStringMessage Untargeted handler must be removed "
+                "Opted-in GlobalStringMessage Untargeted handler must be removed "
                     + "by the inherited base.OnDisable() during destroy. {0}",
                 watcher.DescribeDelta()
             );
 
             // Emit the default-handler triggers against the captured id; with
-            // every default handler deregistered the bus has no work to do
+            // every opted-in handler deregistered the bus has no work to do
             // and no listener to dispatch to. This pins the user-observable
             // consequence of the masking: not just zero counters, but also
             // zero reachable handlers for the messages the framework would
@@ -682,17 +682,17 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// Skipping <c>base.RegisterMessageHandlers()</c> means the default
+        /// Skipping <c>base.RegisterMessageHandlers()</c> means the opted-in
         /// <c>StringMessage</c> / <c>GlobalStringMessage</c> registrations
-        /// the base class normally adds are never installed, while user-added
+        /// the base class would add are never installed, while user-added
         /// registrations in the override still apply because the token itself
         /// was created by the untouched <c>Awake</c>.
         /// </summary>
         [Test]
-        public void OmitBaseRegisterMessageHandlersDoesNotRegisterDefaultStringHandlers()
+        public void OmitBaseRegisterMessageHandlersDoesNotRegisterOptedInStringHandlers()
         {
             GameObject host = new(
-                nameof(OmitBaseRegisterMessageHandlersDoesNotRegisterDefaultStringHandlers),
+                nameof(OmitBaseRegisterMessageHandlersDoesNotRegisterOptedInStringHandlers),
                 typeof(MissingBaseRegisterMessageHandlersComponent)
             );
             _spawned.Add(host);
@@ -704,7 +704,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Token must exist because base.Awake() still runs."
             );
 
-            // Emit the default-handler messages: a component-targeted StringMessage
+            // Emit the opted-in handler messages: a component-targeted StringMessage
             // and an untargeted GlobalStringMessage. Without the base call, the
             // handlers the base would normally register for these are absent.
             StringMessage stringMessage = new("payload");
@@ -715,7 +715,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 0,
                 component.defaultHandlerInvocations,
-                "Default base-class string handlers must not fire when base.RegisterMessageHandlers() is skipped."
+                "Opted-in base-class string handlers must not fire when base.RegisterMessageHandlers() is skipped."
             );
 
             // Confirm the user's own registration (added inside the override)
@@ -744,14 +744,13 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             // Construct the watcher BEFORE spawning the host so the baseline is
             // the truly-fresh bus (0). The fixture
-            // CorrectBaseCallContractComponent overrides
-            // RegisterForStringMessages => false today, so this happens to
-            // match the post-spawn count - but anchoring to the pre-spawn bus
-            // removes the hidden coupling: if a future maintainer flips that
-            // override to true, a "leak" of the default handlers would be
+            // CorrectBaseCallContractComponent uses the default-off string
+            // behavior, so this matches the post-spawn count. Anchoring to
+            // the pre-spawn bus removes the hidden coupling if a future
+            // maintainer opts the fixture into demo handlers and a leak is
             // folded into a post-spawn baseline and silently masked. Watching
             // from before spawn pins the full round-trip (baseline=0,
-            // after-spawn=0 with the override in place, after-register=1,
+            // after-spawn=1 for the component's declared handler, after-register=2,
             // after-destroy=0, leaked=0) regardless of the override's value.
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
@@ -765,6 +764,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     host.GetComponent<CorrectBaseCallContractComponent>();
                 MessageRegistrationToken token = GetToken(component);
                 Assert.IsNotNull(token, "[{0}] Token must be created.", scenario.Kind);
+                Assert.AreEqual(
+                    1,
+                    watcher.Snapshot,
+                    "[{0}] A default MessageAwareComponent must add only its declared handler and no hidden string registrations. {1}",
+                    scenario.Kind,
+                    watcher.DescribeDelta()
+                );
 
                 int handlerInvocations = 0;
                 MessageRegistrationHandle handle = RegisterCounter(

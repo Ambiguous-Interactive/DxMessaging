@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
+  default; override `RegisterForStringMessages` to return `true` when those handlers are required
+  ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 - Reduce source-generator execution allocations by retaining concrete generator-owned lists and
   materializing registrar sort keys once, and reduce package size by shipping only the optimized
   analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576), [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).

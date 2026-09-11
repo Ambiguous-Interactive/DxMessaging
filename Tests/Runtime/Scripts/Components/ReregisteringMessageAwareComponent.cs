@@ -24,8 +24,6 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         /// </summary>
         public int registerInvocationCount;
 
-        protected override bool RegisterForStringMessages => false;
-
         protected override bool ReregisterOnEnableAfterRelease => reregisterOnEnableAfterRelease;
 
         protected override bool MessageRegistrationTiedToEnableStatus =>

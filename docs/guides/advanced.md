@@ -67,8 +67,8 @@ MessageAwareComponent
 
 - `protected virtual bool MessageRegistrationTiedToEnableStatus => true`.
   - Set to `false` to manage `Enable()`/`Disable()` yourself (e.g., persistent listeners on disabled components).
-- `protected virtual bool RegisterForStringMessages => true`.
-  - Set to `false` to not auto-register string message demos.
+- `protected virtual bool RegisterForStringMessages => false`.
+  - Set to `true` to register the built-in string message demos.
 
 ```csharp
 using DxMessaging.Unity;
@@ -76,8 +76,6 @@ using DxMessaging.Unity;
 public sealed class PersistentListener : MessageAwareComponent
 {
     protected override bool MessageRegistrationTiedToEnableStatus => false; // stays enabled when component disables
-    protected override bool RegisterForStringMessages => false;             // opt out of string demos
-
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
@@ -158,9 +156,10 @@ public sealed class RespawningListener : MessageAwareComponent
 }
 ```
 
-String messages: opt-in/out
+String messages: opt in
 
-- MessageAwareComponent registers string demos by default. Override `RegisterForStringMessages` to disable.
+- `MessageAwareComponent` does not register string demos by default in 4.0.
+- Override `RegisterForStringMessages` to return `true` when you want the built-in demo handlers.
 - See String Messages page for using `StringMessage` and `GlobalStringMessage` during prototyping.
 
 Local bus islands (subsystems/tests)
@@ -240,7 +239,7 @@ Do's
 
 - **CRITICAL**: When overriding `MessageAwareComponent` hooks, you MUST call the base method: `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.RegisterMessageHandlers()`.
 - **Always call `base.RegisterMessageHandlers()` first** in your override to ensure parent class registrations happen before yours.
-- Prefer overriding `RegisterForStringMessages => false` instead of removing `base.RegisterMessageHandlers()` if you don't want string demos.
+- Override `RegisterForStringMessages => true` when you want the built-in string demos.
 - **Don't hide Unity methods** with `new` (e.g., `new void OnEnable()`); always `override` and call `base.*`.
 
 - **Prefer `Awake()` for registration** rather than `Start()`. `MessageAwareComponent` calls `RegisterMessageHandlers()` in `Awake()`.

@@ -331,7 +331,7 @@ public abstract class MessageAwareComponent : MonoBehaviour
     // re-creates the token and replays RegisterMessageHandlers
     protected virtual bool ReregisterOnEnableAfterRelease { get; }
 
-    // When true, registers for string messages automatically
+    // When true, registers string message demos (default false)
     protected virtual bool RegisterForStringMessages { get; }
 
     // Override to register your message handlers
@@ -357,7 +357,7 @@ public abstract class MessageAwareComponent : MonoBehaviour
 > }
 > ```
 >
-> Skipping base calls may prevent token setup and default string-message registrations.
+> Skipping base calls may prevent token setup and registrations declared by parent components.
 
 ---
 
