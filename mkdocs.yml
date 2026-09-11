@@ -167,6 +167,7 @@ exclude_docs: |
   ops/
   runbooks/
   overrides/
+  images/**/README.md
 
 # Navigation structure
 

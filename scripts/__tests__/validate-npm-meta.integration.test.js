@@ -68,6 +68,24 @@ function createReleaseFixture(t, options = {}) {
 test("real pack rejects every removed root or docs meta", () => {
   const entries = collectDryRunEntries();
   assert.equal(validatePackEntries(entries).valid, true, "unmodified real pack must be valid");
+  assert.equal(
+    entries.some(
+      (entry) => entry === "SourceGenerators.meta" || entry.startsWith("SourceGenerators/")
+    ),
+    false,
+    "development-only source-generator inputs must not ship"
+  );
+  for (const analyzer of [
+    "WallstopStudios.DxMessaging.Analyzer.dll",
+    "WallstopStudios.DxMessaging.SourceGenerators.dll"
+  ]) {
+    assert.equal(entries.includes(`Runtime/Analyzers/${analyzer}`), true, `${analyzer} must ship`);
+    assert.equal(
+      entries.includes(`Runtime/Analyzers/${analyzer}.meta`),
+      true,
+      `${analyzer}.meta must ship`
+    );
+  }
   for (const missingMeta of ROOT_DOC_METAS) {
     const result = validatePackEntries(entries.filter((entry) => entry !== missingMeta));
     // prettier-ignore

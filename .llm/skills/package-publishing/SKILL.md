@@ -29,11 +29,9 @@ where the `RoslynAnalyzer`-labeled DLLs sit inside it.
   EXCLUSION list applied to what the allowlist already admitted. The pipeline is
   repository files, then the allowlist, then the exclusions.
 - Never use negated (`!`) patterns in `"files"`. Put the exclusion in `.npmignore` instead.
-- Prefer specific glob patterns over broad wildcards for complex trees. `SourceGenerators/`
-  ships individual patterns
-  (`SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/*.cs`, `*.csproj`,
-  `Directory.Build.props`) rather than `SourceGenerators/**`, so the test project needs no
-  exclusion.
+- Prefer specific glob patterns over broad wildcards for complex trees.
+- Ship only the compiled first-party analyzer DLLs under `Runtime/Analyzers/`. Do not include the
+  `SourceGenerators/` development projects, source, build props, or SDK pin in the consumer package.
 - npm always includes `package.json`, `README`, `LICENSE`, and `CHANGELOG` regardless of
   configuration.
 - `.npmignore` still earns its place for subdirectories inside broadly included paths, for
@@ -44,10 +42,9 @@ where the `RoslynAnalyzer`-labeled DLLs sit inside it.
 ### Unity .meta pairing
 
 - Every included file and directory needs its `.meta` in the allowlist: `Editor.meta`,
-  `Runtime.meta`, `SourceGenerators.meta`, `package.json.meta`, `README.md.meta`, and so on.
+  `Runtime.meta`, `package.json.meta`, `README.md.meta`, and so on.
 - Every excluded directory must have its `.meta` excluded too, or the tarball ships orphaned
-  metadata. Always pair them: `Tests/` with `Tests.meta`, `scripts/` with `scripts.meta`,
-  `SourceGenerators/....Tests/` with `SourceGenerators/....Tests.meta`.
+  metadata. Always pair them: `Tests/` with `Tests.meta` and `scripts/` with `scripts.meta`.
 
 ### Tarball invariants (issue #204)
 

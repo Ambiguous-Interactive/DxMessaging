@@ -92,9 +92,9 @@ For ZIP downloads, extract the repository contents into
 
 ## Source Generators and Assembly Definitions
 
-DxMessaging's source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
+DxMessaging's compiled source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
 `[DxBroadcastMessage]`, `[DxAutoConstructor]`) work whether or not your project
-uses assembly definitions. The package ships the generators so they reach the
+uses assembly definitions. The package ships the optimized analyzer assemblies so they reach the
 DxMessaging assembly and every assembly that references it, including the default
 `Assembly-CSharp` used by projects without any `.asmdef` files. You do not need to
 create an assembly definition for `[Dx*Message]` types to generate.

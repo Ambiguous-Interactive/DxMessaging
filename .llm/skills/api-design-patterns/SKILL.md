@@ -1,6 +1,6 @@
 ---
 name: api-design-patterns
-description: "Allocation-conscious C# API shapes used across DxMessaging and its helper libraries: struct-based fluent builders that copy-on-With and validate in Build(), Try-pattern APIs that return bool with an out parameter instead of throwing on expected failure, and collection extension methods with documented complexity, concrete-type fast paths, and Fisher-Yates shuffle. Use when designing a builder, a TryGet/TryParse/GetOrDefault API, or a collection extension, when a constructor has grown too many parameters, or when replacing exceptions or LINQ on a hot path."
+description: "Allocation-conscious C# API and collection shapes used across DxMessaging and its helper libraries: struct-based fluent builders, Try-pattern APIs, concrete collection fast paths, and allocation-safe enumeration and sorting. Use when designing these APIs, replacing exceptions or LINQ on a hot path, or optimizing analyzer/source-generator collection loops and deterministic ordering."
 metadata:
   category: "solid"
   tags: "solid, patterns, builder, fluent-api, zero-alloc"
@@ -19,6 +19,7 @@ heap allocation and a call site that reads like its intent.
   malformed input).
 - Adding an extension method on `IReadOnlyList<T>`, `IList<T>`, or `IEnumerable<T>`.
 - Removing LINQ or exception-driven control flow from a hot path.
+- Optimizing an analyzer or source generator that owns a collection pipeline or sorts symbols.
 
 ## Rules
 
@@ -71,6 +72,28 @@ heap allocation and a call site that reads like its intent.
 - Do not use LINQ on hot paths; `FirstOrDefault` and friends allocate an enumerator.
 - Shuffle in place with Fisher-Yates and offer a `System.Random` overload so tests can be
   deterministic. Assert on permutations by comparing sorted sequences.
+
+### Hot collection pipelines
+
+- Preserve a concrete collection type when the implementation creates and owns it. In particular,
+  passing a `List<T>` as `IReadOnlyList<T>` and using `foreach` calls the interface
+  `GetEnumerator()`; runtimes used by Roslyn and Unity can box the list's struct enumerator. Either
+  keep `List<T>` in the private pipeline or use an indexed loop when abstraction is required.
+- Judge `foreach` from the expression's **static type**, not its runtime object. Concrete
+  `List<T>`, array, and `ImmutableArray<T>` loops have allocation-free lowering; interface-typed
+  `IEnumerable<T>`, `IReadOnlyCollection<T>`, and `IReadOnlyList<T>` loops may not.
+- Validate allocation claims on the code's actual host/runtime. A Unity runtime observation does
+  not prove how a Roslyn analyzer hosted by the compiler behaves. Use fresh-process repetitions,
+  warm both variants equally, retain checksums or generated-output equality, and report the tested
+  runtime.
+- Materialize allocation-producing sort keys once per item. Never call `ToDisplayString`, format a
+  string, normalize a path, or perform another allocating transformation inside a comparison:
+  sorting invokes the comparison O(n log n) times.
+- Prefer a reusable singleton `IComparer<T>` or a demonstrably cached non-capturing comparison for
+  repeated sorts. A non-allocating delegate does not make an allocating comparison body safe.
+- Pair ordering optimizations with a behavior test that pins deterministic ordinal output. Sweep
+  every production sort and interface-typed enumeration in the affected analyzer/generator scope;
+  do not mechanically rewrite UI/reporting LINQ outside the measured hot path.
 
 ## References
 

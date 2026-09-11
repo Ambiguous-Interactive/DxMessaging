@@ -2,7 +2,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 {
     using System;
     using System.Collections.Generic;
-    using System.Collections.Immutable;
     using System.Linq;
     using System.Text;
     using System.Threading;
@@ -87,6 +86,16 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             string Suffix
         );
 
+        private sealed class AotRegistrarSourceInfoComparer : IComparer<AotRegistrarSourceInfo>
+        {
+            internal static readonly AotRegistrarSourceInfoComparer Instance = new();
+
+            private AotRegistrarSourceInfoComparer() { }
+
+            public int Compare(AotRegistrarSourceInfo left, AotRegistrarSourceInfo right) =>
+                string.CompareOrdinal(left.TypeName, right.TypeName);
+        }
+
         private readonly struct SemanticTargetInfo
         {
             public SemanticTargetInfo(
@@ -149,7 +158,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
             }
 
-            Execute(typesToGenerate.ToImmutableArray(), aotTypes.ToImmutableArray(), context);
+            Execute(typesToGenerate, aotTypes, context);
         }
 
         private static bool IsSyntaxTargetForGeneration(SyntaxNode node)
@@ -354,8 +363,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static void Execute(
-            ImmutableArray<MessageToGenerateInfo> typesToGenerate,
-            ImmutableArray<AotRegistrarInfo> aotTypes,
+            List<MessageToGenerateInfo> typesToGenerate,
+            List<AotRegistrarInfo> aotTypes,
             GeneratorExecutionContext context
         )
         {
@@ -759,58 +768,70 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static void GenerateTopLevelAotRegistrar(
-            ImmutableArray<AotRegistrarInfo> aotTypes,
+            List<AotRegistrarInfo> aotTypes,
             HashSet<ISymbol> generatedAttributedTypes,
             GeneratorExecutionContext context
         )
         {
-            if (aotTypes.IsDefaultOrEmpty)
+            if (aotTypes.Count == 0)
             {
                 return;
             }
 
-            List<AotRegistrarInfo> registrarTypes = aotTypes
-                .Where(info =>
-                    !info.HasMessageAttribute
-                    && !generatedAttributedTypes.Contains(info.TypeSymbol)
-                    && IsAccessibleFromTopLevelRegistrar(info.TypeSymbol)
+            Dictionary<INamedTypeSymbol, AotRegistrarInfo> uniqueRegistrarTypes = new(
+                SymbolEqualityComparer.Default
+            );
+            foreach (AotRegistrarInfo info in aotTypes)
+            {
+                if (
+                    info.HasMessageAttribute
+                    || generatedAttributedTypes.Contains(info.TypeSymbol)
+                    || !IsAccessibleFromTopLevelRegistrar(info.TypeSymbol)
                 )
-                .GroupBy(info => info.TypeSymbol, SymbolEqualityComparer.Default)
-                .Select(group =>
                 {
-                    AotRegistrarInfo merged = default;
-                    bool hasValue = false;
-                    foreach (AotRegistrarInfo info in group)
-                    {
-                        if (!hasValue)
-                        {
-                            merged = info;
-                            hasValue = true;
-                            continue;
-                        }
+                    continue;
+                }
 
-                        merged = new AotRegistrarInfo(
-                            info.TypeSymbol,
-                            merged.RegistersUntargetedAotBridge
-                                || info.RegistersUntargetedAotBridge,
-                            merged.RegistersTargetedAotBridge || info.RegistersTargetedAotBridge,
-                            merged.RegistersBroadcastAotBridge || info.RegistersBroadcastAotBridge,
-                            merged.HasMessageAttribute || info.HasMessageAttribute
-                        );
-                    }
-
-                    return merged;
-                })
-                .OrderBy(
-                    info =>
-                        info.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    StringComparer.Ordinal
+                if (
+                    uniqueRegistrarTypes.TryGetValue(info.TypeSymbol, out AotRegistrarInfo existing)
                 )
-                .ToList();
+                {
+                    uniqueRegistrarTypes[info.TypeSymbol] = new AotRegistrarInfo(
+                        info.TypeSymbol,
+                        existing.RegistersUntargetedAotBridge || info.RegistersUntargetedAotBridge,
+                        existing.RegistersTargetedAotBridge || info.RegistersTargetedAotBridge,
+                        existing.RegistersBroadcastAotBridge || info.RegistersBroadcastAotBridge,
+                        HasMessageAttribute: false
+                    );
+                }
+                else
+                {
+                    uniqueRegistrarTypes.Add(info.TypeSymbol, info);
+                }
+            }
 
-            if (registrarTypes.Count == 0)
+            if (uniqueRegistrarTypes.Count == 0)
             {
                 return;
+            }
+
+            List<AotRegistrarSourceInfo> registrarTypes = new(uniqueRegistrarTypes.Count);
+            foreach (AotRegistrarInfo info in uniqueRegistrarTypes.Values)
+            {
+                string typeName = info.TypeSymbol.ToDisplayString(
+                    SymbolDisplayFormat.FullyQualifiedFormat
+                );
+                registrarTypes.Add(new AotRegistrarSourceInfo(info, typeName, string.Empty));
+            }
+            registrarTypes.Sort(AotRegistrarSourceInfoComparer.Instance);
+            for (int index = 0; index < registrarTypes.Count; index++)
+            {
+                AotRegistrarSourceInfo sourceInfo = registrarTypes[index];
+                registrarTypes[index] = new AotRegistrarSourceInfo(
+                    sourceInfo.Info,
+                    sourceInfo.TypeName,
+                    index + "_" + SanitizeIdentifier(sourceInfo.TypeName)
+                );
             }
 
             string source = GenerateTopLevelAotRegistrarSource(registrarTypes);
@@ -820,25 +841,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             );
         }
 
-        private static string GenerateTopLevelAotRegistrarSource(List<AotRegistrarInfo> types)
+        private static string GenerateTopLevelAotRegistrarSource(
+            List<AotRegistrarSourceInfo> sourceTypes
+        )
         {
             const string Indent = "        ";
-            List<AotRegistrarSourceInfo> sourceTypes = types
-                .Select(
-                    (info, index) =>
-                    {
-                        string typeName = info.TypeSymbol.ToDisplayString(
-                            SymbolDisplayFormat.FullyQualifiedFormat
-                        );
-                        return new AotRegistrarSourceInfo(
-                            info,
-                            typeName,
-                            index + "_" + SanitizeIdentifier(typeName)
-                        );
-                    }
-                )
-                .ToList();
-
             var builder = new StringBuilder();
             builder.AppendLine("// <auto-generated by DxMessageIdGenerator/>");
             builder.AppendLine("#nullable enable annotations");

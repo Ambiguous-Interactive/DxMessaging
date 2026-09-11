@@ -5,8 +5,8 @@
 # - "files" in package.json is an ALLOWLIST of what to include
 # - This .npmignore file EXCLUDES items from within those allowed directories
 #
-# Only exclusions for files within Editor/, Runtime/, Samples~/, and
-# SourceGenerators/ are needed here. Files outside those directories are
+# Only exclusions for files within Editor/, Runtime/, and Samples~/ are needed
+# here. Files outside those directories are
 # already excluded by not being in the "files" allowlist.
 
 # =============================================================================
@@ -35,13 +35,6 @@
 # =============================================================================
 .artifacts/
 .artifacts.meta
-
-# =============================================================================
-# SourceGenerator Exclusions
-# =============================================================================
-# Exclude the test project entirely (both folder and .meta file)
-SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/
-SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests.meta
 
 # =============================================================================
 # Tests (not needed in distributed package)

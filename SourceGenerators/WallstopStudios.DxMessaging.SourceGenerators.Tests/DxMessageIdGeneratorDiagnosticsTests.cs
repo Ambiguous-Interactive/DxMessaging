@@ -502,6 +502,35 @@ public readonly struct ManualBroadcast : IBroadcastMessage<ManualBroadcast> { }
     }
 
     [Test]
+    public void ManualInterfaceRegistrarUsesOrdinalTypeNameOrder()
+    {
+        string source = """
+using DxMessaging.Core.Messages;
+
+namespace Sample;
+
+public readonly struct ZuluManual : IUntargetedMessage<ZuluManual> { }
+public readonly struct AlphaManual : IUntargetedMessage<AlphaManual> { }
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+        int alphaIndex = generated.IndexOf(
+            "__DxMessagingAotUntargetedBridge_0_global__Sample_AlphaManual",
+            StringComparison.Ordinal
+        );
+        int zuluIndex = generated.IndexOf(
+            "__DxMessagingAotUntargetedBridge_1_global__Sample_ZuluManual",
+            StringComparison.Ordinal
+        );
+
+        Assert.That(result.Results[0].Diagnostics, Is.Empty);
+        Assert.That(alphaIndex, Is.GreaterThanOrEqualTo(0));
+        Assert.That(zuluIndex, Is.GreaterThan(alphaIndex));
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [Test]
     public void OpenGenericMessagesDoNotEmitIl2CppAotBridges()
     {
         string source = """
