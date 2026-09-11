@@ -123,9 +123,7 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
     // prettier-ignore
     assert.match(fs.readFileSync(path.join(consumers, "tarball", "Packages", "manifest.json"), "utf8"), /\.tgz/);
     // prettier-ignore
-    assert.match(fs.readFileSync(path.join(consumers, "git", "Assets", "Editor", "DxmConsumerSampleImporter.cs"), "utf8"), /Sample\.FindByPackage[\s\S]*OverridePreviousImports[\s\S]*HideImportWindow/);
-    // prettier-ignore
-    assert.ok(!fs.existsSync(path.join(consumers, "classic", "Assets", "Editor", "DxmConsumerSampleImporter.cs")));
+    { assert.match(fs.readFileSync(path.join(consumers, "git", "Assets", "Editor", "DxmConsumerSampleImporter.cs"), "utf8"), /Sample\.FindByPackage[\s\S]*OverridePreviousImports[\s\S]*HideImportWindow/); assert.match(fs.readFileSync(SCRIPT_PATH, "utf8"), /Runtime\/Core\/MessageHandler\.cs[\s\S]*Samples~\/Mini Combat\/MiniCombat\.unity/); assert.ok(!fs.existsSync(path.join(consumers, "classic", "Assets", "Editor", "DxmConsumerSampleImporter.cs"))); }
 
     // (d) The generated exporter lives OUTSIDE the export root.
     const staged = walk(assetsRoot);

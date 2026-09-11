@@ -787,10 +787,16 @@ function Invoke-ConsumerInstallVerification {
                 throw "Git consumer lock provenance mismatch: source=$($lockEntry.source), hash=$($lockEntry.hash), expected=$GitRevision."
             }
         } elseif ($SourceKind -eq 'tarball') {
-            $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $TarballPayloadRoot 'package.json')).Hash
-            $resolvedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $markerValues.resolvedPath 'package.json')).Hash
-            if ($lockEntry.source -ne 'local-tarball' -or $resolvedHash -ne $expectedHash) {
-                throw "Tarball consumer provenance mismatch: source=$($lockEntry.source), package.json hash=$resolvedHash, expected=$expectedHash."
+            $contentMismatches = @()
+            foreach ($relativePath in @('Runtime/Core/MessageHandler.cs', 'Samples~/Mini Combat/MiniCombat.unity')) {
+                $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $TarballPayloadRoot $relativePath)).Hash
+                $resolvedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $markerValues.resolvedPath $relativePath)).Hash
+                if ($resolvedHash -ne $expectedHash) {
+                    $contentMismatches += "$relativePath resolved=$resolvedHash expected=$expectedHash"
+                }
+            }
+            if ($lockEntry.source -ne 'local-tarball' -or $contentMismatches.Count -gt 0) {
+                throw "Tarball consumer provenance mismatch: source=$($lockEntry.source), immutable content=$($contentMismatches -join '; ')."
             }
         }
     }
