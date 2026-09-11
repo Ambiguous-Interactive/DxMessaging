@@ -776,9 +776,9 @@ public void TestAchievementSystem() {
 Important: Inheritance with MessageAwareComponent
 
 - If you override lifecycle or registration hooks, call the base method.
-- Use `base.RegisterMessageHandlers()` to keep default string-message registrations.
+- Use `base.RegisterMessageHandlers()` to keep registrations declared by parent components.
 - Use `base.OnEnable()` / `base.OnDisable()` to preserve token enable/disable.
-- If you need to opt out of string demos, override `RegisterForStringMessages => false` instead of skipping the base call.
+- To use the built-in string demos, override `RegisterForStringMessages => true`.
 - Don't hide Unity methods with `new` (e.g., `new void OnEnable()`); always `override` and call `base.*`.
 
 ### DI Framework Integrations

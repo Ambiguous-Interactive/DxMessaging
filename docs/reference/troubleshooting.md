@@ -29,7 +29,7 @@ Then check the matching cause below:
 - Targeted/Broadcast require a valid `InstanceId`; ensure the target/source object exists when you emit.
 - In Unity, confirm your `MessagingComponent` exists on sender/receiver GameObjects.
 - **CRITICAL**: If inheriting from `MessageAwareComponent`, ensure your overrides call base methods:
-  - **`base.RegisterMessageHandlers()`** - Call this FIRST in your override to preserve default setup (including string message demos) and parent class registrations.
+  - **`base.RegisterMessageHandlers()`** - Call this FIRST in your override to preserve parent class registrations. Override `RegisterForStringMessages => true` separately when you want the built-in string demos.
   - **`base.Awake()`** - Call this if you override `Awake()`, or your token won't be created (this is the #1 cause of handlers not firing).
   - **`base.OnEnable()` / `base.OnDisable()`** - Call these so the token actually enables/disables.
   - **`base.OnDestroy()`** - Call this if you override `OnDestroy()`, or registrations leak past the component's lifetime and held references prevent GC.

@@ -29,8 +29,11 @@ void OnDamageV4(in ApplyDamage message) { }
 To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
 Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
 scans C# scripts under `Assets`, updates callbacks used by recognized DxMessaging registrations,
-explicit `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It does not
-change package or generated sources, interceptors, emission calls, comments, or strings.
+explicit `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. When it
+updates an inherited string-handler override, it also adds
+`protected override bool RegisterForStringMessages => true;` to preserve the 3.x behavior. It
+keeps an existing opt-in, opt-out, or computed property unchanged. It does not change package or
+generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
@@ -41,8 +44,10 @@ ambiguous receivers unchanged. It also leaves a callback unchanged when its newl
 parameter is passed as a `ref` or `out` argument, except for the matching `base` call in a changed
 `MessageAwareComponent` override, which it can update safely. The tool detects callbacks passed
 directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. Review project-wide callback uses, inspect the diff, and let Unity
-compile before committing the migration.
+Console for manual review. Partial `MessageAwareComponent` declarations also require manual review
+before adding the string-handler opt-in because another part can already declare the property.
+Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
+migration.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 

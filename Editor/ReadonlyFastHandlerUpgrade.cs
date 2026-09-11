@@ -10,7 +10,7 @@ namespace DxMessaging.Editor
     using UnityEngine;
 
     /// <summary>
-    /// Upgrades 3.x fast-handler callback parameters from <c>ref</c> to <c>in</c>.
+    /// Upgrades 3.x fast-handler callbacks and inherited string-handler opt-ins for 4.0.
     /// </summary>
     internal static class ReadonlyFastHandlerUpgrade
     {
@@ -134,26 +134,29 @@ namespace DxMessaging.Editor
                     manualReview.Add($"{assetPath}: {skippedMethod}");
                 }
 
-                if (result.ReplacementCount > 0)
+                if (result.ReplacementCount > 0 || result.StringHandlerOptInCount > 0)
                 {
                     upgrades.Add(
                         new FileUpgrade(
                             fullPath,
                             originalBytes,
                             upgradedBytes,
-                            result.ReplacementCount
+                            result.ReplacementCount,
+                            result.StringHandlerOptInCount
                         )
                     );
                 }
             }
 
             int replacementCount = 0;
+            int stringHandlerOptInCount = 0;
             foreach (FileUpgrade upgrade in upgrades)
             {
                 replacementCount += upgrade.ReplacementCount;
+                stringHandlerOptInCount += upgrade.StringHandlerOptInCount;
             }
 
-            if (replacementCount == 0)
+            if (replacementCount == 0 && stringHandlerOptInCount == 0)
             {
                 string suffix =
                     manualReview.Count == 0
@@ -162,7 +165,8 @@ namespace DxMessaging.Editor
                             + "See the Console for details.";
                 EditorUtility.DisplayDialog(
                     "DxMessaging Fast Handler Upgrade",
-                    "No 3.x fast-handler parameters were found under Assets." + suffix,
+                    "No 3.x fast handlers or inherited string handlers were found under Assets."
+                        + suffix,
                     "OK"
                 );
                 LogManualReview(manualReview);
@@ -176,7 +180,8 @@ namespace DxMessaging.Editor
                         + "reported in the Console.";
             bool confirmed = EditorUtility.DisplayDialog(
                 "DxMessaging Fast Handler Upgrade",
-                $"Update {replacementCount} parameter(s) in {upgrades.Count} script(s)?\n\n"
+                $"Update {replacementCount} parameter(s) and add {stringHandlerOptInCount} "
+                    + $"string-handler opt-in(s) in {upgrades.Count} script(s)?\n\n"
                     + "Only scripts under Assets are changed. Interceptors and emission calls remain "
                     + "writable by ref. Earlier writes are restored if a later write fails; newer "
                     + "concurrent edits are preserved and reported."
@@ -210,7 +215,8 @@ namespace DxMessaging.Editor
             {
                 AssetDatabase.Refresh();
                 Debug.Log(
-                    $"[DxMessaging] Upgraded {replacementCount} fast-handler parameter(s) in "
+                    $"[DxMessaging] Upgraded {replacementCount} fast-handler parameter(s) and "
+                        + $"added {stringHandlerOptInCount} string-handler opt-in(s) in "
                         + $"{upgrades.Count} script(s). Review the diff before committing."
                 );
                 LogManualReview(manualReview);
@@ -309,21 +315,43 @@ namespace DxMessaging.Editor
 
             PruneUnsafeByReferenceUse(masked, replacementStarts, manualReview);
 
+            SortedDictionary<int, string> insertions = new();
+            AddStringHandlerOptIns(masked, replacementStarts, insertions, manualReview);
+
             List<int> orderedStarts = new(replacementStarts);
             orderedStarts.Sort();
-            StringBuilder upgraded = new(source.Length);
+            StringBuilder upgraded = new(source.Length + insertions.Count * 96);
             int previous = 0;
-            foreach (int start in orderedStarts)
+            int replacementIndex = 0;
+            foreach (KeyValuePair<int, string> insertion in insertions)
             {
-                upgraded.Append(source, previous, start - previous);
+                while (
+                    replacementIndex < orderedStarts.Count
+                    && orderedStarts[replacementIndex] < insertion.Key
+                )
+                {
+                    int replacementStart = orderedStarts[replacementIndex++];
+                    upgraded.Append(source, previous, replacementStart - previous);
+                    upgraded.Append("in");
+                    previous = replacementStart + 3;
+                }
+                upgraded.Append(source, previous, insertion.Key - previous);
+                upgraded.Append(insertion.Value);
+                previous = insertion.Key;
+            }
+            while (replacementIndex < orderedStarts.Count)
+            {
+                int replacementStart = orderedStarts[replacementIndex++];
+                upgraded.Append(source, previous, replacementStart - previous);
                 upgraded.Append("in");
-                previous = start + 3;
+                previous = replacementStart + 3;
             }
             upgraded.Append(source, previous, source.Length - previous);
 
             return new UpgradeResult(
                 upgraded.ToString(),
                 orderedStarts.Count,
+                insertions.Count,
                 new List<string>(manualReview)
             );
         }
@@ -580,6 +608,165 @@ namespace DxMessaging.Editor
                     replacementStarts
                 );
             }
+        }
+
+        private static void AddStringHandlerOptIns(
+            string masked,
+            HashSet<int> replacementStarts,
+            SortedDictionary<int, string> insertions,
+            SortedSet<string> manualReview
+        )
+        {
+            HashSet<int> handledTypeStarts = new();
+            foreach (string methodName in ChangedOverrideNames)
+            {
+                foreach (
+                    ParameterList declaration in FindMethodDeclarations(masked, methodName, true)
+                )
+                {
+                    int typeStart = FindContainingTypeStart(masked, declaration.DeclarationStart);
+                    if (
+                        !TypeScopeDerivesFromMessageAwareComponent(masked, typeStart)
+                        || !HasReplacementInRange(
+                            replacementStarts,
+                            declaration.ParametersStart,
+                            declaration.ParametersEnd
+                        )
+                        || !handledTypeStarts.Add(typeStart)
+                    )
+                    {
+                        continue;
+                    }
+                    if (TypeScopeDeclaresStringHandlerOptIn(masked, typeStart))
+                    {
+                        continue;
+                    }
+                    if (TypeScopeIsPartial(masked, typeStart))
+                    {
+                        manualReview.Add(
+                            $"{methodName} is declared in a partial MessageAwareComponent; add "
+                                + "RegisterForStringMessages => true manually if inherited string handlers are required"
+                        );
+                        continue;
+                    }
+                    if (
+                        !TryCreateMemberInsertion(
+                            masked,
+                            typeStart,
+                            declaration.DeclarationStart,
+                            out string insertion
+                        )
+                    )
+                    {
+                        manualReview.Add(
+                            $"{methodName} shares a line with its MessageAwareComponent declaration; add "
+                                + "RegisterForStringMessages => true manually if inherited string handlers are required"
+                        );
+                        continue;
+                    }
+                    insertions.Add(typeStart + 1, insertion);
+                }
+            }
+        }
+
+        private static bool HasReplacementInRange(
+            HashSet<int> replacementStarts,
+            int start,
+            int end
+        )
+        {
+            foreach (int replacementStart in replacementStarts)
+            {
+                if (replacementStart >= start && replacementStart < end)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool TypeScopeDeclaresStringHandlerOptIn(string masked, int typeStart)
+        {
+            Regex memberRegex = new(
+                @"\boverride\s+(?:(?:global::)?System\s*\.\s*)?(?:Boolean|bool)\s+RegisterForStringMessages\b",
+                RegexOptions.CultureInvariant
+            );
+            foreach (Match match in memberRegex.Matches(masked, typeStart + 1))
+            {
+                if (FindContainingTypeStart(masked, match.Index) == typeStart)
+                {
+                    return true;
+                }
+                if (match.Index > FindMatching(masked, typeStart, '{', '}'))
+                {
+                    break;
+                }
+            }
+            return false;
+        }
+
+        private static bool TypeScopeIsPartial(string masked, int typeStart)
+        {
+            foreach (Match match in TypeDeclarationRegex.Matches(masked))
+            {
+                int open = masked.IndexOf('{', match.Index + match.Length);
+                if (open != typeStart)
+                {
+                    continue;
+                }
+                int modifierStart = match.Index - 1;
+                while (
+                    modifierStart >= 0
+                    && masked[modifierStart] != ';'
+                    && masked[modifierStart] != '{'
+                    && masked[modifierStart] != '}'
+                )
+                {
+                    modifierStart--;
+                }
+                return Regex.IsMatch(
+                    masked.Substring(modifierStart + 1, match.Index - modifierStart - 1),
+                    @"\bpartial\b",
+                    RegexOptions.CultureInvariant
+                );
+            }
+            return false;
+        }
+
+        private static bool TryCreateMemberInsertion(
+            string source,
+            int typeStart,
+            int memberNameStart,
+            out string insertion
+        )
+        {
+            int memberLineStart = source.LastIndexOf('\n', memberNameStart);
+            if (memberLineStart <= typeStart)
+            {
+                insertion = string.Empty;
+                return false;
+            }
+            memberLineStart++;
+            int indentationEnd = memberLineStart;
+            while (
+                indentationEnd < memberNameStart
+                && (source[indentationEnd] == ' ' || source[indentationEnd] == '\t')
+            )
+            {
+                indentationEnd++;
+            }
+            string indentation = source.Substring(
+                memberLineStart,
+                indentationEnd - memberLineStart
+            );
+            string lineEnding =
+                memberLineStart >= 2 && source[memberLineStart - 2] == '\r' ? "\r\n" : "\n";
+            insertion =
+                lineEnding
+                + indentation
+                + "protected override bool RegisterForStringMessages => true;"
+                + lineEnding;
+            return true;
         }
 
         private static void AddUniqueDeclarationReplacements(
@@ -2198,17 +2385,21 @@ namespace DxMessaging.Editor
             public UpgradeResult(
                 string upgradedSource,
                 int replacementCount,
+                int stringHandlerOptInCount,
                 IReadOnlyList<string> manualReviewMethods
             )
             {
                 UpgradedSource = upgradedSource;
                 ReplacementCount = replacementCount;
+                StringHandlerOptInCount = stringHandlerOptInCount;
                 ManualReviewMethods = manualReviewMethods;
             }
 
             public string UpgradedSource { get; }
 
             public int ReplacementCount { get; }
+
+            public int StringHandlerOptInCount { get; }
 
             public IReadOnlyList<string> ManualReviewMethods { get; }
         }
@@ -2264,13 +2455,15 @@ namespace DxMessaging.Editor
                 string fullPath,
                 byte[] originalBytes,
                 byte[] upgradedBytes,
-                int replacementCount
+                int replacementCount,
+                int stringHandlerOptInCount
             )
             {
                 FullPath = fullPath;
                 OriginalBytes = originalBytes;
                 UpgradedBytes = upgradedBytes;
                 ReplacementCount = replacementCount;
+                StringHandlerOptInCount = stringHandlerOptInCount;
             }
 
             public string FullPath { get; }
@@ -2280,6 +2473,8 @@ namespace DxMessaging.Editor
             public byte[] UpgradedBytes { get; }
 
             public int ReplacementCount { get; }
+
+            public int StringHandlerOptInCount { get; }
         }
 
         internal readonly struct PendingFileUpgrade
