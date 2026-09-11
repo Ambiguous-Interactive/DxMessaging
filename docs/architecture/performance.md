@@ -14,6 +14,16 @@ see the
 See also: [Performance optimizations](./design-and-architecture.md#performance-optimizations)
 for design details.
 
+## Performance targets and parity claims
+
+DxMessaging 4.0 treats 80% of MessagePipe throughput on each named comparison row as a research
+target, not a parity claim. A formal parity result has a stricter rule: the lower confidence bound
+for each required row must reach 90%, as tracked in
+[#414](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414). The current tables are
+measurements, not a statement that either threshold has been met. Each generated block identifies
+its source commit, Unity version, Release IL2CPP profile, and runner; the linked methodology runbook
+defines the evidence and uncertainty required before a verdict.
+
 Untargeted emissions with no interceptors, global accept-all handlers, or post-processors reuse
 their resolved handler route across steady-state emissions. Registration changes and sweeps refresh
 the route. Dispatch keeps live handler-state and reset checks while preserving the zero-allocation

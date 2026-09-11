@@ -8,6 +8,30 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 internal sealed class DxAutoConstructorGeneratorDiagnosticsTests
 {
     [Test]
+    public void PreservesDeclaratorOrderForFieldsInOneDeclaration()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+
+namespace Sample;
+
+[DxAutoConstructor]
+public readonly partial struct Ordered
+{
+    public readonly int first, second;
+}
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
+
+        AssertGeneratedSourceContains(
+            result,
+            "Ordered(global::System.Int32 first, global::System.Int32 second)",
+            "Fields that share one declaration should retain their declarator order."
+        );
+    }
+
+    [Test]
     public void ReportsNonPartialContainingType()
     {
         string source = """

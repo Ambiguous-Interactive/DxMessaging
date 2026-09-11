@@ -39,6 +39,11 @@ const STANDARD_CSHARP_META_MONO_IMPORTER_LINES = [
 ];
 
 const FORBIDDEN_PATH_RULES = [
+  [
+    "source-generator-development-input",
+    /^SourceGenerators(?:\.meta|\/|$)/i,
+    "source-generator development input (the compiled analyzer payload ships under Runtime/Analyzers/)"
+  ],
   ["vs-dir", /(^|\/)\.vs(\/|$)/i, "Visual Studio cache directory (.vs/)"],
   ["idea-dir", /(^|\/)\.idea(\/|$)/i, "JetBrains IDE settings directory (.idea/)"],
   ["bin-dir", /(^|\/)bin(\/|$)/i, "Build output directory (bin/)"],

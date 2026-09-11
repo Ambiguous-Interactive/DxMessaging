@@ -34,15 +34,6 @@
     "Editor/**",
     "Runtime/**",
     "Samples~/**",
-    "SourceGenerators/Directory.Build.props",
-    "SourceGenerators/Directory.Build.props.meta",
-    "SourceGenerators/global.json",
-    "SourceGenerators/global.json.meta",
-    "SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/*.cs",
-    "SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/*.cs.meta",
-    "SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/*.csproj",
-    "SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/*.csproj.meta",
-    "SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.meta",
     "CHANGELOG.md",
     "CHANGELOG.md.meta",
     "docs.meta",
@@ -57,8 +48,7 @@
     "Third Party Notices.md.meta",
     "package.json.meta",
     "Editor.meta",
-    "Runtime.meta",
-    "SourceGenerators.meta"
+    "Runtime.meta"
   ],
   "scripts": {
     "test": "node --test scripts/",

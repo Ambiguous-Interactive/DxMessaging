@@ -2,7 +2,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 {
     using System;
     using System.Collections.Generic;
-    using System.Collections.Immutable;
     using System.Linq;
     using System.Text;
     using System.Threading;
@@ -149,7 +148,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
             }
 
-            Execute(typesToGenerate.ToImmutableArray(), aotTypes.ToImmutableArray(), context);
+            Execute(typesToGenerate, aotTypes, context);
         }
 
         private static bool IsSyntaxTargetForGeneration(SyntaxNode node)
@@ -354,8 +353,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static void Execute(
-            ImmutableArray<MessageToGenerateInfo> typesToGenerate,
-            ImmutableArray<AotRegistrarInfo> aotTypes,
+            IReadOnlyList<MessageToGenerateInfo> typesToGenerate,
+            IReadOnlyList<AotRegistrarInfo> aotTypes,
             GeneratorExecutionContext context
         )
         {
@@ -759,54 +758,57 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static void GenerateTopLevelAotRegistrar(
-            ImmutableArray<AotRegistrarInfo> aotTypes,
+            IReadOnlyList<AotRegistrarInfo> aotTypes,
             HashSet<ISymbol> generatedAttributedTypes,
             GeneratorExecutionContext context
         )
         {
-            if (aotTypes.IsDefaultOrEmpty)
+            if (aotTypes.Count == 0)
             {
                 return;
             }
 
-            List<AotRegistrarInfo> registrarTypes = aotTypes
-                .Where(info =>
-                    !info.HasMessageAttribute
-                    && !generatedAttributedTypes.Contains(info.TypeSymbol)
-                    && IsAccessibleFromTopLevelRegistrar(info.TypeSymbol)
+            Dictionary<INamedTypeSymbol, AotRegistrarInfo> uniqueRegistrarTypes = new(
+                SymbolEqualityComparer.Default
+            );
+            foreach (AotRegistrarInfo info in aotTypes)
+            {
+                if (
+                    info.HasMessageAttribute
+                    || generatedAttributedTypes.Contains(info.TypeSymbol)
+                    || !IsAccessibleFromTopLevelRegistrar(info.TypeSymbol)
                 )
-                .GroupBy(info => info.TypeSymbol, SymbolEqualityComparer.Default)
-                .Select(group =>
                 {
-                    AotRegistrarInfo merged = default;
-                    bool hasValue = false;
-                    foreach (AotRegistrarInfo info in group)
-                    {
-                        if (!hasValue)
-                        {
-                            merged = info;
-                            hasValue = true;
-                            continue;
-                        }
+                    continue;
+                }
 
-                        merged = new AotRegistrarInfo(
-                            info.TypeSymbol,
-                            merged.RegistersUntargetedAotBridge
-                                || info.RegistersUntargetedAotBridge,
-                            merged.RegistersTargetedAotBridge || info.RegistersTargetedAotBridge,
-                            merged.RegistersBroadcastAotBridge || info.RegistersBroadcastAotBridge,
-                            merged.HasMessageAttribute || info.HasMessageAttribute
-                        );
-                    }
-
-                    return merged;
-                })
-                .OrderBy(
-                    info =>
-                        info.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    StringComparer.Ordinal
+                if (
+                    uniqueRegistrarTypes.TryGetValue(info.TypeSymbol, out AotRegistrarInfo existing)
                 )
-                .ToList();
+                {
+                    uniqueRegistrarTypes[info.TypeSymbol] = new AotRegistrarInfo(
+                        info.TypeSymbol,
+                        existing.RegistersUntargetedAotBridge || info.RegistersUntargetedAotBridge,
+                        existing.RegistersTargetedAotBridge || info.RegistersTargetedAotBridge,
+                        existing.RegistersBroadcastAotBridge || info.RegistersBroadcastAotBridge,
+                        HasMessageAttribute: false
+                    );
+                }
+                else
+                {
+                    uniqueRegistrarTypes.Add(info.TypeSymbol, info);
+                }
+            }
+
+            List<AotRegistrarInfo> registrarTypes = new(uniqueRegistrarTypes.Values);
+            registrarTypes.Sort(
+                static (left, right) =>
+                    string.Compare(
+                        left.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        right.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        StringComparison.Ordinal
+                    )
+            );
 
             if (registrarTypes.Count == 0)
             {
@@ -823,21 +825,21 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         private static string GenerateTopLevelAotRegistrarSource(List<AotRegistrarInfo> types)
         {
             const string Indent = "        ";
-            List<AotRegistrarSourceInfo> sourceTypes = types
-                .Select(
-                    (info, index) =>
-                    {
-                        string typeName = info.TypeSymbol.ToDisplayString(
-                            SymbolDisplayFormat.FullyQualifiedFormat
-                        );
-                        return new AotRegistrarSourceInfo(
-                            info,
-                            typeName,
-                            index + "_" + SanitizeIdentifier(typeName)
-                        );
-                    }
-                )
-                .ToList();
+            List<AotRegistrarSourceInfo> sourceTypes = new(types.Count);
+            for (int index = 0; index < types.Count; index++)
+            {
+                AotRegistrarInfo info = types[index];
+                string typeName = info.TypeSymbol.ToDisplayString(
+                    SymbolDisplayFormat.FullyQualifiedFormat
+                );
+                sourceTypes.Add(
+                    new AotRegistrarSourceInfo(
+                        info,
+                        typeName,
+                        index + "_" + SanitizeIdentifier(typeName)
+                    )
+                );
+            }
 
             var builder = new StringBuilder();
             builder.AppendLine("// <auto-generated by DxMessageIdGenerator/>");

@@ -24,6 +24,8 @@ const {
 } = validateNpmMeta;
 
 const FORBIDDEN_PATH_CASES = [
+  ["SourceGenerators/Generator.cs", "source-generator-development-input"],
+  ["SourceGenerators.meta", "source-generator-development-input"],
   ["Runtime/bin/Debug/Foo.dll", "bin-dir"],
   ["Runtime/obj/Release/Foo.dll", "obj-dir"],
   ["Editor/cache.tmp", "tmp"],

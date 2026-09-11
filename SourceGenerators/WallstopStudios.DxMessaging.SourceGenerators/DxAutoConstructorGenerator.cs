@@ -2,7 +2,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 {
     using System;
     using System.Collections.Generic;
-    using System.Collections.Immutable;
     using System.Diagnostics;
     using System.Globalization;
     using System.Linq;
@@ -53,7 +52,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         private record struct TypeToGenerateInfo(
             INamedTypeSymbol TypeSymbol,
             TypeDeclarationSyntax DeclarationSyntax,
-            ImmutableArray<IFieldSymbol> FieldsToInject // Public readonly non-static fields
+            IReadOnlyList<IFieldSymbol> FieldsToInject // Public non-static fields in declaration order
         );
 
         /// <summary>
@@ -72,17 +71,20 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return;
             }
 
-            ImmutableArray<TypeToGenerateInfo> typesToGenerate = receiver
-                .Candidates.Select(typeDeclarationSyntax =>
-                    GetSemanticTargetForGeneration(
-                        typeDeclarationSyntax,
-                        context.Compilation,
-                        context.CancellationToken
-                    )
-                )
-                .Where(static target => target.HasValue)
-                .Select(static target => target!.Value)
-                .ToImmutableArray();
+            List<TypeToGenerateInfo> typesToGenerate = new(receiver.Candidates.Count);
+            foreach (TypeDeclarationSyntax candidate in receiver.Candidates)
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+                TypeToGenerateInfo? target = GetSemanticTargetForGeneration(
+                    candidate,
+                    context.Compilation,
+                    context.CancellationToken
+                );
+                if (target.HasValue)
+                {
+                    typesToGenerate.Add(target.Value);
+                }
+            }
 
             Execute(typesToGenerate, context);
         }
@@ -138,15 +140,24 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
 
             // Find public readonly non-static fields in declaration order
-            ImmutableArray<IFieldSymbol> fieldsToInject = typeSymbol
-                .GetMembers()
-                .OfType<IFieldSymbol>()
-                .Where(f => f.DeclaredAccessibility == Accessibility.Public && !f.IsStatic)
-                .OrderBy(f => f.DeclaringSyntaxReferences.FirstOrDefault()?.Span.Start ?? 0) // Order by declaration in source
-                .ToImmutableArray();
+            List<IFieldSymbol> fieldsToInject = new();
+            foreach (ISymbol member in typeSymbol.GetMembers())
+            {
+                if (
+                    member is IFieldSymbol
+                    {
+                        DeclaredAccessibility: Accessibility.Public,
+                        IsStatic: false,
+                    } field
+                )
+                {
+                    fieldsToInject.Add(field);
+                }
+            }
+            SortFieldsByDeclarationOrder(fieldsToInject);
 
             // If there are no relevant fields, we don't need to generate a constructor
-            if (fieldsToInject.Length == 0)
+            if (fieldsToInject.Count == 0)
             {
                 return null;
             }
@@ -154,12 +165,36 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return new TypeToGenerateInfo(typeSymbol, typeDeclarationSyntax, fieldsToInject);
         }
 
+        private static int GetDeclarationStart(IFieldSymbol field)
+        {
+            return field.DeclaringSyntaxReferences.FirstOrDefault()?.Span.Start ?? 0;
+        }
+
+        private static void SortFieldsByDeclarationOrder(List<IFieldSymbol> fields)
+        {
+            for (int index = 1; index < fields.Count; index++)
+            {
+                IFieldSymbol field = fields[index];
+                int declarationStart = GetDeclarationStart(field);
+                int insertionIndex = index;
+                while (
+                    insertionIndex > 0
+                    && GetDeclarationStart(fields[insertionIndex - 1]) > declarationStart
+                )
+                {
+                    fields[insertionIndex] = fields[insertionIndex - 1];
+                    insertionIndex--;
+                }
+                fields[insertionIndex] = field;
+            }
+        }
+
         private static void Execute(
-            ImmutableArray<TypeToGenerateInfo> typesToGenerate,
+            IReadOnlyList<TypeToGenerateInfo> typesToGenerate,
             GeneratorExecutionContext context
         )
         {
-            if (typesToGenerate.IsDefaultOrEmpty)
+            if (typesToGenerate.Count == 0)
             {
                 return;
             }
@@ -169,7 +204,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             foreach (TypeToGenerateInfo typeInfo in typesToGenerate)
             {
-                if (!processedTypes.Add(typeInfo.TypeSymbol) || typeInfo.FieldsToInject.Length == 0)
+                if (!processedTypes.Add(typeInfo.TypeSymbol) || typeInfo.FieldsToInject.Count == 0)
                 {
                     continue; // Already processed this type (e.g., from another partial definition)
                 }
@@ -249,7 +284,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         )
         {
             INamedTypeSymbol typeSymbol = typeInfo.TypeSymbol;
-            ImmutableArray<IFieldSymbol> fieldsToInject = typeInfo.FieldsToInject;
+            IReadOnlyList<IFieldSymbol> fieldsToInject = typeInfo.FieldsToInject;
             string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
                 ? string.Empty
                 : typeSymbol.ContainingNamespace.ToDisplayString();

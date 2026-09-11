@@ -96,6 +96,7 @@ function buildAnalyzerPayload(label, payloadDir) {
   const commonArgs = [
     "--configuration",
     CONFIGURATION,
+    "/p:Optimize=true",
     `/p:ArtifactsRoot=${msbuildArtifactsRoot}`,
     `/p:AnalyzerPayloadOutputDir=${payloadDir}`,
     "/p:CopyAnalyzerPayload=true"
