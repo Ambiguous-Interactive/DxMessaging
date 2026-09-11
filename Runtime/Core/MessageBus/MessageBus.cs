@@ -4761,20 +4761,19 @@ namespace DxMessaging.Core.MessageBus
                             }
                         }
                     }
-                    else if (!sentInADirection && sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat))
-                    {
-                        if (
-                            !SendMessage(
-                                go,
-                                ref reflexiveMessage,
-                                onlyActive,
-                                preserveNativeSemantics,
-                                emissionResetGeneration
-                            )
+                    else if (
+                        !sentInADirection
+                        && sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat)
+                        && !SendMessage(
+                            go,
+                            ref reflexiveMessage,
+                            onlyActive,
+                            preserveNativeSemantics,
+                            emissionResetGeneration
                         )
-                        {
-                            return;
-                        }
+                    )
+                    {
+                        return;
                     }
                 }
 #else
@@ -4971,18 +4970,16 @@ namespace DxMessaging.Core.MessageBus
                 return foundAnyHandlers;
             }
 
-            if (targetedWithoutTargetingPostSnapshot.IsInitialized)
-            {
-                if (
-                    DispatchContextFlatSnapshot(
-                        targetedWithoutTargetingPostSnapshot,
-                        ref target,
-                        ref typedMessage
-                    )
+            if (
+                targetedWithoutTargetingPostSnapshot.IsInitialized
+                && DispatchContextFlatSnapshot(
+                    targetedWithoutTargetingPostSnapshot,
+                    ref target,
+                    ref typedMessage
                 )
-                {
-                    foundAnyHandlers = true;
-                }
+            )
+            {
+                foundAnyHandlers = true;
             }
 
             return foundAnyHandlers;
@@ -5341,7 +5338,6 @@ namespace DxMessaging.Core.MessageBus
             // the exact frozen view for this emission.
             if (source != preInterceptorSource)
             {
-                broadcastPostSnapshot = DispatchSnapshot.Empty;
                 if (
                     !TryGetContextPostRouteAtEmissionStart<TMessage>(
                         BroadcastPostSlot,
@@ -5350,23 +5346,19 @@ namespace DxMessaging.Core.MessageBus
                         emissionResetGeneration,
                         out broadcastPostSnapshot
                     )
+                    && _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
+                        .TryGetValue<TMessage>(out broadcastPostHandlers)
+                    && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
+                    && broadcastPostByPriority.handlers.Count > 0
                 )
                 {
-                    if (
-                        _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                            .TryGetValue<TMessage>(out broadcastPostHandlers)
-                        && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
-                        && broadcastPostByPriority.handlers.Count > 0
-                    )
-                    {
-                        broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                            this,
-                            broadcastPostByPriority,
-                            BroadcastPostSlot,
-                            emissionId,
-                            source
-                        );
-                    }
+                    broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                        this,
+                        broadcastPostByPriority,
+                        BroadcastPostSlot,
+                        emissionId,
+                        source
+                    );
                 }
             }
 
@@ -5383,18 +5375,16 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (broadcastWithoutSourcePostSnapshot.IsInitialized)
-            {
-                if (
-                    DispatchContextFlatSnapshot(
-                        broadcastWithoutSourcePostSnapshot,
-                        ref source,
-                        ref typedMessage
-                    )
+            if (
+                broadcastWithoutSourcePostSnapshot.IsInitialized
+                && DispatchContextFlatSnapshot(
+                    broadcastWithoutSourcePostSnapshot,
+                    ref source,
+                    ref typedMessage
                 )
-                {
-                    bwsFound = true;
-                }
+            )
+            {
+                bwsFound = true;
             }
 
             if (!(foundAnyHandlers || bwsFound) && MessagingDebug.enabled)
@@ -6428,32 +6418,30 @@ namespace DxMessaging.Core.MessageBus
             }
 
             bool complete = false;
-            if (removed)
+            if (
+                removed
+                && interceptsByType.TryGetValue<T>(
+                    out InterceptorCache<object> prioritizedInterceptors
+                )
+            )
             {
                 if (
-                    interceptsByType.TryGetValue<T>(
-                        out InterceptorCache<object> prioritizedInterceptors
+                    prioritizedInterceptors.handlers.TryGetValue(
+                        priority,
+                        out List<object> interceptors
                     )
                 )
                 {
-                    if (
-                        prioritizedInterceptors.handlers.TryGetValue(
-                            priority,
-                            out List<object> interceptors
-                        )
-                    )
+                    complete = interceptors.Remove(interceptor);
+                    if (interceptors.Count == 0)
                     {
-                        complete = interceptors.Remove(interceptor);
-                        if (interceptors.Count == 0)
-                        {
-                            _ = prioritizedInterceptors.handlers.Remove(priority);
-                        }
-
-                        // Drops the flattened view's references too, so the
-                        // removed interceptor is not kept alive until the next
-                        // emission or sweep.
-                        prioritizedInterceptors.MarkFlatDirty();
+                        _ = prioritizedInterceptors.handlers.Remove(priority);
                     }
+
+                    // Drops the flattened view's references too, so the
+                    // removed interceptor is not kept alive until the next
+                    // emission or sweep.
+                    prioritizedInterceptors.MarkFlatDirty();
                 }
 
                 if (!complete && MessagingDebug.enabled)

@@ -8,6 +8,11 @@ closure into the disposable test project's `Assets` tree. `csc.rsp` registers
 the files for the existing full-source compile, where `-warnaserror` makes every
 enabled diagnostic blocking.
 
+`DxMessaging.StaticAnalysis.globalconfig` is the text-only analyzer policy. It
+documents narrow exceptions for deliberate compatibility, Unity, reflection,
+and allocation-sensitive architecture. All other diagnostics from the pinned
+analyzers remain enabled and become build errors.
+
 The pinned set is:
 
 - [Roslynator.Analyzers 4.16.0](https://www.nuget.org/packages/Roslynator.Analyzers/4.16.0)

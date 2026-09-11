@@ -122,6 +122,7 @@ function Get-ShippingDispatchLoopShape {
     return 'DxmShippingPublicUntargetedClass'
 }
 $CiAnalyzerManifestRelativePath = [System.IO.Path]::Combine('.github', 'analyzers', 'manifest.json')
+$CiAnalyzerConfigRelativePath = [System.IO.Path]::Combine('.github', 'analyzers', 'DxMessaging.StaticAnalysis.globalconfig')
 $ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
 $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
 $CacheOwnershipMarkerName = '.dxmessaging-ci-cache'
@@ -1543,7 +1544,17 @@ PluginImporter:
     # command-line loader does not probe sibling DLLs. The DLLs deliberately have
     # no RoslynAnalyzer label: folder labels are assembly-scoped and would also
     # double-register predefined code.
-    return @($destinationPaths)
+    $sourceConfigPath = Join-Path $Root $CiAnalyzerConfigRelativePath
+    if (-not (Test-Path -LiteralPath $sourceConfigPath -PathType Leaf)) {
+        throw "Missing text-only Unity CI analyzer policy: $sourceConfigPath"
+    }
+    $destinationConfigPath = Join-Path $destinationDirectory 'DxMessaging.StaticAnalysis.globalconfig'
+    Copy-Item -LiteralPath $sourceConfigPath -Destination $destinationConfigPath -Force
+
+    return [pscustomobject]@{
+        AnalyzerPaths = @($destinationPaths)
+        ConfigPath = $destinationConfigPath
+    }
 }
 
 function New-ConfiguratorSource {
@@ -3782,10 +3793,11 @@ EditorSettings:
         $cscOptions += "-define:$shippingDefine"
     }
     if ($includeIntegrations -and -not $SkipCiAnalyzers) {
-        $ciAnalyzerPaths = @(Install-CiAnalyzers -Root $Root -Project $project)
-        foreach ($ciAnalyzerPath in $ciAnalyzerPaths) {
+        $ciAnalyzerInstallation = Install-CiAnalyzers -Root $Root -Project $project
+        foreach ($ciAnalyzerPath in @($ciAnalyzerInstallation.AnalyzerPaths)) {
             $cscOptions += "-analyzer:`"$ciAnalyzerPath`""
         }
+        $cscOptions += "-analyzerconfig:`"$($ciAnalyzerInstallation.ConfigPath)`""
     }
     $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |

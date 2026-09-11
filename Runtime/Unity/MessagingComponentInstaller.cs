@@ -45,7 +45,7 @@ namespace DxMessaging.Unity
                 return;
             }
 
-            if (providerHandle.TryGetProvider(out IMessageBusProvider provider))
+            if (providerHandle.TryGetProvider(out _))
             {
                 foreach (MessagingComponent component in _messagingComponents)
                 {

@@ -1920,9 +1920,7 @@ namespace DxMessaging.Core
                             _orphanDeregistrations.Remove(handle);
                             --_deregistrationCount;
                         }
-                        else if (
-                            TryGetSlot(identity.Slot, identity.Id, out RegistrationSlot current)
-                        )
+                        else if (TryGetSlot(identity.Slot, identity.Id, out _))
                         {
                             _slots[identity.Slot].Deregistration = null;
                             --_deregistrationCount;
@@ -2004,9 +2002,9 @@ namespace DxMessaging.Core
             }
         }
 
-        private bool RemoveRegistrationState(MessageRegistrationHandle handle)
+        private void RemoveRegistrationState(MessageRegistrationHandle handle)
         {
-            return RemoveRegistrationState(handle.Slot, handle.Id);
+            _ = RemoveRegistrationState(handle.Slot, handle.Id);
         }
 
         private bool RemoveRegistrationState(int slotIndex, long id)
@@ -2079,13 +2077,10 @@ namespace DxMessaging.Core
                     0,
                     out bool shouldRemove
                 );
-                if (shouldRemove)
+                if (shouldRemove && TryGetSlot(handle.Slot, handle.Id, out _))
                 {
-                    if (TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot current))
-                    {
-                        _slots[handle.Slot].Deregistration = null;
-                        --_deregistrationCount;
-                    }
+                    _slots[handle.Slot].Deregistration = null;
+                    --_deregistrationCount;
                 }
 
                 if (deregistrationException != null)
@@ -2263,7 +2258,7 @@ namespace DxMessaging.Core
 
             public bool ContainsKey(MessageRegistrationHandle handle)
             {
-                return _token.TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot);
+                return _token.TryGetSlot(handle.Slot, handle.Id, out _);
             }
 
             public Enumerator GetEnumerator()

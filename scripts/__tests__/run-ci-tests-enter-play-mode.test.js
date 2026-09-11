@@ -88,9 +88,9 @@ test("Unity CI analyzers stay text-locked, developer-local, and warnings-as-erro
   // prettier-ignore
   assert.deepEqual(CI_ANALYZER_MANIFEST.packages.map(({ id }) => id), ["Roslynator.Analyzers", "Microsoft.Unity.Analyzers", "SonarAnalyzer.CSharp", "Microsoft.CodeAnalysis.NetAnalyzers", "ErrorProne.NET.CoreAnalyzers"]);
   // prettier-ignore
-  for (const entry of fs.readdirSync(path.join(REPO_ROOT, ".github", "analyzers"))) assert.doesNotMatch(entry, /\.(?:dll|exe|nupkg)$/i);
+  for (const entry of fs.readdirSync(path.join(REPO_ROOT, ".github", "analyzers"))) assert.doesNotMatch(entry, /\.(?:dll|exe|nupkg)$/i); assert.match(fs.readFileSync(path.join(REPO_ROOT, ".github", "analyzers", "DxMessaging.StaticAnalysis.globalconfig"), "utf8"), /^is_global = true$/m);
   // prettier-ignore
-  for (const pattern of [/function Install-CiAnalyzers[\s\S]*DxmCiAnalyzers[\s\S]*api\.nuget\.org[\s\S]*Test-FileSha256/, /\$cscOptions = @\('-warnaserror', '-warn:9999'\)/]) assert.match(runCiTests, pattern);
+  for (const pattern of [/function Install-CiAnalyzers[\s\S]*DxmCiAnalyzers[\s\S]*api\.nuget\.org[\s\S]*Test-FileSha256/, /\$cscOptions = @\('-warnaserror', '-warn:9999'\)/, /-analyzerconfig:/]) assert.match(runCiTests, pattern);
 });
 
 test("Unity native-exit, diagnostic, and retry-cleanup guards stay fail-closed", () => {
