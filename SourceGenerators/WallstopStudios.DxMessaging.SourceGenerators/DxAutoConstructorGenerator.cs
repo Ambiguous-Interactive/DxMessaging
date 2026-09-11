@@ -52,7 +52,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         private record struct TypeToGenerateInfo(
             INamedTypeSymbol TypeSymbol,
             TypeDeclarationSyntax DeclarationSyntax,
-            IReadOnlyList<IFieldSymbol> FieldsToInject // Public non-static fields in declaration order
+            List<IFieldSymbol> FieldsToInject // Public non-static fields in declaration order
         );
 
         /// <summary>
@@ -190,7 +190,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static void Execute(
-            IReadOnlyList<TypeToGenerateInfo> typesToGenerate,
+            List<TypeToGenerateInfo> typesToGenerate,
             GeneratorExecutionContext context
         )
         {
@@ -284,7 +284,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         )
         {
             INamedTypeSymbol typeSymbol = typeInfo.TypeSymbol;
-            IReadOnlyList<IFieldSymbol> fieldsToInject = typeInfo.FieldsToInject;
+            List<IFieldSymbol> fieldsToInject = typeInfo.FieldsToInject;
             string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
                 ? string.Empty
                 : typeSymbol.ContainingNamespace.ToDisplayString();
