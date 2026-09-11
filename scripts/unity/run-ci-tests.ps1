@@ -57,7 +57,9 @@ param(
     [ValidateSet('Local', 'Central')]
     [string]$LicenseReturnOwner = 'Local',
 
-    [switch]$GenerateOnly
+    [switch]$GenerateOnly,
+
+    [switch]$SkipCiAnalyzers
 )
 
 Set-StrictMode -Version Latest
@@ -74,6 +76,10 @@ $ErrorActionPreference = 'Stop'
 # authoritative and identical across hosts/versions. (PS 5.1 lacks this variable;
 # assigning it there is harmless, and the assignment is StrictMode-safe.)
 $PSNativeCommandUseErrorActionPreference = $false
+
+if ($SkipCiAnalyzers -and -not $GenerateOnly) {
+    throw '-SkipCiAnalyzers is a test-only seam and requires -GenerateOnly.'
+}
 
 $PackageName = 'com.wallstop-studios.dxmessaging'
 $TestFrameworkVersion = '1.4.5'
@@ -115,12 +121,7 @@ function Get-ShippingDispatchLoopShape {
     }
     return 'DxmShippingPublicUntargetedClass'
 }
-$CiRoslynatorAnalyzerFiles = @(
-    @{ Name = 'Roslynator.CSharp.Analyzers.dll'; Sha256 = '3f104ae829826e063b36ea4c11df2fd595ae482ddf76c58c09530486e1ebf853'; Guid = '3661e954d1b7490b944b35cdb72a3665' }
-    @{ Name = 'Roslynator_Analyzers_Roslynator.Common.dll'; Sha256 = '4b3133ce1d4f52e17e6b488a1b7e7eb3d768e4d705c50d3482f8ca65e91cc834'; Guid = '8ccb09443b614abbb68b8e4bc48fed63' }
-    @{ Name = 'Roslynator_Analyzers_Roslynator.Core.dll'; Sha256 = 'bab462206bdb9653cc61f39b13b47042d82b8fcc189ab73eaf76452f2f369424'; Guid = 'f4fdc9dd29fa4da897893d2be89437d6' }
-    @{ Name = 'Roslynator_Analyzers_Roslynator.CSharp.dll'; Sha256 = 'c69267920234e720e5c93f0eec218d522547edd1e67ec2e295f42c5a2b89de70'; Guid = 'bb49eda285bf4387a171485058f6ae80' }
-)
+$CiAnalyzerManifestRelativePath = [System.IO.Path]::Combine('.github', 'analyzers', 'manifest.json')
 $ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
 $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
 $CacheOwnershipMarkerName = '.dxmessaging-ci-cache'
@@ -173,7 +174,7 @@ function Clear-NonFatalNativeExitCode {
 #   - error CS\d+ -- compiler errors (CS0246, CS0103, CS0117, etc).
 #   - warning CS8032 -- "An instance of analyzer cannot be created" (analyzer
 #     failed to instantiate; same class of issue).
-#   - error RCS/ROS -- Roslynator diagnostics promoted by -warnaserror.
+#   - third-party analyzer IDs -- diagnostics promoted by -warnaserror.
 #   - "forwarded to assembly 'UnityEngine.<X>Module'" (CS1069) -- a test/source
 #     references an OPTIONAL engine module the minimal CI test project omits;
 #     carries a remediation Hint (kept in sync with the copy in
@@ -184,7 +185,7 @@ $script:CatastrophicPatterns = @(
     @{ Label = 'Multiple precompiled assemblies with the same name'; Pattern = 'Multiple precompiled assemblies with the same name'; UseSimple = $true }
     @{ Label = 'error CS\d+'; Pattern = 'error CS\d+'; UseSimple = $false }
     @{ Label = 'warning CS8032'; Pattern = 'warning CS8032'; UseSimple = $false }
-    @{ Label = 'error Roslynator diagnostic'; Pattern = 'error (?:RCS|ROS)\d+'; UseSimple = $false }
+    @{ Label = 'error static analyzer diagnostic'; Pattern = 'error (?:RCS|ROS|S|UNT|ERP|CA)\d+'; UseSimple = $false }
     @{ Label = 'Roslyn analyzer failure'; Pattern = '(?:error|warning) AD0001'; UseSimple = $false }
     @{
         Label = 'Optional engine module not in the minimal CI project (CS1069 forwarded type)'
@@ -1379,31 +1380,128 @@ function New-DiSampleAsmdef {
 '@
 }
 
-function Install-CiRoslynatorAnalyzer {
+function Test-FileSha256 {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ExpectedSha256
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $ExpectedSha256
+}
+
+function Install-CiAnalyzers {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
         [Parameter(Mandatory = $true)][string]$Project
     )
 
-    $destinationDirectory = Join-Path $Project 'Assets'
-    New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+    if ([string]::IsNullOrWhiteSpace($script:UnityCacheRoot)) {
+        throw 'The Unity cache must be initialized before installing CI analyzers.'
+    }
+
+    $manifestPath = Join-Path $Root $CiAnalyzerManifestRelativePath
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "Missing text-only Unity CI analyzer manifest: $manifestPath"
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($manifest.schemaVersion -ne 1 -or @($manifest.packages).Count -eq 0) {
+        throw "Unsupported or empty Unity CI analyzer manifest: $manifestPath"
+    }
+
+    $destinationDirectory = [System.IO.Path]::Combine($Project, 'Assets', 'DxmCiAnalyzers')
+    Reset-OwnedUnityInputRoot -Path $destinationDirectory
     $destinationPaths = New-Object System.Collections.Generic.List[string]
-    foreach ($file in $CiRoslynatorAnalyzerFiles) {
-        $sourcePath = [System.IO.Path]::Combine($Root, '.github', 'analyzers', $file.Name)
-        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-            throw "Missing vendored Unity CI analyzer dependency: $sourcePath"
+    $destinationNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    foreach ($package in @($manifest.packages)) {
+        if (
+            $package.id -notmatch '^[A-Za-z0-9_.-]+$' -or
+            $package.version -notmatch '^[A-Za-z0-9.+-]+$' -or
+            $package.sha256 -notmatch '^[a-f0-9]{64}$' -or
+            @($package.files).Count -eq 0
+        ) {
+            throw "Invalid package entry in Unity CI analyzer manifest: $manifestPath"
         }
-        $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($sourceHash -ne $file.Sha256) {
-            throw "Vendored Unity CI analyzer hash mismatch for $($file.Name): expected $($file.Sha256), got $sourceHash."
+        $packageUri = [Uri]$package.url
+        if ($packageUri.Scheme -cne 'https' -or $packageUri.Host -cne 'api.nuget.org') {
+            throw "Unity CI analyzer package '$($package.id)' must use an api.nuget.org HTTPS URL."
         }
 
-        $destinationPath = Join-Path $destinationDirectory $file.Name
-        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
-        $destinationPaths.Add($destinationPath)
-        @"
+        $packageCacheDirectory = [System.IO.Path]::Combine(
+            $script:UnityCacheRoot,
+            'analyzers',
+            "$($package.id).$($package.version)"
+        )
+        New-Item -ItemType Directory -Force -Path $packageCacheDirectory | Out-Null
+        $packagePath = Join-Path $packageCacheDirectory "$($package.id).$($package.version).nupkg"
+        if (-not (Test-FileSha256 -Path $packagePath -ExpectedSha256 $package.sha256)) {
+            $temporaryPackagePath = "$packagePath.$([Guid]::NewGuid().ToString('N')).tmp"
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol =
+                    [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+                $webClient = New-Object System.Net.WebClient
+                try {
+                    $webClient.DownloadFile($packageUri, $temporaryPackagePath)
+                } finally {
+                    $webClient.Dispose()
+                }
+                if (-not (Test-FileSha256 -Path $temporaryPackagePath -ExpectedSha256 $package.sha256)) {
+                    throw "Downloaded Unity CI analyzer package hash mismatch: $($package.id) $($package.version)."
+                }
+                Move-Item -LiteralPath $temporaryPackagePath -Destination $packagePath -Force
+            } finally {
+                if (Test-Path -LiteralPath $temporaryPackagePath -PathType Leaf) {
+                    Remove-Item -LiteralPath $temporaryPackagePath -Force
+                }
+            }
+        }
+
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($packagePath)
+        try {
+            foreach ($file in @($package.files)) {
+                $destinationName = [System.IO.Path]::GetFileName($file.entry)
+                if (
+                    [string]::IsNullOrWhiteSpace($file.entry) -or
+                    $destinationName -notmatch '\.dll$' -or
+                    $file.sha256 -notmatch '^[a-f0-9]{64}$' -or
+                    $file.guid -notmatch '^[a-f0-9]{32}$' -or
+                    -not $destinationNames.Add($destinationName)
+                ) {
+                    throw "Invalid or duplicate analyzer payload '$($file.entry)' in $manifestPath."
+                }
+
+                $cachedPayloadPath = Join-Path $packageCacheDirectory $destinationName
+                if (-not (Test-FileSha256 -Path $cachedPayloadPath -ExpectedSha256 $file.sha256)) {
+                    $archiveEntry = $archive.GetEntry($file.entry)
+                    if ($null -eq $archiveEntry) {
+                        throw "Analyzer payload '$($file.entry)' is missing from $($package.id) $($package.version)."
+                    }
+                    $inputStream = $archiveEntry.Open()
+                    try {
+                        $outputStream = [System.IO.File]::Create($cachedPayloadPath)
+                        try {
+                            $inputStream.CopyTo($outputStream)
+                        } finally {
+                            $outputStream.Dispose()
+                        }
+                    } finally {
+                        $inputStream.Dispose()
+                    }
+                    if (-not (Test-FileSha256 -Path $cachedPayloadPath -ExpectedSha256 $file.sha256)) {
+                        throw "Extracted Unity CI analyzer payload hash mismatch: $($file.entry)."
+                    }
+                }
+
+                $destinationPath = Join-Path $destinationDirectory $destinationName
+                Copy-Item -LiteralPath $cachedPayloadPath -Destination $destinationPath -Force
+                $destinationPaths.Add($destinationPath)
+                @"
 fileFormatVersion: 2
-guid: $($file.Guid)
+guid: $($file.guid)
 PluginImporter:
   externalObjects: {}
   serializedVersion: 2
@@ -1435,6 +1533,10 @@ PluginImporter:
   assetBundleName:
   assetBundleVariant:
 "@ | Set-Content -LiteralPath "$destinationPath.meta" -Encoding UTF8
+            }
+        } finally {
+            $archive.Dispose()
+        }
     }
 
     # csc.rsp registers every assembly in the dependency closure because Roslyn's
@@ -3679,8 +3781,8 @@ EditorSettings:
         }
         $cscOptions += "-define:$shippingDefine"
     }
-    if ($includeIntegrations) {
-        $ciAnalyzerPaths = @(Install-CiRoslynatorAnalyzer -Root $Root -Project $project)
+    if ($includeIntegrations -and -not $SkipCiAnalyzers) {
+        $ciAnalyzerPaths = @(Install-CiAnalyzers -Root $Root -Project $project)
         foreach ($ciAnalyzerPath in $ciAnalyzerPaths) {
             $cscOptions += "-analyzer:`"$ciAnalyzerPath`""
         }
@@ -5482,7 +5584,7 @@ function Write-DuplicateAnalyzerDiagnostics {
                 "$($entry.Value.Count) distinct paths: $joinedPaths. A source generator that runs more than " +
                 "once emits each member twice (CS0102) and duplicate precompiled assemblies are rejected " +
                 "outright. Each DLL must arrive from exactly one intended path: DxMessaging analyzers " +
-                "through Runtime/Analyzers RoslynAnalyzer metadata, and CI-only Roslynator assemblies " +
+                "through Runtime/Analyzers RoslynAnalyzer metadata, and developer-local CI analyzer assemblies " +
                 "through Assets/csc.rsp. Do not copy or register the same DLL through another path.")
         }
         Write-Host "::endgroup::"

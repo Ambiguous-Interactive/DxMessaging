@@ -18,7 +18,7 @@ const EDITOR_PLAYMODE_PLATFORM =
   "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)";
 const RUN_CI_SCRIPT_PATH = path.join(__dirname, "..", "unity", "run-ci-tests.ps1");
 // prettier-ignore
-const ROSLYNATOR_ANALYZER_FILES = ["Roslynator.CSharp.Analyzers.dll", "Roslynator_Analyzers_Roslynator.Common.dll", "Roslynator_Analyzers_Roslynator.Core.dll", "Roslynator_Analyzers_Roslynator.CSharp.dll"];
+const CI_ANALYZER_MANIFEST = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ".github", "analyzers", "manifest.json"), "utf8"));
 // prettier-ignore
 const INTEGRATION_PACKAGES = { "com.gustavopsantos.reflex": "14.3.1", "com.svermeulen.extenject": "9.2.0-stcf3", "jp.hadashikick.vcontainer": "1.19.0" };
 const runCiTests = fs.readFileSync(RUN_CI_SCRIPT_PATH, "utf8");
@@ -47,10 +47,7 @@ function createGenerateOnlyRepo(root) {
   // prettier-ignore
   for (const [index, relative] of compileInputs.entries()) { const fullPath = path.join(root, "Samples~", ...relative.split("/")); fs.mkdirSync(path.dirname(fullPath), { recursive: true }); fs.writeFileSync(fullPath, `fixture ${relative}\n`, "utf8"); fs.writeFileSync(`${fullPath}.meta`, `fileFormatVersion: 2\nguid: ${String(index + 1).padStart(32, "0")}\n`, "utf8"); }
   fs.writeFileSync(path.join(root, "package.json"), "{}\n", "utf8");
-  const analyzerSourceRoot = path.join(root, ".github", "analyzers");
-  fs.mkdirSync(analyzerSourceRoot, { recursive: true });
-  // prettier-ignore
-  for (const name of ROSLYNATOR_ANALYZER_FILES) fs.copyFileSync(path.join(__dirname, "..", "..", ".github", "analyzers", name), path.join(analyzerSourceRoot, name));
+  fs.mkdirSync(path.join(root, ".github"), { recursive: true });
   // prettier-ignore
   const comparisonPackages = { registry: { name: "package.openupm.com", url: "https://package.openupm.com", scopes: ["com.gustavopsantos", "com.svermeulen", "jp.hadashikick"] }, integrationPackages: INTEGRATION_PACKAGES, integrationUnityBuiltInPackages: { "com.unity.modules.animation": "1.0.0" } };
   // prettier-ignore
@@ -64,7 +61,7 @@ function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
   const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RUN_CI_SCRIPT_PATH, "-UnityVersion", UNITY_VERSION, "-TestMode", "editmode", "-AssemblyNames", "WallstopStudios.DxMessaging.Tests.Editor", "-ArtifactsPath", artifactsPath, "-RepoRoot", repoRoot];
   if (options.projectPath) args.push("-ProjectPath", options.projectPath);
   if (options.cachePath) args.push("-CachePath", options.cachePath);
-  args.push("-GenerateOnly");
+  args.push("-GenerateOnly", "-SkipCiAnalyzers");
 
   const started = performance.now();
   const result = spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 120000 });
@@ -85,6 +82,15 @@ test("run-ci-tests emits EnterPlayModeOptions reload-disable for CI projects", (
   assert.match(runCiTests, /m_EnterPlayModeOptions:\s*3/, "run-ci-tests.ps1 must emit m_EnterPlayModeOptions: 3 (DisableDomainReload | DisableSceneReload)");
   // prettier-ignore
   assert.match(runCiTests, /\[System\.IO\.Path\]::Combine\(\$project,\s*'ProjectSettings',\s*'EditorSettings\.asset'\)/, "the EnterPlayModeOptions block must be written to ProjectSettings/EditorSettings.asset through native path segments");
+});
+
+test("Unity CI analyzers stay text-locked, developer-local, and warnings-as-errors", () => {
+  // prettier-ignore
+  assert.deepEqual(CI_ANALYZER_MANIFEST.packages.map(({ id }) => id), ["Roslynator.Analyzers", "Microsoft.Unity.Analyzers", "SonarAnalyzer.CSharp", "Microsoft.CodeAnalysis.NetAnalyzers", "ErrorProne.NET.CoreAnalyzers"]);
+  // prettier-ignore
+  for (const entry of fs.readdirSync(path.join(REPO_ROOT, ".github", "analyzers"))) assert.doesNotMatch(entry, /\.(?:dll|exe|nupkg)$/i);
+  // prettier-ignore
+  for (const pattern of [/function Install-CiAnalyzers[\s\S]*DxmCiAnalyzers[\s\S]*api\.nuget\.org[\s\S]*Test-FileSha256/, /\$cscOptions = @\('-warnaserror', '-warn:9999'\)/]) assert.match(runCiTests, pattern);
 });
 
 test("Unity native-exit, diagnostic, and retry-cleanup guards stay fail-closed", () => {
@@ -138,9 +144,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
 
     assert.equal(result.status, 0, `GenerateOnly failed:\n${result.stdout}\n${result.stderr}`);
     // prettier-ignore
-    const analyzerFiles = ROSLYNATOR_ANALYZER_FILES.flatMap((name) => [`Assets/${name}`, `Assets/${name}.meta`]);
-    // prettier-ignore
-    const expectedFiles = ["Packages/manifest.json", "ProjectSettings/EditorSettings.asset", "Assets/Editor/DxmCiTestConfigurator.cs", "Assets/csc.rsp", ...analyzerFiles, "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity", "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/A.cs.meta", "Assets/DxmCiSamples/Mini Combat/MiniCombat.unity", "Assets/DxmCiSamples/Mini Combat/MiniCombat.unity.meta", "Assets/DxmCiSamples/Mini Combat/Sample.asmdef", "Assets/DxmCiSamples/UI Buttons + Inspector/UIButtonsInspector.unity", "Assets/DxmCiSamples/UI Buttons + Inspector/Sample.asmdef", "Assets/DxmCiSamples/DI/VContainer/ConditionalSample.cs", "Assets/DxmCiSamples/DI/DxmCi.Samples.DI.asmdef", ".dxmessaging-ci-project", "Library"];
+    const expectedFiles = ["Packages/manifest.json", "ProjectSettings/EditorSettings.asset", "Assets/Editor/DxmCiTestConfigurator.cs", "Assets/csc.rsp", "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity", "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/A.cs.meta", "Assets/DxmCiSamples/Mini Combat/MiniCombat.unity", "Assets/DxmCiSamples/Mini Combat/MiniCombat.unity.meta", "Assets/DxmCiSamples/Mini Combat/Sample.asmdef", "Assets/DxmCiSamples/UI Buttons + Inspector/UIButtonsInspector.unity", "Assets/DxmCiSamples/UI Buttons + Inspector/Sample.asmdef", "Assets/DxmCiSamples/DI/VContainer/ConditionalSample.cs", "Assets/DxmCiSamples/DI/DxmCi.Samples.DI.asmdef", ".dxmessaging-ci-project", "Library"];
     for (const relative of expectedFiles) {
       assert.ok(fs.existsSync(path.join(projectPath, ...relative.split("/"))), relative);
     }
@@ -148,11 +152,9 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     for (const relative of ["Mini Combat/MiniCombat.unity", "Mini Combat/A.cs.meta"]) assert.equal(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", relative), "utf8"), fs.readFileSync(path.join(fakeRepoRoot, "Samples~", relative), "utf8"));
     const cscRsp = fs.readFileSync(path.join(projectPath, "Assets", "csc.rsp"), "utf8");
     // prettier-ignore
-    const expectedCscOptions = ["-warnaserror", "-warn:9999", ...ROSLYNATOR_ANALYZER_FILES.map((name) => `-analyzer:"${path.join(projectPath, "Assets", name)}"`)];
+    const expectedCscOptions = ["-warnaserror", "-warn:9999"];
     // prettier-ignore
     assert.equal(cscRsp.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), expectedCscOptions.join("\n"));
-    // prettier-ignore
-    for (const name of ROSLYNATOR_ANALYZER_FILES) assert.doesNotMatch(fs.readFileSync(path.join(projectPath, "Assets", `${name}.meta`), "utf8"), /RoslynAnalyzer/);
     // prettier-ignore
     const manifest = JSON.parse(fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8"));
     // prettier-ignore
