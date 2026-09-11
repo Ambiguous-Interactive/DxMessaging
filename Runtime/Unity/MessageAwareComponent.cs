@@ -12,8 +12,8 @@ namespace DxMessaging.Unity
     /// </summary>
     /// <remarks>
     /// Derive from this to quickly make components that participate in DxMessaging without boilerplate.
-    /// Override <see cref="RegisterMessageHandlers"/> to stage your registrations. By default this class
-    /// subscribes to <see cref="Core.Messages.StringMessage"/> in a few common forms to demonstrate usage.
+    /// Override <see cref="RegisterMessageHandlers"/> to stage your registrations. Enable
+    /// <see cref="RegisterForStringMessages"/> to subscribe to built-in string message demos.
     ///
     /// Lifecycle integration:
     /// - <see cref="Awake"/> creates the token and calls <see cref="RegisterMessageHandlers"/>.
@@ -84,9 +84,10 @@ namespace DxMessaging.Unity
 
         /// <summary>
         /// If true, registers demo handlers for <see cref="Core.Messages.StringMessage"/> and
-        /// <see cref="Core.Messages.GlobalStringMessage"/>. Override and return <c>false</c> to disable.
+        /// <see cref="Core.Messages.GlobalStringMessage"/>. Override and return <c>true</c> to enable.
         /// </summary>
-        protected virtual bool RegisterForStringMessages => true;
+        /// <remarks><b>Changed in v4.0.0.</b> The default is now <c>false</c>.</remarks>
+        protected virtual bool RegisterForStringMessages => false;
 
         protected MessagingComponent _messagingComponent;
         protected IMessageBus _configuredMessageBus;

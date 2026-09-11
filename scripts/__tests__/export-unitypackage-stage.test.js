@@ -12,23 +12,16 @@ const SCRIPT_PATH = path.join(REPO_ROOT, "scripts", "unity", "export-unitypackag
 const UNITY_VERSION = "2022.3.45f1";
 
 function commandExists(command) {
-  const result = spawnSync(
-    command,
-    ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"],
-    {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
-    }
-  );
+  // prettier-ignore
+  const result = spawnSync(command, ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return !result.error && result.status === 0;
 }
 
 const HAS_PWSH = commandExists("pwsh");
 
 function swapAsciiCase(value) {
-  return value.replace(/[A-Za-z]/g, (character) =>
-    character === character.toUpperCase() ? character.toLowerCase() : character.toUpperCase()
-  );
+  // prettier-ignore
+  return value.replace(/[A-Za-z]/g, (character) => character === character.toUpperCase() ? character.toLowerCase() : character.toUpperCase());
 }
 
 function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
@@ -55,13 +48,17 @@ function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
   if (options.outputPath) {
     args.push("-OutputPath", options.outputPath);
   }
+  if (options.verifyConsumerInstalls) {
+    // prettier-ignore
+    args.push("-VerifyConsumerInstalls", "-GitRevision", "0123456789abcdef0123456789abcdef01234567");
+  }
   args.push("-StageOnly");
 
   return spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 600000 });
 }
 
-function runStageOnly(stagingRoot, projectPath) {
-  const result = runStageOnlyRaw(stagingRoot, projectPath);
+function runStageOnly(stagingRoot, projectPath, options) {
+  const result = runStageOnlyRaw(stagingRoot, projectPath, options);
   assert.equal(result.status, 0, `stage-only run failed:\n${result.stdout}\n${result.stderr}`);
 }
 
@@ -105,7 +102,7 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-stage-"));
   const projectPath = path.join(stagingRoot, "project");
   try {
-    runStageOnly(stagingRoot, projectPath);
+    runStageOnly(stagingRoot, projectPath, { verifyConsumerInstalls: true });
     const assetsRoot = path.join(projectPath, "Assets");
     const exportRoot = path.join(assetsRoot, "WallstopStudios", "DxMessaging");
 
@@ -118,6 +115,15 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
     // (e) The payload manifest and its meta survive.
     assert.ok(fs.existsSync(path.join(exportRoot, "package.json")));
     assert.ok(fs.existsSync(path.join(exportRoot, "package.json.meta")));
+    const consumers = path.join(projectPath, "consumers");
+    // prettier-ignore
+    for (const source of ["git", "tarball", "classic"]) for (const relative of ["Packages/manifest.json", "ProjectSettings/ProjectVersion.txt", "ProjectSettings/EditorSettings.asset", "Assets/Editor/ConsumerAcceptance/Dxm.ConsumerAcceptance.Tests.Editor.asmdef", "Assets/Editor/ConsumerAcceptance/SampleQualityContractTests.cs"]) assert.ok(fs.existsSync(path.join(consumers, source, ...relative.split("/"))), `${source} consumer is missing ${relative}`);
+    // prettier-ignore
+    assert.match(fs.readFileSync(path.join(consumers, "git", "Packages", "manifest.json"), "utf8"), /DxMessaging\.git#0123456789abcdef0123456789abcdef01234567/);
+    // prettier-ignore
+    assert.match(fs.readFileSync(path.join(consumers, "tarball", "Packages", "manifest.json"), "utf8"), /\.tgz/);
+    // prettier-ignore
+    { assert.match(fs.readFileSync(path.join(consumers, "git", "Assets", "Editor", "DxmConsumerSampleImporter.cs"), "utf8"), /Sample\.FindByPackage[\s\S]*OverridePreviousImports[\s\S]*HideImportWindow/); assert.match(fs.readFileSync(SCRIPT_PATH, "utf8"), /Runtime\/Core\/MessageHandler\.cs[\s\S]*Samples~\/Mini Combat\/MiniCombat\.unity/); assert.ok(!fs.existsSync(path.join(consumers, "classic", "Assets", "Editor", "DxmConsumerSampleImporter.cs"))); }
 
     // (d) The generated exporter lives OUTSIDE the export root.
     const staged = walk(assetsRoot);
@@ -309,7 +315,7 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
 // Single source of truth for the built-in module set the ephemeral export
 // project must enable; both export-unitypackage.ps1 and this guard read it.
 const MODULE_DATA_PATH = path.join(REPO_ROOT, "scripts", "unity", "unity-builtin-modules.json");
-const RELEASE_UNITY_2022_UNSUPPORTED_MODULES = ["com.unity.modules.accessibility"];
+const MATRIX_UNSUPPORTED_MODULES = ["com.unity.modules.accessibility", "com.unity.modules.vr"];
 
 test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) => {
   if (!HAS_PWSH) {
@@ -336,8 +342,8 @@ test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) =>
     for (const id of Object.keys(required)) {
       assert.ok(hasDependency(id), `manifest is missing required dependency ${id}`);
     }
-    for (const id of RELEASE_UNITY_2022_UNSUPPORTED_MODULES) {
-      assert.equal(hasDependency(id), false, `${id} is not resolvable by Unity 2022.3`);
+    for (const id of MATRIX_UNSUPPORTED_MODULES) {
+      assert.equal(hasDependency(id), false, `${id} is not resolvable across the Unity matrix`);
     }
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });

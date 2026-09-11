@@ -11,11 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
-  applies the batch transactionally, upgrades matching `base` forwarding calls, and reports
-  ambiguous callbacks or other callbacks with `ref` or `out` argument uses for manual review.
+  applies the batch transactionally, preserves inherited string-handler behavior, upgrades matching
+  `base` forwarding calls, and reports ambiguous callbacks or other callbacks with `ref` or `out`
+  argument uses for manual review ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 
 ### Changed
 
+- Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
+  exercises to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
+- **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
+  default; override `RegisterForStringMessages` to return `true` when those handlers are required
+  ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 - Reduce source-generator execution allocations by retaining concrete generator-owned lists and
   materializing registrar sort keys once, and reduce package size by shipping only the optimized
   analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576), [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).

@@ -60,9 +60,29 @@ namespace DxMessaging.Tests.Editor
             ).SetName("Out-of-order named lambda");
             yield return new TestCaseData(
                 "protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }",
-                "protected override void HandleGlobalStringMessage(in GlobalStringMessage message) { }",
+                "protected override bool RegisterForStringMessages => true;\n\n"
+                    + "protected override void HandleGlobalStringMessage(in GlobalStringMessage message) { }",
                 1
             ).SetName("Changed MessageAwareComponent override");
+            yield return new TestCaseData(
+                "protected override bool RegisterForStringMessages => false;\n"
+                    + "protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }",
+                "protected override bool RegisterForStringMessages => false;\n"
+                    + "protected override void HandleGlobalStringMessage(in GlobalStringMessage message) { }",
+                1
+            ).SetName("Existing string handler opt out");
+            yield return new TestCaseData(
+                "// RegisterForStringMessages\n"
+                    + "private const string Note = \"RegisterForStringMessages\";\n"
+                    + "private void Observe() { bool RegisterForStringMessages = false; }\n"
+                    + "protected override void HandleStringComponentMessage(ref StringMessage message) { }",
+                "protected override bool RegisterForStringMessages => true;\n\n"
+                    + "// RegisterForStringMessages\n"
+                    + "private const string Note = \"RegisterForStringMessages\";\n"
+                    + "private void Observe() { bool RegisterForStringMessages = false; }\n"
+                    + "protected override void HandleStringComponentMessage(in StringMessage message) { }",
+                1
+            ).SetName("Comments and strings do not suppress string handler opt in");
         }
 
         private static IEnumerable<TestCaseData> UnchangedCases()
@@ -108,6 +128,11 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(expectedReplacements),
                 $"Source:\n{source}"
             );
+            Assert.That(
+                result.StringHandlerOptInCount,
+                Is.EqualTo(expected.Contains("RegisterForStringMessages => true;") ? 1 : 0),
+                $"Source:\n{source}"
+            );
             Assert.That(result.ManualReviewMethods, Is.Empty, $"Source:\n{source}");
         }
 
@@ -120,6 +145,7 @@ namespace DxMessaging.Tests.Editor
 
             Assert.That(result.UpgradedSource, Is.EqualTo(source), $"Source:\n{source}");
             Assert.That(result.ReplacementCount, Is.Zero, $"Source:\n{source}");
+            Assert.That(result.StringHandlerOptInCount, Is.Zero, $"Source:\n{source}");
             Assert.That(result.ManualReviewMethods, Is.Empty, $"Source:\n{source}");
         }
 
@@ -279,6 +305,13 @@ sealed class First : MessageAwareComponent
 sealed class Second : MessageAwareComponent
 {
     protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
+}
+#region class RegionLabel
+#endregion
+partial
+class PartialReceiver : MessageAwareComponent
+{
+    protected override void HandleStringGameObjectMessage(ref StringMessage message) { }
 }";
 
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
@@ -287,11 +320,23 @@ sealed class Second : MessageAwareComponent
 
             Assert.That(
                 result.ReplacementCount,
-                Is.EqualTo(2),
+                Is.EqualTo(3),
                 $"Actual:\n{result.UpgradedSource}"
             );
             Assert.That(result.UpgradedSource, Does.Not.Contain("ref GlobalStringMessage"));
-            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(2));
+            Assert.That(
+                result.UpgradedSource.Split(
+                    new[] { "RegisterForStringMessages" },
+                    StringSplitOptions.None
+                ),
+                Has.Length.EqualTo(3)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("partial MessageAwareComponent")
+            );
         }
 
         [Test]
@@ -961,9 +1006,11 @@ void OnPulse(ref Pulse message) { }";
         public void AnalyzeIsIdempotentAndPreservesLineEndings()
         {
             const string Source =
-                "DxMessaging.Core.MessageRegistrationToken token;\r\n"
-                + "token.RegisterUntargeted<Pulse>(OnPulse);\r\n"
-                + "void OnPulse(ref Pulse message) { }\r\n";
+                "using DxMessaging.Unity;\r\n"
+                + "sealed class Receiver : MessageAwareComponent\r\n"
+                + "{\r\n"
+                + "    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\r\n"
+                + "}\r\n";
 
             ReadonlyFastHandlerUpgrade.UpgradeResult first = ReadonlyFastHandlerUpgrade.Analyze(
                 Source
@@ -974,8 +1021,11 @@ void OnPulse(ref Pulse message) { }";
 
             Assert.That(first.UpgradedSource, Does.Contain("\r\n"));
             Assert.That(first.ReplacementCount, Is.EqualTo(1));
+            Assert.That(first.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(first.UpgradedSource.Replace("\r\n", string.Empty), Does.Not.Contain("\n"));
             Assert.That(second.UpgradedSource, Is.EqualTo(first.UpgradedSource));
             Assert.That(second.ReplacementCount, Is.Zero);
+            Assert.That(second.StringHandlerOptInCount, Is.Zero);
         }
 
         [Test]

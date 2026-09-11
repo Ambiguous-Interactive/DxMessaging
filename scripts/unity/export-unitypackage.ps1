@@ -48,6 +48,12 @@ param(
     # (local inspection of the staged payload).
     [switch]$StageOnly,
 
+    # After export, install the exact Git revision, npm tarball, and classic
+    # package into separate clean projects and run the shipped sample contracts.
+    [switch]$VerifyConsumerInstalls,
+
+    [string]$GitRevision,
+
     [ValidateSet('Local', 'Central')]
     [string]$LicenseReturnOwner = 'Local'
 )
@@ -538,6 +544,290 @@ function New-DeterministicFolderMeta {
     ) -join "`n"
 }
 
+function New-ConsumerSampleImporterSource {
+    return @'
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using DxMessaging.Core;
+using UnityEditor.PackageManager;
+using UnityEditor.PackageManager.UI;
+using UnityEngine;
+
+public static class DxmConsumerSampleImporter
+{
+    public static void Import()
+    {
+        string markerPath = Environment.GetEnvironmentVariable("DXM_CONSUMER_IMPORT_MARKER");
+        if (string.IsNullOrEmpty(markerPath))
+        {
+            throw new InvalidOperationException("DXM_CONSUMER_IMPORT_MARKER is not set.");
+        }
+
+        PackageInfo package = PackageInfo.FindForAssembly(typeof(MessageHandler).Assembly);
+        if (package == null || package.name != "com.wallstop-studios.dxmessaging")
+        {
+            throw new InvalidOperationException("The installed DxMessaging package was not resolved.");
+        }
+
+        string[] expected =
+        {
+            "Mini Combat",
+            "UI Buttons + Inspector",
+            "Diagnostics Tooling Exerciser",
+            "Dependency Injection",
+        };
+        Dictionary<string, Sample> samples = Sample.FindByPackage(package.name, package.version)
+            .ToDictionary(sample => sample.displayName, StringComparer.Ordinal);
+        if (!expected.All(samples.ContainsKey) || samples.Count != expected.Length)
+        {
+            throw new InvalidOperationException(
+                "Expected exactly the four shipped samples; found: " + string.Join(", ", samples.Keys)
+            );
+        }
+
+        string projectRoot = Directory.GetParent(Application.dataPath).FullName.Replace('\\', '/');
+        Dictionary<string, string> importedPaths = new(StringComparer.Ordinal);
+        foreach (string displayName in expected)
+        {
+            Sample sample = samples[displayName];
+            if (!sample.Import(Sample.ImportOptions.OverridePreviousImports | Sample.ImportOptions.HideImportWindow))
+            {
+                throw new InvalidOperationException("Failed to import sample " + displayName + ".");
+            }
+            string importedPath = sample.importPath.Replace('\\', '/');
+            if (Path.IsPathRooted(importedPath))
+            {
+                string projectPrefix = projectRoot + "/";
+                if (!importedPath.StartsWith(projectPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Imported sample is outside the consumer project: " + importedPath);
+                }
+                importedPath = importedPath.Substring(projectPrefix.Length);
+            }
+            string absoluteImportedPath = Path.Combine(projectRoot, importedPath).Replace('\\', '/');
+            if (!Directory.Exists(absoluteImportedPath))
+            {
+                throw new InvalidOperationException("Imported sample path is missing: " + sample.importPath);
+            }
+            importedPaths[displayName] = importedPath;
+        }
+
+        string samplesRoot = Path.GetDirectoryName(importedPaths[expected[0]]).Replace('\\', '/');
+        string markerDirectory = Path.GetDirectoryName(markerPath);
+        if (!string.IsNullOrEmpty(markerDirectory))
+        {
+            Directory.CreateDirectory(markerDirectory);
+        }
+        File.WriteAllLines(markerPath, new[]
+        {
+            "package=" + package.name,
+            "version=" + package.version,
+            "resolvedPath=" + package.resolvedPath.Replace('\\', '/'),
+            "samplesRoot=" + samplesRoot,
+            "samples=" + string.Join("|", expected),
+        });
+    }
+}
+'@
+}
+
+function New-ConsumerProject {
+    param(
+        [Parameter(Mandatory = $true)][string]$ConsumerPath,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Dependency,
+        [Parameter(Mandatory = $true)][bool]$IncludeImporter
+    )
+
+    New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($ConsumerPath, 'Assets', 'Editor')) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $ConsumerPath 'Packages') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $ConsumerPath 'ProjectSettings') | Out-Null
+    $dependencies = [ordered]@{ 'com.unity.test-framework' = '1.4.5' }
+    if (-not [string]::IsNullOrWhiteSpace($Dependency)) {
+        $dependencies[$PackageName] = $Dependency
+    }
+    foreach ($module in $builtinModules.PSObject.Properties) {
+        $dependencies[$module.Name] = $module.Value
+    }
+    $manifest = [ordered]@{ dependencies = $dependencies }
+    [System.IO.File]::WriteAllText(
+        ([System.IO.Path]::Combine($ConsumerPath, 'Packages', 'manifest.json')),
+        (($manifest | ConvertTo-Json -Depth 5) + "`n"),
+        (New-Object System.Text.UTF8Encoding $false)
+    )
+    "m_EditorVersion: $UnityVersion`n" |
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($ConsumerPath, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
+    @'
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!159 &1
+EditorSettings:
+  m_EnterPlayModeOptionsEnabled: 1
+  m_EnterPlayModeOptions: 3
+'@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($ConsumerPath, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
+    @('-warnaserror', '-warn:9999') |
+        Set-Content -LiteralPath ([System.IO.Path]::Combine($ConsumerPath, 'Assets', 'csc.rsp')) -Encoding UTF8
+    if ($IncludeImporter) {
+        New-ConsumerSampleImporterSource |
+            Set-Content -LiteralPath ([System.IO.Path]::Combine($ConsumerPath, 'Assets', 'Editor', 'DxmConsumerSampleImporter.cs')) -Encoding UTF8
+    }
+}
+
+function Add-ConsumerSampleTests {
+    param([Parameter(Mandatory = $true)][string]$ConsumerPath)
+
+    $testRoot = [System.IO.Path]::Combine($ConsumerPath, 'Assets', 'Editor', 'ConsumerAcceptance')
+    New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'Tests/Editor/SampleQualityContractTests.cs') -Destination $testRoot
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'Tests/Editor/OwnedEditModeScene.cs') -Destination $testRoot
+    $asmdef = [ordered]@{
+        name = 'Dxm.ConsumerAcceptance.Tests.Editor'
+        rootNamespace = 'DxMessaging.Tests.Editor'
+        references = @('UnityEditor.TestRunner', 'UnityEngine.TestRunner', 'WallstopStudios.DxMessaging')
+        includePlatforms = @('Editor')
+        excludePlatforms = @()
+        allowUnsafeCode = $false
+        overrideReferences = $true
+        precompiledReferences = @('nunit.framework.dll')
+        autoReferenced = $true
+        defineConstraints = @('UNITY_INCLUDE_TESTS')
+        versionDefines = @()
+        noEngineReferences = $false
+    }
+    [System.IO.File]::WriteAllText(
+        (Join-Path $testRoot 'Dxm.ConsumerAcceptance.Tests.Editor.asmdef'),
+        (($asmdef | ConvertTo-Json -Depth 5) + "`n"),
+        (New-Object System.Text.UTF8Encoding $false)
+    )
+}
+
+function Get-ConsumerMarkerValues {
+    param([Parameter(Mandatory = $true)][string]$MarkerPath)
+
+    $values = @{}
+    foreach ($line in Get-Content -LiteralPath $MarkerPath) {
+        $parts = $line -split '=', 2
+        if ($parts.Count -eq 2) {
+            $values[$parts[0]] = $parts[1]
+        }
+    }
+    return $values
+}
+
+function Assert-ConsumerResults {
+    param(
+        [Parameter(Mandatory = $true)][string]$ResultPath,
+        [Parameter(Mandatory = $true)][string]$SourceKind
+    )
+
+    if (-not (Test-Path -LiteralPath $ResultPath -PathType Leaf)) {
+        throw "$SourceKind consumer wrote no NUnit result at $ResultPath."
+    }
+    [xml]$result = Get-Content -LiteralPath $ResultPath -Raw
+    $run = $result.'test-run'
+    $total = [int]$run.total
+    $passed = [int]$run.passed
+    $failed = [int]$run.failed
+    $skipped = [int]$run.skipped
+    if ($total -ne 8 -or $passed -ne 8 -or $failed -ne 0 -or $skipped -ne 0) {
+        throw "$SourceKind consumer expected 8 passed / 0 failed / 0 skipped; got total=$total passed=$passed failed=$failed skipped=$skipped."
+    }
+    return [ordered]@{ total = $total; passed = $passed; failed = $failed; skipped = $skipped }
+}
+
+function Invoke-ConsumerInstallVerification {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('git', 'tarball', 'classic')]
+        [string]$SourceKind,
+        [Parameter(Mandatory = $true)][string]$ConsumerPath,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Dependency,
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [Parameter(Mandatory = $true)][string]$TarballPayloadRoot
+    )
+
+    $sourceEvidence = Join-Path $EvidenceRoot $SourceKind
+    if (Test-Path -LiteralPath $sourceEvidence -PathType Container) {
+        Remove-Item -LiteralPath $sourceEvidence -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $sourceEvidence | Out-Null
+    New-ConsumerProject -ConsumerPath $ConsumerPath -Dependency $Dependency -IncludeImporter ($SourceKind -ne 'classic')
+    $samplesRoot = 'Assets/WallstopStudios/DxMessaging/Samples'
+    $importLog = Join-Path $sourceEvidence 'install-and-import.log'
+    if ($SourceKind -eq 'classic') {
+        $importArgs = @('-quit', '-batchmode', '-nographics', '-projectPath', $ConsumerPath, '-importPackage', $OutputPath, '-logFile', '-')
+        $importExit = Invoke-UnityEditor -EditorPath $UnityEditorPath -Arguments $importArgs -Label "Import classic package ($UnityVersion)" -LogPath $importLog
+        if ($importExit -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $ConsumerPath $samplesRoot) -PathType Container)) {
+            throw "Classic consumer import failed with exit code $importExit."
+        }
+        $markerValues = @{ package = $PackageName; version = $packageVersion; resolvedPath = $OutputPath; samplesRoot = $samplesRoot; samples = (($packageJson.samples.displayName) -join '|') }
+    } else {
+        $markerPath = Join-Path $sourceEvidence 'import-complete.marker'
+        if (Test-Path -LiteralPath $markerPath) { Remove-Item -LiteralPath $markerPath -Force }
+        $env:DXM_CONSUMER_IMPORT_MARKER = $markerPath
+        try {
+            $importArgs = @('-quit', '-batchmode', '-nographics', '-projectPath', $ConsumerPath, '-executeMethod', 'DxmConsumerSampleImporter.Import', '-logFile', '-')
+            $importExit = Invoke-UnityEditor -EditorPath $UnityEditorPath -Arguments $importArgs -Label "Install and import $SourceKind package ($UnityVersion)" -LogPath $importLog
+        } finally {
+            Remove-Item -LiteralPath Env:\DXM_CONSUMER_IMPORT_MARKER -ErrorAction SilentlyContinue
+        }
+        if ($importExit -ne 0 -or -not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+            throw "$SourceKind consumer import failed with exit code $importExit or no completion marker."
+        }
+        $markerValues = Get-ConsumerMarkerValues -MarkerPath $markerPath
+        $samplesRoot = $markerValues.samplesRoot
+        if ($markerValues.package -ne $PackageName -or $markerValues.version -ne $packageVersion) {
+            throw "$SourceKind consumer resolved $($markerValues.package)@$($markerValues.version), expected $PackageName@$packageVersion."
+        }
+        $lock = Get-Content -LiteralPath (Join-Path $ConsumerPath 'Packages/packages-lock.json') -Raw | ConvertFrom-Json
+        $lockEntry = $lock.dependencies.$PackageName
+        if ($SourceKind -eq 'git') {
+            if ($lockEntry.source -ne 'git' -or $lockEntry.hash -ne $GitRevision) {
+                throw "Git consumer lock provenance mismatch: source=$($lockEntry.source), hash=$($lockEntry.hash), expected=$GitRevision."
+            }
+        } elseif ($SourceKind -eq 'tarball') {
+            $contentMismatches = @()
+            foreach ($relativePath in @('Runtime/Core/MessageHandler.cs', 'Samples~/Mini Combat/MiniCombat.unity')) {
+                $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $TarballPayloadRoot $relativePath)).Hash
+                $resolvedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $markerValues.resolvedPath $relativePath)).Hash
+                if ($resolvedHash -ne $expectedHash) {
+                    $contentMismatches += "$relativePath resolved=$resolvedHash expected=$expectedHash"
+                }
+            }
+            if ($lockEntry.source -ne 'local-tarball' -or $contentMismatches.Count -gt 0) {
+                throw "Tarball consumer provenance mismatch: source=$($lockEntry.source), immutable content=$($contentMismatches -join '; ')."
+            }
+        }
+    }
+
+    $expectedSamples = ($packageJson.samples.displayName) -join '|'
+    if ($markerValues.samples -ne $expectedSamples) {
+        throw "$SourceKind consumer sample roster mismatch: $($markerValues.samples)."
+    }
+    Add-ConsumerSampleTests -ConsumerPath $ConsumerPath
+    $resultPath = Join-Path $sourceEvidence 'test-results.xml'
+    $env:DXM_IMPORTED_SAMPLES_ROOT = $samplesRoot
+    try {
+        $testArgs = @('-batchmode', '-nographics', '-projectPath', $ConsumerPath, '-runTests', '-testPlatform', 'EditMode', '-testResults', $resultPath, '-assemblyNames', 'Dxm.ConsumerAcceptance.Tests.Editor', '-testCategory', 'CiImportedSampleFixture', '-releaseCodeOptimization', '-logFile', '-')
+        $testExit = Invoke-UnityEditor -EditorPath $UnityEditorPath -Arguments $testArgs -Label "Run $SourceKind consumer sample contracts ($UnityVersion)" -LogPath (Join-Path $sourceEvidence 'tests.log')
+    } finally {
+        Remove-Item -LiteralPath Env:\DXM_IMPORTED_SAMPLES_ROOT -ErrorAction SilentlyContinue
+    }
+    $counts = Assert-ConsumerResults -ResultPath $resultPath -SourceKind $SourceKind
+    $artifactHash = if ($SourceKind -eq 'classic') { (Get-FileHash -Algorithm SHA256 -LiteralPath $OutputPath).Hash } elseif ($SourceKind -eq 'tarball') { (Get-FileHash -Algorithm SHA256 -LiteralPath $tarballPath).Hash } else { $GitRevision }
+    [ordered]@{
+        source = $SourceKind
+        unityVersion = $UnityVersion
+        package = "$PackageName@$packageVersion"
+        provenance = $artifactHash
+        samplesRoot = $samplesRoot
+        samples = @($packageJson.samples.displayName)
+        results = $counts
+        unityExitCode = $testExit
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $sourceEvidence 'evidence.json') -Encoding UTF8
+}
+
 function Test-ExportMarker {
     # '' when the marker exists and is fresh for this run; else the problem text.
     param(
@@ -590,6 +880,10 @@ New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
 $packageJsonPath = Join-Path $RepoRoot 'package.json'
 $packageVersion = (Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json).version
+if ($VerifyConsumerInstalls -and $GitRevision -notmatch '^[0-9a-fA-F]{40}$') {
+    Write-CiError 'GitRevision must be the full 40-character commit SHA when VerifyConsumerInstalls is enabled.'
+    exit 1
+}
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $ArtifactsPath "$PackageName-$packageVersion.unitypackage"
 }
@@ -772,6 +1066,19 @@ New-ExporterSource |
 @('-warnaserror', '-warn:9999') |
     Set-Content -LiteralPath ([System.IO.Path]::Combine($projectPath, 'Assets', 'csc.rsp')) -Encoding UTF8
 
+$consumerRoot = Join-Path $projectPath 'consumers'
+if ($VerifyConsumerInstalls) {
+    $tarballDependency = 'file:' + ($tarballPath -replace '\\', '/')
+    if ($StageOnly) {
+        New-ConsumerProject -ConsumerPath (Join-Path $consumerRoot 'git') -Dependency "https://github.com/Ambiguous-Interactive/DxMessaging.git#$GitRevision" -IncludeImporter $true
+        New-ConsumerProject -ConsumerPath (Join-Path $consumerRoot 'tarball') -Dependency $tarballDependency -IncludeImporter $true
+        New-ConsumerProject -ConsumerPath (Join-Path $consumerRoot 'classic') -Dependency '' -IncludeImporter $false
+        foreach ($consumer in @('git', 'tarball', 'classic')) {
+            Add-ConsumerSampleTests -ConsumerPath (Join-Path $consumerRoot $consumer)
+        }
+    }
+}
+
 if ($StageOnly) {
     Write-Host "StageOnly: staged project at $projectPath; skipping the Unity export run."
     exit 0
@@ -855,6 +1162,14 @@ try {
 
     $size = (Get-Item -LiteralPath $OutputPath).Length
     Write-Host "::notice::Exported $OutputPath ($size bytes)."
+
+    if ($VerifyConsumerInstalls) {
+        $evidenceRoot = Join-Path $ArtifactsPath 'consumer-installs'
+        Invoke-ConsumerInstallVerification -SourceKind 'git' -ConsumerPath (Join-Path $consumerRoot 'git') -Dependency "https://github.com/Ambiguous-Interactive/DxMessaging.git#$GitRevision" -EvidenceRoot $evidenceRoot -TarballPayloadRoot $payloadRoot
+        Invoke-ConsumerInstallVerification -SourceKind 'tarball' -ConsumerPath (Join-Path $consumerRoot 'tarball') -Dependency $tarballDependency -EvidenceRoot $evidenceRoot -TarballPayloadRoot $payloadRoot
+        Invoke-ConsumerInstallVerification -SourceKind 'classic' -ConsumerPath (Join-Path $consumerRoot 'classic') -Dependency '' -EvidenceRoot $evidenceRoot -TarballPayloadRoot $payloadRoot
+        Write-Host "::notice::Verified Git, tarball, and classic consumer installs on Unity $UnityVersion."
+    }
 } finally {
     if ($hasLicenseCreds -and $LicenseReturnOwner -eq 'Local') {
         Invoke-UnityLicenseReturn -EditorPath $UnityEditorPath -Email $env:UNITY_EMAIL -Password $env:UNITY_PASSWORD -LogPath $returnLogPath

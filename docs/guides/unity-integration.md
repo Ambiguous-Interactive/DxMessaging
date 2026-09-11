@@ -65,8 +65,8 @@ public sealed class HealthComponent : MessageAwareComponent
 - `MessageAwareComponent` uses many virtual methods (e.g., `Awake`, `OnEnable`, `OnDisable`, `RegisterMessageHandlers`).
 - **CRITICAL**: If you override any of these, you MUST call the base method: `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.RegisterMessageHandlers()`.
 - **Always call `base.RegisterMessageHandlers()` first** in your override -- this ensures parent class registrations happen before yours.
-- Skipping base calls can break core setup (token creation/enable) and default string-message registrations.
-- If you need to opt out of string demos, prefer overriding `RegisterForStringMessages => false` rather than removing the base call.
+- Skipping base calls can break core setup and registrations declared by a parent component.
+- Override `RegisterForStringMessages => true` when you want the built-in string demos.
 - **Don't hide Unity methods** with `new` (e.g., `new void OnEnable()`); always `override` and call `base.*`.
 
 > **Diagnostics and analyzer:**
@@ -127,17 +127,17 @@ public sealed class AlwaysListening : MessageAwareComponent
 }
 ```
 
-## String message demos (opt-out)
+## String message demos (opt-in)
 
 ```csharp
-public sealed class NoStringDemos : MessageAwareComponent
+public sealed class StringDemoReceiver : MessageAwareComponent
 {
-    protected override bool RegisterForStringMessages => false;
+    protected override bool RegisterForStringMessages => true;
 
     protected override void RegisterMessageHandlers()
     {
         base.RegisterMessageHandlers();
-        // only your registrations
+        // Add your registrations here.
     }
 }
 ```

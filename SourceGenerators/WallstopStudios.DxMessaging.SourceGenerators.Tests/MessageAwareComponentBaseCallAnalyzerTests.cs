@@ -441,7 +441,7 @@ namespace Sample
     }
 
     [Test]
-    public void Dxmsg006MessageForRegisterMessageHandlersMentionsStringMessageHandlers()
+    public void Dxmsg006MessageForRegisterMessageHandlersMentionsInheritedRegistrations()
     {
         string source = """
 namespace Sample
@@ -459,11 +459,7 @@ namespace Sample
         Diagnostic dxmsg006 = diagnostics.Single(d => d.Id == "DXMSG006");
         Assert.That(
             dxmsg006.GetMessage(CultureInfo.InvariantCulture),
-            Does.Contain("default string-message handlers will not be registered")
-        );
-        Assert.That(
-            dxmsg006.GetMessage(CultureInfo.InvariantCulture),
-            Does.Contain("RegisterForStringMessages")
+            Does.Contain("inherited registrations may not be registered")
         );
     }
 

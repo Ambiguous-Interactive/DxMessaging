@@ -277,6 +277,67 @@ namespace DxMessaging.Tests.Editor
                 Component first = firstHost.AddComponent(exerciserType);
                 Component second = secondHost.AddComponent(exerciserType);
 
+                int globalUntargetedBefore = messageBus.RegisteredUntargeted;
+                long globalEmissionBefore = messageBus.EmissionId;
+                InvokeRequired(first, "ConfigureStandaloneDiagnostics");
+                MessageBus separateBus =
+                    GetRequiredField(exerciserType, "separateMessageBus").GetValue(first)
+                        as MessageBus
+                    ?? throw new AssertionException(
+                        "The diagnostics sample must create its separate concrete MessageBus."
+                    );
+                MessageRegistrationToken standaloneToken =
+                    GetRequiredField(exerciserType, "standaloneToken").GetValue(first)
+                        as MessageRegistrationToken
+                    ?? throw new AssertionException(
+                        "The diagnostics sample must create its standalone token."
+                    );
+                Assert.That(separateBus.DiagnosticsMode, Is.True);
+                Assert.That(standaloneToken.DiagnosticMode, Is.True);
+                Assert.That(standaloneToken.Enabled, Is.True);
+                Assert.That(
+                    separateBus.RegisteredUntargeted,
+                    Is.EqualTo(1),
+                    "The standalone token must own one isolated registration."
+                );
+                Assert.That(
+                    separateBus.Log.Registrations.Count,
+                    Is.EqualTo(1),
+                    "The separate bus must expose its registration through its own log."
+                );
+                InvokePublic(first, "EmitOnSeparateBus");
+                Assert.That(
+                    GetRequiredProperty(exerciserType, "SeparateBusCallCount").GetValue(first),
+                    Is.EqualTo(1),
+                    "One separate-bus action must invoke the standalone token once."
+                );
+                Assert.That(
+                    messageBus.RegisteredUntargeted,
+                    Is.EqualTo(globalUntargetedBefore),
+                    "The separate-bus walkthrough must not register against the global bus."
+                );
+                Assert.That(
+                    messageBus.EmissionId,
+                    Is.EqualTo(globalEmissionBefore),
+                    "The separate-bus walkthrough must not emit against the global bus."
+                );
+                Assert.That(
+                    separateBus.EmissionId,
+                    Is.EqualTo(1),
+                    "The isolated bus must retain its own emission evidence."
+                );
+                InvokeRequired(first, "ReleaseStandaloneDiagnostics");
+                Assert.That(
+                    separateBus.RegisteredUntargeted,
+                    Is.Zero,
+                    "Releasing the standalone token must remove its isolated registration."
+                );
+                Assert.That(
+                    separateBus.Log.Registrations,
+                    Is.Empty,
+                    "Releasing the separate diagnostics must clear its retained log evidence."
+                );
+
                 InvokeRequired(first, "ConfigureDiagnostics");
                 InvokeRequired(second, "ConfigureDiagnostics");
                 Assert.That(
@@ -309,6 +370,10 @@ namespace DxMessaging.Tests.Editor
                         firstHost.GetComponent(exerciserType),
                         "ReleaseDiagnosticsLease"
                     );
+                    InvokeIfPresent(
+                        firstHost.GetComponent(exerciserType),
+                        "ReleaseStandaloneDiagnostics"
+                    );
                     Object.DestroyImmediate(firstHost);
                 }
 
@@ -317,6 +382,10 @@ namespace DxMessaging.Tests.Editor
                     InvokeIfPresent(
                         secondHost.GetComponent(exerciserType),
                         "ReleaseDiagnosticsLease"
+                    );
+                    InvokeIfPresent(
+                        secondHost.GetComponent(exerciserType),
+                        "ReleaseStandaloneDiagnostics"
                     );
                     Object.DestroyImmediate(secondHost);
                 }
@@ -637,12 +706,22 @@ namespace DxMessaging.Tests.Editor
 
         private static bool TryGetImportedSamplesRoot(out string importedSamplesRoot)
         {
-            importedSamplesRoot = CiImportedSamplesRoot;
+            importedSamplesRoot = Environment.GetEnvironmentVariable("DXM_IMPORTED_SAMPLES_ROOT");
+            if (string.IsNullOrWhiteSpace(importedSamplesRoot))
+            {
+                importedSamplesRoot = CiImportedSamplesRoot;
+            }
+            importedSamplesRoot = importedSamplesRoot.Replace('\\', '/').TrimEnd('/');
+            Assert.That(
+                importedSamplesRoot.StartsWith("Assets/", StringComparison.Ordinal),
+                Is.True,
+                "DXM_IMPORTED_SAMPLES_ROOT must be a project-relative Assets path."
+            );
             bool fixtureExists = AssetDatabase.IsValidFolder(importedSamplesRoot);
             Assert.That(
                 fixtureExists || !IsContinuousIntegration(),
                 Is.True,
-                "CI must import Assets/DxmCiSamples before running fixture-gated sample contracts."
+                $"CI must import {importedSamplesRoot} before running fixture-gated sample contracts."
             );
             if (!fixtureExists)
             {
@@ -680,6 +759,14 @@ namespace DxMessaging.Tests.Editor
         {
             return type.GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new AssertionException($"{type.Name} must retain its {fieldName} field.");
+        }
+
+        private static PropertyInfo GetRequiredProperty(Type type, string propertyName)
+        {
+            return type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
+                ?? throw new AssertionException(
+                    $"{type.Name} must expose its {propertyName} property."
+                );
         }
 
         private static void InvokePublic(Component component, string methodName)

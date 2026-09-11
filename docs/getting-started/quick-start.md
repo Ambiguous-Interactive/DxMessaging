@@ -71,13 +71,13 @@ public sealed class DamageReceiver : MessageAwareComponent
 
 The five guarded methods, with what breaks if you forget the base call:
 
-| Method                           | What breaks                                                                                                                 |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `base.Awake()`                   | The registration token is never created; no handler on this component runs.                                                 |
-| `base.OnEnable()`                | When `MessageRegistrationTiedToEnableStatus` is true, your handlers never re-enable with the component.                     |
-| `base.OnDisable()`               | Handlers stay live while the component is disabled, processing messages they should not see.                                |
-| `base.OnDestroy()`               | Registrations leak past the component's lifetime; held references prevent GC.                                               |
-| `base.RegisterMessageHandlers()` | The default `StringMessage` handlers never register. Override `RegisterForStringMessages => false` if you do not want them. |
+| Method                           | What breaks                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `base.Awake()`                   | The registration token is never created; no handler on this component runs.                             |
+| `base.OnEnable()`                | When `MessageRegistrationTiedToEnableStatus` is true, your handlers never re-enable with the component. |
+| `base.OnDisable()`               | Handlers stay live while the component is disabled, processing messages they should not see.            |
+| `base.OnDestroy()`               | Registrations leak past the component's lifetime; held references prevent GC.                           |
+| `base.RegisterMessageHandlers()` | Registrations declared by a parent component do not register.                                           |
 
 `Start`, `Update`, `FixedUpdate`, `LateUpdate`, and `OnApplicationQuit` are not hooked. You can override them without calling base.
 

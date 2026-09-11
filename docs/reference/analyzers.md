@@ -132,13 +132,13 @@ public readonly partial struct Damage
 - **Triggered when:** A class deriving from `DxMessaging.Unity.MessageAwareComponent` overrides one of the **five guarded methods** without invoking the base implementation.
 - **Messages (per guarded method):** the analyzer emits a per-method consequence sentence so the diagnostic is actionable rather than generic. The message strings are sourced verbatim from `MessageAwareComponentBaseCallAnalyzer.MissingBaseCallMessageFormatsByMethod`:
 
-| Method                    | Message format (`{0}` is the offending type)                                                                                                                                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Awake`                   | `'{0}' overrides MessageAwareComponent.Awake but does not call base.Awake(); the message registration token will never be created and handlers cannot register.`                                                                        |
-| `OnEnable`                | `'{0}' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); handlers will not be re-enabled when this component is enabled.`                                                                                     |
-| `OnDisable`               | `'{0}' overrides MessageAwareComponent.OnDisable but does not call base.OnDisable(); handlers will not be disabled when this component is disabled, causing unwanted message processing.`                                               |
-| `OnDestroy`               | `'{0}' overrides MessageAwareComponent.OnDestroy but does not call base.OnDestroy(); handlers will not be deregistered and the registration token will not be released, causing a memory leak.`                                         |
-| `RegisterMessageHandlers` | `'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); default string-message handlers will not be registered (override RegisterForStringMessages to suppress this warning).` |
+| Method                    | Message format (`{0}` is the offending type)                                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Awake`                   | `'{0}' overrides MessageAwareComponent.Awake but does not call base.Awake(); the message registration token will never be created and handlers cannot register.`                                |
+| `OnEnable`                | `'{0}' overrides MessageAwareComponent.OnEnable but does not call base.OnEnable(); handlers will not be re-enabled when this component is enabled.`                                             |
+| `OnDisable`               | `'{0}' overrides MessageAwareComponent.OnDisable but does not call base.OnDisable(); handlers will not be disabled when this component is disabled, causing unwanted message processing.`       |
+| `OnDestroy`               | `'{0}' overrides MessageAwareComponent.OnDestroy but does not call base.OnDestroy(); handlers will not be deregistered and the registration token will not be released, causing a memory leak.` |
+| `RegisterMessageHandlers` | `'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); inherited registrations may not be registered.`                                |
 
 A generic fallback (`'{0}' overrides MessageAwareComponent.{1} but does not call base.{1}(); the messaging system may not function correctly on this component.`) exists as a safety net for any future guarded method whose entry has not yet been populated. A meta-test forces the per-method dictionary to stay aligned with the guarded set so the fallback is never reached in practice.
 
@@ -150,7 +150,7 @@ A generic fallback (`'{0}' overrides MessageAwareComponent.{1} but does not call
 | `OnEnable`                | Handlers will not be re-enabled when this component is enabled.                                           |
 | `OnDisable`               | Handlers will not be disabled when this component is disabled, causing unwanted message processing.       |
 | `OnDestroy`               | Handlers will not be deregistered and the registration token will not be released, causing a memory leak. |
-| `RegisterMessageHandlers` | Default string-message handlers will not be registered. Override `RegisterForStringMessages` to suppress. |
+| `RegisterMessageHandlers` | Registrations declared by a parent component may not be registered.                                       |
 
 !!! note
 `OnApplicationQuit` is intentionally **not** guarded. The base implementation is a documented no-op -- missing a base call there is harmless and the analyzer ignores it.
@@ -167,9 +167,9 @@ private void CallHelper() => base.Awake();   // analyzer sees this in CallHelper
 
 If you genuinely need to delegate to a helper, suppress the warning with `[DxIgnoreMissingBaseCall]` (see [Suppression precedence](#suppression-precedence) below).
 
-### Smart case: `RegisterForStringMessages => false`
+### Explicit opt-out compatibility case
 
-When the same class overrides `RegisterForStringMessages` to literally `false`, DXMSG006 on `RegisterMessageHandlers` is **lowered to Info severity** (same diagnostic ID -- still configurable via `.editorconfig`). The interpretation is **strict literal-only**:
+When a class explicitly overrides `RegisterForStringMessages` to literally `false`, DXMSG006 on `RegisterMessageHandlers` is **lowered to Info severity** (same diagnostic ID -- still configurable via `.editorconfig`). This preserves the 3.x opt-out signal. The interpretation is **strict literal-only**:
 
 | Form                                                                                              | Lowered to Info?       |
 | ------------------------------------------------------------------------------------------------- | ---------------------- |

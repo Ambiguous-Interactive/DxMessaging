@@ -335,6 +335,68 @@ Repository-wide immutable releases were enabled with maintainer approval on 2026
 authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
 an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
 
+### shipping-fidelity-matrix-6000.5.2f1, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This is a
+20-cell Unity 6000.5.2f1 shipping-fidelity characterization across Minimal, Low, Medium, and High
+stripping. It retains text evidence for five message-shape and cardinality topologies per level.
+It does not retain player binaries or establish confirmatory performance.
+
+| Identity                        | Value                                                                                                                                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable shipping-fidelity prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-shipping-fidelity-matrix-6000.5.2f1-r1-136ce04a)                                              |
+| Release ID                      | `386771634`                                                                                                                                                                                                            |
+| Asset                           | [Shipping-fidelity matrix archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-shipping-fidelity-matrix-6000.5.2f1-r1-136ce04a/shipping-fidelity-matrix-6000.5.2f1-r1.tar.gz) |
+| Exact asset name                | `shipping-fidelity-matrix-6000.5.2f1-r1.tar.gz`                                                                                                                                                                        |
+| Asset ID and size               | `556403738`, 10,014 bytes                                                                                                                                                                                              |
+| Archive SHA-256                 | `2fe634af708db99d291824a88717306f457599e2992c3ef7fb682252d96eb01e`                                                                                                                                                     |
+| Manifest SHA-256                | `136ce04a8cb2f2f60db29d4526b05ed7a59d0396477ae30ff92de651b01a142d`                                                                                                                                                     |
+| Bundle digest                   | `b3cbf02cc1a982c790a354df3d2b355dafa4b41f996742d7f9e06f9858820960`                                                                                                                                                     |
+| Measured source                 | `5bd7ea33dd7182761117a3b3329d841b4d7f9523`                                                                                                                                                                             |
+| Verifier and release tag commit | `1590dd334982cd832e65401138b5bd11904d520b`                                                                                                                                                                             |
+| Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                          |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
+the tag resolves to the verifier commit.
+
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
+The archive was downloaded anonymously. Its 43 entries contained only relative regular files and
+directories with normalized ownership and no links. Archive and manifest hashes matched this
+index. `verify` accepted all 21 declared files, and `replay` reproduced all 20 normalized cells.
+The verifier worktree stayed clean.
+
+### session247-paired-screen-replay, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This historical
+Windows x64 Standalone IL2CPP Release screen retains three raw paired summaries and reproduces an
+`uninterpretable` decision because two sentinels exceed the 3% band. It is not a parity or
+performance-improvement claim.
+
+| Identity                        | Value                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable paired-screen prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session247-paired-screen-replay-r1-75a42003)                                               |
+| Release ID                      | `386771306`                                                                                                                                                                                                     |
+| Asset                           | [Session 247 paired-screen archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session247-paired-screen-replay-r1-75a42003/session247-paired-screen-replay-r1.tar.gz) |
+| Exact asset name                | `session247-paired-screen-replay-r1.tar.gz`                                                                                                                                                                     |
+| Asset ID and size               | `556402567`, 6,287 bytes                                                                                                                                                                                        |
+| Archive SHA-256                 | `1cf1acfef029c3d29a178e71f719fdb76b754283e5911ca034b8bb47592dd478`                                                                                                                                              |
+| Manifest SHA-256                | `75a42003e501936051ee7e80e4be25d1d1b9449a8a21bdade522c3451ae747d2`                                                                                                                                              |
+| Bundle digest                   | `c835487bcde331429aa7f6f429124b3d6f4dc8d5296db835f218d33fc47d76ef`                                                                                                                                              |
+| Measured source                 | `acf0fa4fb5d5a9ba1122a39a0d4a93cc0f38e47b`                                                                                                                                                                      |
+| Verifier and release tag commit | `1590dd334982cd832e65401138b5bd11904d520b`                                                                                                                                                                      |
+| Reducer                         | `paired-throughput-screen-v1`                                                                                                                                                                                   |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
+the tag resolves to the verifier commit.
+
+The restore used the same new remote verifier clone as the shipping-fidelity entry and downloaded
+this archive anonymously. Its six entries contained only relative regular files and one directory,
+with normalized ownership and no links. Archive and manifest hashes matched this index. `verify`
+accepted all four declared files, and `replay` reproduced the sealed `uninterpretable` result. The
+verifier worktree stayed clean.
+
 ### session271-subunsub-measured, revision 1
 
 Status: published and restored from GitHub in a fresh verifier clone on 2026-09-10. This is a
@@ -372,4 +434,3 @@ separate temporary process with deliberately invalid credentials. GitHub returne
 the experiment remained incomplete. The drill did not change the release, fabricate a missing
 asset URL, or use cached evidence as a fallback. This proves the operator procedure's refusal;
 there is no automated remote restore service implied by this result.
-Keep #521 open until the evidence index is reviewed and merged.

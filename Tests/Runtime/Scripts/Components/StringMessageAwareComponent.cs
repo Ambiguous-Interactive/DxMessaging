@@ -14,6 +14,8 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         public int broadcastWithoutSourceCount;
         public int targetedWithoutTargetingCount;
 
+        protected override bool RegisterForStringMessages => true;
+
         protected override void RegisterMessageHandlers()
         {
             base.RegisterMessageHandlers();

@@ -112,7 +112,7 @@ namespace DxMessaging.Editor.Analyzers
             },
             {
                 "RegisterMessageHandlers",
-                "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); default string-message handlers will not be registered (override RegisterForStringMessages to suppress this warning)."
+                "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); inherited registrations may not be registered."
             },
             // Prospective entries. MessageAwareComponent does not currently declare these
             // methods, so nothing can override or hide them yet and no scanner row ever names

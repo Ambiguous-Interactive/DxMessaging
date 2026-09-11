@@ -24,8 +24,6 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         /// </summary>
         public int registerInvocationCount;
 
-        protected override bool RegisterForStringMessages => false;
-
         protected override bool ReregisterOnEnableAfterRelease => reregisterOnEnableAfterRelease;
 
         protected override bool MessageRegistrationTiedToEnableStatus =>
@@ -33,6 +31,7 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
 
         protected override void RegisterMessageHandlers()
         {
+            base.RegisterMessageHandlers();
             ++registerInvocationCount;
             _ = _messageRegistrationToken.RegisterUntargeted<SimpleUntargetedMessage>(
                 HandleSimpleUntargetedMessage

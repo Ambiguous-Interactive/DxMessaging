@@ -864,8 +864,6 @@ namespace DxMessaging.Tests.Editor
     [AddComponentMenu("")]
     internal sealed class SubscriptionsTestComponent : MessageAwareComponent
     {
-        protected override bool RegisterForStringMessages => false;
-
         internal MessageRegistrationToken TestToken => _messageRegistrationToken;
 
         internal void ConfigureForEditorTest(MessagingComponent messagingComponent)

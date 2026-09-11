@@ -85,6 +85,9 @@ namespace DxMessaging.Tests.Editor
             Assert.That(runner, Does.Contain("EmitUntargeted"));
             Assert.That(runner, Does.Contain("EmitGameObjectTargeted"));
             Assert.That(runner, Does.Contain("SourcedBroadcast"));
+            Assert.That(runner, Does.Contain("separateMessageBus.UntargetedBroadcast"));
+            Assert.That(runner, Does.Contain("standaloneToken.DiagnosticMode = true"));
+            Assert.That(runner, Does.Contain("separateMessageBus.Log.Enabled = true"));
             Assert.That(receiver, Does.Contain("RegisterUntargeted<ToolingPulse>"));
             Assert.That(receiver, Does.Contain("RegisterGameObjectTargeted<ToolingCommand>"));
             Assert.That(receiver, Does.Contain("RegisterBroadcastWithoutSource<ToolingSignal>"));
@@ -150,6 +153,13 @@ namespace DxMessaging.Tests.Editor
             Assert.That(readme, Does.Contain("Reset Counters And Emit Burst"));
             Assert.That(readme, Does.Contain("history stays visible"));
             Assert.That(readme, Does.Contain("sample-pulse-001"));
+            Assert.That(readme, Does.Contain("Disable Player Ship"));
+            Assert.That(readme, Does.Contain("Release Enemy Drone Token"));
+            Assert.That(readme, Does.Contain("Destroy HUD Console"));
+            Assert.That(readme, Does.Contain("separate `MessageBus`"));
+            Assert.That(readme, Does.Contain("Emit On Separate Bus"));
+            Assert.That(readme, Does.Contain("sample-separate-*"));
+            Assert.That(readme, Does.Contain("registration-log"));
             Assert.That(readme, Does.Contain("DiagnosticsToolingSampleContractTests"));
         }
 
@@ -158,6 +168,7 @@ namespace DxMessaging.Tests.Editor
         {
             string guide = ReadSampleFile(GuideScriptFileName);
             string runner = ReadSampleFile(RunnerScriptFileName);
+            string receiver = ReadSampleFile(ReceiverScriptFileName);
 
             Assert.That(guide, Does.Contain("Diagnostics Tooling Guided Tour"));
             Assert.That(guide, Does.Contain("DxMessagingMessageMonitorWindow.Open"));
@@ -165,6 +176,14 @@ namespace DxMessaging.Tests.Editor
             Assert.That(guide, Does.Contain("Project/Wallstop Studios/DxMessaging"));
             Assert.That(guide, Does.Contain("Select All Receivers"));
             Assert.That(guide, Does.Contain("Reset Counters And Emit Burst"));
+            Assert.That(guide, Does.Contain("Disable Player Ship"));
+            Assert.That(guide, Does.Contain("Release Enemy Drone Token"));
+            Assert.That(guide, Does.Contain("Destroy HUD Console"));
+            Assert.That(guide, Does.Contain("a separate MessageBus and standalone token"));
+            Assert.That(guide, Does.Contain("Emit On Separate Bus"));
+            Assert.That(guide, Does.Contain("dx-tooling-guide-separate-bus"));
+            Assert.That(runner, Does.Contain("ReleaseStandaloneDiagnostics();"));
+            Assert.That(receiver, Does.Contain("ReleaseTokenForWalkthrough"));
             Assert.That(guide, Does.Contain("trace IDs continue forward"));
             Assert.That(guide, Does.Contain("DxMessagingEditorTheme.ApplyWindow"));
             Assert.That(guide, Does.Contain("DiagnosticsToolingExerciser.unity"));
@@ -249,6 +268,10 @@ namespace DxMessaging.Tests.Editor
                 Button? play = root.Q<Button>("dx-tooling-guide-play");
                 Button? emit = root.Q<Button>("dx-tooling-guide-emit");
                 Button? reset = root.Q<Button>("dx-tooling-guide-reset");
+                Button? disableReceiver = root.Q<Button>("dx-tooling-guide-disable-receiver");
+                Button? releaseToken = root.Q<Button>("dx-tooling-guide-release-token");
+                Button? destroyReceiver = root.Q<Button>("dx-tooling-guide-destroy-receiver");
+                Button? separateBus = root.Q<Button>("dx-tooling-guide-separate-bus");
                 Assert.That(status, Is.Not.Null);
                 Assert.That(play, Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).True);
                 Assert.That(
@@ -257,6 +280,22 @@ namespace DxMessaging.Tests.Editor
                 );
                 Assert.That(
                     reset,
+                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
+                );
+                Assert.That(
+                    disableReceiver,
+                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
+                );
+                Assert.That(
+                    releaseToken,
+                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
+                );
+                Assert.That(
+                    destroyReceiver,
+                    Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
+                );
+                Assert.That(
+                    separateBus,
                     Is.Not.Null.And.Property(nameof(VisualElement.enabledSelf)).False
                 );
 
