@@ -5336,30 +5336,28 @@ namespace DxMessaging.Core.MessageBus
             // Post-processors follow the FINAL source. If that route changed
             // after this emission began, its first pre-mutation snapshot is
             // the exact frozen view for this emission.
-            if (source != preInterceptorSource)
-            {
-                if (
-                    !TryGetContextPostRouteAtEmissionStart<TMessage>(
-                        BroadcastPostSlot,
-                        source,
-                        touchTick,
-                        emissionResetGeneration,
-                        out broadcastPostSnapshot
-                    )
-                    && _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                        .TryGetValue<TMessage>(out broadcastPostHandlers)
-                    && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
-                    && broadcastPostByPriority.handlers.Count > 0
+            if (
+                source != preInterceptorSource
+                && !TryGetContextPostRouteAtEmissionStart<TMessage>(
+                    BroadcastPostSlot,
+                    source,
+                    touchTick,
+                    emissionResetGeneration,
+                    out broadcastPostSnapshot
                 )
-                {
-                    broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                        this,
-                        broadcastPostByPriority,
-                        BroadcastPostSlot,
-                        emissionId,
-                        source
-                    );
-                }
+                && _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
+                    .TryGetValue<TMessage>(out broadcastPostHandlers)
+                && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
+                && broadcastPostByPriority.handlers.Count > 0
+            )
+            {
+                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                    this,
+                    broadcastPostByPriority,
+                    BroadcastPostSlot,
+                    emissionId,
+                    source
+                );
             }
 
             if (broadcastPostSnapshot.IsInitialized)
