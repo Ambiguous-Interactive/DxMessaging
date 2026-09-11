@@ -70,10 +70,14 @@ Run the healthy burst and inspect its routes before using these guide actions:
 1. Exit and re-enter Play Mode to restore the three receivers and deterministic
    starting state.
 
-Message Monitor reads the default global bus. Flow Graph and Component
-Diagnostics read loaded `MessagingComponent` instances. A separate `MessageBus`
-or standalone token does not appear on those surfaces; inspect it through that
-bus or token's diagnostics API.
+Click **Emit On Separate Bus** to send a distinct `sample-separate-*` pulse
+through a separate `MessageBus` and standalone token. The guide status increments
+its call count and shows one direct registration plus its registration-log
+evidence. Message Monitor reads only the default global bus, so it must not add
+that pulse. Flow Graph and Component Diagnostics read loaded `MessagingComponent`
+instances, so they must not add the standalone token. This is the boundary in
+practice: inspect separate buses and standalone tokens through their own counters,
+registration logs, and token diagnostics.
 
 ## Expected Tool Data
 

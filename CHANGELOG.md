@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Add disabled, missing-token, destroyed-receiver, stale-selection, and visibility-boundary steps
-  to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
+- Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
+  exercises to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 - **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
   default; override `RegisterForStringMessages` to return `true` when those handlers are required
   ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).

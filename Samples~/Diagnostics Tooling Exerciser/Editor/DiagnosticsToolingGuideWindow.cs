@@ -25,6 +25,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
         private Button _disableReceiverButton;
         private Button _releaseTokenButton;
         private Button _destroyReceiverButton;
+        private Button _separateBusButton;
         private IVisualElementScheduledItem _statusRefresh;
 
         [MenuItem(MenuPath)]
@@ -129,11 +130,14 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
                 DestroyHudConsole
             );
             _destroyReceiverButton.name = "dx-tooling-guide-destroy-receiver";
-            AddNote(
+            _separateBusButton = AddStep(
                 steps,
-                "10. Check visibility boundaries",
-                "Message Monitor reads only the default global bus. Flow Graph and Component Diagnostics read loaded MessagingComponent instances. A separate MessageBus or standalone token is visible only through that bus or token's diagnostics API."
+                "10. Prove separate-bus visibility boundaries",
+                "Emit through a separate MessageBus and standalone token. The status panel shows its call count and retained registration evidence, but Message Monitor and Flow Graph must not gain a route or emission.",
+                "Emit On Separate Bus",
+                EmitOnSeparateBus
             );
+            _separateBusButton.name = "dx-tooling-guide-separate-bus";
             AddStep(
                 steps,
                 "11. Change capture policy and reset",
@@ -174,17 +178,6 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             return button;
         }
 
-        private static void AddNote(VisualElement parent, string heading, string body)
-        {
-            VisualElement card = new();
-            card.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            Label headingLabel = new(heading);
-            headingLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
-            card.Add(headingLabel);
-            card.Add(new Label(body));
-            parent.Add(card);
-        }
-
         private void RefreshStatus()
         {
             DiagnosticsToolingExerciser runner = FindRunner();
@@ -201,6 +194,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
                 canEmit && enemyDrone != null && enemyDrone.Token != null
             );
             _destroyReceiverButton.SetEnabled(canEmit && hudConsole != null);
+            _separateBusButton.SetEnabled(canEmit);
 
             string receiverSummary =
                 receivers.Length == 0
@@ -214,7 +208,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             string runnerSummary =
                 runner == null
                     ? "Runner: not active"
-                    : $"Runner: sequence {runner.Sequence} - {runner.LastRunSummary}";
+                    : $"Runner: sequence {runner.Sequence} - {runner.LastRunSummary}\nSeparate bus: token {(runner.StandaloneTokenEnabled ? "enabled" : "missing")}, registrations {runner.SeparateBusRegistrationCount}, log entries {runner.SeparateBusLogCount}, calls {runner.SeparateBusCallCount}, last trace {runner.LastSeparateBusTraceId}";
             _liveStatus.text =
                 $"STATUS\nPlay Mode: {(EditorApplication.isPlaying ? "running" : "stopped")}\n{runnerSummary}\n{receiverSummary}";
         }
@@ -239,6 +233,15 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
             if (runner != null)
             {
                 runner.ResetCountersAndEmitBurst();
+            }
+        }
+
+        private static void EmitOnSeparateBus()
+        {
+            DiagnosticsToolingExerciser runner = FindRunner();
+            if (runner != null)
+            {
+                runner.EmitOnSeparateBus();
             }
         }
 

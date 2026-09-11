@@ -38,16 +38,38 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
         [SerializeField]
         private string lastRunSummary = "Not run yet";
 
+        [SerializeField]
+        private int separateBusCallCount;
+
+        [SerializeField]
+        private int separateBusSequence;
+
+        [SerializeField]
+        private string lastSeparateBusTraceId = "None";
+
         private static readonly HashSet<int> InitializedRunnerIds = new();
         private static MessageBus diagnosticsBus;
         private static int diagnosticsLeaseCount;
         private static bool originalDiagnosticsMode;
 
         private bool hasDiagnosticsLease;
+        private MessageBus separateMessageBus;
+        private MessageHandler standaloneMessageHandler;
+        private MessageRegistrationToken standaloneToken;
 
         public int Sequence => sequence;
 
         public string LastRunSummary => lastRunSummary;
+
+        public int SeparateBusCallCount => separateBusCallCount;
+
+        public int SeparateBusRegistrationCount => separateMessageBus?.RegisteredUntargeted ?? 0;
+
+        public int SeparateBusLogCount => separateMessageBus?.Log.Registrations.Count ?? 0;
+
+        public bool StandaloneTokenEnabled => standaloneToken?.Enabled ?? false;
+
+        public string LastSeparateBusTraceId => lastSeparateBusTraceId;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void BeginPlayGeneration()
@@ -95,6 +117,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             CancelInvoke(nameof(EmitBurst));
             StopAllCoroutines();
             ReleaseDiagnosticsLease();
+            ReleaseStandaloneDiagnostics();
         }
 
         private void BeginPlaySession()
@@ -108,6 +131,9 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             StopAllCoroutines();
             sequence = 0;
             lastRunSummary = "Not run yet";
+            separateBusCallCount = 0;
+            separateBusSequence = 0;
+            lastSeparateBusTraceId = "None";
             foreach (DiagnosticsToolingReceiver receiver in receivers)
             {
                 if (receiver != null)
@@ -117,6 +143,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             }
 
             ConfigureDiagnostics();
+            ConfigureStandaloneDiagnostics();
 
             if (emitOnStart)
             {
@@ -225,6 +252,24 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             }
         }
 
+        [ContextMenu("Emit On Separate Bus")]
+        public void EmitOnSeparateBus()
+        {
+            if (separateMessageBus == null || standaloneToken == null)
+            {
+                lastSeparateBusTraceId = "Enter Play Mode to configure the separate bus";
+                return;
+            }
+
+            separateBusSequence++;
+            ToolingPulse pulse = new(
+                $"sample-separate-{separateBusSequence:000}",
+                "Separate MessageBus",
+                separateBusSequence
+            );
+            separateMessageBus.UntargetedBroadcast(ref pulse);
+        }
+
         private void EmitSignal(GameObject source)
         {
             ToolingSignal signal = new(CreateTraceId("signal"), source.name, sequence);
@@ -281,6 +326,51 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             {
                 RestoreDiagnosticsMode();
             }
+        }
+
+        private void ConfigureStandaloneDiagnostics()
+        {
+            ReleaseStandaloneDiagnostics();
+
+            separateMessageBus = new MessageBus { DiagnosticsMode = true };
+            separateMessageBus.Log.Enabled = true;
+            standaloneMessageHandler = new MessageHandler((InstanceId)this, separateMessageBus)
+            {
+                active = true,
+            };
+            standaloneToken = MessageRegistrationToken.Create(
+                standaloneMessageHandler,
+                separateMessageBus
+            );
+            standaloneToken.DiagnosticMode = true;
+            _ = standaloneToken.RegisterUntargeted<ToolingPulse>(OnSeparateBusPulse);
+            standaloneToken.Enable();
+        }
+
+        private void ReleaseStandaloneDiagnostics()
+        {
+            standaloneToken?.Dispose();
+            standaloneToken = null;
+
+            if (standaloneMessageHandler != null)
+            {
+                standaloneMessageHandler.active = false;
+                standaloneMessageHandler = null;
+            }
+
+            if (separateMessageBus != null)
+            {
+                separateMessageBus.DiagnosticsMode = false;
+                separateMessageBus.Log.Enabled = false;
+                _ = separateMessageBus.Log.Clear();
+                separateMessageBus = null;
+            }
+        }
+
+        private void OnSeparateBusPulse(in ToolingPulse message)
+        {
+            separateBusCallCount++;
+            lastSeparateBusTraceId = message.traceId;
         }
 
         private static void RestoreDiagnosticsMode()
