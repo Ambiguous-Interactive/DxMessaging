@@ -83,31 +83,46 @@ every context present without allowing skipped dependencies in `CI Success`.
 
 [`unity-tests.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-tests.yml)
 hosts the Unity correctness gate. Its `pull_request` trigger is filtered by
-`paths-ignore`, so a documentation-only pull request never starts the licensed
+`paths-ignore`, so a Unity-independent pull request never starts the licensed
 matrix. Three shapes skip the licensed work, and each is validated rather than
 assumed:
 
-- **A documentation-only pull request.** Every changed file matches the closed
-  documentation-only allowlist in `paths-ignore`, so the workflow is absent
+- **A documentation or isolated-tooling pull request.** Every changed file matches the closed
+  Unity-independent allowlist in `paths-ignore`, so the workflow is absent
   rather than running an empty matrix.
 - **A fork pull request.**
 - **A Dependabot pull request.** Both read from a different secret store, so the
   Unity serial and the build-lock App credentials resolve empty and a licensed
   leg would fail on missing credentials rather than on the change under test.
 
-A required check must be present, never absent, so the documentation-only shape
+A required check must be present, never absent, so the Unity-independent shape
 needs a reporter:
 [`unity-docs-gate.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/unity-docs-gate.yml)
-triggers on every pull request into `master` with no paths filter and posts the
-same `Unity CI Success` context. Its single step lists the changed files via
+triggers when an allowed path or a workflow changes on a pull request into `master`.
+Its classifier lists the changed files via
 `gh api .../files` (including `previous_filename` for renames), fails closed on
-a lookup failure or an empty listing, reports success only when every changed
-file matches the exact `paths-ignore` allowlist, and reports red for anything
-else. The licensed result for those pull requests stays owned by
-`unity-tests.yml`. Re-running the docs gate manually on a code pull request
-posts a red duplicate until the Unity aggregate runs again; that is visible and
-fail-closed. `scripts/__tests__/ci-aggregate-workflow.test.js` asserts the
-lockstep between the allowlist and the gate's pattern.
+a lookup failure, an empty listing, or a count that differs from the event's
+`changed_files`. The reporter uses `Unity CI Success` only for an independent
+change or failed classification. Mixed changes report `Unity docs gate not applicable`,
+leaving the required context to `unity-tests.yml`.
+`scripts/__tests__/ci-aggregate-workflow.test.js` checks the allowlist against both
+licensed workflows and the classifier.
+
+The allowlist includes documentation, root Markdown, agent context, `.devcontainer/`,
+issue templates, `scripts/llm/`, its harness test, and `scripts/wiki/`.
+Runtime, editor, generator, Unity harness, package configuration, workflow, and
+unknown paths still run Unity. Static checks continue to validate their relevant
+inputs. A tooling-only PR avoids four editor jobs and two benchmark jobs;
+this is a job-count saving, not a measured wall-clock speedup. Default-branch
+pushes and manual runs retain full validation, except for the existing generated
+performance-file push loop break.
+
+Keep the trigger filters and the companion classifier in sync. GitHub limits
+[trigger diff evaluation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)
+to 300 files. A mixed PR whose Unity input falls outside that window can require
+a rerun or a smaller PR; the companion must never turn incomplete data into a
+successful skip. Moving classification inside the licensed workflow requires an
+organization-policy-compatible aggregate change, not an added permissive skip.
 
 The `concurrency` setting keeps `cancel-in-progress: false` on purpose, because
 hard-cancelling a run that holds the organization build lock is the scenario the
@@ -145,7 +160,12 @@ expanded names leaves auto-merge waiting for absent checks.
 
 [`devcontainer-test.yml`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.github/workflows/devcontainer-test.yml)
 always starts for pull requests. Its `changes` job determines whether
-devcontainer files changed. The x64 and native ARM64 smoke jobs run when they
+devcontainer, workflow, action, script, or npm manifest/lock files changed.
+The Dockerfile copies `package.json`, and both image jobs run the script suite;
+those inputs must trigger validation. Issue-template-only and documentation-only
+changes do not build images. Rename endpoints are included, and incomplete
+file listings run the build or fail detection rather than silently skipping it.
+The x64 and native ARM64 smoke jobs run when they
 are relevant and otherwise report `skipped`; the final `Devcontainer CI Success`
 job uses `if: ${{ always() }}` and fails closed unless change detection succeeded
 with an explicit result. PR #382 proved the relevant path with both smoke jobs
@@ -451,7 +471,7 @@ When the required set or a workflow changes, keep them in sync:
 After applying the ruleset:
 
 1. Observe the next unrelated pull request and the next pull request that touches the gate's
-   relevant inputs. For the devcontainer gate, use `.devcontainer/**` or `.github/**`.
+   relevant inputs. For the devcontainer gate, use `.devcontainer/**` or `package.json`.
 1. Confirm every required check reports (runs or skips) on both, so neither hangs waiting for an
    absent check.
 1. Confirm auto-merge waits for every required check, then completes only after all are green.

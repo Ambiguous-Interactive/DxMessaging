@@ -24,5 +24,3 @@ Samples~/
 # --check mode converge: a formatter rewriting these would make `npm run llm:check` fail
 # immediately after a successful regeneration.
 .llm/index.md
-.claude/skills/
-.agents/skills/

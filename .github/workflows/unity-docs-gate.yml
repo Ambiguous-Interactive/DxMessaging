@@ -1,5 +1,7 @@
 name: Unity Docs Gate
 
+# The historical documentation_only output also covers isolated tooling paths.
+# Never admit runtime, editor, generator, Unity harness, workflow, or unknown paths.
 # The repository ruleset requires the "Unity CI Success" context on every pull
 # request into master. unity-tests.yml decides its documentation-only skip with
 # pull_request paths-ignore, so that workflow is absent (never red, just absent)
@@ -24,6 +26,13 @@ on:
       - ".github/workflows/**"
       - "docs/**"
       - ".docs-tests/**"
+      - ".devcontainer/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "scripts/llm/**"
+      - "scripts/wiki/**"
+      - "scripts/__tests__/llm-harness.test.js"
+      - "scripts/__tests__/llm-harness.test.js.meta"
+      - "*.md"
       - "progress/**"
       - ".llm/**"
       - ".agents/**"
@@ -98,7 +107,7 @@ jobs:
           # paths-ignore list in unity-tests.yml, so this gate reports green
           # exactly when that workflow is absent. scripts/__tests__/ci-aggregate-workflow.test.js
           # asserts the lockstep and the path vectors.
-          documentation_only_pattern='^(docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)$|(AGENTS|GOAL|PLAN)\.md$|llms\.txt$|mkdocs\.yml$|requirements-(docs|brand)\.(in|txt)$)'
+          documentation_only_pattern='^(\.devcontainer/|\.github/ISSUE_TEMPLATE/|scripts/(llm|wiki)/|scripts/__tests__/llm-harness\.test\.js(\.meta)?$|[^/]+\.md$|docs/|\.docs-tests/|progress/|\.llm/|\.agents/|\.claude/|Samples~/.*\.(md|markdown)$|(AGENTS|GOAL|PLAN)\.md$|llms\.txt$|mkdocs\.yml$|requirements-(docs|brand)\.(in|txt)$)'
           non_documentation="$(printf '%s\n' "${files}" | grep -Ev "${documentation_only_pattern}" || true)"
           if [ -n "${non_documentation}" ]; then
             echo "::notice::Non-documentation files also changed; the licensed Unity result comes from the unity-tests workflow."
@@ -135,4 +144,4 @@ jobs:
             echo "::error::Changed-file classification produced an invalid result."
             exit 1
           fi
-          echo "::notice::Only documentation and agent-context files changed; unity-tests is path-filtered for this pull request, so this gate reports the documentation-only skip-green."
+          echo "::notice::Only Unity-independent documentation or tooling changed; unity-tests is path-filtered for this pull request, so this gate reports the validated skip."

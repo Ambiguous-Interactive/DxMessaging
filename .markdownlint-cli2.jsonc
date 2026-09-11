@@ -19,8 +19,6 @@
     // generator and its --check mode convergent: an autofix bot rewriting a generated file would
     // make `npm run llm:check` fail with no way to recover except regenerating.
     ".llm/index.md",
-    ".claude/skills/**",
-    ".agents/skills/**",
     // Git-ignored local scratch areas
     "progress/**",
     ".artifacts/**",

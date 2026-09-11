@@ -198,7 +198,9 @@ const path = require("path");
 //     Dependabot env keys only), docs-only PRs gain the unity-docs-gate allowlist vectors, and
 //     the static test-mode axis joins the holder identity, so the topology vectors and their
 //     expectations grow, plus the 5 lines this entry itself adds: 24095.
-const TOTAL_BUDGET = 24095;
+// 089 Require a free price and AI disclosure in existing Asset Store staging, with
+//     data-driven rejection tests and operator checklist coverage: 24125.
+const TOTAL_BUDGET = 24125;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

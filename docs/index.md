@@ -7,6 +7,16 @@ hide:
   - toc
 ---
 
+## AI Assistance Disclosure
+
+DxMessaging began as an original project around 2014 and remains actively developed and used today.
+Over the past two years, I (wallstop) have been using LLMs to help improve the library's quality and
+performance, expand its tests, and create user-facing documentation. There is always a human in
+the loop: I actively review all changes and read through all user-facing copy. I share this so you
+can make an informed decision about using the project.
+
+DxMessaging is free and will remain free forever. No paid editions, paid upgrades, or feature charges.
+
 ## Start Here
 
 - [Quick Start](getting-started/quick-start.md) - Define, register, and emit

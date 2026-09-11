@@ -19,7 +19,13 @@
 
 > **AI Assistance Disclosure:**
 >
-> This project has been actively developed and maintained by human authors for over a decade. Recent versions have utilized AI assistance for documentation, test coverage, and performance optimizations.
+> DxMessaging began as an original project around 2014 and remains actively developed and used today.
+> Over the past two years, I (wallstop) have been using LLMs to help improve the library's quality and
+> performance, expand its tests, and create user-facing documentation. There is always a human in
+> the loop: I actively review all changes and read through all user-facing copy. I share this so you
+> can make an informed decision about using the project.
+
+DxMessaging is free and will remain free forever. No paid editions, paid upgrades, or feature charges.
 
 **DxMessaging is a synchronous, type-safe Unity message bus for decoupled, simple systems.** It replaces sprawling C# events, brittle UnityEvents, and global static event buses with explicit message contracts, lifecycle-managed registrations, and editor-visible routing.
 
@@ -981,7 +987,7 @@ DxMessaging publishes machine-readable context for AI agents through [llms.txt](
 
 - **[llms.txt](llms.txt)** -- Complete project overview, API reference, and context in a single file
 - **[Repository Guidelines](.llm/context.md)** -- Coding standards and development workflows
-- **[AI Agent Skills](.llm/skills/)** -- 33+ specialized skills covering documentation, testing, GitHub Actions, and more
+- **[AI Agent Skills](.llm/skills/)** -- 34+ specialized skills covering documentation, testing, GitHub Actions, and more
 
 The `llms.txt` file is automatically updated via CI/CD to stay current with project changes. It includes:
 

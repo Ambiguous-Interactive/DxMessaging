@@ -3837,7 +3837,8 @@ def validate_perf_pr_policy() -> None:
 
 
 DOCS_GATE_ALLOWLIST = (
-    "documentation_only_pattern='^(docs/|\\.docs-tests/|progress/|\\.llm/|\\.agents/"
+    "documentation_only_pattern='^(\\.devcontainer/|\\.github/ISSUE_TEMPLATE/|scripts/(llm|wiki)/"
+    "|scripts/__tests__/llm-harness\\.test\\.js(\\.meta)?$|[^/]+\\.md$|docs/|\\.docs-tests/|progress/|\\.llm/|\\.agents/"
     "|\\.claude/|Samples~/.*\\.(md|markdown)$|(AGENTS|GOAL|PLAN)\\.md$|llms\\.txt$"
     "|mkdocs\\.yml$|requirements-(docs|brand)\\.(in|txt)$)'"
 )
@@ -4755,6 +4756,13 @@ steps:
     documentation_only_paths_ignore = (
         '      - "docs/**"\n'
         '      - ".docs-tests/**"\n'
+        '      - ".devcontainer/**"\n'
+        '      - ".github/ISSUE_TEMPLATE/**"\n'
+        '      - "scripts/llm/**"\n'
+        '      - "scripts/wiki/**"\n'
+        '      - "scripts/__tests__/llm-harness.test.js"\n'
+        '      - "scripts/__tests__/llm-harness.test.js.meta"\n'
+        '      - "*.md"\n'
         '      - "progress/**"\n'
         '      - ".llm/**"\n'
         '      - ".agents/**"\n'

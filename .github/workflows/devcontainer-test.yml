@@ -38,9 +38,11 @@ on:
       - master
     paths:
       - ".devcontainer/**"
-      - ".github/**"
-      - "scripts/__tests__/devcontainer*.test.js"
-      - "scripts/unity/**"
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
   pull_request:
     branches:
       - master
@@ -68,18 +70,29 @@ jobs:
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_FILE_COUNT: ${{ github.event.pull_request.changed_files }}
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          set -euo pipefail
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! files="$(gh api \
-            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --paginate --jq '.[].filename')"; then
+          if ! [[ "${EXPECTED_FILE_COUNT}" =~ ^[1-9][0-9]*$ ]] || ! records="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --paginate --jq '.[] | [.filename, (.previous_filename // null)] | @json')"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/|^scripts/__tests__/devcontainer.*\.test\.js$|^scripts/unity/)'; then
+          # Count API records, not rename endpoints. Incomplete or invalid data
+          # must never skip the image build and its in-container script suite.
+          if [ -z "$records" ] || [ "$(printf '%s\n' "$records" | wc -l | tr -d '[:space:]')" != "$EXPECTED_FILE_COUNT" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(printf '%s\n' "$records" | jq -er '.[] | select(. != null) | if type == "string" and length > 0 then . else error("Invalid changed path") end')"
+          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/(workflows|actions)/|^scripts/|^package(-lock)?\.json$)'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"

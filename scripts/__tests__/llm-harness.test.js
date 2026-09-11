@@ -14,7 +14,6 @@ const {
   buildManifest,
   countLines,
   main,
-  mirrorContent,
   parseFrontmatter,
   renderIndexMarkdown,
   replaceRegistryBlock,
@@ -85,44 +84,6 @@ test("replaceRegistryBlock swaps the block and refuses ambiguous markers", () =>
 
   assert.throws(() => replaceRegistryBlock("no markers", "x"), /exactly one/);
   assert.throws(() => replaceRegistryBlock(`${start}${start}${end}`, "x"), /exactly one/);
-});
-
-test("mirrorContent is a pointer carrying the discovery fields", () => {
-  const content = mirrorContent({ name: "object-pooling", description: "Reuse pooled objects." });
-  const { data, body } = parseFrontmatter(content);
-  assert.deepEqual(Object.keys(data).sort(), ["description", "name"]);
-  assert.equal(data.name, "object-pooling");
-  assert.match(body, /\.llm\/skills\/object-pooling\/SKILL\.md/);
-  assert.ok(content.includes(GENERATED_MARKER), "a mirror must carry the generated marker");
-  // Three levels up from .claude/skills/<name>/ or .agents/skills/<name>/ reaches the repo root.
-  assert.match(body, /\.\.\/\.\.\/\.\.\/\.llm/);
-});
-
-test("mirrorContent propagates license, compatibility, and allowed-tools when declared", () => {
-  const content = mirrorContent({
-    name: "x",
-    description: "Does x.",
-    license: "MIT",
-    compatibility: "Requires Unity 2022.3 or newer.",
-    allowedTools: "Read Grep Bash"
-  });
-  const { data, error } = parseFrontmatter(content);
-  assert.equal(error, undefined);
-  assert.equal(data.license, "MIT");
-  assert.equal(data.compatibility, "Requires Unity 2022.3 or newer.");
-  assert.equal(data["allowed-tools"], "Read Grep Bash");
-});
-
-test("mirrorContent omits optional fields the source does not declare", () => {
-  const { data } = parseFrontmatter(mirrorContent({ name: "x", description: "Does x." }));
-  assert.deepEqual(Object.keys(data).sort(), ["description", "name"]);
-});
-
-test("mirrorContent escapes a description that would break YAML", () => {
-  const content = mirrorContent({ name: "x", description: 'Uses "quotes": and: colons' });
-  const { data, error } = parseFrontmatter(content);
-  assert.equal(error, undefined);
-  assert.equal(data.description, 'Uses "quotes": and: colons');
 });
 
 // ---------------------------------------------------------------------------
@@ -434,37 +395,21 @@ test("validate accepts spec-shaped optional frontmatter fields", (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// Round trip: writeArtifacts -> artifactDrifts -> staleMirrors
+// Round trip: the index and registry are the only generated artifacts
 // ---------------------------------------------------------------------------
 
-const MIRROR_ROOTS = [".claude/skills", ".agents/skills"];
+const OTHER_SKILL_ROOTS = [".claude/skills", ".agents/skills", ".github/skills", ".codex/skills"];
 
-test("writeArtifacts generates every artifact and artifactDrifts then reports none", (t) => {
+test("index generates only canonical artifacts and remains idempotent", (t) => {
   const root = createFixture(t, { alpha: validSkill("alpha"), beta: validSkill("beta") });
   const changed = atRoot(root, () => writeArtifacts(buildManifest()));
-  assert.deepEqual(
-    changed.sort(),
-    [
-      ".agents/skills/alpha/SKILL.md",
-      ".agents/skills/beta/SKILL.md",
-      ".claude/skills/alpha/SKILL.md",
-      ".claude/skills/beta/SKILL.md",
-      ".llm/context.md",
-      ".llm/index.md"
-    ].sort()
-  );
-
+  assert.deepEqual(changed.sort(), [".llm/context.md", ".llm/index.md"]);
   assert.equal(fs.existsSync(path.join(root, ".llm", "index.json")), false);
-  const indexMarkdown = fs.readFileSync(path.join(root, ".llm", "index.md"), "utf8");
-  assert.match(indexMarkdown, /\.\/skills\/alpha\/SKILL\.md/);
+  assert.match(
+    fs.readFileSync(path.join(root, ".llm", "index.md"), "utf8"),
+    /skills\/alpha\/SKILL\.md/
+  );
   assert.match(fs.readFileSync(path.join(root, ".llm", "context.md"), "utf8"), /`alpha`, `beta`/);
-  for (const mirror of MIRROR_ROOTS) {
-    assert.ok(
-      fs.existsSync(path.join(root, mirror, "alpha", "SKILL.md")),
-      `${mirror}/alpha is missing`
-    );
-  }
-
   assert.deepEqual(
     atRoot(root, () => artifactDrifts(buildManifest())),
     []
@@ -473,126 +418,116 @@ test("writeArtifacts generates every artifact and artifactDrifts then reports no
     atRoot(root, () => writeArtifacts(buildManifest())),
     []
   );
-});
-
-test("artifactDrifts reports an edited artifact and a missing one", (t) => {
-  const root = createFixture(t, { alpha: validSkill("alpha") });
-  atRoot(root, () => writeArtifacts(buildManifest()));
-
-  fs.writeFileSync(path.join(root, ".llm", "index.md"), "# tampered\n", "utf8");
-  fs.rmSync(path.join(root, ".claude", "skills", "alpha", "SKILL.md"));
-  const drifts = atRoot(root, () => artifactDrifts(buildManifest()));
-  assert.deepEqual(
-    drifts.map((drift) => `${drift.path}: ${drift.message}`).sort(),
-    [
-      ".claude/skills/alpha/SKILL.md: missing generated file",
-      ".llm/index.md: generated file is stale"
-    ].sort()
-  );
-
-  atRoot(root, () => writeArtifacts(buildManifest()));
-  assert.deepEqual(
-    atRoot(root, () => artifactDrifts(buildManifest())),
-    []
-  );
-});
-
-test("a renamed skill leaves no mirror file and no empty mirror directory", (t) => {
-  const root = createFixture(t, { alpha: validSkill("alpha") });
-  atRoot(root, () => writeArtifacts(buildManifest()));
-
-  fs.rmSync(path.join(root, ".llm", "skills", "alpha"), { recursive: true });
-  fs.mkdirSync(path.join(root, ".llm", "skills", "gamma"), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, ".llm", "skills", "gamma", "SKILL.md"),
-    validSkill("gamma"),
-    "utf8"
-  );
-
-  const drifts = atRoot(root, () => artifactDrifts(buildManifest()));
-  assert.ok(
-    drifts.some(
-      (drift) =>
-        drift.path === ".claude/skills/alpha/SKILL.md" &&
-        drift.message === "mirror has no matching skill"
-    ),
-    `drifts were ${JSON.stringify(drifts)}`
-  );
-
-  const changed = atRoot(root, () => writeArtifacts(buildManifest()));
-  assert.ok(
-    changed.includes("removed .claude/skills/alpha/SKILL.md"),
-    `changed was ${JSON.stringify(changed)}`
-  );
-  for (const mirror of MIRROR_ROOTS) {
-    assert.equal(
-      fs.existsSync(path.join(root, mirror, "alpha")),
-      false,
-      `${mirror}/alpha directory survived`
-    );
-    assert.ok(fs.existsSync(path.join(root, mirror, "gamma", "SKILL.md")));
-  }
-  assert.deepEqual(
-    atRoot(root, () => artifactDrifts(buildManifest())),
-    []
-  );
-});
-
-test("a hand-authored .claude/skills entry survives index and check", (t) => {
-  const root = createFixture(t, { alpha: validSkill("alpha") });
-  const handAuthored = path.join(root, ".claude", "skills", "my-own-skill");
-  fs.mkdirSync(path.join(handAuthored, "references"), { recursive: true });
-  const content = `${validSkill("my-own-skill")}Hand written, not generated.\n`;
-  fs.writeFileSync(path.join(handAuthored, "SKILL.md"), content, "utf8");
-  fs.writeFileSync(path.join(handAuthored, "references", "notes.md"), "# Notes\n", "utf8");
-
-  const indexRun = runMain(root, "index");
-  assert.equal(indexRun.exitCode, 0, indexRun.output);
-  assert.equal(fs.readFileSync(path.join(handAuthored, "SKILL.md"), "utf8"), content);
-  assert.ok(fs.existsSync(path.join(handAuthored, "references", "notes.md")));
-  assert.doesNotMatch(indexRun.output, /my-own-skill/);
-
-  const checkRun = runMain(root, "check");
-  assert.equal(checkRun.exitCode, 0, checkRun.output);
-  assert.doesNotMatch(checkRun.output, /my-own-skill/);
-  assert.equal(fs.readFileSync(path.join(handAuthored, "SKILL.md"), "utf8"), content);
-});
-
-test("hand-authored empty directories in a mirror survive index", (t) => {
-  // Marker-scoped reaping protects hand-authored FILES; pruning empty directories has to be scoped
-  // the same way, or `mkdir -p .claude/skills/new-skill/references` followed by any hook that runs
-  // `llm:index` silently deletes the scaffolding before SKILL.md is written.
-  const root = createFixture(t, { alpha: validSkill("alpha") });
-  const scaffold = path.join(root, ".claude", "skills", "wip-skill", "references");
-  const bare = path.join(root, ".agents", "skills", "empty-dir");
-  fs.mkdirSync(scaffold, { recursive: true });
-  fs.mkdirSync(bare, { recursive: true });
-
   assert.equal(runMain(root, "index").exitCode, 0);
-  assert.ok(fs.existsSync(scaffold), "a scaffolded references/ directory must survive");
-  assert.ok(fs.existsSync(path.dirname(scaffold)), "its parent skill directory must survive");
-  assert.ok(fs.existsSync(bare), "an unrelated empty mirror directory must survive");
-});
-
-test("a generated mirror with no matching skill is still reaped", (t) => {
-  const root = createFixture(t, { alpha: validSkill("alpha") });
-  atRoot(root, () => writeArtifacts(buildManifest()));
-  const orphan = path.join(root, ".claude", "skills", "removed-skill", "SKILL.md");
-  fs.mkdirSync(path.dirname(orphan), { recursive: true });
-  fs.writeFileSync(orphan, mirrorContent({ name: "removed-skill", description: "Gone." }), "utf8");
-
-  const checkRun = runMain(root, "check");
-  assert.equal(checkRun.exitCode, 1, checkRun.output);
-  assert.match(checkRun.output, /removed-skill\/SKILL\.md: mirror has no matching skill/);
-
-  assert.equal(runMain(root, "index").exitCode, 0);
-  assert.equal(fs.existsSync(orphan), false);
-  assert.equal(
-    fs.existsSync(path.dirname(orphan)),
-    false,
-    "the directory the reaped mirror emptied is pruned"
-  );
   assert.equal(runMain(root, "check").exitCode, 0);
+  for (const other of OTHER_SKILL_ROOTS) {
+    assert.equal(fs.existsSync(path.join(root, other)), false, other);
+  }
+});
+
+test("artifactDrifts reports an edited index and repairs it", (t) => {
+  const root = createFixture(t, { alpha: validSkill("alpha") });
+  atRoot(root, () => writeArtifacts(buildManifest()));
+  fs.writeFileSync(path.join(root, ".llm", "index.md"), "# tampered\n", "utf8");
+  assert.deepEqual(
+    atRoot(root, () => artifactDrifts(buildManifest())),
+    [{ path: ".llm/index.md", message: "generated file is stale" }]
+  );
+  atRoot(root, () => writeArtifacts(buildManifest()));
+  assert.deepEqual(
+    atRoot(root, () => artifactDrifts(buildManifest())),
+    []
+  );
+  fs.rmSync(path.join(root, ".llm", "index.md"));
+  assert.deepEqual(
+    atRoot(root, () => artifactDrifts(buildManifest())),
+    [{ path: ".llm/index.md", message: "missing generated file" }]
+  );
+  assert.equal(runMain(root, "index").exitCode, 0);
+  assert.equal(runMain(root, "check").exitCode, 0);
+});
+
+test("renaming a skill updates canonical discovery without generating mirrors", (t) => {
+  const root = createFixture(t, { alpha: validSkill("alpha") });
+  atRoot(root, () => writeArtifacts(buildManifest()));
+  fs.renameSync(
+    path.join(root, ".llm", "skills", "alpha"),
+    path.join(root, ".llm", "skills", "gamma")
+  );
+  fs.writeFileSync(path.join(root, ".llm", "skills", "gamma", "SKILL.md"), validSkill("gamma"));
+  assert.equal(runMain(root, "check").exitCode, 1);
+  assert.equal(runMain(root, "index").exitCode, 0);
+  assert.equal(runMain(root, "check").exitCode, 0);
+  const index = fs.readFileSync(path.join(root, ".llm", "index.md"), "utf8");
+  assert.match(index, /skills\/gamma\/SKILL\.md/);
+  assert.doesNotMatch(index, /alpha/);
+  for (const other of OTHER_SKILL_ROOTS) {
+    assert.equal(fs.existsSync(path.join(root, other)), false, other);
+  }
+});
+
+for (const other of OTHER_SKILL_ROOTS) {
+  test(`a linked skill root at ${other} is rejected without following it`, (t) => {
+    const root = createFixture(t, { alpha: validSkill("alpha") });
+    const link = path.join(root, other);
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.symlinkSync(root, link, "junction");
+    const run = runMain(root, "index");
+    assert.equal(run.exitCode, 1, run.output);
+    assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+  });
+
+  for (const entry of ["", "removed-skill/references/note.md"]) {
+    test(`non-skill content at ${other}/${entry} is rejected and preserved`, (t) => {
+      const root = createFixture(t, { alpha: validSkill("alpha") });
+      const target = path.join(root, other, entry);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, "Keep this work.\n");
+      const run = runMain(root, "index");
+      assert.equal(run.exitCode, 1, run.output);
+      assert.equal(fs.readFileSync(target, "utf8"), "Keep this work.\n");
+    });
+  }
+
+  test(`empty leftover directories under ${other} do not block canonical indexing`, (t) => {
+    const root = createFixture(t, { alpha: validSkill("alpha") });
+    const empty = path.join(root, other, "removed-skill", "references");
+    fs.mkdirSync(empty, { recursive: true });
+    for (const command of ["validate", "index", "check", "index", "check"]) {
+      const run = runMain(root, command);
+      assert.equal(run.exitCode, 0, run.output);
+    }
+    assert.deepEqual(fs.readdirSync(empty), []);
+    assert.equal(fs.existsSync(path.join(root, other, "alpha", "SKILL.md")), false);
+  });
+
+  for (const generated of [false, true]) {
+    test(`commands reject but preserve a ${generated ? "generated" : "hand-authored"} skill under ${other}`, (t) => {
+      const root = createFixture(t, { alpha: validSkill("alpha") });
+      const misplaced = path.join(root, other, "alpha", "SKILL.md");
+      fs.mkdirSync(path.dirname(misplaced), { recursive: true });
+      const content = validSkill("alpha") + (generated ? GENERATED_MARKER : "Hand written.");
+      fs.writeFileSync(misplaced, content);
+      for (const command of ["validate", "index", "check"]) {
+        const run = runMain(root, command);
+        assert.equal(run.exitCode, 1, run.output);
+        assert.ok(run.output.includes(other), run.output);
+        assert.match(run.output, /must live only under \.llm\/skills/);
+        assert.equal(fs.readFileSync(misplaced, "utf8"), content);
+      }
+      assert.equal(fs.existsSync(path.join(root, ".llm", "index.md")), false);
+    });
+  }
+}
+
+test("index preserves unrelated agent configuration", (t) => {
+  const root = createFixture(t, { alpha: validSkill("alpha") });
+  const config = path.join(root, ".claude", "settings.json");
+  fs.mkdirSync(path.dirname(config), { recursive: true });
+  fs.writeFileSync(config, "{}\n");
+  assert.equal(runMain(root, "index").exitCode, 0);
+  assert.equal(runMain(root, "check").exitCode, 0);
+  assert.equal(fs.readFileSync(config, "utf8"), "{}\n");
 });
 
 test("index refuses to write while validation fails, and check reports the same issue", (t) => {
@@ -731,25 +666,13 @@ test("generated skill index is deterministic and covers every skill", () => {
   }
 });
 
-test("both agent mirrors exist for every skill and stay in sync with the source", () => {
-  const manifest = buildManifest();
-  const names = new Set(manifest.skills.map((skill) => skill.name));
-  for (const root of MIRROR_ROOTS) {
-    for (const skill of manifest.skills) {
-      const mirror = path.join(ROOT, root, skill.name, "SKILL.md");
-      assert.ok(fs.existsSync(mirror), `${root}/${skill.name}/SKILL.md is missing`);
-      assert.equal(
-        fs.readFileSync(mirror, "utf8"),
-        mirrorContent(skill),
-        `${root}/${skill.name} is stale`
-      );
-    }
-    // A hand-authored skill may also live here, so only generated entries must match a source skill.
-    for (const entry of fs.readdirSync(path.join(ROOT, root))) {
-      const mirror = path.join(ROOT, root, entry, "SKILL.md");
-      if (fs.existsSync(mirror) && fs.readFileSync(mirror, "utf8").includes(GENERATED_MARKER)) {
-        assert.ok(names.has(entry), `${root}/${entry} is generated but has no matching skill`);
-      }
-    }
+test("repository skills have only one home", () => {
+  const { issues } = validate();
+  for (const other of OTHER_SKILL_ROOTS) {
+    assert.equal(
+      issues.some((issue) => issue.path.startsWith(other)),
+      false,
+      other
+    );
   }
 });

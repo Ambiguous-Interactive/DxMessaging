@@ -379,7 +379,10 @@ jobs:
           WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj
           --configuration Release
           /p:CopyAnalyzerPayload=false
+          /p:DebugType=portable
+          /p:DebugSymbols=true
           --collect:"XPlat Code Coverage"
+          --results-directory ../.artifacts/generator-coverage/raw
 
       - name: Restore docs tests
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
@@ -405,9 +408,21 @@ jobs:
       - name: Generate coverage summary
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET  # cspell:ignore etree
+          reports = list(Path(".artifacts/generator-coverage/raw").glob("*/coverage.cobertura.xml"))
+          if len(reports) != 1:
+              raise SystemExit(f"Expected one fresh coverage report, found {len(reports)}")
+          root = ET.parse(reports[0]).getroot()
+          expected = {"WallstopStudios.DxMessaging.SourceGenerators", "WallstopStudios.DxMessaging.Analyzer"}
+          packages = {package.get("name") for package in root.findall("./packages/package")}
+          if expected - packages or any(int(root.get(key, "0")) <= 0 for key in ("lines-valid", "lines-covered", "branches-valid")):
+              raise SystemExit("Coverage must include instrumented generator and analyzer code; check portable debug symbols")
+          PY
           mkdir -p artifacts/coverage
           reportgenerator \
-            -reports:".artifacts/**/TestResults/**/coverage.cobertura.xml" \
+            -reports:".artifacts/generator-coverage/raw/**/coverage.cobertura.xml" \
             -targetdir:"artifacts/coverage" \
             -reporttypes:"TextSummary;HtmlSummary;Cobertura"
           cat artifacts/coverage/Summary.txt

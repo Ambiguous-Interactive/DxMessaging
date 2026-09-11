@@ -4,16 +4,24 @@ on:
   pull_request:
     branches:
       - master
-    # Documentation-only pull requests never reach this workflow, so they never
+    # Documentation and isolated tooling pull requests never reach this workflow, so they never
     # need the licensed Unity matrix: the docs-only skip that head-check used to
     # decide in-band is now decided by the trigger itself. The required
     # "Unity CI Success" context still reports for those pull requests through
     # unity-docs-gate.yml, which evaluates the same closed documentation-only
     # allowlist. Keep this list in lockstep with that workflow and with the
     # documentation-only pattern that perf-numbers.yml uses.
+    # The tooling entries do not participate in Unity compilation or execution.
     paths-ignore:
       - "docs/**"
       - ".docs-tests/**"
+      - ".devcontainer/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "scripts/llm/**"
+      - "scripts/wiki/**"
+      - "scripts/__tests__/llm-harness.test.js"
+      - "scripts/__tests__/llm-harness.test.js.meta"
+      - "*.md"
       - "progress/**"
       - ".llm/**"
       - ".agents/**"

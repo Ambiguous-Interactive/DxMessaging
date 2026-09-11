@@ -40,6 +40,16 @@ test("stageAssetStoreSubmission creates a verified operator artifact", (t) => {
   const listing = JSON.parse(fs.readFileSync(path.join(output, "ASSET-STORE-LISTING.json")));
   assert.deepEqual([listing.packageVersion, listing.minimumUnityVersion, listing.releaseNotes, listing.screenshots.length],
     ["1.2.3", "", "### Added\n\n- Release note.", 4]);
+  const sourceListing = JSON.parse(fs.readFileSync(path.join(data.root, ".github", "asset-store-listing.json")));
+  assert.equal(listing.schemaVersion, 2);
+  assert.equal(listing.priceUsd, 0);
+  assert.equal(listing.aiDescription, sourceListing.aiDescription);
+  assert.ok(listing.aiDescription.trim().length > 0);
+  for (const checklist of [classic, upm]) {
+    assert.match(checklist, /Set the price to Free \(USD 0\)/);
+    assert.match(checklist, /AI description.*aiDescription/);
+    assert.match(checklist, /Verify the live listing.*free price.*disclosure/);
+  }
   for (const screenshot of listing.screenshots) {
     assert.ok(fs.existsSync(path.join(output, screenshot.file)), screenshot.file); assert.equal("source" in screenshot, false, screenshot.file);
   }
@@ -54,6 +64,20 @@ test("stageAssetStoreSubmission creates a verified operator artifact", (t) => {
   for (const file of manifest.files) {
     const actual = path.join(output, file.path);
     assert.equal(file.bytes, fs.statSync(actual).size, file.path); assert.equal(file.sha256, sha256(actual), file.path);
+  }
+});
+// prettier-ignore
+test("stageAssetStoreSubmission rejects missing disclosure and nonzero prices", (t) => {
+  const data = fixture(t), listingPath = path.join(data.root, ".github", "asset-store-listing.json");
+  const original = JSON.parse(fs.readFileSync(listingPath));
+  const cases = [
+    ["old schema", (x) => { x.schemaVersion = 1; }],
+    ...[undefined, null, "", "  \n", false, 1, [], {}].map((value) => [`AI description ${JSON.stringify(value)}`, (x) => { x.aiDescription = value; }]),
+    ...[undefined, null, "0", false, -1, 1, 0.01, {}, []].map((value) => [`price ${JSON.stringify(value)}`, (x) => { x.priceUsd = value; }])
+  ];
+  for (const [name, mutate] of cases) {
+    const listing = structuredClone(original); mutate(listing); write(listingPath, JSON.stringify(listing));
+    assert.throws(() => stage(data), /listing source is incomplete or invalid/, name);
   }
 });
 // prettier-ignore
