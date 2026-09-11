@@ -111,12 +111,14 @@ namespace DxMessaging.Editor.Settings
                 _baseCallCheckEnabled = value;
                 if (!previous && value)
                 {
-                    // A master-toggle flip doesn't need a synchronous reflective harvest right now;
-                    // the polled tick (~250ms) will pick up the sentinel cheaply on the editor's
-                    // own update thread, avoiding a heavy reflection sweep on the main thread when
-                    // the user has just clicked a checkbox. Indirected through delayCall so the
-                    // setter is safe to invoke from any editor context (OnValidate, button click,
-                    // etc.) without risking AssetDatabase reentrancy.
+                    /*
+                        A master-toggle flip doesn't need a synchronous reflective harvest right now;
+                        the polled tick (~250ms) will pick up the sentinel cheaply on the editor's
+                        own update thread, avoiding a heavy reflection sweep on the main thread when
+                        the user has just clicked a checkbox. Indirected through delayCall so the
+                        setter is safe to invoke from any editor context (OnValidate, button click,
+                        etc.) without risking AssetDatabase reentrancy.
+                    */
                     EditorApplication.delayCall += DxMessaging
                         .Editor
                         .Analyzers
@@ -289,20 +291,24 @@ namespace DxMessaging.Editor.Settings
         {
             // Defensive: the field can be null if the asset was saved before this field existed.
             EnsureIgnoreListInitialized();
-            // Intentionally NOT regenerating the sidecar here. OnEnable fires on every domain reload
-            // and play-mode entry; the sidecar on disk is already consistent with what we'd write
-            // (RegenerateSidecar is idempotent, but ImportAsset still produces churn). Regen runs
-            // only from OnValidate (user-driven edits) and from explicit Add/RemoveIgnoredType calls.
+            /*
+                Intentionally NOT regenerating the sidecar here. OnEnable fires on every domain reload
+                and play-mode entry; the sidecar on disk is already consistent with what we'd write
+                (RegenerateSidecar is idempotent, but ImportAsset still produces churn). Regen runs
+                only from OnValidate (user-driven edits) and from explicit Add/RemoveIgnoredType calls.
+            */
         }
 
         private void OnValidate()
         {
             EnsureIgnoreListInitialized();
-            // Issue #210: OnValidate fires during asset deserialization, including the domain-load
-            // asset-import-worker window where EditorApplication.isUpdating/isCompiling are both
-            // false. Writing + importing the sidecar synchronously there re-enters the asset
-            // importer and hard-crashes the native editor (GuidReservations::Reserve abort on Unity
-            // 6000.4+). Always defer to the next editor tick; never import synchronously from here.
+            /*
+                Issue #210: OnValidate fires during asset deserialization, including the domain-load
+                asset-import-worker window where EditorApplication.isUpdating/isCompiling are both
+                false. Writing + importing the sidecar synchronously there re-enters the asset
+                importer and hard-crashes the native editor (GuidReservations::Reserve abort on Unity
+                6000.4+). Always defer to the next editor tick; never import synchronously from here.
+            */
             DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(this);
         }
 
@@ -356,7 +362,7 @@ namespace DxMessaging.Editor.Settings
             int removed = _baseCallIgnoredTypes.RemoveAll(entry =>
                 string.Equals(entry, fullyQualifiedTypeName, System.StringComparison.Ordinal)
             );
-            if (removed > 0)
+            if (0 < removed)
             {
                 EditorUtility.SetDirty(this);
                 AssetDatabase.SaveAssets();

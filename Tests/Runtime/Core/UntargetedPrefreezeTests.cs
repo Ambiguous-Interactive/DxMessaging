@@ -86,11 +86,13 @@ namespace DxMessaging.Tests.Runtime.Core
             int latePostProcessCount = 0;
             bool registeredLate = false;
 
-            // Register the interceptor directly through the MessageHandler so
-            // it lands on THIS bus:
-            // MessageRegistrationToken.RegisterUntargetedInterceptor does not
-            // forward the token's bus and always registers on the global bus
-            // (pre-existing token behavior, flagged for API review).
+            /*
+                Register the interceptor directly through the MessageHandler so
+                it lands on THIS bus:
+                MessageRegistrationToken.RegisterUntargetedInterceptor does not
+                forward the token's bus and always registers on the global bus
+                (pre-existing token behavior, flagged for API review).
+            */
             Action interceptorDeregistration =
                 handler.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
                     (ref SimpleUntargetedMessage message) =>

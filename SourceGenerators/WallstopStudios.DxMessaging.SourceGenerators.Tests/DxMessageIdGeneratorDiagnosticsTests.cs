@@ -101,9 +101,11 @@ public class Container
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: generic message structs.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: generic message structs.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void GenericMessageStructEmitsId()
@@ -186,15 +188,19 @@ public readonly partial struct MyMessage<T> where T : struct { }
         AssertGeneratedSourceParses(result);
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: record struct messages.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: record struct messages.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void RecordStructMessageEmitsId()
     {
-        // Pins current contract: `[DxUntargetedMessage] partial record struct` is supported and
-        // produces a partial declaration whose kind is rendered as `record struct`.
+        /*
+            Pins current contract: `[DxUntargetedMessage] partial record struct` is supported and
+            produces a partial declaration whose kind is rendered as `record struct`.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -219,9 +225,11 @@ public readonly partial record struct MyRecordMessage(int Value);
         AssertGeneratedSourceParses(result);
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: deep partial nesting.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: deep partial nesting.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void MessageInThreeLevelNestedPartialContainerEmitsId()
@@ -267,8 +275,10 @@ public partial class A
     [Test]
     public void MessageInNonPartialContainerEmitsDiagnostic()
     {
-        // Pins current contract: ANY non-partial link in the container chain triggers DXMSG003 +
-        // DXMSG004.
+        /*
+            Pins current contract: ANY non-partial link in the container chain triggers DXMSG003 +
+            DXMSG004.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -302,9 +312,11 @@ public partial class A
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: multiple message attributes; permutations.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: multiple message attributes; permutations.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void MultipleMessageAttributesUntargetedAndTargetedEmitsDxmsg002()
@@ -399,16 +411,20 @@ public readonly partial struct Conflicting { }
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: nullable annotations.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: nullable annotations.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void MessageWithNullableReferenceFieldsCompiles()
     {
-        // The generated partial emits `#nullable enable annotations` so the consumer's nullable
-        // reference fields must round-trip cleanly when the user source itself opts in via
-        // `#nullable enable`.
+        /*
+            The generated partial emits `#nullable enable annotations` so the consumer's nullable
+            reference fields must round-trip cleanly when the user source itself opts in via
+            `#nullable enable`.
+        */
         string source = """
 #nullable enable
 using DxMessaging.Core.Attributes;
@@ -438,9 +454,11 @@ public partial struct M
         AssertGeneratedSourceParses(result);
     }
 
-    // ------------------------------------------------------------------------------------------
-    // AOT bridge generation.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        AOT bridge generation.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void AttributedConcreteMessagesEmitIl2CppAotBridges()
@@ -607,9 +625,11 @@ public readonly struct Omnibus : IUntargetedMessage, ITargetedMessage, IBroadcas
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Helpers.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Helpers.
+        ------------------------------------------------------------------------------------------
+    */
 
     private static string GetGeneratedSource(GeneratorDriverRunResult result)
     {
@@ -623,7 +643,7 @@ public readonly struct Omnibus : IUntargetedMessage, ITargetedMessage, IBroadcas
     {
         int count = 0;
         int index = 0;
-        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        while (0 <= (index = text.IndexOf(value, index, StringComparison.Ordinal)))
         {
             ++count;
             index += value.Length;
@@ -653,17 +673,21 @@ public readonly struct Omnibus : IUntargetedMessage, ITargetedMessage, IBroadcas
         string failureMessage
     )
     {
-        // Walk every generated tree, concatenate text, then assert. Roslyn's GeneratedSources is
-        // an ImmutableArray<GeneratedSourceResult>; we don't care about the partition here.
+        /*
+            Walk every generated tree, concatenate text, then assert. Roslyn's GeneratedSources is
+            an ImmutableArray<GeneratedSourceResult>; we don't care about the partition here.
+        */
         string joined = GetGeneratedSource(result);
         Assert.That(joined, Does.Contain(fragment), failureMessage);
     }
 
     private static void AssertGeneratedSourceParses(GeneratorDriverRunResult result)
     {
-        // Parse the generator's output as standalone trees and assert they have no syntax errors.
-        // This catches indentation, accessibility, and type-param mismatch regressions that surface
-        // as parse-level diagnostics, but does NOT perform a full compile against referenced types.
+        /*
+            Parse the generator's output as standalone trees and assert they have no syntax errors.
+            This catches indentation, accessibility, and type-param mismatch regressions that surface
+            as parse-level diagnostics, but does NOT perform a full compile against referenced types.
+        */
         Assert.That(
             result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error),
             Is.Empty,

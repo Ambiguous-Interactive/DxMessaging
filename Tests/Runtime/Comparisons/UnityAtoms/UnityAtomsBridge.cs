@@ -38,8 +38,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         private const int DispatchKey = 0;
 
-        // Single-sourced from the canonical scenario constant so the keyed
-        // lookup-table size stays identical (1:1) across every comparison bridge.
+        /*
+            Single-sourced from the canonical scenario constant so the keyed
+            lookup-table size stays identical (1:1) across every comparison bridge.
+        */
         private const int KeyedListenerCount = ComparisonScenarios.KeyedListenerCount;
 
         private ComparisonScenario _scenario;
@@ -52,8 +54,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         internal IReadOnlyList<ScriptableObject> CreatedEvents => _events;
 
-        // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
-        // event register/unregister cost rather than per-cycle delegate allocation.
+        /*
+            Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
+            event register/unregister cost rather than per-cycle delegate allocation.
+        */
         private Action<int> _churnHandler;
 
         public bool Supports(ComparisonScenario scenario)
@@ -107,9 +111,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
                     _event = CreateEvent();
-                    // Genuinely-distinct subscribers so the fan-out is exactly 16 even if the Atoms
-                    // event store deduped equal delegates. See FanOut for why a loop of identical
-                    // lambdas would collapse to one subscriber under value-equality dedup.
+                    /*
+                        Genuinely-distinct subscribers so the fan-out is exactly 16 even if the Atoms
+                        event store deduped equal delegates. See FanOut for why a loop of identical
+                        lambdas would collapse to one subscriber under value-equality dedup.
+                    */
                     _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
                     foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
@@ -165,7 +171,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
 
         public void Dispose()
         {
-            for (int index = _events.Count - 1; index >= 0; index--)
+            for (int index = _events.Count - 1; 0 <= index; index--)
             {
                 ScriptableObject created = _events[index];
                 if (created != null)

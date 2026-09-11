@@ -49,12 +49,14 @@ namespace DxMessaging.Editor.Analyzers
 #endif
     static class BaseCallIlInspector
     {
-        // CIL opcode tables, indexed by the low byte of OpCode.Value. Built once by reflecting over
-        // System.Reflection.Emit.OpCodes; every public static OpCode field there represents a
-        // canonical CIL instruction. The two-byte form of the table is used when a 0xFE prefix is
-        // observed in the IL stream; otherwise we use the single-byte form. Because CIL specifies
-        // exactly two prefix bytes (single-byte = direct, two-byte = 0xFE prefix), this division
-        // covers every defined opcode.
+        /*
+            CIL opcode tables, indexed by the low byte of OpCode.Value. Built once by reflecting over
+            System.Reflection.Emit.OpCodes; every public static OpCode field there represents a
+            canonical CIL instruction. The two-byte form of the table is used when a 0xFE prefix is
+            observed in the IL stream; otherwise we use the single-byte form. Because CIL specifies
+            exactly two prefix bytes (single-byte = direct, two-byte = 0xFE prefix), this division
+            covers every defined opcode.
+        */
         private static readonly OpCode[] s_singleByteOps = BuildOpCodeTable(twoByte: false);
         private static readonly OpCode[] s_twoByteOps = BuildOpCodeTable(twoByte: true);
 
@@ -104,8 +106,10 @@ namespace DxMessaging.Editor.Analyzers
         {
             if (method == null || string.IsNullOrEmpty(methodName))
             {
-                // Defensive: treat as clean when we don't have enough information to reason. This
-                // ensures the scanner never emits a phantom warning on a degenerate input.
+                /*
+                    Defensive: treat as clean when we don't have enough information to reason. This
+                    ensures the scanner never emits a phantom warning on a degenerate input.
+                */
                 return true;
             }
 
@@ -139,11 +143,13 @@ namespace DxMessaging.Editor.Analyzers
                     OpCode op;
                     if (il[i] == 0xFE)
                     {
-                        // Two-byte (0xFE-prefixed) opcode. Without a following byte we cannot
-                        // decode the instruction; bail out conservatively. Truncated IL is not a
-                        // shape Roslyn ever emits, so reaching this path means we mis-stepped and
-                        // the safest answer is the assume-clean default.
-                        if (i + 1 >= il.Length)
+                        /*
+                            Two-byte (0xFE-prefixed) opcode. Without a following byte we cannot
+                            decode the instruction; bail out conservatively. Truncated IL is not a
+                            shape Roslyn ever emits, so reaching this path means we mis-stepped and
+                            the safest answer is the assume-clean default.
+                        */
+                        if (il.Length <= i + 1)
                         {
                             return true;
                         }
@@ -156,9 +162,11 @@ namespace DxMessaging.Editor.Analyzers
                         i += 1;
                     }
 
-                    // Unrecognised opcode (zero-initialised slot in the table); abandon the walk
-                    // rather than risk the rest of the stream getting misread. Returning the
-                    // assume-clean default keeps the scanner from inventing a phantom warning.
+                    /*
+                        Unrecognised opcode (zero-initialised slot in the table); abandon the walk
+                        rather than risk the rest of the stream getting misread. Returning the
+                        assume-clean default keeps the scanner from inventing a phantom warning.
+                    */
                     if (op.Size == 0)
                     {
                         return true;
@@ -166,7 +174,7 @@ namespace DxMessaging.Editor.Analyzers
 
                     if (op == OpCodes.Call || op == OpCodes.Callvirt)
                     {
-                        if (i + 4 > il.Length)
+                        if (il.Length < i + 4)
                         {
                             return true;
                         }
@@ -179,38 +187,38 @@ namespace DxMessaging.Editor.Analyzers
                                 genericMethodArgs,
                                 out MethodBase? target
                             )
+                            && target != null
+                            && string.Equals(target.Name, methodName, StringComparison.Ordinal)
                         )
                         {
+                            Type? declaring = method.DeclaringType;
+                            Type? resolved = target.DeclaringType;
+                            /*
+                                Guard against false-positives: the resolved method must live on a
+                                STRICT base type of the declaring class (not the declaring class
+                                itself, not a sibling, not a generic-arg shadow). IsAssignableFrom
+                                checks "is `declaring` assignable TO `resolved`"; i.e. is
+                                `resolved` an ancestor of `declaring`.
+                            */
                             if (
-                                target != null
-                                && string.Equals(target.Name, methodName, StringComparison.Ordinal)
+                                declaring != null
+                                && resolved != null
+                                && declaring != resolved
+                                && resolved.IsAssignableFrom(declaring)
                             )
                             {
-                                Type? declaring = method.DeclaringType;
-                                Type? resolved = target.DeclaringType;
-                                // Guard against false-positives: the resolved method must live on a
-                                // STRICT base type of the declaring class (not the declaring class
-                                // itself, not a sibling, not a generic-arg shadow). IsAssignableFrom
-                                // checks "is `declaring` assignable TO `resolved`"; i.e. is
-                                // `resolved` an ancestor of `declaring`.
-                                if (
-                                    declaring != null
-                                    && resolved != null
-                                    && declaring != resolved
-                                    && resolved.IsAssignableFrom(declaring)
-                                )
-                                {
-                                    return true;
-                                }
+                                return true;
                             }
                         }
                         i += 4;
                         continue;
                     }
 
-                    // Step over the operand based on the opcode's declared operand type. Every
-                    // CIL operand size is decided by OperandType, which is exactly why the table
-                    // walker is misalignment-proof.
+                    /*
+                        Step over the operand based on the opcode's declared operand type. Every
+                        CIL operand size is decided by OperandType, which is exactly why the table
+                        walker is misalignment-proof.
+                    */
                     i += GetOperandSize(op, il, i);
                 }
                 return false;
@@ -277,8 +285,10 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        // Returns the number of operand bytes that follow an opcode of the given OperandType,
-        // given the operand-start offset (needed for InlineSwitch's variable-length jump table).
+        /*
+            Returns the number of operand bytes that follow an opcode of the given OperandType,
+            given the operand-start offset (needed for InlineSwitch's variable-length jump table).
+        */
         private static int GetOperandSize(OpCode op, byte[] il, int operandStart)
         {
             switch (op.OperandType)
@@ -305,10 +315,12 @@ namespace DxMessaging.Editor.Analyzers
                 case OperandType.InlineR:
                     return 8;
                 case OperandType.InlineSwitch:
-                    // 4-byte case count, then N × 4-byte branch targets. Truncated stream → bail
-                    // by consuming the rest defensively (the outer loop's bounds check then ends
-                    // the walk).
-                    if (operandStart + 4 > il.Length)
+                    /*
+                        4-byte case count, then N × 4-byte branch targets. Truncated stream → bail
+                        by consuming the rest defensively (the outer loop's bounds check then ends
+                        the walk).
+                    */
+                    if (il.Length < operandStart + 4)
                     {
                         return il.Length - operandStart;
                     }
@@ -320,8 +332,10 @@ namespace DxMessaging.Editor.Analyzers
                     }
                     return 4 + caseCount * 4;
                 default:
-                    // Unknown OperandType; bail conservatively by consuming the rest of the
-                    // stream so the outer loop terminates without misaligning further.
+                    /*
+                        Unknown OperandType; bail conservatively by consuming the rest of the
+                        stream so the outer loop terminates without misaligning further.
+                    */
                     return il.Length - operandStart;
             }
         }

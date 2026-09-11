@@ -36,8 +36,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public const int WarmupEmits = 10_000;
         public const int BatchSize = 10_000;
 
-        // SYNC: scripts/unity/require-comparison-rows.ps1 validates these published
-        // protocol constants, materiality band, and evidence schema fail-closed.
+        /*
+            SYNC: scripts/unity/require-comparison-rows.ps1 validates these published
+            protocol constants, materiality band, and evidence schema fail-closed.
+        */
         public const string PairedProtocolId = "interleaved-abba-baab-v1";
         public const int PairedMeasurementCycles = 4;
         public const int PairedMinimumCycleActiveMilliseconds = 625;
@@ -79,14 +81,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 endTimestamp = Stopwatch.GetTimestamp();
             } while (endTimestamp - startTimestamp < MeasurementWindowTicks);
 
-            // Allocation is counted over a SEPARATE warmed batch (the path is already
-            // warm from the throughput window) so the recorder overhead is excluded
-            // from the timing above. The count is per the operations in one batch. That
-            // batch ALSO drives emitBatch once more, so its operation count is captured
-            // and reported as AllocationProbeOperations: a caller that reconciles an
-            // observed side-effect counter (e.g. a fan-out ProgressMarker) MUST add these
-            // ops back -- they really happened -- while throughput above stays
-            // timed-window-only. See ComparisonHarness for the canonical reconciliation.
+            /*
+                Allocation is counted over a SEPARATE warmed batch (the path is already
+                warm from the throughput window) so the recorder overhead is excluded
+                from the timing above. The count is per the operations in one batch. That
+                batch ALSO drives emitBatch once more, so its operation count is captured
+                and reported as AllocationProbeOperations: a caller that reconciles an
+                observed side-effect counter (e.g. a fan-out ProgressMarker) MUST add these
+                ops back -- they really happened -- while throughput above stays
+                timed-window-only. See ComparisonHarness for the canonical reconciliation.
+            */
             long allocationProbeOperations = 0;
             AllocationProbe.AllocationSample allocationSample = AllocationProbe.MeasureWithBytes(
                 () =>
@@ -176,7 +180,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             if (
                 double.IsNaN(requestedCycleTicks)
                 || double.IsInfinity(requestedCycleTicks)
-                || requestedCycleTicks >= long.MaxValue
+                || long.MaxValue <= requestedCycleTicks
             )
             {
                 throw new ArgumentOutOfRangeException(
@@ -343,17 +347,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 TState state = setUpTrial(index);
                 try
                 {
-                    // Cold latency is a single first-touch operation per trial, so the
-                    // allocation count is taken over the SAME region as the timing (it
-                    // cannot be re-run cold). When the probe is functional its recorder
-                    // adds a small overhead to this window; that is acceptable for the
-                    // cold scenarios (dominated by first-touch JIT) and keeps the count
-                    // honest. When non-functional, the window is a no-op and Sample
-                    // returns AllocationProbe.Unmeasured. The `using` is scoped to this
-                    // try block, so the recorder is released (disabled) even if
-                    // timedOperation throws -- before tearDownTrial runs -- and the end
-                    // timestamp is captured BEFORE Sample so the sample/disable overhead
-                    // stays out of the measured time.
+                    /*
+                        Cold latency is a single first-touch operation per trial, so the
+                        allocation count is taken over the SAME region as the timing (it
+                        cannot be re-run cold). When the probe is functional its recorder
+                        adds a small overhead to this window; that is acceptable for the
+                        cold scenarios (dominated by first-touch JIT) and keeps the count
+                        honest. When non-functional, the window is a no-op and Sample
+                        returns AllocationProbe.Unmeasured. The `using` is scoped to this
+                        try block, so the recorder is released (disabled) even if
+                        timedOperation throws -- before tearDownTrial runs -- and the end
+                        timestamp is captured BEFORE Sample so the sample/disable overhead
+                        stays out of the measured time.
+                    */
                     using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     long startTimestamp = Stopwatch.GetTimestamp();
                     timedOperation(state);
@@ -437,9 +443,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return sorted[middle];
             }
 
-            // Overflow-safe integer midpoint of the two middle samples. Allocation deltas are
-            // non-negative and sorted ascending, so (upper - lower) cannot overflow and the
-            // midpoint is exact without converting through double (which rounds large longs up).
+            /*
+                Overflow-safe integer midpoint of the two middle samples. Allocation deltas are
+                non-negative and sorted ascending, so (upper - lower) cannot overflow and the
+                midpoint is exact without converting through double (which rounds large longs up).
+            */
             long lower = sorted[middle - 1];
             long upper = sorted[middle];
             return lower + ((upper - lower) / 2);
@@ -479,8 +487,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            // Every trial was Unmeasured -> the byte probe is non-functional here; preserve
-            // the sentinel rather than inventing a value.
+            /*
+                Every trial was Unmeasured -> the byte probe is non-functional here; preserve
+                the sentinel rather than inventing a value.
+            */
             if (measuredCount == 0)
             {
                 return AllocationProbe.Unmeasured;
@@ -524,7 +534,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             string remainderText =
-                remainder > 0 ? $"+ {remainder} leftover" : $"- {-remainder} leftover";
+                0 < remainder ? $"+ {remainder} leftover" : $"- {-remainder} leftover";
             return $"{deltaInvocations} invocations = {deltaOperations} ops {remainderText} "
                 + "(NON-INTEGRAL fan-out: a partial operation's worth of invocations, i.e. the "
                 + "library fanned out inconsistently across emits -- a real correctness defect)";
@@ -809,15 +819,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public static int WarmupEmits(DispatchBenchmarkScenario scenario)
         {
-            // The registration/deregistration floods and cold-dispatch scenarios are
-            // cold/latency paths measured outside the shared warm-up helper
-            // (MeasureRegistrationFlood, MeasureRegistrationFloodWarmJit,
-            // MeasureRegistrationMarginal, MeasureDeregistrationFlood,
-            // MeasureDeregistrationFloodWarmJit, MeasureColdFirstDispatch). The 0 branches
-            // are defensive: they keep the contract correct (no warm-up flood for
-            // first-touch / one-time cost) should a future caller route any of them
-            // through the shared warm-up helper. The warm-JIT flood pre-warms the JIT by
-            // registering on a throwaway bus, not by flooding emits, so it is 0 too.
+            /*
+                The registration/deregistration floods and cold-dispatch scenarios are
+                cold/latency paths measured outside the shared warm-up helper
+                (MeasureRegistrationFlood, MeasureRegistrationFloodWarmJit,
+                MeasureRegistrationMarginal, MeasureDeregistrationFlood,
+                MeasureDeregistrationFloodWarmJit, MeasureColdFirstDispatch). The 0 branches
+                are defensive: they keep the contract correct (no warm-up flood for
+                first-touch / one-time cost) should a future caller route any of them
+                through the shared warm-up helper. The warm-JIT flood pre-warms the JIT by
+                registering on a throwaway bus, not by flooding emits, so it is 0 too.
+            */
             switch (scenario)
             {
                 case DispatchBenchmarkScenario.RegistrationFlood1000TypesFromColdBus:

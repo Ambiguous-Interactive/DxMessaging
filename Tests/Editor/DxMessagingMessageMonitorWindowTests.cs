@@ -66,10 +66,12 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
-            // Windows close in a finally: object and asset cleanup below runs Unity code that can
-            // throw, and a leaked EditorWindow outlives the test that made it. It stays subscribed
-            // to statics (this fixture's window subscribes to the shared source index), keeps a
-            // panel alive, and turns one failing test into a cascade in whatever runs next.
+            /*
+                Windows close in a finally: object and asset cleanup below runs Unity code that can
+                throw, and a leaked EditorWindow outlives the test that made it. It stays subscribed
+                to statics (this fixture's window subscribes to the shared source index), keeps a
+                panel alive, and turns one failing test into a cascade in whatever runs next.
+            */
             try
             {
                 foreach (Object instance in _createdObjects)
@@ -106,12 +108,14 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                // Closing a shown window under -nographics logs a benign "No graphic device is
-                // available" error, and Unity resets LogAssert tolerance per phase -- so the
-                // tolerance ShowWindow asserted in the test body does not reach teardown. Any
-                // test here that holds a shown window open until now fails without this.
-                // Headless only, so runs with a real GPU keep full strictness (which is also why
-                // this cannot reproduce on a developer machine).
+                /*
+                    Closing a shown window under -nographics logs a benign "No graphic device is
+                    available" error, and Unity resets LogAssert tolerance per phase -- so the
+                    tolerance ShowWindow asserted in the test body does not reach teardown. Any
+                    test here that holds a shown window open until now fails without this.
+                    Headless only, so runs with a real GPU keep full strictness (which is also why
+                    this cannot reproduce on a developer machine).
+                */
                 EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
                 EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
             }
@@ -209,9 +213,11 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
-        // The snapshot is built inside the test body (not passed as a parameter) because
-        // MessageMonitorSnapshot is internal, and a public [Test] method may not expose an
-        // internal parameter type (CS0051).
+        /*
+            The snapshot is built inside the test body (not passed as a parameter) because
+            MessageMonitorSnapshot is internal, and a public [Test] method may not expose an
+            internal parameter type (CS0051).
+        */
         [TestCase("unavailable", "Monitor unavailable", "active global bus")]
         [TestCase("diagnostics-off", "Diagnostics are Off", "Enable diagnostics")]
         [TestCase("no-messages-yet", "No messages yet", "recorded")]
@@ -846,17 +852,21 @@ namespace DxMessaging.Tests.Editor
                     "The shipped cap is what makes the panel feel stuck."
                 );
 
-                // Lay the window out first: `worldBound` is NaN until it has, and a drag built from
-                // NaN coordinates produces a NaN delta that clamps to NaN.
+                /*
+                    Lay the window out first: `worldBound` is NaN until it has, and a drag built from
+                    NaN coordinates produces a NaN delta that clamps to NaN.
+                */
                 EditorSurfaceCapture.InvokeInheritedPanelMethod(
                     root.panel,
                     "ValidateLayout",
                     Array.Empty<object>()
                 );
 
-                // Drive the handle's own pointer handlers rather than calling the apply helper
-                // directly: a test that writes the height itself and reads it back would pass with
-                // every callback in CreateResizeHandle deleted.
+                /*
+                    Drive the handle's own pointer handlers rather than calling the apply helper
+                    directly: a test that writes the height itself and reads it back would pass with
+                    every callback in CreateResizeHandle deleted.
+                */
                 DragResizeHandle(componentResizer, deltaY: 220f);
 
                 Assert.That(
@@ -1177,8 +1187,10 @@ namespace DxMessaging.Tests.Editor
         public void TheModeBadgeSwitchesModesSoNeitherModeIsOneWay()
         {
             int enterLiveCount = 0;
-            // A click needs a panel to dispatch through, so this drives the real window rather
-            // than a detached element.
+            /*
+                A click needs a panel to dispatch through, so this drives the real window rather
+                than a detached element.
+            */
             EditorWindow window = CreateTrackedEditorWindow();
 
             try
@@ -1228,9 +1240,11 @@ namespace DxMessaging.Tests.Editor
                     "A Return key code activates the badge the same way a click does."
                 );
 
-                // The character-only event UI Toolkit raises right after the key-code one must
-                // NOT activate again. Accepting both is how one keypress became two activations
-                // -- entering live mode twice, or pinging a context twice, from a single press.
+                /*
+                    The character-only event UI Toolkit raises right after the key-code one must
+                    NOT activate again. Accepting both is how one keypress became two activations
+                    -- entering live mode twice, or pinging a context twice, from a single press.
+                */
                 SendActivationKey(badge, '\n', KeyCode.None);
                 Assert.That(
                     enterLiveCount,
@@ -1286,8 +1300,10 @@ namespace DxMessaging.Tests.Editor
             DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
             try
             {
-                // Warm the lazy index the way the window does, then let it finish. `OlderMessage`
-                // is declared in this file, so the location it resolves to is a real asset.
+                /*
+                    Warm the lazy index the way the window does, then let it finish. `OlderMessage`
+                    is declared in this file, so the location it resolves to is a real asset.
+                */
                 _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
                     typeof(OlderMessage).AssemblyQualifiedName,
                     out _
@@ -1351,8 +1367,10 @@ namespace DxMessaging.Tests.Editor
                 ScriptableObject.CreateInstance<DxMessagingMessageMonitorWindow>();
             _createdWindows.Add(window);
 
-            // Build a real surface on the window's own root, so the window's OnEnable
-            // subscription is what routes the signal.
+            /*
+                Build a real surface on the window's own root, so the window's OnEnable
+                subscription is what routes the signal.
+            */
             VisualElement root = window.rootVisualElement;
             DxMessagingMessageMonitorWindow.BuildMonitorUi(
                 root,
@@ -1502,14 +1520,16 @@ namespace DxMessaging.Tests.Editor
         /// than argued: lay the real window out at the smallest size a user can drag it to and
         /// assert that nothing except the log's own scrolled content ends up past an edge.
         /// </summary>
-        // 420x320 is the window's own minimum size. The smaller case is deliberately below it, as
-        // headroom: the editor versions this package supports do not all give the same chrome the
-        // same height, and 2021.3 overflowed at the minimum while 6000.x had room to spare. Each
-        // size runs with the disclosures closed and open, because an expanded Breakdown is the
-        // tallest thing the section ever holds.
-        // 360x260 runs collapsed only: below the supported minimum, with every disclosure open at
-        // once, there is genuinely less room than the sections' own floors add up to. That is a
-        // limit of the window size, not a layout defect.
+        /*
+            420x320 is the window's own minimum size. The smaller case is deliberately below it, as
+            headroom: the editor versions this package supports do not all give the same chrome the
+            same height, and 2021.3 overflowed at the minimum while 6000.x had room to spare. Each
+            size runs with the disclosures closed and open, because an expanded Breakdown is the
+            tallest thing the section ever holds.
+            360x260 runs collapsed only: below the supported minimum, with every disclosure open at
+            once, there is genuinely less room than the sections' own floors add up to. That is a
+            limit of the window size, not a layout defect.
+        */
         [TestCase(360, 260, false)]
         [TestCase(420, 320, false)]
         [TestCase(420, 320, true)]
@@ -1552,9 +1572,11 @@ namespace DxMessaging.Tests.Editor
                     MessageMonitorViewState.Default,
                     onRefresh: () => { },
                     onCopyExport: _ => { },
-                    // A populated list, not an empty one: an expanded Component Diagnostics block
-                    // with real rows is the tallest this section ever gets, and an empty list would
-                    // never exercise the case it has to survive.
+                    /*
+                        A populated list, not an empty one: an expanded Component Diagnostics block
+                        with real rows is the tallest this section ever gets, and an empty list would
+                        never exercise the case it has to survive.
+                    */
                     componentEntries: CreateComponentEntries(12)
                 );
 
@@ -1915,8 +1937,10 @@ namespace DxMessaging.Tests.Editor
                     Is.True
                 );
 
-                // Untargeted, not Targeted: the filter above already leaves only the targeted
-                // entry, and hiding it would render the no-matches state, which has no Breakdown.
+                /*
+                    Untargeted, not Targeted: the filter above already leaves only the targeted
+                    entry, and hiding it would render the no-matches state, which has no Breakdown.
+                */
                 root.Q<Toggle>(DxMessagingMessageMonitorWindow.UntargetedChipName).value = false;
 
                 Assert.That(
@@ -3502,8 +3526,10 @@ namespace DxMessaging.Tests.Editor
             );
             try
             {
-                // Investigation (2026-08-13): NewScene(Additive) cannot run while the shared
-                // editor has an unsaved untitled scene. Open this package-owned fixture instead.
+                /*
+                    Investigation (2026-08-13): NewScene(Additive) cannot run while the shared
+                    editor has an unsaved untitled scene. Open this package-owned fixture instead.
+                */
                 testScene.Activate();
                 GameObject sceneHost = testScene.CreateGameObject(sceneName);
                 MessagingComponent sceneComponent = sceneHost.AddComponent<MessagingComponent>();

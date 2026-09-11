@@ -498,15 +498,17 @@ namespace DxMessaging.Core.Internal
         /// </remarks>
         public void Reset()
         {
-            // Inline the structural-clear body of Clear(); do NOT call
-            // Clear() because that resets version=0 and would break the
-            // monotonic invariant the eviction layer depends on: stale
-            // deregister closures captured before reset must observe a
-            // strictly larger version after reset and skip their work.
-            // Per-cache drain BEFORE the structural clear: every
-            // IHandlerActionCache.Reset() bumps its own version internally,
-            // so closures captured against the inner cache also detect
-            // invalidation -- not just closures captured against the slot.
+            /*
+                Inline the structural-clear body of Clear(); do NOT call
+                Clear() because that resets version=0 and would break the
+                monotonic invariant the eviction layer depends on: stale
+                deregister closures captured before reset must observe a
+                strictly larger version after reset and skip their work.
+                Per-cache drain BEFORE the structural clear: every
+                IHandlerActionCache.Reset() bumps its own version internally,
+                so closures captured against the inner cache also detect
+                invalidation -- not just closures captured against the slot.
+            */
             foreach (KeyValuePair<int, IHandlerActionCache> kv in byPriority)
             {
                 kv.Value?.Reset();
@@ -706,9 +708,11 @@ namespace DxMessaging.Core.Internal
         /// </remarks>
         public void Reset()
         {
-            // Inline the structural-clear body of Clear(); do NOT call
-            // Clear() because that resets version=0 and would break the
-            // monotonic invariant the eviction layer depends on.
+            /*
+                Inline the structural-clear body of Clear(); do NOT call
+                Clear() because that resets version=0 and would break the
+                monotonic invariant the eviction layer depends on.
+            */
             cache?.Reset();
             cache = null;
             lastSeenVersion = -1;

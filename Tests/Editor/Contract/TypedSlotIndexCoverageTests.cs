@@ -41,8 +41,10 @@ namespace DxMessaging.Tests.Editor.Contract
 
         private readonly struct ProbeTargetedMessage : ITargetedMessage { }
 
-        // The expected legacy field name -> slot-index constant map. The names
-        // stay here so new variants must still pick an explicit axis-indexed slot.
+        /*
+            The expected legacy field name -> slot-index constant map. The names
+            stay here so new variants must still pick an explicit axis-indexed slot.
+        */
         private static readonly (string FieldName, string ConstantName)[] LegacySlotMap =
         {
             ("_untargetedHandlers", nameof(TypedSlotIndex.UntargetedHandleDefault)),
@@ -113,10 +115,12 @@ namespace DxMessaging.Tests.Editor.Contract
             "_globalBroadcastFastHandlers",
         };
 
-        // Dispatch links were deleted outright by the stage-3 flattening
-        // cleanup (the resolved flat dispatch arrays replaced them), so
-        // neither the legacy named link fields nor the interim
-        // _dispatchLinks slot array may ever be redeclared.
+        /*
+            Dispatch links were deleted outright by the stage-3 flattening
+            cleanup (the resolved flat dispatch arrays replaced them), so
+            neither the legacy named link fields nor the interim
+            _dispatchLinks slot array may ever be redeclared.
+        */
         private static readonly string[] LegacyDispatchLinkFieldNames =
         {
             "_dispatchLinks",

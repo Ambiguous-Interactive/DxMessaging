@@ -1127,7 +1127,7 @@ namespace DxMessaging.Tests.Editor
                 idIndex + idAnchor.Length,
                 StringComparison.Ordinal
             );
-            if (valueIndex < 0 || (nextIdIndex >= 0 && valueIndex > nextIdIndex))
+            if (valueIndex < 0 || (0 <= nextIdIndex && nextIdIndex < valueIndex))
             {
                 throw new InvalidOperationException(
                     $"The {diagnosticId} descriptor does not declare {valueName}."
@@ -1310,11 +1310,13 @@ namespace DxMessaging.Tests.Editor
                 onEnterLiveMode: () => { }
             );
 
-            // The hidden capture host never receives the native docked-window event that makes
-            // nested ScrollViews paint their content. Their viewports lay out, but an offscreen
-            // panel render produces blank bodies. Keep the shipped rows and detail cards intact,
-            // and host them in equivalent clipped containers for this static documentation frame.
-            // The Flow Graph only has a top-level ScrollView and does not need this accommodation.
+            /*
+                The hidden capture host never receives the native docked-window event that makes
+                nested ScrollViews paint their content. Their viewports lay out, but an offscreen
+                panel render produces blank bodies. Keep the shipped rows and detail cards intact,
+                and host them in equivalent clipped containers for this static documentation frame.
+                The Flow Graph only has a top-level ScrollView and does not need this accommodation.
+            */
             ReplaceNestedScrollViewForCapture(
                 surface.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName)
             );
@@ -1360,8 +1362,10 @@ namespace DxMessaging.Tests.Editor
                 );
             }
 
-            // Window roots normally flex to their dock. Pin the requested viewport or the
-            // surface grows to the capture canvas instead of retaining documentation dimensions.
+            /*
+                Window roots normally flex to their dock. Pin the requested viewport or the
+                surface grows to the capture canvas instead of retaining documentation dimensions.
+            */
             surface.style.flexGrow = 0;
             surface.style.flexShrink = 0;
             return surface;
@@ -1398,7 +1402,7 @@ namespace DxMessaging.Tests.Editor
             clippedContent.style.flexShrink = 1;
             clippedContent.style.minHeight = 0;
             clippedContent.style.overflow = Overflow.Hidden;
-            while (scrollView.contentContainer.childCount > 0)
+            while (0 < scrollView.contentContainer.childCount)
             {
                 VisualElement child = scrollView.contentContainer[0];
                 child.RemoveFromHierarchy();

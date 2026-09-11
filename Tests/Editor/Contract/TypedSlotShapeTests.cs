@@ -37,19 +37,23 @@ namespace DxMessaging.Tests.Editor.Contract
     [Category("Contract")]
     public sealed class TypedSlotShapeTests
     {
-        // Centralized string-named members so reviewers update them in one
-        // place when production renames land.
+        /*
+            Centralized string-named members so reviewers update them in one
+            place when production renames land.
+        */
         private const string HandlerActionCacheNestedName = "HandlerActionCache`1";
         private const string EntryNestedName = "Entry";
         private const string CountFieldName = "count";
 
         private readonly struct ProbeMessage : IUntargetedMessage { }
 
-        // Fixture-private rename-stable probe for the open-vs-closed
-        // regression test below. Pinning the .NET reflection rule against
-        // this fixture-owned type (instead of the production
-        // HandlerActionCache.Entry) keeps the regression backstop alive
-        // even if the production type is renamed or restructured.
+        /*
+            Fixture-private rename-stable probe for the open-vs-closed
+            regression test below. Pinning the .NET reflection rule against
+            this fixture-owned type (instead of the production
+            HandlerActionCache.Entry) keeps the regression backstop alive
+            even if the production type is renamed or restructured.
+        */
         private sealed class ProbeOuter<T>
         {
             internal readonly struct ProbeSlot
@@ -65,8 +69,10 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
-        // Probe shape for the non-generic-outer-with-generic-nested
-        // diagnostic test.
+        /*
+            Probe shape for the non-generic-outer-with-generic-nested
+            diagnostic test.
+        */
         private sealed class NonGenericProbeOuter
         {
             internal readonly struct GenericProbeSlot<U>
@@ -80,9 +86,11 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
-        // Probe shape for the HIGH-severity test that the helper rejects
-        // nested types declaring their own generic parameters under the
-        // three-arg overload, and accepts them under the four-arg overload.
+        /*
+            Probe shape for the HIGH-severity test that the helper rejects
+            nested types declaring their own generic parameters under the
+            three-arg overload, and accepts them under the four-arg overload.
+        */
         private sealed class ProbeOuterWithOwnEntryArg<T>
         {
             internal readonly struct OwnEntry<U>
@@ -356,8 +364,10 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler.HandlerActionCache<System.Action<int>> cache = new();
             IHandlerActionCache view = cache;
 
-            // Exercise every interface member; failure indicates a misapplied
-            // explicit-interface implementation or accidental shadowing.
+            /*
+                Exercise every interface member; failure indicates a misapplied
+                explicit-interface implementation or accidental shadowing.
+            */
             long _ = view.Version;
             view.LastSeenVersion = 7;
             Assert.AreEqual(7, view.LastSeenVersion);
@@ -374,10 +384,12 @@ namespace DxMessaging.Tests.Editor.Contract
                 "Freshly-constructed HandlerActionCache<T> must report IsEmpty == true."
             );
 
-            // Populate the cache through its behavior rather than pinning the
-            // entry store to IDictionary. Reset must drain both registration
-            // state and the materialized dispatch snapshot regardless of the
-            // selected storage representation.
+            /*
+                Populate the cache through its behavior rather than pinning the
+                entry store to IDictionary. Reset must drain both registration
+                state and the materialized dispatch snapshot regardless of the
+                selected storage representation.
+            */
             System.Action<int> handler = _ignored => { };
             cache.entries[handler] =
                 new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
@@ -671,12 +683,14 @@ namespace DxMessaging.Tests.Editor.Contract
                     + "must close it with MakeGenericType(closed.GetGenericArguments()) "
                     + "before constructing instances."
             );
-            // Type-specific Assert.Throws<ArgumentException> is intentional:
-            // this is the early-warning canary for the .NET reflection rule
-            // the helper exists to navigate. If a future runtime ever
-            // changes the exception type or wraps it, the failure message
-            // here surfaces the regression at the source rather than
-            // letting it silently propagate through CloseNestedGeneric.
+            /*
+                Type-specific Assert.Throws<ArgumentException> is intentional:
+                this is the early-warning canary for the .NET reflection rule
+                the helper exists to navigate. If a future runtime ever
+                changes the exception type or wraps it, the failure message
+                here surfaces the regression at the source rather than
+                letting it silently propagate through CloseNestedGeneric.
+            */
             Assert.Throws<System.ArgumentException>(
                 () => System.Activator.CreateInstance(openSlot, (System.Action<int>)(x => { }), 1),
                 "Activator.CreateInstance must reject the OPEN nested type so the "
@@ -947,8 +961,10 @@ namespace DxMessaging.Tests.Editor.Contract
         public void TypedSlotClearResetsVersionToZero()
         {
             TypedSlot<ProbeMessage> slot = new TypedSlot<ProbeMessage>(requiresContext: false);
-            // Drive version above zero via repeated Reset() so the test does
-            // not depend on internal field write access for setup.
+            /*
+                Drive version above zero via repeated Reset() so the test does
+                not depend on internal field write access for setup.
+            */
             slot.Reset();
             slot.Reset();
             slot.Reset();
@@ -1088,9 +1104,11 @@ namespace DxMessaging.Tests.Editor.Contract
                 "DeregisterEntry",
             };
 
-            // GetMembers on an interface reports declared members directly.
-            // Property accessors and event accessors are filtered out by
-            // selecting only properties + methods that are NOT special-name.
+            /*
+                GetMembers on an interface reports declared members directly.
+                Property accessors and event accessors are filtered out by
+                selecting only properties + methods that are NOT special-name.
+            */
             string[] actual = typeof(IHandlerActionCache)
                 .GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .Where(m =>

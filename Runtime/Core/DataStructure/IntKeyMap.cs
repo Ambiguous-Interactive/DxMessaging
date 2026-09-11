@@ -115,7 +115,7 @@ namespace DxMessaging.Core.DataStructure
                 index = (index + 1) & mask;
             }
 
-            if (Count + 1 > LoadLimit(_values.Length))
+            if (LoadLimit(_values.Length) < Count + 1)
             {
                 Resize(NextCapacity(_values.Length));
                 mask = _values.Length - 1;
@@ -247,7 +247,7 @@ namespace DxMessaging.Core.DataStructure
 
         private static int NextCapacity(int capacity)
         {
-            if (capacity >= MaximumCapacity)
+            if (MaximumCapacity <= capacity)
             {
                 throw new InvalidOperationException(
                     "The integer map reached its maximum capacity."

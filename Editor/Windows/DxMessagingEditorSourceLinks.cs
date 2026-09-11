@@ -190,7 +190,7 @@ namespace DxMessaging.Editor.Windows
 
             foreach (string marker in StackCaptureFrameMarkers)
             {
-                if (frame.IndexOf(marker, StringComparison.Ordinal) >= 0)
+                if (0 <= frame.IndexOf(marker, StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -244,13 +244,13 @@ namespace DxMessaging.Editor.Windows
         {
             string callSite = value ?? string.Empty;
             int sourceStart = callSite.LastIndexOf(" (at ", StringComparison.Ordinal);
-            if (sourceStart >= 0)
+            if (0 <= sourceStart)
             {
                 callSite = callSite.Substring(0, sourceStart);
             }
             callSite = callSite.Trim().Replace(" ()", "()");
             int methodSeparator = Math.Max(callSite.LastIndexOf(':'), callSite.LastIndexOf('.'));
-            if (methodSeparator <= 0 || methodSeparator >= callSite.Length - 1)
+            if (methodSeparator <= 0 || callSite.Length - 1 <= methodSeparator)
             {
                 return string.IsNullOrWhiteSpace(callSite) ? "unknown call site" : callSite;
             }
@@ -258,7 +258,7 @@ namespace DxMessaging.Editor.Windows
             string owner = callSite.Substring(0, methodSeparator);
             string method = callSite.Substring(methodSeparator + 1);
             int ownerSeparator = Math.Max(owner.LastIndexOf('.'), owner.LastIndexOf('+'));
-            if (ownerSeparator >= 0 && ownerSeparator < owner.Length - 1)
+            if (0 <= ownerSeparator && ownerSeparator < owner.Length - 1)
             {
                 owner = owner.Substring(ownerSeparator + 1);
             }
@@ -415,7 +415,7 @@ namespace DxMessaging.Editor.Windows
                 {
                     if (
                         existingIndex.BuildTask == null
-                        && DateTime.UtcNow >= existingIndex.RetryAfterUtc
+                        && existingIndex.RetryAfterUtc <= DateTime.UtcNow
                     )
                     {
                         existingIndex.BuildTask = CreateMessageSourceIndexBuildTask(
@@ -579,8 +579,9 @@ namespace DxMessaging.Editor.Windows
                     );
                     index.IsComplete = false;
                     index.RetryAfterUtc = DateTime.UtcNow.AddSeconds(5);
-                    Debug.LogWarning(
-                        $"DxMessaging could not index message source files: {exception.Message}"
+                    DxMessagingEditorLog.LogWarning(
+                        "Could not index message source files.",
+                        exception
                     );
                 }
                 index.BuildTask = null;
@@ -773,7 +774,7 @@ namespace DxMessaging.Editor.Windows
                         attributeSquareDepth = Math.Max(0, attributeSquareDepth - 1);
                         continue;
                     }
-                    if (attributeSquareDepth > 0)
+                    if (0 < attributeSquareDepth)
                     {
                         continue;
                     }
@@ -791,14 +792,14 @@ namespace DxMessaging.Editor.Windows
                     else if (character == '}')
                     {
                         braceDepth = Math.Max(0, braceDepth - 1);
-                        while (scopes.Count > 0 && scopes[scopes.Count - 1].BodyDepth > braceDepth)
+                        while (0 < scopes.Count && braceDepth < scopes[scopes.Count - 1].BodyDepth)
                         {
                             scopes.RemoveAt(scopes.Count - 1);
                         }
                     }
                 }
 
-                if (hasPendingScope && code.IndexOf(';') >= 0)
+                if (hasPendingScope && 0 <= code.IndexOf(';'))
                 {
                     hasPendingScope = false;
                 }
@@ -814,7 +815,7 @@ namespace DxMessaging.Editor.Windows
         )
         {
             genericParameters = string.Empty;
-            if (codeLines == null || declarationLine < 0 || declarationLine >= codeLines.Count)
+            if (codeLines == null || declarationLine < 0 || codeLines.Count <= declarationLine)
             {
                 return false;
             }
@@ -1006,10 +1007,10 @@ namespace DxMessaging.Editor.Windows
                     char quote = line[index];
                     bool verbatim =
                         quote == '"'
-                        && index > 0
+                        && 0 < index
                         && (
                             line[index - 1] == '@'
-                            || (line[index - 1] == '$' && index > 1 && line[index - 2] == '@')
+                            || (line[index - 1] == '$' && 1 < index && line[index - 2] == '@')
                         );
                     code.Append(' ');
                     if (verbatim)

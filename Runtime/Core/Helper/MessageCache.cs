@@ -257,7 +257,7 @@ namespace DxMessaging.Core.Helper
             int capacity = _values.Length == 0 ? 4 : _values.Length;
             while (capacity <= index)
             {
-                if (capacity > int.MaxValue >> 1)
+                if (int.MaxValue >> 1 < capacity)
                 {
                     throw new InvalidOperationException(
                         "The message type index exceeds the cache's supported capacity."

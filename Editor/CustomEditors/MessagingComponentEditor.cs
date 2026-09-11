@@ -52,10 +52,12 @@ namespace DxMessaging.Editor.CustomEditors
         {
             base.OnInspectorGUI();
 
-            // This inspector is the package's remaining IMGUI surface, so it cannot pick colors up
-            // from the stylesheet the way the UI Toolkit windows do. It reads them from the palette
-            // instead: `Color.green` and `Color.yellow` are outside the design system, and both are
-            // close to unreadable as label text on the light skin.
+            /*
+                This inspector is the package's remaining IMGUI surface, so it cannot pick colors up
+                from the stylesheet the way the UI Toolkit windows do. It reads them from the palette
+                instead: `Color.green` and `Color.yellow` are outside the design system, and both are
+                close to unreadable as label text on the light skin.
+            */
             bool proSkin = EditorGUIUtility.isProSkin;
             if (_matchingStyle == null || _coloredStylesUseProSkin != proSkin)
             {
@@ -195,17 +197,17 @@ namespace DxMessaging.Editor.CustomEditors
                         true
                     );
                     int totalGlobalMessages = concreteBus._emissionBuffer.Count;
-                    if (_globalBufferExpanded && totalGlobalMessages > 0)
+                    if (_globalBufferExpanded && 0 < totalGlobalMessages)
                     {
                         int page = _globalBufferPaging;
                         int totalPages = (totalGlobalMessages + PageSize - 1) / PageSize;
                         page = Mathf.Clamp(page, 0, totalPages - 1);
                         EditorGUI.indentLevel++;
-                        if (totalPages > 1)
+                        if (1 < totalPages)
                         {
                             using (new EditorGUILayout.HorizontalScope())
                             {
-                                GUI.enabled = page > 0;
+                                GUI.enabled = 0 < page;
                                 if (GUILayout.Button("<< Previous"))
                                 {
                                     _globalBufferPaging--;
@@ -361,18 +363,18 @@ namespace DxMessaging.Editor.CustomEditors
                         ._registeredListeners[listener]
                         ._emissionBuffer
                         .Count;
-                    if (_listenerBufferFoldouts[listener] && totalMessages > 0)
+                    if (_listenerBufferFoldouts[listener] && 0 < totalMessages)
                     {
                         int page = _listenerBufferPaging.GetValueOrDefault(listener, 0);
                         int totalPages = (totalMessages + PageSize - 1) / PageSize;
                         page = Mathf.Clamp(page, 0, totalPages - 1);
                         _listenerBufferPaging[listener] = page;
                         EditorGUI.indentLevel++;
-                        if (totalPages > 1)
+                        if (1 < totalPages)
                         {
                             using (new EditorGUILayout.HorizontalScope())
                             {
-                                GUI.enabled = page > 0;
+                                GUI.enabled = 0 < page;
                                 if (GUILayout.Button("<< Previous"))
                                 {
                                     _listenerBufferPaging[listener]--;
@@ -520,11 +522,11 @@ namespace DxMessaging.Editor.CustomEditors
             EditorGUILayout.LabelField("Registrations", EditorStyles.boldLabel);
             EditorGUI.indentLevel++;
 
-            if (totalPages > 1)
+            if (1 < totalPages)
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    GUI.enabled = page > 0;
+                    GUI.enabled = 0 < page;
                     if (GUILayout.Button("<< Previous"))
                     {
                         _listenerRegistrationPaging[listener]--;

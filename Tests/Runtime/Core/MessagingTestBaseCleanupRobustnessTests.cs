@@ -142,7 +142,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     $"Zero tracked objects should not register handlers before cleanup. {scenarioLabel} {DescribeMessageBusState(messageBus, includeLog: true)}"
                 );
             }
-            else if (aliveBeforeCleanup > 0)
+            else if (0 < aliveBeforeCleanup)
             {
                 Assert.Greater(
                     totalBeforeCleanup,
@@ -225,8 +225,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Force a clean baseline so any pre-existing logs from earlier
-            // setup do not contaminate the assertion below.
+            /*
+                Force a clean baseline so any pre-existing logs from earlier
+                setup do not contaminate the assertion below.
+            */
             DxMessagingStaticState.Reset();
             yield return WaitUntilMessageHandlerIsFresh();
 
@@ -235,9 +237,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 typeof(SimpleMessageAwareComponent)
             );
 
-            // Layer a kind-specific registration on top of the auto-registered
-            // StringMessage handlers so the regression is exercised across all
-            // dispatch shapes.
+            /*
+                Layer a kind-specific registration on top of the auto-registered
+                StringMessage handlers so the regression is exercised across all
+                dispatch shapes.
+            */
             SimpleMessageAwareComponent component =
                 host.GetComponent<SimpleMessageAwareComponent>();
             MessageRegistrationToken token = GetToken(component);
@@ -275,16 +279,18 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
             }
 
-            // Capture every log emitted by MessagingDebug across the destroy/
-            // reset window. We swap the function (instead of using LogAssert)
-            // so this test does not rely on Unity console plumbing or the
-            // test runner's expected-log matching, both of which interact
-            // badly with deferred destroys.
-            //
-            // The log function is installed *after* the Reset() below because
-            // DxMessagingStaticState.Reset restores MessagingDebug.LogFunction
-            // to the captured baseline; setting it before Reset would lose
-            // the override exactly when we need it.
+            /*
+                Capture every log emitted by MessagingDebug across the destroy/
+                reset window. We swap the function (instead of using LogAssert)
+                so this test does not rely on Unity console plumbing or the
+                test runner's expected-log matching, both of which interact
+                badly with deferred destroys.
+
+                The log function is installed *after* the Reset() below because
+                DxMessagingStaticState.Reset restores MessagingDebug.LogFunction
+                to the captured baseline; setting it before Reset would lose
+                the override exactly when we need it.
+            */
             Action<LogLevel, string> previousLogFunction = MessagingDebug.LogFunction;
             bool previousEnabled = MessagingDebug.enabled;
             List<string> capturedErrors = new();
@@ -302,9 +308,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                 };
 
-                // Yield a frame so Unity flushes the deferred destroy queue.
-                // Pre-fix this is when OnDisable/OnDestroy would fire against
-                // the wiped bus and log over-deregistration errors.
+                /*
+                    Yield a frame so Unity flushes the deferred destroy queue.
+                    Pre-fix this is when OnDisable/OnDestroy would fire against
+                    the wiped bus and log over-deregistration errors.
+                */
                 yield return null;
                 yield return null;
 
@@ -345,8 +353,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Force a clean baseline so any pre-existing logs from earlier setup do not
-            // contaminate the assertion below.
+            /*
+                Force a clean baseline so any pre-existing logs from earlier setup do not
+                contaminate the assertion below.
+            */
             DxMessagingStaticState.Reset();
             yield return WaitUntilMessageHandlerIsFresh();
 
@@ -443,9 +453,11 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
-                // Wipe the custom bus before restoring the previous global so the
-                // generation guard cannot leak entries into the next test's bus
-                // observation.
+                /*
+                    Wipe the custom bus before restoring the previous global so the
+                    generation guard cannot leak entries into the next test's bus
+                    observation.
+                */
                 customBus.ResetState();
                 if (previousBus is MessageBus previousConcrete)
                 {

@@ -88,10 +88,12 @@ namespace DxMessaging.Tests.Runtime
         internal int HandlerToken { get; }
         internal bool HandlerActive { get; }
 
-        // -1 retains the version-one through seven token-associated handle lane.
-        // Nonnegative slots hold independent handles, including aliases and duplicates.
-        // Version nine callback actions use HandleSlot as their trigger identity;
-        // EmitNested uses SourceHandleSlot as its alternating nested registration.
+        /*
+            -1 retains the version-one through seven token-associated handle lane.
+            Nonnegative slots hold independent handles, including aliases and duplicates.
+            Version nine callback actions use HandleSlot as their trigger identity;
+            EmitNested uses SourceHandleSlot as its alternating nested registration.
+        */
         private readonly int _handleSlot;
         private readonly int _sourceHandleSlot;
         internal int HandleSlot => _handleSlot - 1;
@@ -121,12 +123,12 @@ namespace DxMessaging.Tests.Runtime
                     : string.Empty
             )
             + (
-                LeaseSlot >= 0
+                0 <= LeaseSlot
                     ? $"[leaseSlot={LeaseSlot},sourceLeaseSlot={SourceLeaseSlot}]"
                     : string.Empty
             )
             + (
-                HandleSlot >= 0
+                0 <= HandleSlot
                     ? $"[handleSlot={HandleSlot},sourceHandleSlot={SourceHandleSlot}]"
                     : string.Empty
             );
@@ -149,7 +151,7 @@ namespace DxMessaging.Tests.Runtime
         {
             Scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
             Seed = seed;
-            if (generatorVersion < 1 || generatorVersion > GeneratorVersion)
+            if (generatorVersion < 1 || GeneratorVersion < generatorVersion)
             {
                 throw new ArgumentOutOfRangeException(nameof(generatorVersion));
             }
@@ -257,8 +259,10 @@ namespace DxMessaging.Tests.Runtime
             report.Append(
                 $"observationSchema={BusTraceObservation.SchemaVersion}, generator={sequence.Version}, seed={sequence.Seed}, kind={sequence.Scenario.Kind}, firstMismatch={Index}, category={Category}\noperation={sequence.Operations[Index]}\ncontrol: {Control}\ncandidate: {Candidate}\nsequenceLength={sequence.Operations.Count}"
             );
-            // The immutable sequence caps this complete replay input at MaxOperations.
-            // A minimized or hand-written trace cannot be reconstructed from its seed alone.
+            /*
+                The immutable sequence caps this complete replay input at MaxOperations.
+                A minimized or hand-written trace cannot be reconstructed from its seed alone.
+            */
             for (int index = 0; index < sequence.Operations.Count; ++index)
             {
                 report.Append($"\n[{index}] {sequence.Operations[index]}");
@@ -278,7 +282,7 @@ namespace DxMessaging.Tests.Runtime
             int generatorVersion = BusTraceSequence.GeneratorVersion
         )
         {
-            if (length < 0 || length > BusTraceSequence.MaxOperations)
+            if (length < 0 || BusTraceSequence.MaxOperations < length)
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
             }
@@ -357,9 +361,9 @@ namespace DxMessaging.Tests.Runtime
                 {
                     value &= 1;
                 }
-                int kindOffset = generatorVersion >= 5 ? (int)(Next(ref state) % 3) : 0;
+                int kindOffset = 5 <= generatorVersion ? (int)(Next(ref state) % 3) : 0;
                 int nestedToken =
-                    generatorVersion >= 5
+                    5 <= generatorVersion
                         ? (int)(Next(ref state) % BusTraceSequence.TokenCount)
                         : 0;
                 if (kind == BusTraceOperationKind.EmitNested && !registered[nestedToken])
@@ -375,7 +379,7 @@ namespace DxMessaging.Tests.Runtime
                     kind = BusTraceOperationKind.Emit;
                     handleToken = 0;
                 }
-                if (generatorVersion >= 5)
+                if (5 <= generatorVersion)
                 {
                     if (index < 2)
                     {
@@ -554,8 +558,10 @@ namespace DxMessaging.Tests.Runtime
             || kind == BusTraceOperationKind.DisposeGlobalOverride
             || kind == BusTraceOperationKind.ReplaceGlobalBus;
 
-        // Only logical issuance and alias dependencies are modeled, never the production
-        // override stack, physical slots, generations, current bus, or dispatch results.
+        /*
+            Only logical issuance and alias dependencies are modeled, never the production
+            override stack, physical slots, generations, current bus, or dispatch results.
+        */
         private sealed class GlobalOverrideDependencies
         {
             private readonly int[] _identities = new int[BusTraceSequence.TokenCount];
@@ -575,7 +581,7 @@ namespace DxMessaging.Tests.Runtime
                     Array.Clear(_live, 0, _live.Length);
                     return true;
                 }
-                if (slot < 0 || slot >= _identities.Length)
+                if (slot < 0 || _identities.Length <= slot)
                 {
                     return false;
                 }
@@ -596,7 +602,7 @@ namespace DxMessaging.Tests.Runtime
                 {
                     if (
                         source < 0
-                        || source >= _identities.Length
+                        || _identities.Length <= source
                         || source == slot
                         || _identities[source] == 0
                     )
@@ -643,13 +649,15 @@ namespace DxMessaging.Tests.Runtime
                     break;
                 }
                 operations.Add(operation);
-                if (operation.HandleSlot >= 0)
+                if (0 <= operation.HandleSlot)
                 {
                     handles.Apply(operation);
                 }
             }
-            // Retain the complete earlier operation vocabulary in each longer campaign.
-            // Its token-associated handles are independent of the new explicit handle slots.
+            /*
+                Retain the complete earlier operation vocabulary in each longer campaign.
+                Its token-associated handles are independent of the new explicit handle slots.
+            */
             operations.AddRange(
                 Generate(scenario, seed, (length - operations.Count) / 2, 7).Operations
             );
@@ -722,7 +730,7 @@ namespace DxMessaging.Tests.Runtime
                         sourceHandleSlot: choice == 12 ? source : -1
                     ),
                 };
-                if (operation.HandleSlot >= 0 && !handles.Apply(operation))
+                if (0 <= operation.HandleSlot && !handles.Apply(operation))
                 {
                     operation = new BusTraceOperation(BusTraceOperationKind.Emit, value: value);
                 }
@@ -753,14 +761,16 @@ namespace DxMessaging.Tests.Runtime
                 int identity = _identities[slot];
                 if (IsCallbackAction(operation.Kind))
                 {
-                    // Only issued dependencies are checked. Callback cleanup may or may not
-                    // execute, depending on production dispatch, activity, and routing.
+                    /*
+                        Only issued dependencies are checked. Callback cleanup may or may not
+                        execute, depending on production dispatch, activity, and routing.
+                    */
                     return _live[identity]
                         && _owners[slot] == operation.Token
                         && (
                             operation.Kind == BusTraceOperationKind.EmitNested
-                                ? operation.Depth > 0
-                                    && source >= 0
+                                ? 0 < operation.Depth
+                                    && 0 <= source
                                     && _live[_identities[source]]
                                     && _owners[source] == operation.NestedToken
                                 : source == -1
@@ -861,30 +871,30 @@ namespace DxMessaging.Tests.Runtime
             {
                 if (
                     operation.HandleSlot < -1
-                    || operation.HandleSlot >= BusTraceSequence.HandleSlotCount
+                    || BusTraceSequence.HandleSlotCount <= operation.HandleSlot
                     || operation.SourceHandleSlot < -1
-                    || operation.SourceHandleSlot >= BusTraceSequence.HandleSlotCount
+                    || BusTraceSequence.HandleSlotCount <= operation.SourceHandleSlot
                     || (
                         sequence.Version < 8
                         && (operation.HandleSlot != -1 || operation.SourceHandleSlot != -1)
                     )
                     || (operation.HandleSlot == -1 && operation.SourceHandleSlot != -1)
                     || operation.Token < 0
-                    || operation.Token >= registered.Length
+                    || registered.Length <= operation.Token
                     || operation.Context < 0
-                    || operation.Context > 1
+                    || 1 < operation.Context
                     || operation.KindOffset < 0
-                    || operation.KindOffset > 2
+                    || 2 < operation.KindOffset
                     || operation.NestedToken < 0
-                    || operation.NestedToken >= registered.Length
+                    || registered.Length <= operation.NestedToken
                     || operation.HandleToken < 0
-                    || operation.HandleToken >= registered.Length
+                    || registered.Length <= operation.HandleToken
                     || (
                         operation.Kind != BusTraceOperationKind.RemoveForeign
                         && operation.HandleToken != 0
                     )
                     || operation.HandlerToken < 0
-                    || operation.HandlerToken >= registered.Length
+                    || registered.Length <= operation.HandlerToken
                     || (
                         operation.Kind != BusTraceOperationKind.EmitWithHandlerActive
                         && operation.HandlerToken != 0
@@ -895,7 +905,7 @@ namespace DxMessaging.Tests.Runtime
                         && operation.HandlerActive
                     )
                     || operation.Depth < 0
-                    || operation.Depth > 10
+                    || 10 < operation.Depth
                     || (
                         sequence.Version < 5
                         && (
@@ -928,7 +938,7 @@ namespace DxMessaging.Tests.Runtime
                 {
                     return false;
                 }
-                if (operation.HandleSlot >= 0)
+                if (0 <= operation.HandleSlot)
                 {
                     if (
                         (sequence.Version < 9 && IsCallbackAction(operation.Kind))
@@ -968,8 +978,10 @@ namespace DxMessaging.Tests.Runtime
                         {
                             return false;
                         }
-                        // Foreign cleanup owns neither the destination nor source registration.
-                        // A removed source still supplies its actual stale handle for replay.
+                        /*
+                            Foreign cleanup owns neither the destination nor source registration.
+                            A removed source still supplies its actual stale handle for replay.
+                        */
                         break;
                     case BusTraceOperationKind.Enable:
                     case BusTraceOperationKind.Disable:
@@ -1008,13 +1020,13 @@ namespace DxMessaging.Tests.Runtime
                         // Handlers exist before registration; toggling does not consume a handle.
                         break;
                     case BusTraceOperationKind.Trim:
-                        if (sequence.Version < 4 || operation.Value < 0 || operation.Value > 1)
+                        if (sequence.Version < 4 || operation.Value < 0 || 1 < operation.Value)
                         {
                             return false;
                         }
                         break;
                     case BusTraceOperationKind.SetDiagnostics:
-                        if (sequence.Version < 3 || operation.Value < 0 || operation.Value > 1)
+                        if (sequence.Version < 3 || operation.Value < 0 || 1 < operation.Value)
                         {
                             return false;
                         }
@@ -1030,16 +1042,20 @@ namespace DxMessaging.Tests.Runtime
                         {
                             return false;
                         }
-                        // A disabled or differently routed callback may not throw or remove its handle.
-                        // An explicit Remove still owns that handle, even after callback cleanup.
+                        /*
+                            A disabled or differently routed callback may not throw or remove its handle.
+                            An explicit Remove still owns that handle, even after callback cleanup.
+                        */
                         break;
                     case BusTraceOperationKind.EmitWithReset:
                         if (sequence.Version < 2 || !registered[operation.Token])
                         {
                             return false;
                         }
-                        // A bus reset does not remove token-owned staged registrations.
-                        // Leave handle dependencies intact for stale cleanup and re-enable.
+                        /*
+                            A bus reset does not remove token-owned staged registrations.
+                            Leave handle dependencies intact for stale cleanup and re-enable.
+                        */
                         break;
                     default:
                         return false;

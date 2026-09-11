@@ -162,6 +162,10 @@ The agent runs from inside the slim devcontainer (.NET 9/10 base + Node + docs t
 
 - Use explicit types where practical; avoid unnecessary `var`.
 - Keep braces explicit.
+- Write relational comparisons in ascending order using `<`, `<=`, or `==`; swap operands instead
+  of writing `>` or `>=`. Public operator declarations remain paired where C# requires them.
+- Use an indented `/* ... */` block for comments that span multiple physical lines. Reserve `//`
+  for a single physical line and `///` for XML documentation.
 - Avoid regions.
 - Route every shipped Unity object identity read and lookup through `Runtime/Core/InstanceId.cs`,
   including samples. Convert a `GameObject` or `Component` to `InstanceId` and use its `Id` or

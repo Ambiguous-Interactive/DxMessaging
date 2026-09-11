@@ -516,12 +516,14 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void OnActivateThrowLeavesLeaseActiveAndRecoverable()
         {
-            // Activate() marks the lease active BEFORE invoking OnActivate, so a
-            // throwing callback propagates to the caller but leaves the lease's
-            // state consistent with the registrations: IsActive is true, the
-            // registrations are live, and Deactivate()/Dispose() fully release
-            // them. (A previous implementation set _isActive only after the
-            // callback, which wedged live registrations behind an inactive lease.)
+            /*
+                Activate() marks the lease active BEFORE invoking OnActivate, so a
+                throwing callback propagates to the caller but leaves the lease's
+                state consistent with the registrations: IsActive is true, the
+                registrations are live, and Deactivate()/Dispose() fully release
+                them. (A previous implementation set _isActive only after the
+                callback, which wedged live registrations behind an inactive lease.)
+            */
             int handled = 0;
             MessageRegistrationBuildOptions options = new()
             {
@@ -626,9 +628,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "live registrations)."
             );
 
-            // Recovery cycle: release the half-activated lease, then activate
-            // cleanly. The second Activate must re-run OnActivate because the
-            // lease passed through Deactivate first.
+            /*
+                Recovery cycle: release the half-activated lease, then activate
+                cleanly. The second Activate must re-run OnActivate because the
+                lease passed through Deactivate first.
+            */
             lease.Deactivate();
             Assert.IsFalse(lease.IsActive, "Deactivate must release the thrown-into lease.");
 
@@ -972,7 +976,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             private readonly int _successfulRegistrationsBeforeThrow;
             private int _registrationAttempts;
-            private bool _throwOnRegistration = true;
+            private readonly bool _throwOnRegistration = true;
             private bool _throwOnDeregistration = true;
 
             internal ThrowingRegistrationWithFailingRollbackBus(

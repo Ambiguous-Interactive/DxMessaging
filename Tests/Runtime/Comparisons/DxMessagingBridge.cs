@@ -48,8 +48,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         private SimpleTargetedMessage _targeted;
         private InstanceId _dispatchTarget;
 
-        // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
-        // bus subscribe/unsubscribe cost rather than per-cycle delegate allocation.
+        /*
+            Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
+            bus subscribe/unsubscribe cost rather than per-cycle delegate allocation.
+        */
         private MessageHandler.FastHandler<SimpleUntargetedMessage> _churnHandler;
 
         public bool Supports(ComparisonScenario scenario)
@@ -75,8 +77,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             };
         }
 
-        // SYNC: ComparisonTopologyBenchmarks.Workload independently builds these exact shapes.
-        // ComparisonDispatchTopologyTests rejects drift between the two actual workloads.
+        /*
+            SYNC: ComparisonTopologyBenchmarks.Workload independently builds these exact shapes.
+            ComparisonDispatchTopologyTests rejects drift between the two actual workloads.
+        */
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;
@@ -107,10 +111,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _ = _token.RegisterUntargeted<ComparisonStructPayload>(HandleStruct);
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
-                    // 16 subscribers == 16 components == 16 distinct MessageHandlers behind 16
-                    // distinct tokens. Dedup is per-MessageHandler, so each of the 16 tokens
-                    // fires once => 16 invocations per broadcast. The primary token created
-                    // above is the first of the 16 subscribers.
+                    /*
+                        16 subscribers == 16 components == 16 distinct MessageHandlers behind 16
+                        distinct tokens. Dedup is per-MessageHandler, so each of the 16 tokens
+                        fires once => 16 invocations per broadcast. The primary token created
+                        above is the first of the 16 subscribers.
+                    */
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     for (int index = 1; index < ComparisonScenarios.FanOutSubscribers; index++)
                     {
@@ -129,8 +135,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _dispatchTarget = new InstanceId(KeyedTargetBase);
                     return;
                 case ComparisonScenario.PriorityOrderedDispatch:
-                    // Priority is part of the handler-store key, so 4 priorities on a SINGLE
-                    // token produce 4 distinct entries => 4 invocations per broadcast.
+                    /*
+                        Priority is part of the handler-store key, so 4 priorities on a SINGLE
+                        token produce 4 distinct entries => 4 invocations per broadcast.
+                    */
                     for (int priority = 0; priority < 4; priority++)
                     {
                         _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle, priority);
@@ -158,8 +166,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     _ = _token.RegisterUntargeted<SimpleUntargetedMessage>(Handle);
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                    // No persistent registration; EmitOnce performs one register/unregister
-                    // cycle using the cached handler below.
+                    /*
+                        No persistent registration; EmitOnce performs one register/unregister
+                        cycle using the cached handler below.
+                    */
                     _churnHandler = Handle;
                     return;
                 default:
@@ -192,7 +202,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         public void Dispose()
         {
-            for (int index = _tokens.Count - 1; index >= 0; index--)
+            for (int index = _tokens.Count - 1; 0 <= index; index--)
             {
                 _tokens[index].UnregisterAll();
                 _tokens[index].Dispose();
@@ -226,8 +236,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         private void PostProcess(in SimpleUntargetedMessage message)
         {
-            // Post-processor body intentionally runs without touching the handler marker;
-            // its execution is the thing being measured for this scenario.
+            /*
+                Post-processor body intentionally runs without touching the handler marker;
+                its execution is the thing being measured for this scenario.
+            */
         }
     }
 #pragma warning restore RCS1242

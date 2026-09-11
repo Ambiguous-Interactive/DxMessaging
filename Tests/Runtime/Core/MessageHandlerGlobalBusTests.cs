@@ -71,10 +71,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.AreEqual(1, wrapper.TrimCallCount);
             Assert.IsTrue(wrapper.LastForce);
-            // The wrapped bus has no registrations, so its eviction-side fields are always zero.
-            // PooledCollectionsEvicted is intentionally NOT asserted: Trim(force: true) drains
-            // AppDomain-scoped static pools (DxPools / ContextHandlerByTargetDicts) shared with
-            // other test fixtures, so its value is non-deterministic across test orderings.
+            /*
+                The wrapped bus has no registrations, so its eviction-side fields are always zero.
+                PooledCollectionsEvicted is intentionally NOT asserted: Trim(force: true) drains
+                AppDomain-scoped static pools (DxPools / ContextHandlerByTargetDicts) shared with
+                other test fixtures, so its value is non-deterministic across test orderings.
+            */
             Assert.AreEqual(
                 0,
                 result.TypeSlotsEvicted,
@@ -391,7 +393,7 @@ namespace DxMessaging.Tests.Runtime.Core
             GlobalMessageBus overrideBus = new GlobalMessageBus();
             using CleanupScope cleanup = new(() =>
             {
-                for (int i = scopes.Length - 1; i >= 0; --i)
+                for (int i = scopes.Length - 1; 0 <= i; --i)
                 {
                     scopes[i].Dispose();
                 }
@@ -696,8 +698,10 @@ namespace DxMessaging.Tests.Runtime.Core
             int trailingCount = 0;
             int newBusCount = 0;
 
-            // Priority 0 on the old bus swaps the global bus mid-dispatch;
-            // priority 1 on the old bus observes the in-flight snapshot.
+            /*
+                Priority 0 on the old bus swaps the global bus mid-dispatch;
+                priority 1 on the old bus observes the in-flight snapshot.
+            */
             _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 oldBusToken,

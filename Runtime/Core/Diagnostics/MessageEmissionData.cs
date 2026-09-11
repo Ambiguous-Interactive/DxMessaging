@@ -136,7 +136,7 @@ namespace DxMessaging.Core.Diagnostics
                     builder.Append(fullStackTrace, lineStart, lineLength);
                 }
 
-                if (lineEnd >= length)
+                if (length <= lineEnd)
                 {
                     break;
                 }
@@ -172,7 +172,7 @@ namespace DxMessaging.Core.Diagnostics
 
         private static bool IsInternalFrame(string text, int start, int length)
         {
-            if (0 > text.IndexOf("DxMessaging.", start, length, StringComparison.Ordinal))
+            if (text.IndexOf("DxMessaging.", start, length, StringComparison.Ordinal) < 0)
             {
                 return false;
             }

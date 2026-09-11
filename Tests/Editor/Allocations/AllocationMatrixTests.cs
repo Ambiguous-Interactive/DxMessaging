@@ -128,44 +128,50 @@ namespace DxMessaging.Tests.Editor.Allocations
         /// </summary>
         private const int AllocationMeasurementAttempts = 8;
 
-        // Managed-allocation CALL-count budgets for the registration / deregistration /
-        // diagnostics-augmented-registration paths, replacing the vacuous (Boehm-GC)
-        // GC.GetTotalMemory byte deltas these tests used to measure (the byte deltas
-        // under-counted -- the GC reclaimed allocations inside the window -- which is the
-        // dishonesty the count metric removes).
-        //
-        // Registration is INHERENTLY VARIABLE in a warm, long-lived editor: every kind
-        // rents handler-storage (and, for the context kinds, dirty-target) collections from
-        // the GLOBAL DxPools, whose warmth depends on what other tests left behind. That is
-        // REAL allocation, not per-window noise, so min-over-attempts cannot subtract it;
-        // the measured floor genuinely swings from ~14 to ~117 run-to-run, across every kind
-        // (untargeted included). A cold CI domain (a fresh pool) reads the tight ~14-21
-        // floor. So in the warm editor this is a GROSS-regression guard with a generous
-        // budget; the tight per-registration signal lives on the cold CI legs and the
-        // dedicated MarginalRegistrationAllocationCountIsBounded test. 160 covers the ~117
-        // worst observed with margin. Deregistration MEASURES the removal (the rent is in
-        // prepare, off the window); removal returns collections to the pool rather than
-        // renting, so it is allocation-light and stable (floor 0). The diagnostics-augmented
-        // path is registration with diagnostics on -- same variable registration cost (the
-        // counting closure is built regardless of the diagnostics flag and the diagnostics
-        // collections are lazy until first dispatch) -- so it shares the registration budget.
+        /*
+            Managed-allocation CALL-count budgets for the registration / deregistration /
+            diagnostics-augmented-registration paths, replacing the vacuous (Boehm-GC)
+            GC.GetTotalMemory byte deltas these tests used to measure (the byte deltas
+            under-counted -- the GC reclaimed allocations inside the window -- which is the
+            dishonesty the count metric removes).
+
+            Registration is INHERENTLY VARIABLE in a warm, long-lived editor: every kind
+            rents handler-storage (and, for the context kinds, dirty-target) collections from
+            the GLOBAL DxPools, whose warmth depends on what other tests left behind. That is
+            REAL allocation, not per-window noise, so min-over-attempts cannot subtract it;
+            the measured floor genuinely swings from ~14 to ~117 run-to-run, across every kind
+            (untargeted included). A cold CI domain (a fresh pool) reads the tight ~14-21
+            floor. So in the warm editor this is a GROSS-regression guard with a generous
+            budget; the tight per-registration signal lives on the cold CI legs and the
+            dedicated MarginalRegistrationAllocationCountIsBounded test. 160 covers the ~117
+            worst observed with margin. Deregistration MEASURES the removal (the rent is in
+            prepare, off the window); removal returns collections to the pool rather than
+            renting, so it is allocation-light and stable (floor 0). The diagnostics-augmented
+            path is registration with diagnostics on -- same variable registration cost (the
+            counting closure is built regardless of the diagnostics flag and the diagnostics
+            collections are lazy until first dispatch) -- so it shares the registration budget.
+        */
         private const long PerRegistrationCountBudget = 160L;
         private const long PerDeregistrationCountBudget = 16L;
         private const long PerAugmentedRegistrationCountBudget = PerRegistrationCountBudget;
 
         private const int DirtyTargetPoolRetainedEntryCount = 64;
 
-        // Number of mark/return reuse cycles the deterministic dirty-target reuse test runs
-        // to accumulate a clear pool Hits/Misses signal. This is a plain loop count (the test
-        // reads exact pool counters, NOT a GC.Alloc probe), so it is unrelated to the
-        // probe-denoising AllocationMeasurementAttempts above.
+        /*
+            Number of mark/return reuse cycles the deterministic dirty-target reuse test runs
+            to accumulate a clear pool Hits/Misses signal. This is a plain loop count (the test
+            reads exact pool counters, NOT a GC.Alloc probe), so it is unrelated to the
+            probe-denoising AllocationMeasurementAttempts above.
+        */
         private const int DirtyTargetReuseCycles = 8;
 
-        // The InstanceId values below are arbitrary 32-bit integers that
-        // distinguish the targeted/source/owner participants from each other
-        // and from any production-style ids. Tests run on isolated
-        // MessageBus instances so collisions with other tests are not
-        // possible.
+        /*
+            The InstanceId values below are arbitrary 32-bit integers that
+            distinguish the targeted/source/owner participants from each other
+            and from any production-style ids. Tests run on isolated
+            MessageBus instances so collisions with other tests are not
+            possible.
+        */
         private static readonly InstanceId StableTarget = new InstanceId(0x5757_5757);
         private static readonly InstanceId StableSource = new InstanceId(0x4242_4242);
         private static readonly InstanceId RewrittenTarget = new InstanceId(0x5757_5758);
@@ -182,9 +188,11 @@ namespace DxMessaging.Tests.Editor.Allocations
         {
             _diagnosticsScope = new DiagnosticsScope(diagnosticsTargets: DiagnosticsTarget.Off);
             _savedLogFunction = MessagingDebug.LogFunction;
-            // Stray Debug.Log calls would allocate strings and contaminate the
-            // assertion. Mute the messaging logger for the duration of the
-            // fixture and restore it in TearDown.
+            /*
+                Stray Debug.Log calls would allocate strings and contaminate the
+                assertion. Mute the messaging logger for the duration of the
+                fixture and restore it in TearDown.
+            */
             MessagingDebug.LogFunction = null;
         }
 
@@ -521,7 +529,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                     scopes[i] = MessageHandler.OverrideGlobalMessageBus(overrideBus);
                 }
 
-                for (int i = scopes.Length - 1; i >= 0; --i)
+                for (int i = scopes.Length - 1; 0 <= i; --i)
                 {
                     scopes[i].Dispose();
                 }
@@ -691,13 +699,15 @@ namespace DxMessaging.Tests.Editor.Allocations
                     RegisterHandler(scenario, token);
                     RegisterAllowingInterceptor(scenario, token);
 
-                    // A registration for a message type NO scenario emits, so it
-                    // cannot touch the sink under measurement -- SimpleUntargetedMessage
-                    // would be the emitted type on the Untargeted row and would
-                    // legitimately rebuild that sink's own dispatch snapshot. It
-                    // touches no interceptor store either, but it does bump the
-                    // bus-wide dispatch-plan stamp, which is what used to discard
-                    // the flattened interceptor view.
+                    /*
+                        A registration for a message type NO scenario emits, so it
+                        cannot touch the sink under measurement -- SimpleUntargetedMessage
+                        would be the emitted type on the Untargeted row and would
+                        legitimately rebuild that sink's own dispatch snapshot. It
+                        touches no interceptor store either, but it does bump the
+                        bus-wide dispatch-plan stamp, which is what used to discard
+                        the flattened interceptor view.
+                    */
                     MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
                         in ComplexUntargetedMessage _
                     ) => { };
@@ -894,11 +904,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Action emit = BuildEmitClosure(scenario, bus);
                     RegisterHandler(scenario, token);
 
-                    // Pre-warm the cyclic emission buffer to its capacity so
-                    // the underlying List<T> stops growing. After this loop
-                    // every subsequent Add overwrites a slot in place. The
-                    // 2x multiplier is defensive in case capacity changes in
-                    // future or another path also needs to flush.
+                    /*
+                        Pre-warm the cyclic emission buffer to its capacity so
+                        the underlying List<T> stops growing. After this loop
+                        every subsequent Add overwrites a slot in place. The
+                        2x multiplier is defensive in case capacity changes in
+                        future or another path also needs to flush.
+                    */
                     int prewarmCycles =
                         IMessageBus.GlobalMessageBufferSize * DiagnosticsEmitWarmupMultiplier;
                     if (prewarmCycles < 1)
@@ -910,17 +922,19 @@ namespace DxMessaging.Tests.Editor.Allocations
                         emit();
                     }
 
-                    // We count managed allocation CALLS, not bytes:
-                    // GC.GetAllocatedBytesForCurrentThread() returns 0 for every
-                    // allocation under Unity's Boehm GC (editor Mono and IL2CPP),
-                    // so a byte delta is vacuously zero and cannot catch a
-                    // regression. The GC.Alloc profiler recorder behind
-                    // AllocationProbe counts allocation calls precisely and is
-                    // immune to GC timing, so a Gen-0 collection mid-loop cannot
-                    // erase the signal the way a live-heap delta could.
-                    // A warm editor can inject a one-window allocation spike unrelated to
-                    // this fixed batch. MeasureMin repeats these exact same 32 emissions and
-                    // selects the stable floor without changing the established budget.
+                    /*
+                        We count managed allocation CALLS, not bytes:
+                        GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+                        allocation under Unity's Boehm GC (editor Mono and IL2CPP),
+                        so a byte delta is vacuously zero and cannot catch a
+                        regression. The GC.Alloc profiler recorder behind
+                        AllocationProbe counts allocation calls precisely and is
+                        immune to GC timing, so a Gen-0 collection mid-loop cannot
+                        erase the signal the way a live-heap delta could.
+                        A warm editor can inject a one-window allocation spike unrelated to
+                        this fixed batch. MeasureMin repeats these exact same 32 emissions and
+                        selects the stable floor without changing the established budget.
+                    */
                     long gcAllocations = AllocationProbe.MeasureMin(
                         AllocationMeasurementAttempts,
                         prepare: null,
@@ -1064,8 +1078,10 @@ namespace DxMessaging.Tests.Editor.Allocations
             {
                 token.Enable();
 
-                // Warm: create and tear down a few registrations so the dictionaries
-                // and pools used by the registration path are sized for steady state.
+                /*
+                    Warm: create and tear down a few registrations so the dictionaries
+                    and pools used by the registration path are sized for steady state.
+                */
                 for (int i = 0; i < WarmupRegistrationCycles; ++i)
                 {
                     MessageRegistrationHandle warm =
@@ -1131,16 +1147,18 @@ namespace DxMessaging.Tests.Editor.Allocations
                         token.RemoveRegistration(warm);
                     }
 
-                    // Measure the marginal cost of an ADDITIONAL registration (the
-                    // realistic steady state for a component that registers several
-                    // handlers): each attempt registers one more handler that reuses the
-                    // type's already-built dispatch structures. We deliberately do NOT
-                    // remove between attempts -- removing the sole handler tears down and
-                    // rebuilds those structures, whose cost depends on warm DxPools state
-                    // and is not stable run-to-run. The few accumulated handles are
-                    // released when the harness disposes the token. The budget is per-kind
-                    // because the fan-out kinds (TargetedWithoutTargeting) legitimately
-                    // cost more than the scalar kinds.
+                    /*
+                        Measure the marginal cost of an ADDITIONAL registration (the
+                        realistic steady state for a component that registers several
+                        handlers): each attempt registers one more handler that reuses the
+                        type's already-built dispatch structures. We deliberately do NOT
+                        remove between attempts -- removing the sole handler tears down and
+                        rebuilds those structures, whose cost depends on warm DxPools state
+                        and is not stable run-to-run. The few accumulated handles are
+                        released when the harness disposes the token. The budget is per-kind
+                        because the fan-out kinds (TargetedWithoutTargeting) legitimately
+                        cost more than the scalar kinds.
+                    */
                     long delta = AllocationProbe.MeasureMin(
                         AllocationMeasurementAttempts,
                         prepare: null,
@@ -1259,9 +1277,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                 {
                     Action emit = BuildEmitClosure(scenario, bus);
 
-                    // Start from a clean bus, then create exactly one fresh dirty candidate
-                    // (register, emit, remove) for the selected kind so the first forced
-                    // trim has a slot to reclaim.
+                    /*
+                        Start from a clean bus, then create exactly one fresh dirty candidate
+                        (register, emit, remove) for the selected kind so the first forced
+                        trim has a slot to reclaim.
+                    */
                     _ = bus.Trim(force: true);
                     CreateFreshTrimCandidate(scenario, token, emit);
 
@@ -1275,21 +1295,25 @@ namespace DxMessaging.Tests.Editor.Allocations
 
                     int stableLiveTypeSlots = first.LiveTypeSlotsRemaining;
 
-                    // Snapshot the DxPools rental counter AFTER reclaim. Repeated forced
-                    // trims on a now-clean bus must rent NOTHING fresh from the shared pools
-                    // (a sweep returns/evicts collections, it never rents), so the total
-                    // Misses must stay flat across the loop. This deterministically pins the
-                    // "no per-call allocation" half of the bounded-work contract for EVERY
-                    // kind -- including the scalar and without-context kinds that
-                    // DirtyTargetTrimReturnsInstanceIdCollectionsToPools (keyed-only) does not
-                    // cover -- with no allocation probe, so it never flakes.
+                    /*
+                        Snapshot the DxPools rental counter AFTER reclaim. Repeated forced
+                        trims on a now-clean bus must rent NOTHING fresh from the shared pools
+                        (a sweep returns/evicts collections, it never rents), so the total
+                        Misses must stay flat across the loop. This deterministically pins the
+                        "no per-call allocation" half of the bounded-work contract for EVERY
+                        kind -- including the scalar and without-context kinds that
+                        DirtyTargetTrimReturnsInstanceIdCollectionsToPools (keyed-only) does not
+                        cover -- with no allocation probe, so it never flakes.
+                    */
                     long poolMissesAfterReclaim = TotalPoolMisses();
 
-                    // Every subsequent forced trim is a deterministic no-op: nothing is
-                    // dirty, so it evicts zero type/target slots and leaves the live
-                    // type-slot count unchanged. A regression that made repeated forced
-                    // trims do per-call work (the unbounded behavior the former GC.Alloc
-                    // budget guarded against) would evict again or drift the live count.
+                    /*
+                        Every subsequent forced trim is a deterministic no-op: nothing is
+                        dirty, so it evicts zero type/target slots and leaves the live
+                        type-slot count unchanged. A regression that made repeated forced
+                        trims do per-call work (the unbounded behavior the former GC.Alloc
+                        budget guarded against) would evict again or drift the live count.
+                    */
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         IMessageBus.TrimResult repeat = bus.Trim(force: true);
@@ -1325,10 +1349,12 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Sum of the rent-miss counters across every DxPools collection pool. A pool Miss
-        // is recorded only when a Rent finds the pool empty and allocates a fresh
-        // collection, so a flat total across an operation proves that operation rented
-        // nothing new -- a deterministic, probe-free allocation signal.
+        /*
+            Sum of the rent-miss counters across every DxPools collection pool. A pool Miss
+            is recorded only when a Rent finds the pool empty and allocates a fresh
+            collection, so a flat total across an operation proves that operation rented
+            nothing new -- a deterministic, probe-free allocation signal.
+        */
         private static long TotalPoolMisses()
         {
             PoolDiagnosticsSnapshot pools = DxPools.DescribeAll();
@@ -1537,21 +1563,23 @@ namespace DxMessaging.Tests.Editor.Allocations
                     long listHitsBefore = afterWarmup.InstanceIdLists.Hits;
                     long setHitsBefore = afterWarmup.InstanceIdSets.Hits;
 
-                    // Reuse contract: marking dirty targets must rent warmed pooled storage
-                    // rather than allocate per target, so its cost is a small CONSTANT
-                    // independent of targetCount -- not O(targetCount). This is proven
-                    // DETERMINISTICALLY by the pool Hits/Misses counters below (no allocation
-                    // probe): a healthy reuse path rents the warmed list/set on every mark
-                    // batch (Hits climb) and NEVER allocates a fresh one (Misses stay flat).
-                    // Run several disjoint mark/return cycles so the counters accumulate a
-                    // clear signal; each cycle returns the prior marks to the pool (Trim)
-                    // then marks a fresh disjoint id range, so every cycle rents the warmed
-                    // storage. A former GC.Alloc count budget also guarded this, but it was
-                    // warm-editor-flaky (the recorder's ambient floor sat at the budget) and
-                    // strictly WEAKER than the exact Misses-equality back-stop here -- a
-                    // regression to per-target rent-and-allocate records a pool miss even at
-                    // targetCount=1, which the count budget could not distinguish from the
-                    // warm-editor floor -- so the budget was removed.
+                    /*
+                        Reuse contract: marking dirty targets must rent warmed pooled storage
+                        rather than allocate per target, so its cost is a small CONSTANT
+                        independent of targetCount -- not O(targetCount). This is proven
+                        DETERMINISTICALLY by the pool Hits/Misses counters below (no allocation
+                        probe): a healthy reuse path rents the warmed list/set on every mark
+                        batch (Hits climb) and NEVER allocates a fresh one (Misses stay flat).
+                        Run several disjoint mark/return cycles so the counters accumulate a
+                        clear signal; each cycle returns the prior marks to the pool (Trim)
+                        then marks a fresh disjoint id range, so every cycle rents the warmed
+                        storage. A former GC.Alloc count budget also guarded this, but it was
+                        warm-editor-flaky (the recorder's ambient floor sat at the budget) and
+                        strictly WEAKER than the exact Misses-equality back-stop here -- a
+                        regression to per-target rent-and-allocate records a pool miss even at
+                        targetCount=1, which the count budget could not distinguish from the
+                        warm-editor floor -- so the budget was removed.
+                    */
                     int markBase = 0x2425_0000;
                     for (int cycle = 0; cycle < DirtyTargetReuseCycles; ++cycle)
                     {
@@ -1578,12 +1606,14 @@ namespace DxMessaging.Tests.Editor.Allocations
                             + $"after={FormatPoolDiagnostics(afterReuse.InstanceIdSets)}."
                     );
 
-                    // The exact "no fresh allocation" back-stop: every cycle returns the
-                    // collection to the pool (Trim) before its mark batch rents it, so a
-                    // healthy reuse path NEVER misses the pool across the cycles. A
-                    // regression to per-target rent-and-allocate would record a pool miss
-                    // here even at targetCount=1 -- a deterministic signal that needs no
-                    // allocation probe and never flakes in the warm editor.
+                    /*
+                        The exact "no fresh allocation" back-stop: every cycle returns the
+                        collection to the pool (Trim) before its mark batch rents it, so a
+                        healthy reuse path NEVER misses the pool across the cycles. A
+                        regression to per-target rent-and-allocate would record a pool miss
+                        here even at targetCount=1 -- a deterministic signal that needs no
+                        allocation probe and never flakes in the warm editor.
+                    */
                     Assert.AreEqual(
                         afterWarmup.InstanceIdLists.Misses,
                         afterReuse.InstanceIdLists.Misses,

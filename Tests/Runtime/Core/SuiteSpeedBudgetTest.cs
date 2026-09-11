@@ -147,12 +147,14 @@ namespace DxMessaging.Tests.Runtime.Core
             timer.Stop();
             TimeSpan elapsed = timer.Elapsed;
 
-            // CORRECTNESS (hard, blocking in the default suite): every cycle
-            // must have registered, emitted, and incremented exactly once. This
-            // is the runner-speed-independent guarantee that the workload
-            // actually ran; it is separated from the timing judgment per the
-            // zero-flaky policy (never let a wall-clock threshold mask or
-            // manufacture a correctness failure).
+            /*
+                CORRECTNESS (hard, blocking in the default suite): every cycle
+                must have registered, emitted, and incremented exactly once. This
+                is the runner-speed-independent guarantee that the workload
+                actually ran; it is separated from the timing judgment per the
+                zero-flaky policy (never let a wall-clock threshold mask or
+                manufacture a correctness failure).
+            */
             Assert.AreEqual(
                 RepresentativeCycles,
                 total,
@@ -164,10 +166,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 DescribeMessageBusState(MessageHandler.MessageBus, includeLog: true)
             );
 
-            // TIMING (soft): a breach of the 5s target is an early-warning perf
-            // signal only. Logged, never failed, because a tight wall-clock
-            // bound flakes on slower CI runners for identical deterministic work.
-            if (elapsed > RepresentativeSoftBudget)
+            /*
+                TIMING (soft): a breach of the 5s target is an early-warning perf
+                signal only. Logged, never failed, because a tight wall-clock
+                bound flakes on slower CI runners for identical deterministic work.
+            */
+            if (RepresentativeSoftBudget < elapsed)
             {
                 UnityEngine.Debug.LogWarning(
                     $"SuiteSpeedBudgetTest: representative load took {elapsed.TotalSeconds:0.00}s "
@@ -179,9 +183,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
 
-            // TIMING (egregious hard backstop): only a catastrophic blow-out
-            // fails the suite. See RepresentativeHardBudget for the
-            // wide-multiplier justification.
+            /*
+                TIMING (egregious hard backstop): only a catastrophic blow-out
+                fails the suite. See RepresentativeHardBudget for the
+                wide-multiplier justification.
+            */
             Assert.That(
                 elapsed,
                 Is.LessThan(RepresentativeHardBudget),

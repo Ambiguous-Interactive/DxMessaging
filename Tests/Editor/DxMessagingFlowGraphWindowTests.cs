@@ -122,9 +122,11 @@ namespace DxMessaging.Tests.Editor
         public void SetUp()
         {
             _selectionBeforeTest = Selection.activeObject;
-            // Emission-site capture is opt-in (issue #433) because it costs a full managed stack
-            // walk per diagnostic record. This fixture asserts on the emission sites the Flow Graph
-            // renders, so it turns capture on for its own duration.
+            /*
+                Emission-site capture is opt-in (issue #433) because it costs a full managed stack
+                walk per diagnostic record. This fixture asserts on the emission sites the Flow Graph
+                renders, so it turns capture on for its own duration.
+            */
             _stackTracesBeforeTest = IMessageBus.GlobalDiagnosticsStackTraces;
             IMessageBus.GlobalDiagnosticsStackTraces = true;
         }
@@ -133,9 +135,11 @@ namespace DxMessaging.Tests.Editor
         public void TearDown()
         {
             IMessageBus.GlobalDiagnosticsStackTraces = _stackTracesBeforeTest;
-            // The viewport-selection test keeps a shown host window open until teardown.
-            // Unity resets LogAssert tolerance between the test body and teardown, so
-            // re-enable the shared headless-only suppression before closing that window.
+            /*
+                The viewport-selection test keeps a shown host window open until teardown.
+                Unity resets LogAssert tolerance between the test body and teardown, so
+                re-enable the shared headless-only suppression before closing that window.
+            */
             EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
 
             foreach (Object instance in _createdObjects)
@@ -1347,7 +1351,7 @@ namespace DxMessaging.Tests.Editor
                         className: DxMessagingFlowGraphWindow.DetailsHierarchySegmentClassName
                     )
                     .ToList()
-                    .All(segment => segment.style.flexShrink.value > 0f),
+                    .All(segment => 0f < segment.style.flexShrink.value),
                 Is.True,
                 "Breadcrumb groups should shrink at narrow widths without orphaning their separators."
             );
@@ -2746,7 +2750,7 @@ namespace DxMessaging.Tests.Editor
                 );
                 Assert.That(
                     SpinWait.SpinUntil(
-                        () => DxMessagingEditorSourceLinks.CompletedMessageSourceIndexCount > 0,
+                        () => 0 < DxMessagingEditorSourceLinks.CompletedMessageSourceIndexCount,
                         TimeSpan.FromSeconds(10)
                     ),
                     Is.True,
@@ -10788,9 +10792,11 @@ namespace DxMessaging.Tests.Editor
                 Is.Empty,
                 "A destroyed context must use its stable ID without producing a capture warning."
             );
-            // Unity 2021.3's NUnit resolves Has.Count against the runtime array, which has no
-            // public Count property. Read Count through the IReadOnlyList contract directly so
-            // the regression runs on every supported editor version.
+            /*
+                Unity 2021.3's NUnit resolves Has.Count against the runtime array, which has no
+                public Count property. Read Count through the IReadOnlyList contract directly so
+                the regression runs on every supported editor version.
+            */
             Assert.That(
                 snapshot.Edges.Count,
                 Is.EqualTo(1),
@@ -10945,8 +10951,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void CaptureSnapshotBuildsEvidenceOnlyMessageNodesFromGlobalHistory()
         {
-            // Investigation (2026-08-13): NewScene(Additive) cannot run while the shared
-            // editor has an unsaved untitled scene. Open this package-owned fixture instead.
+            /*
+                Investigation (2026-08-13): NewScene(Additive) cannot run while the shared
+                editor has an unsaved untitled scene. Open this package-owned fixture instead.
+            */
             using OwnedEditModeScene testScene = OwnedEditModeScene.OpenAuthored(
                 SceneSafetyFixturePath
             );

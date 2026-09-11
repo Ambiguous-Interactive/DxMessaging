@@ -87,9 +87,11 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
             Assert.AreEqual(1, firstCount, "First handler must run before the throwing handler.");
             Assert.AreEqual(1, secondCount, "Throwing handler must execute before propagating.");
-            // Pinning current behavior: the bus does not wrap handlers in try/catch, so
-            // siblings scheduled after the throwing one are skipped during this dispatch.
-            // If that ever changes (e.g. the bus starts swallow-and-log) update this assertion.
+            /*
+                Pinning current behavior: the bus does not wrap handlers in try/catch, so
+                siblings scheduled after the throwing one are skipped during this dispatch.
+                If that ever changes (e.g. the bus starts swallow-and-log) update this assertion.
+            */
             Assert.AreEqual(
                 0,
                 thirdCount,
@@ -204,9 +206,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.AreEqual(ThrowingHandlerMessage, captured.Message);
             Assert.AreEqual(1, handlerCount, "Throwing handler must execute exactly once.");
-            // Pinning current behavior: a handler exception aborts the dispatch before
-            // post-processors run. If post-processors are later moved into a finally
-            // block the assertion below will need to be inverted.
+            /*
+                Pinning current behavior: a handler exception aborts the dispatch before
+                post-processors run. If post-processors are later moved into a finally
+                block the assertion below will need to be inverted.
+            */
             Assert.AreEqual(
                 0,
                 postProcessorCount,
@@ -257,9 +261,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Handler must not fire after RemoveRegistration even if a previous emit threw."
             );
 
-            // After deregistering the throwing handler, registering a fresh
-            // non-throwing handler must produce a clean dispatch with no residue
-            // from the previous failure.
+            /*
+                After deregistering the throwing handler, registering a fresh
+                non-throwing handler must produce a clean dispatch with no residue
+                from the previous failure.
+            */
             int replacementCount = 0;
             MessageRegistrationHandle replacementHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
@@ -321,16 +327,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 interceptorCount,
                 "Interceptor must execute and throw exactly once."
             );
-            // Behavior pinned to current implementation: interceptor exceptions
-            // propagate before handlers run, so handlers do not see the message.
+            /*
+                Behavior pinned to current implementation: interceptor exceptions
+                propagate before handlers run, so handlers do not see the message.
+            */
             Assert.AreEqual(
                 0,
                 handlerCount,
                 "Handler must not run when an interceptor throws during the same emission."
             );
 
-            // Sanity: a follow-up emission after the throwing interceptor still raises again,
-            // proving no infinite loop or NullReferenceException is masked behind the throw.
+            /*
+                Sanity: a follow-up emission after the throwing interceptor still raises again,
+                proving no infinite loop or NullReferenceException is masked behind the throw.
+            */
             InvalidOperationException secondCaptured = Assert.Throws<InvalidOperationException>(
                 () =>
                     ScenarioCallbacks.EmitForKind(scenario, hostId)
@@ -366,11 +376,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 priority: 0,
                 onInvoked: () => ++handlerCount
             );
-            // Throwing post-processor at priority 1 (runs after the trailing one
-            // at priority 2 if priority is purely lower-first, OR before depending
-            // on order). To force a deterministic order where the throwing PP runs
-            // first and skips the trailing one, register the throwing PP at the
-            // earlier priority and the trailing PP at a later priority.
+            /*
+                Throwing post-processor at priority 1 (runs after the trailing one
+                at priority 2 if priority is purely lower-first, OR before depending
+                on order). To force a deterministic order where the throwing PP runs
+                first and skips the trailing one, register the throwing PP at the
+                earlier priority and the trailing PP at a later priority.
+            */
             ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
@@ -479,9 +491,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 globalCount,
                 "Throwing GlobalAcceptAll sink must execute exactly once before propagating."
             );
-            // Pinning current behavior: GlobalAcceptAll sinks dispatch before typed
-            // handlers and the bus does not wrap them in try/catch, so a throwing
-            // global aborts the typed-handler and post-processor phases entirely.
+            /*
+                Pinning current behavior: GlobalAcceptAll sinks dispatch before typed
+                handlers and the bus does not wrap them in try/catch, so a throwing
+                global aborts the typed-handler and post-processor phases entirely.
+            */
             Assert.AreEqual(
                 0,
                 handlerCount,
@@ -493,9 +507,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Post-processor must not run when a GlobalAcceptAll sink throws earlier in the dispatch."
             );
 
-            // The throw must not leave the bus corrupted (the dispatch-depth lease is
-            // released by a using block even when the emission throws). Removing the
-            // throwing global must restore a clean dispatch for the same message type.
+            /*
+                The throw must not leave the bus corrupted (the dispatch-depth lease is
+                released by a using block even when the emission throws). Removing the
+                throwing global must restore a clean dispatch for the same message type.
+            */
             token.RemoveRegistration(globalHandle);
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
@@ -574,9 +590,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 specificCount,
                 "Throwing specific handler must execute exactly once before propagating."
             );
-            // Pinning current behavior: without-context handlers dispatch after the
-            // target/source-specific handlers, so the specific handler's exception
-            // aborts the without-context phase for this emission.
+            /*
+                Pinning current behavior: without-context handlers dispatch after the
+                target/source-specific handlers, so the specific handler's exception
+                aborts the without-context phase for this emission.
+            */
             Assert.AreEqual(
                 0,
                 withoutContextCount,
@@ -662,9 +680,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 withoutContextCount,
                 "Throwing without-context handler must execute exactly once before propagating."
             );
-            // Pinning current behavior: post-processors (specific and without-context)
-            // dispatch after every handler phase, so the without-context throw skips
-            // both post-processor sinks for this emission.
+            /*
+                Pinning current behavior: post-processors (specific and without-context)
+                dispatch after every handler phase, so the without-context throw skips
+                both post-processor sinks for this emission.
+            */
             Assert.AreEqual(
                 0,
                 specificPostProcessorCount,

@@ -135,23 +135,27 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            // Budget: per-cycle worst case is dominated by closure +
-            // dictionary churn (a single registration costs on the order of a few
-            // hundred bytes -- see the count-based budgets in AllocationMatrixTests).
-            // We allow 1.5x that ceiling per cycle to absorb interim
-            // dictionary resizing across the longer run. The byte figures are
-            // retained for documentation only; the assertion uses a managed
-            // allocation CALL count via AllocationProbe because
-            // GC.GetAllocatedBytesForCurrentThread() returns 0 for every
-            // allocation under Unity's Boehm GC and cannot catch a regression.
+            /*
+                Budget: per-cycle worst case is dominated by closure +
+                dictionary churn (a single registration costs on the order of a few
+                hundred bytes -- see the count-based budgets in AllocationMatrixTests).
+                We allow 1.5x that ceiling per cycle to absorb interim
+                dictionary resizing across the longer run. The byte figures are
+                retained for documentation only; the assertion uses a managed
+                allocation CALL count via AllocationProbe because
+                GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+                allocation under Unity's Boehm GC and cannot catch a regression.
+            */
             const long PerCycleBudgetBytes = 768L;
             long totalBudget = PerCycleBudgetBytes * RegistrationChurnCycles;
 
-            // Count budget = ceil(byteBudget / 16); 16 = minimum managed object
-            // size on 64-bit (8-byte header + 8-byte minimum payload), i.e. the
-            // most distinct objects that could fit in the byte budget. Generous
-            // by construction so incidental allocations never false-fail, while a
-            // gross per-cycle regression still trips it.
+            /*
+                Count budget = ceil(byteBudget / 16); 16 = minimum managed object
+                size on 64-bit (8-byte header + 8-byte minimum payload), i.e. the
+                most distinct objects that could fit in the byte budget. Generous
+                by construction so incidental allocations never false-fail, while a
+                gross per-cycle regression still trips it.
+            */
             long totalCountBudget = (totalBudget + 15L) / 16L;
 
             RunWithFreshHarness(
@@ -188,11 +192,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                         );
                     }
 
-                    // Always log the per-cycle average so a passing run still
-                    // surfaces the baseline (useful when tightening the budget
-                    // later). On failure the per-cycle figure is the actionable
-                    // signal a maintainer needs to decide whether the regression
-                    // is per-cycle or a one-off resize.
+                    /*
+                        Always log the per-cycle average so a passing run still
+                        surfaces the baseline (useful when tightening the budget
+                        later). On failure the per-cycle figure is the actionable
+                        signal a maintainer needs to decide whether the regression
+                        is per-cycle or a one-off resize.
+                    */
                     long perCycleAvg = gcAllocations / RegistrationChurnCycles;
                     UnityEngine.Debug.Log(
                         $"RegistrationChurn-{scenario.Kind}: {gcAllocations} GC allocations / "
@@ -239,10 +245,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 scenario,
                 (token, bus) =>
                 {
-                    // Class messages are reference types, so the dispatch
-                    // path's <c>IUntargetedMessage</c>/<c>ITargetedMessage</c>/
-                    // <c>IBroadcastMessage</c> interface upcast is a pointer
-                    // copy rather than a box. See the docstring above.
+                    /*
+                        Class messages are reference types, so the dispatch
+                        path's <c>IUntargetedMessage</c>/<c>ITargetedMessage</c>/
+                        <c>IBroadcastMessage</c> interface upcast is a pointer
+                        copy rather than a box. See the docstring above.
+                    */
                     Action emit = BuildClassEmitClosure(scenario, bus);
                     RegisterClassHandler(scenario, token);
                     _ = token.RegisterGlobalAcceptAll(
@@ -275,21 +283,25 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            // 128 bytes/emit covers struct-to-interface boxes up to 64 bytes
-            // plus 64 bytes of per-emit overhead for any future bookkeeping;
-            // 64 bytes was at the edge of safety relative to current struct
-            // sizes, so 128 provides meaningful margin for field growth. These
-            // byte figures are retained for documentation only; the assertion
-            // uses a managed allocation CALL count via AllocationProbe because
-            // GC.GetAllocatedBytesForCurrentThread() returns 0 for every
-            // allocation under Unity's Boehm GC and cannot catch a regression.
+            /*
+                128 bytes/emit covers struct-to-interface boxes up to 64 bytes
+                plus 64 bytes of per-emit overhead for any future bookkeeping;
+                64 bytes was at the edge of safety relative to current struct
+                sizes, so 128 provides meaningful margin for field growth. These
+                byte figures are retained for documentation only; the assertion
+                uses a managed allocation CALL count via AllocationProbe because
+                GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+                allocation under Unity's Boehm GC and cannot catch a regression.
+            */
             const long PerEmitBudgetBytes = 128L;
             long totalBudget = PerEmitBudgetBytes * AllocationAssertions.DefaultMeasuredIterations;
 
-            // Count budget = ceil(byteBudget / 16); 16 = minimum managed object
-            // size on 64-bit (8-byte header + 8-byte minimum payload). Generous
-            // by construction so incidental allocations never false-fail, while a
-            // gross per-emit regression on the boxing path still trips it.
+            /*
+                Count budget = ceil(byteBudget / 16); 16 = minimum managed object
+                size on 64-bit (8-byte header + 8-byte minimum payload). Generous
+                by construction so incidental allocations never false-fail, while a
+                gross per-emit regression on the boxing path still trips it.
+            */
             long totalCountBudget = (totalBudget + 15L) / 16L;
 
             RunWithFreshHarness(
@@ -304,18 +316,22 @@ namespace DxMessaging.Tests.Editor.Allocations
                         AcceptAllBroadcast
                     );
 
-                    // Warm: settle any one-shot allocations (delegate caches,
-                    // dictionary capacity) before measurement.
+                    /*
+                        Warm: settle any one-shot allocations (delegate caches,
+                        dictionary capacity) before measurement.
+                    */
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         emit();
                     }
 
-                    // Take the minimum allocation over several attempts: the boxing count
-                    // per emit is real, but a single warm-editor window intermittently
-                    // spikes above it (see AllocationProbe.MeasureMin). 8 attempts read the
-                    // boxing floor reliably; the operation just re-runs the measured emit
-                    // batch.
+                    /*
+                        Take the minimum allocation over several attempts: the boxing count
+                        per emit is real, but a single warm-editor window intermittently
+                        spikes above it (see AllocationProbe.MeasureMin). 8 attempts read the
+                        boxing floor reliably; the operation just re-runs the measured emit
+                        batch.
+                    */
                     long gcAllocations = AllocationProbe.MeasureMin(
                         8,
                         prepare: null,
@@ -337,10 +353,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                     }
                     long perEmit = gcAllocations / AllocationAssertions.DefaultMeasuredIterations;
 
-                    // Always log the measured per-emit cost so a passing run
-                    // still surfaces the baseline. Future maintainers can use
-                    // the printed figure to decide whether the budget can be
-                    // tightened.
+                    /*
+                        Always log the measured per-emit cost so a passing run
+                        still surfaces the baseline. Future maintainers can use
+                        the printed figure to decide whether the budget can be
+                        tightened.
+                    */
                     UnityEngine.Debug.Log(
                         $"GlobalAcceptAllStruct-{scenario.Kind}: {gcAllocations} GC allocations / "
                             + $"{AllocationAssertions.DefaultMeasuredIterations} emissions = "

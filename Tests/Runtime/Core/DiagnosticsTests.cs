@@ -497,8 +497,10 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void GlobalMessageBufferSizeDefaultMatchesConstant()
         {
-            // Verify the default GlobalMessageBufferSize matches the DefaultMessageBufferSize constant
-            // to ensure consistency between the static property and the constant.
+            /*
+                Verify the default GlobalMessageBufferSize matches the DefaultMessageBufferSize constant
+                to ensure consistency between the static property and the constant.
+            */
             Assert.AreEqual(
                 IMessageBus.DefaultMessageBufferSize,
                 100,

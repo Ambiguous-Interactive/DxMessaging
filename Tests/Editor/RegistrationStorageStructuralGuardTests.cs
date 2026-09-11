@@ -124,10 +124,12 @@ namespace DxMessaging.Tests.Editor
             Assert.That(registration, Is.Not.Null);
             Type valueType = registration.FieldType;
 
-            // The value must be the unified per-handle registration OBJECT, not a
-            // delegate. A revert to either the staging Func or a parameterless Action
-            // wrapper re-introduces the staging display class + delegate (and the
-            // separate AugmentedHandler delegate) per registration.
+            /*
+                The value must be the unified per-handle registration OBJECT, not a
+                delegate. A revert to either the staging Func or a parameterless Action
+                wrapper re-introduces the staging display class + delegate (and the
+                separate AugmentedHandler delegate) per registration.
+            */
             Assert.That(
                 typeof(Delegate).IsAssignableFrom(valueType),
                 Is.False,

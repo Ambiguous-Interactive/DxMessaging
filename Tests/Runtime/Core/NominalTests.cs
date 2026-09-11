@@ -20,11 +20,13 @@ namespace DxMessaging.Tests.Runtime.Core
     [Category("Stress")]
     public sealed class NominalTests : MessagingTestBase
     {
-        // Per-shape registration entry counts for the Lifetime test. Hoisted to
-        // a single source of truth so the same expected shape used by every
-        // lifecycle transition cannot drift between call sites.
-        // SimpleMessageAwareComponent contributes the registration entries
-        // documented in the docblock on Lifetime.
+        /*
+            Per-shape registration entry counts for the Lifetime test. Hoisted to
+            a single source of truth so the same expected shape used by every
+            lifecycle transition cannot drift between call sites.
+            SimpleMessageAwareComponent contributes the registration entries
+            documented in the docblock on Lifetime.
+        */
         private const int SingleComponentUntargeted = 1;
         private const int SingleComponentTargeted = 5;
         private const int SingleComponentBroadcast = 3;
@@ -36,9 +38,11 @@ namespace DxMessaging.Tests.Runtime.Core
         public override void Setup()
         {
             base.Setup();
-            // Run(...) helpers below loop _numRegistrations times across many
-            // tests; restore the legacy stress fan-out so coverage matches the
-            // pre-Phase-A baseline.
+            /*
+                Run(...) helpers below loop _numRegistrations times across many
+                tests; restore the legacy stress fan-out so coverage matches the
+                pre-Phase-A baseline.
+            */
             _numRegistrations = StressRegistrations;
         }
 
@@ -295,14 +299,16 @@ namespace DxMessaging.Tests.Runtime.Core
             IMessageBus messageBus = MessageHandler.MessageBus;
             Assert.IsNotNull(messageBus);
 
-            // Bracket the full lifecycle churn in a LeakWatcher. The
-            // per-counter assertions below only cover Untargeted/Targeted/
-            // Broadcast handler counters; LeakWatcher additionally guards
-            // RegisteredInterceptors, RegisteredPostProcessors, and
-            // RegisteredGlobalAcceptAll, so a regression that leaks any of
-            // those auxiliary counters during create/teardown surfaces here
-            // even though the per-counter (0,0,0) assertion at the end would
-            // miss it.
+            /*
+                Bracket the full lifecycle churn in a LeakWatcher. The
+                per-counter assertions below only cover Untargeted/Targeted/
+                Broadcast handler counters; LeakWatcher additionally guards
+                RegisteredInterceptors, RegisteredPostProcessors, and
+                RegisteredGlobalAcceptAll, so a regression that leaks any of
+                those auxiliary counters during create/teardown surfaces here
+                even though the per-counter (0,0,0) assertion at the end would
+                miss it.
+            */
             using LeakWatcher watcher = new(messageBus, label: nameof(Lifetime));
 
             GameObject test = new(nameof(Lifetime), typeof(SimpleMessageAwareComponent));
@@ -311,25 +317,27 @@ namespace DxMessaging.Tests.Runtime.Core
             SimpleMessageAwareComponent firstComponent =
                 test.GetComponent<SimpleMessageAwareComponent>();
 
-            // SimpleMessageAwareComponent registers per active component
-            // (entries are distinct (type, target, priority) registration
-            // entries; identical (type, target, priority) tuples collapse):
-            //   Untargeted bucket (1 registration entry):
-            //     - RegisterUntargeted<SimpleUntargetedMessage>
-            //   Targeted bucket (5 registration entries):
-            //     - RegisterGameObjectTargeted<SimpleTargetedMessage> x2     (collapse to 1 entry)
-            //     - RegisterGameObjectTargeted<ComplexTargetedMessage> x2    (collapse to 1 entry)
-            //     - RegisterComponentTargeted<SimpleTargetedMessage>         (1 entry, distinct context)
-            //     - RegisterComponentTargeted<ComplexTargetedMessage>        (1 entry, distinct context)
-            //     - RegisterTargetedWithoutTargeting<SimpleTargetedMessage>  (1 entry, scalar TargetedWithoutContext sink)
-            //   Broadcast bucket (3 registration entries):
-            //     - RegisterGameObjectBroadcast<SimpleBroadcastMessage>      (1 entry)
-            //     - RegisterComponentBroadcast<SimpleBroadcastMessage>       (1 entry, distinct context)
-            //     - RegisterBroadcastWithoutSource<SimpleBroadcastMessage>   (1 entry, scalar BroadcastWithoutContext sink)
-            // Adding another component on the SAME GameObject reuses the
-            // (type, gameObject) and the scalar (type) registration entries,
-            // so those do NOT double; only the per-component context
-            // entries multiply, giving the +2 / +1 deltas seen below.
+            /*
+                SimpleMessageAwareComponent registers per active component
+                (entries are distinct (type, target, priority) registration
+                entries; identical (type, target, priority) tuples collapse):
+                  Untargeted bucket (1 registration entry):
+                    - RegisterUntargeted<SimpleUntargetedMessage>
+                  Targeted bucket (5 registration entries):
+                    - RegisterGameObjectTargeted<SimpleTargetedMessage> x2     (collapse to 1 entry)
+                    - RegisterGameObjectTargeted<ComplexTargetedMessage> x2    (collapse to 1 entry)
+                    - RegisterComponentTargeted<SimpleTargetedMessage>         (1 entry, distinct context)
+                    - RegisterComponentTargeted<ComplexTargetedMessage>        (1 entry, distinct context)
+                    - RegisterTargetedWithoutTargeting<SimpleTargetedMessage>  (1 entry, scalar TargetedWithoutContext sink)
+                  Broadcast bucket (3 registration entries):
+                    - RegisterGameObjectBroadcast<SimpleBroadcastMessage>      (1 entry)
+                    - RegisterComponentBroadcast<SimpleBroadcastMessage>       (1 entry, distinct context)
+                    - RegisterBroadcastWithoutSource<SimpleBroadcastMessage>   (1 entry, scalar BroadcastWithoutContext sink)
+                Adding another component on the SAME GameObject reuses the
+                (type, gameObject) and the scalar (type) registration entries,
+                so those do NOT double; only the per-component context
+                entries multiply, giving the +2 / +1 deltas seen below.
+            */
             AssertRegistrationCounts(
                 messageBus,
                 untargeted: SingleComponentUntargeted,
@@ -342,15 +350,17 @@ namespace DxMessaging.Tests.Runtime.Core
 
             SimpleMessageAwareComponent secondComponent =
                 test.AddComponent<SimpleMessageAwareComponent>();
-            // Adding a second component contributes:
-            //   Untargeted: +0 (same scalar (SimpleUntargetedMessage) entry)
-            //   Targeted:   +2 (new (SimpleTargetedMessage, second-component)
-            //                   and (ComplexTargetedMessage, second-component)
-            //                   context entries; gameObject + scalar entries
-            //                   reused)
-            //   Broadcast:  +1 (new (SimpleBroadcastMessage, second-component)
-            //                   context entry; gameObject + scalar entries
-            //                   reused)
+            /*
+                Adding a second component contributes:
+                  Untargeted: +0 (same scalar (SimpleUntargetedMessage) entry)
+                  Targeted:   +2 (new (SimpleTargetedMessage, second-component)
+                                  and (ComplexTargetedMessage, second-component)
+                                  context entries; gameObject + scalar entries
+                                  reused)
+                  Broadcast:  +1 (new (SimpleBroadcastMessage, second-component)
+                                  context entry; gameObject + scalar entries
+                                  reused)
+            */
             AssertRegistrationCounts(
                 messageBus,
                 untargeted: TwoComponentsUntargeted,
@@ -362,9 +372,11 @@ namespace DxMessaging.Tests.Runtime.Core
             secondComponent.enabled = false;
             yield return null;
 
-            // Disabling the second component removes only its
-            // per-component context entries; gameObject + scalar entries
-            // stay because the first component still registers them.
+            /*
+                Disabling the second component removes only its
+                per-component context entries; gameObject + scalar entries
+                stay because the first component still registers them.
+            */
             AssertRegistrationCounts(
                 messageBus,
                 untargeted: SingleComponentUntargeted,
@@ -446,10 +458,12 @@ namespace DxMessaging.Tests.Runtime.Core
             Object.Destroy(test);
             yield return null;
 
-            // Belt-and-braces: the per-counter triple must read (0,0,0) before
-            // LeakWatcher.Dispose runs. The watcher additionally enforces that
-            // the interceptor/post-processor/global-accept-all counters did not
-            // drift during the lifecycle churn.
+            /*
+                Belt-and-braces: the per-counter triple must read (0,0,0) before
+                LeakWatcher.Dispose runs. The watcher additionally enforces that
+                the interceptor/post-processor/global-accept-all counters did not
+                drift during the lifecycle churn.
+            */
             AssertRegistrationCounts(
                 messageBus,
                 untargeted: 0,
@@ -465,12 +479,14 @@ namespace DxMessaging.Tests.Runtime.Core
             IMessageBus messageBus = MessageHandler.MessageBus;
             Assert.IsNotNull(messageBus);
 
-            // Bracket the GameObject churn in a LeakWatcher even though we
-            // expect no registrations to be created - if a refactor of
-            // MessageHandler ever auto-registered something on construction
-            // for a bare GameObject, the watcher would catch the auxiliary
-            // counters (Interceptors, PostProcessors, GlobalAcceptAll) that
-            // the per-bucket assertions below do not cover.
+            /*
+                Bracket the GameObject churn in a LeakWatcher even though we
+                expect no registrations to be created - if a refactor of
+                MessageHandler ever auto-registered something on construction
+                for a bare GameObject, the watcher would catch the auxiliary
+                counters (Interceptors, PostProcessors, GlobalAcceptAll) that
+                the per-bucket assertions below do not cover.
+            */
             using LeakWatcher watcher = new(messageBus, label: nameof(NonMessagingObjects));
 
             GameObject test1 = new("NonMessaging1");

@@ -76,7 +76,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             return logs.Count(entry =>
                 entry.level == LogLevel.Warn
-                && entry.message.IndexOf("ReflexiveMessage dispatch", StringComparison.Ordinal) >= 0
+                && 0 <= entry.message.IndexOf("ReflexiveMessage dispatch", StringComparison.Ordinal)
             );
         }
     }

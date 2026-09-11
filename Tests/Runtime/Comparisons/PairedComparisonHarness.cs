@@ -171,7 +171,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 measurement
             );
             if (
-                measurement.CycleRatioSpreadPercent > BenchmarkProtocol.PairedMaterialityBandPercent
+                BenchmarkProtocol.PairedMaterialityBandPercent < measurement.CycleRatioSpreadPercent
             )
             {
                 Debug.LogWarning($"DXM_PAIRED_COMPARISON {evidence}");
@@ -225,7 +225,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             builder.Append(",\"cycleRatios\":[");
             for (int index = 0; index < measurement.CycleRatios.Count; index++)
             {
-                if (index > 0)
+                if (0 < index)
                 {
                     builder.Append(',');
                 }
@@ -236,7 +236,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             builder.Append("],\"cycleMeasurements\":[");
             for (int index = 0; index < measurement.Cycles.Count; index++)
             {
-                if (index > 0)
+                if (0 < index)
                 {
                     builder.Append(',');
                 }

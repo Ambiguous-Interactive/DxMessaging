@@ -51,9 +51,11 @@ namespace DxMessaging.Tests.Editor.Contract
         [SetUp]
         public void DisableMessagingDebug()
         {
-            // The stale over-deregistration below is a genuine over-deregistration, which logs an
-            // error when diagnostics are on. Keep diagnostics off so the intentional over-dereg is
-            // the silent no-op production path and does not trip the test runner's LogError gate.
+            /*
+                The stale over-deregistration below is a genuine over-deregistration, which logs an
+                error when diagnostics are on. Keep diagnostics off so the intentional over-dereg is
+                the silent no-op production path and does not trip the test runner's LogError gate.
+            */
             _savedMessagingDebug = MessagingDebug.enabled;
             MessagingDebug.enabled = false;
         }
@@ -71,16 +73,20 @@ namespace DxMessaging.Tests.Editor.Contract
             MessageHandler ownerOne = new MessageHandler(OwnerOne, bus) { active = true };
             MessageHandler ownerTwo = new MessageHandler(OwnerTwo, bus) { active = true };
 
-            // Owner one occupies (ProbeMessage, priority 0), then fully deregisters so the priority
-            // bucket is removed.
+            /*
+                Owner one occupies (ProbeMessage, priority 0), then fully deregisters so the priority
+                bucket is removed.
+            */
             MessageBusRegistration ownerOneRegistration = bus.RegisterUntargeted<ProbeMessage>(
                 ownerOne,
                 priority: 0
             );
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
-            // Owner two registers a live handler at the SAME (type, priority). The empty leaf may
-            // be recycled, but the stale registration still belongs to owner one.
+            /*
+                Owner two registers a live handler at the SAME (type, priority). The empty leaf may
+                be recycled, but the stale registration still belongs to owner one.
+            */
             int ownerTwoInvocations = 0;
             Action<ProbeMessage> ownerTwoHandler = _ => ownerTwoInvocations++;
             _ = ownerTwo.RegisterUntargetedMessageHandler<ProbeMessage>(
@@ -90,8 +96,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 messageBus: bus
             );
 
-            // Stale over-deregistration with owner one's old handle: the handler is not in the new
-            // bucket, so this hits the cold fallback. It must NOT disturb owner two's live handler.
+            /*
+                Stale over-deregistration with owner one's old handle: the handler is not in the new
+                bucket, so this hits the cold fallback. It must NOT disturb owner two's live handler.
+            */
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
             ProbeMessage message = default;
@@ -135,8 +143,10 @@ namespace DxMessaging.Tests.Editor.Contract
                     + "guard (see CounterBasedTouchTests for the intentional-private-name policy)."
             );
 
-            // Stale over-deregistration: hits the cold fallback (owner one is not in owner two's
-            // bucket). It must NOT bump the live bucket's version (no membership change occurred).
+            /*
+                Stale over-deregistration: hits the cold fallback (owner one is not in owner two's
+                bucket). It must NOT bump the live bucket's version (no membership change occurred).
+            */
             bus.Deregister<ProbeMessage>(in ownerOneRegistration);
 
             long versionAfter = ReadCapturedBucketVersion(ownerTwoRegistration, priority: 0);

@@ -209,7 +209,7 @@ namespace DxMessaging.Core
         /// <returns><c>true</c> when <paramref name="lhs"/> follows <paramref name="rhs"/>.</returns>
         public static bool operator >(InstanceId lhs, InstanceId rhs)
         {
-            return lhs._id.CompareTo(rhs._id) > 0;
+            return 0 < lhs._id.CompareTo(rhs._id);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -223,7 +223,7 @@ namespace DxMessaging.Core
         /// </returns>
         public static bool operator >=(InstanceId lhs, InstanceId rhs)
         {
-            return lhs._id.CompareTo(rhs._id) >= 0;
+            return 0 <= lhs._id.CompareTo(rhs._id);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -309,7 +309,7 @@ namespace DxMessaging.Core.DataStructure
 
             // Count cannot exceed new capacity
             Count = Math.Min(newCapacity, Count);
-            _position = _buffer.Count >= Capacity ? 0 : _buffer.Count;
+            _position = Capacity <= _buffer.Count ? 0 : _buffer.Count;
         }
 
         /// <summary>

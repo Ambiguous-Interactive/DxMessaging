@@ -156,8 +156,6 @@ namespace DxMessaging.Tests.Runtime.Unity
 
             installer.ApplyConfiguration();
             yield return null;
-
-            yield break;
         }
 
         [UnityTest]

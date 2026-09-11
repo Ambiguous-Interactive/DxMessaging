@@ -102,12 +102,14 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanNoModifierOnGuardedNameReportsHidingDiagnostic()
     {
-        // Acceptance contract: declaring a same-named lifecycle method without override or new
-        // (C# CS0114) compiles to the same IL shape as `new void X()`. The scanner's IL-only
-        // probe cannot distinguish DXMSG007 from DXMSG009; it conservatively classifies as
-        // DXMSG007. The compile-time analyzer is authoritative for the precise ID. This test
-        // pins the conservative-classification contract; if a future scanner gains semantic
-        // insight, the assertion below should be updated alongside the doc note.
+        /*
+            Acceptance contract: declaring a same-named lifecycle method without override or new
+            (C# CS0114) compiles to the same IL shape as `new void X()`. The scanner's IL-only
+            probe cannot distinguish DXMSG007 from DXMSG009; it conservatively classifies as
+            DXMSG007. The compile-time analyzer is authoritative for the precise ID. This test
+            pins the conservative-classification contract; if a future scanner gains semantic
+            insight, the assertion below should be updated alongside the doc note.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -116,8 +118,10 @@ internal sealed class BaseCallTypeScannerTests
             {
                 protected void OnEnable()
                 {
-                    // No `override`, no `new`. C# emits CS0114; the analyzer would emit DXMSG009.
-                    // The scanner classifies as DXMSG007 because the IL is indistinguishable.
+                    /*
+                        No `override`, no `new`. C# emits CS0114; the analyzer would emit DXMSG009.
+                        The scanner classifies as DXMSG007 because the IL is indistinguishable.
+                    */
                 }
             }
             """,
@@ -166,10 +170,12 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanBrokenIntermediateReportsDxmsg010OnLeaf()
     {
-        // The user's canonical `BrokenThing : ddd : MessageAwareComponent` case: ddd's override
-        // does not call base, BrokenThing's override does. The leaf is the type the user is
-        // actively editing, so DXMSG010 should land on BrokenThing; not on ddd, which gets its
-        // own DXMSG006 row.
+        /*
+            The user's canonical `BrokenThing : ddd : MessageAwareComponent` case: ddd's override
+            does not call base, BrokenThing's override does. The leaf is the type the user is
+            actively editing, so DXMSG010 should land on BrokenThing; not on ddd, which gets its
+            own DXMSG006 row.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -210,11 +216,13 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanChainSkippingMiddleTypeReportsDxmsg010OnLeaf()
     {
-        // Four-level chain: BrokenThing : Middle : ddd : MessageAwareComponent. Middle does NOT
-        // declare OnEnable, but ddd's override is broken. BrokenThing calls base correctly. The
-        // chain walker's GetOverriddenMethod must walk PAST Middle (which doesn't declare the
-        // slot directly) to find ddd's broken override. If the walker stopped at Middle without
-        // finding the method on it, we would report nothing on BrokenThing; a missed DXMSG010.
+        /*
+            Four-level chain: BrokenThing : Middle : ddd : MessageAwareComponent. Middle does NOT
+            declare OnEnable, but ddd's override is broken. BrokenThing calls base correctly. The
+            chain walker's GetOverriddenMethod must walk PAST Middle (which doesn't declare the
+            slot directly) to find ddd's broken override. If the walker stopped at Middle without
+            finding the method on it, we would report nothing on BrokenThing; a missed DXMSG010.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -328,9 +336,11 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanAbstractTypeIsSkipped()
     {
-        // Abstract subclasses cannot exist as MonoBehaviour instances, so the inspector overlay
-        // never shows their HelpBox. The scanner should not include them in the snapshot even if
-        // they technically have a broken override.
+        /*
+            Abstract subclasses cannot exist as MonoBehaviour instances, so the inspector overlay
+            never shows their HelpBox. The scanner should not include them in the snapshot even if
+            they technically have a broken override.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -354,9 +364,11 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanGenericTypeDefinitionIsSkipped()
     {
-        // Open generic-type definitions cannot be instantiated as MonoBehaviour components.
-        // Closed generic instantiations would be classified separately; but the open definition
-        // itself is a TypeCache artifact we should not surface.
+        /*
+            Open generic-type definitions cannot be instantiated as MonoBehaviour components.
+            Closed generic instantiations would be classified separately; but the open definition
+            itself is a TypeCache artifact we should not surface.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -410,10 +422,12 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanNestedTypeFqnUsesDotsNotPlusSign()
     {
-        // System.Type.FullName for nested types uses '+' as the separator (e.g.
-        // "Outer+Nested"); the analyzer emits the dotted form so the inspector overlay can
-        // round-trip the FQN through the JSON cache and reflect on it as a CSharp identifier.
-        // The scanner must normalise '+' → '.' so its snapshot key matches the analyzer.
+        /*
+            System.Type.FullName for nested types uses '+' as the separator (e.g.
+            "Outer+Nested"); the analyzer emits the dotted form so the inspector overlay can
+            round-trip the FQN through the JSON cache and reflect on it as a CSharp identifier.
+            The scanner must normalise '+' → '.' so its snapshot key matches the analyzer.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -483,8 +497,10 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanMethodLevelDxIgnoreMissingBaseCallAttributeSuppressesOnlyAnnotatedMethod()
     {
-        // A method-level suppression applies only to that annotated guarded method. Other
-        // broken methods on the same type must still appear in the snapshot.
+        /*
+            A method-level suppression applies only to that annotated guarded method. Other
+            broken methods on the same type must still appear in the snapshot.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -518,8 +534,10 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanAllBrokenMethodsSuppressedByMethodLevelAttributesProducesNoEntry()
     {
-        // If every broken method is method-level suppressed, the scanner should produce no row
-        // because MissingBaseFor is empty after suppression filtering.
+        /*
+            If every broken method is method-level suppressed, the scanner should produce no row
+            because MissingBaseFor is empty after suppression filtering.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -684,9 +702,11 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanTwoBrokenMethodsOnSameTypeFoldedIntoSingleEntry()
     {
-        // Spec 2b: a single type with TWO broken overrides (Awake AND OnEnable) must produce
-        // exactly ONE entry whose MissingBaseFor lists both methods. DiagnosticIds is the
-        // deduplicated union (DXMSG006 once even though both methods contribute it).
+        /*
+            Spec 2b: a single type with TWO broken overrides (Awake AND OnEnable) must produce
+            exactly ONE entry whose MissingBaseFor lists both methods. DiagnosticIds is the
+            deduplicated union (DXMSG006 once even though both methods contribute it).
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -727,8 +747,10 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanNullSettingsTreatsOptOutListAsEmptyNoNullReferenceException()
     {
-        // Spec 2e: passing null for ignoredTypeNames must be treated as an empty opt-out list and
-        // must not throw. This pins the defensive null-handling at the API boundary.
+        /*
+            Spec 2e: passing null for ignoredTypeNames must be treated as an empty opt-out list and
+            must not throw. This pins the defensive null-handling at the API boundary.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -755,11 +777,13 @@ internal sealed class BaseCallTypeScannerTests
     [Test]
     public void ScanOnExternMethodTreatedAsCleanCrossAssembly()
     {
-        // Spec 2d: a concrete MessageAwareComponent subclass whose override is extern (no IL body)
-        // must be treated as assume-clean. GetMethodBody() returns null just like it does for
-        // cross-assembly closed-source code; the scanner's defensive bias means no diagnostic is
-        // emitted. CS0626 is intrinsic to this exact no-body fixture and is the sole allowed
-        // compiler warning.
+        /*
+            Spec 2d: a concrete MessageAwareComponent subclass whose override is extern (no IL body)
+            must be treated as assume-clean. GetMethodBody() returns null just like it does for
+            cross-assembly closed-source code; the scanner's defensive bias means no diagnostic is
+            emitted. CS0626 is intrinsic to this exact no-body fixture and is the sole allowed
+            compiler warning.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -787,9 +811,11 @@ internal sealed class BaseCallTypeScannerTests
         Dictionary<string, BaseCallTypeScannerCore.ScanEntry> snapshot =
             BaseCallTypeScannerCore.Scan(EnumerateMacSubclasses(fixture), null);
 
-        // The IL inspector returns true (assume clean) when the body is null. The scanner records
-        // an entry only when MissingBaseFor is non-empty; so an assume-clean override produces
-        // no entry.
+        /*
+            The IL inspector returns true (assume clean) when the body is null. The scanner records
+            an entry only when MissingBaseFor is non-empty; so an assume-clean override produces
+            no entry.
+        */
         Assert.That(
             snapshot,
             Does.Not.ContainKey("ExternLeaf"),
@@ -844,10 +870,12 @@ internal sealed class BaseCallTypeScannerTests
 
     private static Assembly CompileFixture(string userSource, params string[] allowedWarningIds)
     {
-        // Build a self-contained assembly that defines a MessageAwareComponent stub plus the
-        // user's classes on top. The stub's chain terminator FQN ("DxMessaging.Unity.MessageAware
-        // Component") is the literal string the Core checks for to terminate the chain walk;
-        // keep them in lock-step.
+        /*
+            Build a self-contained assembly that defines a MessageAwareComponent stub plus the
+            user's classes on top. The stub's chain terminator FQN ("DxMessaging.Unity.MessageAware
+            Component") is the literal string the Core checks for to terminate the chain walk;
+            keep them in lock-step.
+        */
         const string Stubs = """
 namespace UnityEngine
 {

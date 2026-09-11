@@ -384,8 +384,10 @@ namespace DxMessaging.Unity
             }
 
             MessageBusRebindMode effectiveMode =
-                // Zero is the legacy Unknown value. Compare the default without naming the
-                // obsolete compatibility member so strict consumers do not inherit CS0618.
+                /*
+                    Zero is the legacy Unknown value. Compare the default without naming the
+                    obsolete compatibility member so strict consumers do not inherit CS0618.
+                */
                 rebindMode == default
                     ? MessageBusRebindMode.RebindActive
                     : rebindMode;
@@ -472,7 +474,7 @@ namespace DxMessaging.Unity
             {
                 Debug.Log($"[DxMessaging] Cleared runtime state for '{name}'.");
             }
-            else if (_registeredListeners.Count > 0)
+            else if (0 < _registeredListeners.Count)
             {
                 Debug.LogWarning(
                     $"[DxMessaging] Runtime state for '{name}' still has listener tokens awaiting cleanup. Retry the reset."
@@ -493,10 +495,10 @@ namespace DxMessaging.Unity
                 _messageHandler.active = false;
             }
 
-            if (_registeredListeners.Count > 0)
+            if (0 < _registeredListeners.Count)
             {
                 DisposeRetainedListeners();
-                if (_registeredListeners.Count > 0)
+                if (0 < _registeredListeners.Count)
                 {
                     return false;
                 }

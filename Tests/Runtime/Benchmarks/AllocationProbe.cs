@@ -99,8 +99,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private const string GcAllocMarker = "GC.Alloc";
 
-        // The live, per-frame managed-allocation BYTE counter. Reading its CurrentValue
-        // before/after a synchronous region yields that region's allocated bytes exactly.
+        /*
+            The live, per-frame managed-allocation BYTE counter. Reading its CurrentValue
+            before/after a synchronous region yields that region's allocated bytes exactly.
+        */
         private const string GcAllocatedInFrameCounter = "GC Allocated In Frame";
 
         // 0 = not yet probed, 1 = recorder confirmed functional, -1 = non-functional.
@@ -112,10 +114,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         // 0 = not yet probed, 1 = byte counter confirmed functional, -1 = non-functional.
         private static int s_bytesState;
 
-        // The domain-lived byte counter recorder. Created lazily by the byte self-test and
-        // kept running for the rest of the domain (a single always-on counter, like the
-        // count probe's global GC.Alloc Recorder), so opening a window reads CurrentValue
-        // without allocating a fresh recorder -- which would itself pollute the count.
+        /*
+            The domain-lived byte counter recorder. Created lazily by the byte self-test and
+            kept running for the rest of the domain (a single always-on counter, like the
+            count probe's global GC.Alloc Recorder), so opening a window reads CurrentValue
+            without allocating a fresh recorder -- which would itself pollute the count.
+        */
         private static ProfilerRecorder s_byteRecorder;
 
         // Anchors the byte self-test allocation against a release-build optimizer.
@@ -196,16 +200,20 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             if (countFunctional)
             {
                 recorder = Recorder.Get(GcAllocMarker);
-                // Toggling off then on resets sampleBlockCount for a fresh window. Enabling
-                // is the LAST thing we do so nothing above is counted against the window.
+                /*
+                    Toggling off then on resets sampleBlockCount for a fresh window. Enabling
+                    is the LAST thing we do so nothing above is counted against the window.
+                */
                 recorder.enabled = false;
                 recorder.enabled = true;
             }
 
-            // Capture the byte baseline LAST -- after the count recorder is enabled -- so
-            // the count-recorder toggle is not attributed to this window's byte delta. The
-            // counter accumulates live within the frame, so (CurrentValue at Sample) minus
-            // this baseline is exactly the bytes the measured region allocated.
+            /*
+                Capture the byte baseline LAST -- after the count recorder is enabled -- so
+                the count-recorder toggle is not attributed to this window's byte delta. The
+                counter accumulates live within the frame, so (CurrentValue at Sample) minus
+                this baseline is exactly the bytes the measured region allocated.
+            */
             long byteStart = bytesFunctional ? s_byteRecorder.CurrentValue : Unmeasured;
             return new Window(recorder, bytesFunctional, byteStart);
         }
@@ -355,13 +363,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return new MinimumMeasurement<TDiagnostics>(Unmeasured, Unmeasured, -1, default);
             }
 
-            // Settle ONCE before the loop, matching a single test's pre-measurement
-            // collection cost. We deliberately do NOT force a collection per attempt: a
-            // per-attempt GC.Collect storm (attempts x parameterizations) grows and
-            // fragments the long-lived editor heap enough to perturb OTHER allocation
-            // tests that run afterward. The minimum already rejects the windows where an
-            // organic collection fires mid-measurement, so per-attempt forcing is both
-            // unnecessary and harmful.
+            /*
+                Settle ONCE before the loop, matching a single test's pre-measurement
+                collection cost. We deliberately do NOT force a collection per attempt: a
+                per-attempt GC.Collect storm (attempts x parameterizations) grows and
+                fragments the long-lived editor heap enough to perturb OTHER allocation
+                tests that run afterward. The minimum already rejects the windows where an
+                organic collection fires mid-measurement, so per-attempt forcing is both
+                unnecessary and harmful.
+            */
             SettleHeapForMeasurement();
 
             long min = long.MaxValue;
@@ -388,12 +398,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             finally
             {
-                // Reclaim the garbage these repeated attempts produced BEFORE returning,
-                // so a collection it would otherwise trigger does not fire inside a later
-                // test's measurement window and inflate that test's count. Without this,
-                // repeating an operation N times leaves N times the garbage, which is what
-                // turns a robust single-window neighbor test flaky after a MeasureMin test
-                // runs. The finally keeps that hygiene even when an attempt throws.
+                /*
+                    Reclaim the garbage these repeated attempts produced BEFORE returning,
+                    so a collection it would otherwise trigger does not fire inside a later
+                    test's measurement window and inflate that test's count. Without this,
+                    repeating an operation N times leaves N times the garbage, which is what
+                    turns a robust single-window neighbor test flaky after a MeasureMin test
+                    runs. The finally keeps that hygiene even when an attempt throws.
+                */
                 SettleHeapForMeasurement();
             }
 
@@ -432,15 +444,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return true;
             }
 
-            if (candidateAllocations > currentAllocations)
+            if (currentAllocations < candidateAllocations)
             {
                 return false;
             }
 
-            // Counts are the selection key. When attempts tie on that key, prefer a
-            // measured byte companion over an Unmeasured one so a frame-boundary reset in
-            // an earlier tied attempt does not hide a later equally-minimal byte sample.
-            return candidateBytes >= 0 && currentBytes < 0;
+            /*
+                Counts are the selection key. When attempts tie on that key, prefer a
+                measured byte companion over an Unmeasured one so a frame-boundary reset in
+                an earlier tied attempt does not hide a later equally-minimal byte sample.
+            */
+            return 0 <= candidateBytes && currentBytes < 0;
         }
 
         private readonly struct NoDiagnostics { }
@@ -520,14 +534,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public readonly struct Window : IDisposable
         {
-            // Null when the count probe is non-functional (a no-op count window). Recorder
-            // is a plain managed class (not a UnityEngine.Object), so == null is a true
-            // reference check.
+            /*
+                Null when the count probe is non-functional (a no-op count window). Recorder
+                is a plain managed class (not a UnityEngine.Object), so == null is a true
+                reference check.
+            */
             private readonly Recorder _recorder;
 
-            // True when the byte counter is functional for this window. The counter itself
-            // is the domain-static s_byteRecorder (always running); the window only needs
-            // the baseline it captured at BeginWindow.
+            /*
+                True when the byte counter is functional for this window. The counter itself
+                is the domain-static s_byteRecorder (always running); the window only needs
+                the baseline it captured at BeginWindow.
+            */
             private readonly bool _bytesFunctional;
             private readonly long _byteStart;
 
@@ -645,23 +663,25 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     return false;
                 }
 
-                // Confirm the live counter actually observes a known allocation. byte[4096]
-                // is large enough that even with Boehm's size-class rounding the delta must
-                // be at least the requested 4096 bytes if the counter is working. A backend
-                // that strips the profiler counter (a non-development Release player) reads a
-                // flat 0 here, so we fall back to the honest Unmeasured sentinel.
-                //
-                // Retried a few times because the counter resets per frame: a single frame
-                // boundary landing between the before/after reads would make the delta
-                // negative and false-negative the WHOLE domain (the verdict is cached). One
-                // clean attempt is enough to confirm the counter works; an all-stripped
-                // backend never produces one and correctly stays non-functional.
+                /*
+                    Confirm the live counter actually observes a known allocation. byte[4096]
+                    is large enough that even with Boehm's size-class rounding the delta must
+                    be at least the requested 4096 bytes if the counter is working. A backend
+                    that strips the profiler counter (a non-development Release player) reads a
+                    flat 0 here, so we fall back to the honest Unmeasured sentinel.
+
+                    Retried a few times because the counter resets per frame: a single frame
+                    boundary landing between the before/after reads would make the delta
+                    negative and false-negative the WHOLE domain (the verdict is cached). One
+                    clean attempt is enough to confirm the counter works; an all-stripped
+                    backend never produces one and correctly stays non-functional.
+                */
                 for (int attempt = 0; attempt < 4; attempt++)
                 {
                     long before = s_byteRecorder.CurrentValue;
                     s_byteSelfTestSink = new byte[4096];
                     long after = s_byteRecorder.CurrentValue;
-                    if (after - before >= 4096)
+                    if (4096 <= after - before)
                     {
                         return true;
                     }
@@ -671,8 +691,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             catch
             {
-                // Any recorder/profiler unavailability => honest "unmeasured" sentinel
-                // rather than a misleading byte value.
+                /*
+                    Any recorder/profiler unavailability => honest "unmeasured" sentinel
+                    rather than a misleading byte value.
+                */
                 return false;
             }
         }
@@ -686,8 +708,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             catch
             {
-                // Any recorder/profiler unavailability => fall back to the honest
-                // "unmeasured" sentinel rather than risk a misleading zero.
+                /*
+                    Any recorder/profiler unavailability => fall back to the honest
+                    "unmeasured" sentinel rather than risk a misleading zero.
+                */
                 return false;
             }
 
@@ -703,7 +727,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 // A guaranteed managed allocation the recorder must observe if it works.
                 s_selfTestSink = new byte[64];
                 recorder.enabled = false;
-                return recorder.sampleBlockCount > 0;
+                return 0 < recorder.sampleBlockCount;
             }
             catch
             {
@@ -711,9 +735,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             finally
             {
-                // Never leave the self-test recorder enabled, even if reading the count
-                // throws: a leaked-enabled recorder adds profiler overhead to every
-                // subsequent allocation in the domain and can distort later timings.
+                /*
+                    Never leave the self-test recorder enabled, even if reading the count
+                    throws: a leaked-enabled recorder adds profiler overhead to every
+                    subsequent allocation in the domain and can distort later timings.
+                */
                 recorder.enabled = false;
             }
         }

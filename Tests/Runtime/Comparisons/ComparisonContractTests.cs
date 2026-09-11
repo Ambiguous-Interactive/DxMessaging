@@ -25,8 +25,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             }
         }
 
-        // Case generation lives in ComparisonBridgeContract so the zero-dependency roster and the
-        // gated External/UnityAtoms rosters all enumerate cases from ONE source of truth.
+        /*
+            Case generation lives in ComparisonBridgeContract so the zero-dependency roster and the
+            gated External/UnityAtoms rosters all enumerate cases from ONE source of truth.
+        */
         private static IEnumerable<TestCaseData> RosterCases() =>
             ComparisonBridgeContract.IdentityCases(ZeroDependencyComparisonRoster.Bridges);
 
@@ -59,13 +61,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
         }
 
-        // 1:1 drift-guard: for each scenario, every zero-dependency bridge that SUPPORTS it
-        // must perform the SAME number of invocations per operation (identical fan-out), so a
-        // scenario column measures an apples-to-apples workload across techs. A bridge that
-        // silently under- or over-fans-out would make its cell measure different work. The
-        // keyed lookup-table size (K) is single-sourced separately via
-        // ComparisonScenarios.KeyedListenerCount in every bridge. (External/UnityAtoms bridges
-        // live in gated assemblies with their own contract suites.)
+        /*
+            1:1 drift-guard: for each scenario, every zero-dependency bridge that SUPPORTS it
+            must perform the SAME number of invocations per operation (identical fan-out), so a
+            scenario column measures an apples-to-apples workload across techs. A bridge that
+            silently under- or over-fans-out would make its cell measure different work. The
+            keyed lookup-table size (K) is single-sourced separately via
+            ComparisonScenarios.KeyedListenerCount in every bridge. (External/UnityAtoms bridges
+            live in gated assemblies with their own contract suites.)
+        */
         [Test]
         [TestCaseSource(nameof(ComparisonScenarioCases))]
         public void SupportingBridgesAgreeOnInvocationsPerOperation(ComparisonScenario scenario)

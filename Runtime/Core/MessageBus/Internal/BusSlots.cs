@@ -163,9 +163,11 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// </summary>
         public void Reset()
         {
-            // Inline the structural-clear body of Clear(); do NOT call Clear()
-            // because that resets version=0 and would break the monotonic
-            // invariant the eviction layer depends on.
+            /*
+                Inline the structural-clear body of Clear(); do NOT call Clear()
+                because that resets version=0 and would break the monotonic
+                invariant the eviction layer depends on.
+            */
             sharedHandlers.Clear();
             sharedCache.Clear();
             untargetedDispatchState?.Reset();

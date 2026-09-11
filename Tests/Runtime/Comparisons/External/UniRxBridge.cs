@@ -37,8 +37,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         private IObservable<int> _intStream;
         private readonly List<IDisposable> _subscriptions = new();
 
-        // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
-        // broker subscribe/dispose cost rather than per-cycle delegate allocation.
+        /*
+            Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
+            broker subscribe/dispose cost rather than per-cycle delegate allocation.
+        */
         private Action<int> _churnHandler;
 
         public bool Supports(ComparisonScenario scenario)
@@ -91,8 +93,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _subscriptions.Add(_intStream.Subscribe(Handle));
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
-                    // Genuinely-distinct subscribers model 16 independent listeners; this keeps
-                    // every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    /*
+                        Genuinely-distinct subscribers model 16 independent listeners; this keeps
+                        every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    */
                     _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
                     _intStream = _broker.Receive<int>();
                     foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
@@ -105,8 +109,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _subscriptions.Add(_intStream.Subscribe(Handle));
                     return;
                 case ComparisonScenario.SubscribeUnsubscribeChurn:
-                    // No persistent registration; EmitOnce performs one subscribe/dispose
-                    // cycle using the cached stream and handler below.
+                    /*
+                        No persistent registration; EmitOnce performs one subscribe/dispose
+                        cycle using the cached stream and handler below.
+                    */
                     _intStream = _broker.Receive<int>();
                     _churnHandler = Handle;
                     return;
@@ -145,7 +151,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public void Dispose()
         {
-            for (int index = _subscriptions.Count - 1; index >= 0; index--)
+            for (int index = _subscriptions.Count - 1; 0 <= index; index--)
             {
                 _subscriptions[index]?.Dispose();
             }

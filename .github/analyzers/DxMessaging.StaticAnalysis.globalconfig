@@ -1,0 +1,56 @@
+is_global = true
+
+# These exceptions preserve deliberate package architecture and compatibility choices.
+# Every diagnostic not listed here remains enabled and is promoted to an error by csc.rsp.
+
+# Catch-and-fallback paths implement Try-style APIs and optional Unity resource loading.
+dotnet_diagnostic.ERP022.severity = none
+
+# Obsolete members are retained intentionally for source and serialized-data compatibility.
+dotnet_diagnostic.S1133.severity = none
+
+# Reflection/AOT dispatch helpers and conditionally compiled fast paths can appear unused.
+dotnet_diagnostic.S1144.severity = none
+dotnet_diagnostic.S1172.severity = none
+dotnet_diagnostic.S2326.severity = none
+
+# Prose state-machine and invariant comments are occasionally parsed as commented-out code.
+dotnet_diagnostic.S125.severity = none
+
+# Explicit backing fields support reset paths and lazy state without widening property setters.
+dotnet_diagnostic.S2292.severity = none
+
+# Existing public parameter names remain stable for named-argument source compatibility.
+dotnet_diagnostic.S927.severity = none
+
+# Public enum names are stable API; renaming DiagnosticsTarget.Off would be breaking.
+dotnet_diagnostic.S2346.severity = none
+
+# Debug.Assert(false) marks deliberately unreachable corruption and double-release paths.
+dotnet_diagnostic.S2701.severity = none
+
+# Per-closed-message-type static caches are the intended zero-allocation lookup architecture.
+dotnet_diagnostic.S2743.severity = none
+
+# Helper placement and public overload grouping follow API semantics, not lexical proximity.
+dotnet_diagnostic.S3398.severity = none
+dotnet_diagnostic.S4136.severity = none
+dotnet_diagnostic.S4144.severity = none
+
+# Test seams are intentionally instance-shaped; changing them would obscure ownership in tests.
+dotnet_diagnostic.S2325.severity = none
+
+# Scope guards must reject invalid disposal order immediately instead of masking misuse.
+dotnet_diagnostic.S3877.severity = none
+
+# ReflexiveMessage exposes arrays for its established allocation-sensitive public contract.
+dotnet_diagnostic.S3887.severity = none
+
+# The explicit static constructor intentionally prevents beforefieldinit initialization.
+dotnet_diagnostic.S3963.severity = none
+
+# Retention/version fields participate in lifecycle identity and conditional compilation paths.
+dotnet_diagnostic.S4487.severity = none
+
+# CyclicBuffer(int, IEnumerable<T>) is a normal constructor, not a serialization constructor.
+dotnet_diagnostic.S5766.severity = none

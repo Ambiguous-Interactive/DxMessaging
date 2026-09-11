@@ -34,7 +34,7 @@ namespace DxMessaging.Core.MessageBus
         {
             get
             {
-                if ((uint)index >= (uint)(_finalizedRegistrations?.Count ?? 0))
+                if ((uint)(_finalizedRegistrations?.Count ?? 0) <= (uint)index)
                 {
                     throw new ArgumentOutOfRangeException(nameof(index));
                 }

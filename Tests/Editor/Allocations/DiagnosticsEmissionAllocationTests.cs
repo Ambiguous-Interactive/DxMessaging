@@ -38,10 +38,12 @@ namespace DxMessaging.Tests.Editor.Allocations
         private const int MeasuredEmits = 64;
         private const int MinAttempts = 8;
 
-        // Capture-off must remove at least this share of the capture-on allocation calls. Measured
-        // ~97% removed (about 134 calls per emit down to a handful of boxes and buffer writes); the
-        // threshold leaves a wide margin over backend noise while still failing outright if capture
-        // becomes unconditional again (ratio 1.0).
+        /*
+            Capture-off must remove at least this share of the capture-on allocation calls. Measured
+            ~97% removed (about 134 calls per emit down to a handful of boxes and buffer writes); the
+            threshold leaves a wide margin over backend noise while still failing outright if capture
+            becomes unconditional again (ratio 1.0).
+        */
         private const double MinimumRemovedShare = 0.75d;
 
         protected override bool MessagingDebugEnabled => false;

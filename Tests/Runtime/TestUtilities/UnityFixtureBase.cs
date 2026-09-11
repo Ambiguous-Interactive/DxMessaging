@@ -38,7 +38,7 @@ namespace DxMessaging.Tests.Runtime
         [TearDown]
         public virtual void TearDownManagedResources()
         {
-            for (int i = _disposables.Count - 1; i >= 0; i--)
+            for (int i = _disposables.Count - 1; 0 <= i; i--)
             {
                 try
                 {
@@ -51,7 +51,7 @@ namespace DxMessaging.Tests.Runtime
             }
             _disposables.Clear();
 
-            for (int i = _unityObjects.Count - 1; i >= 0; i--)
+            for (int i = _unityObjects.Count - 1; 0 <= i; i--)
             {
                 UnityEngine.Object instance = _unityObjects[i];
                 if (instance != null)

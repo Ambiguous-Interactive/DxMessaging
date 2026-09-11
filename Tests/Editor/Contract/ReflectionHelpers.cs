@@ -278,8 +278,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 );
             }
 
-            // A non-generic nested type returned by GetNestedType has no
-            // generic parameters at all; nothing to close.
+            /*
+                A non-generic nested type returned by GetNestedType has no
+                generic parameters at all; nothing to close.
+            */
             if (!openNested.ContainsGenericParameters)
             {
                 if (nestedOwnArgs.Length != 0)
@@ -296,12 +298,14 @@ namespace DxMessaging.Tests.Editor.Contract
             }
 
             Type[] outerArgs = closedOuter.GetGenericArguments();
-            // The nested type's full generic-argument list is laid out as:
-            // first the outer's generic parameters (inherited), then any
-            // generic parameters the nested type declares itself. Per .NET
-            // metadata layout the nested type's own arity is
-            // (totalArgs - outerArity); the arity-suffixed nested name
-            // (e.g. "Entry`1") encodes the same number.
+            /*
+                The nested type's full generic-argument list is laid out as:
+                first the outer's generic parameters (inherited), then any
+                generic parameters the nested type declares itself. Per .NET
+                metadata layout the nested type's own arity is
+                (totalArgs - outerArity); the arity-suffixed nested name
+                (e.g. "Entry`1") encodes the same number.
+            */
             Type[] nestedAllArgs = openNested.GetGenericArguments();
             int outerArity = outerArgs.Length;
             int totalArity = nestedAllArgs.Length;
@@ -323,7 +327,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 );
             }
 
-            if (totalArity > 0 && outerArity == 0 && nestedOwnArgs.Length == 0)
+            if (0 < totalArity && outerArity == 0 && nestedOwnArgs.Length == 0)
             {
                 throw new InvalidOperationException(
                     "Nested type '"

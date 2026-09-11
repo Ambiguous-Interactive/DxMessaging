@@ -18,22 +18,24 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     {
         private const string MessageName = "OnPing";
 
-        // The payload is a VALUE type sent through SendMessage's object-typed parameter, so it BOXES
-        // on every dispatch (see SendPing). That per-call box is the unavoidable GC cost of
-        // reflection-based messaging and is exactly what the comparison's GC-allocation column must
-        // surface.
-        //
-        // DO NOT cache a pre-boxed `object` payload here. Doing so reuses one heap object and reads
-        // 0 allocations / 0 bytes -- proven on the host editor (Unity 6000.4, PlayMode): a pre-boxed
-        // payload reads 0/0 while a per-call box reads 1 allocation / ~20 bytes per dispatch.
-        // A cached box would make Unity SendMessage look allocation-free when no real caller of
-        // SendMessage(value) can avoid the box, misrepresenting the technology in DxMessaging's
-        // comparison tables. Guarded by ComparisonAllocationHonestyTests.
-        //
-        // Deliberately NOT `const`: a constant int 0 would bind to the SendMessage(string,
-        // SendMessageOptions) overload (the literal 0 converts to the enum) and silently drop the
-        // argument; a non-constant int forces the SendMessage(string, object) value overload. The
-        // call site also casts to object explicitly as a second guard.
+        /*
+            The payload is a VALUE type sent through SendMessage's object-typed parameter, so it BOXES
+            on every dispatch (see SendPing). That per-call box is the unavoidable GC cost of
+            reflection-based messaging and is exactly what the comparison's GC-allocation column must
+            surface.
+
+            DO NOT cache a pre-boxed `object` payload here. Doing so reuses one heap object and reads
+            0 allocations / 0 bytes -- proven on the host editor (Unity 6000.4, PlayMode): a pre-boxed
+            payload reads 0/0 while a per-call box reads 1 allocation / ~20 bytes per dispatch.
+            A cached box would make Unity SendMessage look allocation-free when no real caller of
+            SendMessage(value) can avoid the box, misrepresenting the technology in DxMessaging's
+            comparison tables. Guarded by ComparisonAllocationHonestyTests.
+
+            Deliberately NOT `const`: a constant int 0 would bind to the SendMessage(string,
+            SendMessageOptions) overload (the literal 0 converts to the enum) and silently drop the
+            argument; a non-constant int forces the SendMessage(string, object) value overload. The
+            call site also casts to object explicitly as a second guard.
+        */
         private static readonly int PingPayload = 0;
 
         private sealed class InvocationCounter
@@ -63,8 +65,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         private const int DispatchKey = 0;
 
-        // Single-sourced from the canonical scenario constant so the keyed
-        // lookup-table size stays identical (1:1) across every comparison bridge.
+        /*
+            Single-sourced from the canonical scenario constant so the keyed
+            lookup-table size stays identical (1:1) across every comparison bridge.
+        */
         private const int KeyCount = ComparisonScenarios.KeyedListenerCount;
 
         private readonly InvocationCounter _counter = new();
@@ -137,11 +141,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         private static void SendPing(GameObject gameObject)
         {
-            // Cast to object EXPLICITLY so this binds to SendMessage(string methodName, object value)
-            // -- the value overload -- and boxes the value-type payload on every call. The cast is
-            // the cost we measure (boxing is never cached in C#, so it allocates one object per
-            // dispatch) AND it disambiguates overload resolution away from SendMessage(string,
-            // SendMessageOptions), which a bare 0 would bind to (dropping the argument).
+            /*
+                Cast to object EXPLICITLY so this binds to SendMessage(string methodName, object value)
+                -- the value overload -- and boxes the value-type payload on every call. The cast is
+                the cost we measure (boxing is never cached in C#, so it allocates one object per
+                dispatch) AND it disambiguates overload resolution away from SendMessage(string,
+                SendMessageOptions), which a bare 0 would bind to (dropping the argument).
+            */
             gameObject.SendMessage(MessageName, (object)PingPayload);
         }
 

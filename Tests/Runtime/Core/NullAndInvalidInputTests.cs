@@ -311,9 +311,11 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void RegisterTargetedAcceptsDefaultInstanceIdSilently()
         {
-            // Pinning current behavior: default(InstanceId) is treated as a normal
-            // identifier (zero) by the bus rather than rejected. If the contract
-            // changes to disallow it, this test must be updated deliberately.
+            /*
+                Pinning current behavior: default(InstanceId) is treated as a normal
+                identifier (zero) by the bus rather than rejected. If the contract
+                changes to disallow it, this test must be updated deliberately.
+            */
             using TokenScope scope = TokenScope.Create();
             int invocationCount = 0;
             MessageRegistrationHandle handle = scope.Token.RegisterTargeted<SimpleTargetedMessage>(
@@ -331,8 +333,10 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void RegisterBroadcastAcceptsDefaultInstanceIdSilently()
         {
-            // Pinning current behavior: default(InstanceId) is treated as a normal
-            // source identifier rather than rejected.
+            /*
+                Pinning current behavior: default(InstanceId) is treated as a normal
+                source identifier rather than rejected.
+            */
             using TokenScope scope = TokenScope.Create();
             int invocationCount = 0;
             MessageRegistrationHandle handle =
@@ -383,10 +387,12 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitUntargetedClassMessageWithNullPayloadDoesNotCrashWithoutHandlers()
         {
-            // Pinning current behavior: a null class message dispatched through a
-            // bus with zero registered handlers is a no-op rather than an exception.
-            // The reflective UntypedUntargetedBroadcast path would dereference the
-            // payload, but the strongly typed shorthand does not.
+            /*
+                Pinning current behavior: a null class message dispatched through a
+                bus with zero registered handlers is a no-op rather than an exception.
+                The reflective UntypedUntargetedBroadcast path would dereference the
+                payload, but the strongly typed shorthand does not.
+            */
             BusType bus = new BusType();
             Assert.DoesNotThrow(() => bus.EmitUntargeted((ClassUntargetedMessage)null));
         }
@@ -394,10 +400,12 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitUntargetedClassMessageWithNullPayloadAndHandlerInvokesHandler()
         {
-            // Pinning current behavior: the bus does not dereference the message
-            // reference for dispatch (it uses typeof(TMessage) for the lookup), so
-            // a null class payload still reaches a handler that does not access
-            // any member of the message.
+            /*
+                Pinning current behavior: the bus does not dereference the message
+                reference for dispatch (it uses typeof(TMessage) for the lookup), so
+                a null class payload still reaches a handler that does not access
+                any member of the message.
+            */
             using TokenScope scope = TokenScope.Create();
             int invocationCount = 0;
             MessageRegistrationHandle handle =
@@ -418,9 +426,11 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void EmitUntargetedClassMessageWithNullPayloadThrowsWhenHandlerDereferences()
         {
-            // Pins the user-visible boundary: if the caller's handler dereferences
-            // a null message payload, the resulting NullReferenceException surfaces
-            // through the bus to the emit call. The framework does not catch it.
+            /*
+                Pins the user-visible boundary: if the caller's handler dereferences
+                a null message payload, the resulting NullReferenceException surfaces
+                through the bus to the emit call. The framework does not catch it.
+            */
             using TokenScope scope = TokenScope.Create();
             MessageRegistrationHandle handle =
                 scope.Token.RegisterUntargeted<ClassUntargetedMessage>(
@@ -466,8 +476,10 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TargetedBroadcastWithDefaultTargetIsAccepted()
         {
-            // Pinning current behavior: default(InstanceId) is a valid target. The
-            // bus does not enforce a non-zero identifier on the dispatch path.
+            /*
+                Pinning current behavior: default(InstanceId) is a valid target. The
+                bus does not enforce a non-zero identifier on the dispatch path.
+            */
             BusType bus = new BusType();
             MessageHandler handler = new MessageHandler(new InstanceId(OwnerInstanceId), bus)
             {

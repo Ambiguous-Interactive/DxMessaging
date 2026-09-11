@@ -205,10 +205,13 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
                             $"{receiver.ListenerLabel}: {GetTokenStatus(receiver)}, U {receiver.UntargetedCount}, T {receiver.TargetedCount}, B {receiver.BroadcastCount}, Any {receiver.GlobalAcceptAllCount}"
                         )
                     );
-            string runnerSummary =
-                runner == null
-                    ? "Runner: not active"
-                    : $"Runner: sequence {runner.Sequence} - {runner.LastRunSummary}\nSeparate bus: token {(runner.StandaloneTokenEnabled ? "enabled" : "missing")}, registrations {runner.SeparateBusRegistrationCount}, log entries {runner.SeparateBusLogCount}, calls {runner.SeparateBusCallCount}, last trace {runner.LastSeparateBusTraceId}";
+            string runnerSummary = "Runner: not active";
+            if (runner != null)
+            {
+                string tokenStatus = runner.StandaloneTokenEnabled ? "enabled" : "missing";
+                runnerSummary =
+                    $"Runner: sequence {runner.Sequence} - {runner.LastRunSummary}\nSeparate bus: token {tokenStatus}, registrations {runner.SeparateBusRegistrationCount}, log entries {runner.SeparateBusLogCount}, calls {runner.SeparateBusCallCount}, last trace {runner.LastSeparateBusTraceId}";
+            }
             _liveStatus.text =
                 $"STATUS\nPlay Mode: {(EditorApplication.isPlaying ? "running" : "stopped")}\n{runnerSummary}\n{receiverSummary}";
         }

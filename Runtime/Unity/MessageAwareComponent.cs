@@ -95,10 +95,12 @@ namespace DxMessaging.Unity
         protected MessageBusProviderHandle _configuredMessageBusProviderHandle;
 
 #if UNITY_EDITOR || DEBUG
-        // G6: latch the OnEnable self-check log to fire at most once per component instance.
-        // [NonSerialized] keeps the latch from being saved into the scene; every fresh
-        // instance starts with the latch clear and gets at most one breadcrumb if it really is
-        // missing the base.Awake() call.
+        /*
+            G6: latch the OnEnable self-check log to fire at most once per component instance.
+            [NonSerialized] keeps the latch from being saved into the scene; every fresh
+            instance starts with the latch clear and gets at most one breadcrumb if it really is
+            missing the base.Awake() call.
+        */
         [NonSerialized]
         private bool _selfCheckLogged;
 #endif
@@ -173,11 +175,13 @@ namespace DxMessaging.Unity
             {
                 if (_messagingComponent.TryGetToken(this, out MessageRegistrationToken liveToken))
                 {
-                    // A manual MessagingComponent.Create(this) between the release and
-                    // this enable minted a fresh token the field does not know about;
-                    // adopt it so Token/Enable() operate on the live registration. The
-                    // manual creator owns staging in that case, so RegisterMessageHandlers
-                    // is NOT replayed here (no double-staging).
+                    /*
+                        A manual MessagingComponent.Create(this) between the release and
+                        this enable minted a fresh token the field does not know about;
+                        adopt it so Token/Enable() operate on the live registration. The
+                        manual creator owns staging in that case, so RegisterMessageHandlers
+                        is NOT replayed here (no double-staging).
+                    */
                     _messageRegistrationToken = liveToken;
                 }
                 else
@@ -192,13 +196,15 @@ namespace DxMessaging.Unity
                 _messageRegistrationToken?.Enable();
             }
 #if UNITY_EDITOR || DEBUG
-            // G6: belt-and-braces self-check. If we got here without a registration token, the
-            // most common cause is a subclass that overrode Awake without calling base.Awake();
-            // the analyzer DXMSG006 catches this at compile time but only if the project loads
-            // the analyzer DLL (e.g. user has disabled analyzers, opened the project on a Unity
-            // version that does not load the DLL, or the analyzer suppressed via attribute /
-            // ignore list). We surface a one-time-per-instance LogError so the failure mode is
-            // not silent. Gated on UNITY_EDITOR || DEBUG so release builds pay zero cost.
+            /*
+                G6: belt-and-braces self-check. If we got here without a registration token, the
+                most common cause is a subclass that overrode Awake without calling base.Awake();
+                the analyzer DXMSG006 catches this at compile time but only if the project loads
+                the analyzer DLL (e.g. user has disabled analyzers, opened the project on a Unity
+                version that does not load the DLL, or the analyzer suppressed via attribute /
+                ignore list). We surface a one-time-per-instance LogError so the failure mode is
+                not silent. Gated on UNITY_EDITOR || DEBUG so release builds pay zero cost.
+            */
             if (_messageRegistrationToken == null && !_selfCheckLogged)
             {
                 _selfCheckLogged = true;

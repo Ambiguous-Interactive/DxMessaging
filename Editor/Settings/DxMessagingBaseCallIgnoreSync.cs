@@ -299,8 +299,10 @@ namespace DxMessaging.Editor.Settings
                 return builder.ToString();
             }
 
-            // Deterministic order for git-friendly diffs; deduplicate while preserving the user's
-            // typed casing where possible (Ordinal sort with Ordinal-set dedupe).
+            /*
+                Deterministic order for git-friendly diffs; deduplicate while preserving the user's
+                typed casing where possible (Ordinal sort with Ordinal-set dedupe).
+            */
             HashSet<string> seen = new(StringComparer.Ordinal);
             List<string> sorted = new(ignoredTypes.Count);
             foreach (string entry in ignoredTypes)

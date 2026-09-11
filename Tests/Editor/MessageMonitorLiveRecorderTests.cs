@@ -48,8 +48,10 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();
 
-            // The window snapshots the bus buffer newest first, so the recorder must not rely on
-            // the order it is handed.
+            /*
+                The window snapshots the bus buffer newest first, so the recorder must not rely on
+                the order it is handed.
+            */
             recorder.Ingest(Bus(Entry(3, "C"), Entry(2, "B"), Entry(1, "A")));
 
             CollectionAssert.AreEqual(new[] { "A", "B", "C" }, MessageTypeNames(recorder));
@@ -91,8 +93,10 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();
 
-            // Trace id 0 means the record carries no dispatch sequence, so it cannot be
-            // de-duplicated across polls and would otherwise reappear on every drain.
+            /*
+                Trace id 0 means the record carries no dispatch sequence, so it cannot be
+                de-duplicated across polls and would otherwise reappear on every drain.
+            */
             Assert.IsFalse(recorder.Ingest(Bus(Entry(0, "A"))));
 
             Assert.AreEqual(0, recorder.Entries.Count);
@@ -121,8 +125,10 @@ namespace DxMessaging.Tests.Editor
             recorder.Ingest(Bus(Entry(2, "B"), Entry(3, "C")));
             recorder.Recording = true;
 
-            // Emissions 2 and 3 fell out of the bus ring while the drain was paused; only 4 is
-            // still there, so exactly two are unrecoverable.
+            /*
+                Emissions 2 and 3 fell out of the bus ring while the drain was paused; only 4 is
+                still there, so exactly two are unrecoverable.
+            */
             recorder.Ingest(Bus(Entry(4, "D")));
 
             Assert.AreEqual(2, recorder.MissedCount);
@@ -135,8 +141,10 @@ namespace DxMessaging.Tests.Editor
         {
             MessageMonitorLiveRecorder recorder = CreateRecorder();
 
-            // Opening the window on a bus that has been running for a while is not data loss: those
-            // emissions happened before anyone asked to record them.
+            /*
+                Opening the window on a bus that has been running for a while is not data loss: those
+                emissions happened before anyone asked to record them.
+            */
             recorder.Ingest(Bus(Entry(500, "A")));
 
             Assert.AreEqual(0, recorder.MissedCount);
@@ -182,8 +190,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ClearingDoesNotRefillFromWhatTheBusStillHasBuffered()
         {
-            // The bus keeps its own ring, and a poll re-reads all of it. Rewinding the cursor on
-            // Clear would make the log visibly refill itself within one poll.
+            /*
+                The bus keeps its own ring, and a poll re-reads all of it. Rewinding the cursor on
+                Clear would make the log visibly refill itself within one poll.
+            */
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             IReadOnlyList<MessageMonitorEntry> busBuffer = Bus(
                 Entry(1, "A"),
@@ -205,9 +215,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ResettingForANewBusRunTakesEverythingTheNewRunHasAlreadyBuffered()
         {
-            // The case sequence inference cannot catch: the previous run left the cursor at 40, the
-            // bus resets, and the new run emits past 40 before the next poll. Against the old cursor
-            // its opening emissions look already-drained, so they would be dropped silently.
+            /*
+                The case sequence inference cannot catch: the previous run left the cursor at 40, the
+                bus resets, and the new run emits past 40 before the next poll. Against the old cursor
+                its opening emissions look already-drained, so they would be dropped silently.
+            */
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             recorder.Ingest(Bus(Entry(39, "Old"), Entry(40, "Older")));
 
@@ -222,10 +234,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ANewSessionOnARunningBusKeepsTheBoundaryAndTakesWhatFollowsIt()
         {
-            // A play-mode transition with the domain reload disabled leaves the same counter
-            // running, so the cursor already marks the boundary between the two sessions. Clearing
-            // must drop the old session without stepping over the new session's opening emissions,
-            // which are already buffered by the time the transition callback runs.
+            /*
+                A play-mode transition with the domain reload disabled leaves the same counter
+                running, so the cursor already marks the boundary between the two sessions. Clearing
+                must drop the old session without stepping over the new session's opening emissions,
+                which are already buffered by the time the transition callback runs.
+            */
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             recorder.Ingest(Bus(Entry(1, "EditMode")));
 
@@ -245,8 +259,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void AnInferredResetClearsTheSameStateAnAnnouncedOneDoes()
         {
-            // The two paths describe the same event, so a footer read after either must not still
-            // be totalling a run that is over.
+            /*
+                The two paths describe the same event, so a footer read after either must not still
+                be totalling a run that is over.
+            */
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             recorder.Ingest(Bus(Entry(1, "A")));
             recorder.Ingest(Bus(Entry(9, "B")));
@@ -277,8 +293,10 @@ namespace DxMessaging.Tests.Editor
             MessageMonitorLiveRecorder recorder = CreateRecorder();
             recorder.Ingest(Bus(Entry(40, "A"), Entry(41, "B")));
 
-            // MessageBus.Reset restarts the dispatch sequence at 0, so the next snapshot's ids sit
-            // below the cursor without being stale.
+            /*
+                MessageBus.Reset restarts the dispatch sequence at 0, so the next snapshot's ids sit
+                below the cursor without being stale.
+            */
             Assert.IsTrue(recorder.Ingest(Bus(Entry(1, "C"), Entry(2, "D"))));
 
             Assert.AreEqual(2, recorder.Cursor);

@@ -49,8 +49,10 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTearDown]
         public IEnumerator UnloadOwnedScene()
         {
-            // Retain an in-progress request when an assertion interrupts either scene test.
-            // Only this fixture's scene is eligible for cleanup; the runner scene stays loaded.
+            /*
+                Retain an in-progress request when an assertion interrupts either scene test.
+                Only this fixture's scene is eligible for cleanup; the runner scene stays loaded.
+            */
             if (_sceneUnload == null && _ownedScene.IsValid() && _ownedScene.isLoaded)
             {
                 _sceneUnload = SceneManager.UnloadSceneAsync(_ownedScene);
@@ -204,8 +206,10 @@ namespace DxMessaging.Tests.Runtime.Core
             int aCount = 0;
             int bCount = 0;
 
-            // Handler A (priority 0) disables the token, Handler B (priority 1)
-            // is registered after A so it sees the same emission's snapshot.
+            /*
+                Handler A (priority 0) disables the token, Handler B (priority 1)
+                is registered after A so it sees the same emission's snapshot.
+            */
             MessageRegistrationHandle aHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
@@ -281,8 +285,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Use a dedicated component so we can disable its token without
-            // affecting the dispatch loop on the host's token.
+            /*
+                Use a dedicated component so we can disable its token without
+                affecting the dispatch loop on the host's token.
+            */
             GameObject auxHost = new(
                 nameof(TokenReEnableMidDispatch) + "Aux" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
@@ -295,9 +301,11 @@ namespace DxMessaging.Tests.Runtime.Core
             int hostHandlerCount = 0;
             int auxHandlerCount = 0;
 
-            // Pre-register an aux handler then Disable its token before the
-            // first emission, simulating a previously-disabled handler that
-            // gets re-enabled mid-dispatch on a different bus client.
+            /*
+                Pre-register an aux handler then Disable its token before the
+                first emission, simulating a previously-disabled handler that
+                gets re-enabled mid-dispatch on a different bus client.
+            */
             MessageRegistrationHandle auxHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 auxToken,
@@ -375,10 +383,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // A standalone token (not a MessageAwareComponent token) keeps this
-            // test in full control of every registration: UnregisterAll() on a
-            // component token would also wipe the component's built-in
-            // StringMessage registrations and skew the bus counters.
+            /*
+                A standalone token (not a MessageAwareComponent token) keeps this
+                test in full control of every registration: UnregisterAll() on a
+                component token would also wipe the component's built-in
+                StringMessage registrations and skew the bus counters.
+            */
             GameObject host = new(nameof(UnregisterAllMidDispatch) + scenario.Kind);
             _spawned.Add(host);
             InstanceId hostId = host;
@@ -397,8 +407,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 int initialTargeted = bus.RegisteredTargeted;
                 int initialBroadcast = bus.RegisteredBroadcast;
 
-                // Handler A (priority 0) clears the whole token mid-dispatch;
-                // handler B (priority 1) observes the in-flight snapshot.
+                /*
+                    Handler A (priority 0) clears the whole token mid-dispatch;
+                    handler B (priority 1) observes the in-flight snapshot.
+                */
                 _ = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,
@@ -474,8 +486,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                // KEY difference from Disable(): the staged registrations were
-                // cleared, so Enable() must NOT resurrect the handlers.
+                /*
+                    KEY difference from Disable(): the staged registrations were
+                    cleared, so Enable() must NOT resurrect the handlers.
+                */
                 token.Enable();
                 ScenarioCallbacks.EmitForKind(scenario, hostId);
                 Assert.AreEqual(
@@ -509,8 +523,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                // The token (and the bus) must remain fully usable: a fresh
-                // registration on the re-enabled token dispatches normally.
+                /*
+                    The token (and the bus) must remain fully usable: a fresh
+                    registration on the re-enabled token dispatches normally.
+                */
                 MessageRegistrationHandle freshHandle = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,
@@ -567,9 +583,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Disable the host's token so the only registrations on the bus
-            // are zero (or the test base's own pristine state). Emitting
-            // must not throw.
+            /*
+                Disable the host's token so the only registrations on the bus
+                are zero (or the test base's own pristine state). Emitting
+                must not throw.
+            */
             token.Disable();
 
             IMessageBus bus = MessageHandler.MessageBus;
@@ -579,10 +597,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
 
-            // Per-kind assertion: the counter for the emitted kind must
-            // remain at its baseline (no spurious registrations introduced
-            // by the empty-bus emit), and so must the OTHER two counters
-            // (proves the no-op did not leak into another kind's bookkeeping).
+            /*
+                Per-kind assertion: the counter for the emitted kind must
+                remain at its baseline (no spurious registrations introduced
+                by the empty-bus emit), and so must the OTHER two counters
+                (proves the no-op did not leak into another kind's bookkeeping).
+            */
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
@@ -655,8 +675,10 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId hostId = host;
 
             int handlerCount = 0;
-            // Register a handler whose callback would bump handlerCount; we
-            // never want to see it fire after the reset.
+            /*
+                Register a handler whose callback would bump handlerCount; we
+                never want to see it fire after the reset.
+            */
             _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
@@ -664,10 +686,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => ++handlerCount
             );
 
-            // Reset wipes every registration AND bumps the reset generation
-            // so any deregister closures captured before the reset turn into
-            // no-ops. After the reset, emit a fresh message: no handler may
-            // run because the prior registration was wiped.
+            /*
+                Reset wipes every registration AND bumps the reset generation
+                so any deregister closures captured before the reset turn into
+                no-ops. After the reset, emit a fresh message: no handler may
+                run because the prior registration was wiped.
+            */
             DxMessagingStaticState.Reset();
 
             Assert.DoesNotThrow(
@@ -683,8 +707,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 handlerCount
             );
 
-            // Defensive sanity: the bus must report zero registrations on
-            // every counter after Reset, regardless of what the test ran.
+            /*
+                Defensive sanity: the bus must report zero registrations on
+                every counter after Reset, regardless of what the test ran.
+            */
             IMessageBus bus = MessageHandler.MessageBus;
             Assert.AreEqual(
                 0,
@@ -896,11 +922,13 @@ namespace DxMessaging.Tests.Runtime.Core
             int handlerCount = 0;
             MessageRegistrationHandle? deferredHandle = null;
 
-            // Closure stored in a UnityAction so the same delegate instance
-            // can be both subscribed and unsubscribed. Lambda parameter
-            // discards (Scene _, LoadSceneMode _) follow the project
-            // convention; local functions cannot reuse `_` as a parameter
-            // name across slots.
+            /*
+                Closure stored in a UnityAction so the same delegate instance
+                can be both subscribed and unsubscribed. Lambda parameter
+                discards (Scene _, LoadSceneMode _) follow the project
+                convention; local functions cannot reuse `_` as a parameter
+                name across slots.
+            */
             UnityEngine.Events.UnityAction<Scene, LoadSceneMode> onSceneLoaded = (
                 Scene _,
                 LoadSceneMode _
@@ -914,15 +942,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             };
 
-            // Subscribe / unsubscribe pair documents the API surface users
-            // would touch even though the closure is invoked manually below.
+            /*
+                Subscribe / unsubscribe pair documents the API surface users
+                would touch even though the closure is invoked manually below.
+            */
             SceneManager.sceneLoaded += onSceneLoaded;
             try
             {
-                // Manual invoke: see the XML doc above. SceneManager.CreateScene
-                // does not raise sceneLoaded, and LoadSceneAsync needs a scene
-                // asset in BuildSettings, so we drive the closure directly to
-                // exercise the registration code path deterministically.
+                /*
+                    Manual invoke: see the XML doc above. SceneManager.CreateScene
+                    does not raise sceneLoaded, and LoadSceneAsync needs a scene
+                    asset in BuildSettings, so we drive the closure directly to
+                    exercise the registration code path deterministically.
+                */
                 Scene activeScene = SceneManager.GetActiveScene();
                 onSceneLoaded(activeScene, LoadSceneMode.Additive);
 
@@ -932,10 +964,12 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                // Defensive: assert the bus's per-kind counter actually moved
-                // by exactly 1. Guards against a regression where the closure
-                // runs but the registration silently fails to install on the
-                // bus (e.g. a future short-circuit path).
+                /*
+                    Defensive: assert the bus's per-kind counter actually moved
+                    by exactly 1. Guards against a regression where the closure
+                    runs but the registration silently fails to install on the
+                    bus (e.g. a future short-circuit path).
+                */
                 switch (scenario.Kind)
                 {
                     case MessageKind.Untargeted:
@@ -1047,8 +1081,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 peerCount
             );
 
-            // Yield a frame so Object.Destroy is processed and the
-            // destroyed component's OnDestroy unregisters it.
+            /*
+                Yield a frame so Object.Destroy is processed and the
+                destroyed component's OnDestroy unregisters it.
+            */
             yield return null;
 
             ScenarioCallbacks.EmitForKind(scenario, hostId);
@@ -1095,8 +1131,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Peer host in the test runner's active scene so we can keep
-            // dispatching after the transient scene unloads.
+            /*
+                Peer host in the test runner's active scene so we can keep
+                dispatching after the transient scene unloads.
+            */
             GameObject peer = new(
                 nameof(SceneUnloadMidDispatchDrainsInFlightEmission) + scenario.Kind + "-Peer",
                 typeof(EmptyMessageAwareComponent)
@@ -1111,9 +1149,11 @@ namespace DxMessaging.Tests.Runtime.Core
             AsyncOperation unloadOp = null;
             bool emittedFromHost = false;
 
-            // Peer at priority 1 to assert it still runs on the in-flight
-            // emission AFTER the host's priority-0 handler triggers an
-            // unload.
+            /*
+                Peer at priority 1 to assert it still runs on the in-flight
+                emission AFTER the host's priority-0 handler triggers an
+                unload.
+            */
             MessageRegistrationHandle peerHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 peerToken,
