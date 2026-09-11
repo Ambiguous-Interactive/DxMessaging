@@ -23,7 +23,8 @@ the package editor tools.
 1. Open `DiagnosticsToolingExerciser.unity`.
 1. Follow the **DxMessaging Guided Tour** window that opens with the scene. It
    starts Play Mode, emits deterministic traffic, opens Message Monitor and Flow
-   Graph, selects all receivers, and links to the relevant Project Settings.
+   Graph, selects all receivers, reproduces receiver failures, and links to the
+   relevant Project Settings.
 
 Reopen the guide at any time from **Tools > Wallstop Studios > DxMessaging >
 Diagnostics Tooling Guided Tour**. Each step remains safe when the scene is not
@@ -52,6 +53,27 @@ The runner also exposes context-menu commands:
   trace IDs continue forward without duplicates.
 - Receiver **Reset Counts** clears the inspector counters without changing
   registrations.
+
+## Receiver Failure Walkthrough
+
+Run the healthy burst and inspect its routes before using these guide actions:
+
+1. **Disable Player Ship** keeps its token and registration rows visible in the
+   Inspector, but marks them disabled. Refresh Flow Graph and emit again to see
+   that the disabled receiver gets no new calls.
+1. **Release Enemy Drone Token** leaves the component loaded while removing its
+   live token. The Inspector reports `No token`, and a Flow Graph refresh removes
+   its routes.
+1. Select a HUD Console route in Flow Graph, then click **Destroy HUD Console**.
+   Refresh removes the stale graph selection and live routes. Existing Message
+   Monitor rows keep their captured context text but do not show an object action.
+1. Exit and re-enter Play Mode to restore the three receivers and deterministic
+   starting state.
+
+Message Monitor reads the default global bus. Flow Graph and Component
+Diagnostics read loaded `MessagingComponent` instances. A separate `MessageBus`
+or standalone token does not appear on those surfaces; inspect it through that
+bus or token's diagnostics API.
 
 ## Expected Tool Data
 

@@ -165,6 +165,20 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
             lastPayload = "None";
         }
 
+        /// <summary>
+        /// Releases this receiver's live token so the diagnostics sample can show its no-token
+        /// state. Exit and re-enter Play Mode to restore the receiver.
+        /// </summary>
+        public void ReleaseTokenForWalkthrough()
+        {
+            if (_messagingComponent != null)
+            {
+                _messagingComponent.Release(this);
+            }
+
+            _messageRegistrationToken = null;
+        }
+
         private void OnPulse(in ToolingPulse message)
         {
             untargetedCount++;
