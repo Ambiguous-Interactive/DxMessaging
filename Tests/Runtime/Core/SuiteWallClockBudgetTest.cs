@@ -1,5 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
-[assembly: DxMessaging.Tests.Runtime.NoteGatedCategoryAction]
+[assembly: DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute]
 
 namespace DxMessaging.Tests.Runtime
 {
@@ -43,7 +43,7 @@ namespace DxMessaging.Tests.Runtime
     /// runner.
     /// </para>
     /// <para>
-    /// Gated-category detection: an assembly-scoped <see cref="NoteGatedCategoryAction"/>
+    /// Gated-category detection: an assembly-scoped <see cref="NoteGatedCategoryAttribute"/>
     /// runs <see cref="ITestAction.BeforeTest"/> for every test in the run.
     /// The action reads the test's NUnit categories (from
     /// <see cref="ITest.Properties"/> with the <c>"Category"</c> key, as
@@ -210,7 +210,7 @@ namespace DxMessaging.Tests.Runtime
 
         /// <summary>
         /// Marks the current run as containing a gated test. Called from
-        /// <see cref="NoteGatedCategoryAction.BeforeTest"/> for every test
+        /// <see cref="NoteGatedCategoryAttribute.BeforeTest"/> for every test
         /// before it runs, so the teardown assertion can short-circuit
         /// when a gated category is in scope.
         /// </summary>
@@ -237,12 +237,12 @@ namespace DxMessaging.Tests.Runtime
     /// test runs, scans the test's NUnit categories, and forwards each one
     /// to <see cref="SuiteWallClockBudgetTest.NoteGatedCategoryObserved"/>.
     /// Combined with the assembly-level attribute application (see the
-    /// <c>[assembly: NoteGatedCategoryAction]</c> declaration at the top
+    /// <c>[assembly: NoteGatedCategory]</c> declaration at the top
     /// of this file) this covers every test in every fixture in the
     /// assembly without requiring a base class.
     /// </summary>
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
-    public sealed class NoteGatedCategoryAction : Attribute, ITestAction
+    public sealed class NoteGatedCategoryAttribute : Attribute, ITestAction
     {
         public ActionTargets Targets => ActionTargets.Test;
 

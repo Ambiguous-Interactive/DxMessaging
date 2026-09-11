@@ -179,29 +179,25 @@ namespace DxMessaging.Editor.Analyzers
                                 genericMethodArgs,
                                 out MethodBase? target
                             )
+                            && target != null
+                            && string.Equals(target.Name, methodName, StringComparison.Ordinal)
                         )
                         {
+                            Type? declaring = method.DeclaringType;
+                            Type? resolved = target.DeclaringType;
+                            // Guard against false-positives: the resolved method must live on a
+                            // STRICT base type of the declaring class (not the declaring class
+                            // itself, not a sibling, not a generic-arg shadow). IsAssignableFrom
+                            // checks "is `declaring` assignable TO `resolved`"; i.e. is
+                            // `resolved` an ancestor of `declaring`.
                             if (
-                                target != null
-                                && string.Equals(target.Name, methodName, StringComparison.Ordinal)
+                                declaring != null
+                                && resolved != null
+                                && declaring != resolved
+                                && resolved.IsAssignableFrom(declaring)
                             )
                             {
-                                Type? declaring = method.DeclaringType;
-                                Type? resolved = target.DeclaringType;
-                                // Guard against false-positives: the resolved method must live on a
-                                // STRICT base type of the declaring class (not the declaring class
-                                // itself, not a sibling, not a generic-arg shadow). IsAssignableFrom
-                                // checks "is `declaring` assignable TO `resolved`"; i.e. is
-                                // `resolved` an ancestor of `declaring`.
-                                if (
-                                    declaring != null
-                                    && resolved != null
-                                    && declaring != resolved
-                                    && resolved.IsAssignableFrom(declaring)
-                                )
-                                {
-                                    return true;
-                                }
+                                return true;
                             }
                         }
                         i += 4;

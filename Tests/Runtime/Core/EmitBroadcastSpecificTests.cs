@@ -188,7 +188,7 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle handle =
                 token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test1, Test1Receive);
             _ = handles.Add(handle);
-            handle = token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
+            _ = token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
                 test1,
                 _ => ++test1ReceiveCount
             );

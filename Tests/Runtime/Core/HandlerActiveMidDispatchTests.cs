@@ -86,7 +86,6 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             GameObject host = new(nameof(TargetedSelfDeactivationSkipsSameHandlerSamePriorityPeer));
             _spawned.Add(host);
-            InstanceId hostId = host;
             MessageHandler handler = new(host) { active = true };
             MessageBus bus = new();
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);

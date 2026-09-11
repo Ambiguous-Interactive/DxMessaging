@@ -972,7 +972,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             private readonly int _successfulRegistrationsBeforeThrow;
             private int _registrationAttempts;
-            private bool _throwOnRegistration = true;
+            private readonly bool _throwOnRegistration = true;
             private bool _throwOnDeregistration = true;
 
             internal ThrowingRegistrationWithFailingRollbackBus(

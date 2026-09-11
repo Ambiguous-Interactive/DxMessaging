@@ -560,7 +560,7 @@ namespace DxMessaging.Tests.Runtime
                     );
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(_scenario));
+                    throw new ArgumentOutOfRangeException(nameof(operation));
             }
         }
 
@@ -704,7 +704,7 @@ namespace DxMessaging.Tests.Runtime
                         break;
                     }
                     default:
-                        throw new ArgumentOutOfRangeException(nameof(_scenario));
+                        throw new ArgumentOutOfRangeException(nameof(operation));
                 }
             }
             else
@@ -765,7 +765,7 @@ namespace DxMessaging.Tests.Runtime
                     }
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(_scenario));
+                    throw new ArgumentOutOfRangeException(nameof(operation));
             }
         }
 
