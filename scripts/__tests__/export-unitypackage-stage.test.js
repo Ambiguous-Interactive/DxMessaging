@@ -315,7 +315,7 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
 // Single source of truth for the built-in module set the ephemeral export
 // project must enable; both export-unitypackage.ps1 and this guard read it.
 const MODULE_DATA_PATH = path.join(REPO_ROOT, "scripts", "unity", "unity-builtin-modules.json");
-const RELEASE_UNITY_2022_UNSUPPORTED_MODULES = ["com.unity.modules.accessibility"];
+const MATRIX_UNSUPPORTED_MODULES = ["com.unity.modules.accessibility", "com.unity.modules.vr"];
 
 test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) => {
   if (!HAS_PWSH) {
@@ -342,8 +342,8 @@ test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) =>
     for (const id of Object.keys(required)) {
       assert.ok(hasDependency(id), `manifest is missing required dependency ${id}`);
     }
-    for (const id of RELEASE_UNITY_2022_UNSUPPORTED_MODULES) {
-      assert.equal(hasDependency(id), false, `${id} is not resolvable by Unity 2022.3`);
+    for (const id of MATRIX_UNSUPPORTED_MODULES) {
+      assert.equal(hasDependency(id), false, `${id} is not resolvable across the Unity matrix`);
     }
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
