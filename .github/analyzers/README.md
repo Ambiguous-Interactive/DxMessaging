@@ -8,8 +8,10 @@ closure into the disposable test project's `Assets` tree. `csc.rsp` registers
 the files for the existing full-source compile, where `-warnaserror` makes every
 enabled diagnostic blocking.
 
-`DxMessaging.StaticAnalysis.globalconfig` is the text-only analyzer policy. It
-documents narrow exceptions for deliberate compatibility, Unity, reflection,
+`DxMessaging.StaticAnalysis.globalconfig`, the repository `.editorconfig`, and
+`DxMessaging.CiProject.editorconfig` form the text-only analyzer policy. The
+EditorConfig files keep test, Editor, and copied-sample exceptions path-scoped;
+the global policy documents cross-project compatibility, Unity, reflection,
 and allocation-sensitive architecture. All other diagnostics from the pinned
 analyzers remain enabled and become build errors.
 

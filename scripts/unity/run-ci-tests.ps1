@@ -123,6 +123,7 @@ function Get-ShippingDispatchLoopShape {
 }
 $CiAnalyzerManifestRelativePath = [System.IO.Path]::Combine('.github', 'analyzers', 'manifest.json')
 $CiAnalyzerConfigRelativePath = [System.IO.Path]::Combine('.github', 'analyzers', 'DxMessaging.StaticAnalysis.globalconfig')
+$CiProjectAnalyzerConfigRelativePath = [System.IO.Path]::Combine('.github', 'analyzers', 'DxMessaging.CiProject.editorconfig')
 $ProjectOwnershipMarkerName = '.dxmessaging-ci-project'
 $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
 $CacheOwnershipMarkerName = '.dxmessaging-ci-cache'
@@ -1551,9 +1552,20 @@ PluginImporter:
     $destinationConfigPath = Join-Path $destinationDirectory 'DxMessaging.StaticAnalysis.globalconfig'
     Copy-Item -LiteralPath $sourceConfigPath -Destination $destinationConfigPath -Force
 
+    $repositoryConfigPath = Join-Path $Root '.editorconfig'
+    if (-not (Test-Path -LiteralPath $repositoryConfigPath -PathType Leaf)) {
+        throw "Missing repository EditorConfig analyzer policy: $repositoryConfigPath"
+    }
+    $sourceProjectConfigPath = Join-Path $Root $CiProjectAnalyzerConfigRelativePath
+    if (-not (Test-Path -LiteralPath $sourceProjectConfigPath -PathType Leaf)) {
+        throw "Missing text-only generated-project analyzer policy: $sourceProjectConfigPath"
+    }
+    $destinationProjectConfigPath = Join-Path $Project 'DxMessaging.CiProject.editorconfig'
+    Copy-Item -LiteralPath $sourceProjectConfigPath -Destination $destinationProjectConfigPath -Force
+
     return [pscustomobject]@{
         AnalyzerPaths = @($destinationPaths)
-        ConfigPath = $destinationConfigPath
+        ConfigPaths = @($destinationConfigPath, $repositoryConfigPath, $destinationProjectConfigPath)
     }
 }
 
@@ -3797,7 +3809,9 @@ EditorSettings:
         foreach ($ciAnalyzerPath in @($ciAnalyzerInstallation.AnalyzerPaths)) {
             $cscOptions += "-analyzer:`"$ciAnalyzerPath`""
         }
-        $cscOptions += "-analyzerconfig:`"$($ciAnalyzerInstallation.ConfigPath)`""
+        foreach ($ciAnalyzerConfigPath in @($ciAnalyzerInstallation.ConfigPaths)) {
+            $cscOptions += "-analyzerconfig:`"$ciAnalyzerConfigPath`""
+        }
     }
     $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
     New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |

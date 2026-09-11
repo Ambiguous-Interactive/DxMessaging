@@ -196,3 +196,47 @@ tab_width = 4
 end_of_line = lf
 indent_style = space
 indent_size = 2
+
+# Developer-local CI analyzer exceptions for deliberate Editor implementation patterns.
+[Editor/CustomEditors/MessageAwareComponentInspectorOverlay.cs]
+dotnet_diagnostic.S3241.severity = none
+
+[Editor/CustomEditors/MessageAwareComponentSubscriptionsView.cs]
+dotnet_diagnostic.S3358.severity = none
+
+[Editor/ReadonlyFastHandlerUpgrade.cs]
+dotnet_diagnostic.S127.severity = none
+
+[Editor/Settings/DxMessagingSettings.cs]
+dotnet_diagnostic.S4275.severity = none
+
+[Editor/SetupCscRsp.cs]
+dotnet_diagnostic.S127.severity = none
+dotnet_diagnostic.S3358.severity = none
+
+[Editor/Windows/DxMessagingEditorSourceLinks.cs]
+dotnet_diagnostic.S127.severity = none
+
+[Editor/Windows/DxMessagingFlowGraphWindow.cs]
+dotnet_diagnostic.S2234.severity = none
+dotnet_diagnostic.S3358.severity = none
+
+[Editor/Windows/DxMessagingMessageMonitorLiveView.cs]
+dotnet_diagnostic.S1244.severity = none
+
+# Test-only mutants, closure diagnostics, deterministic trace encodings, and exception-safe
+# cleanup locals intentionally use shapes that production-oriented Sonar rules reject.
+[Tests/**/*.cs]
+dotnet_diagnostic.S1185.severity = none
+dotnet_diagnostic.S1186.severity = none
+dotnet_diagnostic.S1854.severity = none
+dotnet_diagnostic.S1905.severity = none
+dotnet_diagnostic.S2094.severity = none
+dotnet_diagnostic.S2955.severity = none
+dotnet_diagnostic.S3236.severity = none
+dotnet_diagnostic.S3241.severity = none
+dotnet_diagnostic.S3358.severity = none
+dotnet_diagnostic.S3881.severity = none
+dotnet_diagnostic.S3928.severity = none
+dotnet_diagnostic.S3973.severity = none
+dotnet_diagnostic.S4456.severity = none
