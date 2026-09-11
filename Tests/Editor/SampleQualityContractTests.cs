@@ -706,12 +706,22 @@ namespace DxMessaging.Tests.Editor
 
         private static bool TryGetImportedSamplesRoot(out string importedSamplesRoot)
         {
-            importedSamplesRoot = CiImportedSamplesRoot;
+            importedSamplesRoot = Environment.GetEnvironmentVariable("DXM_IMPORTED_SAMPLES_ROOT");
+            if (string.IsNullOrWhiteSpace(importedSamplesRoot))
+            {
+                importedSamplesRoot = CiImportedSamplesRoot;
+            }
+            importedSamplesRoot = importedSamplesRoot.Replace('\\', '/').TrimEnd('/');
+            Assert.That(
+                importedSamplesRoot.StartsWith("Assets/", StringComparison.Ordinal),
+                Is.True,
+                "DXM_IMPORTED_SAMPLES_ROOT must be a project-relative Assets path."
+            );
             bool fixtureExists = AssetDatabase.IsValidFolder(importedSamplesRoot);
             Assert.That(
                 fixtureExists || !IsContinuousIntegration(),
                 Is.True,
-                "CI must import Assets/DxmCiSamples before running fixture-gated sample contracts."
+                $"CI must import {importedSamplesRoot} before running fixture-gated sample contracts."
             );
             if (!fixtureExists)
             {

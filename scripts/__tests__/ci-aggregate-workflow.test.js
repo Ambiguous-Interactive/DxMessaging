@@ -621,8 +621,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     );
     assert.doesNotMatch(returnStep, /continue-on-error:/);
 
-    // Invocation invariant: the validated editor output reaches every
-    // Unity-consuming step as UNITY_EDITOR_PATH, in gate-then-consume order.
+    // prettier-ignore
+    if (file === "unity-tests.yml") { assert.match(readWorkflow(file), /consumer_install_validation:\n\s+description:.*\n\s+type: boolean\n\s+default: false/); for (const fragment of [/-VerifyConsumerInstalls/, /!inputs\.consumer_install_validation && steps\.compute_playmode/, /!inputs\.consumer_install_validation && steps\.compute_standalone/, /CONSUMER_INSTALL_VALIDATION: \$\{\{ inputs\.consumer_install_validation \}\}/]) assert.match(job, fragment, `${label}: consumer installs must remain manual-only and replace ordinary modes`); }
     const parsedSteps = YAML.parse(job)[jobId].steps;
     const gateIndex = parsedSteps.findIndex((step) => step.id === "ensure_unity_editor");
     assert.ok(gateIndex >= 0, `${label}: editor gate step must exist`);

@@ -50,6 +50,10 @@ on:
         description: "Run the exhaustive stripped-player matrix"
         type: boolean
         default: false
+      consumer_install_validation:
+        description: "Validate Git, UPM tarball, and classic package consumers"
+        type: boolean
+        default: false
 
 concurrency:
   # Push runs share one group per ref, so consecutive default-branch pushes stay
@@ -156,6 +160,12 @@ jobs:
           github-token: ${{ github.token }}
           pull-request-number: ${{ github.event.pull_request.number }}
           expected-head-sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Require one optional manual validation mode
+        if: ${{ inputs.shipping_fidelity && inputs.consumer_install_validation }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: throw 'shipping_fidelity and consumer_install_validation are mutually exclusive.'
 
       # Contract item 3: the central immutable gate validates the runner-owned
       # editor before any credential reference or checkout. CI never installs,
@@ -330,24 +340,37 @@ jobs:
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DXM_TEST_ASSEMBLIES: ${{ steps.compute.outputs.assemblies }}
           DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!UnityRuntime;!PerfBench;!PerfGate;!PerfBaseline"
+          CONSUMER_INSTALL_VALIDATION: ${{ inputs.consumer_install_validation }}
         run: |
-          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-editmode'
-          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
-          ./scripts/unity/run-ci-tests.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -TestMode editmode `
-            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
-            -ProjectPath $projectPath `
-            -CachePath $cachePath `
-            -LicenseReturnOwner Central `
-            -ReleaseCodeOptimization `
-            -ReleasePlayerBuild
+          if ($env:CONSUMER_INSTALL_VALIDATION -eq 'true') {
+            $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-unitypackage'
+            $licenseReturnOwner = 'Central'
+            ./scripts/unity/export-unitypackage.ps1 `
+              -UnityVersion '${{ matrix.unity-version }}' `
+              -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
+              -ProjectPath $projectPath `
+              -GitRevision '${{ github.sha }}' `
+              -VerifyConsumerInstalls `
+              -LicenseReturnOwner $licenseReturnOwner
+          } else {
+            $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-editmode'
+            $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
+            ./scripts/unity/run-ci-tests.ps1 `
+              -UnityVersion '${{ matrix.unity-version }}' `
+              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+              -TestMode editmode `
+              -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+              -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
+              -ProjectPath $projectPath `
+              -CachePath $cachePath `
+              -LicenseReturnOwner Central `
+              -ReleaseCodeOptimization `
+              -ReleasePlayerBuild
+          }
 
       - name: Run Unity PlayMode tests
         id: run_playmode
-        if: ${{ !cancelled() && steps.compute_playmode.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ !cancelled() && !inputs.consumer_install_validation && steps.compute_playmode.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         continue-on-error: true
         timeout-minutes: 90
         shell: pwsh
@@ -376,7 +399,7 @@ jobs:
 
       - name: Run Unity standalone tests
         id: run_standalone
-        if: ${{ !cancelled() && steps.compute_standalone.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
+        if: ${{ !cancelled() && !inputs.consumer_install_validation && steps.compute_standalone.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         continue-on-error: true
         timeout-minutes: 150
         shell: pwsh
@@ -492,6 +515,7 @@ jobs:
         if: >-
           ${{
             !cancelled() &&
+            !inputs.consumer_install_validation &&
             steps.compute.outcome == 'success' &&
             (steps.compute.outputs.is-empty == 'true' || steps.run_editmode.outcome != 'skipped')
           }}
@@ -508,6 +532,7 @@ jobs:
         if: >-
           ${{
             !cancelled() &&
+            !inputs.consumer_install_validation &&
             steps.compute_playmode.outcome == 'success' &&
             (steps.compute_playmode.outputs.is-empty == 'true' || steps.run_playmode.outcome != 'skipped')
           }}
@@ -524,6 +549,7 @@ jobs:
         if: >-
           ${{
             !cancelled() &&
+            !inputs.consumer_install_validation &&
             steps.compute_standalone.outcome == 'success' &&
             (steps.compute_standalone.outputs.is-empty == 'true' || steps.run_standalone.outcome != 'skipped')
           }}
@@ -583,7 +609,7 @@ jobs:
           retention-days: 14
 
       - name: Upload PlayMode test artifacts
-        if: ${{ always() && steps.redact_tests.outcome == 'success' }}
+        if: ${{ always() && !inputs.consumer_install_validation && steps.redact_tests.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -593,7 +619,7 @@ jobs:
           retention-days: 14
 
       - name: Upload standalone test artifacts
-        if: ${{ always() && steps.redact_tests.outcome == 'success' }}
+        if: ${{ always() && !inputs.consumer_install_validation && steps.redact_tests.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -642,22 +668,32 @@ jobs:
           STANDALONE_VERIFY: ${{ steps.verify_standalone.outcome }}
           SHIPPING_REQUIRED: ${{ github.event_name == 'workflow_dispatch' && inputs.shipping_fidelity && (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1') }}
           SHIPPING_RUN: ${{ steps.run_shipping.outcome }}
+          CONSUMER_INSTALL_VALIDATION: ${{ inputs.consumer_install_validation }}
         run: |
           $failures = @()
-          foreach ($mode in @(
-            @{ Name = 'editmode'; Compute = $env:EDIT_COMPUTE; Empty = $env:EDIT_EMPTY; Run = $env:EDIT_RUN; Verify = $env:EDIT_VERIFY },
-            @{ Name = 'playmode'; Compute = $env:PLAY_COMPUTE; Empty = $env:PLAY_EMPTY; Run = $env:PLAY_RUN; Verify = $env:PLAY_VERIFY },
-            @{ Name = 'standalone'; Compute = $env:STANDALONE_COMPUTE; Empty = $env:STANDALONE_EMPTY; Run = $env:STANDALONE_RUN; Verify = $env:STANDALONE_VERIFY }
-          )) {
-            if ($mode.Compute -ne 'success') {
-              $failures += "$($mode.Name): assembly discovery $($mode.Compute)"
-            } elseif ($mode.Empty -eq 'true' -and $mode.Run -ne 'skipped') {
-              $failures += "$($mode.Name): empty discovery unexpectedly ran tests ($($mode.Run))"
-            } elseif ($mode.Empty -ne 'true' -and $mode.Run -ne 'success') {
-              $failures += "$($mode.Name): test run $($mode.Run)"
+          if ($env:CONSUMER_INSTALL_VALIDATION -eq 'true') {
+            if ($env:EDIT_RUN -ne 'success') {
+              $failures += "consumer installs: $env:EDIT_RUN"
             }
-            if ($mode.Verify -ne 'success') {
-              $failures += "$($mode.Name): result verification $($mode.Verify)"
+            foreach ($mode in @(@{ Name = 'playmode'; Run = $env:PLAY_RUN }, @{ Name = 'standalone'; Run = $env:STANDALONE_RUN })) {
+              if ($mode.Run -ne 'skipped') { $failures += "$($mode.Name): consumer validation unexpectedly ran tests ($($mode.Run))" }
+            }
+          } else {
+            foreach ($mode in @(
+              @{ Name = 'editmode'; Compute = $env:EDIT_COMPUTE; Empty = $env:EDIT_EMPTY; Run = $env:EDIT_RUN; Verify = $env:EDIT_VERIFY },
+              @{ Name = 'playmode'; Compute = $env:PLAY_COMPUTE; Empty = $env:PLAY_EMPTY; Run = $env:PLAY_RUN; Verify = $env:PLAY_VERIFY },
+              @{ Name = 'standalone'; Compute = $env:STANDALONE_COMPUTE; Empty = $env:STANDALONE_EMPTY; Run = $env:STANDALONE_RUN; Verify = $env:STANDALONE_VERIFY }
+            )) {
+              if ($mode.Compute -ne 'success') {
+                $failures += "$($mode.Name): assembly discovery $($mode.Compute)"
+              } elseif ($mode.Empty -eq 'true' -and $mode.Run -ne 'skipped') {
+                $failures += "$($mode.Name): empty discovery unexpectedly ran tests ($($mode.Run))"
+              } elseif ($mode.Empty -ne 'true' -and $mode.Run -ne 'success') {
+                $failures += "$($mode.Name): test run $($mode.Run)"
+              }
+              if ($mode.Verify -ne 'success') {
+                $failures += "$($mode.Name): result verification $($mode.Verify)"
+              }
             }
           }
           if ($env:SHIPPING_REQUIRED -eq 'true' -and $env:SHIPPING_RUN -ne 'success') {
