@@ -707,30 +707,51 @@ namespace DxMessaging.Editor
 
         private static bool TypeScopeIsPartial(string masked, int typeStart)
         {
+            Match declaration = null;
             foreach (Match match in TypeDeclarationRegex.Matches(masked))
             {
+                if (IsOnPreprocessorDirectiveLine(masked, match.Index))
+                {
+                    continue;
+                }
                 int open = masked.IndexOf('{', match.Index + match.Length);
                 if (open != typeStart)
                 {
                     continue;
                 }
-                int modifierStart = match.Index - 1;
-                while (
-                    modifierStart >= 0
-                    && masked[modifierStart] != ';'
-                    && masked[modifierStart] != '{'
-                    && masked[modifierStart] != '}'
-                )
-                {
-                    modifierStart--;
-                }
-                return Regex.IsMatch(
-                    masked.Substring(modifierStart + 1, match.Index - modifierStart - 1),
-                    @"\bpartial\b",
-                    RegexOptions.CultureInvariant
-                );
+                declaration = match;
             }
-            return false;
+            if (declaration == null)
+            {
+                return false;
+            }
+
+            int modifierStart = declaration.Index - 1;
+            while (
+                modifierStart >= 0
+                && masked[modifierStart] != ';'
+                && masked[modifierStart] != '{'
+                && masked[modifierStart] != '}'
+            )
+            {
+                modifierStart--;
+            }
+            return Regex.IsMatch(
+                masked.Substring(modifierStart + 1, declaration.Index - modifierStart - 1),
+                @"\bpartial\b",
+                RegexOptions.CultureInvariant
+            );
+        }
+
+        private static bool IsOnPreprocessorDirectiveLine(string source, int index)
+        {
+            int lineStart = source.LastIndexOf('\n', index);
+            lineStart = lineStart < 0 ? 0 : lineStart + 1;
+            while (lineStart < index && (source[lineStart] == ' ' || source[lineStart] == '\t'))
+            {
+                lineStart++;
+            }
+            return lineStart < index && source[lineStart] == '#';
         }
 
         private static bool TryCreateMemberInsertion(

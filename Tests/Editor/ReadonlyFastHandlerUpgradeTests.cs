@@ -306,6 +306,8 @@ sealed class Second : MessageAwareComponent
 {
     protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
 }
+#region class RegionLabel
+#endregion
 partial
 class PartialReceiver : MessageAwareComponent
 {
