@@ -639,12 +639,12 @@ namespace DxMessaging.Tests.Editor
                 return scan.ResolvesToGameObject(assigned.Groups["name"].Value, constructionIndex);
             }
 
-            if (ReturnKeyword.IsMatch(statement))
+            if (
+                ReturnKeyword.IsMatch(statement)
+                && scan.IsInsideGameObjectReturningMethod(constructionIndex)
+            )
             {
-                if (scan.IsInsideGameObjectReturningMethod(constructionIndex))
-                {
-                    return true;
-                }
+                return true;
             }
 
             if (GameObjectFactoryLambda.IsMatch(statement))

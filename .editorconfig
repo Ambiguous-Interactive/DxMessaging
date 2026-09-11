@@ -225,14 +225,22 @@ dotnet_diagnostic.S3358.severity = none
 dotnet_diagnostic.S1244.severity = none
 
 # Test-only mutants, closure diagnostics, deterministic trace encodings, and exception-safe
-# cleanup locals intentionally use shapes that production-oriented Sonar rules reject.
+# cleanup locals intentionally use shapes that production-oriented Sonar rules reject. Parser
+# cursor loops advance manually; benchmark fixtures force collections and do not assert results.
 [Tests/**/*.cs]
+dotnet_diagnostic.S1066.severity = none
 dotnet_diagnostic.S1185.severity = none
 dotnet_diagnostic.S1186.severity = none
+dotnet_diagnostic.S1215.severity = none
+dotnet_diagnostic.S1244.severity = none
+dotnet_diagnostic.S127.severity = none
+dotnet_diagnostic.S1751.severity = none
 dotnet_diagnostic.S1854.severity = none
 dotnet_diagnostic.S1905.severity = none
 dotnet_diagnostic.S2094.severity = none
+dotnet_diagnostic.S2699.severity = none
 dotnet_diagnostic.S2955.severity = none
+dotnet_diagnostic.S3218.severity = none
 dotnet_diagnostic.S3236.severity = none
 dotnet_diagnostic.S3241.severity = none
 dotnet_diagnostic.S3358.severity = none
@@ -240,3 +248,4 @@ dotnet_diagnostic.S3881.severity = none
 dotnet_diagnostic.S3928.severity = none
 dotnet_diagnostic.S3973.severity = none
 dotnet_diagnostic.S4456.severity = none
+dotnet_diagnostic.S6608.severity = none

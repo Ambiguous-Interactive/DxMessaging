@@ -237,7 +237,7 @@ namespace DxMessaging.Tests.Editor
                 MethodInfo claim = bootstrapType.GetMethod(
                     "TryClaimSessionForScene",
                     BindingFlags.Static | BindingFlags.NonPublic
-                )!;
+                );
                 Assert.That(
                     claim.Invoke(
                         null,
@@ -260,10 +260,10 @@ namespace DxMessaging.Tests.Editor
                 MethodInfo createGui = windowType.GetMethod(
                     "CreateGUI",
                     BindingFlags.Instance | BindingFlags.NonPublic
-                )!;
+                );
                 createGui.Invoke(window, null);
 
-                VisualElement root = window!.rootVisualElement;
+                VisualElement root = window.rootVisualElement;
                 Label? status = root.Q<Label>("dx-tooling-guide-status");
                 Button? play = root.Q<Button>("dx-tooling-guide-play");
                 Button? emit = root.Q<Button>("dx-tooling-guide-emit");
@@ -302,7 +302,7 @@ namespace DxMessaging.Tests.Editor
                 FieldInfo scheduledRefresh = windowType.GetField(
                     "_statusRefresh",
                     BindingFlags.Instance | BindingFlags.NonPublic
-                )!;
+                );
                 Assert.That(scheduledRefresh.GetValue(window), Is.Not.Null);
             }
             finally

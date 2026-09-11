@@ -452,7 +452,7 @@ namespace DxMessaging.Tests.Runtime.VContainer
             catch (Exception exception)
             {
                 Assert.Fail(
-                    $"{registrationDisplayName}: RegisterDxMessagingBus should expose {typeof(T).FullName}, but VContainer threw {exception.GetType().FullName}: {exception.Message}"
+                    $"{registrationDisplayName}: RegisterDxMessagingBus should expose {typeof(T).FullName}, but VContainer threw: {exception}"
                 );
                 throw;
             }
