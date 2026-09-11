@@ -64,11 +64,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Background bus operation must terminate within the join timeout."
             );
 
-            // Pinning current behavior: the bus does not enforce a threading contract.
-            // The dispatch path has no thread checks, so the handler is expected to
-            // run on the worker thread without any framework-level exception. We
-            // require strictly that no exception escapes - if one does, the test
-            // fails with full diagnostics so the contract change is reviewed.
+            /*
+                Pinning current behavior: the bus does not enforce a threading contract.
+                The dispatch path has no thread checks, so the handler is expected to
+                run on the worker thread without any framework-level exception. We
+                require strictly that no exception escapes - if one does, the test
+                fails with full diagnostics so the contract change is reviewed.
+            */
             if (captured != null)
             {
                 Assert.Fail(
@@ -76,10 +78,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
 
-            // Contract pins that no exception escapes; the handler runs on the
-            // worker thread under cross-thread misuse so the counter should advance
-            // at least once. Tearing reads are possible in theory but the lone
-            // worker scenario is not concurrent enough to exhibit them.
+            /*
+                Contract pins that no exception escapes; the handler runs on the
+                worker thread under cross-thread misuse so the counter should advance
+                at least once. Tearing reads are possible in theory but the lone
+                worker scenario is not concurrent enough to exhibit them.
+            */
             Assert.GreaterOrEqual(
                 invocationCount,
                 1,

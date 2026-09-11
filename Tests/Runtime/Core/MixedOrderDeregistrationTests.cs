@@ -212,8 +212,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             token.RemoveRegistration(handles[1]);
-            // Removing an already-removed handle must be a silent no-op: no exception, and no
-            // over-deregistration error (the base fails the test on any logged Error).
+            /*
+                Removing an already-removed handle must be a silent no-op: no exception, and no
+                over-deregistration error (the base fails the test on any logged Error).
+            */
             Assert.DoesNotThrow(() => token.RemoveRegistration(handles[1]));
             Assert.DoesNotThrow(() => token.RemoveRegistration(handles[1]));
 
@@ -232,9 +234,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageScenario untargeted = MessageScenario.Untargeted();
             (MessageRegistrationToken token, InstanceId hostId) = NewHost(untargeted);
             int invocations = 0;
-            // ONE delegate instance, registered repeatedly: the bus refcounts the same
-            // (handler, priority) into a SINGLE dispatch entry, so it fires ONCE per emit
-            // regardless of count, until every registration is removed.
+            /*
+                ONE delegate instance, registered repeatedly: the bus refcounts the same
+                (handler, priority) into a SINGLE dispatch entry, so it fires ONCE per emit
+                regardless of count, until every registration is removed.
+            */
             System.Action<DxMessaging.Tests.Runtime.Scripts.Messages.SimpleUntargetedMessage> shared =
                 _ => invocations++;
 
@@ -419,7 +423,7 @@ namespace DxMessaging.Tests.Runtime.Core
             int maxPriority = 0;
             foreach (int p in priorities)
             {
-                if (p > maxPriority)
+                if (maxPriority < p)
                 {
                     maxPriority = p;
                 }
@@ -440,9 +444,11 @@ namespace DxMessaging.Tests.Runtime.Core
             return expected.ToArray();
         }
 
-        // Deterministic removal permutations of [0..n): forward, reverse, evens-then-odds,
-        // odds-then-evens, middle-out, plus two seeded Fisher-Yates shuffles (seeded by the base's
-        // TestSeed via _random, so the case is reproducible).
+        /*
+            Deterministic removal permutations of [0..n): forward, reverse, evens-then-odds,
+            odds-then-evens, middle-out, plus two seeded Fisher-Yates shuffles (seeded by the base's
+            TestSeed via _random, so the case is reproducible).
+        */
         private IEnumerable<int[]> RemovalPermutations(int n)
         {
             int[] forward = new int[n];
@@ -485,9 +491,9 @@ namespace DxMessaging.Tests.Runtime.Core
             int lo = (n - 1) / 2;
             int hi = lo + 1;
             bool takeLow = true;
-            while (lo >= 0 || hi < n)
+            while (0 <= lo || hi < n)
             {
-                if (takeLow && lo >= 0)
+                if (takeLow && 0 <= lo)
                 {
                     middleOut.Add(lo--);
                 }
@@ -506,7 +512,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     order[i] = i;
                 }
-                for (int i = n - 1; i > 0; i--)
+                for (int i = n - 1; 0 < i; i--)
                 {
                     int j = _random.Next(i + 1);
                     (order[i], order[j]) = (order[j], order[i]);

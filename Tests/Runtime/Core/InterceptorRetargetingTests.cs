@@ -903,7 +903,7 @@ namespace DxMessaging.Tests.Runtime.Core
                                 }
 
                                 if (
-                                    i > 0
+                                    0 < i
                                     && (
                                         capturedSnapshots.Count <= i
                                         || !IsDispatchSnapshotReleased(capturedSnapshots[i])

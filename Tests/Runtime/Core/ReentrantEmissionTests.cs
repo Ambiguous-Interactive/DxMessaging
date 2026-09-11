@@ -55,7 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 onInvoked: () =>
                 {
                     ++totalInvocations;
-                    if (currentDepth >= MaxRecursionDepth)
+                    if (MaxRecursionDepth <= currentDepth)
                     {
                         return;
                     }
@@ -74,9 +74,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             EmitForScenario(scenario, hostId);
 
-            // Outer call increments to 1 then recurses; depth=1 increments to 2 then
-            // recurses; depth=2 increments to 3 and stops. After the cascade unwinds
-            // the handler is invoked exactly MaxRecursionDepth + 1 times.
+            /*
+                Outer call increments to 1 then recurses; depth=1 increments to 2 then
+                recurses; depth=2 increments to 3 and stops. After the cascade unwinds
+                the handler is invoked exactly MaxRecursionDepth + 1 times.
+            */
             Assert.AreEqual(
                 MaxRecursionDepth + 1,
                 totalInvocations,
@@ -146,11 +148,13 @@ namespace DxMessaging.Tests.Runtime.Core
 
             EmitForScenario(scenario, hostId);
 
-            // Depth starts at 0. The interceptor approves while depth < threshold,
-            // so the handler runs and increments depth on each level; the cascade
-            // halts when depth reaches the threshold. Each emission consults the
-            // interceptor exactly once per attempted dispatch (one approval per
-            // handler invocation plus one final rejection that cancels dispatch).
+            /*
+                Depth starts at 0. The interceptor approves while depth < threshold,
+                so the handler runs and increments depth on each level; the cascade
+                halts when depth reaches the threshold. Each emission consults the
+                interceptor exactly once per attempted dispatch (one approval per
+                handler invocation plus one final rejection that cancels dispatch).
+            */
             Assert.AreEqual(
                 ReentrantSafetyDepth,
                 handlerInvocations,
@@ -378,7 +382,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 onInvoked: () =>
                 {
                     ++primaryInvocations;
-                    if (depth >= MaxDepth)
+                    if (MaxDepth <= depth)
                     {
                         return;
                     }
@@ -527,8 +531,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 token.RemoveRegistration(bHandle);
             }
-            // Reference snapshot to suppress unused-variable analyzer noise across
-            // future refactors. The remove above already used the live handle.
+            /*
+                Reference snapshot to suppress unused-variable analyzer noise across
+                future refactors. The remove above already used the live handle.
+            */
             _ = bHandleSnapshot;
         }
 
@@ -867,8 +873,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken tokenA = GetToken(componentA);
             MessageRegistrationToken tokenB = GetToken(componentB);
 
-            // Targeted/broadcast use a single shared instance id so both handlers
-            // dispatch in the same emission; untargeted ignores the id parameter.
+            /*
+                Targeted/broadcast use a single shared instance id so both handlers
+                dispatch in the same emission; untargeted ignores the id parameter.
+            */
             InstanceId sharedId = hostA;
 
             int aCount = 0;
@@ -1057,11 +1065,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 onInvoked: () => ++bCount
             );
 
-            // First emit: A runs, removes B, then throws. The exception propagates;
-            // B does NOT fire on this emission per the bus's "propagate don't swallow"
-            // contract (the snapshot has B but dispatch never reaches it). Although
-            // A removed B before throwing, the snapshot was already frozen; but the
-            // dispatch loop bails out of the bucket walk after A's throw.
+            /*
+                First emit: A runs, removes B, then throws. The exception propagates;
+                B does NOT fire on this emission per the bus's "propagate don't swallow"
+                contract (the snapshot has B but dispatch never reaches it). Although
+                A removed B before throwing, the snapshot was already frozen; but the
+                dispatch loop bails out of the bucket walk after A's throw.
+            */
             InvalidOperationException firstThrow = Assert.Throws<InvalidOperationException>(() =>
                 EmitForScenario(scenario, hostId)
             );
@@ -1090,9 +1100,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 bCount
             );
 
-            // Second emit: A still registered (its registration wasn't unwound by
-            // the throw), so it throws again. B's removal from the prior emit took
-            // effect; B is no longer in the snapshot, so bCount stays at 0.
+            /*
+                Second emit: A still registered (its registration wasn't unwound by
+                the throw), so it throws again. B's removal from the prior emit took
+                effect; B is no longer in the snapshot, so bCount stays at 0.
+            */
             InvalidOperationException secondThrow = Assert.Throws<InvalidOperationException>(() =>
                 EmitForScenario(scenario, hostId)
             );
@@ -1170,10 +1182,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 onInvoked: () => ++handlerCount
             );
 
-            // Interceptor returns true (allows dispatch to proceed) but removes
-            // the handler before dispatch reads its snapshot. Because
-            // interceptors run before the snapshot is acquired, the handler is
-            // already gone by the time dispatch builds the bucket array.
+            /*
+                Interceptor returns true (allows dispatch to proceed) but removes
+                the handler before dispatch reads its snapshot. Because
+                interceptors run before the snapshot is acquired, the handler is
+                already gone by the time dispatch builds the bucket array.
+            */
             RegisterRemovingInterceptor(
                 scenario,
                 token,

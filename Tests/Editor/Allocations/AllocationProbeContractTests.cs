@@ -39,8 +39,10 @@ namespace DxMessaging.Tests.Editor.Allocations
         [TearDown]
         public void EnsureRecorderDisabled()
         {
-            // Defensive hygiene: never let a failing test leak an enabled recorder into the
-            // next test. Assertions run BEFORE teardown, so this never masks a real leak.
+            /*
+                Defensive hygiene: never let a failing test leak an enabled recorder into the
+                next test. Assertions run BEFORE teardown, so this never masks a real leak.
+            */
             Recorder.Get(GcAllocMarker).enabled = false;
         }
 
@@ -187,10 +189,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
             }
 
-            // Guards the cold-latency INTEGRATION path -- the literal scenario class of the
-            // original bug. Each trial opens a window with `using` INSIDE a try whose finally
-            // tears the trial down; a throwing timed operation must still release the recorder
-            // (the using disposes as the try unwinds, before tearDownTrial runs).
+            /*
+                Guards the cold-latency INTEGRATION path -- the literal scenario class of the
+                original bug. Each trial opens a window with `using` INSIDE a try whose finally
+                tears the trial down; a throwing timed operation must still release the recorder
+                (the using disposes as the try unwinds, before tearDownTrial runs).
+            */
             Assert.Throws<InvalidOperationException>(() =>
                 BenchmarkProtocol.MeasureColdLatency<object>(
                     trials: 1,
@@ -246,11 +250,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                 // Expected.
             }
 
-            // The REAL regression assertion (FAILS on the old leaking code): the recorder is
-            // disabled the instant the throwing measurement returns control -- not merely
-            // "eventually" once the next measurement's toggle-reset self-heals the count. The
-            // leak's true harm is the profiler overhead a left-enabled recorder adds to any
-            // unrelated code that runs before the next window opens.
+            /*
+                The REAL regression assertion (FAILS on the old leaking code): the recorder is
+                disabled the instant the throwing measurement returns control -- not merely
+                "eventually" once the next measurement's toggle-reset self-heals the count. The
+                leak's true harm is the profiler overhead a left-enabled recorder adds to any
+                unrelated code that runs before the next window opens.
+            */
             Assert.IsFalse(
                 RecorderEnabled,
                 "The recorder must be disabled immediately after a throwing Measure."
@@ -303,9 +309,11 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void DefaultWindowIsHarmlessNoOp()
         {
-            // A default (probe-non-functional) window must be safe: Sample returns the
-            // Unmeasured sentinel and Dispose does nothing. This is the contract the
-            // non-functional backends (for example a Release IL2CPP player) rely on.
+            /*
+                A default (probe-non-functional) window must be safe: Sample returns the
+                Unmeasured sentinel and Dispose does nothing. This is the contract the
+                non-functional backends (for example a Release IL2CPP player) rely on.
+            */
             AllocationProbe.Window window = default;
             Assert.AreEqual(AllocationProbe.Unmeasured, window.Sample());
             Assert.AreEqual(AllocationProbe.Unmeasured, window.SampleBytes());
@@ -325,10 +333,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 );
             }
 
-            // RED-GREEN: a region allocating 100 x byte[10000] allocates ~1,003,200 bytes
-            // (Boehm rounds each to ~10,032). The live frame-counter delta is byte-exact and
-            // collection-immune, so the measured value must be well above 1,000,000. If the
-            // byte mechanism regressed to Unmeasured (-1) or a vacuous 0 this FAILS.
+            /*
+                RED-GREEN: a region allocating 100 x byte[10000] allocates ~1,003,200 bytes
+                (Boehm rounds each to ~10,032). The live frame-counter delta is byte-exact and
+                collection-immune, so the measured value must be well above 1,000,000. If the
+                byte mechanism regressed to Unmeasured (-1) or a vacuous 0 this FAILS.
+            */
             object sink = null;
             AllocationProbe.AllocationSample sample = AllocationProbe.MeasureWithBytes(() =>
             {
@@ -361,13 +371,15 @@ namespace DxMessaging.Tests.Editor.Allocations
                 );
             }
 
-            // A genuinely non-allocating region must read ~0 bytes -- the byte counter sums
-            // real GC.Alloc hook sizes, so a no-alloc body has nothing to add. In a warm
-            // editor a small amount of unrelated background allocation can land inside the
-            // window (the counter is all-thread, like the count recorder), so we take the
-            // MINIMUM byte delta over several attempts: background only ADDS, so the minimum
-            // converges to the operation's true ~0 floor -- the exact byte analogue of the
-            // min-over-attempts the count probe already uses to denoise the warm editor.
+            /*
+                A genuinely non-allocating region must read ~0 bytes -- the byte counter sums
+                real GC.Alloc hook sizes, so a no-alloc body has nothing to add. In a warm
+                editor a small amount of unrelated background allocation can land inside the
+                window (the counter is all-thread, like the count recorder), so we take the
+                MINIMUM byte delta over several attempts: background only ADDS, so the minimum
+                converges to the operation's true ~0 floor -- the exact byte analogue of the
+                min-over-attempts the count probe already uses to denoise the warm editor.
+            */
             int accumulator = 0;
             long minBytes = long.MaxValue;
             for (int attempt = 0; attempt < 8; ++attempt)
@@ -379,7 +391,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                         accumulator += i;
                     }
                 });
-                if (sample.Bytes >= 0 && sample.Bytes < minBytes)
+                if (0 <= sample.Bytes && sample.Bytes < minBytes)
                 {
                     minBytes = sample.Bytes;
                 }
@@ -458,12 +470,14 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
             }
 
-            // Each attempt allocates a DESCENDING number of arrays: attempt i allocates
-            // (8 - i) * 100, i.e. 800, 700, ... 100. The descending step (100) is chosen far
-            // larger than the warm-editor per-window background-allocation floor (a handful
-            // to a few dozen), so the minimum reads ~100 (the smallest attempt) while a
-            // max/first selection would read ~800. This pins the min-selection the
-            // warm-editor denoising relies on without assuming a noise-free window.
+            /*
+                Each attempt allocates a DESCENDING number of arrays: attempt i allocates
+                (8 - i) * 100, i.e. 800, 700, ... 100. The descending step (100) is chosen far
+                larger than the warm-editor per-window background-allocation floor (a handful
+                to a few dozen), so the minimum reads ~100 (the smallest attempt) while a
+                max/first selection would read ~800. This pins the min-selection the
+                warm-editor denoising relies on without assuming a noise-free window.
+            */
             int attempt = 0;
             object sink = null;
             long min = AllocationProbe.MeasureMin(
@@ -501,11 +515,13 @@ namespace DxMessaging.Tests.Editor.Allocations
                 Assert.Ignore("GC.Alloc recorder is non-functional on this backend.");
             }
 
-            // The first attempt allocates thousands of arrays while the second attempt
-            // performs no explicit allocation. This gives a large enough gap that editor
-            // background noise cannot make the first attempt the minimum. The diagnostic
-            // payload must come from the second attempt, not from the final outer state or
-            // an aggregate across attempts.
+            /*
+                The first attempt allocates thousands of arrays while the second attempt
+                performs no explicit allocation. This gives a large enough gap that editor
+                background noise cannot make the first attempt the minimum. The diagnostic
+                payload must come from the second attempt, not from the final outer state or
+                an aggregate across attempts.
+            */
             const int allocationsInFirstAttempt = 10_000;
             int attempt = 0;
             object sink = null;
@@ -682,9 +698,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                 firstSettle + settleCall.Length,
                 StringComparison.Ordinal
             );
-            // LastIndexOf targets the FINAL return (after the settle/finally); the core also
-            // has an EARLY return for the non-functional-probe case, which is the first
-            // occurrence and precedes the settlement calls.
+            /*
+                LastIndexOf targets the FINAL return (after the settle/finally); the core also
+                has an EARLY return for the non-functional-probe case, which is the first
+                occurrence and precedes the settlement calls.
+            */
             int returnMeasurement = method.LastIndexOf(
                 "return new MinimumMeasurement<TDiagnostics>(",
                 StringComparison.Ordinal

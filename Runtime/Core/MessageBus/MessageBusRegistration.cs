@@ -180,11 +180,13 @@ namespace DxMessaging.Core.MessageBus
         /// <inheritdoc />
         public override int GetHashCode()
         {
-            // Reference-IDENTITY hashes for the captured refs keep parity with the
-            // ReferenceEquals comparisons in Equals: RuntimeHelpers.GetHashCode is the identity
-            // hash, so it stays consistent regardless of any virtual GetHashCode override (e.g.
-            // MessageHandler hashes by owner, and delegates by target/method) and avoids the
-            // unnecessary collisions those overrides would introduce. (null -> 0.)
+            /*
+                Reference-IDENTITY hashes for the captured refs keep parity with the
+                ReferenceEquals comparisons in Equals: RuntimeHelpers.GetHashCode is the identity
+                hash, so it stays consistent regardless of any virtual GetHashCode override (e.g.
+                MessageHandler hashes by owner, and delegates by target/method) and avoids the
+                unnecessary collisions those overrides would introduce. (null -> 0.)
+            */
             int hash = (int)kind;
             hash = (hash * 397) ^ (int)method;
             hash = (hash * 397) ^ priority;

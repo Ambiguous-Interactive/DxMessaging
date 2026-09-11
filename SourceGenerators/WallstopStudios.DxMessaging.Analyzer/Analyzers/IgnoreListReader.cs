@@ -53,16 +53,18 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 return ImmutableHashSet<string>.Empty;
             }
 
-            // GetValue returns the existing entry or creates one atomically using the factory.
-            // Lazy<T> ensures a single parse per options instance even under thread contention.
-            //
-            // S1. We deliberately pass CancellationToken.None to the factory rather than the
-            // outer Load call's token. With LazyThreadSafetyMode.ExecutionAndPublication, the
-            // first caller's token is baked into the closure and any OperationCanceledException
-            // it throws gets cached forever and rethrown for every subsequent caller using the
-            // same AnalyzerOptions. The parse work is bounded by the size of one small text
-            // file, so dropping cancellation here is acceptable; the outer `cancellationToken`
-            // parameter still flows through symbol-side lookups in the analyzer call sites.
+            /*
+                GetValue returns the existing entry or creates one atomically using the factory.
+                Lazy<T> ensures a single parse per options instance even under thread contention.
+
+                S1. We deliberately pass CancellationToken.None to the factory rather than the
+                outer Load call's token. With LazyThreadSafetyMode.ExecutionAndPublication, the
+                first caller's token is baked into the closure and any OperationCanceledException
+                it throws gets cached forever and rethrown for every subsequent caller using the
+                same AnalyzerOptions. The parse work is bounded by the size of one small text
+                file, so dropping cancellation here is acceptable; the outer `cancellationToken`
+                parameter still flows through symbol-side lookups in the analyzer call sites.
+            */
             Lazy<ImmutableHashSet<string>> lazy = Cache.GetValue(
                 options,
                 key => new Lazy<ImmutableHashSet<string>>(
@@ -118,15 +120,17 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                         continue;
                     }
 
-                    // J. Friendly UX: strip every leading `global::` so users can paste FQNs
-                    // directly from compiler diagnostics (which often emit the global:: prefix)
-                    // without manual editing. Loop instead of branching once so a pathological
-                    // `global::global::Foo` (won't compile, but cheap to handle) collapses
-                    // correctly. The analyzer always compares against an FQN with the global
-                    // namespace style omitted.
+                    /*
+                        J. Friendly UX: strip every leading `global::` so users can paste FQNs
+                        directly from compiler diagnostics (which often emit the global:: prefix)
+                        without manual editing. Loop instead of branching once so a pathological
+                        `global::global::Foo` (won't compile, but cheap to handle) collapses
+                        correctly. The analyzer always compares against an FQN with the global
+                        namespace style omitted.
+                    */
                     while (
                         trimmed.StartsWith(GlobalPrefix, StringComparison.Ordinal)
-                        && trimmed.Length > GlobalPrefix.Length
+                        && GlobalPrefix.Length < trimmed.Length
                     )
                     {
                         trimmed = trimmed.Substring(GlobalPrefix.Length);

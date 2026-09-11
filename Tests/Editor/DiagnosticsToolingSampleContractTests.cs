@@ -347,7 +347,7 @@ namespace DxMessaging.Tests.Editor
         {
             int count = 0;
             int index = 0;
-            while ((index = text.IndexOf(value, index, System.StringComparison.Ordinal)) >= 0)
+            while (0 <= (index = text.IndexOf(value, index, System.StringComparison.Ordinal)))
             {
                 count++;
                 index += value.Length;

@@ -19,8 +19,10 @@ namespace DxMessaging.Core.Pooling
     /// </remarks>
     internal static class DxPools
     {
-        // Mirrors DxMessagingRuntimeSettings.DefaultBufferMaxDistinctEntries; updated by Configure().
-        // Kept as a local constant so DxPools' field initializers don't depend on Unity types.
+        /*
+            Mirrors DxMessagingRuntimeSettings.DefaultBufferMaxDistinctEntries; updated by Configure().
+            Kept as a local constant so DxPools' field initializers don't depend on Unity types.
+        */
         internal const int DefaultMaxRetained = 512;
 
         internal static readonly CollectionPool<Dictionary<InstanceId, object>> InstanceIdDicts =

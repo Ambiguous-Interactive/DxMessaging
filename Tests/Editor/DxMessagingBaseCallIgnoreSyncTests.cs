@@ -426,10 +426,12 @@ namespace DxMessaging.Tests.Editor
             _applyCount = 0;
             _cscRspSyncCount = 0;
 
-            // Capture deferred work instead of routing it to EditorApplication.delayCall, and count
-            // applies instead of touching the AssetDatabase. This makes "synchronous vs deferred"
-            // observable and keeps the tests filesystem-free and deterministic. The csc.rsp follow-up
-            // is captured for the same reason.
+            /*
+                Capture deferred work instead of routing it to EditorApplication.delayCall, and count
+                applies instead of touching the AssetDatabase. This makes "synchronous vs deferred"
+                observable and keeps the tests filesystem-free and deterministic. The csc.rsp follow-up
+                is captured for the same reason.
+            */
             DxMessagingBaseCallIgnoreSync.DeferralScheduler = work => _scheduled.Add(work);
             DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => true;
             DxMessagingBaseCallIgnoreSync.SidecarApplier = _ => _applyCount++;
@@ -453,8 +455,10 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                // Restore in finally so a throw while destroying objects can never leak the
-                // substituted seams into the rest of the editor session.
+                /*
+                    Restore in finally so a throw while destroying objects can never leak the
+                    substituted seams into the rest of the editor session.
+                */
                 DxMessagingBaseCallIgnoreSync.DeferralScheduler = _originalScheduler;
                 DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase =
                     _originalCanMutateAssetDatabase;
@@ -564,8 +568,10 @@ namespace DxMessaging.Tests.Editor
                 "OnValidate must schedule exactly one deferred sidecar regeneration."
             );
 
-            // The deferred work must be a REAL regeneration, not a dropped/no-op write: driving the
-            // scheduled tick applies the sidecar exactly once.
+            /*
+                The deferred work must be a REAL regeneration, not a dropped/no-op write: driving the
+                scheduled tick applies the sidecar exactly once.
+            */
             _scheduled[0].Invoke();
             Assert.That(
                 _applyCount,
@@ -588,9 +594,11 @@ namespace DxMessaging.Tests.Editor
 
             InvokePrivate(settings, "OnEnable");
 
-            // OnEnable fires on EVERY domain reload and play-mode entry. It must neither apply nor
-            // schedule a regeneration: the on-disk sidecar is already consistent, and regenerating
-            // here would churn the AssetDatabase on every reload (and reintroduce #210 risk).
+            /*
+                OnEnable fires on EVERY domain reload and play-mode entry. It must neither apply nor
+                schedule a regeneration: the on-disk sidecar is already consistent, and regenerating
+                here would churn the AssetDatabase on every reload (and reintroduce #210 risk).
+            */
             Assert.That(_applyCount, Is.EqualTo(0), "OnEnable must not apply the sidecar.");
             Assert.That(
                 _scheduled.Count,
@@ -697,8 +705,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void RegenerateSidecarAppliesSynchronouslyWhenEditorCanMutateAssets()
         {
-            // SetUp supplies an idle predicate and captures the apply and scheduling actions.
-            // Explicit ignored-type edits must apply immediately under that controlled state.
+            /*
+                SetUp supplies an idle predicate and captures the apply and scheduling actions.
+                Explicit ignored-type edits must apply immediately under that controlled state.
+            */
             DxMessagingSettings settings = NewSettings();
 
             DxMessagingBaseCallIgnoreSync.RegenerateSidecar(settings);
@@ -793,8 +803,10 @@ namespace DxMessaging.Tests.Editor
         {
             DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
             _createdSettings.Add(settings);
-            // CreateInstance can fire OnEnable/OnValidate; drain anything captured so each test
-            // starts from a clean slate.
+            /*
+                CreateInstance can fire OnEnable/OnValidate; drain anything captured so each test
+                starts from a clean slate.
+            */
             _scheduled.Clear();
             _applyCount = 0;
             _cscRspSyncCount = 0;
@@ -903,8 +915,10 @@ namespace DxMessaging.Tests.Editor
                 "Entries must be Ordinal-sorted and de-duplicated after the two headers."
             );
 
-            // Pin the exact wire format the analyzer reads: LF-separated lines, one trailing LF, no
-            // blank lines (the lenient SplitLines helper would otherwise mask a separator regression).
+            /*
+                Pin the exact wire format the analyzer reads: LF-separated lines, one trailing LF, no
+                blank lines (the lenient SplitLines helper would otherwise mask a separator regression).
+            */
             Assert.That(
                 content,
                 Is.EqualTo(

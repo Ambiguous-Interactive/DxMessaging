@@ -78,8 +78,10 @@ namespace DxMessaging.Tests.Runtime
             // Keep token storage keyed by the real implementation, even when a mutant intercepts emission.
             _emitter = emitter ?? bus;
             _reset = reset;
-            // TrimResult includes process-shared retained pools. Start every isolated replay
-            // from the same real empty-pool baseline, without predicting any eviction result.
+            /*
+                TrimResult includes process-shared retained pools. Start every isolated replay
+                from the same real empty-pool baseline, without predicting any eviction result.
+            */
             _bus.Trim(force: true);
             _leaks = LeakWatcher.WatchWithSlots(bus, label: "Differential replay " + scenario.Kind);
             try
@@ -366,7 +368,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 _globalScope = null;
             }
-            if (errors.Count > 0)
+            if (0 < errors.Count)
             {
                 throw new AggregateException("Differential replay cleanup failed.", errors);
             }
@@ -471,7 +473,7 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void Remove(BusTraceOperation operation)
         {
-            if (operation.HandleSlot >= 0)
+            if (0 <= operation.HandleSlot)
             {
                 _tokens[operation.Token].RemoveRegistration(_explicitHandles[operation.HandleSlot]);
                 return;
@@ -494,7 +496,7 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void CleanupThrowingCallback(BusTraceOperation operation)
         {
-            if (operation.HandleSlot >= 0)
+            if (0 <= operation.HandleSlot)
             {
                 Remove(operation);
             }
@@ -521,7 +523,7 @@ namespace DxMessaging.Tests.Runtime
 
         protected virtual void Register(BusTraceOperation operation)
         {
-            if (operation.HandleSlot >= 0)
+            if (0 <= operation.HandleSlot)
             {
                 Func<MessageRegistrationHandle> register = CreateRegistrationFactory(operation);
                 _explicitHandles[operation.HandleSlot] = register();
@@ -576,8 +578,10 @@ namespace DxMessaging.Tests.Runtime
             MessageScenario scenario = Scenario(operation.KindOffset);
             MessageRegistrationToken token = _tokens[operation.Token];
             InstanceId context = new(2000 + operation.Context);
-            // A duplicate invokes this same factory, retaining the original route, priority,
-            // and delegate identity. All reference counting remains production behavior.
+            /*
+                A duplicate invokes this same factory, retaining the original route, priority,
+                and delegate identity. All reference counting remains production behavior.
+            */
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
@@ -651,10 +655,12 @@ namespace DxMessaging.Tests.Runtime
             using EmissionCapture capture = new(this);
             if (untypedRoute)
             {
-                // Record the original boxed struct and caller context after the untyped
-                // bus call, including when dispatch throws. Production bridges unbox a
-                // separate local and receive context by value, so this does not observe
-                // their internal final payload/context or call extension methods.
+                /*
+                    Record the original boxed struct and caller context after the untyped
+                    bus call, including when dispatch throws. Production bridges unbox a
+                    separate local and receive context by value, so this does not observe
+                    their internal final payload/context or call extension methods.
+                */
                 switch (scenario.Kind)
                 {
                     case MessageKind.Untargeted:
@@ -715,9 +721,11 @@ namespace DxMessaging.Tests.Runtime
             }
         }
 
-        // These are caller-visible typed ref values, including when dispatch throws.
-        // The untyped route above records its caller's original box and context;
-        // internal untyped final values and extension-method boundaries remain unobserved.
+        /*
+            These are caller-visible typed ref values, including when dispatch throws.
+            The untyped route above records its caller's original box and context;
+            internal untyped final values and extension-method boundaries remain unobserved.
+        */
         private void EmitTyped(
             MessageScenario scenario,
             InstanceId context,
@@ -842,7 +850,7 @@ namespace DxMessaging.Tests.Runtime
             _callbacks.Add(
                 $"token={token},value={value}"
                     + (
-                        handleSlot >= 0
+                        0 <= handleSlot
                             ? $",registration={handleSlot},callback={callbackIdentity}"
                             : string.Empty
                     )
@@ -877,7 +885,7 @@ namespace DxMessaging.Tests.Runtime
                     long emission = _bus.EmissionId;
                     int next = (_depth & 1) == 0 ? nested.NestedToken : nested.Token;
                     BusTraceOperation registration =
-                        nested.HandleSlot >= 0
+                        0 <= nested.HandleSlot
                             ? _explicitRegistrations[
                                 useNested ? nested.HandleSlot : nested.SourceHandleSlot
                             ]
@@ -946,8 +954,10 @@ namespace DxMessaging.Tests.Runtime
                 return callbackIdentity < 0;
             }
             int slot = useNested ? operation.SourceHandleSlot : operation.HandleSlot;
-            // Copies and duplicates retain delegate identity even after the original slot
-            // is reused. Actual token state excludes handles consumed by callback cleanup.
+            /*
+                Copies and duplicates retain delegate identity even after the original slot
+                is reused. Actual token state excludes handles consumed by callback cleanup.
+            */
             return callbackIdentity == _explicitCallbackIdentities[slot]
                 && _tokens[owner]._metadata.ContainsKey(_explicitHandles[slot]);
         }

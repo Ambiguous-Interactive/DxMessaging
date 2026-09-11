@@ -267,9 +267,11 @@ namespace DxMessaging.Tests.Runtime.Core
                         priority: 0
                     );
 
-                    // ...then in a reentrant emission emit the same type, forcing the
-                    // nested acquire to promote the staged snapshot under a
-                    // new emission id while the outer loop is mid-iteration.
+                    /*
+                        ...then in a reentrant emission emit the same type, forcing the
+                        nested acquire to promote the staged snapshot under a
+                        new emission id while the outer loop is mid-iteration.
+                    */
                     ++depth;
                     try
                     {
@@ -339,9 +341,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 string.Join(",", trace)
             );
 
-            // Next emission uses the rebuilt steady-state snapshot: all three
-            // handlers fire exactly once (pool-reuse sanity after the
-            // displaced snapshot was released at lease exit).
+            /*
+                Next emission uses the rebuilt steady-state snapshot: all three
+                handlers fire exactly once (pool-reuse sanity after the
+                displaced snapshot was released at lease exit).
+            */
             trace.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
@@ -412,8 +416,10 @@ namespace DxMessaging.Tests.Runtime.Core
                         return;
                     }
 
-                    // Mutation: deregister the peer (stages a same-type
-                    // pending snapshot)...
+                    /*
+                        Mutation: deregister the peer (stages a same-type
+                        pending snapshot)...
+                    */
                     token.RemoveRegistration(peerHandle);
                     peerHandle = default;
 
@@ -473,8 +479,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 string.Join(",", trace)
             );
 
-            // Follow-up emission: the peer is gone for good; only the mutator
-            // fires (which performs no further mutation).
+            /*
+                Follow-up emission: the peer is gone for good; only the mutator
+                fires (which performs no further mutation).
+            */
             trace.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(
@@ -541,7 +549,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     ++driverCount;
                     trace.Add($"d{depth}:driver");
-                    if (depth >= DeepNestingLevels || registeredAtLevel[depth])
+                    if (DeepNestingLevels <= depth || registeredAtLevel[depth])
                     {
                         return;
                     }
@@ -630,8 +638,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 string.Join(",", trace)
             );
 
-            // Follow-up emission: no further mutation/recursion; the rebuilt
-            // steady-state snapshot fires every handler exactly once.
+            /*
+                Follow-up emission: no further mutation/recursion; the rebuilt
+                steady-state snapshot fires every handler exactly once.
+            */
             trace.Clear();
             ScenarioCallbacks.EmitForKind(scenario, hostId);
             Assert.AreEqual(

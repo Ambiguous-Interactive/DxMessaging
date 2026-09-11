@@ -39,8 +39,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         private const int DispatchKey = 0;
 
-        // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
-        // bus subscribe/unsubscribe cost rather than per-cycle delegate allocation.
+        /*
+            Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
+            bus subscribe/unsubscribe cost rather than per-cycle delegate allocation.
+        */
         private Action<int> _churnHandler;
 
         public bool Supports(ComparisonScenario scenario)
@@ -71,9 +73,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             {
                 return null;
             }
-            // The dispatched payload TYPE is the value-type ComparisonStructPayload; Zenject's
-            // internal object-typed routing boxes it on the dispatch path (its real cost), but
-            // the declared payload is still the canonical non-primitive struct.
+            /*
+                The dispatched payload TYPE is the value-type ComparisonStructPayload; Zenject's
+                internal object-typed routing boxes it on the dispatch path (its real cost), but
+                the declared payload is still the canonical non-primitive struct.
+            */
             return scenario == ComparisonScenario.StructMessageNoBoxing
                 ? typeof(ComparisonStructPayload)
                 : typeof(int);
@@ -113,9 +117,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     _container.DeclareSignal<int>();
                     _container.ResolveRoots();
                     _bus = _container.Resolve<SignalBus>();
-                    // SignalBus asserts each (signalType, callback) key is unique and throws on a
-                    // duplicate, so the fan-out must use genuinely-distinct subscribers (a distinct
-                    // delegate target each). See FanOut for why a loop of identical lambdas does not.
+                    /*
+                        SignalBus asserts each (signalType, callback) key is unique and throws on a
+                        duplicate, so the fan-out must use genuinely-distinct subscribers (a distinct
+                        delegate target each). See FanOut for why a loop of identical lambdas does not.
+                    */
                     _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
                     foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
@@ -168,9 +174,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public void Dispose()
         {
-            // The DiContainer/SignalBus are per-case and GC-collected; DiContainer is not
-            // IDisposable and the per-case container holds no shared global state, so dropping
-            // the references is sufficient. The S2 fan-out subscriptions die with the container.
+            /*
+                The DiContainer/SignalBus are per-case and GC-collected; DiContainer is not
+                IDisposable and the per-case container holds no shared global state, so dropping
+                the references is sufficient. The S2 fan-out subscriptions die with the container.
+            */
             _container = null;
             _bus = null;
             _churnHandler = null;

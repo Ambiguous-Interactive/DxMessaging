@@ -164,7 +164,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser
 
         private void StartRepeatingIfRequested()
         {
-            if (repeatSeconds > 0)
+            if (0 < repeatSeconds)
             {
                 InvokeRepeating(nameof(EmitBurst), repeatSeconds, repeatSeconds);
             }

@@ -134,7 +134,7 @@ namespace DxMessaging.Editor
                     manualReview.Add($"{assetPath}: {skippedMethod}");
                 }
 
-                if (result.ReplacementCount > 0 || result.StringHandlerOptInCount > 0)
+                if (0 < result.ReplacementCount || 0 < result.StringHandlerOptInCount)
                 {
                     upgrades.Add(
                         new FileUpgrade(
@@ -392,7 +392,7 @@ namespace DxMessaging.Editor
                 {
                     position++;
                 }
-                if (position + 1 >= header.Length)
+                if (header.Length <= position + 1)
                 {
                     return false;
                 }
@@ -441,8 +441,8 @@ namespace DxMessaging.Editor
             return normalized.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith(".generated.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)
-                || normalized.IndexOf("/Generated/", StringComparison.OrdinalIgnoreCase) >= 0
-                || normalized.IndexOf("/GeneratedCode/", StringComparison.OrdinalIgnoreCase) >= 0;
+                || 0 <= normalized.IndexOf("/Generated/", StringComparison.OrdinalIgnoreCase)
+                || 0 <= normalized.IndexOf("/GeneratedCode/", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void AddFastDelegateReplacements(
@@ -527,7 +527,7 @@ namespace DxMessaging.Editor
         {
             int genericOpen = masked.IndexOf('<', fastHandlerStart);
             int genericClose = FindMatching(masked, genericOpen, '<', '>');
-            if (genericClose < 0 || genericClose >= equals)
+            if (genericClose < 0 || equals <= genericClose)
             {
                 return false;
             }
@@ -677,7 +677,7 @@ namespace DxMessaging.Editor
         {
             foreach (int replacementStart in replacementStarts)
             {
-                if (replacementStart >= start && replacementStart < end)
+                if (start <= replacementStart && replacementStart < end)
                 {
                     return true;
                 }
@@ -697,7 +697,7 @@ namespace DxMessaging.Editor
                 {
                     return true;
                 }
-                if (match.Index > FindMatching(masked, typeStart, '{', '}'))
+                if (FindMatching(masked, typeStart, '{', '}') < match.Index)
                 {
                     break;
                 }
@@ -728,7 +728,7 @@ namespace DxMessaging.Editor
 
             int modifierStart = declaration.Index - 1;
             while (
-                modifierStart >= 0
+                0 <= modifierStart
                 && masked[modifierStart] != ';'
                 && masked[modifierStart] != '{'
                 && masked[modifierStart] != '}'
@@ -781,7 +781,7 @@ namespace DxMessaging.Editor
                 indentationEnd - memberLineStart
             );
             string lineEnding =
-                memberLineStart >= 2 && source[memberLineStart - 2] == '\r' ? "\r\n" : "\n";
+                2 <= memberLineStart && source[memberLineStart - 2] == '\r' ? "\r\n" : "\n";
             insertion =
                 lineEnding
                 + indentation
@@ -805,7 +805,7 @@ namespace DxMessaging.Editor
                 methodName,
                 requireOverride
             );
-            if (usagePosition >= 0)
+            if (0 <= usagePosition)
             {
                 int usageScope = FindContainingTypeStart(masked, usagePosition);
                 declarations = declarations.FindAll(declaration =>
@@ -860,7 +860,7 @@ namespace DxMessaging.Editor
             {
                 int nameStart = match.Index;
                 int previous = PreviousNonWhitespace(masked, nameStart - 1);
-                if (previous >= 0 && masked[previous] == '.')
+                if (0 <= previous && masked[previous] == '.')
                 {
                     continue;
                 }
@@ -890,7 +890,7 @@ namespace DxMessaging.Editor
             int lineStart = masked.LastIndexOf('\n', nameStart);
             lineStart = lineStart < 0 ? 0 : lineStart + 1;
             string prefix = masked.Substring(lineStart, nameStart - lineStart);
-            if (prefix.IndexOf('=') >= 0 || prefix.IndexOf("=>", StringComparison.Ordinal) >= 0)
+            if (0 <= prefix.IndexOf('=') || 0 <= prefix.IndexOf("=>", StringComparison.Ordinal))
             {
                 return false;
             }
@@ -923,8 +923,8 @@ namespace DxMessaging.Editor
                 next + "where".Length,
                 StringComparison.Ordinal
             );
-            return body >= 0 && (expressionBody < 0 || body < expressionBody)
-                || expressionBody >= 0;
+            return 0 <= body && (expressionBody < 0 || body < expressionBody)
+                || 0 <= expressionBody;
         }
 
         private static string ScopedMethodKey(string masked, string methodName, int usagePosition)
@@ -937,23 +937,23 @@ namespace DxMessaging.Editor
             int containingStart = -1;
             foreach (Match match in TypeDeclarationRegex.Matches(masked))
             {
-                if (match.Index >= position)
+                if (position <= match.Index)
                 {
                     break;
                 }
 
                 int open = masked.IndexOf('{', match.Index + match.Length);
-                if (open < 0 || open >= position)
+                if (open < 0 || position <= open)
                 {
                     continue;
                 }
                 int semicolon = masked.IndexOf(';', match.Index + match.Length);
-                if (semicolon >= 0 && semicolon < open)
+                if (0 <= semicolon && semicolon < open)
                 {
                     continue;
                 }
                 int close = FindMatching(masked, open, '{', '}');
-                if (close >= position && open > containingStart)
+                if (position <= close && containingStart < open)
                 {
                     containingStart = open;
                 }
@@ -1072,7 +1072,7 @@ namespace DxMessaging.Editor
             }
             int receiverEnd = PreviousNonWhitespace(masked, dot - 1);
             int receiverStart = receiverEnd;
-            while (receiverStart >= 0 && IsIdentifierPart(masked[receiverStart]))
+            while (0 <= receiverStart && IsIdentifierPart(masked[receiverStart]))
             {
                 receiverStart--;
             }
@@ -1189,7 +1189,7 @@ namespace DxMessaging.Editor
                 }
 
                 int cursor = NextNonWhitespace(masked, match.Index + match.Length);
-                if (cursor >= 0 && masked[cursor] == '<')
+                if (0 <= cursor && masked[cursor] == '<')
                 {
                     cursor = FindMatching(masked, cursor, '<', '>');
                     cursor = cursor < 0 ? -1 : NextNonWhitespace(masked, cursor + 1);
@@ -1200,7 +1200,7 @@ namespace DxMessaging.Editor
                 }
 
                 int close = FindMatching(masked, cursor, '(', ')');
-                if (close >= 0)
+                if (0 <= close)
                 {
                     Invocation invocation = new(name, cursor + 1, close);
                     if (requireProvenReceiver && !HasProvenTokenReceiver(masked, match.Index))
@@ -1274,7 +1274,7 @@ namespace DxMessaging.Editor
             }
 
             int callbackIndex = CallbackArgumentIndex(invocation.Name);
-            if (callbackIndex >= 0 && callbackIndex < arguments.Count)
+            if (0 <= callbackIndex && callbackIndex < arguments.Count)
             {
                 yield return GetArgumentValueSpan(masked, arguments[callbackIndex]);
             }
@@ -1311,7 +1311,7 @@ namespace DxMessaging.Editor
             {
                 match = ConstructedHandlerRegex.Match(value);
             }
-            if (!match.Success && value.Length >= 2 && value[0] == '(' && value[^1] == ')')
+            if (!match.Success && 2 <= value.Length && value[0] == '(' && value[^1] == ')')
             {
                 match = IdentifierRegex.Match(value.Substring(1, value.Length - 2).Trim());
             }
@@ -1391,14 +1391,14 @@ namespace DxMessaging.Editor
                 invocation.End - invocation.Start,
                 StringComparison.Ordinal
             );
-            if (arrow >= 0)
+            if (0 <= arrow)
             {
                 int parameterEnd = PreviousNonWhitespace(masked, arrow - 1);
-                if (parameterEnd >= invocation.Start && masked[parameterEnd] == ')')
+                if (invocation.Start <= parameterEnd && masked[parameterEnd] == ')')
                 {
                     int parameterStart = FindMatchingBackward(masked, parameterEnd, '(', ')');
                     if (
-                        parameterStart >= invocation.Start
+                        invocation.Start <= parameterStart
                         && IsDirectDelegatePrefix(masked, invocation.Start, parameterStart)
                     )
                     {
@@ -1419,12 +1419,12 @@ namespace DxMessaging.Editor
                 return;
             }
             int open = NextNonWhitespace(masked, start + "delegate".Length);
-            if (open < 0 || open >= invocation.End || masked[open] != '(')
+            if (open < 0 || invocation.End <= open || masked[open] != '(')
             {
                 return;
             }
             int close = FindMatching(masked, open, '(', ')');
-            if (close >= 0 && close < invocation.End)
+            if (0 <= close && close < invocation.End)
             {
                 AddRefReplacements(masked, open + 1, close, replacementStarts);
             }
@@ -1487,13 +1487,13 @@ namespace DxMessaging.Editor
             );
             foreach (Match match in baseCall.Matches(masked, body.Start))
             {
-                if (match.Index >= body.Start + body.Length)
+                if (body.Start + body.Length <= match.Index)
                 {
                     break;
                 }
                 int open = masked.IndexOf('(', match.Index, match.Length);
                 int close = FindMatching(masked, open, '(', ')');
-                if (close < 0 || close > body.Start + body.Length)
+                if (close < 0 || body.Start + body.Length < close)
                 {
                     continue;
                 }
@@ -1563,7 +1563,7 @@ namespace DxMessaging.Editor
                         close,
                         replacementStart
                     );
-                    if (parameterName.Length > 0)
+                    if (0 < parameterName.Length)
                     {
                         parameterNames.Add(parameterName);
                     }
@@ -1585,7 +1585,7 @@ namespace DxMessaging.Editor
                     );
                     foreach (Match match in byReferenceUse.Matches(masked, body.Start))
                     {
-                        if (match.Index >= body.Start + body.Length)
+                        if (body.Start + body.Length <= match.Index)
                         {
                             break;
                         }
@@ -1624,7 +1624,7 @@ namespace DxMessaging.Editor
         private static int FindEnclosingOpenParenthesis(string text, int position)
         {
             int depth = 0;
-            for (int index = position - 1; index >= 0; index--)
+            for (int index = position - 1; 0 <= index; index--)
             {
                 if (text[index] == ')')
                 {
@@ -1653,7 +1653,7 @@ namespace DxMessaging.Editor
                     continue;
                 }
                 MatchCollection identifiers = IdentifierRegexForParameter.Matches(parameterText);
-                if (identifiers.Count > 0)
+                if (0 < identifiers.Count)
                 {
                     names.Add(identifiers[identifiers.Count - 1].Value);
                 }
@@ -1672,7 +1672,7 @@ namespace DxMessaging.Editor
             {
                 if (
                     modifierStart < parameter.Start
-                    || modifierStart >= parameter.Start + parameter.Length
+                    || parameter.Start + parameter.Length <= modifierStart
                 )
                 {
                     continue;
@@ -1715,28 +1715,28 @@ namespace DxMessaging.Editor
                     next + "where".Length,
                     StringComparison.Ordinal
                 );
-                if (semicolon >= 0)
+                if (0 <= semicolon)
                 {
-                    if (blockStart > semicolon)
+                    if (semicolon < blockStart)
                     {
                         blockStart = -1;
                     }
-                    if (expressionStart > semicolon)
+                    if (semicolon < expressionStart)
                     {
                         expressionStart = -1;
                     }
                 }
             }
-            if (blockStart >= 0 && (expressionStart < 0 || blockStart < expressionStart))
+            if (0 <= blockStart && (expressionStart < 0 || blockStart < expressionStart))
             {
                 int blockEnd = FindMatching(text, blockStart, '{', '}');
-                if (blockEnd >= 0)
+                if (0 <= blockEnd)
                 {
                     body = new TextSpan(blockStart + 1, blockEnd - blockStart - 1);
                     return true;
                 }
             }
-            if (expressionStart >= 0)
+            if (0 <= expressionStart)
             {
                 int expressionEnd = FindExpressionEnd(text, expressionStart + 2);
                 body = new TextSpan(expressionStart + 2, expressionEnd - expressionStart - 2);
@@ -1789,7 +1789,7 @@ namespace DxMessaging.Editor
                         }
                         break;
                     case '>':
-                        if (angles > 0)
+                        if (0 < angles)
                         {
                             angles--;
                         }
@@ -2034,7 +2034,7 @@ namespace DxMessaging.Editor
                         || (index + 1 < source.Length && source[index + 1] == '@');
                     int quoteCount = CountRun(source, quoteStart, '"');
                     int end =
-                        quoteCount >= 3
+                        3 <= quoteCount
                             ? FindRawStringEnd(source, quoteStart + quoteCount, quoteCount)
                             : FindQuotedEnd(source, quoteStart + 1, '"', verbatim);
                     Mask(masked, index, end);
@@ -2129,7 +2129,7 @@ namespace DxMessaging.Editor
         )
         {
             int depth = 0;
-            for (int index = close; index >= 0; index--)
+            for (int index = close; 0 <= index; index--)
             {
                 if (text[index] == closeValue)
                 {
@@ -2157,7 +2157,7 @@ namespace DxMessaging.Editor
 
         private static int PreviousNonWhitespace(string text, int start)
         {
-            for (int index = start; index >= 0; index--)
+            for (int index = start; 0 <= index; index--)
             {
                 if (!char.IsWhiteSpace(text[index]))
                 {
@@ -2171,7 +2171,7 @@ namespace DxMessaging.Editor
         {
             if (
                 start < 0
-                || start + identifier.Length > text.Length
+                || text.Length < start + identifier.Length
                 || !text.AsSpan(start, identifier.Length).SequenceEqual(identifier.AsSpan())
             )
             {
@@ -2206,13 +2206,13 @@ namespace DxMessaging.Editor
             }
             int identifierEnd = PreviousNonWhitespace(text, dot - 1);
             int identifierStart = identifierEnd;
-            while (identifierStart >= 0 && IsIdentifierPart(text[identifierStart]))
+            while (0 <= identifierStart && IsIdentifierPart(text[identifierStart]))
             {
                 identifierStart--;
             }
             identifierStart++;
             bool correctIdentifier =
-                identifierEnd >= identifierStart
+                identifierStart <= identifierEnd
                 && string.CompareOrdinal(
                     text,
                     identifierStart,
@@ -2254,7 +2254,7 @@ namespace DxMessaging.Editor
             }
             int coreEnd = PreviousNonWhitespace(text, coreDot - 1);
             int coreStart = coreEnd;
-            while (coreStart >= 0 && IsIdentifierPart(text[coreStart]))
+            while (0 <= coreStart && IsIdentifierPart(text[coreStart]))
             {
                 coreStart--;
             }
@@ -2275,7 +2275,7 @@ namespace DxMessaging.Editor
             }
             int dxMessagingEnd = PreviousNonWhitespace(text, dxMessagingDot - 1);
             int dxMessagingStart = dxMessagingEnd;
-            while (dxMessagingStart >= 0 && IsIdentifierPart(text[dxMessagingStart]))
+            while (0 <= dxMessagingStart && IsIdentifierPart(text[dxMessagingStart]))
             {
                 dxMessagingStart--;
             }
@@ -2290,7 +2290,7 @@ namespace DxMessaging.Editor
                     RegexOptions.CultureInvariant
                 );
             return rootQualified
-                && dxMessagingEnd >= dxMessagingStart
+                && dxMessagingStart <= dxMessagingEnd
                 && string.CompareOrdinal(
                     text,
                     dxMessagingStart,
@@ -2348,7 +2348,7 @@ namespace DxMessaging.Editor
             catch (Exception writeFailure)
             {
                 List<Exception> rollbackFailures = new();
-                for (int index = applied.Count - 1; index >= 0; index--)
+                for (int index = applied.Count - 1; 0 <= index; index--)
                 {
                     AppliedFile file = applied[index];
                     try
@@ -2771,7 +2771,7 @@ namespace DxMessaging.Editor
 
                 byte[] preamble = new byte[preambleLength];
                 Array.Copy(bytes, preamble, preambleLength);
-                if (preambleLength == 0 && Array.IndexOf(bytes, (byte)0) >= 0)
+                if (preambleLength == 0 && 0 <= Array.IndexOf(bytes, (byte)0))
                 {
                     throw new DecoderFallbackException(
                         "A BOM-less source contains null bytes and cannot be decoded safely."

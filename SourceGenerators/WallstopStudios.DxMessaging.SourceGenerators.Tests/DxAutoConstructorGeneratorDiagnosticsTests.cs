@@ -91,9 +91,11 @@ public readonly partial struct InvalidOptional
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: [DxOptionalParameter] permutations on primitive types (constructor-constant path).
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: [DxOptionalParameter] permutations on primitive types (constructor-constant path).
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void OptionalParameterIntDefaultEmitsConstructorWithLiteral()
@@ -186,15 +188,19 @@ public readonly partial struct InvalidOptional
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: [DxOptionalParameter(Expression = "...")] permutations.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: [DxOptionalParameter(Expression = "...")] permutations.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void OptionalParameterStringNullableDefaultViaExpressionEmits()
     {
-        // string? with `Expression = "null"` should bind cleanly because the field is a reference
-        // type, satisfying IsReferenceOrNullable.
+        /*
+            string? with `Expression = "null"` should bind cleanly because the field is a reference
+            type, satisfying IsReferenceOrNullable.
+        */
         string source = """
 #nullable enable
 using DxMessaging.Core.Attributes;
@@ -227,9 +233,11 @@ public readonly partial struct M
     [Test]
     public void OptionalParameterEnumLiteralViaExpressionEmits()
     {
-        // Enum literal via Expression; the named-argument path runs IsValidDefaultExpression,
-        // which speculatively binds the expression at the type's syntax position. The enum is
-        // declared in the same compilation, so the binding should succeed.
+        /*
+            Enum literal via Expression; the named-argument path runs IsValidDefaultExpression,
+            which speculatively binds the expression at the type's syntax position. The enum is
+            declared in the same compilation, so the binding should succeed.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -267,9 +275,11 @@ public readonly partial struct M
     [Test]
     public void OptionalParameterDefaultStructViaExpressionEmits()
     {
-        // `default(MyStruct)` is currently the canonical way to express a struct's default value
-        // through DxOptionalParameter. The bare `default` literal is also accepted (the generator
-        // short-circuits on the literal `default` in IsValidDefaultExpression).
+        /*
+            `default(MyStruct)` is currently the canonical way to express a struct's default value
+            through DxOptionalParameter. The bare `default` literal is also accepted (the generator
+            short-circuits on the literal `default` in IsValidDefaultExpression).
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -306,8 +316,10 @@ public readonly partial struct M
     [Test]
     public void OptionalParameterBareDefaultLiteralEmits()
     {
-        // Special case: the generator short-circuits on the literal token `default`; it is valid
-        // for any type because the parameter slot supplies the type context.
+        /*
+            Special case: the generator short-circuits on the literal token `default`; it is valid
+            for any type because the parameter slot supplies the type context.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -336,21 +348,25 @@ public readonly partial struct M
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Phase D: DXMSG005 emission boundary cases.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Phase D: DXMSG005 emission boundary cases.
+        ------------------------------------------------------------------------------------------
+    */
 
     [Test]
     public void DXMSG005DoesNotFireForRuntimeExpressionWhoseTypeMatches()
     {
-        // PINS CURRENT CONTRACT (slightly weaker than the brief assumed): the generator's
-        // IsValidDefaultExpression speculatively binds the expression and checks only that the
-        // bound type is implicitly convertible to the field type. It does NOT verify that the
-        // expression is a compile-time constant. Therefore a non-constant expression like
-        // `System.DateTime.Now.Ticks` (whose type is `long`, convertible to a `long` field) passes
-        // DXMSG005's check. The C# compiler then surfaces the real problem as CS1736 on the
-        // generated constructor signature. This test pins THAT behavior so a future tightening of
-        // IsValidDefaultExpression to require constants is a deliberate, visible change.
+        /*
+            PINS CURRENT CONTRACT (slightly weaker than the brief assumed): the generator's
+            IsValidDefaultExpression speculatively binds the expression and checks only that the
+            bound type is implicitly convertible to the field type. It does NOT verify that the
+            expression is a compile-time constant. Therefore a non-constant expression like
+            `System.DateTime.Now.Ticks` (whose type is `long`, convertible to a `long` field) passes
+            DXMSG005's check. The C# compiler then surfaces the real problem as CS1736 on the
+            generated constructor signature. This test pins THAT behavior so a future tightening of
+            IsValidDefaultExpression to require constants is a deliberate, visible change.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -378,8 +394,10 @@ public readonly partial struct M
     [Test]
     public void DXMSG005FiresForUnparseableExpression()
     {
-        // Pin: a syntactically invalid expression must surface as DXMSG005 (the generator catches
-        // the parse exception and reports the diagnostic rather than crashing).
+        /*
+            Pin: a syntactically invalid expression must surface as DXMSG005 (the generator catches
+            the parse exception and reports the diagnostic rather than crashing).
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -406,8 +424,10 @@ public readonly partial struct M
     [Test]
     public void DXMSG005FiresForTypeMismatchedExpression()
     {
-        // Pin: `Expression = "\"hello\""` on an `int` field must be rejected; there is no
-        // implicit conversion from string -> int.
+        /*
+            Pin: `Expression = "\"hello\""` on an `int` field must be rejected; there is no
+            implicit conversion from string -> int.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -434,8 +454,10 @@ public readonly partial struct M
     [Test]
     public void DXMSG005FiresForNullOnValueTypeField()
     {
-        // Pin: `[DxOptionalParameter(null)]` on an `int` field is invalid because int is neither
-        // a reference type nor a Nullable<T>.
+        /*
+            Pin: `[DxOptionalParameter(null)]` on an `int` field is invalid because int is neither
+            a reference type nor a Nullable<T>.
+        */
         string source = """
 using DxMessaging.Core.Attributes;
 
@@ -491,9 +513,11 @@ public readonly partial struct M
         );
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Helpers.
-    // ------------------------------------------------------------------------------------------
+    /*
+        ------------------------------------------------------------------------------------------
+        Helpers.
+        ------------------------------------------------------------------------------------------
+    */
 
     /// <summary>
     /// Drives the auto-constructor generator with a single optional field of the given type and

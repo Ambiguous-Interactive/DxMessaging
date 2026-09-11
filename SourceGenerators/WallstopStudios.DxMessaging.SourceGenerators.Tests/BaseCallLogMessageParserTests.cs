@@ -7,8 +7,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class BaseCallLogMessageParserTests
 {
-    // The exact format strings the analyzer uses today. If these drift, both this test and the
-    // parser regexes must be updated in lockstep; the parser is downstream of the analyzer.
+    /*
+        The exact format strings the analyzer uses today. If these drift, both this test and the
+        parser regexes must be updated in lockstep; the parser is downstream of the analyzer.
+    */
     private const string Dxmsg006Bare =
         "'Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
         + "the messaging system may not function correctly on this component.";
@@ -183,8 +185,10 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLineAnchorRejectsAnalyzerWordingMidString()
     {
-        // S7: body regexes anchor to ^ so a Debug.Log payload that happens to embed the
-        // analyzer's wording mid-string is NOT surfaced as a real DXMSG006/007/008.
+        /*
+            S7: body regexes anchor to ^ so a Debug.Log payload that happens to embed the
+            analyzer's wording mid-string is NOT surfaced as a real DXMSG006/007/008.
+        */
         Assert.That(
             BaseCallLogMessageParser.ParseLine(
                 "Custom log: see ('Sample.Player' overrides MessageAwareComponent.Awake but does not call base.Awake(); "
@@ -360,8 +364,10 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLineAnchorRejectsDxmsg009MidString()
     {
-        // Adversarial: the analyzer's wording embedded in a Debug.Log payload must not be parsed
-        // as a real DXMSG009 warning.
+        /*
+            Adversarial: the analyzer's wording embedded in a Debug.Log payload must not be parsed
+            as a real DXMSG009 warning.
+        */
         const string line =
             "Hello world. " + "'Sample.BrokenThing' declares OnEnable without 'override' or 'new'.";
 
@@ -448,9 +454,11 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLineAnchorRejectsDxmsg010MidString()
     {
-        // Adversarial: the analyzer's wording embedded in a Debug.Log payload must not be parsed
-        // as a real DXMSG010 warning. The body regex is anchored at ^ so any leading text
-        // disqualifies the match.
+        /*
+            Adversarial: the analyzer's wording embedded in a Debug.Log payload must not be parsed
+            as a real DXMSG010 warning. The body regex is anchored at ^ so any leading text
+            disqualifies the match.
+        */
         const string line =
             "Custom log: see ('Sample.BrokenThing' calls base.OnEnable() but the inherited override on 'Sample.ddd' "
             + "does not chain to MessageAwareComponent.OnEnable; the messaging system will not function correctly on this component.)";
@@ -463,8 +471,10 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void AggregateDxmsg010ContributesToMissingBaseFor()
     {
-        // DXMSG010 must contribute its method name to MissingBaseFor so the inspector overlay
-        // surfaces it just like DXMSG006/007/009.
+        /*
+            DXMSG010 must contribute its method name to MissingBaseFor so the inspector overlay
+            surfaces it just like DXMSG006/007/009.
+        */
         Dictionary<string, ParsedTypeReport> result = BaseCallLogMessageParser.Aggregate(
             new[] { Dxmsg010Bare }
         );
@@ -478,13 +488,15 @@ internal sealed class BaseCallLogMessageParserTests
     [Test]
     public void ParseLineDxmsg010BrokenAncestorIsNotSurfacedOnParsedEntry()
     {
-        // Spec 5a: the DXMSG010 regex captures the broken-ancestor name in a `broken` group, but
-        // the `ParsedEntry` struct does NOT expose it as a field. This test PINS the current
-        // limitation: future readers of the parsed entry have no way to surface the broken-ancestor
-        // FQN to the inspector overlay's "broken chain via {broken}" message. If the struct gains
-        // a BrokenAncestor field in a future change, this test should be updated to assert the
-        // captured value rather than the absence; but until then, this test keeps the limitation
-        // visible to drive a future enhancement and prevent silent regressions of the regex itself.
+        /*
+            Spec 5a: the DXMSG010 regex captures the broken-ancestor name in a `broken` group, but
+            the `ParsedEntry` struct does NOT expose it as a field. This test PINS the current
+            limitation: future readers of the parsed entry have no way to surface the broken-ancestor
+            FQN to the inspector overlay's "broken chain via {broken}" message. If the struct gains
+            a BrokenAncestor field in a future change, this test should be updated to assert the
+            captured value rather than the absence; but until then, this test keeps the limitation
+            visible to drive a future enhancement and prevent silent regressions of the regex itself.
+        */
         ParsedEntry? parsed = BaseCallLogMessageParser.ParseLine(Dxmsg010Bare);
 
         Assert.That(parsed, Is.Not.Null);
@@ -493,9 +505,11 @@ internal sealed class BaseCallLogMessageParserTests
         Assert.That(entry.TypeFullName, Is.EqualTo("Sample.BrokenThing"));
         Assert.That(entry.MethodName, Is.EqualTo("OnEnable"));
 
-        // ParsedEntry's public surface is exactly five members (DiagnosticId, TypeFullName,
-        // MethodName, FilePath, Line). Confirm the struct shape is unchanged so a future addition
-        // of a BrokenAncestor property is detected here as a deliberate API change.
+        /*
+            ParsedEntry's public surface is exactly five members (DiagnosticId, TypeFullName,
+            MethodName, FilePath, Line). Confirm the struct shape is unchanged so a future addition
+            of a BrokenAncestor property is detected here as a deliberate API change.
+        */
         System.Reflection.PropertyInfo[] properties = typeof(ParsedEntry).GetProperties(
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
         );

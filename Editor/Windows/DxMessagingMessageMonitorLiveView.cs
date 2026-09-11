@@ -226,8 +226,10 @@ namespace DxMessaging.Editor.Windows
 
         private const int MessageListMinHeight = 56;
 
-        // The body renders into four fixed slots so a poll can update each independently. Named
-        // only so the UI Toolkit debugger reads clearly; nothing queries them.
+        /*
+            The body renders into four fixed slots so a poll can update each independently. Named
+            only so the UI Toolkit debugger reads clearly; nothing queries them.
+        */
         private const string ListSlotName = "dxmessaging-monitor-live-list-slot";
         private const string DetailSlotName = "dxmessaging-monitor-live-detail-slot";
         private const string FooterSlotName = "dxmessaging-monitor-live-footer-slot";
@@ -402,7 +404,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             state.FooterSlot.Clear();
-            if (recorder.MissedCount > 0)
+            if (0 < recorder.MissedCount)
             {
                 state.FooterSlot.Add(CreateGapNotice(recorder.MissedCount));
             }
@@ -438,7 +440,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             List<MessageMonitorLiveEntry> rows = new(entries.Count);
-            for (int index = entries.Count - 1; index >= 0; index--)
+            for (int index = entries.Count - 1; 0 <= index; index--)
             {
                 MessageMonitorLiveEntry row = entries[index];
                 if (
@@ -527,7 +529,7 @@ namespace DxMessaging.Editor.Windows
                 return "Diagnostics are Off";
             }
 
-            if (recorder.Entries.Count > 0)
+            if (0 < recorder.Entries.Count)
             {
                 return "No matches";
             }
@@ -550,7 +552,7 @@ namespace DxMessaging.Editor.Windows
                 return "The live log drains the bus emission buffer, which only fills while diagnostics are on.";
             }
 
-            if (recorder.Entries.Count > 0)
+            if (0 < recorder.Entries.Count)
             {
                 return "No recorded messages match the current filter.";
             }
@@ -681,10 +683,12 @@ namespace DxMessaging.Editor.Windows
             filters.style.flexDirection = FlexDirection.Row;
             filters.style.alignItems = Align.Center;
 
-            // The badge is the mode switch here too. Snapshot mode offered its switch beside the
-            // filter row while live mode kept a Snapshot button at the far end of a wrapping
-            // toolbar, which is how a reader ends up believing live mode is one-way (#344). Both
-            // modes now switch from the word that names the mode.
+            /*
+                The badge is the mode switch here too. Snapshot mode offered its switch beside the
+                filter row while live mode kept a Snapshot button at the far end of a wrapping
+                toolbar, which is how a reader ends up believing live mode is one-way (#344). Both
+                modes now switch from the word that names the mode.
+            */
             Label mode = new(LiveModeBadgeText)
             {
                 name = ModeBadgeLabelName,
@@ -704,9 +708,11 @@ namespace DxMessaging.Editor.Windows
             }
             toolbar.Add(mode);
 
-            // The explicit button moves up next to the badge for the same reason: the control
-            // that leaves live mode should not be the last thing a wrapping toolbar pushes to a
-            // second row.
+            /*
+                The explicit button moves up next to the badge for the same reason: the control
+                that leaves live mode should not be the last thing a wrapping toolbar pushes to a
+                second row.
+            */
             Button exitLive = new()
             {
                 name = SnapshotButtonName,
@@ -727,9 +733,11 @@ namespace DxMessaging.Editor.Windows
             );
             toolbar.Add(record);
 
-            // The chips name their route kind rather than abbreviating it to a letter: issue #344
-            // reported the toolbar toggles as unlabelled, and a named chip is also the only legend
-            // the row colors have.
+            /*
+                The chips name their route kind rather than abbreviating it to a letter: issue #344
+                reported the toolbar toggles as unlabelled, and a named chip is also the only legend
+                the row colors have.
+            */
             Toggle untargeted = CreateChip(
                 UntargetedChipName,
                 DxMessagingEditorPalette.UntargetedKind,
@@ -750,9 +758,11 @@ namespace DxMessaging.Editor.Windows
             filter.tooltip =
                 "Filter the log. Supports type:, message:, context: and stack: prefixes.";
 
-            // Every control reads the live value of every other control, so a change to one never
-            // writes back a stale copy of the others. Changing a filter also drops the selection
-            // back to the newest row, because the old index pointed into a different row set.
+            /*
+                Every control reads the live value of every other control, so a change to one never
+                writes back a stale copy of the others. Changing a filter also drops the selection
+                back to the newest row, because the old index pointed into a different row set.
+            */
             void RaiseStateChanged()
             {
                 callbacks.OnStateChanged?.Invoke(
@@ -774,15 +784,19 @@ namespace DxMessaging.Editor.Windows
             filters.Add(targeted);
             filters.Add(broadcast);
 
-            // The two rows run four unrelated groups -- what is being recorded, what the window
-            // does next, what is shown, and what is searched. The design system's rule separates
-            // the pairs that share a row so each reads as groups rather than one run of controls.
+            /*
+                The two rows run four unrelated groups -- what is being recorded, what the window
+                does next, what is shown, and what is searched. The design system's rule separates
+                the pairs that share a row so each reads as groups rather than one run of controls.
+            */
             filters.Add(CreateSeparator());
             filters.Add(filter);
 
-            // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
-            // same as the rest of this package's editor UI: it is the event a real click produces
-            // and the one a test can synthesize.
+            /*
+                Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
+                same as the rest of this package's editor UI: it is the event a real click produces
+                and the one a test can synthesize.
+            */
             Button clear = new()
             {
                 name = ClearButtonName,
@@ -812,9 +826,11 @@ namespace DxMessaging.Editor.Windows
             chip.tooltip =
                 $"This color marks {routeKind} messages in every row. Click to show or hide them.";
 
-            // `.dx-record` hides its checkmark from the stylesheet; `.dx-chip` carries no such rule
-            // in the migrated sheet, and the chip's own letter is its state, so the checkmark and
-            // the empty field-label column are collapsed here instead.
+            /*
+                `.dx-record` hides its checkmark from the stylesheet; `.dx-chip` carries no such rule
+                in the migrated sheet, and the chip's own letter is its state, so the checkmark and
+                the empty field-label column are collapsed here instead.
+            */
             VisualElement checkmark = chip.Q(className: "unity-toggle__checkmark");
             if (checkmark != null)
             {
@@ -866,8 +882,10 @@ namespace DxMessaging.Editor.Windows
             bool selectionChanged = state.SelectedIndex != selectedIndex;
             state.SelectedIndex = selectedIndex;
 
-            // Refilling the list the view was built around, rather than assigning a new one, keeps
-            // this a data refresh: reassigning `itemsSource` is a collection reset.
+            /*
+                Refilling the list the view was built around, rather than assigning a new one, keeps
+                this a data refresh: reassigning `itemsSource` is a collection reset.
+            */
             state.Rows.Clear();
             state.Rows.AddRange(rows);
 
@@ -883,8 +901,10 @@ namespace DxMessaging.Editor.Windows
                 state.List.RefreshItems();
             }
 
-            // Only when it moved: the selection is also what the row factory reads to draw the
-            // selected wash, so an unchanged pin needs no work and no allocation per poll.
+            /*
+                Only when it moved: the selection is also what the row factory reads to draw the
+                selected wash, so an unchanged pin needs no work and no allocation per poll.
+            */
             if (selectionChanged)
             {
                 state.List.SetSelectionWithoutNotify(new[] { selectedIndex });
@@ -903,13 +923,15 @@ namespace DxMessaging.Editor.Windows
                 makeItem = static () => new VisualElement(),
             };
 
-            // Selection is raised from the row's own click rather than the list's selection event:
-            // the event was renamed across the supported editor range (onSelectionChange ->
-            // selectionChanged), and the row click carries the index directly.
-            //
-            // Everything the binding needs is read off the shared state at bind time rather than
-            // captured here, so a refreshed list renders the current rows and reports clicks to the
-            // host's current callbacks instead of the ones it was first built with.
+            /*
+                Selection is raised from the row's own click rather than the list's selection event:
+                the event was renamed across the supported editor range (onSelectionChange ->
+                selectionChanged), and the row click carries the index directly.
+
+                Everything the binding needs is read off the shared state at bind time rather than
+                captured here, so a refreshed list renders the current rows and reports clicks to the
+                host's current callbacks instead of the ones it was first built with.
+            */
             list.bindItem = (element, index) =>
             {
                 element.Clear();
@@ -933,7 +955,7 @@ namespace DxMessaging.Editor.Windows
         /// </summary>
         private static void UpdateDetail(LiveBodyState state, MessageMonitorLiveEntry row)
         {
-            if (state.DetailSlot.childCount > 0 && state.DetailShows(row))
+            if (0 < state.DetailSlot.childCount && state.DetailShows(row))
             {
                 return;
             }
@@ -1049,9 +1071,11 @@ namespace DxMessaging.Editor.Windows
             Label cardLabel = new("EMISSION");
             cardLabel.AddToClassList(DxMessagingEditorTheme.CardLabelClassName);
             card.Add(cardLabel);
-            // Both modes render the same emission, so they render it the same way: the type
-            // opens its source, the context selects the object it named, and the stack trace is
-            // one row per frame with Unity's own capture frames left out.
+            /*
+                Both modes render the same emission, so they render it the same way: the type
+                opens its source, the context selects the object it named, and the stack trace is
+                one row per frame with Unity's own capture frames left out.
+            */
             card.Add(DxMessagingMessageMonitorWindow.CreateTypeDetailRow(row.Entry));
             card.Add(
                 DxMessagingMessageMonitorWindow.CreateContextDetailRow(
@@ -1082,8 +1106,10 @@ namespace DxMessaging.Editor.Windows
         private static string CreateObservedRangeText(MessageMonitorLiveEntry row)
         {
             string first = FormatObservedSeconds(row.FirstObservedSeconds);
-            // ReSharper disable once CompareOfFloatsByEqualityOperator -- both readings come from
-            // the same clock, and a coalesced row copies the earlier reading verbatim.
+            /*
+                ReSharper disable once CompareOfFloatsByEqualityOperator -- both readings come from
+                the same clock, and a coalesced row copies the earlier reading verbatim.
+            */
             return row.FirstObservedSeconds == row.LastObservedSeconds
                 ? first
                 : $"{first} - {FormatObservedSeconds(row.LastObservedSeconds)}";
@@ -1118,10 +1144,12 @@ namespace DxMessaging.Editor.Windows
             title.AddToClassList(DxMessagingEditorTheme.AdmonitionTitleClassName);
             notice.Add(title);
 
-            // Deliberately carries no class, matching the package's other admonitions:
-            // `.dx-admonition` owns the padding and the body is plain copy. `.dx-empty__body` would
-            // have been the convenient class to reach for and is the wrong one -- it caps width at
-            // 260px and centers, which is right for an empty state and wrong for a full-width notice.
+            /*
+                Deliberately carries no class, matching the package's other admonitions:
+                `.dx-admonition` owns the padding and the body is plain copy. `.dx-empty__body` would
+                have been the convenient class to reach for and is the wrong one -- it caps width at
+                260px and centers, which is right for an empty state and wrong for a full-width notice.
+            */
             Label body = new(CreateGapNoticeBodyText(missedCount)) { name = GapNoticeBodyName };
             body.style.whiteSpace = WhiteSpace.Normal;
             notice.Add(body);
@@ -1154,10 +1182,12 @@ namespace DxMessaging.Editor.Windows
                 footer.Add(statElement);
             }
 
-            // The stats say how many rows there are; this says what a row is. Without it the count
-            // column reads as a mystery on a log that silently merges repeats. It stays on one line
-            // and is cut off with an ellipsis rather than wrapping past the fixed-height footer on a
-            // narrow window; the full sentence is on the tooltip and the LIVE badge.
+            /*
+                The stats say how many rows there are; this says what a row is. Without it the count
+                column reads as a mystery on a log that silently merges repeats. It stays on one line
+                and is cut off with an ellipsis rather than wrapping past the fixed-height footer on a
+                narrow window; the full sentence is on the tooltip and the LIVE badge.
+            */
             Label hint = new(LiveModeHintText)
             {
                 name = ModeHintLabelName,

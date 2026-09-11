@@ -20,9 +20,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     [Category("Performance"), Category("ComparisonContract")]
     public sealed class ComparisonHarnessFanOutAccountingTests
     {
-        // fanOut 1 = GlobalToOne shape (CI diff +10000), 4 = PriorityOrdered shape (+40000),
-        // 16 = GlobalToMany shape (+160000). Each value reproduces the corresponding pre-fix
-        // CI fan-out diff (fanOut * BatchSize) when the probe batch is left uncounted.
+        /*
+            fanOut 1 = GlobalToOne shape (CI diff +10000), 4 = PriorityOrdered shape (+40000),
+            16 = GlobalToMany shape (+160000). Each value reproduces the corresponding pre-fix
+            CI fan-out diff (fanOut * BatchSize) when the probe batch is left uncounted.
+        */
         [Test]
         [TestCase(ComparisonScenario.GlobalToOneSubscriber, 1)]
         [TestCase(ComparisonScenario.PriorityOrderedDispatch, 4)]
@@ -57,9 +59,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             StringAssert.Contains("requires the canonical fan-out 1", exception.Message);
         }
 
-        // Minimal bridge: ProgressMarker counts handler invocations (fanOut per EmitOnce), mirroring
-        // a real bridge's accounting with no messaging library. Supports every scenario and reports a
-        // constant fan-out, so the scenario argument does not change the arithmetic.
+        /*
+            Minimal bridge: ProgressMarker counts handler invocations (fanOut per EmitOnce), mirroring
+            a real bridge's accounting with no messaging library. Supports every scenario and reports a
+            constant fan-out, so the scenario argument does not change the arithmetic.
+        */
         private sealed class CountingFanOutBridge : IMessagingTechBridge
         {
             private readonly int _fanOut;

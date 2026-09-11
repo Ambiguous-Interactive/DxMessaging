@@ -35,11 +35,13 @@ namespace DxMessaging.Tests.Runtime.Core
             ScriptableObject scriptableObject = ScriptableObject.CreateInstance<ScriptableObject>();
             try
             {
-                // Transform is the always-present, module-free Component
-                // (UnityEngine.CoreModule). Using it -- rather than a type from an
-                // optional engine module like 3D Physics (BoxCollider) -- keeps this
-                // identity test compiling on the deliberately minimal CI test project,
-                // whose package closure does not include those modules.
+                /*
+                    Transform is the always-present, module-free Component
+                    (UnityEngine.CoreModule). Using it -- rather than a type from an
+                    optional engine module like 3D Physics (BoxCollider) -- keeps this
+                    identity test compiling on the deliberately minimal CI test project,
+                    whose package closure does not include those modules.
+                */
                 Component component = gameObject.transform;
                 UnityEngine.Object[] objects = { gameObject, component, scriptableObject };
                 foreach (UnityEngine.Object unityObject in objects)
@@ -80,8 +82,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 InstanceId fromGameObject = gameObject;
                 Assert.AreEqual(InstanceId.StableId(gameObject), fromGameObject.Id);
 
-                // Transform: the always-present, module-free Component (see the kind
-                // sweep above) -- no optional engine module required to compile.
+                /*
+                    Transform: the always-present, module-free Component (see the kind
+                    sweep above) -- no optional engine module required to compile.
+                */
                 Component component = gameObject.transform;
                 InstanceId fromComponent = component;
                 Assert.AreEqual(InstanceId.StableId(component), fromComponent.Id);
@@ -140,8 +144,10 @@ namespace DxMessaging.Tests.Runtime.Core
                         continue;
                     }
 
-                    // Only the single version-gated source is allowed to name the legacy
-                    // API, matched by its full relative path (not just the file name).
+                    /*
+                        Only the single version-gated source is allowed to name the legacy
+                        API, matched by its full relative path (not just the file name).
+                    */
                     if (
                         normalized
                             .Replace('\\', '/')

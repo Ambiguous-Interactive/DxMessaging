@@ -84,8 +84,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     leaked = RegisterCountingHandler(scenario, token, hostId);
                     leakedRegistered = true;
-                    // Intentionally NOT removing the registration before Dispose so
-                    // the watcher records the leak.
+                    /*
+                        Intentionally NOT removing the registration before Dispose so
+                        the watcher records the leak.
+                    */
                     Assert.GreaterOrEqual(
                         watcher.LeakedRegistrations,
                         1,
@@ -104,11 +106,13 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
-                // Clean up the leaked handle outside the using block, in a
-                // finally that runs even if any of the assertions above
-                // throw (so the next test does not inherit the leaked
-                // registration). The cleanup is best-effort: a registration
-                // wiped by a Reset triggered earlier is a no-op here.
+                /*
+                    Clean up the leaked handle outside the using block, in a
+                    finally that runs even if any of the assertions above
+                    throw (so the next test does not inherit the leaked
+                    registration). The cleanup is best-effort: a registration
+                    wiped by a Reset triggered earlier is a no-op here.
+                */
                 if (leakedRegistered)
                 {
                     token.RemoveRegistration(leaked);

@@ -109,8 +109,10 @@ namespace DxMessaging.Editor.Analyzers
             }
 #endif
 
-            // 1. Replace this assembly's FQN set with the latest batch. Types absent from the new
-            //    batch are dropped from the assembly's row; that's the per-assembly retirement.
+            /*
+                1. Replace this assembly's FQN set with the latest batch. Types absent from the new
+                   batch are dropped from the assembly's row; that's the per-assembly retirement.
+            */
             if (!typesByAssembly.TryGetValue(assemblyKey, out HashSet<string>? typeSet))
             {
                 typeSet = new HashSet<string>(StringComparer.Ordinal);
@@ -128,16 +130,18 @@ namespace DxMessaging.Editor.Analyzers
                 }
             }
 
-            // 2. Rebuild mergedReports from the per-assembly view. We can't simply remove "the
-            //    types this assembly retired" because another assembly may still report them; the
-            //    only correct algorithm is to start fresh from typesByAssembly + the freshest
-            //    payload for each (assembly, FQN) pair.
-            //
-            //    Per-FQN merge semantics:
-            //    - Method list: union, deduplicated ordinally, stored in deterministic
-            //      ordinal-sorted order.
-            //    - Diagnostic IDs: union via HashSet.
-            //    - File path / line: first non-empty wins (stable across recompiles).
+            /*
+                2. Rebuild mergedReports from the per-assembly view. We can't simply remove "the
+                   types this assembly retired" because another assembly may still report them; the
+                   only correct algorithm is to start fresh from typesByAssembly + the freshest
+                   payload for each (assembly, FQN) pair.
+
+                   Per-FQN merge semantics:
+                   - Method list: union, deduplicated ordinally, stored in deterministic
+                     ordinal-sorted order.
+                   - Diagnostic IDs: union via HashSet.
+                   - File path / line: first non-empty wins (stable across recompiles).
+            */
             Dictionary<string, ParsedTypeReport> rebuilt = new(StringComparer.Ordinal);
             foreach (KeyValuePair<string, HashSet<string>> assemblyEntry in typesByAssembly)
             {
@@ -148,10 +152,12 @@ namespace DxMessaging.Editor.Analyzers
                     continue;
                 }
 
-                // For the assembly we just updated, prefer the freshly-parsed payload. For other
-                // assemblies, we need the previous merge to still carry their data; but that
-                // information is only retrievable from the OUTGOING mergedReports, so we read it
-                // before clearing.
+                /*
+                    For the assembly we just updated, prefer the freshly-parsed payload. For other
+                    assemblies, we need the previous merge to still carry their data; but that
+                    information is only retrievable from the OUTGOING mergedReports, so we read it
+                    before clearing.
+                */
                 IReadOnlyDictionary<string, ParsedTypeReport>? source = string.Equals(
                     thisAssemblyKey,
                     assemblyKey,
@@ -177,8 +183,10 @@ namespace DxMessaging.Editor.Analyzers
 
                     if (!rebuilt.TryGetValue(fqn, out ParsedTypeReport? existing))
                     {
-                        // Defensive copy so future ApplyAssemblyReports calls don't mutate state
-                        // that callers may still hold a reference to.
+                        /*
+                            Defensive copy so future ApplyAssemblyReports calls don't mutate state
+                            that callers may still hold a reference to.
+                        */
                         existing = new ParsedTypeReport
                         {
                             TypeFullName = contribution.TypeFullName,
@@ -290,10 +298,12 @@ namespace DxMessaging.Editor.Analyzers
             {
                 if (!string.IsNullOrEmpty(method))
                 {
-                    // Dedupe across the dual-source merge: LogEntries and CompilerMessage may
-                    // both surface the same `<type>.<method>` pair on Unity 2022+, where both
-                    // pipes are wired. MissingBaseFor is a SortedSet<string>, so duplicates are
-                    // removed and HelpBox output remains stable via deterministic ordinal sorting.
+                    /*
+                        Dedupe across the dual-source merge: LogEntries and CompilerMessage may
+                        both surface the same `<type>.<method>` pair on Unity 2022+, where both
+                        pipes are wired. MissingBaseFor is a SortedSet<string>, so duplicates are
+                        removed and HelpBox output remains stable via deterministic ordinal sorting.
+                    */
                     existing.MissingBaseFor.Add(method);
                 }
             }
@@ -302,14 +312,18 @@ namespace DxMessaging.Editor.Analyzers
             {
                 if (!string.IsNullOrEmpty(id))
                 {
-                    // HashSet dedupes repeated IDs surfaced by the dual-source merge
-                    // (LogEntries + CompilerMessage on Unity 2022+).
+                    /*
+                        HashSet dedupes repeated IDs surfaced by the dual-source merge
+                        (LogEntries + CompilerMessage on Unity 2022+).
+                    */
                     existing.DiagnosticIds.Add(id);
                 }
             }
 
-            // First seen file/line wins so "Open Script" jumps to a stable location across
-            // rebuilds; which is what the user's eye lands on first in the console.
+            /*
+                First seen file/line wins so "Open Script" jumps to a stable location across
+                rebuilds; which is what the user's eye lands on first in the console.
+            */
             if (string.IsNullOrEmpty(existing.FilePath) && !string.IsNullOrEmpty(report.FilePath))
             {
                 existing.FilePath = report.FilePath;

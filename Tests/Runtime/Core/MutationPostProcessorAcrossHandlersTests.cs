@@ -32,8 +32,10 @@ namespace DxMessaging.Tests.Runtime.Core
             List<int> order = new();
             InstanceId emissionTarget = ResolveEmissionTarget(scenario, components);
 
-            // Ensure dispatch reaches the post-processor stage by registering a no-op handler
-            // on the same MessageHandler that owns pp[0].
+            /*
+                Ensure dispatch reaches the post-processor stage by registering a no-op handler
+                on the same MessageHandler that owns pp[0].
+            */
             MessageRegistrationHandle noop = RegisterHandler(
                 scenario,
                 tokens[0],
@@ -478,12 +480,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 counts[0],
                 counts[1]
             );
-            // Documented behavior: the global accept-all path uses lazy
-            // per-entry prefreeze, so global[1] is dropped during the same
-            // emission that global[0] removes it. If a future change adds an
-            // upfront prefreeze for global handlers (mirroring the per-kind
-            // dispatch surfaces), this assertion must flip to expect counts[1]
-            // == 1 on the first emission.
+            /*
+                Documented behavior: the global accept-all path uses lazy
+                per-entry prefreeze, so global[1] is dropped during the same
+                emission that global[0] removes it. If a future change adds an
+                upfront prefreeze for global handlers (mirroring the per-kind
+                dispatch surfaces), this assertion must flip to expect counts[1]
+                == 1 on the first emission.
+            */
             Assert.AreEqual(
                 0,
                 counts[1],

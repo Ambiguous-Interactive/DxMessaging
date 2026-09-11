@@ -178,8 +178,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 int declarationStart = GetDeclarationStart(field);
                 int insertionIndex = index;
                 while (
-                    insertionIndex > 0
-                    && GetDeclarationStart(fields[insertionIndex - 1]) > declarationStart
+                    0 < insertionIndex
+                    && declarationStart < GetDeclarationStart(fields[insertionIndex - 1])
                 )
                 {
                     fields[insertionIndex] = fields[insertionIndex - 1];
@@ -217,7 +217,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     List<INamedTypeSymbol> nonPartial = GetNonPartialContainers(
                         typeInfo.TypeSymbol
                     );
-                    if (nonPartial.Count > 0)
+                    if (0 < nonPartial.Count)
                     {
                         string containersList = string.Join(
                             ", ",
@@ -330,7 +330,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
                 // Render generic parameters for the container
                 string containerTypeParams =
-                    container.TypeParameters.Length > 0
+                    0 < container.TypeParameters.Length
                         ? "<"
                             + string.Join(", ", container.TypeParameters.Select(static p => p.Name))
                             + ">"
@@ -348,7 +348,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             // Use simple identifier + type parameters (no containers) because we are inside container wrappers
             string typeGenericParams =
-                typeSymbol.TypeParameters.Length > 0
+                0 < typeSymbol.TypeParameters.Length
                     ? "<"
                         + string.Join(", ", typeSymbol.TypeParameters.Select(static p => p.Name))
                         + ">"
@@ -699,7 +699,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 if (syntaxReference.GetSyntax() is TypeDeclarationSyntax declaration)
                 {
                     string kind = declaration.Kind().ToString();
-                    if (kind.IndexOf("Record", StringComparison.Ordinal) >= 0)
+                    if (0 <= kind.IndexOf("Record", StringComparison.Ordinal))
                     {
                         return true;
                     }

@@ -79,7 +79,7 @@ namespace DxMessaging.Core.MessageBus.Internal
             byte k = (byte)kind;
             byte p = (byte)phase;
             byte v = (byte)variant;
-            if (k > KindMask)
+            if (KindMask < k)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(kind),
@@ -87,7 +87,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                     "DispatchKind must fit in 4 bits (0..15)."
                 );
             }
-            if (p > PhaseMask)
+            if (PhaseMask < p)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(phase),
@@ -95,7 +95,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                     "DispatchPhase must fit in 1 bit (0..1)."
                 );
             }
-            if (v > VariantMask)
+            if (VariantMask < v)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(variant),

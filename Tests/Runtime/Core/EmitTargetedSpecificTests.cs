@@ -732,7 +732,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     (in SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
-                        for (int j = priority - 1; j >= 0; --j)
+                        for (int j = priority - 1; 0 <= j; --j)
                         {
                             // Keep every comparison; construct NUnit diagnostics only on failure.
                             if (received[j] != previous + 1)
@@ -756,7 +756,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);
-                        for (int j = priority - 1; j >= 0; --j)
+                        for (int j = priority - 1; 0 <= j; --j)
                         {
                             if (received[j] != previous + 1)
                             {
@@ -815,7 +815,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     (in SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
-                        for (int j = priority - 1; j >= 0; --j)
+                        for (int j = priority - 1; 0 <= j; --j)
                         {
                             if (received[j] != previous + 1)
                             {
@@ -838,7 +838,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         int previous = received[priority]++;
                         Assert.AreEqual(1, previous % 2);
-                        for (int j = priority - 1; j >= 0; --j)
+                        for (int j = priority - 1; 0 <= j; --j)
                         {
                             if (received[j] != previous + 1)
                             {
@@ -893,7 +893,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     (ref InstanceId _, ref SimpleTargetedMessage _) =>
                     {
                         int previous = received[priority]++;
-                        for (int j = priority - 1; j >= 0; --j)
+                        for (int j = priority - 1; 0 <= j; --j)
                         {
                             if (received[j] != previous + 1)
                             {

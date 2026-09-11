@@ -84,8 +84,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Expect the self-check breadcrumb BEFORE the action that triggers it
-            // in builds that compile the runtime breadcrumb branch.
+            /*
+                Expect the self-check breadcrumb BEFORE the action that triggers it
+                in builds that compile the runtime breadcrumb branch.
+            */
             ExpectMissingBaseAwakeBreadcrumbIfCompiled();
 
             GameObject host = new(
@@ -102,10 +104,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind
             );
 
-            // Calling through a null token throws NullReferenceException.
-            // The exact exception type is not the contract; the contract is
-            // "the call fails in a defined way rather than silently dropping
-            // the registration", which a thrown exception satisfies.
+            /*
+                Calling through a null token throws NullReferenceException.
+                The exact exception type is not the contract; the contract is
+                "the call fails in a defined way rather than silently dropping
+                the registration", which a thrown exception satisfies.
+            */
             Assert.Throws<System.NullReferenceException>(
                 () =>
                     _ = component.Token.RegisterUntargeted<SimpleUntargetedMessage>(
@@ -121,9 +125,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 yield return fresh.Current;
             }
 
-            // No handler is registered (the registration above threw); emit
-            // anyway and confirm dispatch is a no-op. The bus must remain
-            // fresh because the broken component never installed a handler.
+            /*
+                No handler is registered (the registration above threw); emit
+                anyway and confirm dispatch is a no-op. The bus must remain
+                fresh because the broken component never installed a handler.
+            */
             EmitDirectly(scenario, host);
 
             IMessageBus bus = MessageHandler.MessageBus;
@@ -223,8 +229,10 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             try
             {
-                // Disable the component; because the override skips
-                // base.OnDisable(), the token stays enabled.
+                /*
+                    Disable the component; because the override skips
+                    base.OnDisable(), the token stays enabled.
+                */
                 component.enabled = false;
                 EmitDirectly(scenario, host);
 
@@ -356,17 +364,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Construct the watcher BEFORE spawning the host so the baseline
-            // is the truly-fresh bus (0) that MessagingTestBase.UnitySetup
-            // guarantees. Capturing the baseline AFTER spawn would fold the
-            // 3 opted-in StringMessage handlers (registered by the inherited
-            // MessageAwareComponent.RegisterMessageHandlers) into the
-            // baseline, so the "leak" delta would be the negative of those
-            // 3 handlers when base.OnDisable() drains them at destroy time.
-            // Watching from before spawn pins the FULL round-trip: every
-            // handler the framework added on Awake (defaults + counter) must
-            // be removed by the inherited OnDisable during the destroy
-            // lifecycle, so the final delta is exactly 0.
+            /*
+                Construct the watcher BEFORE spawning the host so the baseline
+                is the truly-fresh bus (0) that MessagingTestBase.UnitySetup
+                guarantees. Capturing the baseline AFTER spawn would fold the
+                3 opted-in StringMessage handlers (registered by the inherited
+                MessageAwareComponent.RegisterMessageHandlers) into the
+                baseline, so the "leak" delta would be the negative of those
+                3 handlers when base.OnDisable() drains them at destroy time.
+                Watching from before spawn pins the FULL round-trip: every
+                handler the framework added on Awake (defaults + counter) must
+                be removed by the inherited OnDisable during the destroy
+                lifecycle, so the final delta is exactly 0.
+            */
             using LeakWatcher watcher = new(
                 bus: MessageHandler.MessageBus,
                 throwOnLeak: false,
@@ -408,13 +418,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 watcher.DescribeDelta()
             );
 
-            // Destroy only the listener, so owner cleanup cannot mask a missing OnDisable.
-            // Unity fires OnDisable then OnDestroy;
-            // the inherited base.OnDisable() runs (the override is absent on
-            // this fixture) and disables the token before the broken
-            // OnDestroy runs, so no registration leaks - including the
-            // opted-in StringMessage handlers, which is what makes the masking
-            // observable end-to-end.
+            /*
+                Destroy only the listener, so owner cleanup cannot mask a missing OnDisable.
+                Unity fires OnDisable then OnDestroy;
+                the inherited base.OnDisable() runs (the override is absent on
+                this fixture) and disables the token before the broken
+                OnDestroy runs, so no registration leaks - including the
+                opted-in StringMessage handlers, which is what makes the masking
+                observable end-to-end.
+            */
             UnityEngine.Object.Destroy(component);
 
             if (Application.isPlaying)
@@ -446,10 +458,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 watcher.DescribeDelta()
             );
 
-            // Belt-and-braces: the live bus counters must each be 0 after the
-            // listener is gone, not just the aggregate. Guards against a future
-            // refactor that nets to zero by accidentally deregistering
-            // unrelated registrations along with the user counter.
+            /*
+                Belt-and-braces: the live bus counters must each be 0 after the
+                listener is gone, not just the aggregate. Guards against a future
+                refactor that nets to zero by accidentally deregistering
+                unrelated registrations along with the user counter.
+            */
             IMessageBus bus = MessageHandler.MessageBus;
             AssertRegistrationCounts(
                 bus,
@@ -486,8 +500,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Watch from before spawn so the per-counter accounting is
-            // anchored to a fresh bus.
+            /*
+                Watch from before spawn so the per-counter accounting is
+                anchored to a fresh bus.
+            */
             using LeakWatcher watcher = new(
                 bus: MessageHandler.MessageBus,
                 label: scenario.DisplayName
@@ -531,21 +547,25 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             IMessageBus bus = MessageHandler.MessageBus;
 
-            // The two opted-in StringMessage handlers ALWAYS land on Targeted
-            // regardless of scenario, and the opted-in GlobalStringMessage
-            // handler ALWAYS lands on Untargeted. The counter handler lands
-            // on the counter that matches the scenario kind.
+            /*
+                The two opted-in StringMessage handlers ALWAYS land on Targeted
+                regardless of scenario, and the opted-in GlobalStringMessage
+                handler ALWAYS lands on Untargeted. The counter handler lands
+                on the counter that matches the scenario kind.
+            */
             int expectedTargeted = 2 + (scenario.Kind == MessageKind.Targeted ? 1 : 0);
             int expectedUntargeted = 1 + (scenario.Kind == MessageKind.Untargeted ? 1 : 0);
             int expectedBroadcast = scenario.Kind == MessageKind.Broadcast ? 1 : 0;
 
             string deltaDescription = watcher.DescribeDelta();
 
-            // Per-counter shape: the two opted-in StringMessage handlers land on
-            // Targeted regardless of scenario, the opted-in GlobalStringMessage
-            // handler lands on Untargeted, and the user counter lands on the
-            // bucket that matches scenario.Kind. Failure messages surface the
-            // diverging bucket(s) directly.
+            /*
+                Per-counter shape: the two opted-in StringMessage handlers land on
+                Targeted regardless of scenario, the opted-in GlobalStringMessage
+                handler lands on Untargeted, and the user counter lands on the
+                bucket that matches scenario.Kind. Failure messages surface the
+                diverging bucket(s) directly.
+            */
             AssertRegistrationCounts(
                 bus,
                 untargeted: expectedUntargeted,
@@ -604,8 +624,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 host.GetComponent<MissingBaseOnDestroyOnlyComponent>();
             Assert.IsNotNull(GetToken(component), "Token must be created.");
 
-            // Retain the host route while destroying only the listener, so owner
-            // cleanup cannot make the inherited-OnDisable assertion pass.
+            /*
+                Retain the host route while destroying only the listener, so owner
+                cleanup cannot make the inherited-OnDisable assertion pass.
+            */
             InstanceId hostId = host;
 
             // Sanity: spawning installs exactly the opted-in handler count.
@@ -643,15 +665,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 watcher.DescribeDelta()
             );
 
-            // Emit the default-handler triggers against the captured id; with
-            // every opted-in handler deregistered the bus has no work to do
-            // and no listener to dispatch to. This pins the user-observable
-            // consequence of the masking: not just zero counters, but also
-            // zero reachable handlers for the messages the framework would
-            // normally route by default.
-            // Use the untyped overload because Assert.DoesNotThrow takes a
-            // delegate and the typed TargetedBroadcast takes a ref parameter,
-            // which lambdas cannot capture.
+            /*
+                Emit the default-handler triggers against the captured id; with
+                every opted-in handler deregistered the bus has no work to do
+                and no listener to dispatch to. This pins the user-observable
+                consequence of the masking: not just zero counters, but also
+                zero reachable handlers for the messages the framework would
+                normally route by default.
+                Use the untyped overload because Assert.DoesNotThrow takes a
+                delegate and the typed TargetedBroadcast takes a ref parameter,
+                which lambdas cannot capture.
+            */
             Assert.DoesNotThrow(
                 () =>
                 {
@@ -704,9 +728,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Token must exist because base.Awake() still runs."
             );
 
-            // Emit the opted-in handler messages: a component-targeted StringMessage
-            // and an untargeted GlobalStringMessage. Without the base call, the
-            // handlers the base would normally register for these are absent.
+            /*
+                Emit the opted-in handler messages: a component-targeted StringMessage
+                and an untargeted GlobalStringMessage. Without the base call, the
+                handlers the base would normally register for these are absent.
+            */
             StringMessage stringMessage = new("payload");
             stringMessage.EmitComponentTargeted(component);
             GlobalStringMessage globalMessage = new("global-payload");
@@ -718,8 +744,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Opted-in base-class string handlers must not fire when base.RegisterMessageHandlers() is skipped."
             );
 
-            // Confirm the user's own registration (added inside the override)
-            // does fire, proving the token itself is operational.
+            /*
+                Confirm the user's own registration (added inside the override)
+                does fire, proving the token itself is operational.
+            */
             SimpleUntargetedMessage userMessage = new();
             userMessage.EmitUntargeted();
 
@@ -742,16 +770,18 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Construct the watcher BEFORE spawning the host so the baseline is
-            // the truly-fresh bus (0). The fixture
-            // CorrectBaseCallContractComponent uses the default-off string
-            // behavior, so this matches the post-spawn count. Anchoring to
-            // the pre-spawn bus removes the hidden coupling if a future
-            // maintainer opts the fixture into demo handlers and a leak is
-            // folded into a post-spawn baseline and silently masked. Watching
-            // from before spawn pins the full round-trip (baseline=0,
-            // after-spawn=1 for the component's declared handler, after-register=2,
-            // after-destroy=0, leaked=0) regardless of the override's value.
+            /*
+                Construct the watcher BEFORE spawning the host so the baseline is
+                the truly-fresh bus (0). The fixture
+                CorrectBaseCallContractComponent uses the default-off string
+                behavior, so this matches the post-spawn count. Anchoring to
+                the pre-spawn bus removes the hidden coupling if a future
+                maintainer opts the fixture into demo handlers and a leak is
+                folded into a post-spawn baseline and silently masked. Watching
+                from before spawn pins the full round-trip (baseline=0,
+                after-spawn=1 for the component's declared handler, after-register=2,
+                after-destroy=0, leaked=0) regardless of the override's value.
+            */
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
                 GameObject host = new(
@@ -825,9 +855,11 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void MultipleSubclassesDoNotCrossContaminate()
         {
-            // A broken Awake emits one breadcrumb when the broken host enables
-            // in builds that compile the runtime breadcrumb branch; declare
-            // the expectation up front.
+            /*
+                A broken Awake emits one breadcrumb when the broken host enables
+                in builds that compile the runtime breadcrumb branch; declare
+                the expectation up front.
+            */
             ExpectMissingBaseAwakeBreadcrumbIfCompiled();
 
             GameObject correctHost = new(
@@ -857,9 +889,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 correct.userHandlerInvocations,
                 "Correct host must receive the message."
             );
-            // The broken host has no token and no registration, so it cannot
-            // observe a counter increment; assert via the only public surface
-            // it exposes (the null token and a fresh emit-with-no-effect).
+            /*
+                The broken host has no token and no registration, so it cannot
+                observe a counter increment; assert via the only public surface
+                it exposes (the null token and a fresh emit-with-no-effect).
+            */
             Assert.IsNull(broken.Token, "Broken host must remain unable to register handlers.");
         }
 

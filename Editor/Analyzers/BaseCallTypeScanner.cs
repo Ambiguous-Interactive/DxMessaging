@@ -72,17 +72,21 @@ namespace DxMessaging.Editor.Analyzers
         /// </remarks>
         internal static Dictionary<string, BaseCallReportEntry> Scan(DxMessagingSettings settings)
         {
-            // TypeCache is Unity's domain-reload-cached type lookup. Effectively O(1) after the
-            // first call and survives across reloads via Unity's serialization layer. Using
-            // TypeCache (rather than scanning every loaded assembly via AppDomain) is important
-            // for performance; a fresh project can have hundreds of assemblies loaded.
+            /*
+                TypeCache is Unity's domain-reload-cached type lookup. Effectively O(1) after the
+                first call and survives across reloads via Unity's serialization layer. Using
+                TypeCache (rather than scanning every loaded assembly via AppDomain) is important
+                for performance; a fresh project can have hundreds of assemblies loaded.
+            */
             TypeCache.TypeCollection candidates =
                 TypeCache.GetTypesDerivedFrom<MessageAwareComponent>();
 
-            // Defensive: TypeCache.GetTypesDerivedFrom<T>() returns strict subclasses, but
-            // belt-and-braces in case a future Unity version changes the contract; we feed the
-            // list through Core.Scan which itself skips MessageAwareComponent by FQN match.
-            // The Core handles abstract / generic-definition / null-FQN skipping uniformly.
+            /*
+                Defensive: TypeCache.GetTypesDerivedFrom<T>() returns strict subclasses, but
+                belt-and-braces in case a future Unity version changes the contract; we feed the
+                list through Core.Scan which itself skips MessageAwareComponent by FQN match.
+                The Core handles abstract / generic-definition / null-FQN skipping uniformly.
+            */
             Dictionary<string, BaseCallTypeScannerCore.ScanEntry> coreResult =
                 BaseCallTypeScannerCore.Scan(
                     candidates,

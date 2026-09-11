@@ -216,10 +216,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageScenario scenario
         )
         {
-            // Shared context every component listens on, so Targeted and
-            // Broadcast emissions reach all handlers in a single emission.
-            // It is deliberately NOT one of the handler hosts so destroying
-            // host B cannot disturb the emission context.
+            /*
+                Shared context every component listens on, so Targeted and
+                Broadcast emissions reach all handlers in a single emission.
+                It is deliberately NOT one of the handler hosts so destroying
+                host B cannot disturb the emission context.
+            */
             GameObject contextHost = new(
                 nameof(SamePriorityCrossComponentOrderPreservedAfterHandlerChurn)
                     + "Context"
@@ -274,11 +276,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "registration order on the first emission."
             );
 
-            // Destroy B outright: its component deregisters and its
-            // MessageHandler must leave the bus-side per-priority bucket
-            // entirely (not merely drop one delegate), freeing its slot in
-            // the bucket's handler Dictionary. Deferred destroy needs a
-            // frame to flush OnDisable/OnDestroy.
+            /*
+                Destroy B outright: its component deregisters and its
+                MessageHandler must leave the bus-side per-priority bucket
+                entirely (not merely drop one delegate), freeing its slot in
+                the bucket's handler Dictionary. Deferred destroy needs a
+                frame to flush OnDisable/OnDestroy.
+            */
             UnityEngine.Object.Destroy(hostB);
             yield return null;
 
@@ -306,8 +310,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     + "bucket must not dispatch D into B's vacated position (A, D, C)."
             );
 
-            // The post-churn order must be stable on every emission, not
-            // merely the first one after churn.
+            /*
+                The post-churn order must be stable on every emission, not
+                merely the first one after churn.
+            */
             order.Clear();
             ScenarioCallbacks.EmitForKind(scenario, contextId);
             Assert.AreEqual(

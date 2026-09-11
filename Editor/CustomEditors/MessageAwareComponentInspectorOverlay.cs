@@ -46,17 +46,19 @@ namespace DxMessaging.Editor.CustomEditors
     [InitializeOnLoad]
     public static class MessageAwareComponentInspectorOverlay
     {
-        // Per-Repaint latch keyed on instanceID for the header-hook entry point. We render once
-        // per Repaint event per target. EventType.Layout marks the start of a fresh GUI cycle, so
-        // we clear the set then; rendering happens on EventType.Repaint, which Unity guarantees
-        // fires once per visible inspector per frame.
-        //
-        // NOTE: cross-path dedupe between the header hook and the OnInspectorGUI hook is
-        // accomplished by an UNCONDITIONAL skip at the top of <see cref="DrawHeader"/> when the
-        // target editor is our fallback CustomEditor; see that method's comment. We do NOT use
-        // a per-frame "header drew" set, because such a set would necessarily be populated only
-        // on the Repaint pass of the header hook, while OnInspectorGUI runs on BOTH the Layout
-        // and Repaint passes; that asymmetry would corrupt the inspector's layout cache.
+        /*
+            Per-Repaint latch keyed on instanceID for the header-hook entry point. We render once
+            per Repaint event per target. EventType.Layout marks the start of a fresh GUI cycle, so
+            we clear the set then; rendering happens on EventType.Repaint, which Unity guarantees
+            fires once per visible inspector per frame.
+
+            NOTE: cross-path dedupe between the header hook and the OnInspectorGUI hook is
+            accomplished by an UNCONDITIONAL skip at the top of <see cref="DrawHeader"/> when the
+            target editor is our fallback CustomEditor; see that method's comment. We do NOT use
+            a per-frame "header drew" set, because such a set would necessarily be populated only
+            on the Repaint pass of the header hook, while OnInspectorGUI runs on BOTH the Layout
+            and Repaint passes; that asymmetry would corrupt the inspector's layout cache.
+        */
         private static readonly HashSet<int> _renderedThisRepaint = new();
 
         internal static System.Action<System.Action> AssetDatabaseMutationScheduler { get; set; } =
@@ -90,10 +92,12 @@ namespace DxMessaging.Editor.CustomEditors
         {
             try
             {
-                // InternalEditorUtility.RepaintAllViews is the cheap path: it walks the
-                // existing GUIView list once. Resources.FindObjectsOfTypeAll<Editor>() allocates
-                // a fresh array of every Editor instance Unity has loaded, which is wasteful
-                // when we just want a redraw signal.
+                /*
+                    InternalEditorUtility.RepaintAllViews is the cheap path: it walks the
+                    existing GUIView list once. Resources.FindObjectsOfTypeAll<Editor>() allocates
+                    a fresh array of every Editor instance Unity has loaded, which is wasteful
+                    when we just want a redraw signal.
+                */
                 InternalEditorUtility.RepaintAllViews();
             }
             catch (System.Exception ex)
@@ -127,10 +131,12 @@ namespace DxMessaging.Editor.CustomEditors
                 return false;
             }
 
-            // If our own fallback CustomEditor is the editor instance, skip the header path
-            // entirely; CreateInspectorGUI or OnInspectorGUI owns package fallback rendering and
-            // we would otherwise render twice. Unconditional skip (not gated on EventType) keeps
-            // control counts balanced on both Layout and Repaint passes.
+            /*
+                If our own fallback CustomEditor is the editor instance, skip the header path
+                entirely; CreateInspectorGUI or OnInspectorGUI owns package fallback rendering and
+                we would otherwise render twice. Unconditional skip (not gated on EventType) keeps
+                control counts balanced on both Layout and Repaint passes.
+            */
             return editor is not MessageAwareComponentFallbackEditor;
         }
 
@@ -209,9 +215,11 @@ namespace DxMessaging.Editor.CustomEditors
                 return false;
             }
 
-            // ---- Render phase: straight-line EditorGUILayout calls, identical sequence on
-            // every pass. Wrapped in a vertical group so any internal mismatch we missed cannot
-            // propagate to sibling inspectors. ----
+            /*
+                ---- Render phase: straight-line EditorGUILayout calls, identical sequence on
+                every pass. Wrapped in a vertical group so any internal mismatch we missed cannot
+                propagate to sibling inspectors. ----
+            */
             EditorGUILayout.BeginVertical();
             try
             {
@@ -283,9 +291,11 @@ namespace DxMessaging.Editor.CustomEditors
                 return MessageAwareComponentInspectorState.None;
             }
 
-            // Mid-compile / mid-import is the worst time to dereference the settings asset:
-            // AssetDatabase may be in a transitional state. Bail and let the next OnGUI redraw
-            // pick up where we left off.
+            /*
+                Mid-compile / mid-import is the worst time to dereference the settings asset:
+                AssetDatabase may be in a transitional state. Bail and let the next OnGUI redraw
+                pick up where we left off.
+            */
             if (IsInspectorResolutionTransientlyBlocked())
             {
                 return MessageAwareComponentInspectorState.None;
@@ -345,10 +355,12 @@ namespace DxMessaging.Editor.CustomEditors
                 return MessageAwareComponentInspectorState.None;
             }
 
-            // S6: System.Type.FullName renders nested types as `Outer+Nested`, but the analyzer's
-            // `containingType.ToDisplayString()` (which produces the FQN we key the snapshot by)
-            // renders them as `Outer.Nested`. Without this normalization the lookup misses for
-            // every nested MessageAwareComponent subclass and the HelpBox never shows.
+            /*
+                S6: System.Type.FullName renders nested types as `Outer+Nested`, but the analyzer's
+                `containingType.ToDisplayString()` (which produces the FQN we key the snapshot by)
+                renders them as `Outer.Nested`. Without this normalization the lookup misses for
+                every nested MessageAwareComponent subclass and the HelpBox never shows.
+            */
             string fullName = GetOverlayTypeName(messageAwareComponent);
             if (string.IsNullOrEmpty(fullName))
             {
@@ -380,7 +392,7 @@ namespace DxMessaging.Editor.CustomEditors
                 );
             }
 
-            if (entry != null && entry.missingBaseFor != null && entry.missingBaseFor.Count > 0)
+            if (entry != null && entry.missingBaseFor != null && 0 < entry.missingBaseFor.Count)
             {
                 return MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
                     messageAwareComponent,
@@ -391,9 +403,11 @@ namespace DxMessaging.Editor.CustomEditors
                 );
             }
 
-            // "Render nothing" branch: emit ZERO EditorGUILayout calls. This must hold on
-            // both Layout and Repaint passes when called from OnInspectorGUI, so Unity's
-            // layout cache stays consistent.
+            /*
+                "Render nothing" branch: emit ZERO EditorGUILayout calls. This must hold on
+                both Layout and Repaint passes when called from OnInspectorGUI, so Unity's
+                layout cache stays consistent.
+            */
             return MessageAwareComponentInspectorState.None;
         }
 
@@ -458,9 +472,11 @@ namespace DxMessaging.Editor.CustomEditors
         )
         {
             string missingMethods = string.Join(", ", entry.missingBaseFor);
-            // Per-method consequence lines mirror the analyzer's DXMSG006 message text. Reading
-            // the dictionary on BaseCallTypeScannerCore keeps the overlay copy in lockstep with
-            // the analyzer; both are updated together when a new guarded method is added.
+            /*
+                Per-method consequence lines mirror the analyzer's DXMSG006 message text. Reading
+                the dictionary on BaseCallTypeScannerCore keeps the overlay copy in lockstep with
+                the analyzer; both are updated together when a new guarded method is added.
+            */
             System.Text.StringBuilder consequenceBuilder = new();
             foreach (string missingMethod in entry.missingBaseFor)
             {
@@ -471,13 +487,15 @@ namespace DxMessaging.Editor.CustomEditors
             }
             string consequenceLines = consequenceBuilder.ToString();
 
-            // Cached-vs-fresh suffix is appended to the SAME HelpBox string rather than emitted
-            // as a sibling control, which keeps the Layout and Repaint passes emitting an
-            // identical sequence of EditorGUILayout.* calls regardless of harvester freshness.
-            // The suffix only appears when the harvester is showing entries loaded eagerly from
-            // `Library/DxMessaging/baseCallReport.json` and the first post-reload scan has not
-            // yet completed; once the scan flips IsFreshThisSession to true and RepaintAllInspectors
-            // fires, the overlay redraws without the suffix.
+            /*
+                Cached-vs-fresh suffix is appended to the SAME HelpBox string rather than emitted
+                as a sibling control, which keeps the Layout and Repaint passes emitting an
+                identical sequence of EditorGUILayout.* calls regardless of harvester freshness.
+                The suffix only appears when the harvester is showing entries loaded eagerly from
+                `Library/DxMessaging/baseCallReport.json` and the first post-reload scan has not
+                yet completed; once the scan flips IsFreshThisSession to true and RepaintAllInspectors
+                fires, the overlay redraws without the suffix.
+            */
             string freshnessSuffix = isFreshThisSession
                 ? string.Empty
                 : "\n(cached from previous session; refreshing...)";
@@ -542,7 +560,7 @@ namespace DxMessaging.Editor.CustomEditors
                 {
                     return;
                 }
-                if (entry != null && entry.line > 0)
+                if (entry != null && 0 < entry.line)
                 {
                     AssetDatabase.OpenAsset(monoScript, entry.line);
                 }
@@ -559,12 +577,14 @@ namespace DxMessaging.Editor.CustomEditors
 
         private static void TryAddIgnoredType(DxMessagingSettings settings, string fullName)
         {
-            // Defer the mutation to AFTER the current frame's Layout/Repaint pair completes.
-            // Mutating settings._baseCallIgnoredTypes synchronously inside a button handler
-            // would flip the overlay's shape between Layout and Repaint passes of the SAME
-            // frame, corrupting Unity's per-window layout cache. delayCall fires AFTER the
-            // current GUI cycle, so the next frame's Layout pass sees the new state and
-            // both passes emit consistent control counts.
+            /*
+                Defer the mutation to AFTER the current frame's Layout/Repaint pair completes.
+                Mutating settings._baseCallIgnoredTypes synchronously inside a button handler
+                would flip the overlay's shape between Layout and Repaint passes of the SAME
+                frame, corrupting Unity's per-window layout cache. delayCall fires AFTER the
+                current GUI cycle, so the next frame's Layout pass sees the new state and
+                both passes emit consistent control counts.
+            */
             System.Action<System.Action> schedule =
                 AssetDatabaseMutationScheduler
                 ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
@@ -591,9 +611,11 @@ namespace DxMessaging.Editor.CustomEditors
 
         private static void TryRemoveIgnoredType(DxMessagingSettings settings, string fullName)
         {
-            // Same reasoning as TryAddIgnoredType: defer mutation past the current GUI cycle so
-            // the overlay's shape gating remains identical on Layout and Repaint passes of THIS
-            // frame. The next frame's Layout pass observes the new state; both passes agree.
+            /*
+                Same reasoning as TryAddIgnoredType: defer mutation past the current GUI cycle so
+                the overlay's shape gating remains identical on Layout and Repaint passes of THIS
+                frame. The next frame's Layout pass observes the new state; both passes agree.
+            */
             System.Action<System.Action> schedule =
                 AssetDatabaseMutationScheduler
                 ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;

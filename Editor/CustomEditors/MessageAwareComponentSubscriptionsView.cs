@@ -85,10 +85,12 @@ namespace DxMessaging.Editor.CustomEditors
             head.Add(meta);
             root.Add(head);
 
-            // `.dx-sub` pads vertically only, and `.dx-inspector` clips to a rounded corner, so the
-            // body needs its own horizontal inset: without it a row name sits flush against the
-            // border and the trailing status dot clips on the corner radius. Matches the
-            // `.dx-inspector__head` inset so the head and the rows line up.
+            /*
+                `.dx-sub` pads vertically only, and `.dx-inspector` clips to a rounded corner, so the
+                body needs its own horizontal inset: without it a row name sits flush against the
+                border and the trailing status dot clips on the corner radius. Matches the
+                `.dx-inspector__head` inset so the head and the rows line up.
+            */
             VisualElement rows = new() { name = RowsName };
             rows.style.paddingLeft = HeadHorizontalPadding;
             rows.style.paddingRight = HeadHorizontalPadding;
@@ -322,7 +324,7 @@ namespace DxMessaging.Editor.CustomEditors
 
         internal int SelectionCount { get; }
 
-        internal bool IsAggregate => SelectionCount > 1;
+        internal bool IsAggregate => 1 < SelectionCount;
     }
 
     /// <summary>
@@ -435,9 +437,11 @@ namespace DxMessaging.Editor.CustomEditors
                 return None;
             }
 
-            // Reading _callCounts materializes the lazy diagnostics dictionary, so only touch it
-            // when the token is actually recording. With diagnostics off the count is unknown
-            // rather than zero, and the row says so instead of implying nothing ever fired.
+            /*
+                Reading _callCounts materializes the lazy diagnostics dictionary, so only touch it
+                when the token is actually recording. With diagnostics off the count is unknown
+                rather than zero, and the row says so instead of implying nothing ever fired.
+            */
             bool diagnosticsEnabled = token.DiagnosticMode;
             int ResolveCallCount(MessageRegistrationHandle handle)
             {
@@ -589,7 +593,7 @@ namespace DxMessaging.Editor.CustomEditors
 
             rows.Sort(CompareRows);
             return new MessageAwareComponentSubscriptionsState(
-                hasToken: tokenCount > 0,
+                hasToken: 0 < tokenCount,
                 tokenEnabled: false,
                 diagnosticsEnabled: false,
                 rows: rows,

@@ -1,10 +1,12 @@
 #if UNITY_2021_3_OR_NEWER
-// CallerArgumentExpressionAttribute polyfill for build environments whose
-// BCL predates .NET 6 (Unity 2021.3 ships a Mono runtime without this
-// attribute). Roslyn recognizes the attribute by full name regardless of
-// origin, so a hand-rolled type in System.Runtime.CompilerServices is
-// sufficient. The polyfill is wrapped in a #if so newer runtimes that ship
-// the attribute do not see a duplicate definition.
+/*
+    CallerArgumentExpressionAttribute polyfill for build environments whose
+    BCL predates .NET 6 (Unity 2021.3 ships a Mono runtime without this
+    attribute). Roslyn recognizes the attribute by full name regardless of
+    origin, so a hand-rolled type in System.Runtime.CompilerServices is
+    sufficient. The polyfill is wrapped in a #if so newer runtimes that ship
+    the attribute do not see a duplicate definition.
+*/
 #if !NET6_0_OR_GREATER
 namespace System.Runtime.CompilerServices
 {
@@ -243,7 +245,7 @@ namespace DxMessaging.Tests.Runtime
             }
 
             int delta = actual - expected;
-            string sign = delta >= 0 ? "+" : string.Empty;
+            string sign = 0 <= delta ? "+" : string.Empty;
             mismatches.Add(
                 string.Format(
                     CultureInfo.InvariantCulture,

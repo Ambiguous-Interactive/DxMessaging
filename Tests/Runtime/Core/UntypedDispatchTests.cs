@@ -460,8 +460,10 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    // Root this test-only custom generic implementation explicitly. Its distinct
-                    // message type must never root the registration-only regression payload.
+                    /*
+                        Root this test-only custom generic implementation explicitly. Its distinct
+                        message type must never root the registration-only regression payload.
+                    */
                     customBus.UntargetedBroadcast(ref payload);
                     _ = token.RegisterUntargeted<CustomBusMessage>(Receive);
                     break;
@@ -601,8 +603,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageKind.Broadcast => "AotSourcedBroadcast",
                 _ => throw new ArgumentOutOfRangeException(nameof(kind)),
             };
-            // Registration must root this exact closed bridge and its typed dispatch target.
-            // Reflection lets Mono/.NET execute the same AOT body as IL2CPP public dispatch.
+            /*
+                Registration must root this exact closed bridge and its typed dispatch target.
+                Reflection lets Mono/.NET execute the same AOT body as IL2CPP public dispatch.
+            */
             MethodInfo method = typeof(BusType)
                 .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)
                 ?.MakeGenericMethod(typeof(T));

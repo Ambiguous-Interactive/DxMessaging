@@ -144,8 +144,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 }
 
                 token = messagingComponent.Create(component);
-                // Benchmarks register handlers explicitly per scenario, so they do not depend on
-                // MessageAwareComponent.RegisterMessageHandlers being invoked here.
+                /*
+                    Benchmarks register handlers explicitly per scenario, so they do not depend on
+                    MessageAwareComponent.RegisterMessageHandlers being invoked here.
+                */
             }
 
             if (!token.Enabled)
@@ -178,8 +180,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 #if UNITY_EDITOR
             if (!Application.isPlaying)
             {
-                // EditMode SendMessage requires runnable behaviours, otherwise Unity logs
-                // repeated ShouldRunBehaviour assertions that fail benchmark tests.
+                /*
+                    EditMode SendMessage requires runnable behaviours, otherwise Unity logs
+                    repeated ShouldRunBehaviour assertions that fail benchmark tests.
+                */
                 behaviour.runInEditMode = true;
             }
 #endif

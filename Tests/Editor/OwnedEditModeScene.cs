@@ -186,7 +186,7 @@ namespace DxMessaging.Tests.Editor
                 _disposed = false;
                 throw failures[0];
             }
-            if (failures.Count > 1)
+            if (1 < failures.Count)
             {
                 _disposed = false;
                 throw new AggregateException("Fixture-owned scene cleanup failed.", failures);

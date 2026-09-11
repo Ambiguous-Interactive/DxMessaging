@@ -45,7 +45,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         public static SlotKey GetSlotKey(RegistrationMethod method)
         {
             uint index = (uint)(int)method;
-            if (index >= (uint)Table.Length)
+            if ((uint)Table.Length <= index)
             {
                 return SlotKey.None;
             }
@@ -67,7 +67,7 @@ namespace DxMessaging.Core.MessageBus.Internal
                             + ". RegistrationMethodAxes assumes non-negative ordinals."
                     );
                 }
-                if (raw > max)
+                if (max < raw)
                 {
                     max = raw;
                 }
@@ -191,12 +191,14 @@ namespace DxMessaging.Core.MessageBus.Internal
                 }
             }
 
-            // Tighten validation: walk every ordinal in [0..max]. Any unassigned
-            // index that does NOT correspond to a defined enum value is a gap
-            // (e.g. left behind by an [Obsolete]-removed member or sparse enum
-            // numbering) and would otherwise silently route into the Untargeted
-            // slot via default(SlotKey). SlotKey.None is the only safe sentinel
-            // for unmapped ordinals; gap ordinals must fail at type-init.
+            /*
+                Tighten validation: walk every ordinal in [0..max]. Any unassigned
+                index that does NOT correspond to a defined enum value is a gap
+                (e.g. left behind by an [Obsolete]-removed member or sparse enum
+                numbering) and would otherwise silently route into the Untargeted
+                slot via default(SlotKey). SlotKey.None is the only safe sentinel
+                for unmapped ordinals; gap ordinals must fail at type-init.
+            */
             bool[] defined = new bool[max + 1];
             for (int i = 0; i < values.Length; i++)
             {

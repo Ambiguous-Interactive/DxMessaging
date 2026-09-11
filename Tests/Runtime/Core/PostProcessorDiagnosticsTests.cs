@@ -44,9 +44,11 @@ namespace DxMessaging.Tests.Runtime.Core
             return token;
         }
 
-        // The diagnostics-augmented flat invoker records into token._callCounts; a
-        // registration whose closure never ran has no entry (count 0). TryGetValue
-        // keeps this dependency-free (no CollectionExtensions.GetValueOrDefault).
+        /*
+            The diagnostics-augmented flat invoker records into token._callCounts; a
+            registration whose closure never ran has no entry (count 0). TryGetValue
+            keeps this dependency-free (no CollectionExtensions.GetValueOrDefault).
+        */
         private static int CallCount(
             MessageRegistrationToken token,
             MessageRegistrationHandle handle

@@ -161,14 +161,16 @@ namespace DxMessaging.Tests.Runtime
             _suiteTimer.Stop();
             TimeSpan elapsed = _suiteTimer.Elapsed;
 
-            // Sanity: dump the elapsed time so CI logs make the budget
-            // proximity visible without a failure. The Unity version is
-            // included because the hard budget is selected per version (the
-            // 2021.x runner gets a wider ceiling); seeing both together makes
-            // a near-budget run easy to triage.
-            // Invariant culture on purpose: CI lifts this line into the job summary
-            // (issue #410), so the decimal separator must not follow the runner's
-            // locale. `scripts/unity/run-ci-tests.ps1` parses exactly this shape.
+            /*
+                Sanity: dump the elapsed time so CI logs make the budget
+                proximity visible without a failure. The Unity version is
+                included because the hard budget is selected per version (the
+                2021.x runner gets a wider ceiling); seeing both together makes
+                a near-budget run easy to triage.
+                Invariant culture on purpose: CI lifts this line into the job summary
+                (issue #410), so the decimal separator must not follow the runner's
+                locale. `scripts/unity/run-ci-tests.ps1` parses exactly this shape.
+            */
             CultureInfo invariant = CultureInfo.InvariantCulture;
             UnityEngine.Debug.Log(
                 $"DxMessaging suite wall clock: {elapsed.TotalSeconds.ToString("0.00", invariant)}s "
@@ -186,7 +188,7 @@ namespace DxMessaging.Tests.Runtime
                 return;
             }
 
-            if (elapsed > HardBudget)
+            if (HardBudget < elapsed)
             {
                 Assert.Fail(
                     $"DxMessaging default-suite wall-clock budget exceeded: {elapsed.TotalSeconds:0.00}s "
@@ -198,7 +200,7 @@ namespace DxMessaging.Tests.Runtime
                         + "(Stress/Performance/Allocation/MemoryReclaim)."
                 );
             }
-            else if (elapsed > SoftBudget)
+            else if (SoftBudget < elapsed)
             {
                 UnityEngine.Debug.LogWarning(
                     $"Default suite wall clock ({elapsed.TotalSeconds:0.00}s) exceeded the soft budget "
@@ -253,12 +255,14 @@ namespace DxMessaging.Tests.Runtime
                 return;
             }
 
-            // ITest.Properties is a flat IPropertyBag; categories live under
-            // the well-known "Category" key (NUnit 3.x's PropertyNames.Category
-            // resolves to the same literal). Each test may have multiple
-            // categories, and NUnit applies fixture-level [Category]
-            // attributes to each child test automatically, so a class-level
-            // [Category("Allocation")] also shows up here.
+            /*
+                ITest.Properties is a flat IPropertyBag; categories live under
+                the well-known "Category" key (NUnit 3.x's PropertyNames.Category
+                resolves to the same literal). Each test may have multiple
+                categories, and NUnit applies fixture-level [Category]
+                attributes to each child test automatically, so a class-level
+                [Category("Allocation")] also shows up here.
+            */
             const string CategoryPropertyName = "Category";
             System.Collections.IList categories = test.Properties[CategoryPropertyName];
             if (categories == null)

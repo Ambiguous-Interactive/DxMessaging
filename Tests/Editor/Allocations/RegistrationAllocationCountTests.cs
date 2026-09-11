@@ -97,26 +97,32 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static readonly InstanceId Owner = new InstanceId(0x7A7A_7A7A);
         private static readonly InstanceId PostProcessorTarget = new InstanceId(0x5151_5151);
 
-        // Warm to a count that grows the per-token registration dictionaries AND the
-        // bus-side per-type handler arrays past the measured window; the settle batch
-        // then absorbs any capacity-boundary resize so the measured window pays only the
-        // steady per-registration cost.
+        /*
+            Warm to a count that grows the per-token registration dictionaries AND the
+            bus-side per-type handler arrays past the measured window; the settle batch
+            then absorbs any capacity-boundary resize so the measured window pays only the
+            steady per-registration cost.
+        */
         private const int WarmupRegistrations = 512;
         private const int SettleRegistrations = 64;
         private const int MeasuredRegistrations = 16;
         private const int MeasuredDirectBusChurnCycles = 256;
 
-        // Attempts for AllocationProbe.MeasureMin: a single allocation window in a warm,
-        // long-lived editor domain intermittently spikes above the true cost, so we take
-        // the minimum over several attempts (see AllocationProbe.MeasureMin).
+        /*
+            Attempts for AllocationProbe.MeasureMin: a single allocation window in a warm,
+            long-lived editor domain intermittently spikes above the true cost, so we take
+            the minimum over several attempts (see AllocationProbe.MeasureMin).
+        */
         private const int MinAttempts = 8;
 
-        // ~13 measured per registration post-change (208 over 16). The window also pays
-        // bus-side flat-array growth whose warm-domain count varies, so this is a
-        // gross-regression tripwire (20/registration), not a 1-call-precise bound -- the
-        // structural test pins the exact metadata-closure removal. 20 (not 16) leaves
-        // margin over the explicitly-varying ~224 floor so a boundary resize landing in
-        // every attempt's window cannot false-fail it.
+        /*
+            ~13 measured per registration post-change (208 over 16). The window also pays
+            bus-side flat-array growth whose warm-domain count varies, so this is a
+            gross-regression tripwire (20/registration), not a 1-call-precise bound -- the
+            structural test pins the exact metadata-closure removal. 20 (not 16) leaves
+            margin over the explicitly-varying ~224 floor so a boundary resize landing in
+            every attempt's window cannot false-fail it.
+        */
         private const long MarginalRegistrationBudget = MeasuredRegistrations * 20;
 
         private DiagnosticsTarget _savedDiagnostics;
@@ -209,8 +215,10 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
             fastToken.Enable();
 
-            // Warm both paths past their capacity-boundary resizes so the measured
-            // batches pay only the steady per-registration cost.
+            /*
+                Warm both paths past their capacity-boundary resizes so the measured
+                batches pay only the steady per-registration cost.
+            */
             for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
             {
                 _ = actionToken.RegisterUntargeted<SimpleUntargetedMessage>(NoOpAction);
@@ -249,10 +257,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 bestDelta = Math.Min(bestDelta, actionCount - fastCount);
             }
 
-            // Tolerance is half the window: the collapsed delta is ~0, while a
-            // re-introduced adapter would add a full MeasuredRegistrations of extra
-            // closures (one per registration), so half the window cleanly separates
-            // "collapsed" from "regressed" without tripping on warm-editor noise.
+            /*
+                Tolerance is half the window: the collapsed delta is ~0, while a
+                re-introduced adapter would add a full MeasuredRegistrations of extra
+                closures (one per registration), so half the window cleanly separates
+                "collapsed" from "regressed" without tripping on warm-editor noise.
+            */
             long tolerance = MeasuredRegistrations / 2;
             Assert.That(
                 bestDelta,
@@ -301,8 +311,10 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
             fastToken.Enable();
 
-            // Warm both paths past their capacity-boundary resizes so the measured
-            // batches pay only the steady per-registration cost.
+            /*
+                Warm both paths past their capacity-boundary resizes so the measured
+                batches pay only the steady per-registration cost.
+            */
             for (int i = 0; i < WarmupRegistrations + SettleRegistrations; ++i)
             {
                 _ = actionToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
@@ -380,9 +392,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                 _ = token.RegisterUntargeted<SimpleUntargetedMessage>(NoOp);
             }
 
-            // Each attempt registers another MeasuredRegistrations handlers (they
-            // accumulate); the minimum skips the attempts where a bus-array resize lands
-            // in the window, leaving the steady per-registration floor.
+            /*
+                Each attempt registers another MeasuredRegistrations handlers (they
+                accumulate); the minimum skips the attempts where a bus-array resize lands
+                in the window, leaving the steady per-registration floor.
+            */
             long registrationCount = AllocationProbe.MeasureMin(
                 MinAttempts,
                 prepare: null,

@@ -222,14 +222,16 @@ namespace DxMessaging.Tests.Runtime.VContainer
         [Test]
         public void BareRegisterMessageBusFailsBecauseClockIsUnregistered()
         {
-            // Pins the documented failure mode that motivates RegisterDxMessagingBus. VContainer's
-            // TypeAnalyzer scans both public and non-public constructors via
-            // BindingFlags.Public | BindingFlags.NonPublic, then prefers the constructor with the
-            // most parameters when no [Inject] is present. Even after the production change that
-            // demoted the IDxMessagingClock-taking ctor to private, the analyzer still latches onto
-            // it; the dependency is not registered with the container, so resolution throws.
-            // VContainer surfaces the failure either at Build time (graph validation) or at the
-            // first Resolve call depending on the version, so the test wraps the entire flow.
+            /*
+                Pins the documented failure mode that motivates RegisterDxMessagingBus. VContainer's
+                TypeAnalyzer scans both public and non-public constructors via
+                BindingFlags.Public | BindingFlags.NonPublic, then prefers the constructor with the
+                most parameters when no [Inject] is present. Even after the production change that
+                demoted the IDxMessagingClock-taking ctor to private, the analyzer still latches onto
+                it; the dependency is not registered with the container, so resolution throws.
+                VContainer surfaces the failure either at Build time (graph validation) or at the
+                first Resolve call depending on the version, so the test wraps the entire flow.
+            */
             ContainerBuilder builder = new();
             builder.Register<MessageBus>(Lifetime.Singleton).As<IMessageBus>();
 

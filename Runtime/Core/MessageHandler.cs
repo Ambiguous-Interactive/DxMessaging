@@ -40,8 +40,10 @@ namespace DxMessaging.Core
         /// <summary>
         /// High-performance handler that receives the message by readonly reference (no boxing/copies).
         /// </summary>
-        // SYNC: .docs-tests/DocsSnippetCompiler.cs mirrors these parameter modifiers. Its generic
-        // constraints stay relaxed because the docs harness does not run DxMessageIdGenerator.
+        /*
+            SYNC: .docs-tests/DocsSnippetCompiler.cs mirrors these parameter modifiers. Its generic
+            constraints stay relaxed because the docs harness does not run DxMessageIdGenerator.
+        */
         public delegate void FastHandler<TMessage>(in TMessage message)
             where TMessage : IMessage;
 
@@ -219,7 +221,7 @@ namespace DxMessaging.Core
         {
             int slot = _latestGlobalMessageBusOverrideSlot;
             _latestGlobalMessageBusOverrideSlot = -1;
-            while (slot >= 0)
+            while (0 <= slot)
             {
                 int previous = GetGlobalMessageBusOverrideState(slot).PreviousSlot;
                 ReleaseGlobalMessageBusOverrideSlot(slot);
@@ -232,7 +234,7 @@ namespace DxMessaging.Core
             while (true)
             {
                 int slot = _globalMessageBusOverrideFreeHead;
-                if (slot >= 0)
+                if (0 <= slot)
                 {
                     _globalMessageBusOverrideFreeHead = GetGlobalMessageBusOverrideState(
                         slot
@@ -257,8 +259,10 @@ namespace DxMessaging.Core
                 );
                 if (state.Generation == -1)
                 {
-                    // Every nonzero 64-bit generation was issued for this slot. Burn it instead of
-                    // wrapping to a generation an ancient stale scope could still carry.
+                    /*
+                        Every nonzero 64-bit generation was issued for this slot. Burn it instead of
+                        wrapping to a generation an ancient stale scope could still carry.
+                    */
                     continue;
                 }
                 unchecked
@@ -300,7 +304,7 @@ namespace DxMessaging.Core
             }
 
             int required = block + 1;
-            if (required > _globalMessageBusOverrideBlocks.Length)
+            if (_globalMessageBusOverrideBlocks.Length < required)
             {
                 int capacity = _globalMessageBusOverrideBlocks.Length * 2;
                 while (capacity < required)
@@ -398,7 +402,7 @@ namespace DxMessaging.Core
                     int releaseSlot = slot;
                     int previousSlot = state.PreviousSlot;
                     while (
-                        previousSlot >= 0 && GetGlobalMessageBusOverrideState(previousSlot).Disposed
+                        0 <= previousSlot && GetGlobalMessageBusOverrideState(previousSlot).Disposed
                     )
                     {
                         ref GlobalMessageBusOverrideState previousState =
@@ -2653,18 +2657,20 @@ namespace DxMessaging.Core
             {
                 HandlerActionCache<Action<T>>.Entry entry = cache.entries.ValueAt(i);
 
-                // Every default registration path for the flattened slots
-                // supplies the adapter at registration time (AddUntargetedHandler,
-                // AddTargetedHandler, AddSourcedBroadcastHandler, and their
-                // post-processor siblings). The type test doubles as a null
-                // guard; a missing adapter would indicate a new registration
-                // path that forgot to provide one.
-                //
-                // INVARIANT: default-slot dispatch consumes entry.flatInvoker.
-                // entry.handler is not a safe dispatch target because
-                // diagnostics-folding Add* overloads may store the raw user
-                // Action there as the identity key. The legacy Handle*/RunHandlers
-                // path uses GetOrAddNewFlatInvokerStack for the same reason.
+                /*
+                    Every default registration path for the flattened slots
+                    supplies the adapter at registration time (AddUntargetedHandler,
+                    AddTargetedHandler, AddSourcedBroadcastHandler, and their
+                    post-processor siblings). The type test doubles as a null
+                    guard; a missing adapter would indicate a new registration
+                    path that forgot to provide one.
+
+                    INVARIANT: default-slot dispatch consumes entry.flatInvoker.
+                    entry.handler is not a safe dispatch target because
+                    diagnostics-folding Add* overloads may store the raw user
+                    Action there as the identity key. The legacy Handle-family and RunHandlers
+                    path uses GetOrAddNewFlatInvokerStack for the same reason.
+                */
                 if (entry.flatInvoker is FastHandler<T> invoker)
                 {
                     target[writeIndex++] = new FlatDispatchEntry<T>(this, invoker);
@@ -2736,10 +2742,12 @@ namespace DxMessaging.Core
             {
                 HandlerActionCache<Action<InstanceId, T>>.Entry entry = cache.entries.ValueAt(i);
 
-                // See FillDefaultFlatEntries: the adapter is created once at
-                // registration time (AddTargetedWithoutTargetingHandler,
-                // AddSourcedBroadcastWithoutSourceHandler, and their
-                // post-processor siblings).
+                /*
+                    See FillDefaultFlatEntries: the adapter is created once at
+                    registration time (AddTargetedWithoutTargetingHandler,
+                    AddSourcedBroadcastWithoutSourceHandler, and their
+                    post-processor siblings).
+                */
                 if (entry.flatInvoker is FastHandlerWithContext<T> invoker)
                 {
                     target[writeIndex++] = new ContextFlatDispatchEntry<T>(this, invoker);
@@ -2845,7 +2853,7 @@ namespace DxMessaging.Core
                         }
 
                         int index = FindInlineIndex(key);
-                        if (index >= 0)
+                        if (0 <= index)
                         {
                             SetInlineValue(index, value);
                             return;
@@ -2875,7 +2883,7 @@ namespace DxMessaging.Core
                 public bool ContainsKey(T key)
                 {
                     ThrowIfNull(key);
-                    return _spillMap?.ContainsKey(key) ?? FindInlineIndex(key) >= 0;
+                    return _spillMap?.ContainsKey(key) ?? 0 <= FindInlineIndex(key);
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2887,7 +2895,7 @@ namespace DxMessaging.Core
                         return _spillMap.TryGetValue(key, out value);
                     }
                     int index = FindInlineIndex(key);
-                    if (index >= 0)
+                    if (0 <= index)
                     {
                         value = GetInlineValue(index);
                         return true;
@@ -2916,14 +2924,16 @@ namespace DxMessaging.Core
                             && s_comparer.Equals(_spillOrder[_spillOrderStart], key)
                         )
                         {
-                            // Token bulk teardown runs in registration order. Advance a cleared
-                            // prefix in O(1) for that path, while retaining the original fallback
-                            // for arbitrary per-handle removal.
+                            /*
+                                Token bulk teardown runs in registration order. Advance a cleared
+                                prefix in O(1) for that path, while retaining the original fallback
+                                for arbitrary per-handle removal.
+                            */
                             _spillOrder[_spillOrderStart] = default;
                             ++_spillOrderStart;
                             if (
-                                _spillOrderStart >= CompactionPrefixThreshold
-                                && _spillOrderStart >= _spillOrder.Count - _spillOrderStart
+                                CompactionPrefixThreshold <= _spillOrderStart
+                                && _spillOrder.Count - _spillOrderStart <= _spillOrderStart
                             )
                             {
                                 CompactSpillOrder();
@@ -2986,7 +2996,7 @@ namespace DxMessaging.Core
                     {
                         return _spillOrder[_spillOrderStart + index];
                     }
-                    if ((uint)index >= (uint)_inlineCount)
+                    if ((uint)_inlineCount <= (uint)index)
                     {
                         throw new ArgumentOutOfRangeException(nameof(index));
                     }
@@ -3000,7 +3010,7 @@ namespace DxMessaging.Core
                     {
                         return _spillMap[_spillOrder[_spillOrderStart + index]];
                     }
-                    if ((uint)index >= (uint)_inlineCount)
+                    if ((uint)_inlineCount <= (uint)index)
                     {
                         throw new ArgumentOutOfRangeException(nameof(index));
                     }
@@ -3010,11 +3020,11 @@ namespace DxMessaging.Core
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 private int FindInlineIndex(T key)
                 {
-                    if (_inlineCount > 0 && s_comparer.Equals(_key0, key))
+                    if (0 < _inlineCount && s_comparer.Equals(_key0, key))
                     {
                         return 0;
                     }
-                    if (_inlineCount > 1 && s_comparer.Equals(_key1, key))
+                    if (1 < _inlineCount && s_comparer.Equals(_key1, key))
                     {
                         return 1;
                     }
@@ -3095,10 +3105,12 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Uses outer T as a field type -- reflection callers must close
-            // via MakeGenericType(outer.GetGenericArguments()) before passing
-            // this type to Activator.CreateInstance. See
-            // Tests/Editor/Contract/ReflectionHelpers.cs::CloseNestedGeneric.
+            /*
+                Uses outer T as a field type -- reflection callers must close
+                via MakeGenericType(outer.GetGenericArguments()) before passing
+                this type to Activator.CreateInstance. See
+                Tests/Editor/Contract/ReflectionHelpers.cs::CloseNestedGeneric.
+            */
             internal readonly struct Entry
             {
                 /// <summary>
@@ -3123,40 +3135,46 @@ namespace DxMessaging.Core
                     this.flatInvoker = flatInvoker;
                 }
 
-                // The stored handler delegate. For default Action<TMessage>
-                // slots this is the dedup/refcount delegate and is not the
-                // dispatch target; both bus-side flat dispatch and legacy
-                // Handle*/RunHandlers dispatch go through `flatInvoker`.
-                // Registration paths that pre-build the augmented invoker store
-                // the RAW user handler here (so no extra augmented Action wrapper
-                // is allocated); paths that adapt at registration time store the
-                // augmented handler. For fast/global slots, by contrast,
-                // `handler` IS the dispatched delegate.
+                /*
+                    The stored handler delegate. For default Action<TMessage>
+                    slots this is the dedup/refcount delegate and is not the
+                    dispatch target; both bus-side flat dispatch and legacy
+                    Handle-family and RunHandlers dispatch go through `flatInvoker`.
+                    Registration paths that pre-build the augmented invoker store
+                    the RAW user handler here (so no extra augmented Action wrapper
+                    is allocated); paths that adapt at registration time store the
+                    augmented handler. For fast/global slots, by contrast,
+                    `handler` IS the dispatched delegate.
+                */
                 public readonly T handler;
                 public readonly int count;
 
-                // Pre-resolved invoker consumed by bus-side flat dispatch
-                // snapshots and legacy default-slot Handle*/RunHandlers
-                // snapshots. For default Action<TMessage> registrations this holds the
-                // diagnostics-AUGMENTED FastHandler<TMessage> closure (either a
-                // standalone adapter wrapping an augmented Action, or the single
-                // folded augmented closure the registration token now builds
-                // directly), created exactly ONCE at registration time so
-                // snapshot rebuilds never allocate closures. It -- not
-                // `handler` -- is the dispatch target for default slots.
-                // For delegate shapes the flat path does not consume (fast
-                // handlers, which already ARE the invoker, and global accept-all
-                // shapes) this stays null. Refcount increments and decrements
-                // preserve the first registration's invoker, mirroring the
-                // first-registration-wins semantics of `handler`.
+                /*
+                    Pre-resolved invoker consumed by bus-side flat dispatch
+                    snapshots and legacy default-slot Handle-family and RunHandlers
+                    snapshots. For default Action<TMessage> registrations this holds the
+                    diagnostics-AUGMENTED FastHandler<TMessage> closure (either a
+                    standalone adapter wrapping an augmented Action, or the single
+                    folded augmented closure the registration token now builds
+                    directly), created exactly ONCE at registration time so
+                    snapshot rebuilds never allocate closures. It -- not
+                    `handler` -- is the dispatch target for default slots.
+                    For delegate shapes the flat path does not consume (fast
+                    handlers, which already ARE the invoker, and global accept-all
+                    shapes) this stays null. Refcount increments and decrements
+                    preserve the first registration's invoker, mirroring the
+                    first-registration-wins semantics of `handler`.
+                */
                 public readonly object flatInvoker;
             }
 
-            // The first two distinct handlers live directly in this object.
-            // The third materializes a dictionary plus an ordered key list;
-            // that spill remains allocated for reuse after removal or reset.
-            // Both representations preserve first-registration order and make
-            // entry/order drift structurally impossible.
+            /*
+                The first two distinct handlers live directly in this object.
+                The third materializes a dictionary plus an ordered key list;
+                that spill remains allocated for reuse after removal or reset.
+                Both representations preserve first-registration order and make
+                entry/order drift structurally impossible.
+            */
             public OrderedEntries entries;
             public readonly List<T> cache = new();
             private System.Collections.IList _flatInvokerCache;
@@ -3283,23 +3301,27 @@ namespace DxMessaging.Core
         internal sealed class TypedHandler<T> : ITypedHandlerSlotSweeper
             where T : IMessage
         {
-            // Every message type owns 20 typed slots. Only the IMessage facade used by
-            // global accept-all registration can address the six global slots; ordinary
-            // typed handlers share the empty array instead of allocating unusable storage.
-            // The legacy named fields were deleted so new handler variants must pick an
-            // explicit axis-indexed slot.
+            /*
+                Every message type owns 20 typed slots. Only the IMessage facade used by
+                global accept-all registration can address the six global slots; ordinary
+                typed handlers share the empty array instead of allocating unusable storage.
+                The legacy named fields were deleted so new handler variants must pick an
+                explicit axis-indexed slot.
+            */
             internal readonly TypedSlot<T>[] _slots = new TypedSlot<T>[TypedSlotIndex.Length];
             internal readonly TypedGlobalSlot[] _globalSlots =
                 typeof(T) == typeof(IMessage)
                     ? new TypedGlobalSlot[TypedGlobalSlotIndex.Length]
                     : Array.Empty<TypedGlobalSlot>();
 
-            // Constructor exists solely so the [Conditional("DEBUG")]
-            // validator below runs at construction time. In Release builds
-            // the Conditional attribute strips the call site, leaving an
-            // empty constructor body that the JIT collapses to the
-            // equivalent of the implicit default. Mirrors the
-            // MessageBus.ValidateSinkArrays() pattern.
+            /*
+                Constructor exists solely so the [Conditional("DEBUG")]
+                validator below runs at construction time. In Release builds
+                the Conditional attribute strips the call site, leaving an
+                empty constructor body that the JIT collapses to the
+                equivalent of the implicit default. Mirrors the
+                MessageBus.ValidateSinkArrays() pattern.
+            */
             internal TypedHandler()
             {
                 ValidateSlotArrays();
@@ -3592,10 +3614,12 @@ namespace DxMessaging.Core
                         $"_globalSlots length is {_globalSlots.Length} but the expected length for {typeof(T)} is {expectedGlobalSlotCount}."
                     );
                 }
-                // Lazy registration writers update the slot arrays; this assertion still
-                // holds at construction (slots populate on first register,
-                // not on construction). The invariant flips meaning -- not
-                // the message -- when writers land.
+                /*
+                    Lazy registration writers update the slot arrays; this assertion still
+                    holds at construction (slots populate on first register,
+                    not on construction). The invariant flips meaning -- not
+                    the message -- when writers land.
+                */
                 for (int i = 0; i < _slots.Length; ++i)
                 {
                     if (_slots[i] != null)
@@ -3985,18 +4009,20 @@ namespace DxMessaging.Core
                 HandlerActionCache<Action<IUntargetedMessage>> cache = GetGlobalCache<
                     Action<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedDefault);
-                // Live-count fast path. Cross-handler in-flight snapshot
-                // semantics do not apply to the global accept-all path: the
-                // bus dispatch loop calls PrefreezeGlobalUntargetedForEmission
-                // lazily per-entry inside InvokeGlobalUntargetedEntry, after
-                // earlier-priority handlers have already run. A sibling
-                // MessageHandler that removes this handler's entry mid-emit
-                // drains cache.entries before the lazy prefreeze can capture
-                // a snapshot, so cache.cache rebuilds from the now-empty
-                // entries. Bailing on cache.entries.Count == 0 is therefore
-                // equivalent to bailing after GetOrAddNewHandlerStack would
-                // return an empty list, and is documented behavior for the
-                // global path.
+                /*
+                    Live-count fast path. Cross-handler in-flight snapshot
+                    semantics do not apply to the global accept-all path: the
+                    bus dispatch loop calls PrefreezeGlobalUntargetedForEmission
+                    lazily per-entry inside InvokeGlobalUntargetedEntry, after
+                    earlier-priority handlers have already run. A sibling
+                    MessageHandler that removes this handler's entry mid-emit
+                    drains cache.entries before the lazy prefreeze can capture
+                    a snapshot, so cache.cache rebuilds from the now-empty
+                    entries. Bailing on cache.entries.Count == 0 is therefore
+                    equivalent to bailing after GetOrAddNewHandlerStack would
+                    return an empty list, and is documented behavior for the
+                    global path.
+                */
                 if (cache?.entries is not { Count: > 0 })
                 {
                     return;
@@ -4033,9 +4059,11 @@ namespace DxMessaging.Core
                 HandlerActionCache<Action<InstanceId, ITargetedMessage>> cache = GetGlobalCache<
                     Action<InstanceId, ITargetedMessage>
                 >(TypedGlobalSlotIndex.TargetedDefault);
-                // Live-count fast path. See comment in HandleGlobalUntargeted
-                // for why the global accept-all path bails on
-                // cache.entries.Count == 0 rather than reading the snapshot.
+                /*
+                    Live-count fast path. See comment in HandleGlobalUntargeted
+                    for why the global accept-all path bails on
+                    cache.entries.Count == 0 rather than reading the snapshot.
+                */
                 if (cache?.entries is not { Count: > 0 })
                 {
                     return;
@@ -4072,9 +4100,11 @@ namespace DxMessaging.Core
                 HandlerActionCache<Action<InstanceId, IBroadcastMessage>> cache = GetGlobalCache<
                     Action<InstanceId, IBroadcastMessage>
                 >(TypedGlobalSlotIndex.BroadcastDefault);
-                // Live-count fast path. See comment in HandleGlobalUntargeted
-                // for why the global accept-all path bails on
-                // cache.entries.Count == 0 rather than reading the snapshot.
+                /*
+                    Live-count fast path. See comment in HandleGlobalUntargeted
+                    for why the global accept-all path bails on
+                    cache.entries.Count == 0 rather than reading the snapshot.
+                */
                 if (cache?.entries is not { Count: > 0 })
                 {
                     return;
@@ -4329,9 +4359,11 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandler form exactly once,
-                // at registration time, so bus-side flat snapshot rebuilds
-                // resolve default registrations without allocating closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandler form exactly once,
+                    at registration time, so bus-side flat snapshot rebuilds
+                    resolve default registrations without allocating closures.
+                */
                 FastHandler<T> flatInvoker = (in T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     target,
@@ -4417,10 +4449,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandlerWithContext form
-                // exactly once, at registration time, so bus-side flat snapshot
-                // rebuilds resolve default registrations without allocating
-                // closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandlerWithContext form
+                    exactly once, at registration time, so bus-side flat snapshot
+                    rebuilds resolve default registrations without allocating
+                    closures.
+                */
                 FastHandlerWithContext<T> flatInvoker = (in InstanceId context, in T message) =>
                     handler(context, message);
                 return AddHandlerPreservingPriorityKey(
@@ -4510,9 +4544,11 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandler form exactly once,
-                // at registration time, so bus-side flat snapshot rebuilds
-                // resolve default registrations without allocating closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandler form exactly once,
+                    at registration time, so bus-side flat snapshot rebuilds
+                    resolve default registrations without allocating closures.
+                */
                 FastHandler<T> flatInvoker = (in T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
@@ -4605,9 +4641,11 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandler form exactly once,
-                // at registration time, so bus-side flat snapshot rebuilds
-                // resolve default registrations without allocating closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandler form exactly once,
+                    at registration time, so bus-side flat snapshot rebuilds
+                    resolve default registrations without allocating closures.
+                */
                 FastHandler<T> flatInvoker = (in T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     source,
@@ -4692,10 +4730,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandlerWithContext form
-                // exactly once, at registration time, so bus-side flat snapshot
-                // rebuilds resolve default registrations without allocating
-                // closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandlerWithContext form
+                    exactly once, at registration time, so bus-side flat snapshot
+                    rebuilds resolve default registrations without allocating
+                    closures.
+                */
                 FastHandlerWithContext<T> flatInvoker = (in InstanceId context, in T message) =>
                     handler(context, message);
                 // Preserve the priority bucket during the current emission so frozen snapshots remain valid
@@ -4902,9 +4942,11 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandler form exactly once,
-                // at registration time, so bus-side flat snapshot rebuilds
-                // resolve default registrations without allocating closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandler form exactly once,
+                    at registration time, so bus-side flat snapshot rebuilds
+                    resolve default registrations without allocating closures.
+                */
                 FastHandler<T> flatInvoker = (in T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     GetOrCreatePriorityHandlers(
@@ -4965,9 +5007,11 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandler form exactly once,
-                // at registration time, so bus-side flat snapshot rebuilds
-                // resolve default registrations without allocating closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandler form exactly once,
+                    at registration time, so bus-side flat snapshot rebuilds
+                    resolve default registrations without allocating closures.
+                */
                 FastHandler<T> flatInvoker = (in T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     target,
@@ -5053,10 +5097,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandlerWithContext form
-                // exactly once, at registration time, so bus-side flat snapshot
-                // rebuilds resolve default registrations without allocating
-                // closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandlerWithContext form
+                    exactly once, at registration time, so bus-side flat snapshot
+                    rebuilds resolve default registrations without allocating
+                    closures.
+                */
                 FastHandlerWithContext<T> flatInvoker = (in InstanceId context, in T message) =>
                     handler(context, message);
                 return AddHandlerPreservingPriorityKey(
@@ -5150,9 +5196,11 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandler form exactly once,
-                // at registration time, so bus-side flat snapshot rebuilds
-                // resolve default registrations without allocating closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandler form exactly once,
+                    at registration time, so bus-side flat snapshot rebuilds
+                    resolve default registrations without allocating closures.
+                */
                 FastHandler<T> flatInvoker = (in T message) => handler(message);
                 return AddHandlerPreservingPriorityKey(
                     source,
@@ -5238,10 +5286,12 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                // Adapt the AUGMENTED handler to FastHandlerWithContext form
-                // exactly once, at registration time, so bus-side flat snapshot
-                // rebuilds resolve default registrations without allocating
-                // closures.
+                /*
+                    Adapt the AUGMENTED handler to FastHandlerWithContext form
+                    exactly once, at registration time, so bus-side flat snapshot
+                    rebuilds resolve default registrations without allocating
+                    closures.
+                */
                 FastHandlerWithContext<T> flatInvoker = (in InstanceId context, in T message) =>
                     handler(context, message);
                 return AddHandlerPreservingPriorityKey(
@@ -5317,13 +5367,15 @@ namespace DxMessaging.Core
                 );
             }
 
-            // Context mappings survive in-flight emissions. Empty leaves are
-            // reclaimed immediately outside dispatch, or by the next eligible
-            // handler sweep after a removal during dispatch.
-            // `flatInvoker` carries the pre-resolved flat-dispatch invoker for
-            // default-shape registrations the bus-side flat snapshot consumes
-            // (FastHandler adapter wrapping the augmented handler); see
-            // HandlerActionCache.Entry.flatInvoker.
+            /*
+                Context mappings survive in-flight emissions. Empty leaves are
+                reclaimed immediately outside dispatch, or by the next eligible
+                handler sweep after a removal during dispatch.
+                `flatInvoker` carries the pre-resolved flat-dispatch invoker for
+                default-shape registrations the bus-side flat snapshot consumes
+                (FastHandler adapter wrapping the augmented handler); see
+                HandlerActionCache.Entry.flatInvoker.
+            */
             private TypedHandlerDeregistrationState AddHandlerPreservingPriorityKey<TU>(
                 InstanceId context,
                 Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> handlersByContext,
@@ -5395,13 +5447,15 @@ namespace DxMessaging.Core
                 long localResetGeneration =
                     global::DxMessaging.Core.MessageBus.MessageBus.GetResetGeneration(messageBus);
 
-                // The per-handle teardown object re-expresses the old
-                // deregistration closure verbatim (generation + slot-version
-                // guards, cache resolution, version bumps, refcount
-                // decrement-or-remove, liveCount, keep-key-during-emission)
-                // using the non-generic IHandlerActionCache teardown ops, so it
-                // carries no TU type argument and replaces the closure's display
-                // class + delegate with this single object.
+                /*
+                    The per-handle teardown object re-expresses the old
+                    deregistration closure verbatim (generation + slot-version
+                    guards, cache resolution, version bumps, refcount
+                    decrement-or-remove, liveCount, keep-key-during-emission)
+                    using the non-generic IHandlerActionCache teardown ops, so it
+                    carries no TU type argument and replaces the closure's display
+                    class + delegate with this single object.
+                */
                 return new TypedHandlerDeregistrationState(
                     messageBus,
                     localResetGeneration,
@@ -5503,8 +5557,10 @@ namespace DxMessaging.Core
                     {
                         _ = localCache.entries.Remove(originalHandler);
                         localCache.version++;
-                        // Deliberately keep the priority and context mappings to preserve
-                        // frozen snapshots for the current emission.
+                        /*
+                            Deliberately keep the priority and context mappings to preserve
+                            frozen snapshots for the current emission.
+                        */
                         return;
                     }
 
@@ -5832,21 +5888,23 @@ namespace DxMessaging.Core
                 where TMessage : IMessage
                 where TU : IMessage
             {
-                // Snapshot semantics: do not bail on the live entry storage
-                // count. A mid-emit removal can drain entries while the pinned
-                // emission snapshot in cache.cache still holds the handlers we
-                // must invoke. Read the snapshot first and bail only if the
-                // snapshot itself is empty.
-                //
-                // Perf note: GetOrAddNewHandlerStack is now invoked on every
-                // call (including for empty caches that the previous fast-path
-                // would have skipped). The cost is one
-                // emission-id/version compare and -- only when the per-emission
-                // snapshot has not been pinned yet -- a single pass over
-                // cache.entries to materialise an empty list. The win is
-                // correctness across cross-handler mid-emit removals where the
-                // pinned snapshot in cache.cache still holds handlers the live
-                // entry storage no longer reaches.
+                /*
+                    Snapshot semantics: do not bail on the live entry storage
+                    count. A mid-emit removal can drain entries while the pinned
+                    emission snapshot in cache.cache still holds the handlers we
+                    must invoke. Read the snapshot first and bail only if the
+                    snapshot itself is empty.
+
+                    Perf note: GetOrAddNewHandlerStack is now invoked on every
+                    call (including for empty caches that the previous fast-path
+                    would have skipped). The cost is one
+                    emission-id/version compare and -- only when the per-emission
+                    snapshot has not been pinned yet -- a single pass over
+                    cache.entries to materialise an empty list. The win is
+                    correctness across cross-handler mid-emit removals where the
+                    pinned snapshot in cache.cache still holds handlers the live
+                    entry storage no longer reaches.
+                */
                 if (cache == null)
                 {
                     return;
@@ -5953,9 +6011,11 @@ namespace DxMessaging.Core
                 where TMessage : IMessage
                 where TU : IMessage
             {
-                // Snapshot semantics: see comment on the FastHandler<TU> overload.
-                // The pinned emission snapshot may still hold handlers even when
-                // the live entry storage has been drained mid-emit.
+                /*
+                    Snapshot semantics: see comment on the FastHandler<TU> overload.
+                    The pinned emission snapshot may still hold handlers even when
+                    the live entry storage has been drained mid-emit.
+                */
                 if (cache == null)
                 {
                     return;
@@ -6721,16 +6781,18 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Mid-dispatch clear contract: the List returned here is the LIVE
-            // cache.cache list, not a copy. IHandlerActionCache.Reset() (bus
-            // reset / sweep eviction) clears it IN PLACE, so every dispatch
-            // loop that indexes the returned list re-checks list.Count before
-            // each invocation past the first (and the >5 fallback loops bound
-            // on the live Count). A reset fired from inside a handler then
-            // cleanly stops the in-flight bucket: no peer delegate runs and
-            // nothing throws. The re-check is a single inlined List.Count
-            // field read on data already in cache, so steady-state dispatch
-            // cost is unchanged.
+            /*
+                Mid-dispatch clear contract: the List returned here is the LIVE
+                cache.cache list, not a copy. IHandlerActionCache.Reset() (bus
+                reset / sweep eviction) clears it IN PLACE, so every dispatch
+                loop that indexes the returned list re-checks list.Count before
+                each invocation past the first (and the >5 fallback loops bound
+                on the live Count). A reset fired from inside a handler then
+                cleanly stops the in-flight bucket: no peer delegate runs and
+                nothing throws. The re-check is a single inlined List.Count
+                field read on data already in cache, so steady-state dispatch
+                cost is unchanged.
+            */
             internal static List<TU> GetOrAddNewHandlerStack<TU>(
                 HandlerActionCache<TU> actionCache,
                 long emissionId
@@ -6740,9 +6802,11 @@ namespace DxMessaging.Core
                 {
                     if (actionCache.version != actionCache.lastSeenVersion)
                     {
-                        // Rebuild in the ordered map's first-registration order.
-                        // This branch only runs on registration churn, never on
-                        // steady-state dispatch, and reuses the snapshot list.
+                        /*
+                            Rebuild in the ordered map's first-registration order.
+                            This branch only runs on registration churn, never on
+                            steady-state dispatch, and reuses the snapshot list.
+                        */
                         List<TU> list = actionCache.cache;
                         list.Clear();
                         actionCache.entries.PrepareForOrderedIteration();
@@ -6758,11 +6822,13 @@ namespace DxMessaging.Core
                 return actionCache.cache;
             }
 
-            // Default-slot registrations may store the raw user Action as the
-            // identity key while carrying diagnostics in Entry.flatInvoker. The
-            // legacy Handle* path must dispatch that same flat invoker snapshot,
-            // not Entry.handler, so diagnostics semantics match bus-side flat
-            // dispatch if the legacy callback path is used directly.
+            /*
+                Default-slot registrations may store the raw user Action as the
+                identity key while carrying diagnostics in Entry.flatInvoker. The
+                legacy Handle* path must dispatch that same flat invoker snapshot,
+                not Entry.handler, so diagnostics semantics match bus-side flat
+                dispatch if the legacy callback path is used directly.
+            */
             internal static List<TInvoker> GetOrAddNewFlatInvokerStack<TU, TInvoker>(
                 HandlerActionCache<TU> actionCache,
                 long emissionId
@@ -7106,12 +7172,14 @@ namespace DxMessaging.Core
                 };
             }
 
-            // Variant of AddHandler that preserves the priority key in the dictionary when the last entry is removed.
-            // This ensures that during an in-flight emission (where handler stacks are already frozen),
-            // subsequent removals do not cause lookups to fail for the current pass.
-            // `flatInvoker` carries the pre-resolved flat-dispatch invoker for
-            // registrations the bus-side flat snapshot consumes (untargeted
-            // handle/post default handlers); see HandlerActionCache.Entry.flatInvoker.
+            /*
+                Variant of AddHandler that preserves the priority key in the dictionary when the last entry is removed.
+                This ensures that during an in-flight emission (where handler stacks are already frozen),
+                subsequent removals do not cause lookups to fail for the current pass.
+                `flatInvoker` carries the pre-resolved flat-dispatch invoker for
+                registrations the bus-side flat snapshot consumes (untargeted
+                handle/post default handlers); see HandlerActionCache.Entry.flatInvoker.
+            */
             private TypedHandlerDeregistrationState AddHandlerPreservingPriorityKey<TU>(
                 Dictionary<int, IHandlerActionCache> handlers,
                 TU originalHandler,
@@ -7173,8 +7241,10 @@ namespace DxMessaging.Core
                 long localResetGeneration =
                     global::DxMessaging.Core.MessageBus.MessageBus.GetResetGeneration(messageBus);
 
-                // See the context overload: this re-expresses the old scalar
-                // deregistration closure verbatim as a per-handle object.
+                /*
+                    See the context overload: this re-expresses the old scalar
+                    deregistration closure verbatim as a per-handle object.
+                */
                 return new TypedHandlerDeregistrationState(
                     messageBus,
                     localResetGeneration,
@@ -7249,8 +7319,10 @@ namespace DxMessaging.Core
                     {
                         _ = localCache.entries.Remove(originalHandler);
                         localCache.version++;
-                        // Intentionally DO NOT remove the priority key here to preserve
-                        // the cache handle during an in-flight emission.
+                        /*
+                            Intentionally DO NOT remove the priority key here to preserve
+                            the cache handle during an in-flight emission.
+                        */
                         return;
                     }
 

@@ -481,7 +481,7 @@ namespace DxMessaging.Tests.Runtime.Core
             )> registrations
         )
         {
-            for (int i = registrations.Count - 1; i >= 0; --i)
+            for (int i = registrations.Count - 1; 0 <= i; --i)
             {
                 (MessageRegistrationToken token, MessageRegistrationHandle handle) = registrations[
                     i

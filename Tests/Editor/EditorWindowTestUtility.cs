@@ -109,10 +109,12 @@ namespace DxMessaging.Tests.Editor
             window.rootVisualElement.Clear();
             CreatedWindows.Remove(window);
 
-            // A window that was created but never shown has no host view, and
-            // EditorWindow.Close() dereferences that parent unconditionally. Destroying the
-            // instance is the whole of its teardown. Some tests inspect an unattached root tree,
-            // so closing one has to be safe rather than a NullReferenceException in teardown.
+            /*
+                A window that was created but never shown has no host view, and
+                EditorWindow.Close() dereferences that parent unconditionally. Destroying the
+                instance is the whole of its teardown. Some tests inspect an unattached root tree,
+                so closing one has to be safe rather than a NullReferenceException in teardown.
+            */
             if (ReadMember(window, "m_Parent") == null)
             {
                 Object.DestroyImmediate(window);
@@ -126,12 +128,14 @@ namespace DxMessaging.Tests.Editor
         {
             CloseWindows(windows);
             CloseWindows(CreatedWindows);
-            // Intentionally do NOT reset LogAssert.ignoreFailingMessages here. Fixtures run
-            // more teardown after this call (e.g. DestroyImmediate of inspector editors and
-            // scene objects) which, in -nographics, re-emits the benign "No graphic device"
-            // error; resetting mid-teardown would let those slip through as unexpected logs.
-            // Unity gives each test a fresh LogScope (ignoreFailingMessages defaults back to
-            // false next test), so the nographics tolerance ShowWindow enabled cannot leak.
+            /*
+                Intentionally do NOT reset LogAssert.ignoreFailingMessages here. Fixtures run
+                more teardown after this call (e.g. DestroyImmediate of inspector editors and
+                scene objects) which, in -nographics, re-emits the benign "No graphic device"
+                error; resetting mid-teardown would let those slip through as unexpected logs.
+                Unity gives each test a fresh LogScope (ignoreFailingMessages defaults back to
+                false next test), so the nographics tolerance ShowWindow enabled cannot leak.
+            */
         }
 
         private static void CloseWindows(List<EditorWindow> windows)
@@ -332,12 +336,14 @@ namespace DxMessaging.Tests.Editor
                     continue;
                 }
 
-                // An element laid out with no bound reports Unity's largest length rather than a
-                // measurement. A box eight million pixels tall is not painting over anything a
-                // reader can see, and asserting on it compares two sentinels.
+                /*
+                    An element laid out with no bound reports Unity's largest length rather than a
+                    measurement. A box eight million pixels tall is not painting over anything a
+                    reader can see, and asserting on it compares two sentinels.
+                */
                 if (
                     float.IsNaN(element.resolvedStyle.height)
-                    || element.resolvedStyle.height >= UnboundedLayoutSize
+                    || UnboundedLayoutSize <= element.resolvedStyle.height
                 )
                 {
                     continue;

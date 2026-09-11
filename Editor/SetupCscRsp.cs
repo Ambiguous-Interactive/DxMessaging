@@ -18,19 +18,23 @@ namespace DxMessaging.Editor
         private static bool responseFileImportPending;
         private static readonly int EditorThreadId = Thread.CurrentThread.ManagedThreadId;
 
-        // Older package versions copied the analyzer + Roslyn runtime DLLs into the consumer
-        // project here so the source generator applied project-wide. The generator now ships
-        // under the package's Runtime/Analyzers folder (Unity scopes it natively to the runtime
-        // assembly and everything that references it, including the predefined Assembly-CSharp),
-        // so this in-project copy is redundant and is removed on upgrade.
+        /*
+            Older package versions copied the analyzer + Roslyn runtime DLLs into the consumer
+            project here so the source generator applied project-wide. The generator now ships
+            under the package's Runtime/Analyzers folder (Unity scopes it natively to the runtime
+            assembly and everything that references it, including the predefined Assembly-CSharp),
+            so this in-project copy is redundant and is removed on upgrade.
+        */
         internal const string LegacyAnalyzerCopyFolder =
             "Assets/Plugins/Editor/WallstopStudios.DxMessaging";
 
         private const string LegacySourceGeneratorDllName =
             "WallstopStudios.DxMessaging.SourceGenerators.dll";
 
-        // Released 2.x legacy folders predate the companion analyzer DLL, so the source generator
-        // is the required package-owned marker. Unknown DLLs still make the folder unsafe.
+        /*
+            Released 2.x legacy folders predate the companion analyzer DLL, so the source generator
+            is the required package-owned marker. Unknown DLLs still make the folder unsafe.
+        */
         private static readonly HashSet<string> RequiredLegacyAnalyzerCopyDlls = new(
             StringComparer.OrdinalIgnoreCase
         )
@@ -61,8 +65,10 @@ namespace DxMessaging.Editor
 
         static SetupCscRsp()
         {
-            // Backstop only: the primary removal happens pre-compile in LegacyAnalyzerCopyCleanup.
-            // This catches projects whose legacy copy predates the upgrade and triggers no import.
+            /*
+                Backstop only: the primary removal happens pre-compile in LegacyAnalyzerCopyCleanup.
+                This catches projects whose legacy copy predates the upgrade and triggers no import.
+            */
             ScheduleSetupStep(
                 () => TryRemoveLegacyAnalyzerCopy(),
                 "remove redundant in-project analyzer copy"
@@ -166,8 +172,10 @@ namespace DxMessaging.Editor
             }
             catch
             {
-                // ImportAsset calls inside the batch only enqueue imports. StopAssetEditing can
-                // fail after either file was written, so preserve both imports for an explicit retry.
+                /*
+                    ImportAsset calls inside the batch only enqueue imports. StopAssetEditing can
+                    fail after either file was written, so preserve both imports for an explicit retry.
+                */
                 sidecarImportPending = true;
                 rspImportPending = true;
                 throw;
@@ -222,9 +230,11 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            // The only shape this package ever created here is a flat set of analyzer / Roslyn
-            // DLLs plus their auto-generated .meta sidecars. Inspect the on-disk folder and bail
-            // out if a consumer repurposed it for anything else.
+            /*
+                The only shape this package ever created here is a flat set of analyzer / Roslyn
+                DLLs plus their auto-generated .meta sidecars. Inspect the on-disk folder and bail
+                out if a consumer repurposed it for anything else.
+            */
             string absoluteFolder = Path.GetFullPath(
                 Path.Combine(Application.dataPath, "..", LegacyAnalyzerCopyFolder)
             );
@@ -233,12 +243,14 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            // A real subdirectory means a consumer repurposed this folder for their own content;
-            // preserve it. The package only ever wrote a flat set of analyzer DLLs here, so the
-            // safe-to-remove check below sees only files (a subfolder named "x.dll" can never be
-            // mistaken for a DLL).
+            /*
+                A real subdirectory means a consumer repurposed this folder for their own content;
+                preserve it. The package only ever wrote a flat set of analyzer DLLs here, so the
+                safe-to-remove check below sees only files (a subfolder named "x.dll" can never be
+                mistaken for a DLL).
+            */
             string[] files = Directory.GetFiles(absoluteFolder);
-            if (Directory.GetDirectories(absoluteFolder).Length > 0)
+            if (0 < Directory.GetDirectories(absoluteFolder).Length)
             {
                 LogSkippedLegacyAnalyzerCopyCleanupIfNeeded(files);
                 return false;
@@ -345,7 +357,7 @@ namespace DxMessaging.Editor
         {
             string normalizedEntry = entry.Replace("\\", "/");
             int lastSeparator = normalizedEntry.LastIndexOf('/');
-            return lastSeparator >= 0
+            return 0 <= lastSeparator
                 ? normalizedEntry.Substring(lastSeparator + 1)
                 : normalizedEntry;
         }
@@ -429,8 +441,10 @@ namespace DxMessaging.Editor
                 newline
             );
 
-            // Only remove package-managed options from the old root file. Moving unrelated
-            // options to Assets would activate compiler settings Unity previously ignored.
+            /*
+                Only remove package-managed options from the old root file. Moving unrelated
+                options to Assets would activate compiler settings Unity previously ignored.
+            */
             string[] legacyLines = ReadResponseFile(legacyRspPath, out Encoding legacyEncoding);
             legacyLines = CleanDxMessagingAnalyzerLines(
                 legacyLines,
@@ -449,8 +463,10 @@ namespace DxMessaging.Editor
                 importPending = true;
             }
 
-            // Keep an unsuccessful import pending even if the file was already written. The
-            // next scheduled sync must retry the import without rewriting unchanged contents.
+            /*
+                Keep an unsuccessful import pending even if the file was already written. The
+                next scheduled sync must retry the import without rewriting unchanged contents.
+            */
             if (importPending)
             {
                 importAsset(RspAssetPath);
@@ -668,7 +684,7 @@ namespace DxMessaging.Editor
             }
             if (sidecarExists && !foundDesired)
             {
-                if (newline != null && result.Count > 0)
+                if (newline != null && 0 < result.Count)
                 {
                     string last = result[result.Count - 1];
                     if (
@@ -750,8 +766,10 @@ namespace DxMessaging.Editor
             bool changed = false;
             bool inQuotes = false;
             int start = 0;
-            // Roslyn splits analyzer/additionalfile path lists on comma and semicolon outside
-            // quotes. Retain each surviving path and its original separator without decoding it.
+            /*
+                Roslyn splits analyzer/additionalfile path lists on comma and semicolon outside
+                quotes. Retain each surviving path and its original separator without decoding it.
+            */
             for (int index = 0; index <= value.Length; ++index)
             {
                 if (index < value.Length && value[index] == '"')
@@ -768,7 +786,7 @@ namespace DxMessaging.Editor
                 string path = value.Substring(start, index - start);
                 if (retain(path))
                 {
-                    if (kept.Length > 0)
+                    if (0 < kept.Length)
                     {
                         kept.Append(value[start - 1]);
                     }
@@ -800,7 +818,7 @@ namespace DxMessaging.Editor
                 return null;
             }
             int length = line.Length;
-            while (length > 0 && (line[length - 1] == '\r' || line[length - 1] == '\n'))
+            while (0 < length && (line[length - 1] == '\r' || line[length - 1] == '\n'))
             {
                 --length;
             }
@@ -813,8 +831,10 @@ namespace DxMessaging.Editor
                 {
                     ++index;
                 }
-                // Roslyn recognizes # at the beginning of a token. An embedded or quoted #
-                // belongs to its argument and must not hide following compiler options.
+                /*
+                    Roslyn recognizes # at the beginning of a token. An embedded or quoted #
+                    belongs to its argument and must not hide following compiler options.
+                */
                 if (index == length || line[index] == '#')
                 {
                     break;
@@ -846,7 +866,7 @@ namespace DxMessaging.Editor
                     }
                     if (index == length)
                     {
-                        while (start > copied && char.IsWhiteSpace(line[start - 1]))
+                        while (copied < start && char.IsWhiteSpace(line[start - 1]))
                         {
                             --start;
                         }

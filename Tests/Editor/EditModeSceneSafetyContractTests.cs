@@ -411,8 +411,11 @@ namespace DxMessaging.Tests.Editor
                     ExpectedRelativePath,
                     StringComparison.Ordinal
                 )
-                && construction.SourceLine.IndexOf(ExpectedSourceFragment, StringComparison.Ordinal)
-                    >= 0;
+                && 0
+                    <= construction.SourceLine.IndexOf(
+                        ExpectedSourceFragment,
+                        StringComparison.Ordinal
+                    );
         }
     }
 
@@ -558,7 +561,7 @@ namespace DxMessaging.Tests.Editor
                 );
                 int open = invocation.IndexOf('(');
                 IReadOnlyList<string> arguments =
-                    open >= 0 && invocation.Length > open + 1
+                    0 <= open && open + 1 < invocation.Length
                         ? SplitTopLevelArguments(
                             invocation.Substring(open + 1, invocation.Length - open - 2)
                         )
@@ -832,12 +835,12 @@ namespace DxMessaging.Tests.Editor
                 LexerFrame frame = frames.Peek();
                 bool isCode = frame.State == LexerState.Code;
 
-                if (isCode && frame.InterpolationDepth > 0 && current == '}')
+                if (isCode && 0 < frame.InterpolationDepth && current == '}')
                 {
                     sanitized[index] = ' ';
                     frame.InterpolationDepth--;
                     frames.Pop();
-                    if (frame.InterpolationDepth > 0)
+                    if (0 < frame.InterpolationDepth)
                     {
                         frames.Push(frame);
                     }
@@ -911,7 +914,7 @@ namespace DxMessaging.Tests.Editor
                     frames.Push(new LexerFrame(LexerState.String, 0));
                     continue;
                 }
-                else if (isCode && frame.InterpolationDepth > 0 && current == '{')
+                else if (isCode && 0 < frame.InterpolationDepth && current == '{')
                 {
                     frame.InterpolationDepth++;
                     frames.Pop();
@@ -1113,11 +1116,11 @@ namespace DxMessaging.Tests.Editor
                         scopeChangeAt.Add(index + 1);
                         scopeChangeOpenBrace.Add(index);
                     }
-                    else if (current == '}' && openBraces.Count > 0)
+                    else if (current == '}' && 0 < openBraces.Count)
                     {
                         _closeByOpenBrace[openBraces.Pop()] = index;
                         scopeChangeAt.Add(index + 1);
-                        scopeChangeOpenBrace.Add(openBraces.Count > 0 ? openBraces.Peek() : -1);
+                        scopeChangeOpenBrace.Add(0 < openBraces.Count ? openBraces.Peek() : -1);
                     }
                 }
 
@@ -1158,14 +1161,14 @@ namespace DxMessaging.Tests.Editor
                     return false;
                 }
 
-                for (int index = declarations.Count - 1; index >= 0; index--)
+                for (int index = declarations.Count - 1; 0 <= index; index--)
                 {
                     TypedDeclaration declaration = declarations[index];
-                    if (declaration.End > constructionIndex)
+                    if (constructionIndex < declaration.End)
                     {
                         continue;
                     }
-                    if (constructionIndex >= EnclosingScopeEnd(declaration.Start))
+                    if (EnclosingScopeEnd(declaration.Start) <= constructionIndex)
                     {
                         continue;
                     }
@@ -1193,7 +1196,7 @@ namespace DxMessaging.Tests.Editor
 
             private int MatchingBrace(int openBrace)
             {
-                return openBrace >= 0 && _closeByOpenBrace.TryGetValue(openBrace, out int close)
+                return 0 <= openBrace && _closeByOpenBrace.TryGetValue(openBrace, out int close)
                     ? close
                     : Source.Length;
             }
@@ -1239,7 +1242,7 @@ namespace DxMessaging.Tests.Editor
                     foreach (Match match in ForPattern(patternForType(type)).Matches(Source))
                     {
                         int openBrace = Source.IndexOf('{', match.Index);
-                        if (openBrace >= 0)
+                        if (0 <= openBrace)
                         {
                             bodies.Add(new BraceSpan(openBrace, MatchingBrace(openBrace)));
                         }

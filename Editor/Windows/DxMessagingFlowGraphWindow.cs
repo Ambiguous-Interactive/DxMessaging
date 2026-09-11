@@ -590,7 +590,7 @@ namespace DxMessaging.Editor.Windows
             const int sampleCount = 28;
             float nearestSquaredDistance = hitRadius * hitRadius;
             string nearestSelectionKey = string.Empty;
-            for (int curveIndex = curves.Count - 1; curveIndex >= 0; curveIndex--)
+            for (int curveIndex = curves.Count - 1; 0 <= curveIndex; curveIndex--)
             {
                 GraphCurveDescriptor curve = curves[curveIndex];
                 if (string.IsNullOrWhiteSpace(curve.SelectionKey))
@@ -1180,14 +1180,14 @@ namespace DxMessaging.Editor.Windows
             content.userData = foldoutState;
             content.Clear();
             bool hasGraphItems =
-                visibleSnapshot.ComponentNodes.Count > 0
-                || visibleSnapshot.MessageNodes.Count > 0
-                || visibleSnapshot.Edges.Count > 0
-                || visibleSnapshot.TracePaths.Count > 0;
-            bool hasWarnings = visibleSnapshot.Warnings.Count > 0;
+                0 < visibleSnapshot.ComponentNodes.Count
+                || 0 < visibleSnapshot.MessageNodes.Count
+                || 0 < visibleSnapshot.Edges.Count
+                || 0 < visibleSnapshot.TracePaths.Count;
+            bool hasWarnings = 0 < visibleSnapshot.Warnings.Count;
             bool hasObservedObjects =
-                snapshot.ComponentNodes.Count > 0 || snapshot.MessageNodes.Count > 0;
-            bool hasCapturedRoutes = snapshot.Edges.Count > 0 || snapshot.TracePaths.Count > 0;
+                0 < snapshot.ComponentNodes.Count || 0 < snapshot.MessageNodes.Count;
+            bool hasCapturedRoutes = 0 < snapshot.Edges.Count || 0 < snapshot.TracePaths.Count;
 
             if (!hasGraphItems && !hasWarnings)
             {
@@ -1268,13 +1268,13 @@ namespace DxMessaging.Editor.Windows
                 }
                 analysis.Add(routeMap);
 
-                if (visibleSnapshot.Edges.Count > 0)
+                if (0 < visibleSnapshot.Edges.Count)
                 {
                     analysis.Add(CreateVisibleMessageLanes(visibleSnapshot));
                     analysis.Add(CreateVisibleTargetLanes(visibleSnapshot));
                 }
 
-                if (visibleSnapshot.TracePaths.Count > 0)
+                if (0 < visibleSnapshot.TracePaths.Count)
                 {
                     Foldout traceActivity = CreateCollapsedFoldout(
                         TraceActivityFoldoutName,
@@ -2054,7 +2054,7 @@ namespace DxMessaging.Editor.Windows
                 messageNames.Add(path.MessageTypeName);
             }
 
-            if (tracePaths.Length > 0)
+            if (0 < tracePaths.Length)
             {
                 HashSet<string> visibleEdgeKeys = new(
                     edges.Select(CreateEdgeSelectionKey),
@@ -2289,11 +2289,11 @@ namespace DxMessaging.Editor.Windows
             export.SetEnabled(
                 onCopyExport != null
                     && (
-                        visibleSnapshot.ComponentNodes.Count > 0
-                        || visibleSnapshot.MessageNodes.Count > 0
-                        || visibleSnapshot.Edges.Count > 0
-                        || visibleSnapshot.TracePaths.Count > 0
-                        || visibleSnapshot.Warnings.Count > 0
+                        0 < visibleSnapshot.ComponentNodes.Count
+                        || 0 < visibleSnapshot.MessageNodes.Count
+                        || 0 < visibleSnapshot.Edges.Count
+                        || 0 < visibleSnapshot.TracePaths.Count
+                        || 0 < visibleSnapshot.Warnings.Count
                     )
             );
         }
@@ -2926,7 +2926,7 @@ namespace DxMessaging.Editor.Windows
             FlowGraphVisibleSnapshot visibleSnapshot
         )
         {
-            if (visibleSnapshot.Edges.Count > 0)
+            if (0 < visibleSnapshot.Edges.Count)
             {
                 return visibleSnapshot
                     .Edges.Select(edge => new GraphConnectionDescriptor(
@@ -3475,7 +3475,7 @@ namespace DxMessaging.Editor.Windows
             });
             viewport.RegisterCallback<WheelEvent>(evt =>
             {
-                float zoomFactor = evt.delta.y > 0f ? 0.88f : 1.14f;
+                float zoomFactor = 0f < evt.delta.y ? 0.88f : 1.14f;
                 ZoomAround(evt.localMousePosition, canvasState.Zoom * zoomFactor);
                 evt.StopPropagation();
             });
@@ -3594,12 +3594,12 @@ namespace DxMessaging.Editor.Windows
         {
             string typeName = messageTypeName ?? string.Empty;
             int assemblyStart = typeName.LastIndexOf(" [", StringComparison.Ordinal);
-            if (assemblyStart >= 0)
+            if (0 <= assemblyStart)
             {
                 typeName = typeName.Substring(0, assemblyStart);
             }
             int namespaceSeparator = Math.Max(typeName.LastIndexOf('.'), typeName.LastIndexOf('+'));
-            return namespaceSeparator >= 0 && namespaceSeparator < typeName.Length - 1
+            return 0 <= namespaceSeparator && namespaceSeparator < typeName.Length - 1
                 ? typeName.Substring(namespaceSeparator + 1)
                 : typeName;
         }
@@ -3608,7 +3608,7 @@ namespace DxMessaging.Editor.Windows
         {
             string path = hierarchyPath ?? string.Empty;
             int separator = path.LastIndexOf('/');
-            return separator >= 0 && separator < path.Length - 1
+            return 0 <= separator && separator < path.Length - 1
                 ? path.Substring(separator + 1)
                 : path;
         }
@@ -3680,7 +3680,7 @@ namespace DxMessaging.Editor.Windows
                 );
             }
 
-            if (orderedRoutes.Length > VisibleRouteLimit)
+            if (VisibleRouteLimit < orderedRoutes.Length)
             {
                 FlowGraphEdge[] remainingRoutes = orderedRoutes.Skip(VisibleRouteLimit).ToArray();
                 Foldout moreRoutes = CreateCollapsedFoldout(
@@ -4580,7 +4580,7 @@ namespace DxMessaging.Editor.Windows
             int totalDeliveries = lanes.Sum(lane => lane.DeliveryCount);
             int traceIdCount = lanes
                 .SelectMany(lane => lane.TraceIds)
-                .Where(traceId => traceId > 0)
+                .Where(traceId => 0 < traceId)
                 .Distinct()
                 .Count();
             if (lanes.Count == 0 || totalDeliveries <= 0 || lanes[0].DeliveryCount <= 0)
@@ -4599,7 +4599,7 @@ namespace DxMessaging.Editor.Windows
             int totalDeliveries = lanes.Sum(lane => lane.DeliveryCount);
             int traceIdCount = lanes
                 .SelectMany(lane => lane.TraceIds)
-                .Where(traceId => traceId > 0)
+                .Where(traceId => 0 < traceId)
                 .Distinct()
                 .Count();
             if (lanes.Count == 0 || totalDeliveries <= 0 || lanes[0].DeliveryCount <= 0)
@@ -4632,7 +4632,7 @@ namespace DxMessaging.Editor.Windows
             int totalDeliveries = lanes.Sum(lane => lane.DeliveryCount);
             int traceIdCount = lanes
                 .SelectMany(lane => lane.TraceIds)
-                .Where(traceId => traceId > 0)
+                .Where(traceId => 0 < traceId)
                 .Distinct()
                 .Count();
             if (lanes.Count == 0 || totalDeliveries <= 0 || lanes[0].DeliveryCount <= 0)
@@ -4651,7 +4651,7 @@ namespace DxMessaging.Editor.Windows
             int totalDeliveries = lanes.Sum(lane => lane.DeliveryCount);
             int traceIdCount = lanes
                 .SelectMany(lane => lane.TraceIds)
-                .Where(traceId => traceId > 0)
+                .Where(traceId => 0 < traceId)
                 .Distinct()
                 .Count();
             if (lanes.Count == 0 || totalDeliveries <= 0 || lanes[0].DeliveryCount <= 0)
@@ -4926,7 +4926,7 @@ namespace DxMessaging.Editor.Windows
                     );
                     long[] traceIds = groupPaths
                         .SelectMany(path => path.TraceIds)
-                        .Where(traceId => traceId > 0)
+                        .Where(traceId => 0 < traceId)
                         .Distinct()
                         .OrderBy(traceId => traceId)
                         .ToArray();
@@ -4974,7 +4974,7 @@ namespace DxMessaging.Editor.Windows
                     );
                     long[] traceIds = groupPaths
                         .SelectMany(path => path.TraceIds)
-                        .Where(traceId => traceId > 0)
+                        .Where(traceId => 0 < traceId)
                         .Distinct()
                         .OrderBy(traceId => traceId)
                         .ToArray();
@@ -5006,7 +5006,7 @@ namespace DxMessaging.Editor.Windows
             List<FlowGraphTraceIdPathMembership> memberships = new();
             foreach (FlowGraphTracePath path in visibleTracePaths)
             {
-                foreach (long traceId in path.TraceIds.Where(traceId => traceId > 0))
+                foreach (long traceId in path.TraceIds.Where(traceId => 0 < traceId))
                 {
                     memberships.Add(new FlowGraphTraceIdPathMembership(traceId, path));
                 }
@@ -5098,7 +5098,7 @@ namespace DxMessaging.Editor.Windows
                     );
                     long[] traceIds = groupPaths
                         .SelectMany(path => path.TraceIds)
-                        .Where(traceId => traceId > 0)
+                        .Where(traceId => 0 < traceId)
                         .Distinct()
                         .OrderBy(traceId => traceId)
                         .ToArray();
@@ -5180,7 +5180,7 @@ namespace DxMessaging.Editor.Windows
                     );
                     long[] traceIds = groupPaths
                         .SelectMany(path => path.TraceIds)
-                        .Where(traceId => traceId > 0)
+                        .Where(traceId => 0 < traceId)
                         .Distinct()
                         .OrderBy(traceId => traceId)
                         .ToArray();
@@ -5228,7 +5228,7 @@ namespace DxMessaging.Editor.Windows
 
             if (
                 duplicateTargetPathCounts.TryGetValue(targetComponentPath, out int count)
-                && count > 1
+                && 1 < count
                 && !string.IsNullOrWhiteSpace(targetComponentId)
             )
             {
@@ -5494,7 +5494,7 @@ namespace DxMessaging.Editor.Windows
             }
 
             int tracedRouteCount = visibleSnapshot.Edges.Count(edge =>
-                edge.RecentTracedDeliveryCount > 0
+                0 < edge.RecentTracedDeliveryCount
             );
             return $"Recent traced routes: {tracedRouteCount}/{routeCount}";
         }
@@ -5597,7 +5597,7 @@ namespace DxMessaging.Editor.Windows
                 return "Recent traced routes: none | No-call routes: 0";
             }
 
-            int tracedRouteCount = visibleEdges.Count(edge => edge.RecentTracedDeliveryCount > 0);
+            int tracedRouteCount = visibleEdges.Count(edge => 0 < edge.RecentTracedDeliveryCount);
             int noCallRouteCount = visibleEdges.Count(edge => edge.CallCount <= 0);
             return $"Recent traced routes: {tracedRouteCount}/{visibleEdges.Length} | No-call routes: {noCallRouteCount}";
         }
@@ -5722,7 +5722,7 @@ namespace DxMessaging.Editor.Windows
             {
                 foreach (long traceId in path.TraceIds)
                 {
-                    if (traceId > 0)
+                    if (0 < traceId)
                     {
                         pathCountsByTraceId[traceId] =
                             pathCountsByTraceId.GetValueOrDefault(traceId) + 1;
@@ -5872,7 +5872,7 @@ namespace DxMessaging.Editor.Windows
                 .Where(kind => !string.IsNullOrWhiteSpace(kind) && kind != "none")
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            if (normalizedKinds.Length > 1)
+            if (1 < normalizedKinds.Length)
             {
                 return "MIXED";
             }
@@ -6587,7 +6587,7 @@ namespace DxMessaging.Editor.Windows
                 {
                     roster.Add(CreateDetailsRouteRow(edge, onSelectionChanged));
                 }
-                if (orderedEdges.Length > VisibleDetailsRowLimit)
+                if (VisibleDetailsRowLimit < orderedEdges.Length)
                 {
                     FlowGraphEdge[] overflowEdges = orderedEdges
                         .Skip(VisibleDetailsRowLimit)
@@ -6864,12 +6864,12 @@ namespace DxMessaging.Editor.Windows
                 new GraphNodeMetric("Routes", edges.Length.ToString(CultureInfo.InvariantCulture)),
                 new GraphNodeMetric(
                     "Called",
-                    edges.Count(edge => edge.CallCount > 0).ToString(CultureInfo.InvariantCulture)
+                    edges.Count(edge => 0 < edge.CallCount).ToString(CultureInfo.InvariantCulture)
                 ),
                 new GraphNodeMetric(
                     "Traced",
                     edges
-                        .Count(edge => edge.RecentTracedDeliveryCount > 0)
+                        .Count(edge => 0 < edge.RecentTracedDeliveryCount)
                         .ToString(CultureInfo.InvariantCulture)
                 ),
                 new GraphNodeMetric(
@@ -7021,13 +7021,13 @@ namespace DxMessaging.Editor.Windows
         )
         {
             busiestEdge = edges
-                .Where(edge => edge.RecentTracedDeliveryCount > 0)
+                .Where(edge => 0 < edge.RecentTracedDeliveryCount)
                 .OrderByDescending(edge => edge.RecentTracedDeliveryCount)
                 .ThenBy(edge => edge.MessageTypeName, StringComparer.Ordinal)
                 .ThenBy(edge => edge.TargetComponentPath, StringComparer.Ordinal)
                 .ThenBy(edge => edge.RegistrationTypeName, StringComparer.Ordinal)
                 .FirstOrDefault();
-            return busiestEdge.RecentTracedDeliveryCount > 0;
+            return 0 < busiestEdge.RecentTracedDeliveryCount;
         }
 
         private static bool TryGetBusiestTracePath(
@@ -7036,14 +7036,14 @@ namespace DxMessaging.Editor.Windows
         )
         {
             busiestPath = tracePaths
-                .Where(path => path.RecentTracedDeliveryCount > 0)
+                .Where(path => 0 < path.RecentTracedDeliveryCount)
                 .OrderByDescending(path => path.RecentTracedDeliveryCount)
                 .ThenBy(path => path.MessageTypeName, StringComparer.Ordinal)
                 .ThenBy(path => path.TargetComponentPath, StringComparer.Ordinal)
                 .ThenBy(path => path.RegistrationTypeName, StringComparer.Ordinal)
                 .ThenBy(path => NormalizeTraceContext(path.Context), StringComparer.Ordinal)
                 .FirstOrDefault();
-            return busiestPath.RecentTracedDeliveryCount > 0;
+            return 0 < busiestPath.RecentTracedDeliveryCount;
         }
 
         private static bool RelationshipsMatch(FlowGraphEdge edge, FlowGraphTracePath tracePath)
@@ -7116,7 +7116,7 @@ namespace DxMessaging.Editor.Windows
             );
             traceIdentity.AddToClassList(DxMessagingEditorTheme.KeyValueValueClassName);
             values.Add(traceIdentity);
-            if (widestTrace.PathCount > 0)
+            if (0 < widestTrace.PathCount)
             {
                 Label pathCount = new(FormatCount(widestTrace.PathCount, "path"));
                 pathCount.AddToClassList(DxMessagingEditorTheme.DetailFrameClassName);
@@ -7475,13 +7475,13 @@ namespace DxMessaging.Editor.Windows
 
             string[] segments = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(segment => segment.Trim())
-                .Where(segment => segment.Length > 0)
+                .Where(segment => 0 < segment.Length)
                 .ToArray();
             if (segments.Length == 0)
             {
                 segments = new[] { "none" };
             }
-            if (segments.Length > 4)
+            if (4 < segments.Length)
             {
                 segments = new[]
                 {
@@ -7509,7 +7509,7 @@ namespace DxMessaging.Editor.Windows
                 segmentGroup.style.flexDirection = FlexDirection.Row;
                 segmentGroup.style.alignItems = Align.Center;
                 segmentGroup.style.flexShrink = 1;
-                if (index > 0)
+                if (0 < index)
                 {
                     Label separator = new(">");
                     separator.AddToClassList(DxMessagingEditorTheme.DetailFrameClassName);
@@ -7765,7 +7765,7 @@ namespace DxMessaging.Editor.Windows
             relationship.Add(
                 CreateRelationshipActivity(deliveryCount, totalDeliveryCount, activityLabel)
             );
-            if (secondaryDeliveryCount >= 0)
+            if (0 <= secondaryDeliveryCount)
             {
                 relationship.Add(
                     CreateRelationshipActivity(
@@ -7945,7 +7945,7 @@ namespace DxMessaging.Editor.Windows
             {
                 section.Add(CreateMessageTypeRow(distinctTypes[index]));
             }
-            if (distinctTypes.Length > visibleCount)
+            if (visibleCount < distinctTypes.Length)
             {
                 Foldout overflow = new()
                 {
@@ -8024,19 +8024,23 @@ namespace DxMessaging.Editor.Windows
             return row;
         }
 
-        // internal for the capture-off notice tests: building a full snapshot and selecting a node
-        // to reach this empty state would test the graph, not the notice.
+        /*
+            internal for the capture-off notice tests: building a full snapshot and selecting a node
+            to reach this empty state would test the graph, not the notice.
+        */
         internal static void AddSourceDetailValues(
             VisualElement section,
             string firstLabel,
             IReadOnlyList<string> values
         )
         {
-            // CreateEmissionSite returns the UnknownCallSite placeholder for a record with no
-            // captured trace, so with capture off a node that HAS emitted still carries a full
-            // list -- of placeholders. Rendering those would say nothing and would hide the
-            // capture notice behind rows that look like data, so they are dropped first and a
-            // list left with nothing real is the same fact as an empty one.
+            /*
+                CreateEmissionSite returns the UnknownCallSite placeholder for a record with no
+                captured trace, so with capture off a node that HAS emitted still carries a full
+                list -- of placeholders. Rendering those would say nothing and would hide the
+                capture notice behind rows that look like data, so they are dropped first and a
+                list left with nothing real is the same fact as an empty one.
+            */
             List<string> resolved = new(values.Count);
             for (int index = 0; index < values.Count; index++)
             {
@@ -8049,8 +8053,10 @@ namespace DxMessaging.Editor.Windows
             values = resolved;
             if (values.Count == 0)
             {
-                // "none captured" reads as "we looked and there was nothing", which is wrong when
-                // emission-site capture is simply off. Name the setting and carry its switch.
+                /*
+                    "none captured" reads as "we looked and there was nothing", which is wrong when
+                    emission-site capture is simply off. Name the setting and carry its switch.
+                */
                 if (!DxMessagingEmissionCaptureNotice.CaptureEnabled)
                 {
                     section.Add(
@@ -8177,7 +8183,7 @@ namespace DxMessaging.Editor.Windows
                 identity.TypeName.LastIndexOf('.'),
                 identity.TypeName.LastIndexOf('+')
             );
-            return typeSeparator > 0 ? identity.TypeName.Substring(0, typeSeparator) : string.Empty;
+            return 0 < typeSeparator ? identity.TypeName.Substring(0, typeSeparator) : string.Empty;
         }
 
         private static string CreateDetailsTitleTooltip(FlowGraphSelectedItem selectedItem)
@@ -8682,7 +8688,7 @@ namespace DxMessaging.Editor.Windows
             {
                 foreach (long traceId in path.TraceIds)
                 {
-                    if (traceId > 0)
+                    if (0 < traceId)
                     {
                         traceIds.Add(traceId);
                     }
@@ -8800,7 +8806,7 @@ namespace DxMessaging.Editor.Windows
             builder.Append(' ', indentSize).Append("\"").Append(name).Append("\": [");
             for (int i = 0; i < values.Count; i++)
             {
-                if (i > 0)
+                if (0 < i)
                 {
                     builder.Append(", ");
                 }
@@ -8826,7 +8832,7 @@ namespace DxMessaging.Editor.Windows
             builder.Append(' ', indentSize).Append("\"").Append(name).Append("\": [");
             for (int i = 0; i < values.Count; i++)
             {
-                if (i > 0)
+                if (0 < i)
                 {
                     builder.Append(", ");
                 }
@@ -8886,7 +8892,7 @@ namespace DxMessaging.Editor.Windows
         private static bool ContainsText(string value, string filterText)
         {
             return !string.IsNullOrEmpty(value)
-                && value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
 
         private sealed class MessageNodeBuilder
@@ -8906,7 +8912,7 @@ namespace DxMessaging.Editor.Windows
                     {
                         return "GLOBAL OBSERVER";
                     }
-                    if (Kinds.Count > 1)
+                    if (1 < Kinds.Count)
                     {
                         return "MIXED";
                     }
@@ -9157,7 +9163,7 @@ namespace DxMessaging.Editor.Windows
 
             internal void AddTraceId(long traceId)
             {
-                if (traceId > 0)
+                if (0 < traceId)
                 {
                     TraceIds.Add(traceId);
                 }
@@ -9971,7 +9977,7 @@ namespace DxMessaging.Editor.Windows
         private static bool ContainsText(string value, string filterText)
         {
             return !string.IsNullOrEmpty(value)
-                && value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -10036,7 +10042,7 @@ namespace DxMessaging.Editor.Windows
         private static bool ContainsText(string value, string filterText)
         {
             return !string.IsNullOrEmpty(value)
-                && value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -10101,7 +10107,7 @@ namespace DxMessaging.Editor.Windows
             return traceIds == null
                 ? Array.Empty<long>()
                 : traceIds
-                    .Where(traceId => traceId > 0)
+                    .Where(traceId => 0 < traceId)
                     .Distinct()
                     .OrderBy(traceId => traceId)
                     .ToArray();
@@ -10137,7 +10143,7 @@ namespace DxMessaging.Editor.Windows
         private static bool ContainsText(string value, string filterText)
         {
             return !string.IsNullOrEmpty(value)
-                && value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -10207,7 +10213,7 @@ namespace DxMessaging.Editor.Windows
         private static bool ContainsText(string value, string filterText)
         {
             return !string.IsNullOrEmpty(value)
-                && value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

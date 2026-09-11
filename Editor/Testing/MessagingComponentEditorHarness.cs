@@ -35,7 +35,7 @@ namespace DxMessaging.Editor.Testing
             if (MessageHandler.MessageBus is MessageBus concreteBus)
             {
                 globalDiagnosticsEnabled = concreteBus.DiagnosticsMode;
-                if (globalDiagnosticsEnabled && concreteBus._emissionBuffer.Count > 0)
+                if (globalDiagnosticsEnabled && 0 < concreteBus._emissionBuffer.Count)
                 {
                     globalHistory = concreteBus._emissionBuffer.ToArray();
                 }
@@ -74,7 +74,7 @@ namespace DxMessaging.Editor.Testing
                 .ToArray();
 
             IReadOnlyList<MessageEmissionData> emissionHistory =
-                token._emissionBuffer.Count > 0 ? token._emissionBuffer.ToArray() : EmptyEmissions;
+                0 < token._emissionBuffer.Count ? token._emissionBuffer.ToArray() : EmptyEmissions;
 
             return new ListenerDiagnosticsView(
                 listener,

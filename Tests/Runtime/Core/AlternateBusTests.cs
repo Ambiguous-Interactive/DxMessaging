@@ -109,10 +109,12 @@ namespace DxMessaging.Tests.Runtime.Core
             int countA = 0;
             int countB = 0;
 
-            // Handler on bus A re-emits on bus B mid-dispatch; bus B's handler
-            // re-emits back on bus A mid-dispatch. Each side only bounces on its
-            // first invocation so the chain terminates deterministically:
-            // emit(A) -> countA=1 -> emit(B) -> countB=1 -> emit(A) -> countA=2.
+            /*
+                Handler on bus A re-emits on bus B mid-dispatch; bus B's handler
+                re-emits back on bus A mid-dispatch. Each side only bounces on its
+                first invocation so the chain terminates deterministically:
+                emit(A) -> countA=1 -> emit(B) -> countB=1 -> emit(A) -> countA=2.
+            */
             _ = RegisterReentrantHandler(
                 scenario,
                 tokenA,
@@ -155,8 +157,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario
             );
 
-            // Post-reentrancy sanity: both buses keep dispatching normally and
-            // emissions never leak to the other bus.
+            /*
+                Post-reentrancy sanity: both buses keep dispatching normally and
+                emissions never leak to the other bus.
+            */
             EmitOnBus(scenario, context, busB);
             Assert.AreEqual(
                 2,

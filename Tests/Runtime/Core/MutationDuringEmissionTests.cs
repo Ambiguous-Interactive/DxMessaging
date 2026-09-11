@@ -140,9 +140,11 @@ namespace DxMessaging.Tests.Runtime.Core
             bool added = false;
             MessageRegistrationHandle defaultHandle = default;
 
-            // RegisterCountingHandler registers a FAST handler; from inside it,
-            // register a DEFAULT (Action<T>) delegate for the same type on
-            // the same MessageHandler - the previously leaking shape.
+            /*
+                RegisterCountingHandler registers a FAST handler; from inside it,
+                register a DEFAULT (Action<T>) delegate for the same type on
+                the same MessageHandler - the previously leaking shape.
+            */
             MessageRegistrationHandle fastHandle = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
@@ -1585,8 +1587,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
 
-            // The handler parameter is deliberately NOT named "_": a discard
-            // assignment inside the body would bind to it instead.
+            /*
+                The handler parameter is deliberately NOT named "_": a discard
+                assignment inside the body would bind to it instead.
+            */
             _ = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
                 host,
                 (in SimpleTargetedMessage targeted) =>

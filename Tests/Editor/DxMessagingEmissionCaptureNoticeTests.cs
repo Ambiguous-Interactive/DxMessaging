@@ -144,9 +144,11 @@ namespace DxMessaging.Tests.Editor
             IMessageBus.GlobalDiagnosticsStackTraces = captureEnabled;
             VisualElement section = new();
 
-            // The list a node that HAS emitted actually carries while capture is off: one
-            // placeholder per emission, never an empty list. Passing Array.Empty here would have
-            // let the notice pass a test it could not pass in the window (Bugbot, PR #434).
+            /*
+                The list a node that HAS emitted actually carries while capture is off: one
+                placeholder per emission, never an empty list. Passing Array.Empty here would have
+                let the notice pass a test it could not pass in the window (Bugbot, PR #434).
+            */
             DxMessagingFlowGraphWindow.AddSourceDetailValues(
                 section,
                 "Emitted by",
@@ -231,11 +233,13 @@ namespace DxMessaging.Tests.Editor
         public void EnableCaptureTakesEffectImmediatelyAndPersistsToSettings()
         {
             IMessageBus.GlobalDiagnosticsStackTraces = false;
-            // The scheduled body is captured but deliberately NOT run: it calls
-            // DxMessagingSettings.GetOrCreateSettings(), which would create or rewrite the real
-            // project settings asset in whichever editor runs this suite. What is testable here
-            // without that side effect is the contract that matters -- immediate in-memory effect,
-            // deferred durable write.
+            /*
+                The scheduled body is captured but deliberately NOT run: it calls
+                DxMessagingSettings.GetOrCreateSettings(), which would create or rewrite the real
+                project settings asset in whichever editor runs this suite. What is testable here
+                without that side effect is the contract that matters -- immediate in-memory effect,
+                deferred durable write.
+            */
             List<Action> scheduled = new();
             DxMessagingEmissionCaptureNotice.AssetDatabaseMutationScheduler = scheduled.Add;
 

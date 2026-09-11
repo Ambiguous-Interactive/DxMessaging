@@ -31,8 +31,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
-        // Base IMessage interface (used for implementation checks if needed, and property names)
-        // *** Assumes the user has defined this interface in their code ***
+        /*
+            Base IMessage interface (used for implementation checks if needed, and property names)
+            *** Assumes the user has defined this interface in their code ***
+        */
         private const string BaseInterfaceFullName = "DxMessaging.Core.IMessage";
 
         // Message Type Attribute Full Names (Ensure these match your attributes)
@@ -168,7 +170,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return false;
             }
 
-            return typeDecl.AttributeLists.Count > 0 || HasRelevantMessageBaseType(typeDecl);
+            return 0 < typeDecl.AttributeLists.Count || HasRelevantMessageBaseType(typeDecl);
         }
 
         private static bool IsSupportedTypeDeclaration(TypeDeclarationSyntax typeDeclarationSyntax)
@@ -194,9 +196,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             {
                 string baseTypeName = baseType.Type.ToString();
                 if (
-                    baseTypeName.IndexOf("IUntargetedMessage", StringComparison.Ordinal) >= 0
-                    || baseTypeName.IndexOf("ITargetedMessage", StringComparison.Ordinal) >= 0
-                    || baseTypeName.IndexOf("IBroadcastMessage", StringComparison.Ordinal) >= 0
+                    0 <= baseTypeName.IndexOf("IUntargetedMessage", StringComparison.Ordinal)
+                    || 0 <= baseTypeName.IndexOf("ITargetedMessage", StringComparison.Ordinal)
+                    || 0 <= baseTypeName.IndexOf("IBroadcastMessage", StringComparison.Ordinal)
                 )
                 {
                     return true;
@@ -467,7 +469,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     List<INamedTypeSymbol> nonPartial = GetNonPartialContainers(
                         messageInfo.TypeSymbol
                     );
-                    if (nonPartial.Count > 0)
+                    if (0 < nonPartial.Count)
                     {
                         string containersList = string.Join(
                             ", ",
@@ -592,7 +594,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 };
 
                 string containerTypeParams =
-                    container.TypeParameters.Length > 0
+                    0 < container.TypeParameters.Length
                         ? "<"
                             + string.Join(", ", container.TypeParameters.Select(static p => p.Name))
                             + ">"
@@ -610,7 +612,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             // Use unqualified nested identifier for declaration (containers already opened)
             string typeGenericParams =
-                typeSymbol.TypeParameters.Length > 0
+                0 < typeSymbol.TypeParameters.Length
                     ? "<"
                         + string.Join(", ", typeSymbol.TypeParameters.Select(static p => p.Name))
                         + ">"
@@ -1125,7 +1127,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 current = current.ContainingType
             )
             {
-                if (current.TypeParameters.Length > 0)
+                if (0 < current.TypeParameters.Length)
                 {
                     return true;
                 }
@@ -1139,7 +1141,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             var builder = new StringBuilder(value.Length);
             foreach (char c in value)
             {
-                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                if (('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z') || ('0' <= c && c <= '9'))
                 {
                     builder.Append(c);
                 }
@@ -1159,7 +1161,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 if (syntaxReference.GetSyntax() is TypeDeclarationSyntax declaration)
                 {
                     string kind = declaration.Kind().ToString();
-                    if (kind.IndexOf("Record", StringComparison.Ordinal) >= 0)
+                    if (0 <= kind.IndexOf("Record", StringComparison.Ordinal))
                     {
                         return true;
                     }

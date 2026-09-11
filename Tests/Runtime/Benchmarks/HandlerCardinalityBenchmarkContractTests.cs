@@ -103,7 +103,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
             Assert.AreEqual(cardinality, storage.HandlerEntries);
-            Assert.AreEqual(cardinality > 2, expectedSpill);
+            Assert.AreEqual(2 < cardinality, expectedSpill);
             if (UsesRegistrationSlotArena)
             {
                 Assert.AreEqual(expectedSpill, storage.HandlerUsesSpillStorage);

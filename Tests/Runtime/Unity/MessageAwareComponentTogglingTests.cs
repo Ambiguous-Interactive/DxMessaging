@@ -47,9 +47,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while enabled.");
 
-            // emitMessagesWhenDisabled only keeps the SHARED MessageHandler active when the
-            // MessagingComponent itself is disabled. A disabled MessageAwareComponent still
-            // disables its own registration token, so it stops receiving despite the flag.
+            /*
+                emitMessagesWhenDisabled only keeps the SHARED MessageHandler active when the
+                MessagingComponent itself is disabled. A disabled MessageAwareComponent still
+                disables its own registration token, so it stops receiving despite the flag.
+            */
             listener.enabled = false;
             message.EmitUntargeted();
             Assert.AreEqual(
@@ -227,10 +229,12 @@ namespace DxMessaging.Tests.Runtime.Unity
                     "Positive control: listener should receive while active."
                 );
 
-                // The manual listener does not tie its token to the Unity lifecycle, so the only
-                // gate that whole-GameObject deactivation flips is the shared handler's active
-                // flag - which emitMessagesWhenDisabled keeps alive. This pins the documented
-                // purpose of the flag: keep emitting while the GameObject is disabled.
+                /*
+                    The manual listener does not tie its token to the Unity lifecycle, so the only
+                    gate that whole-GameObject deactivation flips is the shared handler's active
+                    flag - which emitMessagesWhenDisabled keeps alive. This pins the documented
+                    purpose of the flag: keep emitting while the GameObject is disabled.
+                */
                 host.SetActive(false);
                 message.EmitUntargeted();
                 Assert.AreEqual(

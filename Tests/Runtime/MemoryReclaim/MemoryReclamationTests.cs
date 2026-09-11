@@ -412,9 +412,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 {
                     calls++;
                     token.RemoveRegistration(handle);
-                    // This trim runs INSIDE active dispatch and must short-circuit the dirty
-                    // target eviction (HasActiveDispatchSnapshot guard). Capture the eviction
-                    // count to assert the in-dispatch contract directly.
+                    /*
+                        This trim runs INSIDE active dispatch and must short-circuit the dirty
+                        target eviction (HasActiveDispatchSnapshot guard). Capture the eviction
+                        count to assert the in-dispatch contract directly.
+                    */
                     IMessageBus.TrimResult inDispatch = bus.Trim(force: false);
                     inDispatchTargetEvictions = inDispatch.TargetSlotsEvicted;
                 }
@@ -435,11 +437,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 scenario.Kind
             );
 
-            // Advance the bus tick so the dirty target candidate ages past the idle threshold
-            // (idleEvictionTicks=0 still requires _tickCounter strictly greater than the slot's
-            // lastTouchTicks). Without this probe the post-dispatch trim observes 0 elapsed
-            // ticks since deregister and skips eviction. EmitSweepProbe is the canonical pattern
-            // shared with TrimAfterDeregisterReclaimsHandlerCache and BusContextDictReturnsToPool.
+            /*
+                Advance the bus tick so the dirty target candidate ages past the idle threshold
+                (idleEvictionTicks=0 still requires _tickCounter strictly greater than the slot's
+                lastTouchTicks). Without this probe the post-dispatch trim observes 0 elapsed
+                ticks since deregister and skips eviction. EmitSweepProbe is the canonical pattern
+                shared with TrimAfterDeregisterReclaimsHandlerCache and BusContextDictReturnsToPool.
+            */
             EmitSweepProbe(bus);
             IMessageBus.TrimResult afterDispatch = bus.Trim(force: false);
 
@@ -1014,12 +1018,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             [ValueSource(nameof(ContextDictPoolScenarios))] MessageScenario scenario
         )
         {
-            // Pin the AppDomain-scoped ContextHandlerByTargetDicts pool's MaxRetained to a
-            // known >0 value for the duration of this test. A sibling test that drops it to
-            // 0 (e.g. RuntimeSettingsHotReloadAppliesCaps) and runs first under a randomized
-            // execution order would otherwise make the trim's Return path drop the dict on
-            // the floor instead of caching it, breaking the assertion below. Mirrors the
-            // pattern in TrimAfterDeregisterReclaimsHandlerCache.
+            /*
+                Pin the AppDomain-scoped ContextHandlerByTargetDicts pool's MaxRetained to a
+                known >0 value for the duration of this test. A sibling test that drops it to
+                0 (e.g. RuntimeSettingsHotReloadAppliesCaps) and runs first under a randomized
+                execution order would otherwise make the trim's Return path drop the dict on
+                the floor instead of caching it, breaking the assertion below. Mirrors the
+                pattern in TrimAfterDeregisterReclaimsHandlerCache.
+            */
             DxMessagingRuntimeSettings settings = null;
             IDisposable overrideToken = null;
             Action firstDeregister = null;
@@ -1038,11 +1044,13 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 using IDisposable cleanup = ForceTrimCleanup(bus);
                 MessageHandler handler = CreateActiveHandler(bus);
 
-                // The bus's context-dict pool is AppDomain-scoped (shared across all MessageBus
-                // instances). Capture the baseline AFTER the registration's rent so the delta
-                // cleanly measures the trim's contribution alone, regardless of whatever entries
-                // prior fixtures left in the pool. (Capturing before the rent would produce a
-                // net-zero delta: the rent decrements Cached, the trim's return increments it back.)
+                /*
+                    The bus's context-dict pool is AppDomain-scoped (shared across all MessageBus
+                    instances). Capture the baseline AFTER the registration's rent so the delta
+                    cleanly measures the trim's contribution alone, regardless of whatever entries
+                    prior fixtures left in the pool. (Capturing before the rent would produce a
+                    net-zero delta: the rent decrements Cached, the trim's return increments it back.)
+                */
                 firstDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
                 CollectionPoolDiagnostics afterFirstRent =
                     bus.GetContextDictPoolDiagnosticsForTesting();
@@ -2013,7 +2021,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 );
 
                 Assert.IsTrue(
-                    CountHandlerTypeCacheEntries(handler, bus) >= 3,
+                    3 <= CountHandlerTypeCacheEntries(handler, bus),
                     "[{0}] typed-handler wrappers must exist while registrations are live.",
                     scenario.Kind
                 );
@@ -2026,7 +2034,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 deregisterThird = null;
 
                 Assert.IsTrue(
-                    CountHandlerTypeCacheEntries(handler, bus) >= 3,
+                    3 <= CountHandlerTypeCacheEntries(handler, bus),
                     "[{0}] empty typed-handler wrappers must remain until trim.",
                     scenario.Kind
                 );

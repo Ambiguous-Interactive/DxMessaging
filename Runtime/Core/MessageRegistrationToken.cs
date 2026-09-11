@@ -58,29 +58,31 @@ namespace DxMessaging.Core
 
         private readonly MessageHandler _messageHandler;
 
-        // Maps each staged registration handle to the unified per-handle Registration
-        // object the public Register* methods built. Calling Registration.Register()
-        // (re)registers the handler on the bus and returns the matching
-        // HandlerDeregistration. The Registration object IS the collapsed staging
-        // state: it replaces (a) the per-registration staging Func display class, (b)
-        // the staging Func delegate itself, and (c) the nested AugmentedHandler
-        // local-function delegate -- the captured target/source, user handler,
-        // priority, and kind are now plain fields, and the diagnostics-augmented
-        // invoker is an instance method bound to the object (the FastHandler<T> handed
-        // to MessageHandler is (FastHandler<T>)registration.AugmentedHandlerScalar).
-        // The registration also owns its common teardown state, eliminating the separate
-        // HandlerDeregistration object; an allocation-backed wrapper is created only for
-        // overlapping retry/recovery state. Net ~ -3 managed allocations per registration.
-        // The central replay loop pairs
-        // the Registration with its handle and performs the AddDeregistration. The
-        // re-entrancy snapshot semantics are unchanged: the replay queue captures the
-        // Registration reference (exactly as it previously captured the staging Func),
-        // so a registration removed mid-replay is still replayed if it was already
-        // snapshotted.
-        // Token-owned arena. A handle identifies a slot and the globally unique id that
-        // occupied it. Both are validated, so stale handles remain harmless after slot reuse.
-        // The doubly-linked live list preserves registration order while the singly-linked
-        // free list makes insertion and removal O(1).
+        /*
+            Maps each staged registration handle to the unified per-handle Registration
+            object the public Register* methods built. Calling Registration.Register()
+            (re)registers the handler on the bus and returns the matching
+            HandlerDeregistration. The Registration object IS the collapsed staging
+            state: it replaces (a) the per-registration staging Func display class, (b)
+            the staging Func delegate itself, and (c) the nested AugmentedHandler
+            local-function delegate -- the captured target/source, user handler,
+            priority, and kind are now plain fields, and the diagnostics-augmented
+            invoker is an instance method bound to the object (the FastHandler<T> handed
+            to MessageHandler is (FastHandler<T>)registration.AugmentedHandlerScalar).
+            The registration also owns its common teardown state, eliminating the separate
+            HandlerDeregistration object; an allocation-backed wrapper is created only for
+            overlapping retry/recovery state. Net ~ -3 managed allocations per registration.
+            The central replay loop pairs
+            the Registration with its handle and performs the AddDeregistration. The
+            re-entrancy snapshot semantics are unchanged: the replay queue captures the
+            Registration reference (exactly as it previously captured the staging Func),
+            so a registration removed mid-replay is still replayed if it was already
+            snapshotted.
+            Token-owned arena. A handle identifies a slot and the globally unique id that
+            occupied it. Both are validated, so stale handles remain harmless after slot reuse.
+            The doubly-linked live list preserves registration order while the singly-linked
+            free list makes insertion and removal O(1).
+        */
         private RegistrationSlot[] _slots = Array.Empty<RegistrationSlot>();
         private int _registrationHead = -1;
         private int _registrationTail = -1;
@@ -88,8 +90,10 @@ namespace DxMessaging.Core
         private int _registrationCount;
         private int _deregistrationCount;
 
-        // Lifecycle snapshots are exceptional-path storage and materialize only when a replay,
-        // teardown, or retarget actually needs them.
+        /*
+            Lifecycle snapshots are exceptional-path storage and materialize only when a replay,
+            teardown, or retarget actually needs them.
+        */
         private List<StagedRegistration> _registrationReplayQueue;
         private List<TeardownIdentity> _teardownQueue;
         private Dictionary<MessageRegistrationHandle, int> _rollbackCounts;
@@ -98,20 +102,22 @@ namespace DxMessaging.Core
 
         internal RegistrationMetadataView _metadata => new RegistrationMetadataView(this);
 
-        // Diagnostics-only collections, allocated lazily on first use. A token whose
-        // owner never enables diagnostics (the default -- GlobalDiagnosticsTargets is
-        // Off -- and the common player case) never materializes them, saving the
-        // dictionary, the cyclic buffer, and the buffer's two backing lists per token.
-        // These are exposed as properties under their original field names so the
-        // inspector overlay and the diagnostics tests (which read token._callCounts /
-        // token._emissionBuffer) compile and behave unchanged; the getter caches into
-        // the backing field, so repeated reads return the same instance and an editor
-        // read simply materializes an empty collection. The only production writers are
-        // the dispatch-time AugmentedHandler bodies, all guarded by _diagnosticMode, so
-        // production-with-diagnostics-off never triggers the allocation. Teardown
-        // (ClearDiagnosticState / RemoveRegistrationState /
-        // PruneRegistrationStateToFailedDeregistrations) clears through the backing
-        // fields to avoid materializing a collection just to empty it.
+        /*
+            Diagnostics-only collections, allocated lazily on first use. A token whose
+            owner never enables diagnostics (the default -- GlobalDiagnosticsTargets is
+            Off -- and the common player case) never materializes them, saving the
+            dictionary, the cyclic buffer, and the buffer's two backing lists per token.
+            These are exposed as properties under their original field names so the
+            inspector overlay and the diagnostics tests (which read token._callCounts /
+            token._emissionBuffer) compile and behave unchanged; the getter caches into
+            the backing field, so repeated reads return the same instance and an editor
+            read simply materializes an empty collection. The only production writers are
+            the dispatch-time AugmentedHandler bodies, all guarded by _diagnosticMode, so
+            production-with-diagnostics-off never triggers the allocation. Teardown
+            (ClearDiagnosticState / RemoveRegistrationState /
+            PruneRegistrationStateToFailedDeregistrations) clears through the backing
+            fields to avoid materializing a collection just to empty it.
+        */
         private Dictionary<MessageRegistrationHandle, int> _callCountsBacking;
         private CyclicBuffer<MessageEmissionData> _emissionBufferBacking;
 
@@ -1307,10 +1313,12 @@ namespace DxMessaging.Core
         /// <returns>A handle that allows for registration and de-registration.</returns>
         private MessageRegistrationHandle InternalRegister(Registration registration)
         {
-            // Enabled registrations are caller-visible immediately. Validate before
-            // allocating a token slot so a rejected call cannot leave inaccessible
-            // metadata behind. Disabled tokens deliberately retain lazy validation:
-            // staged registrations are validated when Enable() replays them.
+            /*
+                Enabled registrations are caller-visible immediately. Validate before
+                allocating a token slot so a rejected call cannot leave inaccessible
+                metadata behind. Disabled tokens deliberately retain lazy validation:
+                staged registrations are validated when Enable() replays them.
+            */
             if (_enabled)
             {
                 registration.Validate();
@@ -1326,7 +1334,7 @@ namespace DxMessaging.Core
             slot.Previous = _registrationTail;
             slot.Next = -1;
             slot.NextFree = -1;
-            if (_registrationTail >= 0)
+            if (0 <= _registrationTail)
             {
                 _slots[_registrationTail].Next = slotIndex;
             }
@@ -1336,11 +1344,13 @@ namespace DxMessaging.Core
             }
             _registrationTail = slotIndex;
             ++_registrationCount;
-            // Generally, registrations should take place before all calls to enable.
-            // Just in case, though, register immediately if already enabled. We do not
-            // register at staging time when disabled (the owner might not be awake), so
-            // the Registration object is retained in _registrations to lazily
-            // (re)register on Enable().
+            /*
+                Generally, registrations should take place before all calls to enable.
+                Just in case, though, register immediately if already enabled. We do not
+                register at staging time when disabled (the owner might not be awake), so
+                the Registration object is retained in _registrations to lazily
+                (re)register on Enable().
+            */
             if (_enabled)
             {
                 MessageHandler.HandlerDeregistration actualDeregistration =
@@ -1370,15 +1380,17 @@ namespace DxMessaging.Core
                 return;
             }
 
-            if (_registrationCount > 0)
+            if (0 < _registrationCount)
             {
-                // Replay staged registrations in original registration order
-                // (via _registrationOrder) rather than in
-                // _registrations.Values enumeration order, which permutes
-                // after Remove/Add churn. This preserves the documented
-                // equal-priority "registration order" dispatch contract across
-                // Disable()/Enable() cycles. Snapshot into _registrationReplayQueue first
-                // so replay tolerates re-entrant registration mutation.
+                /*
+                    Replay staged registrations in original registration order
+                    (via _registrationOrder) rather than in
+                    _registrations.Values enumeration order, which permutes
+                    after Remove/Add churn. This preserves the documented
+                    equal-priority "registration order" dispatch contract across
+                    Disable()/Enable() cycles. Snapshot into _registrationReplayQueue first
+                    so replay tolerates re-entrant registration mutation.
+                */
                 QueueRegistrationsInOrder();
                 InvokeRegistrationQueueWithRollback();
             }
@@ -1405,7 +1417,7 @@ namespace DxMessaging.Core
             }
 
             Exception deregistrationException = InvokeDeregistrationQueue();
-            _enabled = _deregistrationCount > 0;
+            _enabled = 0 < _deregistrationCount;
             if (deregistrationException != null)
             {
                 ExceptionDispatchInfo.Capture(deregistrationException).Throw();
@@ -1433,7 +1445,7 @@ namespace DxMessaging.Core
                 return;
             }
 
-            _enabled = _deregistrationCount > 0;
+            _enabled = 0 < _deregistrationCount;
             PruneRegistrationStateToFailedDeregistrations();
             ExceptionDispatchInfo.Capture(deregistrationException).Throw();
         }
@@ -1446,8 +1458,10 @@ namespace DxMessaging.Core
         public void RetargetMessageBus(IMessageBus messageBus, MessageBusRebindMode rebindMode)
         {
             MessageBusRebindMode effectiveMode =
-                // Zero is the legacy Unknown value. Compare the default without naming the
-                // obsolete compatibility member so strict consumers do not inherit CS0618.
+                /*
+                    Zero is the legacy Unknown value. Compare the default without naming the
+                    obsolete compatibility member so strict consumers do not inherit CS0618.
+                */
                 rebindMode == default
                     ? MessageBusRebindMode.RebindActive
                     : rebindMode;
@@ -1456,7 +1470,7 @@ namespace DxMessaging.Core
             bool rebindActiveRegistrations =
                 effectiveMode == MessageBusRebindMode.RebindActive
                 && _enabled
-                && _deregistrationCount > 0;
+                && 0 < _deregistrationCount;
             if (sameBus && !rebindActiveRegistrations)
             {
                 return;
@@ -1480,7 +1494,7 @@ namespace DxMessaging.Core
                         previousMessageBus,
                         activeRetargetHandles
                     );
-                    _enabled = _deregistrationCount > 0;
+                    _enabled = 0 < _deregistrationCount;
                     ExceptionDispatchInfo.Capture(deregistrationException).Throw();
                 }
 
@@ -1489,10 +1503,12 @@ namespace DxMessaging.Core
 
             _messageBus = messageBus;
 
-            if (rebindActiveRegistrations && _registrationCount > 0)
+            if (rebindActiveRegistrations && 0 < _registrationCount)
             {
-                // Mirror Enable(): rebind in original registration order so the
-                // equal-priority dispatch order survives a bus retarget.
+                /*
+                    Mirror Enable(): rebind in original registration order so the
+                    equal-priority dispatch order survives a bus retarget.
+                */
                 QueueRegistrationsInOrder();
                 try
                 {
@@ -1516,10 +1532,12 @@ namespace DxMessaging.Core
         {
             if (!TryGetSlot(slotIndex, id, out RegistrationSlot slot))
             {
-                // The staged registration was removed or its slot was reused while its replay
-                // snapshot was executing. Preserve the returned teardown under the original
-                // identity: consuming it here would lose a throwing teardown instead of keeping it
-                // retryable, while attaching it to the slot would target the new occupant.
+                /*
+                    The staged registration was removed or its slot was reused while its replay
+                    snapshot was executing. Preserve the returned teardown under the original
+                    identity: consuming it here would lose a throwing teardown instead of keeping it
+                    retryable, while attaching it to the slot would target the new occupant.
+                */
                 AddOrphanDeregistration(
                     MessageRegistrationHandle.FromIdentity(id, slotIndex),
                     deregistration
@@ -1541,9 +1559,11 @@ namespace DxMessaging.Core
                 return;
             }
 
-            // A second de-registration accumulated on this handle: promote the inline object to a
-            // PendingDeregistration holder that preserves the ordering / partial-failure / rollback
-            // semantics for the multi-de-registration (retarget-recovery replay) case.
+            /*
+                A second de-registration accumulated on this handle: promote the inline object to a
+                PendingDeregistration holder that preserves the ordering / partial-failure / rollback
+                semantics for the multi-de-registration (retarget-recovery replay) case.
+            */
             PendingDeregistration promoted = new();
             promoted.Add((MessageHandler.HandlerDeregistration)existing);
             promoted.Add(deregistration);
@@ -1580,11 +1600,13 @@ namespace DxMessaging.Core
         private static int DeregistrationCount(object value) =>
             value is PendingDeregistration pending ? pending.Count : 1;
 
-        // Invokes the de-registration tail [startIndex..) for a _deregistrations value. For the
-        // inline object (logical Count 1, index 0): on success it is consumed (shouldRemove = true);
-        // on throw it is KEPT (retryable, shouldRemove = false); a rollback pass (startIndex &gt; 0)
-        // leaves the baseline entry untouched. For a holder it delegates to InvokeFrom, mutating the
-        // holder in place. Mirrors the prior PendingDeregistration-only semantics exactly.
+        /*
+            Invokes the de-registration tail [startIndex..) for a _deregistrations value. For the
+            inline object (logical Count 1, index 0): on success it is consumed (shouldRemove = true);
+            on throw it is KEPT (retryable, shouldRemove = false); a rollback pass (startIndex &gt; 0)
+            leaves the baseline entry untouched. For a holder it delegates to InvokeFrom, mutating the
+            holder in place. Mirrors the prior PendingDeregistration-only semantics exactly.
+        */
         private static Exception InvokeDeregistration(
             object value,
             int startIndex,
@@ -1598,10 +1620,12 @@ namespace DxMessaging.Core
                 return holderException;
             }
 
-            if (startIndex > 0)
+            if (0 < startIndex)
             {
-                // Rollback baseline pass: the inline head (logical index 0) is below the requested
-                // tail, so leave it untouched.
+                /*
+                    Rollback baseline pass: the inline head (logical index 0) is below the requested
+                    tail, so leave it untouched.
+                */
                 shouldRemove = false;
                 return null;
             }
@@ -1627,7 +1651,7 @@ namespace DxMessaging.Core
             snapshot.Clear();
             for (
                 int slotIndex = _registrationHead;
-                slotIndex >= 0;
+                0 <= slotIndex;
                 slotIndex = _slots[slotIndex].Next
             )
             {
@@ -1686,7 +1710,7 @@ namespace DxMessaging.Core
             _messageBus = previousMessageBus;
             if (_registrationCount == 0)
             {
-                _enabled = _deregistrationCount > 0;
+                _enabled = 0 < _deregistrationCount;
                 return;
             }
 
@@ -1698,7 +1722,7 @@ namespace DxMessaging.Core
             }
             catch (Exception restoreException)
             {
-                _enabled = _deregistrationCount > 0;
+                _enabled = 0 < _deregistrationCount;
                 if (MessagingDebug.enabled)
                 {
                     MessagingDebug.Log(
@@ -1716,7 +1740,7 @@ namespace DxMessaging.Core
             queue.Clear();
             for (
                 int slotIndex = _registrationHead;
-                slotIndex >= 0;
+                0 <= slotIndex;
                 slotIndex = _slots[slotIndex].Next
             )
             {
@@ -1733,7 +1757,7 @@ namespace DxMessaging.Core
             queue.Clear();
             for (
                 int slotIndex = _registrationHead;
-                slotIndex >= 0;
+                0 <= slotIndex;
                 slotIndex = _slots[slotIndex].Next
             )
             {
@@ -1754,7 +1778,7 @@ namespace DxMessaging.Core
             queue.Clear();
             for (
                 int slotIndex = _registrationHead;
-                slotIndex >= 0;
+                0 <= slotIndex;
                 slotIndex = _slots[slotIndex].Next
             )
             {
@@ -1827,7 +1851,7 @@ namespace DxMessaging.Core
             teardownQueue.Clear();
             for (
                 int slotIndex = _registrationHead;
-                slotIndex >= 0;
+                0 <= slotIndex;
                 slotIndex = _slots[slotIndex].Next
             )
             {
@@ -1839,7 +1863,7 @@ namespace DxMessaging.Core
             }
 
             bool hasOrphanSnapshot =
-                _orphanDeregistrations != null && _orphanDeregistrations.Count > 0;
+                _orphanDeregistrations != null && 0 < _orphanDeregistrations.Count;
             if (hasOrphanSnapshot)
             {
                 foreach (MessageRegistrationHandle handle in _orphanDeregistrations.Keys)
@@ -1848,9 +1872,11 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Global handle ids are monotonic and therefore encode original registration order.
-            // Capture and sort BEFORE invoking anything: reentrant teardown additions are deferred
-            // to the next pass rather than joining this snapshot.
+            /*
+                Global handle ids are monotonic and therefore encode original registration order.
+                Capture and sort BEFORE invoking anything: reentrant teardown additions are deferred
+                to the next pass rather than joining this snapshot.
+            */
             if (hasOrphanSnapshot)
             {
                 teardownQueue.Sort(TeardownIdentityComparer.Instance);
@@ -1897,7 +1923,7 @@ namespace DxMessaging.Core
                             startIndex = baselineCount;
                         }
 
-                        if (startIndex >= DeregistrationCount(value))
+                        if (DeregistrationCount(value) <= startIndex)
                         {
                             continue;
                         }
@@ -1947,7 +1973,7 @@ namespace DxMessaging.Core
             catch (Exception exception)
             {
                 RollBackDeregistrationsAfterRegistrationFailure(rollbackBaseline);
-                _enabled = _deregistrationCount > 0;
+                _enabled = 0 < _deregistrationCount;
                 ExceptionDispatchInfo.Capture(exception).Throw();
                 throw;
             }
@@ -1975,8 +2001,10 @@ namespace DxMessaging.Core
 
         private void ClearDiagnosticState()
         {
-            // Clear through the backing fields so an inactive (never-materialized)
-            // diagnostics collection is not allocated merely to be emptied.
+            /*
+                Clear through the backing fields so an inactive (never-materialized)
+                diagnostics collection is not allocated merely to be emptied.
+            */
             _callCountsBacking?.Clear();
             _emissionBufferBacking?.Clear();
         }
@@ -1984,7 +2012,7 @@ namespace DxMessaging.Core
         private void PruneRegistrationStateToFailedDeregistrations()
         {
             int slotIndex = _registrationTail;
-            while (slotIndex >= 0)
+            while (0 <= slotIndex)
             {
                 int previous = _slots[slotIndex].Previous;
                 if (_slots[slotIndex].Deregistration == null)
@@ -2014,7 +2042,7 @@ namespace DxMessaging.Core
                 return false;
             }
 
-            if (slot.Previous >= 0)
+            if (0 <= slot.Previous)
             {
                 _slots[slot.Previous].Next = slot.Next;
             }
@@ -2023,7 +2051,7 @@ namespace DxMessaging.Core
                 _registrationHead = slot.Next;
             }
 
-            if (slot.Next >= 0)
+            if (0 <= slot.Next)
             {
                 _slots[slot.Next].Previous = slot.Previous;
             }
@@ -2089,9 +2117,11 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Drop the matching staged registration and metadata so a later
-            // Disable()/Enable() cycle does not silently re-register the
-            // handler we were just asked to remove.
+            /*
+                Drop the matching staged registration and metadata so a later
+                Disable()/Enable() cycle does not silently re-register the
+                handler we were just asked to remove.
+            */
             RemoveRegistrationState(handle);
         }
 
@@ -2125,7 +2155,7 @@ namespace DxMessaging.Core
                 int oldLength = _slots.Length;
                 int newLength = oldLength == 0 ? 4 : oldLength << 1;
                 Array.Resize(ref _slots, newLength);
-                for (int i = newLength - 1; i >= oldLength; --i)
+                for (int i = newLength - 1; oldLength <= i; --i)
                 {
                     _slots[i].Previous = -1;
                     _slots[i].Next = -1;
@@ -2156,11 +2186,11 @@ namespace DxMessaging.Core
 
         private void ClearRegistrationArena()
         {
-            if (_slots.Length > 0)
+            if (0 < _slots.Length)
             {
                 Array.Clear(_slots, 0, _slots.Length);
                 _freeSlotHead = -1;
-                for (int i = _slots.Length - 1; i >= 0; --i)
+                for (int i = _slots.Length - 1; 0 <= i; --i)
                 {
                     _slots[i].Previous = -1;
                     _slots[i].Next = -1;
@@ -2193,7 +2223,7 @@ namespace DxMessaging.Core
         {
             for (
                 int slotIndex = _registrationHead;
-                slotIndex >= 0;
+                0 <= slotIndex;
                 slotIndex = _slots[slotIndex].Next
             )
             {
@@ -2334,25 +2364,27 @@ namespace DxMessaging.Core
             }
         }
 
-        // Holds the live de-registration Actions for a single handle in the MULTI-de-registration
-        // case (2+). The common case is EXACTLY ONE de-registration per handle (the existing
-        // Registration object executes its embedded teardown state); that Registration is stored
-        // INLINE as the slot value, so the common path allocates no
-        // PendingDeregistration object at all (see AddDeregistration / InvokeDeregistration). This
-        // holder is allocated only when a rare second de-registration accumulates on the same
-        // handle -- a re-entrant retarget-recovery replay can stage one beyond the rollback
-        // baseline -- at which point the inline Registration is promoted into this holder's head
-        // and the second spills to a lazily-allocated overflow list. This stays a class (mutated in
-        // place through the _deregistrations dictionary), so reference semantics and every
-        // call site are unchanged; only the storage shape changed.
-        //
-        // Invariant: when Count > 0 the head lives in _hasHead/_head and is the LOGICAL
-        // FIRST entry; any further entries follow in _overflow in insertion order. Add
-        // appends to the logical tail; InvokeFrom invokes a contiguous logical tail
-        // [startIndex..Count), removing each success and KEEPING each failure (retryable),
-        // then promotes the first surviving overflow entry into the head slot if the head
-        // was consumed -- preserving the exact ordering, partial-failure, and
-        // rollback-baseline (startIndex) semantics the List<Action> form had.
+        /*
+            Holds the live de-registration Actions for a single handle in the MULTI-de-registration
+            case (2+). The common case is EXACTLY ONE de-registration per handle (the existing
+            Registration object executes its embedded teardown state); that Registration is stored
+            INLINE as the slot value, so the common path allocates no
+            PendingDeregistration object at all (see AddDeregistration / InvokeDeregistration). This
+            holder is allocated only when a rare second de-registration accumulates on the same
+            handle -- a re-entrant retarget-recovery replay can stage one beyond the rollback
+            baseline -- at which point the inline Registration is promoted into this holder's head
+            and the second spills to a lazily-allocated overflow list. This stays a class (mutated in
+            place through the _deregistrations dictionary), so reference semantics and every
+            call site are unchanged; only the storage shape changed.
+
+            Invariant: when Count > 0 the head lives in _hasHead/_head and is the LOGICAL
+            FIRST entry; any further entries follow in _overflow in insertion order. Add
+            appends to the logical tail; InvokeFrom invokes a contiguous logical tail
+            [startIndex..Count), removing each success and KEEPING each failure (retryable),
+            then promotes the first surviving overflow entry into the head slot if the head
+            was consumed -- preserving the exact ordering, partial-failure, and
+            rollback-baseline (startIndex) semantics the List<Action> form had.
+        */
         private sealed class PendingDeregistration
         {
             private MessageHandler.HandlerDeregistration _head;
@@ -2363,16 +2395,18 @@ namespace DxMessaging.Core
 
             internal void Add(MessageHandler.HandlerDeregistration action)
             {
-                // Fill the inline head ONLY when nothing is stored. The empty-overflow
-                // clause matters during the transient window inside InvokeFrom where the
-                // head has been consumed but overflow survivors remain (before they are
-                // promoted): a re-entrant Add then appends to the logical TAIL (overflow),
-                // exactly as the List form did, rather than jumping the new entry ahead of
-                // the survivors into the head slot. The overflow loop re-reads its Count,
-                // so such a tail-appended entry is still invoked in the same pass -- the
-                // List form's behavior preserved. (The stored Actions are pure bus
-                // de-registration callbacks, so this re-entrancy is not reachable through
-                // the public API today; the guard keeps the invariant honest regardless.)
+                /*
+                    Fill the inline head ONLY when nothing is stored. The empty-overflow
+                    clause matters during the transient window inside InvokeFrom where the
+                    head has been consumed but overflow survivors remain (before they are
+                    promoted): a re-entrant Add then appends to the logical TAIL (overflow),
+                    exactly as the List form did, rather than jumping the new entry ahead of
+                    the survivors into the head slot. The overflow loop re-reads its Count,
+                    so such a tail-appended entry is still invoked in the same pass -- the
+                    List form's behavior preserved. (The stored Actions are pure bus
+                    de-registration callbacks, so this re-entrancy is not reachable through
+                    the public API today; the guard keeps the invariant honest regardless.)
+                */
                 if (!_hasHead && (_overflow == null || _overflow.Count == 0))
                 {
                     _head = action;
@@ -2392,9 +2426,11 @@ namespace DxMessaging.Core
 
                 Exception firstException = null;
 
-                // Logical index 0 is the inline head; logical indices 1.. are _overflow.
-                // Invoke the head only when it is within the requested tail (a rollback
-                // pass with startIndex > 0 must leave the baseline head untouched).
+                /*
+                    Logical index 0 is the inline head; logical indices 1.. are _overflow.
+                    Invoke the head only when it is within the requested tail (a rollback
+                    pass with startIndex > 0 must leave the baseline head untouched).
+                */
                 if (_hasHead && startIndex <= 0)
                 {
                     try
@@ -2405,16 +2441,20 @@ namespace DxMessaging.Core
                     }
                     catch (Exception exception)
                     {
-                        // Keep the failed head (retryable), exactly as the List form did
-                        // by advancing past a throwing entry instead of removing it.
+                        /*
+                            Keep the failed head (retryable), exactly as the List form did
+                            by advancing past a throwing entry instead of removing it.
+                        */
                         firstException ??= exception;
                     }
                 }
 
                 if (_overflow is { Count: > 0 })
                 {
-                    // Overflow entry j has logical index 1 + j; invoke those at or past
-                    // startIndex. Remove successes, keep failures (retryable).
+                    /*
+                        Overflow entry j has logical index 1 + j; invoke those at or past
+                        startIndex. Remove successes, keep failures (retryable).
+                    */
                     int overflowStart = startIndex <= 1 ? 0 : startIndex - 1;
                     for (int j = overflowStart; j < _overflow.Count; )
                     {
@@ -2431,9 +2471,11 @@ namespace DxMessaging.Core
                     }
                 }
 
-                // If the head was consumed but overflow survivors remain, promote the
-                // first survivor into the head slot so the head is always the logical
-                // first entry (keeping Count and future Adds consistent).
+                /*
+                    If the head was consumed but overflow survivors remain, promote the
+                    first survivor into the head slot so the head is always the logical
+                    first entry (keeping Count and future Adds consistent).
+                */
                 if (!_hasHead && _overflow is { Count: > 0 })
                 {
                     _head = _overflow[0];
@@ -2445,15 +2487,17 @@ namespace DxMessaging.Core
             }
         }
 
-        // Discriminates the per-handle Registration object's behaviour. Each value
-        // pins (a) which MessageHandler.Register* method the kind-switch in
-        // Registration.Register() calls and (b) which augmented-invoker body shape
-        // (user-delegate type + by-value vs by-ref call) the bound FastHandler/
-        // FastHandlerWithContext delegate runs. The values map 1:1 onto the former
-        // per-method staging lambdas; the *Action / *Fast suffix mirrors the two
-        // public overloads (Action<T>/Action<InstanceId,T> vs FastHandler<T>/
-        // FastHandlerWithContext<T>) that previously had distinct AugmentedHandler
-        // local functions.
+        /*
+            Discriminates the per-handle Registration object's behaviour. Each value
+            pins (a) which MessageHandler.Register* method the kind-switch in
+            Registration.Register() calls and (b) which augmented-invoker body shape
+            (user-delegate type + by-value vs by-ref call) the bound FastHandler/
+            FastHandlerWithContext delegate runs. The values map 1:1 onto the former
+            per-method staging lambdas; the *Action / *Fast suffix mirrors the two
+            public overloads (Action<T>/Action<InstanceId,T> vs FastHandler<T>/
+            FastHandlerWithContext<T>) that previously had distinct AugmentedHandler
+            local functions.
+        */
         private enum RegistrationKind
         {
             TargetedHandlerAction,
@@ -2485,23 +2529,25 @@ namespace DxMessaging.Core
             GlobalAcceptAllFast,
         }
 
-        // The unified per-handle staging object. Replaces, per registration, the old
-        // staging Func<handle, HandlerDeregistration> display class + delegate AND the
-        // nested AugmentedHandler local-function delegate. The captured staging state
-        // (owning token, handle, user handler delegate, target/source InstanceId,
-        // priority, kind) lives in plain fields; the diagnostics-augmented invoker is
-        // an instance method bound to this object (so MessageHandler still receives a
-        // delegate on the hot path -- no virtual/interface call per dispatch).
-        //
-        // The base is non-generic so _registrations / the replay queue can hold every
-        // registration polymorphically. The constrained MessageHandler.Register*<T>
-        // calls each require T : ITargetedMessage / IUntargetedMessage /
-        // IBroadcastMessage, which a single Registration<T> (T : IMessage) cannot
-        // satisfy; the three concrete subclasses below carry the matching constraint
-        // and each run a kind-SWITCH over only the kinds in their family (per the
-        // user-accepted "unified object, accept the kind-switch" design -- NOT ~14
-        // subclasses). GlobalAcceptAllRegistration is non-generic (its sub-handlers
-        // are the fixed IMessage facades).
+        /*
+            The unified per-handle staging object. Replaces, per registration, the old
+            staging Func<handle, HandlerDeregistration> display class + delegate AND the
+            nested AugmentedHandler local-function delegate. The captured staging state
+            (owning token, handle, user handler delegate, target/source InstanceId,
+            priority, kind) lives in plain fields; the diagnostics-augmented invoker is
+            an instance method bound to this object (so MessageHandler still receives a
+            delegate on the hot path -- no virtual/interface call per dispatch).
+
+            The base is non-generic so _registrations / the replay queue can hold every
+            registration polymorphically. The constrained MessageHandler.Register*<T>
+            calls each require T : ITargetedMessage / IUntargetedMessage /
+            IBroadcastMessage, which a single Registration<T> (T : IMessage) cannot
+            satisfy; the three concrete subclasses below carry the matching constraint
+            and each run a kind-SWITCH over only the kinds in their family (per the
+            user-accepted "unified object, accept the kind-switch" design -- NOT ~14
+            subclasses). GlobalAcceptAllRegistration is non-generic (its sub-handlers
+            are the fixed IMessage facades).
+        */
         private abstract class Registration : MessageHandler.HandlerDeregistration
         {
             protected readonly MessageRegistrationToken Token;
@@ -2513,12 +2559,14 @@ namespace DxMessaging.Core
                 Token = token;
             }
 
-            // Kind-switch: (re)register on the bus and return the matching
-            // HandlerDeregistration, exactly as the former staging lambda did. Reads
-            // the token's CURRENT _messageBus (so Enable()/RetargetMessageBus replay
-            // binds to the active bus, unchanged from when _messageBus was captured by
-            // the staging closure at call time -- the staging closure also read the
-            // field, not a snapshot).
+            /*
+                Kind-switch: (re)register on the bus and return the matching
+                HandlerDeregistration, exactly as the former staging lambda did. Reads
+                the token's CURRENT _messageBus (so Enable()/RetargetMessageBus replay
+                binds to the active bus, unchanged from when _messageBus was captured by
+                the staging closure at call time -- the staging closure also read the
+                field, not a snapshot).
+            */
             public MessageHandler.HandlerDeregistration Register()
             {
                 Validate();
@@ -2527,9 +2575,11 @@ namespace DxMessaging.Core
 
             internal abstract MessageHandler.HandlerDeregistration RegisterValidated();
 
-            // Rejects invalid staged state without mutating the token or bus. Register()
-            // repeats this validation because disabled-token replay and retargeting do
-            // not pass through InternalRegister.
+            /*
+                Rejects invalid staged state without mutating the token or bus. Register()
+                repeats this validation because disabled-token replay and retargeting do
+                not pass through InternalRegister.
+            */
             public abstract void Validate();
 
             public abstract MessageRegistrationMetadata Metadata { get; }
@@ -2634,9 +2684,11 @@ namespace DxMessaging.Core
 
                 _typedDeregistration.Deregister();
 
-                // Clear only after successful teardown. If a custom bus throws, this
-                // registration remains the retryable inline action and any recovery
-                // registration spills into an independent compatibility wrapper.
+                /*
+                    Clear only after successful teardown. If a custom bus throws, this
+                    registration remains the retryable inline action and any recovery
+                    registration spills into an independent compatibility wrapper.
+                */
                 _hasInlineDeregistration = false;
             }
         }
@@ -2649,10 +2701,12 @@ namespace DxMessaging.Core
             private readonly object _userHandler;
             private readonly int _priority;
 
-            // Strongly-typed views of _userHandler, resolved ONCE at Register() time
-            // (cold) so the per-dispatch augmented invoker calls a typed field directly
-            // -- no per-dispatch castclass or kind-switch (which would add an O(handlers)
-            // cost on the hot dispatch path). Exactly one is set per registration kind.
+            /*
+                Strongly-typed views of _userHandler, resolved ONCE at Register() time
+                (cold) so the per-dispatch augmented invoker calls a typed field directly
+                -- no per-dispatch castclass or kind-switch (which would add an O(handlers)
+                cost on the hot dispatch path). Exactly one is set per registration kind.
+            */
             private Action<T> _scalarAction;
             private MessageHandler.FastHandler<T> _scalarFast;
             private Action<InstanceId, T> _contextAction;
@@ -2808,10 +2862,12 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            // Scalar invokers (targeted handler / post-processor). The user's handler is
-            // the identity/dedup key; this flat invoker runs for the default slot. Calls
-            // the typed field directly (no castclass) then records the (message, _context)
-            // emission, matching the former AugmentedHandler bodies exactly.
+            /*
+                Scalar invokers (targeted handler / post-processor). The user's handler is
+                the identity/dedup key; this flat invoker runs for the default slot. Calls
+                the typed field directly (no castclass) then records the (message, _context)
+                emission, matching the former AugmentedHandler bodies exactly.
+            */
             private void AugmentedScalarAction(in T message)
             {
                 _scalarAction(message);
@@ -2830,9 +2886,11 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Context invokers (without-targeting handler / post-processor). Emission data
-            // uses the dispatch-supplied target (the readonly parameter), not the stored _context
-            // (default for these kinds), matching the former bodies exactly.
+            /*
+                Context invokers (without-targeting handler / post-processor). Emission data
+                uses the dispatch-supplied target (the readonly parameter), not the stored _context
+                (default for these kinds), matching the former bodies exactly.
+            */
             private void AugmentedContextAction(in InstanceId target, in T message)
             {
                 _contextAction(target, message);
@@ -2859,9 +2917,11 @@ namespace DxMessaging.Core
             private readonly object _userHandler;
             private readonly int _priority;
 
-            // Typed views of _userHandler, resolved once at Register() time (cold) so the
-            // per-dispatch invoker calls a typed field directly -- no castclass/switch on
-            // the hot path. Exactly one is set per registration kind.
+            /*
+                Typed views of _userHandler, resolved once at Register() time (cold) so the
+                per-dispatch invoker calls a typed field directly -- no castclass/switch on
+                the hot path. Exactly one is set per registration kind.
+            */
             private Action<T> _scalarAction;
             private MessageHandler.FastHandler<T> _scalarFast;
 
@@ -2938,8 +2998,10 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            // Untargeted scalar invokers. No context: emission data carries the message
-            // only, matching the former AugmentedHandler bodies exactly.
+            /*
+                Untargeted scalar invokers. No context: emission data carries the message
+                only, matching the former AugmentedHandler bodies exactly.
+            */
             private void AugmentedScalarAction(in T message)
             {
                 _scalarAction(message);
@@ -2967,9 +3029,11 @@ namespace DxMessaging.Core
             private readonly object _userHandler;
             private readonly int _priority;
 
-            // Typed views of _userHandler, resolved once at Register() time (cold) so the
-            // per-dispatch invoker calls a typed field directly -- no castclass/switch on
-            // the hot path. Exactly one is set per registration kind.
+            /*
+                Typed views of _userHandler, resolved once at Register() time (cold) so the
+                per-dispatch invoker calls a typed field directly -- no castclass/switch on
+                the hot path. Exactly one is set per registration kind.
+            */
             private Action<T> _scalarAction;
             private MessageHandler.FastHandler<T> _scalarFast;
             private Action<InstanceId, T> _contextAction;
@@ -3117,8 +3181,10 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            // Broadcast scalar invokers. Emission data carries the stored source
-            // (_context), matching the former AugmentedHandler bodies exactly.
+            /*
+                Broadcast scalar invokers. Emission data carries the stored source
+                (_context), matching the former AugmentedHandler bodies exactly.
+            */
             private void AugmentedScalarAction(in T message)
             {
                 _scalarAction(message);
@@ -3137,9 +3203,11 @@ namespace DxMessaging.Core
                 }
             }
 
-            // Broadcast context invokers for the without-source kinds. Emission data uses
-            // the dispatch-supplied source (the readonly parameter), not the stored _context
-            // (default for these kinds), matching the former bodies exactly.
+            /*
+                Broadcast context invokers for the without-source kinds. Emission data uses
+                the dispatch-supplied source (the readonly parameter), not the stored _context
+                (default for these kinds), matching the former bodies exactly.
+            */
             private void AugmentedContextAction(in InstanceId source, in T message)
             {
                 _contextAction(source, message);
@@ -3318,19 +3386,23 @@ namespace DxMessaging.Core
             }
         }
 
-        // Global accept-all is non-generic: its three sub-handlers are the fixed
-        // IMessage facades. Stores the three user delegates (as object, since the two
-        // public overloads differ in delegate shape -- Action vs FastHandler/
-        // FastHandlerWithContext) and exposes six augmented sub-invokers (three per
-        // overload shape). The kind-switch picks the matching MessageHandler.
-        // RegisterGlobalAcceptAll overload and binds the three augmented invokers.
+        /*
+            Global accept-all is non-generic: its three sub-handlers are the fixed
+            IMessage facades. Stores the three user delegates (as object, since the two
+            public overloads differ in delegate shape -- Action vs FastHandler/
+            FastHandlerWithContext) and exposes six augmented sub-invokers (three per
+            overload shape). The kind-switch picks the matching MessageHandler.
+            RegisterGlobalAcceptAll overload and binds the three augmented invokers.
+        */
         private sealed class GlobalAcceptAllRegistration : Registration
         {
             private readonly RegistrationKind _kind;
 
-            // Typed sub-handlers (one shape-trio is set per kind). The per-dispatch
-            // invokers call these directly -- no castclass on the hot global-dispatch
-            // path (the heaviest fan-out, so the castclass cost there was the worst).
+            /*
+                Typed sub-handlers (one shape-trio is set per kind). The per-dispatch
+                invokers call these directly -- no castclass on the hot global-dispatch
+                path (the heaviest fan-out, so the castclass cost there was the worst).
+            */
             private readonly Action<IUntargetedMessage> _untargetedAction;
             private readonly Action<InstanceId, ITargetedMessage> _targetedAction;
             private readonly Action<InstanceId, IBroadcastMessage> _broadcastAction;
@@ -3551,8 +3623,10 @@ namespace DxMessaging.Core
             /// </summary>
             public void Dispose()
             {
-                // RemoveRegistration rejects a stale opaque handle even after its slot is reused.
-                // Keeping the wrapper stateless makes every copy follow that authoritative check.
+                /*
+                    RemoveRegistration rejects a stale opaque handle even after its slot is reused.
+                    Keeping the wrapper stateless makes every copy follow that authoritative check.
+                */
                 if (_token != null)
                 {
                     _token.RemoveRegistration(_handle);

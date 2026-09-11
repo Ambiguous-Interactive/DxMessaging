@@ -54,13 +54,15 @@ namespace DxMessaging.Core
 
                 MessageRegistrationBuilder.SetSyntheticOwnerCounter(Baseline.SyntheticOwnerCounter);
 
-                // Capture the active global bus before ResetStatics swaps it back to the default
-                // instance. If a user installed a custom global bus via SetGlobalMessageBus, we
-                // also bump that bus's reset generation so deregister closures captured against
-                // it (e.g. a deferred Object.Destroy that lands after Reset) silently no-op
-                // instead of logging spurious over-deregistration errors. We deliberately do NOT
-                // call ResetState() on the custom bus -- that would clear its sinks, which the
-                // user may have intentionally preserved.
+                /*
+                    Capture the active global bus before ResetStatics swaps it back to the default
+                    instance. If a user installed a custom global bus via SetGlobalMessageBus, we
+                    also bump that bus's reset generation so deregister closures captured against
+                    it (e.g. a deferred Object.Destroy that lands after Reset) silently no-op
+                    instead of logging spurious over-deregistration errors. We deliberately do NOT
+                    call ResetState() on the custom bus -- that would clear its sinks, which the
+                    user may have intentionally preserved.
+                */
                 IMessageBus activeBus = MessageHandler.MessageBus;
                 IMessageBus defaultBus = MessageHandler.InitialGlobalMessageBus;
 

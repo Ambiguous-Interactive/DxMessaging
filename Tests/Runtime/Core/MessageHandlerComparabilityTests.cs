@@ -119,11 +119,13 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void CompareToNullOrNonHandlerReturnsMinusOne()
         {
-            // Pinned, documented behavior: CompareTo returns -1 for null and for
-            // non-handler objects. Note this inverts the usual IComparable
-            // convention (where any instance compares GREATER than null); the XML
-            // docs on MessageHandler.CompareTo state -1 explicitly, so the
-            // implementation matches its documentation.
+            /*
+                Pinned, documented behavior: CompareTo returns -1 for null and for
+                non-handler objects. Note this inverts the usual IComparable
+                convention (where any instance compares GREATER than null); the XML
+                docs on MessageHandler.CompareTo state -1 explicitly, so the
+                implementation matches its documentation.
+            */
             MessageHandler handler = new(new InstanceId(7));
 
             Assert.AreEqual(

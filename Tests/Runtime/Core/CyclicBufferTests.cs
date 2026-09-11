@@ -84,7 +84,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             // Verify the most recent items are retained (if any)
-            if (expectedCount > 0)
+            if (0 < expectedCount)
             {
                 int expectedNewest = itemsToAdd - 1;
                 Assert.AreEqual(

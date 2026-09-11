@@ -471,8 +471,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // Direct public API call; the component and the listener stay enabled throughout,
-            // proving the toggle gates delivery independently of Unity's enabled state.
+            /*
+                Direct public API call; the component and the listener stay enabled throughout,
+                proving the toggle gates delivery independently of Unity's enabled state.
+            */
             messaging.ToggleMessageHandler(false);
             Assert.IsTrue(messaging.enabled, "Toggling the handler must not touch enabled state.");
 
@@ -508,9 +510,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // emitMessagesWhenDisabled only opts the Unity enable/disable lifecycle out of
-            // touching the handler. An EXPLICIT ToggleMessageHandler(false) call is a direct
-            // user decision and must always win, flag or no flag.
+            /*
+                emitMessagesWhenDisabled only opts the Unity enable/disable lifecycle out of
+                touching the handler. An EXPLICIT ToggleMessageHandler(false) call is a direct
+                user decision and must always win, flag or no flag.
+            */
             messaging.ToggleMessageHandler(false);
             message.EmitUntargeted();
             Assert.AreEqual(
@@ -549,10 +553,12 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Explicit deactivation must suspend delivery.");
 
-            // While emitMessagesWhenDisabled is true the Unity lifecycle must leave the handler
-            // alone in BOTH directions: OnDisable must not deactivate it, and OnEnable must not
-            // reactivate it behind the user's back. The explicit choice above survives a full
-            // enabled=false/true cycle.
+            /*
+                While emitMessagesWhenDisabled is true the Unity lifecycle must leave the handler
+                alone in BOTH directions: OnDisable must not deactivate it, and OnEnable must not
+                reactivate it behind the user's back. The explicit choice above survives a full
+                enabled=false/true cycle.
+            */
             messaging.enabled = false;
             message.EmitUntargeted();
             Assert.AreEqual(
@@ -598,9 +604,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // Suspend with the flag clear, then set the flag while suspended. Explicit
-            // toggle calls are never gated by emitMessagesWhenDisabled in either
-            // direction, so reactivation works with the flag set.
+            /*
+                Suspend with the flag clear, then set the flag while suspended. Explicit
+                toggle calls are never gated by emitMessagesWhenDisabled in either
+                direction, so reactivation works with the flag set.
+            */
             messaging.ToggleMessageHandler(false);
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Handler should be suspended while the flag is false.");
@@ -631,11 +639,13 @@ namespace DxMessaging.Tests.Runtime.Unity
             int count = 0;
             listener.untargetedHandler = () => ++count;
 
-            // Pins the documented edge of the lifecycle-skip model: with the flag
-            // clear, disabling deactivates the handler via the lifecycle. Setting
-            // emitMessagesWhenDisabled WHILE suspended then re-enabling does NOT
-            // reactivate (the lifecycle no longer touches the handler once the flag
-            // is set); an explicit ToggleMessageHandler(true) is the way to resume.
+            /*
+                Pins the documented edge of the lifecycle-skip model: with the flag
+                clear, disabling deactivates the handler via the lifecycle. Setting
+                emitMessagesWhenDisabled WHILE suspended then re-enabling does NOT
+                reactivate (the lifecycle no longer touches the handler once the flag
+                is set); an explicit ToggleMessageHandler(true) is the way to resume.
+            */
             messaging.enabled = false;
             messaging.emitMessagesWhenDisabled = true;
             messaging.enabled = true;
@@ -664,8 +674,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             MessagingComponent messaging = host.AddComponent<MessagingComponent>();
             ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
 
-            // Awake has not run on the inactive host, so no MessageHandler exists yet. Both
-            // toggle directions must be safe no-ops on the public API.
+            /*
+                Awake has not run on the inactive host, so no MessageHandler exists yet. Both
+                toggle directions must be safe no-ops on the public API.
+            */
             Assert.DoesNotThrow(() => messaging.ToggleMessageHandler(false));
             Assert.DoesNotThrow(() => messaging.ToggleMessageHandler(true));
 
@@ -982,8 +994,10 @@ namespace DxMessaging.Tests.Runtime.Unity
                 );
             }
 
-            // No corruption: the same listener can request a fresh, fully functional token
-            // after the double release, and the old token stays dead.
+            /*
+                No corruption: the same listener can request a fresh, fully functional token
+                after the double release, and the old token stays dead.
+            */
             MessageRegistrationToken recreated = messaging.Create(listener);
             Assert.IsNotNull(recreated, "Create after release should produce a token.");
 
