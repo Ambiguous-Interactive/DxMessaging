@@ -244,7 +244,9 @@ namespace DxMessaging.Tests.Runtime
             catch (Exception error)
             {
                 // Exceptions are observable output, not ignored failures; later operations still run.
+#pragma warning disable EPC12 // The deterministic trace intentionally records the exception type and message.
                 exception = error.GetType().FullName + ": " + error.Message;
+#pragma warning restore EPC12
             }
             string enabled = string.Empty;
             foreach (MessageRegistrationToken token in _tokens)

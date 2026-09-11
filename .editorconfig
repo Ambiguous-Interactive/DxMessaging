@@ -240,4 +240,3 @@ dotnet_diagnostic.S3881.severity = none
 dotnet_diagnostic.S3928.severity = none
 dotnet_diagnostic.S3973.severity = none
 dotnet_diagnostic.S4456.severity = none
-dotnet_diagnostic.EPC12.severity = none
