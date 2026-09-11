@@ -579,8 +579,9 @@ namespace DxMessaging.Editor.Windows
                     );
                     index.IsComplete = false;
                     index.RetryAfterUtc = DateTime.UtcNow.AddSeconds(5);
-                    Debug.LogWarning(
-                        $"DxMessaging could not index message source files: {exception.Message}"
+                    DxMessagingEditorLog.LogWarning(
+                        "Could not index message source files.",
+                        exception
                     );
                 }
                 index.BuildTask = null;

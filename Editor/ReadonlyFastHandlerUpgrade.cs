@@ -2381,9 +2381,9 @@ namespace DxMessaging.Editor
                 }
                 catch (Exception cleanupFailure)
                 {
-                    Debug.LogWarning(
-                        $"[DxMessaging] Updated {file.FullPath}, but could not remove backup "
-                            + $"{file.BackupPath}: {cleanupFailure.Message}"
+                    DxMessagingEditorLog.LogWarning(
+                        $"Updated {file.FullPath}, but could not remove backup {file.BackupPath}.",
+                        cleanupFailure
                     );
                 }
             }
