@@ -159,12 +159,6 @@ jobs:
           pull-request-number: ${{ github.event.pull_request.number }}
           expected-head-sha: ${{ github.event.pull_request.head.sha }}
 
-      - name: Require one optional manual validation mode
-        if: ${{ inputs.shipping_fidelity && inputs.consumer_install_validation }}
-        timeout-minutes: 1
-        shell: pwsh
-        run: throw 'shipping_fidelity and consumer_install_validation are mutually exclusive.'
-
       # Contract item 3: the central immutable gate validates the runner-owned
       # editor before any credential reference or checkout. CI never installs,
       # repairs, or provisions an editor; a missing or unhealthy editor is an
@@ -183,6 +177,15 @@ jobs:
           diagnostics-path: unity-editor-check.json
           ci-managed-only: true
           require-healthy-existing: true
+
+      # Contract item 3: only the current-PR-head guard may precede the editor
+      # gate, so this input check lives after it. It still fails before any
+      # checkout, credential reference, or lock acquisition.
+      - name: Require one optional manual validation mode
+        if: ${{ inputs.shipping_fidelity && inputs.consumer_install_validation }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: throw 'shipping_fidelity and consumer_install_validation are mutually exclusive.'
 
       - name: Enable Git long paths
         timeout-minutes: 2
