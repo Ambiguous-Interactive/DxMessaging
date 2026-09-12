@@ -208,12 +208,20 @@ foreach ($shippingProfile in $shippingProfiles) {
         # point of this slice, but it is reported as its own class so nobody
         # reads it as a stripping regression.
         try {
-            $cellRows.Add((
-                Read-ShippingCellEvidence `
-                    -Path (Join-Path (Join-Path $ArtifactsPath $shippingCaseId) 'shipping-cell-evidence.json') `
-                    -CellId $shippingCaseId
-            ))
-            if ($RetainNativePayload -and $shippingCaseId -ceq 'high-semantic-18') {
+            $cellRow = Read-ShippingCellEvidence `
+                -Path (Join-Path (Join-Path $ArtifactsPath $shippingCaseId) 'shipping-cell-evidence.json') `
+                -CellId $shippingCaseId
+            $cellRows.Add($cellRow)
+        } catch {
+            $failure = "{0}: passed its shipping proof but wrote unusable evidence: {1}" -f
+                $shippingCaseId, $_.Exception.Message
+            $failures.Add($failure)
+            $unreadableEvidenceCellIds.Add($shippingCaseId)
+            Write-Warning "Shipping-fidelity cell evidence is unusable; continuing to preserve later evidence. $failure"
+            continue
+        }
+        if ($RetainNativePayload -and $shippingCaseId -ceq 'high-semantic-18') {
+            try {
                 $cellArtifactsPath = Join-Path $ArtifactsPath $shippingCaseId
                 $playerRoot = Join-Path (
                     Join-Path $ProjectPathRoot "$UnityVersion-shipping-$shippingCaseId"
@@ -222,13 +230,12 @@ foreach ($shippingProfile in $shippingProfiles) {
                     -CellArtifactsPath $cellArtifactsPath `
                     -PlayerRoot $playerRoot `
                     -Destination "$ArtifactsPath-native-payload"
+            } catch {
+                $failure = "{0}: native payload retention failed: {1}" -f
+                    $shippingCaseId, $_.Exception.Message
+                $failures.Add($failure)
+                Write-Warning "Shipping-fidelity native payload is unusable. $failure"
             }
-        } catch {
-            $failure = "{0}: passed its shipping proof but wrote unusable evidence: {1}" -f
-                $shippingCaseId, $_.Exception.Message
-            $failures.Add($failure)
-            $unreadableEvidenceCellIds.Add($shippingCaseId)
-            Write-Warning "Shipping-fidelity cell evidence is unusable; continuing to preserve later evidence. $failure"
         }
     }
 }
