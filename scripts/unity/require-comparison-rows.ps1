@@ -400,6 +400,35 @@ try {
     if ($evidenceFiles.Count -eq 0) {
         throw 'No paired comparison evidence inputs were provided.'
     }
+    $resultsFiles = @($evidenceFiles | Where-Object {
+        [System.IO.Path]::GetFileName($_) -eq 'results.xml'
+    })
+    if ($resultsFiles.Count -ne 1) {
+        throw "Comparison evidence requires exactly one results.xml; found $($resultsFiles.Count)."
+    }
+    try {
+        [xml]$results = Get-Content -LiteralPath $resultsFiles[0] -Raw
+    }
+    catch {
+        throw "Comparison results.xml is not valid XML: $($_.Exception.Message)"
+    }
+    $requiredContractFixtures = @(
+        'DxMessaging.Tests.Runtime.Comparisons.ComparisonDispatchTopologyTests',
+        'DxMessaging.Tests.Runtime.Comparisons.External.MessagePipeSemanticCharacterizationTests'
+    )
+    foreach ($fixture in $requiredContractFixtures) {
+        $fixtureNodes = @($results.SelectNodes("//test-suite[@type='TestFixture' and @fullname='$fixture']"))
+        if (
+            $fixtureNodes.Count -ne 1 -or
+            [string]$fixtureNodes[0].result -cne 'Passed' -or
+            [int]$fixtureNodes[0].total -le 0 -or
+            [int]$fixtureNodes[0].failed -ne 0 -or
+            [int]$fixtureNodes[0].skipped -ne 0 -or
+            [int]$fixtureNodes[0].inconclusive -ne 0
+        ) {
+            throw "Required native comparison contract fixture '$fixture' did not run once with only passing results."
+        }
+    }
     $playerLogs = @($evidenceFiles | Where-Object {
         [System.IO.Path]::GetFileName($_) -eq 'player.log'
     })
