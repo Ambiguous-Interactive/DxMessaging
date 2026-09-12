@@ -35,8 +35,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         private const int DispatchKey = 0;
 
-        // Single-sourced from the canonical scenario constant so the keyed
-        // lookup-table size stays identical (1:1) across every comparison bridge.
+        /*
+            Single-sourced from the canonical scenario constant so the keyed
+            lookup-table size stays identical (1:1) across every comparison bridge.
+        */
         private const int KeyedListenerCount = ComparisonScenarios.KeyedListenerCount;
 
         private ComparisonScenario _scenario;
@@ -54,8 +56,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         private readonly List<IDisposable> _subscriptions = new();
 
-        // Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
-        // broker subscribe/dispose cost rather than per-cycle delegate allocation.
+        /*
+            Cached, reused churn handler so the SubscribeUnsubscribe scenario measures the
+            broker subscribe/dispose cost rather than per-cycle delegate allocation.
+        */
         private Action<int> _churnHandler;
 
         public bool Supports(ComparisonScenario scenario)
@@ -118,8 +122,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                     builder.AddMessageBroker<int>();
                     BuildProvider(builder);
                     ResolveKeylessBroker();
-                    // Genuinely-distinct subscribers model 16 independent listeners; this keeps
-                    // every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    /*
+                        Genuinely-distinct subscribers model 16 independent listeners; this keeps
+                        every bridge's fan-out immune to value-equality dedup. See FanOut.
+                    */
                     _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
                     foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {
@@ -206,15 +212,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
         public void Dispose()
         {
-            for (int index = _subscriptions.Count - 1; index >= 0; index--)
+            for (int index = _subscriptions.Count - 1; 0 <= index; index--)
             {
                 _subscriptions[index]?.Dispose();
             }
             _subscriptions.Clear();
 
-            // The provider (BuiltinContainerBuilderServiceProvider) and its brokers are
-            // per-case and GC-collected; the provider is not IDisposable, so dropping the
-            // directly-resolved references is enough.
+            /*
+                The provider (BuiltinContainerBuilderServiceProvider) and its brokers are
+                per-case and GC-collected; the provider is not IDisposable, so dropping the
+                directly-resolved references is enough.
+            */
             _provider = null;
             _publisher = null;
             _subscriber = null;
@@ -256,8 +264,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
 
             private static void PostProcess(int message)
             {
-                // The post stage intentionally performs no application work. Its middleware
-                // traversal and after-next invocation are the costs this scenario measures.
+                /*
+                    The post stage intentionally performs no application work. Its middleware
+                    traversal and after-next invocation are the costs this scenario measures.
+                */
             }
         }
     }

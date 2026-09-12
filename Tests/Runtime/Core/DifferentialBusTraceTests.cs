@@ -213,8 +213,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(observation.Callbacks, Is.Empty, report);
             Assert.That(adapter.GlobalCalls, Is.EqualTo(setup == "global" ? 1 : 0), report);
             Assert.That(adapter.VetoCalls, Is.EqualTo(setup == "veto" ? 1 : 0), report);
-            // Global-only delivery can log unmatched; a bare bus bucket can suppress it
-            // without invoking a delegate; veto stops before any unmatched report.
+            /*
+                Global-only delivery can log unmatched; a bare bus bucket can suppress it
+                without invoking a delegate; veto stops before any unmatched report.
+            */
             Assert.That(
                 observation.UnmatchedDiagnostics.Count,
                 Is.EqualTo(setup == "empty" || setup == "global" ? 1 : 0),
@@ -353,9 +355,11 @@ namespace DxMessaging.Tests.Runtime.Core
             [Values(false, true)] bool keepRegistration
         )
         {
-            // Registration roots the concrete type's untyped dispatch bridge under AOT
-            // before any untyped emit; the removed case keeps that rooting while emptying
-            // the bus so the untyped unmatched path is exercised on every backend.
+            /*
+                Registration roots the concrete type's untyped dispatch bridge under AOT
+                before any untyped emit; the removed case keeps that rooting while emptying
+                the bus so the untyped unmatched path is exercised on every backend.
+            */
             BusTraceSequence sequence = new(
                 scenario,
                 811,
@@ -579,7 +583,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             "CopyHandle(token=0,context=0,value=0,priority=0)[handleSlot=2,sourceHandleSlot=0]",
                             "EmitUntyped(token=0,context=0,value=0,priority=0)",
                         }
-                    : version >= 8
+                    : 8 <= version
                         ? new[]
                         {
                             "Register(token=0,context=0,value=0,priority=0)[handleSlot=0,sourceHandleSlot=-1]",
@@ -2089,7 +2093,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     all.Add(operation.Kind);
                     if (
-                        operation.HandleSlot >= 0
+                        0 <= operation.HandleSlot
                         && DifferentialBusTrace.IsCallbackAction(operation.Kind)
                     )
                     {
@@ -2541,7 +2545,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     expected.Add($"nested-enter:depth={level},emission={firstEmission + level}");
                 }
             }
-            for (int level = depth - 1; level >= 0; --level)
+            for (int level = depth - 1; 0 <= level; --level)
             {
                 expected.Add($"nested-return:depth={level},emission={firstEmission + level}");
             }
@@ -2746,8 +2750,10 @@ namespace DxMessaging.Tests.Runtime.Core
             };
             if (!force)
             {
-                // The real empty emit advances the bus tick without touching empty sinks.
-                // No clock or process-global settings are changed by this replay.
+                /*
+                    The real empty emit advances the bus tick without touching empty sinks.
+                    No clock or process-global settings are changed by this replay.
+                */
                 operations.Add(new BusTraceOperation(BusTraceOperationKind.Emit, value: 11));
             }
             int reclaimed = operations.Count;
@@ -3357,7 +3363,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         new[]
                         {
                             $"token=0,value={value}"
-                                + (handleSlot >= 0 ? ",registration=0,callback=0" : string.Empty),
+                                + (0 <= handleSlot ? ",registration=0,callback=0" : string.Empty),
                             $"token=1,value={value}",
                         },
                         later.Callbacks,
@@ -3537,8 +3543,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 trimApiEnabled: true
             );
             bus.DiagnosticsMode = false;
-            // Fault injection seeds only this isolated bus before any registrations exist.
-            // Actual ResetState performs each increment, teardown, and snapshot invalidation.
+            /*
+                Fault injection seeds only this isolated bus before any registrations exist.
+                Actual ResetState performs each increment, teardown, and snapshot invalidation.
+            */
             FieldInfo field = typeof(MessageBus).GetField(
                 "_resetGeneration",
                 BindingFlags.Instance | BindingFlags.NonPublic
@@ -3554,8 +3562,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 bus,
                 reset: () =>
                 {
-                    // Mutation: a boundary guard wrongly rejects signed overflow or zero.
-                    // It changes the operation, never the oracle's observations.
+                    /*
+                        Mutation: a boundary guard wrongly rejects signed overflow or zero.
+                        It changes the operation, never the oracle's observations.
+                    */
                     if (rejectWrap && MessageBus.GetResetGeneration(bus) == initialGeneration)
                     {
                         return;
@@ -4189,8 +4199,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 if (operation.Kind == BusTraceOperationKind.RemoveForeign)
                 {
-                    // Simulate treating a foreign identity as the destination's own slot.
-                    // The production API performs the removal; the observer stays unchanged.
+                    /*
+                        Simulate treating a foreign identity as the destination's own slot.
+                        The production API performs the removal; the observer stays unchanged.
+                    */
                     Token(operation.Token).RemoveRegistration(Handle(operation.Token));
                     return;
                 }
@@ -4235,8 +4247,10 @@ namespace DxMessaging.Tests.Runtime.Core
             };
         }
 
-        // Each mutant changes a real operation before the shared observer reads production state.
-        // None rewrites observations or implements message routing.
+        /*
+            Each mutant changes a real operation before the shared observer reads production state.
+            None rewrites observations or implements message routing.
+        */
         private sealed class WrongExplicitCallbackCleanupAdapter : MessageBusTraceAdapter
         {
             internal WrongExplicitCallbackCleanupAdapter(MessageScenario scenario, MessageBus bus)
@@ -4247,7 +4261,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     new BusTraceOperation(
                         BusTraceOperationKind.Remove,
                         token: operation.Token,
-                        handleSlot: operation.HandleSlot >= 0 ? 0 : -1
+                        handleSlot: 0 <= operation.HandleSlot ? 0 : -1
                     )
                 );
         }
@@ -4312,7 +4326,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             protected override void Remove(BusTraceOperation operation) =>
                 base.Remove(
-                    operation.HandleSlot >= 0
+                    0 <= operation.HandleSlot
                         ? new BusTraceOperation(
                             BusTraceOperationKind.Remove,
                             token: operation.Token,
@@ -4444,13 +4458,15 @@ namespace DxMessaging.Tests.Runtime.Core
             protected override void Remove(BusTraceOperation operation)
             {
                 MessageRegistrationToken token = Token(operation.Token);
-                bool hasEmission = token._emissionBuffer.Count > 0;
+                bool hasEmission = 0 < token._emissionBuffer.Count;
                 MessageEmissionData retained = hasEmission ? token._emissionBuffer[0] : default;
                 base.Remove(operation);
                 if (hasEmission && token._metadata.Count == 0)
                 {
-                    // Preserve the actual boxed message reference after its registration dies.
-                    // This mutates the production holder, not the recorded observation.
+                    /*
+                        Preserve the actual boxed message reference after its registration dies.
+                        This mutates the production holder, not the recorded observation.
+                    */
                     token._emissionBuffer.Add(retained);
                 }
             }
@@ -5005,10 +5021,12 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        // Intentional mutants for the untyped boundary: the untyped route must stay
-        // observable through the same callbacks, diagnostics, and final values as the
-        // typed route. "drop" skips the production emission; "wrong-value" dispatches
-        // a payload that differs from the caller's argument.
+        /*
+            Intentional mutants for the untyped boundary: the untyped route must stay
+            observable through the same callbacks, diagnostics, and final values as the
+            typed route. "drop" skips the production emission; "wrong-value" dispatches
+            a payload that differs from the caller's argument.
+        */
         private sealed class UntypedRouteEmitter : DelegatingMessageBus
         {
             private readonly string _fault;

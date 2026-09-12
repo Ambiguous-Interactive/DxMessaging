@@ -115,9 +115,11 @@ namespace DxMessaging.Core.Internal
     {
         private static readonly ArrayPool<TEntry> EntryPool = ArrayPool<TEntry>.Shared;
 
-        // Cold-path pool (rebuild/teardown only); the lock is uncontended in
-        // practice but keeps the holder pool safe if multiple buses are ever
-        // driven from different threads.
+        /*
+            Cold-path pool (rebuild/teardown only); the lock is uncontended in
+            practice but keeps the holder pool safe if multiple buses are ever
+            driven from different threads.
+        */
         private static readonly Stack<THolder> HolderPool = new();
         private static readonly object HolderPoolLock = new();
         private const int MaxRetainedHolders = 64;
@@ -140,9 +142,11 @@ namespace DxMessaging.Core.Internal
             }
         }
 
-        // True while the holder is parked in (or eligible for) the pool;
-        // false while it is owned by a live DispatchSnapshot. Guards the
-        // rent/release lifecycle against double-release and rent-of-live.
+        /*
+            True while the holder is parked in (or eligible for) the pool;
+            false while it is owned by a live DispatchSnapshot. Guards the
+            rent/release lifecycle against double-release and rent-of-live.
+        */
         private bool _released = true;
 
         internal static THolder Rent(int capacity)

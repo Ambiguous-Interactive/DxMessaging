@@ -61,9 +61,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
 
             bridge.Prepare(scenario);
-            // Capture the warm-up count ONCE so the warm-up loop and the fan-out
-            // assertion below stay coupled: expectedInvocations adds warmupEmits, so if
-            // these two read different values the fan-out assertion breaks.
+            /*
+                Capture the warm-up count ONCE so the warm-up loop and the fan-out
+                assertion below stay coupled: expectedInvocations adds warmupEmits, so if
+                these two read different values the fan-out assertion breaks.
+            */
             int warmupEmits = ComparisonScenarios.WarmupEmits(scenario);
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
                 () =>
@@ -82,13 +84,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     return BenchmarkProtocol.BatchSize;
                 }
             );
-            // Reconcile against TotalEmittedOperations (timed window + the untimed
-            // allocation-probe batch), NOT TotalOperations: BenchmarkProtocol.Measure drives
-            // one extra emitBatch under AllocationProbe after the window, which advances
-            // ProgressMarker too. Counting only the timed window under-counts by exactly one
-            // BatchSize and the exact-equality fan-out check fails for every case. This stays
-            // an EXACT correctness check (no tolerance): it must still catch a library that
-            // drops, duplicates, or dedups any message.
+            /*
+                Reconcile against TotalEmittedOperations (timed window + the untimed
+                allocation-probe batch), NOT TotalOperations: BenchmarkProtocol.Measure drives
+                one extra emitBatch under AllocationProbe after the window, which advances
+                ProgressMarker too. Counting only the timed window under-counts by exactly one
+                BatchSize and the exact-equality fan-out check fails for every case. This stays
+                an EXACT correctness check (no tolerance): it must still catch a library that
+                drops, duplicates, or dedups any message.
+            */
             long expectedInvocations =
                 invocationsPerOperation * (warmupEmits + measurement.TotalEmittedOperations);
             long observedInvocations = bridge.ProgressMarker;

@@ -279,8 +279,10 @@ internal static class GeneratorTestUtilities
             options: effectiveOptions
         );
 
-        // B6. Refuse invalid fixture input. CS0114 is deferred until the analyzer runs because
-        // the positive DXMSG009 fixtures intentionally produce the compiler/analyzer pair.
+        /*
+            B6. Refuse invalid fixture input. CS0114 is deferred until the analyzer runs because
+            the positive DXMSG009 fixtures intentionally produce the compiler/analyzer pair.
+        */
         ImmutableArray<Diagnostic> compileDiags = compilation.GetDiagnostics();
         ImmutableArray<Diagnostic> blockingErrors = compileDiags
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)

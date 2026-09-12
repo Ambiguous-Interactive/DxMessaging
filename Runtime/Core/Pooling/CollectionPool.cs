@@ -24,8 +24,10 @@ namespace DxMessaging.Core.Pooling
         private bool _useLru;
         private int _maxRetained;
 
-        // LRU state -- Queue<T> is FIFO with O(1) Enqueue/Dequeue (amortized)
-        // and avoids the per-node allocation that LinkedList incurs.
+        /*
+            LRU state -- Queue<T> is FIFO with O(1) Enqueue/Dequeue (amortized)
+            and avoids the per-node allocation that LinkedList incurs.
+        */
         private readonly Queue<T> _lruQueue;
         private readonly HashSet<T> _lruMembership;
 
@@ -110,7 +112,7 @@ namespace DxMessaging.Core.Pooling
             AssertOwnerThread();
             if (_useLru)
             {
-                if (_lruQueue.Count > 0)
+                if (0 < _lruQueue.Count)
                 {
                     T pooled = _lruQueue.Dequeue();
                     _lruMembership.Remove(pooled);
@@ -118,7 +120,7 @@ namespace DxMessaging.Core.Pooling
                     return pooled;
                 }
             }
-            else if (_stack.Count > 0)
+            else if (0 < _stack.Count)
             {
                 T pooled = _stack.Pop();
                 _stackMembership.Remove(pooled);
@@ -178,7 +180,7 @@ namespace DxMessaging.Core.Pooling
                 {
                     return; // already pooled; ignore double-return
                 }
-                if (_lruQueue.Count >= _maxRetained)
+                if (_maxRetained <= _lruQueue.Count)
                 {
                     T head = _lruQueue.Dequeue();
                     _lruMembership.Remove(head);
@@ -195,7 +197,7 @@ namespace DxMessaging.Core.Pooling
                 {
                     return; // already pooled; ignore double-return
                 }
-                if (_stack.Count >= _maxRetained)
+                if (_maxRetained <= _stack.Count)
                 {
                     _evictions++;
                     _onEvicted?.Invoke(value);
@@ -228,7 +230,7 @@ namespace DxMessaging.Core.Pooling
             int evicted = 0;
             if (_useLru)
             {
-                while (_lruQueue.Count > targetSize)
+                while (targetSize < _lruQueue.Count)
                 {
                     T head = _lruQueue.Dequeue();
                     _lruMembership.Remove(head);
@@ -239,7 +241,7 @@ namespace DxMessaging.Core.Pooling
             }
             else
             {
-                while (_stack.Count > targetSize)
+                while (targetSize < _stack.Count)
                 {
                     T item = _stack.Pop();
                     _stackMembership.Remove(item);
@@ -253,7 +255,7 @@ namespace DxMessaging.Core.Pooling
 
         private void ConvertLruToStack()
         {
-            while (_lruQueue.Count > 0)
+            while (0 < _lruQueue.Count)
             {
                 T item = _lruQueue.Dequeue();
                 _lruMembership.Remove(item);
@@ -267,7 +269,7 @@ namespace DxMessaging.Core.Pooling
             T[] items = _stack.ToArray();
             _stack.Clear();
             _stackMembership.Clear();
-            for (int index = items.Length - 1; index >= 0; index--)
+            for (int index = items.Length - 1; 0 <= index; index--)
             {
                 T item = items[index];
                 _lruQueue.Enqueue(item);

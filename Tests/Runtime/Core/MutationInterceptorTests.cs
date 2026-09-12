@@ -251,8 +251,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Opened after the host's own registrations exist so the baseline
-            // covers only the interceptors this test adds and removes.
+            /*
+                Opened after the host's own registrations exist so the baseline
+                covers only the interceptors this test adds and removes.
+            */
             using LeakWatcher watcher = LeakWatcher.Watch(scenario.DisplayName);
 
             int earlyCount = 0;
@@ -340,8 +342,10 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Opened after the host's own registrations exist so the baseline
-            // covers only the interceptors this test adds and removes.
+            /*
+                Opened after the host's own registrations exist so the baseline
+                covers only the interceptors this test adds and removes.
+            */
             using LeakWatcher watcher = LeakWatcher.Watch(scenario.DisplayName);
 
             int earlyCount = 0;

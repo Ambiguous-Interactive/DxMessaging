@@ -363,10 +363,12 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Data-driven over EVERY DispatchBenchmarkScenario so adding an enum value without
-        // wiring up its metadata (Key/DisplayName) fails this suite automatically. These
-        // metadata cases are deliberately cheap (no measurement window) so they stay in the
-        // fast gate; the run-the-scenario lock below carries the heavy PerfBench category.
+        /*
+            Data-driven over EVERY DispatchBenchmarkScenario so adding an enum value without
+            wiring up its metadata (Key/DisplayName) fails this suite automatically. These
+            metadata cases are deliberately cheap (no measurement window) so they stay in the
+            fast gate; the run-the-scenario lock below carries the heavy PerfBench category.
+        */
         private static IEnumerable<TestCaseData> DispatchScenarioCases()
         {
             foreach (DispatchBenchmarkScenario scenario in DispatchBenchmarkScenarios.All)
@@ -671,14 +673,16 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // REGRESSION GUARD (fan-out accounting). BenchmarkProtocol.Measure drives ONE extra
-        // emitBatch under AllocationProbe AFTER the timed window. Those ops are real -- they advance
-        // any side-effect counter (e.g. a fan-out ProgressMarker) -- but are excluded from
-        // TotalOperations/throughput because the batch is untimed. They MUST be reported as
-        // AllocationProbeOperations so callers that assert an exact invocation total
-        // (ComparisonHarness) can reconcile via TotalEmittedOperations; pre-fix they were dropped,
-        // undercounting every comparison fan-out check by exactly one BatchSize. Runs the real 5s
-        // window, so it is PerfBench (matching this file's other measurement-window tests).
+        /*
+            REGRESSION GUARD (fan-out accounting). BenchmarkProtocol.Measure drives ONE extra
+            emitBatch under AllocationProbe AFTER the timed window. Those ops are real -- they advance
+            any side-effect counter (e.g. a fan-out ProgressMarker) -- but are excluded from
+            TotalOperations/throughput because the batch is untimed. They MUST be reported as
+            AllocationProbeOperations so callers that assert an exact invocation total
+            (ComparisonHarness) can reconcile via TotalEmittedOperations; pre-fix they were dropped,
+            undercounting every comparison fan-out check by exactly one BatchSize. Runs the real 5s
+            window, so it is PerfBench (matching this file's other measurement-window tests).
+        */
         [Test, Category("PerfBench")]
         public void MeasureCountsAllocationProbeBatchOperationsExactlyOneBatch()
         {
@@ -833,8 +837,10 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void MedianLongEvenAverageOfTwoLargeValuesDoesNotOverflow()
         {
-            // Two equal large values whose naive (a + b) sum overflows long: the overflow-safe
-            // integer midpoint must land on the true value, never a wrapped or double-rounded one.
+            /*
+                Two equal large values whose naive (a + b) sum overflows long: the overflow-safe
+                integer midpoint must land on the true value, never a wrapped or double-rounded one.
+            */
             long[] samples = { long.MaxValue - 1L, long.MaxValue - 1L };
             Assert.AreEqual(long.MaxValue - 1L, BenchmarkProtocol.Median(samples));
         }
@@ -850,11 +856,13 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void MedianOfMeasuredFiltersTheUnmeasuredSentinelBeforeMedianing()
         {
-            // THE HONESTY FIX (session 068): a byte sample can be Unmeasured (-1) for a single
-            // trial that crossed a frame boundary even on a functional backend. Feeding that -1
-            // into the plain Median midpoint would launder it into a fabricated magnitude
-            // (e.g. Median({-1,100,200,300}) = 150, or Median({-1,100}) = 49). MedianOfMeasured
-            // must drop the sentinel and median ONLY the real survivors.
+            /*
+                THE HONESTY FIX (session 068): a byte sample can be Unmeasured (-1) for a single
+                trial that crossed a frame boundary even on a functional backend. Feeding that -1
+                into the plain Median midpoint would launder it into a fabricated magnitude
+                (e.g. Median({-1,100,200,300}) = 150, or Median({-1,100}) = 49). MedianOfMeasured
+                must drop the sentinel and median ONLY the real survivors.
+            */
             long[] mixed = { AllocationProbe.Unmeasured, 100L, 200L, 300L };
             Assert.AreEqual(
                 200L,
@@ -875,8 +883,10 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void MedianOfMeasuredAllSentinelReportsUnmeasured()
         {
-            // When EVERY sample is the sentinel (the byte probe is genuinely non-functional on
-            // this backend) the honest result is Unmeasured, never a fabricated number.
+            /*
+                When EVERY sample is the sentinel (the byte probe is genuinely non-functional on
+                this backend) the honest result is Unmeasured, never a fabricated number.
+            */
             long[] allSentinel =
             {
                 AllocationProbe.Unmeasured,
@@ -953,9 +963,11 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Data-driven over every wall-clock scenario: construction, registration /
-        // deregistration floods, marginal registration, and cold first dispatch. Each result
-        // reports latency rather than throughput.
+        /*
+            Data-driven over every wall-clock scenario: construction, registration /
+            deregistration floods, marginal registration, and cold first dispatch. Each result
+            reports latency rather than throughput.
+        */
         private static IEnumerable<TestCaseData> WallClockScenarioCases()
         {
             yield return new TestCaseData(
@@ -1150,11 +1162,13 @@ namespace DxMessaging.Tests.Editor.Allocations
             Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
         }
 
-        // Result-shape lock: every cold/warm-JIT latency scenario reports zero throughput
-        // (the time lives in WallClockMs) and is flagged as a wall-clock scenario. The
-        // emitsPerSecond=0 property is exactly what auto-excludes these rows from the JS
-        // regression gate, so this guards the contract the CI gate relies on. Runs a real
-        // measurement, so it carries the PerfBench category.
+        /*
+            Result-shape lock: every cold/warm-JIT latency scenario reports zero throughput
+            (the time lives in WallClockMs) and is flagged as a wall-clock scenario. The
+            emitsPerSecond=0 property is exactly what auto-excludes these rows from the JS
+            regression gate, so this guards the contract the CI gate relies on. Runs a real
+            measurement, so it carries the PerfBench category.
+        */
         [Test, Category("PerfBench")]
         [TestCaseSource(nameof(WallClockScenarioCases))]
         public void WallClockScenarioResultReportsZeroThroughputAndIsWallClock(
@@ -1196,12 +1210,14 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Direction sanity: the warm-JIT registration flood pre-pays the Mono JIT bill on a
-        // throwaway bus, so its timed pass must not exceed the cold flood (which times JIT +
-        // registration together). Under IL2CPP/AOT the generics are precompiled so the two
-        // are ~equal; this asserts DIRECTION only, with generous slack, never strict <. The
-        // cold flood runs FIRST so the shared closed generics are JIT-warm for both timed
-        // passes, keeping the comparison stable in EditMode under Mono.
+        /*
+            Direction sanity: the warm-JIT registration flood pre-pays the Mono JIT bill on a
+            throwaway bus, so its timed pass must not exceed the cold flood (which times JIT +
+            registration together). Under IL2CPP/AOT the generics are precompiled so the two
+            are ~equal; this asserts DIRECTION only, with generous slack, never strict <. The
+            cold flood runs FIRST so the shared closed generics are JIT-warm for both timed
+            passes, keeping the comparison stable in EditMode under Mono.
+        */
         [Test, Category("PerfBench")]
         public void WarmJitRegistrationFloodDoesNotExceedColdFloodWithSlack()
         {
@@ -1214,10 +1230,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 logResult: false
             );
 
-            // Generous slack absorbs run-to-run jitter on the small wall-clock numbers; the
-            // contract under test is only that warm JIT is not categorically SLOWER than
-            // cold. A tiny absolute floor avoids a near-zero cold measurement making the
-            // bound impossibly tight.
+            /*
+                Generous slack absorbs run-to-run jitter on the small wall-clock numbers; the
+                contract under test is only that warm JIT is not categorically SLOWER than
+                cold. A tiny absolute floor avoids a near-zero cold measurement making the
+                bound impossibly tight.
+            */
             const double Slack = 5d;
             const double FloorMs = 1d;
             double allowedMs = Math.Max(cold.WallClockMs, FloorMs) * Slack;
@@ -1228,13 +1246,15 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // Direction sanity for the deregistration floods, mirroring the registration check:
-        // the warm-JIT flood pre-pays the Mono JIT bill (it registers AND deregisters once on
-        // a throwaway bus), so its timed UnregisterAll must not exceed the cold flood (which
-        // times the JIT compile of the deregistration path + the teardown together). Under
-        // IL2CPP/AOT the two are ~equal; this asserts DIRECTION only, with generous slack,
-        // never strict <. The cold flood runs FIRST so the shared closed generics are JIT-warm
-        // for both timed passes, keeping the comparison stable in EditMode under Mono.
+        /*
+            Direction sanity for the deregistration floods, mirroring the registration check:
+            the warm-JIT flood pre-pays the Mono JIT bill (it registers AND deregisters once on
+            a throwaway bus), so its timed UnregisterAll must not exceed the cold flood (which
+            times the JIT compile of the deregistration path + the teardown together). Under
+            IL2CPP/AOT the two are ~equal; this asserts DIRECTION only, with generous slack,
+            never strict <. The cold flood runs FIRST so the shared closed generics are JIT-warm
+            for both timed passes, keeping the comparison stable in EditMode under Mono.
+        */
         [Test, Category("PerfBench")]
         public void WarmJitDeregistrationFloodDoesNotExceedColdFloodWithSlack()
         {
@@ -1247,10 +1267,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 logResult: false
             );
 
-            // Generous slack absorbs run-to-run jitter on the small wall-clock numbers; the
-            // contract under test is only that warm JIT is not categorically SLOWER than
-            // cold. A tiny absolute floor avoids a near-zero cold measurement making the
-            // bound impossibly tight.
+            /*
+                Generous slack absorbs run-to-run jitter on the small wall-clock numbers; the
+                contract under test is only that warm JIT is not categorically SLOWER than
+                cold. A tiny absolute floor avoids a near-zero cold measurement making the
+                bound impossibly tight.
+            */
             const double Slack = 5d;
             const double FloorMs = 1d;
             double allowedMs = Math.Max(cold.WallClockMs, FloorMs) * Slack;
@@ -1261,14 +1283,16 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
-        // The "every scenario captures GC allocations + bytes + CSV stays 8 columns" lock. This
-        // runs the real 5s measurement window per scenario, so it carries the PerfBench category
-        // and stays out of the fast metadata gate above. Because this runs in the Editor (where
-        // both the GC.Alloc recorder and the "GC Allocated In Frame" byte counter are functional),
-        // it also doubles as the regression guard for the dead-allocation-API bug: a non-functional
-        // probe would make GcAllocations the Unmeasured sentinel and trip the IsFunctional
-        // assertion. The byte column (index 7) is the gcAllocatedBytes companion appended in
-        // session 068.
+        /*
+            The "every scenario captures GC allocations + bytes + CSV stays 8 columns" lock. This
+            runs the real 5s measurement window per scenario, so it carries the PerfBench category
+            and stays out of the fast metadata gate above. Because this runs in the Editor (where
+            both the GC.Alloc recorder and the "GC Allocated In Frame" byte counter are functional),
+            it also doubles as the regression guard for the dead-allocation-API bug: a non-functional
+            probe would make GcAllocations the Unmeasured sentinel and trip the IsFunctional
+            assertion. The byte column (index 7) is the gcAllocatedBytes companion appended in
+            session 068.
+        */
         [Test, Category("PerfBench")]
         [TestCaseSource(nameof(DispatchScenarioCases))]
         public void DispatchScenarioRunEmitsEightColumnCsvWithGcAllocationsAndBytes(
@@ -1303,15 +1327,19 @@ namespace DxMessaging.Tests.Editor.Allocations
                 fields[7],
                 $"Scenario '{scenario}' must populate the gc-allocated-bytes field (index 7). Row: '{csvRow}'."
             );
-            // Functional in the Editor, so the count is a real non-negative measurement (never
-            // the Unmeasured sentinel here).
+            /*
+                Functional in the Editor, so the count is a real non-negative measurement (never
+                the Unmeasured sentinel here).
+            */
             Assert.GreaterOrEqual(
                 result.GcAllocations,
                 0,
                 $"Scenario '{scenario}' must report a non-negative GC allocation count in the Editor."
             );
-            // The "GC Allocated In Frame" byte counter is functional in the Editor too, so bytes
-            // are a real non-negative measurement here (never the Unmeasured sentinel).
+            /*
+                The "GC Allocated In Frame" byte counter is functional in the Editor too, so bytes
+                are a real non-negative measurement here (never the Unmeasured sentinel).
+            */
             Assert.IsTrue(
                 AllocationProbe.BytesFunctional,
                 "The 'GC Allocated In Frame' byte counter must be functional in the Editor; a "

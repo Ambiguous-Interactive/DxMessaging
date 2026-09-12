@@ -17,9 +17,11 @@ namespace DxMessaging.Tests.Runtime.Core
         public override void Setup()
         {
             base.Setup();
-            // Run(...) helpers below loop _numRegistrations times across many
-            // tests; restore the legacy stress fan-out so coverage matches the
-            // pre-Phase-A baseline.
+            /*
+                Run(...) helpers below loop _numRegistrations times across many
+                tests; restore the legacy stress fan-out so coverage matches the
+                pre-Phase-A baseline.
+            */
             _numRegistrations = StressRegistrations;
         }
 

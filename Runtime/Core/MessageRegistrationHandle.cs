@@ -74,7 +74,7 @@ namespace DxMessaging.Core
             MessageRegistrationHandle right
         )
         {
-            return left.CompareTo(right) > 0;
+            return 0 < left.CompareTo(right);
         }
 
         /// <summary>
@@ -104,7 +104,7 @@ namespace DxMessaging.Core
             MessageRegistrationHandle right
         )
         {
-            return left.CompareTo(right) >= 0;
+            return 0 <= left.CompareTo(right);
         }
 
         /// <summary>

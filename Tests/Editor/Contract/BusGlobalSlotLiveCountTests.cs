@@ -84,8 +84,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 _ = bus.RegisterGlobalAcceptAll(handler);
                 _ = bus.RegisterGlobalAcceptAll(handler);
 
-                // The dictionary refcount goes 0 -> 1 -> 2; only the 0 -> 1
-                // transition advances liveCount.
+                /*
+                    The dictionary refcount goes 0 -> 1 -> 2; only the 0 -> 1
+                    transition advances liveCount.
+                */
                 Assert.AreEqual(1, bus.RegisteredGlobalAcceptAll);
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(1, slot.liveCount);
@@ -161,9 +163,11 @@ namespace DxMessaging.Tests.Editor.Contract
 
                 bus.Deregister<IMessage>(in dereg1);
 
-                // Refcount: 2 -> 1; the dictionary entry is still present, so
-                // liveCount must stay 1 (only the final 1 -> 0 transition
-                // decrements it).
+                /*
+                    Refcount: 2 -> 1; the dictionary entry is still present, so
+                    liveCount must stay 1 (only the final 1 -> 0 transition
+                    decrements it).
+                */
                 Assert.AreEqual(1, bus.RegisteredGlobalAcceptAll);
                 BusGlobalSlot slot = ReadGlobalSlot(bus);
                 Assert.AreEqual(1, slot.liveCount);
@@ -194,8 +198,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(0, slot.liveCount);
                 slot.DebugAssertLiveCountInvariant();
 
-                // Second invocation is over-deregistration: the early-exit
-                // branch must NOT decrement liveCount.
+                /*
+                    Second invocation is over-deregistration: the early-exit
+                    branch must NOT decrement liveCount.
+                */
                 bus.Deregister<IMessage>(in dereg);
 
                 Assert.AreEqual(0, bus.RegisteredGlobalAcceptAll);

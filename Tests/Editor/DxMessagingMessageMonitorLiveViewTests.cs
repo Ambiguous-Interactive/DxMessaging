@@ -37,11 +37,13 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
-            // Every interaction test here holds its host window open until teardown, and closing a
-            // shown window in -nographics CI logs a benign "No graphic device is available" error.
-            // Unity resets LogAssert tolerance per phase, so ShowWindow's tolerance does not reach
-            // this one; re-assert it for the teardown phase (headless only, so runs with a real GPU
-            // keep full strictness).
+            /*
+                Every interaction test here holds its host window open until teardown, and closing a
+                shown window in -nographics CI logs a benign "No graphic device is available" error.
+                Unity resets LogAssert tolerance per phase, so ShowWindow's tolerance does not reach
+                this one; re-assert it for the teardown phase (headless only, so runs with a real GPU
+                keep full strictness).
+            */
             EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
             EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
         }
@@ -51,9 +53,11 @@ namespace DxMessaging.Tests.Editor
         {
             VisualElement root = CreateView(Recorder(Entry(1, "PlayerSpawned")));
 
-            // These classes shipped in the theme with no C# referencing them. The live recorder is
-            // the surface they were designed for, so each one must appear on the built tree; a
-            // removed class here means the stylesheet has drifted back out of use.
+            /*
+                These classes shipped in the theme with no C# referencing them. The live recorder is
+                the surface they were designed for, so each one must appear on the built tree; a
+                removed class here means the stylesheet has drifted back out of use.
+            */
             string[] expected =
             {
                 DxMessagingEditorTheme.RecordClassName,
@@ -88,8 +92,10 @@ namespace DxMessaging.Tests.Editor
                 DxMessagingEditorTheme.FooterNumberClassName,
             };
 
-            // The list virtualizes, so a row is only realized once it lays out; assert the row
-            // classes against the row factory the list binds instead of waiting on a frame.
+            /*
+                The list virtualizes, so a row is only realized once it lays out; assert the row
+                classes against the row factory the list binds instead of waiting on a frame.
+            */
             HashSet<string> present = CollectClassNames(root);
             present.UnionWith(
                 CollectClassNames(
@@ -260,8 +266,10 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void AnUnrecognizedRouteKindSurvivesEveryChipBeingOff()
         {
-            // Chips can only hide what they can bring back; a row they cannot represent must not
-            // become permanently invisible.
+            /*
+                Chips can only hide what they can bring back; a row they cannot represent must not
+                become permanently invisible.
+            */
             List<MessageMonitorLiveEntry> rows = DxMessagingMessageMonitorLiveView.FilterRows(
                 Recorded(Entry(1, "Mystery", "Context: none", routeKind: string.Empty)),
                 new MessageMonitorLiveViewState(
@@ -579,9 +587,11 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void APinnedRowKeepsItsDetailPaneAsNewerRowsArrive()
         {
-            // The log is newest-first, so every appended row shifts every position. A selection
-            // stored as a position would silently repoint the detail pane at a different emission
-            // while recording continues.
+            /*
+                The log is newest-first, so every appended row shifts every position. A selection
+                stored as a position would silently repoint the detail pane at a different emission
+                while recording continues.
+            */
             MessageMonitorLiveRecorder recorder = Recorder(Entry(1, "Pinned"), Entry(2, "Other"));
             MessageMonitorLiveViewState pinned = new(selectedTraceId: 1);
 
@@ -770,8 +780,10 @@ namespace DxMessaging.Tests.Editor
                 "A complete log says nothing."
             );
 
-            // Skipping a dispatch id is exactly what the bus overwriting records looks like to the
-            // recorder, and it is the one condition that makes every count on screen wrong.
+            /*
+                Skipping a dispatch id is exactly what the bus overwriting records looks like to the
+                recorder, and it is the one condition that makes every count on screen wrong.
+            */
             recorder.Ingest(new[] { Entry(9, "B") });
             RenderBody(root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName), recorder);
 
@@ -840,8 +852,10 @@ namespace DxMessaging.Tests.Editor
             recorder.Ingest(new[] { Entry(2, "Second") });
             RenderBody(body, recorder);
 
-            // A rebuilt list starts scrolled to the top, so keeping the instance is what keeps a
-            // reader who had scrolled into older rows where they were (issue #303).
+            /*
+                A rebuilt list starts scrolled to the top, so keeping the instance is what keeps a
+                reader who had scrolled into older rows where they were (issue #303).
+            */
             Assert.AreSame(
                 list,
                 root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName),
@@ -868,9 +882,11 @@ namespace DxMessaging.Tests.Editor
                 }
             );
 
-            // The row binding is driven directly rather than waiting for the virtualized list to
-            // realize a row. What it must prove is that the kept list binds against the current row
-            // set and the current callbacks instead of the ones it was first built with.
+            /*
+                The row binding is driven directly rather than waiting for the virtualized list to
+                realize a row. What it must prove is that the kept list binds against the current row
+                set and the current callbacks instead of the ones it was first built with.
+            */
             ListView list = root.Q<ListView>(DxMessagingMessageMonitorLiveView.ListName);
             VisualElement bound = new();
             root.Add(bound);
@@ -901,8 +917,10 @@ namespace DxMessaging.Tests.Editor
 
             RenderBody(body, recorder);
 
-            // The pane carries a scrollable stack trace, so rebuilding it for an unchanged row would
-            // scroll a reader back to the top of that trace on every poll.
+            /*
+                The pane carries a scrollable stack trace, so rebuilding it for an unchanged row would
+                scroll a reader back to the top of that trace on every poll.
+            */
             Assert.AreSame(
                 detail,
                 root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.DetailName)
@@ -933,9 +951,11 @@ namespace DxMessaging.Tests.Editor
             VisualElement root = CreateView(recorder);
             VisualElement body = root.Q<VisualElement>(DxMessagingMessageMonitorLiveView.BodyName);
 
-            // Folding does not add a row, so the pane's row identity is unchanged while the count it
-            // renders is not. Keying the reuse on the dispatch range and the count is what keeps the
-            // pane honest here.
+            /*
+                Folding does not add a row, so the pane's row identity is unchanged while the count it
+                renders is not. Keying the reuse on the dispatch range and the count is what keeps the
+                pane honest here.
+            */
             recorder.Ingest(new[] { Entry(2, "Tick"), Entry(3, "Tick") });
             RenderBody(body, recorder);
 
@@ -986,8 +1006,10 @@ namespace DxMessaging.Tests.Editor
                 new MessageMonitorLiveViewState(selectedTraceId: 999)
             );
 
-            // A pinned row can age out of the bounded log or be filtered away. Falling back to the
-            // newest row keeps the detail pane on something real.
+            /*
+                A pinned row can age out of the bounded log or be filtered away. Falling back to the
+                newest row keeps the detail pane on something real.
+            */
             Assert.AreEqual(
                 "Newer",
                 Text(
@@ -1074,8 +1096,10 @@ namespace DxMessaging.Tests.Editor
                 "ValidateLayout",
                 System.Array.Empty<object>()
             );
-            // The first pass realizes the virtualized rows and changes the list's content basis;
-            // the second measures the settled split that the reader sees.
+            /*
+                The first pass realizes the virtualized rows and changes the list's content basis;
+                the second measures the settled split that the reader sees.
+            */
             EditorSurfaceCapture.InvokeInheritedPanelMethod(
                 root.panel,
                 "ValidateLayout",
@@ -1400,9 +1424,11 @@ namespace DxMessaging.Tests.Editor
                 Assert.IsNotNull(row, $"The live view must render its `{rowName}` row.");
                 Assert.Greater(row.childCount, 0, $"`{rowName}` must render its controls.");
 
-                // Re-adding `flex-wrap` is what this catches, and it catches it where it matters:
-                // a wrapped row's height is unresolved on Unity 2021.3, so the second line lands
-                // outside the row and this assertion fails on that leg.
+                /*
+                    Re-adding `flex-wrap` is what this catches, and it catches it where it matters:
+                    a wrapped row's height is unresolved on Unity 2021.3, so the second line lands
+                    outside the row and this assertion fails on that leg.
+                */
                 foreach (VisualElement control in row.Children())
                 {
                     Assert.LessOrEqual(
@@ -1466,9 +1492,11 @@ namespace DxMessaging.Tests.Editor
             {
                 VisualElement column = root.Q<VisualElement>(className: columnClass);
                 Assert.IsNotNull(column, $"The log header must render a `{columnClass}` heading.");
-                // `IResolvedStyle` exposes no `overflow`, so the clip itself is asserted on the
-                // stylesheet by `DxMessagingEditorThemeTests`; what is observable here is the
-                // ellipsis and the single line that clip is there to produce.
+                /*
+                    `IResolvedStyle` exposes no `overflow`, so the clip itself is asserted on the
+                    stylesheet by `DxMessagingEditorThemeTests`; what is observable here is the
+                    ellipsis and the single line that clip is there to produce.
+                */
                 Assert.AreEqual(
                     TextOverflow.Ellipsis,
                     column.resolvedStyle.textOverflow,
@@ -1483,8 +1511,8 @@ namespace DxMessaging.Tests.Editor
                 VisualElement cell = root.Q<VisualElement>(className: cellClass);
                 Assert.IsNotNull(cell, $"A rendered row must carry a `{cellClass}` cell.");
                 Assert.AreEqual(
-                    cell.resolvedStyle.width > 0f,
-                    column.resolvedStyle.width > 0f,
+                    0f < cell.resolvedStyle.width,
+                    0f < column.resolvedStyle.width,
                     $"Heading `{columnClass}` and cell `{cellClass}` must agree on whether the "
                         + "column is shown at all."
                 );
@@ -1529,8 +1557,10 @@ namespace DxMessaging.Tests.Editor
             EditorWindowTestUtility.ShowWindow(window);
             window.rootVisualElement.Add(view);
 
-            // The first pass realizes the virtualized rows and changes the list's content basis;
-            // the second measures the settled layout the reader sees.
+            /*
+                The first pass realizes the virtualized rows and changes the list's content basis;
+                the second measures the settled layout the reader sees.
+            */
             EditorSurfaceCapture.InvokeInheritedPanelMethod(
                 window.rootVisualElement.panel,
                 "ValidateLayout",
@@ -1643,9 +1673,11 @@ namespace DxMessaging.Tests.Editor
             {
                 messageBus.DiagnosticsMode = previousDiagnosticsMode;
                 messageBus._emissionBuffer.Clear();
-                // Close first because production OnDisable persists the dragged value. Restore
-                // the developer's preference afterwards so this fixture is order-independent and
-                // leaves the shared editor exactly as it found it.
+                /*
+                    Close first because production OnDisable persists the dragged value. Restore
+                    the developer's preference afterwards so this fixture is order-independent and
+                    leaves the shared editor exactly as it found it.
+                */
                 EditorWindowTestUtility.CloseWindow(window);
                 _createdWindows.Remove(window);
                 if (hadPreviousHeight)

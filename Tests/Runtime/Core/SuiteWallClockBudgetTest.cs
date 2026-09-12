@@ -1,5 +1,5 @@
 #if UNITY_2021_3_OR_NEWER
-[assembly: DxMessaging.Tests.Runtime.NoteGatedCategoryAction]
+[assembly: DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute]
 
 namespace DxMessaging.Tests.Runtime
 {
@@ -43,7 +43,7 @@ namespace DxMessaging.Tests.Runtime
     /// runner.
     /// </para>
     /// <para>
-    /// Gated-category detection: an assembly-scoped <see cref="NoteGatedCategoryAction"/>
+    /// Gated-category detection: an assembly-scoped <see cref="NoteGatedCategoryAttribute"/>
     /// runs <see cref="ITestAction.BeforeTest"/> for every test in the run.
     /// The action reads the test's NUnit categories (from
     /// <see cref="ITest.Properties"/> with the <c>"Category"</c> key, as
@@ -161,14 +161,16 @@ namespace DxMessaging.Tests.Runtime
             _suiteTimer.Stop();
             TimeSpan elapsed = _suiteTimer.Elapsed;
 
-            // Sanity: dump the elapsed time so CI logs make the budget
-            // proximity visible without a failure. The Unity version is
-            // included because the hard budget is selected per version (the
-            // 2021.x runner gets a wider ceiling); seeing both together makes
-            // a near-budget run easy to triage.
-            // Invariant culture on purpose: CI lifts this line into the job summary
-            // (issue #410), so the decimal separator must not follow the runner's
-            // locale. `scripts/unity/run-ci-tests.ps1` parses exactly this shape.
+            /*
+                Sanity: dump the elapsed time so CI logs make the budget
+                proximity visible without a failure. The Unity version is
+                included because the hard budget is selected per version (the
+                2021.x runner gets a wider ceiling); seeing both together makes
+                a near-budget run easy to triage.
+                Invariant culture on purpose: CI lifts this line into the job summary
+                (issue #410), so the decimal separator must not follow the runner's
+                locale. `scripts/unity/run-ci-tests.ps1` parses exactly this shape.
+            */
             CultureInfo invariant = CultureInfo.InvariantCulture;
             UnityEngine.Debug.Log(
                 $"DxMessaging suite wall clock: {elapsed.TotalSeconds.ToString("0.00", invariant)}s "
@@ -186,7 +188,7 @@ namespace DxMessaging.Tests.Runtime
                 return;
             }
 
-            if (elapsed > HardBudget)
+            if (HardBudget < elapsed)
             {
                 Assert.Fail(
                     $"DxMessaging default-suite wall-clock budget exceeded: {elapsed.TotalSeconds:0.00}s "
@@ -198,7 +200,7 @@ namespace DxMessaging.Tests.Runtime
                         + "(Stress/Performance/Allocation/MemoryReclaim)."
                 );
             }
-            else if (elapsed > SoftBudget)
+            else if (SoftBudget < elapsed)
             {
                 UnityEngine.Debug.LogWarning(
                     $"Default suite wall clock ({elapsed.TotalSeconds:0.00}s) exceeded the soft budget "
@@ -210,7 +212,7 @@ namespace DxMessaging.Tests.Runtime
 
         /// <summary>
         /// Marks the current run as containing a gated test. Called from
-        /// <see cref="NoteGatedCategoryAction.BeforeTest"/> for every test
+        /// <see cref="NoteGatedCategoryAttribute.BeforeTest"/> for every test
         /// before it runs, so the teardown assertion can short-circuit
         /// when a gated category is in scope.
         /// </summary>
@@ -237,12 +239,12 @@ namespace DxMessaging.Tests.Runtime
     /// test runs, scans the test's NUnit categories, and forwards each one
     /// to <see cref="SuiteWallClockBudgetTest.NoteGatedCategoryObserved"/>.
     /// Combined with the assembly-level attribute application (see the
-    /// <c>[assembly: NoteGatedCategoryAction]</c> declaration at the top
+    /// <c>[assembly: NoteGatedCategory]</c> declaration at the top
     /// of this file) this covers every test in every fixture in the
     /// assembly without requiring a base class.
     /// </summary>
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
-    public sealed class NoteGatedCategoryAction : Attribute, ITestAction
+    public sealed class NoteGatedCategoryAttribute : Attribute, ITestAction
     {
         public ActionTargets Targets => ActionTargets.Test;
 
@@ -253,12 +255,14 @@ namespace DxMessaging.Tests.Runtime
                 return;
             }
 
-            // ITest.Properties is a flat IPropertyBag; categories live under
-            // the well-known "Category" key (NUnit 3.x's PropertyNames.Category
-            // resolves to the same literal). Each test may have multiple
-            // categories, and NUnit applies fixture-level [Category]
-            // attributes to each child test automatically, so a class-level
-            // [Category("Allocation")] also shows up here.
+            /*
+                ITest.Properties is a flat IPropertyBag; categories live under
+                the well-known "Category" key (NUnit 3.x's PropertyNames.Category
+                resolves to the same literal). Each test may have multiple
+                categories, and NUnit applies fixture-level [Category]
+                attributes to each child test automatically, so a class-level
+                [Category("Allocation")] also shows up here.
+            */
             const string CategoryPropertyName = "Category";
             System.Collections.IList categories = test.Properties[CategoryPropertyName];
             if (categories == null)

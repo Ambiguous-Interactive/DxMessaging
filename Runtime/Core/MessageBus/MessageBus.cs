@@ -18,9 +18,11 @@ namespace DxMessaging.Core.MessageBus
     using Messages;
     using Pooling;
     using static IMessageBus;
-    // global:: is required: inside the DxMessaging.* namespace the bare name
-    // "Unity" binds to DxMessaging.Unity (the bridge namespace), not the
-    // global Unity.IL2CPP.CompilerServices namespace il2cpp matches.
+    /*
+        global:: is required: inside the DxMessaging.* namespace the bare name
+        "Unity" binds to DxMessaging.Unity (the bridge namespace), not the
+        global Unity.IL2CPP.CompilerServices namespace il2cpp matches.
+    */
     using Il2CppSetOption = global::Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute;
     using Option = global::Unity.IL2CPP.CompilerServices.Option;
 #if UNITY_2021_3_OR_NEWER
@@ -35,20 +37,22 @@ namespace DxMessaging.Core.MessageBus
     {
         private long _emissionId;
 
-        // The emission id of the dispatch pass currently executing on this
-        // bus. Assigned alongside each _emissionId increment and
-        // saved/restored by DispatchLease, so when a nested (reentrant)
-        // emission completes, the OUTER emission resumes reading ITS OWN id
-        // rather than the bumped live counter. Every per-emission freeze key
-        // (handler-side GetOrAddNewHandlerStack via the
-        // EmissionId property, global prefreeze stamps, snapshot
-        // acquisition) compares against
-        // this scoped value; using the live counter instead would make the
-        // outer emission's post-nested cache reads look like a NEW emission
-        // and rebuild (dropping mid-emission-deregistered handlers /
-        // surfacing mid-emission registrations), violating the documented
-        // frozen-snapshot contract. Outside any dispatch the two values are
-        // always equal.
+        /*
+            The emission id of the dispatch pass currently executing on this
+            bus. Assigned alongside each _emissionId increment and
+            saved/restored by DispatchLease, so when a nested (reentrant)
+            emission completes, the OUTER emission resumes reading ITS OWN id
+            rather than the bumped live counter. Every per-emission freeze key
+            (handler-side GetOrAddNewHandlerStack via the
+            EmissionId property, global prefreeze stamps, snapshot
+            acquisition) compares against
+            this scoped value; using the live counter instead would make the
+            outer emission's post-nested cache reads look like a NEW emission
+            and rebuild (dropping mid-emission-deregistered handlers /
+            surfacing mid-emission registrations), violating the documented
+            frozen-snapshot contract. Outside any dispatch the two values are
+            always equal.
+        */
         private long _scopedEmissionId;
 
         /// <summary>
@@ -59,7 +63,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         public long EmissionId => 0 < _dispatchDepth ? _scopedEmissionId : _emissionId;
         internal long TickCounter => _tickCounter;
-        internal bool IsDispatching => _dispatchDepth > 0;
+        internal bool IsDispatching => 0 < _dispatchDepth;
 
         private const long DefaultIdleEvictionTicks = 30;
         private const double DefaultEvictionTickIntervalSeconds = 5d;
@@ -241,10 +245,12 @@ namespace DxMessaging.Core.MessageBus
             return ContextHandlerByTargetDicts.Trim(0);
         }
 
-        // One bucket entry per registered MessageHandler. Bucket arrays are
-        // populated only for GLOBAL accept-all snapshots (the only remaining
-        // bucket-walking dispatch path). Non-global snapshots carry a resolved
-        // flat array and its entry count directly.
+        /*
+            One bucket entry per registered MessageHandler. Bucket arrays are
+            populated only for GLOBAL accept-all snapshots (the only remaining
+            bucket-walking dispatch path). Non-global snapshots carry a resolved
+            flat array and its entry count directly.
+        */
         internal readonly struct DispatchEntry
         {
             public DispatchEntry(MessageHandler handler)
@@ -333,16 +339,18 @@ namespace DxMessaging.Core.MessageBus
             public int entryCount;
             public bool hasRegistrations;
 
-            // Resolved flat dispatch entries for every flattened slot kind:
-            // untargeted handle/post, targeted/broadcast Default handle/post
-            // (context-keyed; one snapshot per context), and the
-            // targeted/broadcast WithoutContext handle/post slots. Holds a
-            // closed FlatDispatch<TMessage> (message-only delegate shape) or
-            // ContextFlatDispatch<TMessage> (WithoutContext shape, delegates
-            // receive the routing InstanceId); the dispatch site reinterprets
-            // it via DxUnsafe.As using the emission's TMessage and the slot's
-            // known shape. Owned by this snapshot: released exactly once in
-            // Release().
+            /*
+                Resolved flat dispatch entries for every flattened slot kind:
+                untargeted handle/post, targeted/broadcast Default handle/post
+                (context-keyed; one snapshot per context), and the
+                targeted/broadcast WithoutContext handle/post slots. Holds a
+                closed FlatDispatch<TMessage> (message-only delegate shape) or
+                ContextFlatDispatch<TMessage> (WithoutContext shape, delegates
+                receive the routing InstanceId); the dispatch site reinterprets
+                it via DxUnsafe.As using the emission's TMessage and the slot's
+                known shape. Owned by this snapshot: released exactly once in
+                Release().
+            */
             public FlatDispatchArray flat;
             private bool _pooled;
             private readonly bool _pooledBuckets;
@@ -600,9 +608,11 @@ namespace DxMessaging.Core.MessageBus
             /// </summary>
             public void Clear()
             {
-                // LEGACY: version reset semantics. Bus-side deregistration closures use
-                // captured cache identity and reset generations, so monotonic versioning
-                // is handled by sweep-driven slot reset paths.
+                /*
+                    LEGACY: version reset semantics. Bus-side deregistration closures use
+                    captured cache identity and reset generations, so monotonic versioning
+                    is handled by sweep-driven slot reset paths.
+                */
                 handlers.Clear();
                 order.Clear();
                 version = 0;
@@ -761,13 +771,15 @@ namespace DxMessaging.Core.MessageBus
             private readonly long _leaseId;
             private readonly long _previousLeaseId;
 
-            // The scoped emission id of the emission this lease is nested
-            // inside (or the idle value at the outermost lease). Restored on
-            // Dispose so that when a nested (reentrant) emission completes,
-            // the outer emission's remaining dispatch reads its OWN emission
-            // id again - the per-emission freeze keys (GetOrAdd*HandlerStack,
-            // prefreeze stamps) rely on this to keep the outer emission's
-            // frozen caches frozen across nested emissions.
+            /*
+                The scoped emission id of the emission this lease is nested
+                inside (or the idle value at the outermost lease). Restored on
+                Dispose so that when a nested (reentrant) emission completes,
+                the outer emission's remaining dispatch reads its OWN emission
+                id again - the per-emission freeze keys (GetOrAdd*HandlerStack,
+                prefreeze stamps) rely on this to keep the outer emission's
+                frozen caches frozen across nested emissions.
+            */
             private readonly long _previousScopedEmissionId;
 
             public DispatchLease(MessageBus bus)
@@ -791,9 +803,11 @@ namespace DxMessaging.Core.MessageBus
                     return;
                 }
 
-                // The owner-held identity makes copies idempotent. A mutable flag on this
-                // readonly struct would protect only one copy and still allow another copy to
-                // unwind the same dispatch twice.
+                /*
+                    The owner-held identity makes copies idempotent. A mutable flag on this
+                    readonly struct would protect only one copy and still allow another copy to
+                    unwind the same dispatch twice.
+                */
                 bus._activeDispatchLeaseId = _previousLeaseId;
                 bus._scopedEmissionId = _previousScopedEmissionId;
                 int depth = bus._dispatchDepth - 1;
@@ -858,7 +872,7 @@ namespace DxMessaging.Core.MessageBus
                     _leaseId = ++bus._reflexiveDispatchLeaseSequence;
                 }
                 _previousState = bus._reflexiveDispatchState;
-                _rented = bus._reflexiveDispatchDepth > 0;
+                _rented = 0 < bus._reflexiveDispatchDepth;
                 _resetGeneration = bus._resetGeneration;
                 _retentionGeneration = bus._reflexiveRetentionGeneration;
                 if (_rented)
@@ -883,12 +897,14 @@ namespace DxMessaging.Core.MessageBus
                     return;
                 }
 
-                // See DispatchLease.Dispose: the identity lives on the bus so every copied
-                // value observes that this logical lease has already ended.
+                /*
+                    See DispatchLease.Dispose: the identity lives on the bus so every copied
+                    value observes that this logical lease has already ended.
+                */
                 bus._activeReflexiveDispatchLeaseId = _previousLeaseId;
                 ReflexiveDispatchState completedState = bus._reflexiveDispatchState;
                 bool retain =
-                    bus._handlerCacheRetentionLimit > 0
+                    0 < bus._handlerCacheRetentionLimit
                     && completedState.RetainedCapacity <= bus._handlerCacheRetentionLimit
                     && bus._resetGeneration == _resetGeneration
                     && bus._reflexiveRetentionGeneration == _retentionGeneration;
@@ -932,17 +948,19 @@ namespace DxMessaging.Core.MessageBus
         {
             public readonly Dictionary<MessageHandler, int> handlers = new();
 
-            // MessageHandler keys in first-registration order. Dictionary
-            // enumeration order is NOT stable across Remove/Add churn (.NET
-            // reuses freed slots LIFO), so dispatch snapshots are built from
-            // this list instead of from <see cref="handlers"/> to honor the
-            // documented "same priority uses registration order" contract
-            // across components. Invariants: contains exactly the keys of
-            // <see cref="handlers"/>; a key is appended on its FIRST
-            // registration only (refcount increments do not move it) and
-            // removed when its refcount drops to zero. The MessageHandler-side
-            // cache keeps this invariant inside one ordered container; the
-            // bus-side map remains a separate candidate.
+            /*
+                MessageHandler keys in first-registration order. Dictionary
+                enumeration order is NOT stable across Remove/Add churn (.NET
+                reuses freed slots LIFO), so dispatch snapshots are built from
+                this list instead of from <see cref="handlers"/> to honor the
+                documented "same priority uses registration order" contract
+                across components. Invariants: contains exactly the keys of
+                <see cref="handlers"/>; a key is appended on its FIRST
+                registration only (refcount increments do not move it) and
+                removed when its refcount drops to zero. The MessageHandler-side
+                cache keeps this invariant inside one ordered container; the
+                bus-side map remains a separate candidate.
+            */
             public readonly List<MessageHandler> insertionOrder = new();
             public long version;
             public int highWaterDistinctHandlers;
@@ -952,9 +970,11 @@ namespace DxMessaging.Core.MessageBus
             /// </summary>
             public void Clear()
             {
-                // LEGACY: version reset semantics. Bus-side deregistration closures use
-                // captured cache identity and reset generations, so monotonic versioning
-                // is handled by sweep-driven slot reset paths.
+                /*
+                    LEGACY: version reset semantics. Bus-side deregistration closures use
+                    captured cache identity and reset generations, so monotonic versioning
+                    is handled by sweep-driven slot reset paths.
+                */
                 handlers.Clear();
                 insertionOrder.Clear();
                 version = 0;
@@ -980,7 +1000,7 @@ namespace DxMessaging.Core.MessageBus
             cache.Clear();
             if (
                 _recycledEmptyHandlerCache == null
-                && _handlerCacheRetentionLimit > 0
+                && 0 < _handlerCacheRetentionLimit
                 && cache.highWaterDistinctHandlers <= _handlerCacheRetentionLimit
             )
             {
@@ -1254,14 +1274,16 @@ namespace DxMessaging.Core.MessageBus
 
         public RegistrationLog Log => _log ??= new RegistrationLog(false, _registrationLogCapacity);
 
-        // Storage trio for typed and global dispatch. _scalarSinks and
-        // _contextSinks are SlotKey-indexed arrays of MessageCache (call sites
-        // index by BusSinkIndex / BusContextIndex constants; reserved-null
-        // entries are documented in BusSinkIndex.cs). _globalSlots is a single
-        // BusGlobalSlot -- the global accept-all slot is single-cardinality, so
-        // there is no array to index, but it is grouped here because it shares
-        // the lifecycle of the typed sinks (cleared together in ResetState,
-        // touched together by the eviction layer).
+        /*
+            Storage trio for typed and global dispatch. _scalarSinks and
+            _contextSinks are SlotKey-indexed arrays of MessageCache (call sites
+            index by BusSinkIndex / BusContextIndex constants; reserved-null
+            entries are documented in BusSinkIndex.cs). _globalSlots is a single
+            BusGlobalSlot -- the global accept-all slot is single-cardinality, so
+            there is no array to index, but it is grouped here because it shares
+            the lifecycle of the typed sinks (cleared together in ResetState,
+            touched together by the eviction layer).
+        */
         private readonly MessageCache<HandlerCache<int, HandlerCache>>[] _scalarSinks =
             new MessageCache<HandlerCache<int, HandlerCache>>[BusSinkIndex.Length]
             {
@@ -1286,10 +1308,12 @@ namespace DxMessaging.Core.MessageBus
 
         private readonly BusGlobalSlot _globalSlots = new();
 
-        // P1 emit-preamble plans: one per (bus, type, kind), validated by a
-        // single bus-wide version stamp (see DispatchPlan /
-        // InvalidateDispatchPlans). Registered in SweepableTypeCacheRegistry
-        // so sweeps drop their cached sink references.
+        /*
+            P1 emit-preamble plans: one per (bus, type, kind), validated by a
+            single bus-wide version stamp (see DispatchPlan /
+            InvalidateDispatchPlans). Registered in SweepableTypeCacheRegistry
+            so sweeps drop their cached sink references.
+        */
         private readonly MessageCache<UntargetedDispatchPlan> _untargetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _targetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _broadcastDispatchPlans = new();
@@ -1443,10 +1467,12 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        // Bumped by every mutation that can change what a DispatchPlan
-        // caches or decides. Plans compare their stamp against this value at
-        // every emission; the emit shells also re-compare mid-emission to
-        // detect handler-driven registration changes.
+        /*
+            Bumped by every mutation that can change what a DispatchPlan
+            caches or decides. Plans compare their stamp against this value at
+            every emission; the emit shells also re-compare mid-emission to
+            detect handler-driven registration changes.
+        */
         private long _dispatchPlanVersion;
 
         /// <summary>
@@ -1544,7 +1570,7 @@ namespace DxMessaging.Core.MessageBus
 
         private static void RegisterForIdleSweeps(MessageBus bus)
         {
-            for (int i = IdleSweepBuses.Count - 1; i >= 0; --i)
+            for (int i = IdleSweepBuses.Count - 1; 0 <= i; --i)
             {
                 if (!IdleSweepBuses[i].TryGetTarget(out MessageBus existing))
                 {
@@ -1578,7 +1604,7 @@ namespace DxMessaging.Core.MessageBus
                 settings = DxMessagingRuntimeSettingsProvider.Current;
             }
 
-            for (int i = IdleSweepBuses.Count - 1; i >= 0; --i)
+            for (int i = IdleSweepBuses.Count - 1; 0 <= i; --i)
             {
                 if (IdleSweepBuses[i].TryGetTarget(out MessageBus bus))
                 {
@@ -1592,7 +1618,7 @@ namespace DxMessaging.Core.MessageBus
 
         internal static void SweepIdleBusesFromPlayerLoop()
         {
-            for (int i = IdleSweepBuses.Count - 1; i >= 0; --i)
+            for (int i = IdleSweepBuses.Count - 1; 0 <= i; --i)
             {
                 if (IdleSweepBuses[i].TryGetTarget(out MessageBus bus))
                 {
@@ -1849,7 +1875,7 @@ namespace DxMessaging.Core.MessageBus
                 && _reflexiveDispatchState != null
                 && (
                     _handlerCacheRetentionLimit == 0
-                    || _reflexiveDispatchState.RetainedCapacity > _handlerCacheRetentionLimit
+                    || _handlerCacheRetentionLimit < _reflexiveDispatchState.RetainedCapacity
                 )
             )
             {
@@ -1859,8 +1885,8 @@ namespace DxMessaging.Core.MessageBus
                 _recycledEmptyHandlerCache != null
                 && (
                     _handlerCacheRetentionLimit == 0
-                    || _recycledEmptyHandlerCache.highWaterDistinctHandlers
-                        > _handlerCacheRetentionLimit
+                    || _handlerCacheRetentionLimit
+                        < _recycledEmptyHandlerCache.highWaterDistinctHandlers
                 )
             )
             {
@@ -1878,8 +1904,10 @@ namespace DxMessaging.Core.MessageBus
             _evictionTickIntervalSeconds = Math.Max(0d, settings.EvictionTickIntervalSeconds);
             _idleEvictionEnabled = settings.EvictionEnabled;
             _trimApiEnabled = settings.EnableTrimApi;
-            // Defensive: plans cache no settings today, but a hot reload is
-            // a documented invalidation site (cheap, runs only on reload).
+            /*
+                Defensive: plans cache no settings today, but a hot reload is
+                a documented invalidation site (cheap, runs only on reload).
+            */
             InvalidateDispatchPlans();
         }
 #endif
@@ -1983,12 +2011,14 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        // Asserts BusGlobalSlot.liveCount remains in lockstep with
-        // _globalSlots.sharedHandlers.Count after every register / deregister.
-        // Stripped in Release builds via [Conditional("DEBUG")] -- zero
-        // hot-path cost. Kept separate from ValidateSinkArrays (which runs
-        // once at construction) because this invariant must hold across
-        // mutations, not only at startup.
+        /*
+            Asserts BusGlobalSlot.liveCount remains in lockstep with
+            _globalSlots.sharedHandlers.Count after every register / deregister.
+            Stripped in Release builds via [Conditional("DEBUG")] -- zero
+            hot-path cost. Kept separate from ValidateSinkArrays (which runs
+            once at construction) because this invariant must hold across
+            mutations, not only at startup.
+        */
         [Conditional("DEBUG")]
         private void DebugAssertGlobalLiveCount()
         {
@@ -2099,36 +2129,38 @@ namespace DxMessaging.Core.MessageBus
         private long _dispatchLeaseSequence;
         private long _activeDispatchLeaseId;
 
-        // Deferred teardown for ResetState() invoked from inside a handler
-        // while an emission is in flight. Clearing a context HandlerCache (or
-        // resetting a global DispatchState) inline would release the in-flight
-        // emission's frozen DispatchSnapshot bucket/entry arrays back to their
-        // ArrayPools (and clear the frozen priority list) while the dispatch
-        // loop is still iterating them. Instead, the caches/states are queued
-        // here and torn down when the outermost dispatch lease exits --
-        // mirroring how Trim/sweep defer eviction via HasActiveDispatchSnapshot
-        // and the _dispatchDepth gate in SweepDirtyTypedHandlerSlots. The
-        // deferred reset lists allocate only on the rare reset-during-dispatch
-        // path; the steady-state dispatch path pays a single flag check on
-        // lease exit.
-        //
-        // _deferredDisplacedSnapshots extends the same machinery to dispatch
-        // snapshots DISPLACED out of DispatchState.active by a nested
-        // emission's snapshot promotion (see ReleaseDisplacedSnapshot): a
-        // handler that mutates the same-type registration set and then
-        // in a reentrant emission emits the same message type promotes the staged pending
-        // snapshot under a new emission id, displacing the snapshot the OUTER
-        // dispatch loop is still iterating. Releasing it inline would clear
-        // and pool the frozen arrays mid-iteration (NRE / silent handler
-        // drops / cross-dispatch pool aliasing at deeper nesting). Displaced
-        // snapshots are queued here instead and released when the outermost
-        // dispatch lease exits. A snapshot can be queued at most once: it is
-        // removed from its DispatchState field at the moment it is queued,
-        // snapshot instances are never shared between state fields, and
-        // Release() is additionally idempotent via its _pooled guard.
-        // _postRouteSnapshotHistory uses the same lease lifetime for standalone
-        // pre-mutation snapshots of rewritten target/source post routes. It
-        // allocates only when a keyed post route mutates during dispatch.
+        /*
+            Deferred teardown for ResetState() invoked from inside a handler
+            while an emission is in flight. Clearing a context HandlerCache (or
+            resetting a global DispatchState) inline would release the in-flight
+            emission's frozen DispatchSnapshot bucket/entry arrays back to their
+            ArrayPools (and clear the frozen priority list) while the dispatch
+            loop is still iterating them. Instead, the caches/states are queued
+            here and torn down when the outermost dispatch lease exits --
+            mirroring how Trim/sweep defer eviction via HasActiveDispatchSnapshot
+            and the _dispatchDepth gate in SweepDirtyTypedHandlerSlots. The
+            deferred reset lists allocate only on the rare reset-during-dispatch
+            path; the steady-state dispatch path pays a single flag check on
+            lease exit.
+
+            _deferredDisplacedSnapshots extends the same machinery to dispatch
+            snapshots DISPLACED out of DispatchState.active by a nested
+            emission's snapshot promotion (see ReleaseDisplacedSnapshot): a
+            handler that mutates the same-type registration set and then
+            in a reentrant emission emits the same message type promotes the staged pending
+            snapshot under a new emission id, displacing the snapshot the OUTER
+            dispatch loop is still iterating. Releasing it inline would clear
+            and pool the frozen arrays mid-iteration (NRE / silent handler
+            drops / cross-dispatch pool aliasing at deeper nesting). Displaced
+            snapshots are queued here instead and released when the outermost
+            dispatch lease exits. A snapshot can be queued at most once: it is
+            removed from its DispatchState field at the moment it is queued,
+            snapshot instances are never shared between state fields, and
+            Release() is additionally idempotent via its _pooled guard.
+            _postRouteSnapshotHistory uses the same lease lifetime for standalone
+            pre-mutation snapshots of rewritten target/source post routes. It
+            allocates only when a keyed post route mutates during dispatch.
+        */
         private bool _hasDeferredResetTeardown;
         private List<HandlerCache<int, HandlerCache>> _deferredResetHandlerCaches;
         private List<DispatchState> _deferredResetDispatchStates;
@@ -2136,10 +2168,12 @@ namespace DxMessaging.Core.MessageBus
         private List<PostRouteSnapshotHistoryEntry> _postRouteSnapshotHistory;
         private HashSet<PostRouteKey> _postRouteCompactionRoutes;
 
-        // Bumped by ResetState. Deregister closures captured before the bump
-        // compare their captured generation to this field and silently skip
-        // when they no longer match, so a deferred Object.Destroy that lands
-        // after a Reset cannot log spurious over-deregistration errors.
+        /*
+            Bumped by ResetState. Deregister closures captured before the bump
+            compare their captured generation to this field and silently skip
+            when they no longer match, so a deferred Object.Destroy that lands
+            after a Reset cannot log spurious over-deregistration errors.
+        */
         private long _resetGeneration;
 
         /// <summary>
@@ -2356,9 +2390,11 @@ namespace DxMessaging.Core.MessageBus
 
         internal TrimResult Sweep(bool force)
         {
-            // Any eviction below can remove a sink slot a DispatchPlan has
-            // cached; bump first so the plan rows at the end of this method
-            // (and the next emission of any type) see every plan as stale.
+            /*
+                Any eviction below can remove a sink slot a DispatchPlan has
+                cached; bump first so the plan rows at the end of this method
+                (and the next emission of any type) see every plan as stale.
+            */
             InvalidateDispatchPlans();
             int typeSlotsEvicted = SweepableTypeCacheRegistry[0].Sweep(this, force);
             _lastContextTypeSlotsEvicted = 0;
@@ -2369,9 +2405,11 @@ namespace DxMessaging.Core.MessageBus
             typeSlotsEvicted += SweepableTypeCacheRegistry[4].Sweep(this, force);
             typeSlotsEvicted += SweepGlobalSlot(force);
             typeSlotsEvicted += SweepDirtyTypedHandlerSlots(force);
-            // Plan rows: release cached sink references AFTER the eviction
-            // rows above so anything they evicted is dereferenced within the
-            // same sweep. Always returns 0 (derived caches, not type slots).
+            /*
+                Plan rows: release cached sink references AFTER the eviction
+                rows above so anything they evicted is dereferenced within the
+                same sweep. Always returns 0 (derived caches, not type slots).
+            */
             _ = SweepableTypeCacheRegistry[5].Sweep(this, force);
             _ = SweepableTypeCacheRegistry[6].Sweep(this, force);
             _ = SweepableTypeCacheRegistry[7].Sweep(this, force);
@@ -2591,8 +2629,10 @@ namespace DxMessaging.Core.MessageBus
                 return 0;
             }
 
-            // LEGACY: global slot reset keeps the sweep-generation guard for stale
-            // deregistration closures.
+            /*
+                LEGACY: global slot reset keeps the sweep-generation guard for stale
+                deregistration closures.
+            */
             _globalSlots.Reset();
             unchecked
             {
@@ -2605,7 +2645,7 @@ namespace DxMessaging.Core.MessageBus
         private int SweepDirtyTypedHandlerSlots(bool force)
         {
             int evicted = 0;
-            if (_dispatchDepth > 0)
+            if (0 < _dispatchDepth)
             {
                 return evicted;
             }
@@ -2649,13 +2689,13 @@ namespace DxMessaging.Core.MessageBus
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsIdleForSweep(long lastTouchTicks, bool force)
         {
-            return force || unchecked(_tickCounter - lastTouchTicks) > _idleEvictionTicks;
+            return force || _idleEvictionTicks < unchecked(_tickCounter - lastTouchTicks);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HasActiveDispatchSnapshot(DispatchState state)
         {
-            return _dispatchDepth > 0 && state != null && state.active.IsInitialized;
+            return 0 < _dispatchDepth && state != null && state.active.IsInitialized;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2828,10 +2868,10 @@ namespace DxMessaging.Core.MessageBus
                     && _dirtyHandlerSet.Contains(handler)
                     && _dirtyHandlerTicks.TryGetValue(handler, out long lastTouchTicks)
                     && (
-                        handler.CountEmptyTypedSlotsForSweep(this) > 0
+                        0 < handler.CountEmptyTypedSlotsForSweep(this)
                         || handler.HasPendingContextCleanup(this)
                     )
-                    && (_dispatchDepth > 0 || !IsIdleForSweep(lastTouchTicks, force: false))
+                    && (0 < _dispatchDepth || !IsIdleForSweep(lastTouchTicks, force: false))
                 )
                 {
                     _dirtyHandlers[write++] = handler;
@@ -2957,7 +2997,7 @@ namespace DxMessaging.Core.MessageBus
                 && targetSet.Remove(target)
             )
             {
-                for (int index = targets.Count - 1; index >= 0; --index)
+                for (int index = targets.Count - 1; 0 <= index; --index)
                 {
                     if (targets[index] != target)
                     {
@@ -2971,9 +3011,11 @@ namespace DxMessaging.Core.MessageBus
                 }
             }
 
-            // Deliberately retain the empty per-type context map and dirty-candidate
-            // collections. Returning and immediately renting them would make this row measure
-            // shared pools in addition to the target map. ResetState returns them at teardown.
+            /*
+                Deliberately retain the empty per-type context map and dirty-candidate
+                collections. Returning and immediately renting them would make this row measure
+                shared pools in addition to the target map. ResetState returns them at teardown.
+            */
             return evicted;
         }
 
@@ -3049,13 +3091,15 @@ namespace DxMessaging.Core.MessageBus
                     continue;
                 }
 
-                if (_dispatchDepth > 0)
+                if (0 < _dispatchDepth)
                 {
-                    // An emission is in flight (ResetState invoked from inside
-                    // a handler): Clear() would release the active dispatch
-                    // snapshot's pooled arrays and the frozen priority list
-                    // while the dispatch loop is still iterating them. Defer
-                    // the teardown until the outermost dispatch lease exits.
+                    /*
+                        An emission is in flight (ResetState invoked from inside
+                        a handler): Clear() would release the active dispatch
+                        snapshot's pooled arrays and the frozen priority list
+                        while the dispatch loop is still iterating them. Defer
+                        the teardown until the outermost dispatch lease exits.
+                    */
                     DeferHandlerCacheClear(handlers);
                     continue;
                 }
@@ -3103,7 +3147,7 @@ namespace DxMessaging.Core.MessageBus
         {
             foreach (HandlerCache<int, HandlerCache> handlers in sink)
             {
-                if (_dispatchDepth > 0)
+                if (0 < _dispatchDepth)
                 {
                     DeferHandlerCacheClear(handlers);
                     continue;
@@ -3187,12 +3231,14 @@ namespace DxMessaging.Core.MessageBus
                     routeHistory[i].snapshot.Release();
                 }
 
-                // List.Clear clears the DispatchSnapshot references held by
-                // each entry. Retain only a bounded backing array so an
-                // adversarial mutation burst cannot permanently raise this
-                // bus's idle footprint.
+                /*
+                    List.Clear clears the DispatchSnapshot references held by
+                    each entry. Retain only a bounded backing array so an
+                    adversarial mutation burst cannot permanently raise this
+                    bus's idle footprint.
+                */
                 routeHistory.Clear();
-                if (routeHistory.Capacity > ContextHandlerByTargetDicts.MaxRetained)
+                if (ContextHandlerByTargetDicts.MaxRetained < routeHistory.Capacity)
                 {
                     _postRouteSnapshotHistory = null;
                 }
@@ -3201,17 +3247,19 @@ namespace DxMessaging.Core.MessageBus
             HashSet<PostRouteKey> compactionRoutes = _postRouteCompactionRoutes;
             if (
                 compactionRoutes != null
-                && compactionRoutes.EnsureCapacity(0) > ContextHandlerByTargetDicts.MaxRetained
+                && ContextHandlerByTargetDicts.MaxRetained < compactionRoutes.EnsureCapacity(0)
             )
             {
                 _postRouteCompactionRoutes = null;
             }
 
-            // Displaced snapshots are standalone (queued only after being
-            // unlinked from DispatchState.active), just like the historical
-            // route snapshots released above. Releasing both groups ahead of
-            // cache clears keeps the pools warm and cannot overlap snapshots
-            // still referenced by those states.
+            /*
+                Displaced snapshots are standalone (queued only after being
+                unlinked from DispatchState.active), just like the historical
+                route snapshots released above. Releasing both groups ahead of
+                cache clears keeps the pools warm and cannot overlap snapshots
+                still referenced by those states.
+            */
             List<DispatchSnapshot> displacedSnapshots = _deferredDisplacedSnapshots;
             if (displacedSnapshots != null)
             {
@@ -3268,7 +3316,7 @@ namespace DxMessaging.Core.MessageBus
 
         private static bool ShouldDropOversizedPoolEntry(int retainedEntryCount, int maxRetained)
         {
-            return maxRetained > 0 && retainedEntryCount > maxRetained;
+            return 0 < maxRetained && maxRetained < retainedEntryCount;
         }
 
         private void ClearDirtyTypeCandidatesWithoutEmptySlots()
@@ -3405,7 +3453,7 @@ namespace DxMessaging.Core.MessageBus
                     handler != null
                     && _dirtyHandlerSet.Contains(handler)
                     && (
-                        handler.CountEmptyTypedSlotsForSweep(this) > 0
+                        0 < handler.CountEmptyTypedSlotsForSweep(this)
                         || handler.HasPendingContextCleanup(this)
                     )
                 )
@@ -3475,13 +3523,15 @@ namespace DxMessaging.Core.MessageBus
             ClearAndReturnContextSink(_contextSinks[BusContextIndex.BroadcastPostProcessDefault]);
             ClearScalarSink(_scalarSinks[BusSinkIndex.TargetedPostProcessWithoutContext]);
             ClearScalarSink(_scalarSinks[BusSinkIndex.BroadcastPostProcessWithoutContext]);
-            if (_dispatchDepth > 0)
+            if (0 < _dispatchDepth)
             {
-                // BusGlobalSlot.Clear() resets its dispatch states inline,
-                // which would release an in-flight global accept-all
-                // snapshot's pooled arrays mid-iteration. Detach the states
-                // first so the release runs after the outermost dispatch
-                // lease exits; see FlushDeferredResetTeardown.
+                /*
+                    BusGlobalSlot.Clear() resets its dispatch states inline,
+                    which would release an in-flight global accept-all
+                    snapshot's pooled arrays mid-iteration. Detach the states
+                    first so the release runs after the outermost dispatch
+                    lease exits; see FlushDeferredResetTeardown.
+                */
                 DeferDispatchStateReset(ref _globalSlots.untargetedDispatchState);
                 DeferDispatchStateReset(ref _globalSlots.targetedDispatchState);
                 DeferDispatchStateReset(ref _globalSlots.broadcastDispatchState);
@@ -3489,8 +3539,10 @@ namespace DxMessaging.Core.MessageBus
 
             _globalSlots.Clear();
 
-            // Plans cache references into the sinks cleared above; drop them
-            // and force every type to rebuild its plan on the next emission.
+            /*
+                Plans cache references into the sinks cleared above; drop them
+                and force every type to rebuild its plan on the next emission.
+            */
             InvalidateDispatchPlans();
             _untargetedDispatchPlans.Clear();
             _targetedDispatchPlans.Clear();
@@ -3695,10 +3747,12 @@ namespace DxMessaging.Core.MessageBus
 
             Type type = typeof(IMessage);
             _globalSlots.sharedHandlers[messageHandler] = count + 1;
-            // liveCount mirrors sharedHandlers.Count at every stable
-            // observation point; only newly-inserted handlers (the 0 -> 1
-            // transition in the per-handler refcount) advance it. See
-            // BusGlobalSlot.liveCount xmldoc for the full invariant.
+            /*
+                liveCount mirrors sharedHandlers.Count at every stable
+                observation point; only newly-inserted handlers (the 0 -> 1
+                transition in the per-handler refcount) advance it. See
+                BusGlobalSlot.liveCount xmldoc for the full invariant.
+            */
             if (count == 0)
             {
                 _globalSlots.liveCount++;
@@ -3751,8 +3805,10 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         private void DeregisterGlobalAcceptAll(in MessageBusRegistration reg)
         {
-            // Generation guard: see DeregisterScalarHandler. The global slot guards on BOTH the
-            // reset generation and the global-slot sweep generation.
+            /*
+                Generation guard: see DeregisterScalarHandler. The global slot guards on BOTH the
+                reset generation and the global-slot sweep generation.
+            */
             if (
                 reg.generation != _resetGeneration
                 || reg.sweepGeneration != _globalSlotSweepGeneration
@@ -3795,9 +3851,11 @@ namespace DxMessaging.Core.MessageBus
                 _ = _globalSlots.sharedHandlers.Remove(messageHandler);
                 MarkDirtyHandler(messageHandler);
                 _globalSlotSweepCandidate = true;
-                // Final-removal of this handler from sharedHandlers is the 1 -> 0 transition that
-                // mirrors back into liveCount. Partial deregistration (count > 1) leaves liveCount
-                // alone -- the dictionary entry is still present.
+                /*
+                    Final-removal of this handler from sharedHandlers is the 1 -> 0 transition that
+                    mirrors back into liveCount. Partial deregistration (count > 1) leaves liveCount
+                    alone -- the dictionary entry is still present.
+                */
                 _globalSlots.liveCount--;
             }
             else
@@ -4173,26 +4231,30 @@ namespace DxMessaging.Core.MessageBus
         public void UntargetedBroadcast<TMessage>(ref TMessage typedMessage)
             where TMessage : IUntargetedMessage
         {
-            // TrySweepIdle runs BEFORE the plan is validated: a sweep can
-            // evict sink slots (and bumps the plan version), so validating
-            // afterwards guarantees the plan's cached references are live
-            // until the first user code of this emission runs.
+            /*
+                TrySweepIdle runs BEFORE the plan is validated: a sweep can
+                evict sink slots (and bumps the plan version), so validating
+                afterwards guarantees the plan's cached references are live
+                until the first user code of this emission runs.
+            */
             TrySweepIdle();
             if (!_untargetedDispatchPlans.TryGetValue<TMessage>(out UntargetedDispatchPlan plan))
             {
                 plan = _untargetedDispatchPlans.GetOrAdd<TMessage>();
-                // Root the IL2CPP AOT untyped-dispatch bridge for TMessage on the
-                // FIRST typed emit per bus (plan creation), not on every emit.
-                // EnsureAotUntargetedBridge is [Conditional("ENABLE_IL2CPP")] (inert
-                // under Mono) and flips a process-global one-way latch, so it need
-                // only run once before the first untyped dispatch of TMessage. Every
-                // Register*<TMessage> path roots it independently, and untyped
-                // dispatch is reachable only for a type already registered or
-                // typed-emitted first (otherwise it throws, unchanged) - so this
-                // first-touch placement preserves the invariant while removing a
-                // per-emit generic-static-init check + call from the IL2CPP
-                // steady-state hot path. Guarded by UntypedDispatchTests
-                // .TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch.
+                /*
+                    Root the IL2CPP AOT untyped-dispatch bridge for TMessage on the
+                    FIRST typed emit per bus (plan creation), not on every emit.
+                    EnsureAotUntargetedBridge is [Conditional("ENABLE_IL2CPP")] (inert
+                    under Mono) and flips a process-global one-way latch, so it need
+                    only run once before the first untyped dispatch of TMessage. Every
+                    Register*<TMessage> path roots it independently, and untyped
+                    dispatch is reachable only for a type already registered or
+                    typed-emitted first (otherwise it throws, unchanged) - so this
+                    first-touch placement preserves the invariant while removing a
+                    per-emit generic-static-init check + call from the IL2CPP
+                    steady-state hot path. Guarded by UntypedDispatchTests
+                    .TypedDispatchSeedsBridgeForPrivateManualMessageBeforeUntypedDispatch.
+                */
                 EnsureAotUntargetedBridge<TMessage>();
             }
 
@@ -4217,10 +4279,12 @@ namespace DxMessaging.Core.MessageBus
 
             if (plan.fastPath)
             {
-                // No interceptors, no global accept-all, no post-processors
-                // existed when the plan was validated (i.e. at emission
-                // start): handle phase only. A post-processor added by a
-                // handler waits until the next emission.
+                /*
+                    No interceptors, no global accept-all, no post-processors
+                    existed when the plan was validated (i.e. at emission
+                    start): handle phase only. A post-processor added by a
+                    handler waits until the next emission.
+                */
                 bool fastFound = false;
                 HandlerCache<int, HandlerCache> fastHandlers = plan.scalarHandle;
                 if (fastHandlers != null && 0 < fastHandlers.handlers.Count)
@@ -4246,20 +4310,24 @@ namespace DxMessaging.Core.MessageBus
                             handleEntries = flat.entries;
                             handleEntryCount = flat.count;
 
-                            // Publish the settled route BEFORE user code runs. A handler can
-                            // mutate registrations and re-emit this type; publishing after the
-                            // callback would let the outer emission overwrite the nested
-                            // emission's fresh route with a displaced array under a current
-                            // plan version.
+                            /*
+                                Publish the settled route BEFORE user code runs. A handler can
+                                mutate registrations and re-emit this type; publishing after the
+                                callback would let the outer emission overwrite the nested
+                                emission's fresh route with a displaced array under a current
+                                plan version.
+                            */
                             plan.handleEntryCount = handleEntryCount;
                             plan.handleEntries = handleEntries;
                         }
                     }
                     else
                     {
-                        // Equivalent steady-state stores from
-                        // AcquireDispatchSnapshotFast. The cached route is valid only while
-                        // the plan stamp matches, and every relevant mutation invalidates it.
+                        /*
+                            Equivalent steady-state stores from
+                            AcquireDispatchSnapshotFast. The cached route is valid only while
+                            the plan stamp matches, and every relevant mutation invalidates it.
+                        */
                         fastHandlers.lastTouchTicks = _tickCounter;
                         fastHandlers.dispatchState.snapshotEmissionId = emissionId;
                     }
@@ -4288,18 +4356,20 @@ namespace DxMessaging.Core.MessageBus
 
             long emissionResetGeneration = _resetGeneration;
 
-            // Pre-freeze the post-processing snapshot for this emission so
-            // mutations during handlers/post-processors are not observed
-            // until the next emission. Acquiring the snapshot here (before
-            // interceptors and handlers run) is sufficient: the snapshot's
-            // flat entry array was fully resolved at build time, so no lazy
-            // per-handler cache read remains to observe a mid-emission
-            // registration. plan.scalarPost is the same reference a live
-            // sink lookup would return here (the plan was validated after
-            // the sweep and no user code has run since).
+            /*
+                Pre-freeze the post-processing snapshot for this emission so
+                mutations during handlers/post-processors are not observed
+                until the next emission. Acquiring the snapshot here (before
+                interceptors and handlers run) is sufficient: the snapshot's
+                flat entry array was fully resolved at build time, so no lazy
+                per-handler cache read remains to observe a mid-emission
+                registration. plan.scalarPost is the same reference a live
+                sink lookup would return here (the plan was validated after
+                the sweep and no user code has run since).
+            */
             DispatchSnapshot untargetedPostSnapshot = DispatchSnapshot.Empty;
             HandlerCache<int, HandlerCache> untargetedPostHandlers = plan.scalarPost;
-            if (untargetedPostHandlers != null && untargetedPostHandlers.handlers.Count > 0)
+            if (untargetedPostHandlers != null && 0 < untargetedPostHandlers.handlers.Count)
             {
                 Touch(untargetedPostHandlers, touchTick);
                 untargetedPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
@@ -4326,9 +4396,11 @@ namespace DxMessaging.Core.MessageBus
                 BroadcastGlobalUntargeted(ref untargetedMessage, emissionId);
             }
 
-            // While the plan stamp still matches, no registration mutation has
-            // run since the plan was validated, so plan.scalarHandle IS what a
-            // live sink lookup returns. Only the mutated case pays the lookup.
+            /*
+                While the plan stamp still matches, no registration mutation has
+                run since the plan was validated, so plan.scalarHandle IS what a
+                live sink lookup returns. Only the mutated case pays the lookup.
+            */
             bool foundAnyHandlers =
                 planVersion == _dispatchPlanVersion
                     ? DispatchUntargetedHandlePhase(plan.scalarHandle, ref typedMessage, emissionId)
@@ -4384,9 +4456,11 @@ namespace DxMessaging.Core.MessageBus
         private void RefreshUntargetedDispatchPlan<TMessage>(UntargetedDispatchPlan plan)
             where TMessage : IUntargetedMessage
         {
-            // A relevant mutation can have staged a pending snapshot that the
-            // first post-refresh acquire still has to promote. Clear the route
-            // here, then repopulate it only AFTER that acquisition settles.
+            /*
+                A relevant mutation can have staged a pending snapshot that the
+                first post-refresh acquire still has to promote. Clear the route
+                here, then repopulate it only AFTER that acquisition settles.
+            */
             plan.ClearCachedRoute();
             _ = _scalarSinks[BusSinkIndex.UntargetedHandleDefault]
                 .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handle);
@@ -4467,14 +4541,18 @@ namespace DxMessaging.Core.MessageBus
         public void TargetedBroadcast<TMessage>(ref InstanceId target, ref TMessage typedMessage)
             where TMessage : ITargetedMessage
         {
-            // TrySweepIdle runs BEFORE the plan is validated; see
-            // UntargetedBroadcast for the ordering rationale.
+            /*
+                TrySweepIdle runs BEFORE the plan is validated; see
+                UntargetedBroadcast for the ordering rationale.
+            */
             TrySweepIdle();
             if (!_targetedDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
             {
                 plan = _targetedDispatchPlans.GetOrAdd<TMessage>();
-                // Root the AOT bridge on the first typed emit per bus; see
-                // UntargetedBroadcast for the full rationale and invariant.
+                /*
+                    Root the AOT bridge on the first typed emit per bus; see
+                    UntargetedBroadcast for the full rationale and invariant.
+                */
                 EnsureAotTargetedBridge<TMessage>();
             }
 
@@ -4497,10 +4575,12 @@ namespace DxMessaging.Core.MessageBus
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage, target, emissionId));
             }
 
-            // Fast lane: no interceptors, no global accept-all, no
-            // post-processors of either variant existed at emission start.
-            // ReflexiveMessage always takes the featured path (the typeof
-            // check is a JIT-time constant for every other message type).
+            /*
+                Fast lane: no interceptors, no global accept-all, no
+                post-processors of either variant existed at emission start.
+                ReflexiveMessage always takes the featured path (the typeof
+                check is a JIT-time constant for every other message type).
+            */
             if (plan.fastPath && typeof(TMessage) != typeof(ReflexiveMessage))
             {
                 bool fastFound = false;
@@ -4511,7 +4591,7 @@ namespace DxMessaging.Core.MessageBus
                         target,
                         out HandlerCache<int, HandlerCache> fastSorted
                     )
-                    && fastSorted.handlers.Count > 0
+                    && 0 < fastSorted.handlers.Count
                 )
                 {
                     Touch(fastSorted, touchTick);
@@ -4528,11 +4608,13 @@ namespace DxMessaging.Core.MessageBus
                     }
                 }
 
-                // Without-targeting handle phase. While no mutation happened
-                // this emission the cached sink reference IS the live sink;
-                // otherwise fall back to the live lookup (preserving the
-                // "registration into a previously snapshotless sink
-                // mid-emission fires" lazy-acquire semantics).
+                /*
+                    Without-targeting handle phase. While no mutation happened
+                    this emission the cached sink reference IS the live sink;
+                    otherwise fall back to the live lookup (preserving the
+                    "registration into a previously snapshotless sink
+                    mid-emission fires" lazy-acquire semantics).
+                */
                 if (planVersion == _dispatchPlanVersion)
                 {
                     HandlerCache<int, HandlerCache> fastTwt = plan.scalarHandle;
@@ -4579,15 +4661,17 @@ namespace DxMessaging.Core.MessageBus
 
             long emissionResetGeneration = _resetGeneration;
 
-            // Pre-freeze targeted post-processing for this emission
-            // (target-specific and without targeting). Acquiring the snapshot
-            // here (before interceptors and handlers run) is sufficient: the
-            // snapshot's flat entry array was fully resolved at build time,
-            // so no lazy per-handler cache read remains to observe a
-            // mid-emission registration - no prefreeze stamping needed.
-            // plan.contextPost / plan.scalarPost are the same references a
-            // live sink lookup would return here (plan validated after the
-            // sweep, no user code has run since).
+            /*
+                Pre-freeze targeted post-processing for this emission
+                (target-specific and without targeting). Acquiring the snapshot
+                here (before interceptors and handlers run) is sufficient: the
+                snapshot's flat entry array was fully resolved at build time,
+                so no lazy per-handler cache read remains to observe a
+                mid-emission registration - no prefreeze stamping needed.
+                plan.contextPost / plan.scalarPost are the same references a
+                live sink lookup would return here (plan validated after the
+                sweep, no user code has run since).
+            */
             DispatchSnapshot targetedPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot targetedWithoutTargetingPostSnapshot = DispatchSnapshot.Empty;
             ContextHandlerMap targetedPostHandlers = plan.contextPost;
@@ -4597,7 +4681,7 @@ namespace DxMessaging.Core.MessageBus
                     target,
                     out HandlerCache<int, HandlerCache> targetedPostByPriority
                 )
-                && targetedPostByPriority.handlers.Count > 0
+                && 0 < targetedPostByPriority.handlers.Count
             )
             {
                 Touch(targetedPostByPriority, touchTick);
@@ -4612,7 +4696,7 @@ namespace DxMessaging.Core.MessageBus
             HandlerCache<int, HandlerCache> targetedWithoutTargetingHandlers = plan.scalarPost;
             if (
                 targetedWithoutTargetingHandlers != null
-                && targetedWithoutTargetingHandlers.handlers.Count > 0
+                && 0 < targetedWithoutTargetingHandlers.handlers.Count
             )
             {
                 Touch(targetedWithoutTargetingHandlers, touchTick);
@@ -4625,8 +4709,10 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
-            // Capture the pre-interceptor target so post-processing can detect a
-            // rewritten id and re-resolve its snapshot against the final target.
+            /*
+                Capture the pre-interceptor target so post-processing can detect a
+                rewritten id and re-resolve its snapshot against the final target.
+            */
             InstanceId preInterceptorTarget = target;
             InterceptorCache<object> targetedInterceptors = plan.interceptorCache;
             if (
@@ -4761,20 +4847,19 @@ namespace DxMessaging.Core.MessageBus
                             }
                         }
                     }
-                    else if (!sentInADirection && sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat))
-                    {
-                        if (
-                            !SendMessage(
-                                go,
-                                ref reflexiveMessage,
-                                onlyActive,
-                                preserveNativeSemantics,
-                                emissionResetGeneration
-                            )
+                    else if (
+                        !sentInADirection
+                        && sendMode.HasFlagNoAlloc(ReflexiveSendMode.Flat)
+                        && !SendMessage(
+                            go,
+                            ref reflexiveMessage,
+                            onlyActive,
+                            preserveNativeSemantics,
+                            emissionResetGeneration
                         )
-                        {
-                            return;
-                        }
+                    )
+                    {
+                        return;
                     }
                 }
 #else
@@ -4785,10 +4870,12 @@ namespace DxMessaging.Core.MessageBus
 #endif
             }
 
-            // The target-keyed handle sink is re-resolved LIVE only once the
-            // plan stamp has moved; while it still matches, no interceptor or
-            // global handler mutated registrations and plan.contextHandle IS
-            // what a live lookup returns.
+            /*
+                The target-keyed handle sink is re-resolved LIVE only once the
+                plan stamp has moved; while it still matches, no interceptor or
+                global handler mutated registrations and plan.contextHandle IS
+                what a live lookup returns.
+            */
             bool planStillValid = planVersion == _dispatchPlanVersion;
             ContextHandlerMap targetedHandlers;
             if (planStillValid)
@@ -4807,7 +4894,7 @@ namespace DxMessaging.Core.MessageBus
                     target,
                     out HandlerCache<int, HandlerCache> sortedHandlers
                 )
-                && sortedHandlers.handlers.Count > 0
+                && 0 < sortedHandlers.handlers.Count
             )
             {
                 Touch(sortedHandlers, touchTick);
@@ -4818,19 +4905,23 @@ namespace DxMessaging.Core.MessageBus
                     emissionId,
                     target
                 );
-                // Flat dispatch; see DispatchFlatSnapshot for the
-                // frozen-array semantics that replace the legacy
-                // cross-priority prefreeze pass.
+                /*
+                    Flat dispatch; see DispatchFlatSnapshot for the
+                    frozen-array semantics that replace the legacy
+                    cross-priority prefreeze pass.
+                */
                 if (DispatchFlatSnapshot(snapshot, ref typedMessage))
                 {
                     foundAnyHandlers = true;
                 }
             }
 
-            // Re-compare rather than reusing planStillValid: the target-keyed
-            // handle phase above ran user code, and a handler that mutated
-            // registrations must be observed here exactly as the live lookup
-            // this replaces would have observed it.
+            /*
+                Re-compare rather than reusing planStillValid: the target-keyed
+                handle phase above ran user code, and a handler that mutated
+                registrations must be observed here exactly as the live lookup
+                this replaces would have observed it.
+            */
             bool planValidAfterHandlers = planVersion == _dispatchPlanVersion;
             if (
                 DispatchTargetedWithoutTargetingPhase(
@@ -4948,7 +5039,7 @@ namespace DxMessaging.Core.MessageBus
                         target,
                         out HandlerCache<int, HandlerCache> sortedHandlers
                     )
-                    && sortedHandlers.handlers.Count > 0
+                    && 0 < sortedHandlers.handlers.Count
                 )
                 {
                     snapshot = AcquireDispatchSnapshotFast<TMessage>(
@@ -4971,18 +5062,16 @@ namespace DxMessaging.Core.MessageBus
                 return foundAnyHandlers;
             }
 
-            if (targetedWithoutTargetingPostSnapshot.IsInitialized)
-            {
-                if (
-                    DispatchContextFlatSnapshot(
-                        targetedWithoutTargetingPostSnapshot,
-                        ref target,
-                        ref typedMessage
-                    )
+            if (
+                targetedWithoutTargetingPostSnapshot.IsInitialized
+                && DispatchContextFlatSnapshot(
+                    targetedWithoutTargetingPostSnapshot,
+                    ref target,
+                    ref typedMessage
                 )
-                {
-                    foundAnyHandlers = true;
-                }
+            )
+            {
+                foundAnyHandlers = true;
             }
 
             return foundAnyHandlers;
@@ -5060,14 +5149,18 @@ namespace DxMessaging.Core.MessageBus
         public void SourcedBroadcast<TMessage>(ref InstanceId source, ref TMessage typedMessage)
             where TMessage : IBroadcastMessage
         {
-            // TrySweepIdle runs BEFORE the plan is validated; see
-            // UntargetedBroadcast for the ordering rationale.
+            /*
+                TrySweepIdle runs BEFORE the plan is validated; see
+                UntargetedBroadcast for the ordering rationale.
+            */
             TrySweepIdle();
             if (!_broadcastDispatchPlans.TryGetValue<TMessage>(out DispatchPlan plan))
             {
                 plan = _broadcastDispatchPlans.GetOrAdd<TMessage>();
-                // Root the AOT bridge on the first typed emit per bus; see
-                // UntargetedBroadcast for the full rationale and invariant.
+                /*
+                    Root the AOT bridge on the first typed emit per bus; see
+                    UntargetedBroadcast for the full rationale and invariant.
+                */
                 EnsureAotSourcedBridge<TMessage>();
             }
 
@@ -5090,20 +5183,24 @@ namespace DxMessaging.Core.MessageBus
                 _emissionBuffer.Add(new MessageEmissionData(typedMessage, source, emissionId));
             }
 
-            // Fast lane: no interceptors, no global accept-all, no
-            // post-processors of either variant existed at emission start.
+            /*
+                Fast lane: no interceptors, no global accept-all, no
+                post-processors of either variant existed at emission start.
+            */
             if (plan.fastPath)
             {
-                // Pre-freeze the broadcast-without-source HANDLE snapshot
-                // before the source-keyed handle phase runs - with no
-                // interceptors and no global walk on this lane, this is the
-                // same program point as the featured acquisition, so
-                // registrations made by a source-keyed handler this emission
-                // are not observed (matching the legacy emission-start
-                // freeze).
+                /*
+                    Pre-freeze the broadcast-without-source HANDLE snapshot
+                    before the source-keyed handle phase runs - with no
+                    interceptors and no global walk on this lane, this is the
+                    same program point as the featured acquisition, so
+                    registrations made by a source-keyed handler this emission
+                    are not observed (matching the legacy emission-start
+                    freeze).
+                */
                 DispatchSnapshot fastBwsSnapshot = DispatchSnapshot.Empty;
                 HandlerCache<int, HandlerCache> fastBws = plan.scalarHandle;
-                if (fastBws != null && fastBws.handlers.Count > 0)
+                if (fastBws != null && 0 < fastBws.handlers.Count)
                 {
                     fastBwsSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
@@ -5126,8 +5223,10 @@ namespace DxMessaging.Core.MessageBus
                 )
                 {
                     Touch(fastSorted, touchTick);
-                    // Legacy reporting: the live per-source gate above
-                    // passing counts as "found".
+                    /*
+                        Legacy reporting: the live per-source gate above
+                        passing counts as "found".
+                    */
                     fastFound = true;
                     DispatchSnapshot fastSnapshot = AcquireDispatchSnapshotFast<TMessage>(
                         this,
@@ -5139,13 +5238,15 @@ namespace DxMessaging.Core.MessageBus
                     _ = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
                 }
 
-                // Without-source handle phase. While no mutation happened
-                // this emission the cached sink reference IS the live sink
-                // (and the pre-frozen snapshot above is exactly what the
-                // live phase would dispatch); otherwise fall back to the
-                // live lookup, preserving the "registration into a
-                // previously-empty sink mid-emission fires" lazy-acquire
-                // semantics.
+                /*
+                    Without-source handle phase. While no mutation happened
+                    this emission the cached sink reference IS the live sink
+                    (and the pre-frozen snapshot above is exactly what the
+                    live phase would dispatch); otherwise fall back to the
+                    live lookup, preserving the "registration into a
+                    previously-empty sink mid-emission fires" lazy-acquire
+                    semantics.
+                */
                 bool fastBwsFound;
                 if (planVersion == _dispatchPlanVersion)
                 {
@@ -5157,8 +5258,10 @@ namespace DxMessaging.Core.MessageBus
                             ref source,
                             ref typedMessage
                         );
-                        // Legacy reporting: the live-sink gate passing counts
-                        // as "found".
+                        /*
+                            Legacy reporting: the live-sink gate passing counts
+                            as "found".
+                        */
                         fastBwsFound = true;
                     }
                 }
@@ -5172,11 +5275,13 @@ namespace DxMessaging.Core.MessageBus
                     );
                 }
 
-                // Post phases: the featured path dispatches only snapshots
-                // pre-frozen at emission start (no live post re-check for
-                // broadcasts), and none existed on this lane - even a
-                // mid-emission post registration cannot fire this emission,
-                // exactly like the featured path.
+                /*
+                    Post phases: the featured path dispatches only snapshots
+                    pre-frozen at emission start (no live post re-check for
+                    broadcasts), and none existed on this lane - even a
+                    mid-emission post registration cannot fire this emission,
+                    exactly like the featured path.
+                */
                 if (!(fastFound || fastBwsFound) && MessagingDebug.enabled)
                 {
                     MessagingDebug.Log(
@@ -5192,15 +5297,17 @@ namespace DxMessaging.Core.MessageBus
 
             long emissionResetGeneration = _resetGeneration;
 
-            // Pre-freeze broadcast post-processing for this emission
-            // (source-specific and without source). Acquiring the snapshot
-            // here (before interceptors and handlers run) is sufficient: the
-            // snapshot's flat entry array was fully resolved at build time,
-            // so no lazy per-handler cache read remains to observe a
-            // mid-emission registration - no prefreeze stamping needed.
-            // plan.contextPost / plan.scalarPost are the same references a
-            // live sink lookup would return here (plan validated after the
-            // sweep, no user code has run since).
+            /*
+                Pre-freeze broadcast post-processing for this emission
+                (source-specific and without source). Acquiring the snapshot
+                here (before interceptors and handlers run) is sufficient: the
+                snapshot's flat entry array was fully resolved at build time,
+                so no lazy per-handler cache read remains to observe a
+                mid-emission registration - no prefreeze stamping needed.
+                plan.contextPost / plan.scalarPost are the same references a
+                live sink lookup would return here (plan validated after the
+                sweep, no user code has run since).
+            */
             DispatchSnapshot broadcastPostSnapshot = DispatchSnapshot.Empty;
             DispatchSnapshot broadcastWithoutSourcePostSnapshot = DispatchSnapshot.Empty;
             ContextHandlerMap broadcastPostHandlers = plan.contextPost;
@@ -5210,7 +5317,7 @@ namespace DxMessaging.Core.MessageBus
                     source,
                     out HandlerCache<int, HandlerCache> broadcastPostByPriority
                 )
-                && broadcastPostByPriority.handlers.Count > 0
+                && 0 < broadcastPostByPriority.handlers.Count
             )
             {
                 Touch(broadcastPostByPriority, touchTick);
@@ -5225,7 +5332,7 @@ namespace DxMessaging.Core.MessageBus
             HandlerCache<int, HandlerCache> broadcastWithoutSourceHandlers = plan.scalarPost;
             if (
                 broadcastWithoutSourceHandlers != null
-                && broadcastWithoutSourceHandlers.handlers.Count > 0
+                && 0 < broadcastWithoutSourceHandlers.handlers.Count
             )
             {
                 Touch(broadcastWithoutSourceHandlers, touchTick);
@@ -5238,8 +5345,10 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
-            // Capture the pre-interceptor source so post-processing can detect a
-            // rewritten id and re-resolve its snapshot against the final source.
+            /*
+                Capture the pre-interceptor source so post-processing can detect a
+                rewritten id and re-resolve its snapshot against the final source.
+            */
             InstanceId preInterceptorSource = source;
             InterceptorCache<object> broadcastInterceptors = plan.interceptorCache;
             if (
@@ -5256,16 +5365,18 @@ namespace DxMessaging.Core.MessageBus
                 BroadcastGlobalSourcedBroadcast(ref source, ref broadcastMessage, emissionId);
             }
 
-            // Pre-freeze the broadcast-without-source HANDLE snapshot at the
-            // point the legacy per-handler prefreeze pass ran (after
-            // interceptors and the global walk, before the source-keyed
-            // handle phase), so registrations made by a source-keyed handler
-            // this emission are not observed - acquisition alone freezes the
-            // fully-resolved flat array. The sinks are re-resolved LIVE only
-            // once the plan stamp has moved: interceptors and global handlers
-            // (user code) run above, but while the stamp still matches, none
-            // of them mutated registrations and the plan's cached sinks ARE
-            // what a live lookup returns.
+            /*
+                Pre-freeze the broadcast-without-source HANDLE snapshot at the
+                point the legacy per-handler prefreeze pass ran (after
+                interceptors and the global walk, before the source-keyed
+                handle phase), so registrations made by a source-keyed handler
+                this emission are not observed - acquisition alone freezes the
+                fully-resolved flat array. The sinks are re-resolved LIVE only
+                once the plan stamp has moved: interceptors and global handlers
+                (user code) run above, but while the stamp still matches, none
+                of them mutated registrations and the plan's cached sinks ARE
+                what a live lookup returns.
+            */
             bool planStillValid = planVersion == _dispatchPlanVersion;
             HandlerCache<int, HandlerCache> bwsHandlers;
             ContextHandlerMap broadcastHandlers;
@@ -5283,7 +5394,7 @@ namespace DxMessaging.Core.MessageBus
             }
 
             DispatchSnapshot broadcastWithoutSourceHandleSnapshot = DispatchSnapshot.Empty;
-            if (bwsHandlers != null && bwsHandlers.handlers.Count > 0)
+            if (bwsHandlers != null && 0 < bwsHandlers.handlers.Count)
             {
                 Touch(bwsHandlers, touchTick);
                 broadcastWithoutSourceHandleSnapshot = AcquireDispatchSnapshotFast<TMessage>(
@@ -5306,9 +5417,11 @@ namespace DxMessaging.Core.MessageBus
             )
             {
                 Touch(sortedHandlers, touchTick);
-                // Legacy reporting: the live per-source gate above passing
-                // counts as "found", regardless of how many frozen delegates
-                // fire below.
+                /*
+                    Legacy reporting: the live per-source gate above passing
+                    counts as "found", regardless of how many frozen delegates
+                    fire below.
+                */
                 foundAnyHandlers = true;
                 DispatchSnapshot snapshot = AcquireDispatchSnapshotFast<TMessage>(
                     this,
@@ -5317,10 +5430,12 @@ namespace DxMessaging.Core.MessageBus
                     emissionId,
                     source
                 );
-                // Flat dispatch; see DispatchFlatSnapshot for the
-                // frozen-array semantics that replace the legacy
-                // cross-priority prefreeze pass and the reentrant-rebuild
-                // copy/live-count guards.
+                /*
+                    Flat dispatch; see DispatchFlatSnapshot for the
+                    frozen-array semantics that replace the legacy
+                    cross-priority prefreeze pass and the reentrant-rebuild
+                    copy/live-count guards.
+                */
                 _ = DispatchFlatSnapshot(snapshot, ref typedMessage);
             }
 
@@ -5336,44 +5451,41 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            // Post-processors follow the FINAL source. If that route changed
-            // after this emission began, its first pre-mutation snapshot is
-            // the exact frozen view for this emission.
-            if (source != preInterceptorSource)
-            {
-                broadcastPostSnapshot = DispatchSnapshot.Empty;
-                if (
-                    !TryGetContextPostRouteAtEmissionStart<TMessage>(
-                        BroadcastPostSlot,
-                        source,
-                        touchTick,
-                        emissionResetGeneration,
-                        out broadcastPostSnapshot
-                    )
+            /*
+                Post-processors follow the FINAL source. If that route changed
+                after this emission began, its first pre-mutation snapshot is
+                the exact frozen view for this emission.
+            */
+            if (
+                source != preInterceptorSource
+                && !TryGetContextPostRouteAtEmissionStart<TMessage>(
+                    BroadcastPostSlot,
+                    source,
+                    touchTick,
+                    emissionResetGeneration,
+                    out broadcastPostSnapshot
                 )
-                {
-                    if (
-                        _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
-                            .TryGetValue<TMessage>(out broadcastPostHandlers)
-                        && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
-                        && broadcastPostByPriority.handlers.Count > 0
-                    )
-                    {
-                        broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
-                            this,
-                            broadcastPostByPriority,
-                            BroadcastPostSlot,
-                            emissionId,
-                            source
-                        );
-                    }
-                }
+                && _contextSinks[BusContextIndex.BroadcastPostProcessDefault]
+                    .TryGetValue<TMessage>(out broadcastPostHandlers)
+                && broadcastPostHandlers.TryGetValue(source, out broadcastPostByPriority)
+                && 0 < broadcastPostByPriority.handlers.Count
+            )
+            {
+                broadcastPostSnapshot = AcquireDispatchSnapshotFast<TMessage>(
+                    this,
+                    broadcastPostByPriority,
+                    BroadcastPostSlot,
+                    emissionId,
+                    source
+                );
             }
 
             if (broadcastPostSnapshot.IsInitialized)
             {
-                // Legacy reporting: an initialized pre-frozen snapshot counts as
-                // "found" even when it owns zero resolved delegates.
+                /*
+                    Legacy reporting: an initialized pre-frozen snapshot counts as
+                    "found" even when it owns zero resolved delegates.
+                */
                 foundAnyHandlers = true;
                 _ = DispatchFlatSnapshot(broadcastPostSnapshot, ref typedMessage);
             }
@@ -5383,18 +5495,16 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            if (broadcastWithoutSourcePostSnapshot.IsInitialized)
-            {
-                if (
-                    DispatchContextFlatSnapshot(
-                        broadcastWithoutSourcePostSnapshot,
-                        ref source,
-                        ref typedMessage
-                    )
+            if (
+                broadcastWithoutSourcePostSnapshot.IsInitialized
+                && DispatchContextFlatSnapshot(
+                    broadcastWithoutSourcePostSnapshot,
+                    ref source,
+                    ref typedMessage
                 )
-                {
-                    bwsFound = true;
-                }
+            )
+            {
+                bwsFound = true;
             }
 
             if (!(foundAnyHandlers || bwsFound) && MessagingDebug.enabled)
@@ -5441,8 +5551,10 @@ namespace DxMessaging.Core.MessageBus
             plan.version = _dispatchPlanVersion;
         }
 
-        // IL2CPP check elision on the frozen global bucket walk; entries and
-        // handlers are non-null by snapshot construction (see DispatchFlatSnapshot).
+        /*
+            IL2CPP check elision on the frozen global bucket walk; entries and
+            handlers are non-null by snapshot construction (see DispatchFlatSnapshot).
+        */
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private void BroadcastGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
@@ -5688,8 +5800,10 @@ namespace DxMessaging.Core.MessageBus
         /// phase mid-walk, because a reset invalidates the message itself, not
         /// just the interceptor set.
         /// </remarks>
-        // IL2CPP check elision on the frozen array walk: entries are non-null
-        // by plan construction and the loop bound is the plan's own count.
+        /*
+            IL2CPP check elision on the frozen array walk: entries are non-null
+            by plan construction and the loop bound is the plan's own count.
+        */
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private bool RunUntargetedInterceptors<T>(ref T message, InterceptorCache<object> cache)
@@ -5812,11 +5926,13 @@ namespace DxMessaging.Core.MessageBus
                 default
             );
 
-            // Flat dispatch; see DispatchFlatSnapshot for the frozen-array
-            // semantics, the reset-generation guard, and the
-            // "found any handlers" reporting (delegates fired OR bus-level
-            // bucket entries exist, matching the legacy link path's
-            // bucket-count behavior).
+            /*
+                Flat dispatch; see DispatchFlatSnapshot for the frozen-array
+                semantics, the reset-generation guard, and the
+                "found any handlers" reporting (delegates fired OR bus-level
+                bucket entries exist, matching the legacy link path's
+                bucket-count behavior).
+            */
             return DispatchFlatSnapshot(snapshot, ref message);
         }
 
@@ -5856,10 +5972,12 @@ namespace DxMessaging.Core.MessageBus
                 default
             );
 
-            // Flat dispatch; see DispatchContextFlatSnapshot for the
-            // frozen-array semantics that replace the legacy prefreeze hoist
-            // (the resolved array cannot observe a mid-emission
-            // deregistration, so no per-bucket prefreeze pass is needed).
+            /*
+                Flat dispatch; see DispatchContextFlatSnapshot for the
+                frozen-array semantics that replace the legacy prefreeze hoist
+                (the resolved array cannot observe a mid-emission
+                deregistration, so no per-bucket prefreeze pass is needed).
+            */
             return DispatchContextFlatSnapshot(snapshot, ref target, ref message);
         }
 
@@ -5880,15 +5998,17 @@ namespace DxMessaging.Core.MessageBus
                 return false;
             }
 
-            // The handle-phase snapshot is acquired at emission start (where
-            // the legacy per-handler prefreeze pass ran, after interceptors
-            // and the global walk but before the source-keyed handle phase),
-            // so registrations made by a source-keyed handler this emission
-            // are not observed - matching the legacy emission-start freeze.
-            // When the sink was EMPTY at emission start (prefrozenSnapshot is
-            // Empty), acquire lazily here: the legacy path took its first
-            // freeze at this point in that case, so a registration made
-            // earlier in this emission into a previously-empty sink fires.
+            /*
+                The handle-phase snapshot is acquired at emission start (where
+                the legacy per-handler prefreeze pass ran, after interceptors
+                and the global walk but before the source-keyed handle phase),
+                so registrations made by a source-keyed handler this emission
+                are not observed - matching the legacy emission-start freeze.
+                When the sink was EMPTY at emission start (prefrozenSnapshot is
+                Empty), acquire lazily here: the legacy path took its first
+                freeze at this point in that case, so a registration made
+                earlier in this emission into a previously-empty sink fires.
+            */
             DispatchSnapshot snapshot = !prefrozenSnapshot.IsInitialized
                 ? AcquireDispatchSnapshotFast<TMessage>(
                     this,
@@ -5899,8 +6019,10 @@ namespace DxMessaging.Core.MessageBus
                 )
                 : prefrozenSnapshot;
             _ = DispatchContextFlatSnapshot(snapshot, ref source, ref message);
-            // Legacy reporting: the live-sink gate above passing counts as
-            // "found", regardless of how many frozen delegates fired.
+            /*
+                Legacy reporting: the live-sink gate above passing counts as
+                "found", regardless of how many frozen delegates fired.
+            */
             return true;
         }
 
@@ -5947,9 +6069,11 @@ namespace DxMessaging.Core.MessageBus
             handler[messageHandler] = count + 1;
             if (count == 0)
             {
-                // First registration of this MessageHandler in the bucket:
-                // record its position. Refcount increments (count > 0) must
-                // NOT move it.
+                /*
+                    First registration of this MessageHandler in the bucket:
+                    record its position. Refcount increments (count > 0) must
+                    NOT move it.
+                */
                 cache.insertionOrder.Add(messageHandler);
                 cache.highWaterDistinctHandlers = Math.Max(
                     cache.highWaterDistinctHandlers,
@@ -5991,9 +6115,11 @@ namespace DxMessaging.Core.MessageBus
         private void DeregisterScalarHandler<T>(in MessageBusRegistration reg)
             where T : IMessage
         {
-            // Generation guard: if ResetState() ran after this handle was captured (e.g. a
-            // deferred Object.Destroy fires after a domain-reload-style reset), silently no-op
-            // rather than logging a misleading over-deregistration error.
+            /*
+                Generation guard: if ResetState() ran after this handle was captured (e.g. a
+                deferred Object.Destroy fires after a domain-reload-style reset), silently no-op
+                rather than logging a misleading over-deregistration error.
+            */
             if (reg.generation != _resetGeneration)
             {
                 return;
@@ -6011,17 +6137,19 @@ namespace DxMessaging.Core.MessageBus
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
 
-            // FAST PATH: operate on the captured leaf handler-cache (already pinned on the
-            // handle at registration time) DIRECTLY, without re-resolving the sink from the
-            // method (ScalarSinkForMethod) or re-walking sinks->type->priority->handler. When
-            // the generation guard above has passed and the captured bucket still holds this
-            // handler, the captured leaf IS the live sink entry (handles are unique and never
-            // reused), so the re-resolution + ReferenceEquals identity check is redundant. The
-            // sweep-staleness / over-deregistration classification only matters when the handler
-            // is NOT found, so it is deferred to the cold fallback below. This removes the
-            // per-deregistration sink re-resolution (the measured cold-path regression source)
-            // while preserving every guard and the throw-safe ordering (this method performs no
-            // user callback; the throwing IMessageBus.Deregister boundary is the caller's).
+            /*
+                FAST PATH: operate on the captured leaf handler-cache (already pinned on the
+                handle at registration time) DIRECTLY, without re-resolving the sink from the
+                method (ScalarSinkForMethod) or re-walking sinks->type->priority->handler. When
+                the generation guard above has passed and the captured bucket still holds this
+                handler, the captured leaf IS the live sink entry (handles are unique and never
+                reused), so the re-resolution + ReferenceEquals identity check is redundant. The
+                sweep-staleness / over-deregistration classification only matters when the handler
+                is NOT found, so it is deferred to the cold fallback below. This removes the
+                per-deregistration sink re-resolution (the measured cold-path regression source)
+                while preserving every guard and the throw-safe ordering (this method performs no
+                user callback; the throwing IMessageBus.Deregister boundary is the caller's).
+            */
             if (
                 capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
                 && cache.handlers.TryGetValue(messageHandler, out int count)
@@ -6042,12 +6170,14 @@ namespace DxMessaging.Core.MessageBus
                 if (count <= 1)
                 {
                     _ = handler.Remove(messageHandler);
-                    // List.Remove is O(n) over the same-priority bucket. Accepted tradeoff (here
-                    // and at the context-path sibling site): buckets are small in practice,
-                    // removal is a cold churn path, and the list keeps dispatch-order rebuilds
-                    // allocation-free while preserving first-registration order, unlike Dictionary
-                    // enumeration whose freed slots are reused LIFO. Mirrors the MessageHandler-side
-                    // insertionOrder tradeoff.
+                    /*
+                        List.Remove is O(n) over the same-priority bucket. Accepted tradeoff (here
+                        and at the context-path sibling site): buckets are small in practice,
+                        removal is a cold churn path, and the list keeps dispatch-order rebuilds
+                        allocation-free while preserving first-registration order, unlike Dictionary
+                        enumeration whose freed slots are reused LIFO. Mirrors the MessageHandler-side
+                        insertionOrder tradeoff.
+                    */
                     _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
 
@@ -6057,7 +6187,7 @@ namespace DxMessaging.Core.MessageBus
                         // remove priority from order
                         List<int> order = capturedHandlers.order;
                         int removeIdx = order.IndexOf(priority);
-                        if (removeIdx >= 0)
+                        if (0 <= removeIdx)
                         {
                             order.RemoveAt(removeIdx);
                         }
@@ -6077,14 +6207,16 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            // COLD FALLBACK: the handler was not found in the captured bucket, so this is a no-op
-            // deregistration (post-sweep, or a genuine over-deregistration) -- nothing is removed,
-            // so NO version bump / snapshot invalidation is performed. Bumping here would
-            // spuriously rebuild whichever bucket currently occupies this priority, which after a
-            // full deregister + re-registration at the same priority is the NEW live bucket (the
-            // stale handle must not touch it). Re-resolve the live sink only to CLASSIFY this as a
-            // silent stale-after-sweep no-op versus a genuine over-deregistration. Rare path; not
-            // on the steady deregistration cost.
+            /*
+                COLD FALLBACK: the handler was not found in the captured bucket, so this is a no-op
+                deregistration (post-sweep, or a genuine over-deregistration) -- nothing is removed,
+                so NO version bump / snapshot invalidation is performed. Bumping here would
+                spuriously rebuild whichever bucket currently occupies this priority, which after a
+                full deregister + re-registration at the same priority is the NEW live bucket (the
+                stale handle must not touch it). Re-resolve the live sink only to CLASSIFY this as a
+                silent stale-after-sweep no-op versus a genuine over-deregistration. Rare path; not
+                on the steady deregistration cost.
+            */
             MessageCache<HandlerCache<int, HandlerCache>> sinks = ScalarSinkForMethod(
                 registrationMethod
             );
@@ -6165,9 +6297,11 @@ namespace DxMessaging.Core.MessageBus
             handler[messageHandler] = count + 1;
             if (count == 0)
             {
-                // First registration of this MessageHandler in the bucket:
-                // record its position. Refcount increments (count > 0) must
-                // NOT move it.
+                /*
+                    First registration of this MessageHandler in the bucket:
+                    record its position. Refcount increments (count > 0) must
+                    NOT move it.
+                */
                 cache.insertionOrder.Add(messageHandler);
                 cache.highWaterDistinctHandlers = Math.Max(
                     cache.highWaterDistinctHandlers,
@@ -6210,8 +6344,10 @@ namespace DxMessaging.Core.MessageBus
         private void DeregisterContextHandler<T>(in MessageBusRegistration reg)
             where T : IMessage
         {
-            // Generation guard: see DeregisterScalarHandler for the rationale. Skip silently when
-            // the handle outlived a Reset.
+            /*
+                Generation guard: see DeregisterScalarHandler for the rationale. Skip silently when
+                the handle outlived a Reset.
+            */
             if (reg.generation != _resetGeneration)
             {
                 return;
@@ -6229,12 +6365,14 @@ namespace DxMessaging.Core.MessageBus
             long deregisterTouchTick = AdvanceTick();
             InvalidateDispatchPlans();
 
-            // FAST PATH: operate on the captured per-context leaf handler-cache directly, without
-            // re-resolving the sink (ContextSinkForMethod) or re-walking sinks->type->context->
-            // priority->handler. See DeregisterScalarHandler for the full rationale and the
-            // sweep-staleness argument (the context sweep, like the scalar sweep, only evicts
-            // EMPTY caches, so a found handler is never in a swept/detached cache). Throw-safe:
-            // no user callback runs here.
+            /*
+                FAST PATH: operate on the captured per-context leaf handler-cache directly, without
+                re-resolving the sink (ContextSinkForMethod) or re-walking sinks->type->context->
+                priority->handler. See DeregisterScalarHandler for the full rationale and the
+                sweep-staleness argument (the context sweep, like the scalar sweep, only evicts
+                EMPTY caches, so a found handler is never in a swept/detached cache). Throw-safe:
+                no user callback runs here.
+            */
             if (
                 capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
                 && cache.handlers.TryGetValue(messageHandler, out int count)
@@ -6260,8 +6398,10 @@ namespace DxMessaging.Core.MessageBus
                 if (count <= 1)
                 {
                     _ = handler.Remove(messageHandler);
-                    // O(n) List.Remove: see the tradeoff comment at the scalar-path sibling site in
-                    // DeregisterScalarHandler.
+                    /*
+                        O(n) List.Remove: see the tradeoff comment at the scalar-path sibling site in
+                        DeregisterScalarHandler.
+                    */
                     _ = cache.insertionOrder.Remove(messageHandler);
                     MarkDirtyHandler(messageHandler);
                     if (handler.Count == 0)
@@ -6271,7 +6411,7 @@ namespace DxMessaging.Core.MessageBus
                         // remove priority from order
                         List<int> order = capturedHandlers.order;
                         int removeIdx = order.IndexOf(priority);
-                        if (removeIdx >= 0)
+                        if (0 <= removeIdx)
                         {
                             order.RemoveAt(removeIdx);
                         }
@@ -6291,11 +6431,13 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
-            // COLD FALLBACK: handler not found in the captured bucket -> a no-op deregistration
-            // (nothing removed), so NO version bump is performed (it would spuriously rebuild the
-            // bucket currently at this priority -- the NEW live bucket after a full deregister +
-            // re-registration). Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
-            // over-deregistration (error). Rare path; not on the steady deregistration cost.
+            /*
+                COLD FALLBACK: handler not found in the captured bucket -> a no-op deregistration
+                (nothing removed), so NO version bump is performed (it would spuriously rebuild the
+                bucket currently at this priority -- the NEW live bucket after a full deregister +
+                re-registration). Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
+                over-deregistration (error). Rare path; not on the steady deregistration cost.
+            */
             MessageCache<ContextHandlerMap> sinks = ContextSinkForMethod(registrationMethod);
             if (IsStaleContextDeregisterAfterSweep<T>(sinks, context, capturedHandlers))
             {
@@ -6338,8 +6480,10 @@ namespace DxMessaging.Core.MessageBus
                     DeregisterGlobalAcceptAll(in registration);
                     break;
                 default:
-                    // Kind.None is the empty/sentinel handle (no-op); Kind.External handles are
-                    // minted by a foreign IMessageBus implementation and own no store here.
+                    /*
+                        Kind.None is the empty/sentinel handle (no-op); Kind.External handles are
+                        minted by a foreign IMessageBus implementation and own no store here.
+                    */
                     break;
             }
         }
@@ -6428,32 +6572,32 @@ namespace DxMessaging.Core.MessageBus
             }
 
             bool complete = false;
-            if (removed)
+            if (
+                removed
+                && interceptsByType.TryGetValue<T>(
+                    out InterceptorCache<object> prioritizedInterceptors
+                )
+            )
             {
                 if (
-                    interceptsByType.TryGetValue<T>(
-                        out InterceptorCache<object> prioritizedInterceptors
+                    prioritizedInterceptors.handlers.TryGetValue(
+                        priority,
+                        out List<object> interceptors
                     )
                 )
                 {
-                    if (
-                        prioritizedInterceptors.handlers.TryGetValue(
-                            priority,
-                            out List<object> interceptors
-                        )
-                    )
+                    complete = interceptors.Remove(interceptor);
+                    if (interceptors.Count == 0)
                     {
-                        complete = interceptors.Remove(interceptor);
-                        if (interceptors.Count == 0)
-                        {
-                            _ = prioritizedInterceptors.handlers.Remove(priority);
-                        }
-
-                        // Drops the flattened view's references too, so the
-                        // removed interceptor is not kept alive until the next
-                        // emission or sweep.
-                        prioritizedInterceptors.MarkFlatDirty();
+                        _ = prioritizedInterceptors.handlers.Remove(priority);
                     }
+
+                    /*
+                        Drops the flattened view's references too, so the
+                        removed interceptor is not kept alive until the next
+                        emission or sweep.
+                    */
+                    prioritizedInterceptors.MarkFlatDirty();
                 }
 
                 if (!complete && MessagingDebug.enabled)
@@ -6602,9 +6746,11 @@ namespace DxMessaging.Core.MessageBus
 
             int entryIndex = history.Count;
 
-            // Reserve the history slot before renting/building snapshot
-            // storage. If list growth fails, the registration mutation has
-            // not started and there is no standalone snapshot to release.
+            /*
+                Reserve the history slot before renting/building snapshot
+                storage. If list growth fails, the registration mutation has
+                not started and there is no standalone snapshot to release.
+            */
             history.Add(default);
             try
             {
@@ -6645,9 +6791,11 @@ namespace DxMessaging.Core.MessageBus
             snapshot = DispatchSnapshot.Empty;
             if (emissionResetGeneration != _resetGeneration)
             {
-                // Reset invalidates the in-flight message. Treat the route as
-                // historically empty so post-reset registrations cannot leak
-                // into the old emission.
+                /*
+                    Reset invalidates the in-flight message. Treat the route as
+                    historically empty so post-reset registrations cannot leak
+                    into the old emission.
+                */
                 return true;
             }
 
@@ -6667,7 +6815,7 @@ namespace DxMessaging.Core.MessageBus
                     && entry.messageTypeIndex == messageTypeIndex
                     && entry.slotKey == slotKey
                     && entry.context == context
-                    && unchecked(entry.mutationTick - emissionStartTick) > 0
+                    && 0 < unchecked(entry.mutationTick - emissionStartTick)
                 )
                 {
                     snapshot = entry.snapshot;
@@ -6782,9 +6930,11 @@ namespace DxMessaging.Core.MessageBus
             DispatchState state = handlers.dispatchState;
             if (state == null)
             {
-                // No snapshot exists before this sink's first emission, so registration has
-                // nothing to invalidate. AcquireDispatchSnapshot materializes and builds the
-                // state when that first emission arrives.
+                /*
+                    No snapshot exists before this sink's first emission, so registration has
+                    nothing to invalidate. AcquireDispatchSnapshot materializes and builds the
+                    state when that first emission arrives.
+                */
                 return;
             }
             if (state.hasPending)
@@ -6803,10 +6953,12 @@ namespace DxMessaging.Core.MessageBus
         )
             where TMessage : IMessage
         {
-            // DispatchKind has no None sentinel; the bus only reaches this path
-            // through register sites that pass a valid kind, so the legacy
-            // category-None short-circuit is no longer needed -- the
-            // `handlers == null` guard alone suffices.
+            /*
+                DispatchKind has no None sentinel; the bus only reaches this path
+                through register sites that pass a valid kind, so the legacy
+                category-None short-circuit is no longer needed -- the
+                `handlers == null` guard alone suffices.
+            */
             if (handlers == null)
             {
                 return;
@@ -6900,9 +7052,11 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
-        // Guards the AcquireDispatchSnapshotFast precondition (callers gate
-        // on a non-empty live sink). Compiled out unless the
-        // DXMESSAGING_INTERNAL_CHECKS define is set (rig/diagnostic builds).
+        /*
+            Guards the AcquireDispatchSnapshotFast precondition (callers gate
+            on a non-empty live sink). Compiled out unless the
+            DXMESSAGING_INTERNAL_CHECKS define is set (rig/diagnostic builds).
+        */
         [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
         private static void DebugAssertAcquireFastPrecondition(
             HandlerCache<int, HandlerCache> handlers
@@ -6938,7 +7092,7 @@ namespace DxMessaging.Core.MessageBus
             Touch(handlers, messageBus._tickCounter);
             DispatchState state = handlers.dispatchState ??= new DispatchState();
 
-            bool hasHandlers = handlers.handlers.Count > 0;
+            bool hasHandlers = 0 < handlers.handlers.Count;
 
             if (state.hasPending)
             {
@@ -6969,11 +7123,13 @@ namespace DxMessaging.Core.MessageBus
             {
                 if (state.hasPending)
                 {
-                    // Displacement, not plain release: an OUTER emission may
-                    // still be iterating state.active (handler mutated the
-                    // registration set, then in a reentrant emission emitted this type).
-                    // ReleaseDisplacedSnapshot defers the release to the
-                    // outermost dispatch-lease exit when one is in flight.
+                    /*
+                        Displacement, not plain release: an OUTER emission may
+                        still be iterating state.active (handler mutated the
+                        registration set, then in a reentrant emission emitted this type).
+                        ReleaseDisplacedSnapshot defers the release to the
+                        outermost dispatch-lease exit when one is in flight.
+                    */
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
                     if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                     {
@@ -7403,14 +7559,16 @@ namespace DxMessaging.Core.MessageBus
         /// Returns the legacy "found any handlers" semantics: delegates were
         /// resolved, OR bus-level bucket entries exist for the slot.
         /// </summary>
-        // IL2CPP: the generated null/bounds checks are elided on this loop (and its
-        // siblings below). The invariants are guaranteed by construction and pinned
-        // by tests: BuildFlatDispatch fills `entries[0..count)` with non-null
-        // handler + invoker pairs and never publishes count > entries.Length; the
-        // array is frozen for the emission, so no concurrent shrink exists
-        // (single-threaded bus, mutations surface on the NEXT emission's rebuild).
-        // Under Mono the attributes are inert. Rig builds keep the
-        // DXMESSAGING_INTERNAL_CHECKS shape assert immediately below.
+        /*
+            IL2CPP: the generated null/bounds checks are elided on this loop (and its
+            siblings below). The invariants are guaranteed by construction and pinned
+            by tests: BuildFlatDispatch fills `entries[0..count)` with non-null
+            handler + invoker pairs and never publishes count > entries.Length; the
+            array is frozen for the emission, so no concurrent shrink exists
+            (single-threaded bus, mutations surface on the NEXT emission's rebuild).
+            Under Mono the attributes are inert. Rig builds keep the
+            DXMESSAGING_INTERNAL_CHECKS shape assert immediately below.
+        */
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -7564,23 +7722,27 @@ namespace DxMessaging.Core.MessageBus
             return HasAnyDispatchEntries(snapshot);
         }
 
-        // Asserts the snapshot's flat array is the concrete closed-generic
-        // holder the dispatch site is about to DxUnsafe.As-cast it to. A
-        // mismatch means a slot-key/build-shape wiring bug (e.g. a
-        // WithoutContext slot built a message-shape array); the unchecked
-        // cast would otherwise corrupt the dispatch.
-        // Gated behind the DXMESSAGING_INTERNAL_CHECKS custom define rather
-        // than DEBUG: the isinst per dispatch was measured on editor hot
-        // paths (~1ns/dispatch). Rig/diagnostic builds set the define; Unity
-        // editor/player builds compile this out entirely.
+        /*
+            Asserts the snapshot's flat array is the concrete closed-generic
+            holder the dispatch site is about to DxUnsafe.As-cast it to. A
+            mismatch means a slot-key/build-shape wiring bug (e.g. a
+            WithoutContext slot built a message-shape array); the unchecked
+            cast would otherwise corrupt the dispatch.
+            Gated behind the DXMESSAGING_INTERNAL_CHECKS custom define rather
+            than DEBUG: the isinst per dispatch was measured on editor hot
+            paths (~1ns/dispatch). Rig/diagnostic builds set the define; Unity
+            editor/player builds compile this out entirely.
+        */
         [Conditional("DXMESSAGING_INTERNAL_CHECKS")]
         private static void DebugAssertFlatShape<TExpected>(FlatDispatchArray flat)
             where TExpected : FlatDispatchArray
         {
-            // Early return on the expected (always-taken) path so the failure
-            // message is only materialized on an actual mismatch; building it
-            // eagerly would allocate strings on every dispatch in DEBUG
-            // (editor) runs and trip the zero-alloc steady-state gates.
+            /*
+                Early return on the expected (always-taken) path so the failure
+                message is only materialized on an actual mismatch; building it
+                eagerly would allocate strings on every dispatch in DEBUG
+                (editor) runs and trip the zero-alloc steady-state gates.
+            */
             if (flat is TExpected)
             {
                 return;
@@ -7596,13 +7758,15 @@ namespace DxMessaging.Core.MessageBus
             );
         }
 
-        // Asserts the bus-side per-priority insertionOrder list stays in
-        // lockstep with the refcount dictionary at every snapshot build.
-        // Drift indicates a mutation site of HandlerCache.handlers that
-        // forgot to mirror the change into insertionOrder (register /
-        // deregistration closures), which would corrupt the documented
-        // same-priority registration order. Mirrors the MessageHandler-side
-        // DebugAssertInsertionOrderInSync; stripped in Release builds.
+        /*
+            Asserts the bus-side per-priority insertionOrder list stays in
+            lockstep with the refcount dictionary at every snapshot build.
+            Drift indicates a mutation site of HandlerCache.handlers that
+            forgot to mirror the change into insertionOrder (register /
+            deregistration closures), which would corrupt the documented
+            same-priority registration order. Mirrors the MessageHandler-side
+            DebugAssertInsertionOrderInSync; stripped in Release builds.
+        */
         [Conditional("DEBUG")]
         private static void DebugAssertBusInsertionOrderInSync(HandlerCache cache)
         {
@@ -7641,7 +7805,7 @@ namespace DxMessaging.Core.MessageBus
             ref DispatchState slotState = ref SelectGlobalDispatchState(handlers, kind);
             slotState ??= new DispatchState();
             DispatchState state = slotState;
-            bool hasHandlers = handlers.sharedHandlers.Count > 0;
+            bool hasHandlers = 0 < handlers.sharedHandlers.Count;
 
             if (state.hasPending)
             {
@@ -7676,9 +7840,11 @@ namespace DxMessaging.Core.MessageBus
             {
                 if (state.hasPending)
                 {
-                    // See AcquireDispatchSnapshot: the displaced active
-                    // snapshot may still be iterated by an outer emission, so
-                    // its release is deferred while a dispatch lease is live.
+                    /*
+                        See AcquireDispatchSnapshot: the displaced active
+                        snapshot may still be iterated by an outer emission, so
+                        its release is deferred while a dispatch lease is live.
+                    */
                     messageBus.ReleaseDisplacedSnapshot(ref state.active);
                     if (state.pendingDirty || (hasHandlers && !state.pending.IsInitialized))
                     {
@@ -7986,8 +8152,10 @@ namespace DxMessaging.Core.MessageBus
             where T : IUntargetedMessage
         {
             T typedMessage = (T)message;
-            // A direct concrete call roots the closed native target from registration on
-            // IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            /*
+                A direct concrete call roots the closed native target from registration on
+                IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            */
             if (messageBus is MessageBus concreteBus)
             {
                 concreteBus.UntargetedBroadcast(ref typedMessage);
@@ -8006,8 +8174,10 @@ namespace DxMessaging.Core.MessageBus
             where T : ITargetedMessage
         {
             T typedMessage = (T)message;
-            // A direct concrete call roots the closed native target from registration on
-            // IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            /*
+                A direct concrete call roots the closed native target from registration on
+                IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            */
             if (messageBus is MessageBus concreteBus)
             {
                 concreteBus.TargetedBroadcast(ref target, ref typedMessage);
@@ -8026,8 +8196,10 @@ namespace DxMessaging.Core.MessageBus
             where T : IBroadcastMessage
         {
             T typedMessage = (T)message;
-            // A direct concrete call roots the closed native target from registration on
-            // IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            /*
+                A direct concrete call roots the closed native target from registration on
+                IL2CPP 2021. An interface-only generic call can leave that target without native code.
+            */
             if (messageBus is MessageBus concreteBus)
             {
                 concreteBus.SourcedBroadcast(ref source, ref typedMessage);
@@ -8360,7 +8532,7 @@ namespace DxMessaging.Core.MessageBus
                 if (methodInfo != null)
                 {
                     method = CompileMethodAction(methodInfo);
-                    if (method != null && _handlerCacheRetentionLimit > 0)
+                    if (method != null && 0 < _handlerCacheRetentionLimit)
                     {
                         TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
                         LinkedListNode<ReflexiveMethodEntry> entry = new(
@@ -8378,7 +8550,7 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>Evicts oldest lookups and optionally shrinks backing storage at a cold lifecycle boundary.</summary>
         private void TrimReflexiveMethodCache(int capacity, bool releaseStorage = false)
         {
-            while (_methodCache.Count > capacity)
+            while (capacity < _methodCache.Count)
             {
                 LinkedListNode<ReflexiveMethodEntry> oldest = _methodCacheLru.Last;
                 _methodCache.Remove(oldest.Value.key);

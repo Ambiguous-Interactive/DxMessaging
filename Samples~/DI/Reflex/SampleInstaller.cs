@@ -26,8 +26,10 @@ namespace DxMessaging.Samples.DI.Reflex
                 throw new System.ArgumentNullException(nameof(builder));
             }
 
-            // Use the explicit factory-based helper so constructor selection cannot drift with
-            // the container's reflection policy.
+            /*
+                Use the explicit factory-based helper so constructor selection cannot drift with
+                the container's reflection policy.
+            */
             UnsubscribeFromContainerBuilt();
             _builder = builder;
             builder.AddDxMessagingBus();

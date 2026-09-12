@@ -126,8 +126,10 @@ namespace DxMessaging.Tests.Editor
             pending.Add(() => order.Add(1)); // baseline (logical index 1)
             pending.Add(() => order.Add(2)); // added (logical index 2)
 
-            // The rollback path invokes only de-registrations added beyond the baseline
-            // count, leaving the baseline ones intact and retryable.
+            /*
+                The rollback path invokes only de-registrations added beyond the baseline
+                count, leaving the baseline ones intact and retryable.
+            */
             Exception exception = pending.InvokeFrom(2);
 
             Assert.That(exception, Is.Null);
@@ -215,9 +217,11 @@ namespace DxMessaging.Tests.Editor
             pending.Add(() => order.Add(1)); // overflow, logical index 1
             pending.Add(() => order.Add(2)); // overflow, logical index 2
 
-            // startIndex == 1 leaves the head untouched and runs both overflow entries
-            // (overflowStart == 0). This is the boundary where startIndex maps to the
-            // first overflow entry.
+            /*
+                startIndex == 1 leaves the head untouched and runs both overflow entries
+                (overflowStart == 0). This is the boundary where startIndex maps to the
+                first overflow entry.
+            */
             Exception exception = pending.InvokeFrom(1);
 
             Assert.That(exception, Is.Null);
@@ -235,9 +239,11 @@ namespace DxMessaging.Tests.Editor
             pending.Add(() => order.Add(2)); // overflow[1] -> logical 2
             pending.Add(() => order.Add(3)); // overflow[2] -> logical 3
 
-            // startIndex == 3 must skip the head and overflow[0..1] (logical 0..2) and
-            // invoke only overflow[2] (logical 3): the load-bearing startIndex - 1
-            // mapping (overflowStart == 2) with multiple skipped overflow entries.
+            /*
+                startIndex == 3 must skip the head and overflow[0..1] (logical 0..2) and
+                invoke only overflow[2] (logical 3): the load-bearing startIndex - 1
+                mapping (overflowStart == 2) with multiple skipped overflow entries.
+            */
             Exception exception = pending.InvokeFrom(3);
 
             Assert.That(exception, Is.Null);
@@ -277,8 +283,10 @@ namespace DxMessaging.Tests.Editor
                 "Both failed overflow entries are retained (one promoted to the head slot)."
             );
 
-            // The two retained failures retry in their original relative order (the
-            // promote step kept the failed overflow[0] as the logical head).
+            /*
+                The two retained failures retry in their original relative order (the
+                promote step kept the failed overflow[0] as the logical head).
+            */
             order.Clear();
             Exception retry = pending.InvokeFrom(0);
             Assert.That(retry, Is.SameAs(firstThrown));
@@ -320,10 +328,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void ReentrantAddDuringHeadInvokeAppendsToTailAndRunsInTheSamePass()
         {
-            // Reproduces the List form's behavior: a de-registration that, while running,
-            // adds another de-registration for the same handle is appended to the logical
-            // tail AND invoked in the same InvokeFrom pass (the overflow loop re-reads its
-            // Count). The Add guard keeps it out of the just-consumed head slot.
+            /*
+                Reproduces the List form's behavior: a de-registration that, while running,
+                adds another de-registration for the same handle is appended to the logical
+                tail AND invoked in the same InvokeFrom pass (the overflow loop re-reads its
+                Count). The Add guard keeps it out of the just-consumed head slot.
+            */
             List<int> order = new List<int>();
             Pending pending = new Pending();
             pending.Add(() =>
@@ -388,17 +398,21 @@ namespace DxMessaging.Tests.Editor
 
             internal int Count => (int)CountProperty.GetValue(_instance);
 
-            // The overflow field is now a List<MessageHandler.HandlerDeregistration>; the
-            // tests only assert its Count / null-or-empty, so expose it through the
-            // non-generic ICollection surface.
+            /*
+                The overflow field is now a List<MessageHandler.HandlerDeregistration>; the
+                tests only assert its Count / null-or-empty, so expose it through the
+                non-generic ICollection surface.
+            */
             internal System.Collections.ICollection OverflowList =>
                 (System.Collections.ICollection)OverflowField.GetValue(_instance);
 
             internal void Add(Action action)
             {
-                // PendingDeregistration.Add now takes a HandlerDeregistration; wrap the
-                // test's Action so the existing test bodies (which express each
-                // de-registration as a lambda) keep reading like ordinary usage.
+                /*
+                    PendingDeregistration.Add now takes a HandlerDeregistration; wrap the
+                    test's Action so the existing test bodies (which express each
+                    de-registration as a lambda) keep reading like ordinary usage.
+                */
                 AddMethod.Invoke(_instance, new object[] { new ActionDeregistration(action) });
             }
 

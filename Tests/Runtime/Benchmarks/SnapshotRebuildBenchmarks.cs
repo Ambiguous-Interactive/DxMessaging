@@ -259,7 +259,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             private void DisposeTokensBestEffort()
             {
-                for (int index = _tokens.Length - 1; index >= 0; --index)
+                for (int index = _tokens.Length - 1; 0 <= index; --index)
                 {
                     try
                     {
@@ -276,7 +276,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 try
                 {
-                    for (int index = _tokens.Length - 1; index >= 0; --index)
+                    for (int index = _tokens.Length - 1; 0 <= index; --index)
                     {
                         _tokens[index]?.Dispose();
                     }
@@ -285,9 +285,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     try
                     {
-                        // Token teardown stages the now-empty sink. Reset through the production
-                        // bus path so the active snapshot releases its holder and rented array
-                        // before the benchmark's isolated idle-sweep registry is restored.
+                        /*
+                            Token teardown stages the now-empty sink. Reset through the production
+                            bus path so the active snapshot releases its holder and rented array
+                            before the benchmark's isolated idle-sweep registry is restored.
+                        */
                         _bus.ResetState();
                     }
                     finally

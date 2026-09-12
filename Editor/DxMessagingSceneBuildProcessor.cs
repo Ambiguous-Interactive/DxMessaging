@@ -43,7 +43,7 @@ namespace DxMessaging.Editor
                 }
             }
 
-            if (cleared > 0 && report != null)
+            if (0 < cleared && report != null)
             {
                 Debug.Log(
                     $"[DxMessaging] Cleared {cleared} MessagingComponent instance(s) in scene '{scene.path}' prior to build."

@@ -230,14 +230,16 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void TripletEmitTestsUseScenarioParameterization()
         {
-            // Group [UnityTest] AND [Test] methods by their declaring fixture
-            // and by the kind-stripped base name, tracking which leading kinds
-            // appear for each base name. A "triplet" is a base name that has
-            // Untargeted, Targeted, AND Broadcast siblings in the same fixture;
-            // a "two-kind pair" is a base name with exactly Targeted AND
-            // Broadcast (no Untargeted). Already-consolidated methods (those
-            // accepting a MessageScenario parameter) short-circuit out so they
-            // cannot accidentally satisfy either criterion.
+            /*
+                Group [UnityTest] AND [Test] methods by their declaring fixture
+                and by the kind-stripped base name, tracking which leading kinds
+                appear for each base name. A "triplet" is a base name that has
+                Untargeted, Targeted, AND Broadcast siblings in the same fixture;
+                a "two-kind pair" is a base name with exactly Targeted AND
+                Broadcast (no Untargeted). Already-consolidated methods (those
+                accepting a MessageScenario parameter) short-circuit out so they
+                cannot accidentally satisfy either criterion.
+            */
             Dictionary<Type, Dictionary<string, HashSet<string>>> kindsByFixture = new();
 
             foreach (MethodInfo method in GetDxMessagingTestMethods())
@@ -256,7 +258,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                if (fixture.Name.IndexOf("Specific", StringComparison.Ordinal) >= 0)
+                if (0 <= fixture.Name.IndexOf("Specific", StringComparison.Ordinal))
                 {
                     // Kind-specific fixtures are exempt by design.
                     continue;
@@ -312,84 +314,100 @@ namespace DxMessaging.Tests.Runtime.Core
                 kindsSet.Add(kind);
             }
 
-            // Triplets intentionally not consolidated due to kind-asymmetric behavior.
-            // Each entry must include a justification comment explaining why
-            // consolidation is unsafe. Future maintainers should be able to remove
-            // an exemption if they consolidate the triplet later.
+            /*
+                Triplets intentionally not consolidated due to kind-asymmetric behavior.
+                Each entry must include a justification comment explaining why
+                consolidation is unsafe. Future maintainers should be able to remove
+                an exemption if they consolidate the triplet later.
+            */
             HashSet<string> exemptedTriplets = new HashSet<string>(StringComparer.Ordinal)
             {
-                // NominalTests.RemoveOrder: the Untargeted variant exercises three
-                // Run blocks, while Targeted and Broadcast each exercise five Run
-                // blocks (extra ComponentTargeted/ComponentBroadcast permutations
-                // only available for those kinds). The bodies are not structurally
-                // identical, and consolidating would weaken the kind-asymmetric
-                // coverage the longer variants provide.
-                // Remove when the Targeted/Broadcast variants drop their extra
-                // Component-* Run blocks OR the harness gains a uniform way to
-                // declare per-kind extra emit paths (then the body becomes
-                // identical and consolidation is safe).
+                /*
+                    NominalTests.RemoveOrder: the Untargeted variant exercises three
+                    Run blocks, while Targeted and Broadcast each exercise five Run
+                    blocks (extra ComponentTargeted/ComponentBroadcast permutations
+                    only available for those kinds). The bodies are not structurally
+                    identical, and consolidating would weaken the kind-asymmetric
+                    coverage the longer variants provide.
+                    Remove when the Targeted/Broadcast variants drop their extra
+                    Component-* Run blocks OR the harness gains a uniform way to
+                    declare per-kind extra emit paths (then the body becomes
+                    identical and consolidation is safe).
+                */
                 "DxMessaging.Tests.Runtime.Core.NominalTests.RemoveOrder",
-                // OrderingManyRegistrationsTests.PostProcessorsManyRegistrationsMaintainOrder:
-                // the Untargeted variant registers only fast post-processors with
-                // a single ordering list, while Targeted and Broadcast register
-                // both fast and action post-processors with two lists. The number
-                // of register loops and assertion shape differs across kinds, so
-                // consolidation would either drop assertions or test a code path
-                // (action post-processors) that is not exercised today on the
-                // untargeted bus.
-                // Remove when action post-processors are wired into the
-                // untargeted bus (so the untargeted variant uses the same
-                // dual-list shape as the targeted/broadcast variants).
+                /*
+                    OrderingManyRegistrationsTests.PostProcessorsManyRegistrationsMaintainOrder:
+                    the Untargeted variant registers only fast post-processors with
+                    a single ordering list, while Targeted and Broadcast register
+                    both fast and action post-processors with two lists. The number
+                    of register loops and assertion shape differs across kinds, so
+                    consolidation would either drop assertions or test a code path
+                    (action post-processors) that is not exercised today on the
+                    untargeted bus.
+                    Remove when action post-processors are wired into the
+                    untargeted bus (so the untargeted variant uses the same
+                    dual-list shape as the targeted/broadcast variants).
+                */
                 "DxMessaging.Tests.Runtime.Core.OrderingManyRegistrationsTests.PostProcessorsManyRegistrationsMaintainOrder",
-                // RegistrationTests.Interceptor: the Untargeted variant emits via
-                // a single EmitUntargeted path, while Targeted and Broadcast each
-                // exercise BOTH the GameObject-targeted and Component-targeted
-                // (or GameObject-broadcast and Component-broadcast) emit paths in
-                // the post-deregistration assertion to prove deregistration applies
-                // across both targeting/source variants. Consolidation would
-                // reduce the targeted/broadcast assertions to a single emit path.
-                // Remove when the Untargeted variant grows a Component-style
-                // second emit path OR the helper harness collapses the per-kind
-                // emit list so each variant exercises the same number of paths.
+                /*
+                    RegistrationTests.Interceptor: the Untargeted variant emits via
+                    a single EmitUntargeted path, while Targeted and Broadcast each
+                    exercise BOTH the GameObject-targeted and Component-targeted
+                    (or GameObject-broadcast and Component-broadcast) emit paths in
+                    the post-deregistration assertion to prove deregistration applies
+                    across both targeting/source variants. Consolidation would
+                    reduce the targeted/broadcast assertions to a single emit path.
+                    Remove when the Untargeted variant grows a Component-style
+                    second emit path OR the helper harness collapses the per-kind
+                    emit list so each variant exercises the same number of paths.
+                */
                 "DxMessaging.Tests.Runtime.Core.RegistrationTests.Interceptor",
             };
 
-            // Two-kind Targeted+Broadcast pairs intentionally NOT consolidated.
-            // Each entry's bodies differ by more than message-kind plumbing, so
-            // a ScenarioHarness merge (which expresses a target as a single
-            // InstanceId) would silently drop coverage. Remove an entry only
-            // when the bodies become plumbing-only-different.
+            /*
+                Two-kind Targeted+Broadcast pairs intentionally NOT consolidated.
+                Each entry's bodies differ by more than message-kind plumbing, so
+                a ScenarioHarness merge (which expresses a target as a single
+                InstanceId) would silently drop coverage. Remove an entry only
+                when the bodies become plumbing-only-different.
+            */
             HashSet<string> exemptedTwoKindPairs = new HashSet<string>(StringComparer.Ordinal)
             {
-                // MutationDestructionTests.ComponentDestroyOtherListenerDoesNotRun:
-                // the Targeted/Broadcast Component variants register and emit via
-                // the COMPONENT-identity overloads (RegisterComponentTargeted /
-                // EmitComponentTargeted, RegisterComponentBroadcast /
-                // EmitComponentBroadcast). The fixture's parameterized
-                // DestroyOtherListenerDoesNotRun already covers the GameObject /
-                // *WithoutTargeting paths; these two pin the distinct
-                // Component-identity dispatch path that ScenarioHarness's single
-                // InstanceId target cannot express without collapsing the two
-                // identity kinds. Remove when ScenarioHarness grows a
-                // Component-vs-GameObject target distinction.
+                /*
+                    MutationDestructionTests.ComponentDestroyOtherListenerDoesNotRun:
+                    the Targeted/Broadcast Component variants register and emit via
+                    the COMPONENT-identity overloads (RegisterComponentTargeted /
+                    EmitComponentTargeted, RegisterComponentBroadcast /
+                    EmitComponentBroadcast). The fixture's parameterized
+                    DestroyOtherListenerDoesNotRun already covers the GameObject /
+                    *WithoutTargeting paths; these two pin the distinct
+                    Component-identity dispatch path that ScenarioHarness's single
+                    InstanceId target cannot express without collapsing the two
+                    identity kinds. Remove when ScenarioHarness grows a
+                    Component-vs-GameObject target distinction.
+                */
                 "DxMessaging.Tests.Runtime.Core.MutationDestructionTests.ComponentDestroyOtherListenerDoesNotRun",
-                // OrderingTests Targeted/Broadcast GameObject-identity ordering
-                // pairs: each pair registers and emits through the
-                // GameObject-targeted / GameObject-broadcast overloads and has a
-                // sibling Component-identity variant (the
-                // *Component* methods below). The "...GameObject..." vs
-                // "...Component..." split is the coverage these tests exist to
-                // pin; ScenarioHarness resolves a target to a single InstanceId
-                // and cannot preserve the GameObject-vs-Component identity-path
-                // distinction, so a merge would erase one path. Remove an entry
-                // when ScenarioHarness can express the target-identity kind.
+                /*
+                    OrderingTests Targeted/Broadcast GameObject-identity ordering
+                    pairs: each pair registers and emits through the
+                    GameObject-targeted / GameObject-broadcast overloads and has a
+                    sibling Component-identity variant (the
+                    *Component* methods below). The "...GameObject..." vs
+                    "...Component..." split is the coverage these tests exist to
+                    pin; ScenarioHarness resolves a target to a single InstanceId
+                    and cannot preserve the GameObject-vs-Component identity-path
+                    distinction, so a merge would erase one path. Remove an entry
+                    when ScenarioHarness can express the target-identity kind.
+                */
                 "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityActionsGameObjectInRegistrationOrder",
                 "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityFastGameObjectInRegistrationOrder",
                 "DxMessaging.Tests.Runtime.Core.OrderingTests.MixedFastBeforeActionsGameObject",
-                // OrderingTests Targeted/Broadcast Component-identity ordering
-                // pairs: the mirror of the GameObject pairs above, pinning the
-                // Component-identity ordering path. Same justification and same
-                // removal condition.
+                /*
+                    OrderingTests Targeted/Broadcast Component-identity ordering
+                    pairs: the mirror of the GameObject pairs above, pinning the
+                    Component-identity ordering path. Same justification and same
+                    removal condition.
+                */
                 "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityActionsComponentInRegistrationOrder",
                 "DxMessaging.Tests.Runtime.Core.OrderingTests.SamePriorityFastComponentInRegistrationOrder",
                 "DxMessaging.Tests.Runtime.Core.OrderingTests.MixedFastBeforeActionsComponent",
@@ -539,8 +557,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
-                // Best-effort cleanup; Reset above already cleared the bus,
-                // but disposing the token is a no-op on a fresh state.
+                /*
+                    Best-effort cleanup; Reset above already cleared the bus,
+                    but disposing the token is a no-op on a fresh state.
+                */
                 pollutingToken.Disable();
                 DxMessagingStaticState.Reset();
             }
@@ -587,9 +607,9 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
 
                 if (
-                    fixture.Name.IndexOf("Specific", StringComparison.Ordinal) >= 0
-                    || fixture.Name.IndexOf("Equivalence", StringComparison.Ordinal) >= 0
-                    || fixture.Name.IndexOf("Prefreeze", StringComparison.Ordinal) >= 0
+                    0 <= fixture.Name.IndexOf("Specific", StringComparison.Ordinal)
+                    || 0 <= fixture.Name.IndexOf("Equivalence", StringComparison.Ordinal)
+                    || 0 <= fixture.Name.IndexOf("Prefreeze", StringComparison.Ordinal)
                 )
                 {
                     continue;
@@ -604,7 +624,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 bool nameHasKindToken = false;
                 foreach (string token in kindTokens)
                 {
-                    if (method.Name.IndexOf(token, StringComparison.Ordinal) >= 0)
+                    if (0 <= method.Name.IndexOf(token, StringComparison.Ordinal))
                     {
                         nameHasKindToken = true;
                         break;
@@ -625,36 +645,44 @@ namespace DxMessaging.Tests.Runtime.Core
                 bucket.Add(method);
             }
 
-            // Allowlist: fixtures known to mix kind-named and parameterized
-            // tests for justified reasons. Adding a NEW fixture should be
-            // accompanied by a comment explaining why consolidation is unsafe.
+            /*
+                Allowlist: fixtures known to mix kind-named and parameterized
+                tests for justified reasons. Adding a NEW fixture should be
+                accompanied by a comment explaining why consolidation is unsafe.
+            */
             HashSet<string> allowedMixedFixtures = new(StringComparer.Ordinal)
             {
-                // MutationDestructionTests pairs a parameterized
-                // DestroyOtherListenerDoesNotRun with kind-asymmetric
-                // overloads (TargetedComponent / TargetedWithoutTargeting /
-                // BroadcastComponent / BroadcastWithoutSource) that have
-                // no Untargeted counterpart. Consolidating would erase the
-                // overload-specific assertions.
-                // Remove when the Untargeted bus grows a Component or
-                // *WithoutTargeting analogue (so every overload has a
-                // counterpart and the asymmetric methods can collapse).
+                /*
+                    MutationDestructionTests pairs a parameterized
+                    DestroyOtherListenerDoesNotRun with kind-asymmetric
+                    overloads (TargetedComponent / TargetedWithoutTargeting /
+                    BroadcastComponent / BroadcastWithoutSource) that have
+                    no Untargeted counterpart. Consolidating would erase the
+                    overload-specific assertions.
+                    Remove when the Untargeted bus grows a Component or
+                    *WithoutTargeting analogue (so every overload has a
+                    counterpart and the asymmetric methods can collapse).
+                */
                 "DxMessaging.Tests.Runtime.Core.MutationDestructionTests",
-                // MutationDuringEmissionTests pins a wide matrix of mutation
-                // x emission permutations. Several methods cover the
-                // *WithoutTargeting / *WithoutSource overloads which are
-                // kind-asymmetric (only Targeted and Broadcast have
-                // without-* variants).
-                // Remove when the Untargeted bus exposes equivalent
-                // *WithoutTargeting / *WithoutSource overloads (so every
-                // mutation entry has a corresponding Untargeted variant).
+                /*
+                    MutationDuringEmissionTests pins a wide matrix of mutation
+                    x emission permutations. Several methods cover the
+                    *WithoutTargeting / *WithoutSource overloads which are
+                    kind-asymmetric (only Targeted and Broadcast have
+                    without-* variants).
+                    Remove when the Untargeted bus exposes equivalent
+                    *WithoutTargeting / *WithoutSource overloads (so every
+                    mutation entry has a corresponding Untargeted variant).
+                */
                 "DxMessaging.Tests.Runtime.Core.MutationDuringEmissionTests",
-                // OrderingManyRegistrationsTests has the same shape: the
-                // *WithoutTargeting and per-kind PostProcessor variants
-                // are kind-asymmetric.
-                // Remove when action post-processors and *WithoutTargeting
-                // are unified across kinds (matching the resolution
-                // condition above for the same fixture's triplet entry).
+                /*
+                    OrderingManyRegistrationsTests has the same shape: the
+                    *WithoutTargeting and per-kind PostProcessor variants
+                    are kind-asymmetric.
+                    Remove when action post-processors and *WithoutTargeting
+                    are unified across kinds (matching the resolution
+                    condition above for the same fixture's triplet entry).
+                */
                 "DxMessaging.Tests.Runtime.Core.OrderingManyRegistrationsTests",
             };
 
@@ -704,9 +732,11 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void FixturesUsingMessagingTestBaseUseSpawnedCleanupPattern()
         {
-            // Scan every loaded test assembly (Runtime + Benchmarks +
-            // siblings) so the rule applies uniformly across the test
-            // surface, not just to the assembly that hosts this fixture.
+            /*
+                Scan every loaded test assembly (Runtime + Benchmarks +
+                siblings) so the rule applies uniformly across the test
+                surface, not just to the assembly that hosts this fixture.
+            */
             HashSet<Type> messagingBaseFixtures = new();
             foreach (Type type in DxMessagingTestTypes.Value)
             {
@@ -727,9 +757,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                // Skip fixtures that have NO test methods (likely helper
-                // scaffolding); the rule applies to fixtures that exercise
-                // the bus.
+                /*
+                    Skip fixtures that have NO test methods (likely helper
+                    scaffolding); the rule applies to fixtures that exercise
+                    the bus.
+                */
                 bool hasTest = false;
                 foreach (
                     MethodInfo method in type.GetMethods(
@@ -755,12 +787,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 messagingBaseFixtures.Add(type);
             }
 
-            // Source-text approximation: walk the test source roots and
-            // for each fixture pair its source file, then flag fixtures
-            // whose source spawns GameObjects (`new GameObject(`) but
-            // never calls `_spawned.Add(`. Files that cannot be located
-            // on disk are simply not classified (they fall into the
-            // "uncovered" bucket and do not fail the test).
+            /*
+                Source-text approximation: walk the test source roots and
+                for each fixture pair its source file, then flag fixtures
+                whose source spawns GameObjects (`new GameObject(`) but
+                never calls `_spawned.Add(`. Files that cannot be located
+                on disk are simply not classified (they fall into the
+                "uncovered" bucket and do not fail the test).
+            */
             List<string> sourceRoots = ResolveTestSourceRootsFallback();
             Dictionary<string, string> fixtureToSource = new(StringComparer.Ordinal);
 
@@ -791,8 +825,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     foreach (Type fixture in messagingBaseFixtures)
                     {
-                        // Match by simple type name; the file name pattern
-                        // mirrors the fixture name across the test tree.
+                        /*
+                            Match by simple type name; the file name pattern
+                            mirrors the fixture name across the test tree.
+                        */
                         if (
                             !string.Equals(
                                 System.IO.Path.GetFileNameWithoutExtension(file),
@@ -818,18 +854,20 @@ namespace DxMessaging.Tests.Runtime.Core
                     continue;
                 }
 
-                // Match BOTH classic `new GameObject(...)` AND C# 9 target-typed
-                // `GameObject identifier = new(...)` patterns. The latter became
-                // common when fixtures adopted target-typed instantiation; without
-                // this alternate the check would silently miss spawn calls written
-                // in the new style. Roslyn would be more robust but the runtime
-                // tests asmdef does not reference the syntax APIs, so the regex
-                // form is the pragmatic option.
+                /*
+                    Match BOTH classic `new GameObject(...)` AND C# 9 target-typed
+                    `GameObject identifier = new(...)` patterns. The latter became
+                    common when fixtures adopted target-typed instantiation; without
+                    this alternate the check would silently miss spawn calls written
+                    in the new style. Roslyn would be more robust but the runtime
+                    tests asmdef does not reference the syntax APIs, so the regex
+                    form is the pragmatic option.
+                */
                 bool spawnsGameObjects =
-                    text.IndexOf("new GameObject(", StringComparison.Ordinal) >= 0
+                    0 <= text.IndexOf("new GameObject(", StringComparison.Ordinal)
                     || GameObjectTargetTypedNewPattern.IsMatch(text);
                 bool tracksWithSpawned =
-                    text.IndexOf("_spawned.Add", StringComparison.Ordinal) >= 0;
+                    0 <= text.IndexOf("_spawned.Add", StringComparison.Ordinal);
 
                 if (spawnsGameObjects && !tracksWithSpawned)
                 {
@@ -912,8 +950,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
                     foreach (string token in bannedTokens)
                     {
-                        // Report EVERY occurrence (not just the first) so a fix
-                        // sees all offending lines in one pass.
+                        /*
+                            Report EVERY occurrence (not just the first) so a fix
+                            sees all offending lines in one pass.
+                        */
                         int searchFrom = 0;
                         while (true)
                         {
@@ -993,14 +1033,16 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void NoYieldUnityTestsMustBePlainTest()
         {
-            // The [UnityTest] -> [Test] migration is COMPLETE: every no-yield
-            // [UnityTest] (synchronous body that never yields a frame) has been
-            // converted to a plain [Test], including the per-method conversions in
-            // the eight formerly-mixed fixtures (coroutine + synchronous interleaved
-            // in one file). This allowlist is now empty and must stay that way -
-            // never ADD an entry. A newly authored synchronous test must be a [Test]
-            // from the start; the only [UnityTest] methods left in the tree genuinely
-            // yield a frame.
+            /*
+                The [UnityTest] -> [Test] migration is COMPLETE: every no-yield
+                [UnityTest] (synchronous body that never yields a frame) has been
+                converted to a plain [Test], including the per-method conversions in
+                the eight formerly-mixed fixtures (coroutine + synchronous interleaved
+                in one file). This allowlist is now empty and must stay that way -
+                never ADD an entry. A newly authored synchronous test must be a [Test]
+                from the start; the only [UnityTest] methods left in the tree genuinely
+                yield a frame.
+            */
             HashSet<string> pendingMigration = new(StringComparer.Ordinal);
 
             List<string> roots = ResolveTestsTreeRootsFallback();
@@ -1191,7 +1233,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> offenders = new();
             foreach (KeyValuePair<string, List<string>> pair in fixturesByNamespace)
             {
-                if (pair.Value.Count > 1)
+                if (1 < pair.Value.Count)
                 {
                     offenders.Add(
                         $"{pair.Key}: {pair.Value.Count} SetUpFixture types ("
@@ -1238,12 +1280,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
 
                     bool hasValueSource =
-                        parameter
+                        0
+                        < parameter
                             .GetCustomAttributes(
                                 typeof(NUnit.Framework.ValueSourceAttribute),
                                 inherit: false
                             )
-                            .Length > 0;
+                            .Length;
                     if (hasValueSource)
                     {
                         continue;

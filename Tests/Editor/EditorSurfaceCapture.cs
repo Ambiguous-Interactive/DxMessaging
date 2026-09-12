@@ -105,11 +105,13 @@ namespace DxMessaging.Tests.Editor
                 host = EditorWindowTestUtility.CreateWindow();
                 host.minSize = new Vector2(canvasWidth, canvasHeight);
                 host.position = new Rect(0f, 0f, canvasWidth, canvasHeight);
-                // A window only gets a panel once it is shown, and a panel is what
-                // ValidateLayout and Render operate on. Popup mode avoids painting a dock tab
-                // into that panel on macOS. Showing it does not make the capture read the
-                // desktop: the pixels still come from the render target below, never from the
-                // screen.
+                /*
+                    A window only gets a panel once it is shown, and a panel is what
+                    ValidateLayout and Render operate on. Popup mode avoids painting a dock tab
+                    into that panel on macOS. Showing it does not make the capture read the
+                    desktop: the pixels still come from the render target below, never from the
+                    screen.
+                */
                 EditorWindowTestUtility.ShowPopupWindow(host);
 
                 VisualElement root = host.rootVisualElement;
@@ -143,14 +145,16 @@ namespace DxMessaging.Tests.Editor
                 RenderTexture.active = target;
                 GL.Clear(true, true, Color.clear);
 
-                // Three steps, in this order. Settling layout resolves deferred text, scroll,
-                // and wrapping geometry across as many passes as the tree needs. Repaint walks
-                // the settled tree and records the draw commands, and Render flushes those
-                // commands to the active target. Nested ScrollViews realize their content during
-                // the first repaint, and newly introduced glyphs can extend the dynamic font
-                // atlas during the second. A third repaint/render cycle draws both settled sets.
-                // Stopping earlier can yield a valid PNG with blank scroll bodies or partially
-                // missing labels, which is why the tests inspect the rendered content too.
+                /*
+                    Three steps, in this order. Settling layout resolves deferred text, scroll,
+                    and wrapping geometry across as many passes as the tree needs. Repaint walks
+                    the settled tree and records the draw commands, and Render flushes those
+                    commands to the active target. Nested ScrollViews realize their content during
+                    the first repaint, and newly introduced glyphs can extend the dynamic font
+                    atlas during the second. A third repaint/render cycle draws both settled sets.
+                    Stopping earlier can yield a valid PNG with blank scroll bodies or partially
+                    missing labels, which is why the tests inspect the rendered content too.
+                */
                 EditorWindowTestUtility.SettleLayout(host);
                 for (int repaintPass = 0; repaintPass < 3; repaintPass++)
                 {
@@ -162,9 +166,11 @@ namespace DxMessaging.Tests.Editor
                     InvokeInheritedPanelMethod(panel, "Render", Array.Empty<object>());
                 }
 
-                // Read back only the surface, not the whole canvas. Cropping to the surface's
-                // own laid-out rect gives the manifest its tight frame: the padding in the image
-                // comes from the surface's styling, not from slack in the canvas.
+                /*
+                    Read back only the surface, not the whole canvas. Cropping to the surface's
+                    own laid-out rect gives the manifest its tight frame: the padding in the image
+                    comes from the surface's styling, not from slack in the canvas.
+                */
                 RectInt crop = ResolveCropRect(content, canvasWidth, canvasHeight);
                 readback = new Texture2D(crop.width, crop.height, TextureFormat.RGB24, false, true);
                 readback.ReadPixels(new Rect(crop.x, crop.y, crop.width, crop.height), 0, 0, false);
@@ -237,10 +243,12 @@ namespace DxMessaging.Tests.Editor
             int canvasHeight
         )
         {
-            // Round the EDGES, then derive the size from them. Rounding the origin and the size
-            // independently lets the two drift a pixel apart -- a surface at x=10.5 w=10.5 rounds
-            // to x=10 w=10, a right edge of 20 where the real one is 21 -- and a pixel lost here
-            // is a pixel of the surface clipped out of a documentation image.
+            /*
+                Round the EDGES, then derive the size from them. Rounding the origin and the size
+                independently lets the two drift a pixel apart -- a surface at x=10.5 w=10.5 rounds
+                to x=10 w=10, a right edge of 20 where the real one is 21 -- and a pixel lost here
+                is a pixel of the surface clipped out of a documentation image.
+            */
             Rect bounds = content.worldBound;
             int cropX = Mathf.RoundToInt(bounds.x);
             int cropY = Mathf.RoundToInt(canvasHeight - bounds.yMax);
@@ -254,14 +262,16 @@ namespace DxMessaging.Tests.Editor
                 );
             }
 
-            // Refuse a surface that does not fit rather than clamping into the canvas. Clamping
-            // would return a silently clipped image, which is exactly the defect the manifest
-            // tells reviewers to look for, produced by the tool that exists to avoid it.
+            /*
+                Refuse a surface that does not fit rather than clamping into the canvas. Clamping
+                would return a silently clipped image, which is exactly the defect the manifest
+                tells reviewers to look for, produced by the tool that exists to avoid it.
+            */
             if (
                 cropX < 0
                 || cropY < 0
-                || cropX + cropWidth > canvasWidth
-                || cropY + cropHeight > canvasHeight
+                || canvasWidth < cropX + cropWidth
+                || canvasHeight < cropY + cropHeight
             )
             {
                 throw new InvalidOperationException(

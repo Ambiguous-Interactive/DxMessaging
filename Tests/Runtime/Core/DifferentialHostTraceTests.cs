@@ -51,8 +51,10 @@ namespace DxMessaging.Tests.Runtime.Core
             [ValueSource(nameof(PersistenceMutations))] bool omitPersistence
         )
         {
-            // This native protocol has an explicit asynchronous boundary. It supplements
-            // version-seven generation; the managed generator does not claim scene coverage.
+            /*
+                This native protocol has an explicit asynchronous boundary. It supplements
+                version-seven generation; the managed generator does not claim scene coverage.
+            */
             const int unloadOperation = 6;
             BusTraceSequence sequence = new(
                 scenario,
@@ -564,8 +566,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 owner.gameObject.SetActive(active);
                 if (_ignoreDisable && !active)
                 {
-                    // Mutate the production handler after the real native OnDisable callback.
-                    // Native host observations stay identical; only actual delivery reveals drift.
+                    /*
+                        Mutate the production handler after the real native OnDisable callback.
+                        Native host observations stay identical; only actual delivery reveals drift.
+                    */
                     owner.ToggleMessageHandler(true);
                 }
             }
@@ -622,8 +626,10 @@ namespace DxMessaging.Tests.Runtime.Core
                         Is.False,
                         $"Native owner {slot} must disable its released token."
                     );
-                    // The base adapter checks metadata and bus leaks after this returns.
-                    // Do not repair a failed owner release before those observations.
+                    /*
+                        The base adapter checks metadata and bus leaks after this returns.
+                        Do not repair a failed owner release before those observations.
+                    */
                 }
                 catch
                 {

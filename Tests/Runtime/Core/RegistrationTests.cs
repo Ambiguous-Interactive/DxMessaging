@@ -26,9 +26,11 @@ namespace DxMessaging.Tests.Runtime.Core
         public override void Setup()
         {
             base.Setup();
-            // RunRegistrationTest validates ordering and dispatch correctness
-            // across every registered handler, so it relies on the legacy
-            // stress-scale count rather than the smoke-check default.
+            /*
+                RunRegistrationTest validates ordering and dispatch correctness
+                across every registered handler, so it relies on the legacy
+                stress-scale count rather than the smoke-check default.
+            */
             _numRegistrations = StressRegistrations;
         }
 

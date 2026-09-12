@@ -107,8 +107,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             private InstanceId _target = new(41000);
             internal long Progress { get; private set; }
 
-            // SYNC: DxMessagingBridge.Prepare is the public-contract workload.
-            // Keep this independent twin exact; ComparisonDispatchTopologyTests checks both.
+            /*
+                SYNC: DxMessagingBridge.Prepare is the public-contract workload.
+                Keep this independent twin exact; ComparisonDispatchTopologyTests checks both.
+            */
             internal Workload(ComparisonScenario scenario)
             {
                 _scenario = scenario;
@@ -215,7 +217,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
             public void Dispose()
             {
-                for (int index = Tokens.Count - 1; index >= 0; index--)
+                for (int index = Tokens.Count - 1; 0 <= index; index--)
                 {
                     Tokens[index].UnregisterAll();
                     Tokens[index].Dispose();

@@ -37,8 +37,10 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void IlInspectorOnNullMethodReturnsTrueAssumeClean()
     {
-        // Defensive default biases away from phantom warnings: when we can't reason, assume the
-        // method is fine.
+        /*
+            Defensive default biases away from phantom warnings: when we can't reason, assume the
+            method is fine.
+        */
         Assert.That(BaseCallIlInspector.MethodIlContainsBaseCall(null!, "OnEnable"), Is.True);
     }
 
@@ -55,9 +57,11 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void IlInspectorOnAbstractMethodReturnsTrueAssumeClean()
     {
-        // Abstract methods have no IL body; GetMethodBody() returns null. The inspector must
-        // treat this as assume-clean (cross-assembly third-party code paths exhibit the same
-        // shape and emitting an unactionable warning would be hostile).
+        /*
+            Abstract methods have no IL body; GetMethodBody() returns null. The inspector must
+            treat this as assume-clean (cross-assembly third-party code paths exhibit the same
+            shape and emitting an unactionable warning would be hostile).
+        */
         MethodInfo abstractMethod = typeof(AbstractFixture).GetMethod(
             "OnEnable",
             BindingFlags.NonPublic | BindingFlags.Instance
@@ -132,9 +136,11 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2ELeafCallsUnrelatedSiblingMethodNotMistakenForBaseCall()
     {
-        // The leaf calls SOMETHING; but it's a method on a sibling class, not the parent's
-        // OnEnable. The IsAssignableFrom check inside the inspector ensures we only count calls
-        // to ancestors of the declaring type.
+        /*
+            The leaf calls SOMETHING; but it's a method on a sibling class, not the parent's
+            OnEnable. The IsAssignableFrom check inside the inspector ensures we only count calls
+            to ancestors of the declaring type.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -169,9 +175,11 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2ELeafCallsBaseAwakeButCheckingForOnEnableDoesNotMatch()
     {
-        // The leaf overrides Awake correctly but does not declare OnEnable. We're asking about
-        // "does this Awake body call base.OnEnable()"; which is a meaningless question, but the
-        // inspector shouldn't false-positive on the base.Awake() call.
+        /*
+            The leaf overrides Awake correctly but does not declare OnEnable. We're asking about
+            "does this Awake body call base.OnEnable()"; which is a meaningless question, but the
+            inspector shouldn't false-positive on the base.Awake() call.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -249,10 +257,12 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2EBrokenIntermediateChainDescendantBaseCallStillDetectedAtLeaf()
     {
-        // The leaf calls base.OnEnable() correctly; IL inspection of the leaf must report TRUE.
-        // The DXMSG010 detection (the intermediate's broken chain) is the SCANNER's job, not the
-        // raw IL inspector's; here we confirm the inspector primitive faithfully reports each
-        // method's IL in isolation regardless of what its ancestors do.
+        /*
+            The leaf calls base.OnEnable() correctly; IL inspection of the leaf must report TRUE.
+            The DXMSG010 detection (the intermediate's broken chain) is the SCANNER's job, not the
+            raw IL inspector's; here we confirm the inspector primitive faithfully reports each
+            method's IL in isolation regardless of what its ancestors do.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -308,9 +318,11 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2ECallvirtStillDetectedAsBaseCall()
     {
-        // C# emits `call` for non-virtual base method invocation, and `callvirt` for virtual ones
-        // in some configurations. We accept both opcodes; covered by Roslyn's standard emission
-        // for `base.X()` overrides.
+        /*
+            C# emits `call` for non-virtual base method invocation, and `callvirt` for virtual ones
+            in some configurations. We accept both opcodes; covered by Roslyn's standard emission
+            for `base.X()` overrides.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -340,8 +352,10 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2EDeepChainLeafBaseCallDetected()
     {
-        // Three-deep chain, each link calls base. The IL inspector at the leaf only inspects the
-        // leaf's body; it must report TRUE because the leaf's IL contains a base.OnEnable() call.
+        /*
+            Three-deep chain, each link calls base. The IL inspector at the leaf only inspects the
+            leaf's body; it must report TRUE because the leaf's IL contains a base.OnEnable() call.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -382,9 +396,11 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2ELeafCallsBaseConditionallyStillDetected()
     {
-        // base.X() inside an `if` is still visible to the IL walker. The walker doesn't check
-        // reachability; even an unreachable base call counts as "calls base". This matches the
-        // analyzer's conservative semantic check.
+        /*
+            base.X() inside an `if` is still visible to the IL walker. The walker doesn't check
+            reachability; even an unreachable base call counts as "calls base". This matches the
+            analyzer's conservative semantic check.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -418,8 +434,10 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2EMultipleSeparateBaseCallsStillDetectedAsCallsBase()
     {
-        // Multiple invocations of base methods (e.g. base.OnEnable() called twice for some
-        // reason); the inspector returns true on the first match and short-circuits.
+        /*
+            Multiple invocations of base methods (e.g. base.OnEnable() called twice for some
+            reason); the inspector returns true on the first match and short-circuits.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -450,13 +468,15 @@ internal sealed class BaseCallIlInspectorTests
     [Test]
     public void E2ELeafWithSwitchInstructionBeforeBaseCallStillDetectsBaseCall()
     {
-        // S2: regression guard for the OpCodes-table walker. The body emits a `switch` instruction
-        // (variable-length jump table: 4-byte case count + N×4-byte targets) BEFORE the base
-        // call. The conservative single-byte walker would mis-step inside the jump table and
-        // could land on a stray 0x28 byte, throwing on garbage tokens or missing the real base
-        // call later in the stream → phantom DXMSG006. The proper OpCodes-table walker steps the
-        // operand bytes per opcode-declared OperandType, so the base call after the switch must
-        // still be detected correctly.
+        /*
+            S2: regression guard for the OpCodes-table walker. The body emits a `switch` instruction
+            (variable-length jump table: 4-byte case count + N×4-byte targets) BEFORE the base
+            call. The conservative single-byte walker would mis-step inside the jump table and
+            could land on a stray 0x28 byte, throwing on garbage tokens or missing the real base
+            call later in the stream → phantom DXMSG006. The proper OpCodes-table walker steps the
+            operand bytes per opcode-declared OperandType, so the base call after the switch must
+            still be detected correctly.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -497,8 +517,10 @@ internal sealed class BaseCallIlInspectorTests
 
     private static Assembly CompileFixture(string userSource)
     {
-        // Build a self-contained assembly that defines a MessageAwareComponent stub (so the
-        // user code can derive from it) and the user's classes on top.
+        /*
+            Build a self-contained assembly that defines a MessageAwareComponent stub (so the
+            user code can derive from it) and the user's classes on top.
+        */
         const string Stubs = """
 namespace UnityEngine
 {
@@ -543,7 +565,7 @@ namespace DxMessaging.Unity
         using MemoryStream stream = new();
         EmitResult emit = compilation.Emit(stream);
         Diagnostic[] blockingDiagnostics = emit
-            .Diagnostics.Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning)
+            .Diagnostics.Where(diagnostic => DiagnosticSeverity.Warning <= diagnostic.Severity)
             .ToArray();
         if (blockingDiagnostics.Length != 0)
         {
@@ -568,11 +590,13 @@ namespace DxMessaging.Unity
     [Test]
     public void E2ELdstrBeforeBaseCallStillDetectsBaseCall()
     {
-        // Spec 4b: an `ldstr` opcode (0x72) carries a 4-byte metadata-token operand. If the
-        // walker stepped 1 byte instead of 4, it would land inside the operand bytes; and one
-        // of those bytes could happen to be 0x28 (call). The OpCodes-table walker steps the
-        // operand bytes per the opcode's declared OperandType, so the base call AFTER the ldstr
-        // must still be detected correctly. This pins the misalignment-proofness of the walker.
+        /*
+            Spec 4b: an `ldstr` opcode (0x72) carries a 4-byte metadata-token operand. If the
+            walker stepped 1 byte instead of 4, it would land inside the operand bytes; and one
+            of those bytes could happen to be 0x28 (call). The OpCodes-table walker steps the
+            operand bytes per the opcode's declared OperandType, so the base call AFTER the ldstr
+            must still be detected correctly. This pins the misalignment-proofness of the walker.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -609,10 +633,12 @@ namespace DxMessaging.Unity
     [Test]
     public void E2EGenericMethodContextResolutionWorks()
     {
-        // Spec 4c: an IL body that resolves a base method on a generic ancestor. The IL inspector
-        // must pass the method's generic-arg context (declaring-type generic args + method generic
-        // args) to ResolveMethod so the token resolves correctly. Without that context, the
-        // ResolveMethod call would throw and the walker would miss the base call.
+        /*
+            Spec 4c: an IL body that resolves a base method on a generic ancestor. The IL inspector
+            must pass the method's generic-arg context (declaring-type generic args + method generic
+            args) to ResolveMethod so the token resolves correctly. Without that context, the
+            ResolveMethod call would throw and the walker would miss the base call.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -654,10 +680,12 @@ namespace DxMessaging.Unity
     [Test]
     public void E2EUnrelatedClassCallingSameNamedStaticMethodRejectedByIsAssignableFromGuard()
     {
-        // Spec 4e: the leaf calls a same-named method on a CONCRETE UNRELATED class (not via a
-        // static-helper alias, but via the class type directly). The IsAssignableFrom guard inside
-        // MethodIlContainsBaseCall must reject this; the unrelated class is not an ancestor of
-        // the leaf, so even though the method name matches, the call is not a base call.
+        /*
+            Spec 4e: the leaf calls a same-named method on a CONCRETE UNRELATED class (not via a
+            static-helper alias, but via the class type directly). The IsAssignableFrom guard inside
+            MethodIlContainsBaseCall must reject this; the unrelated class is not an ancestor of
+            the leaf, so even though the method name matches, the call is not a base call.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -696,9 +724,11 @@ namespace DxMessaging.Unity
     [Test]
     public void E2ESecondInstanceMethodNamedSameAsBaseOnUnrelatedInstanceAlsoRejected()
     {
-        // Spec 4e (reinforced): the leaf calls `OnEnable` on a field of an unrelated REFERENCE
-        // type; IsAssignableFrom must still reject. The reference type is not an ancestor of the
-        // leaf's declaring type, so the same-named call must not be misclassified.
+        /*
+            Spec 4e (reinforced): the leaf calls `OnEnable` on a field of an unrelated REFERENCE
+            type; IsAssignableFrom must still reject. The reference type is not an ancestor of the
+            leaf's declaring type, so the same-named call must not be misclassified.
+        */
         Assembly fixture = CompileFixture(
             """
             using DxMessaging.Unity;
@@ -738,13 +768,15 @@ namespace DxMessaging.Unity
     [Test]
     public void E2EVolatilePrefixTwoByteOpcodeWalkerHandled()
     {
-        // Spec 4a: a method body containing the two-byte 0xFE 0x13 (volatile.) prefix BEFORE
-        // an instruction. The OpCodes-table walker has a separate two-byte branch that must
-        // step over volatile. correctly so the subsequent instructions are walked correctly.
-        // We exercise the branch by building a method via Reflection.Emit; the resulting IL
-        // contains the two-byte prefix shape and the inspector must terminate without throwing.
-        // We assert the method correctly does NOT report a base call (the synthesized method
-        // doesn't call any same-named method).
+        /*
+            Spec 4a: a method body containing the two-byte 0xFE 0x13 (volatile.) prefix BEFORE
+            an instruction. The OpCodes-table walker has a separate two-byte branch that must
+            step over volatile. correctly so the subsequent instructions are walked correctly.
+            We exercise the branch by building a method via Reflection.Emit; the resulting IL
+            contains the two-byte prefix shape and the inspector must terminate without throwing.
+            We assert the method correctly does NOT report a base call (the synthesized method
+            doesn't call any same-named method).
+        */
         AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(
             new AssemblyName("VolatilePrefixFixture"),
             AssemblyBuilderAccess.RunAndCollect
@@ -772,17 +804,21 @@ namespace DxMessaging.Unity
         Type built = tb.CreateType()!;
         MethodInfo m = built.GetMethod("M", BindingFlags.Public | BindingFlags.Static)!;
 
-        // RunAndCollect dynamic methods may or may not expose IL via GetMethodBody depending on
-        // runtime; if the body is null the inspector returns assume-clean (true). Either way,
-        // the inspector must NOT throw.
+        /*
+            RunAndCollect dynamic methods may or may not expose IL via GetMethodBody depending on
+            runtime; if the body is null the inspector returns assume-clean (true). Either way,
+            the inspector must NOT throw.
+        */
         bool result = false;
         Assert.DoesNotThrow(() =>
         {
             result = BaseCallIlInspector.MethodIlContainsBaseCall(m, "OnEnable");
         });
-        // The walker must terminate cleanly. With a readable body, no base-call shape exists →
-        // false. With an unreadable body, assume-clean → true. Both are valid; we pin the
-        // no-throw contract.
+        /*
+            The walker must terminate cleanly. With a readable body, no base-call shape exists →
+            false. With an unreadable body, assume-clean → true. Both are valid; we pin the
+            no-throw contract.
+        */
         Assert.That(
             result,
             Is.True.Or.False,
@@ -793,10 +829,12 @@ namespace DxMessaging.Unity
     [Test]
     public void E2EResolveMethodInvalidTokenWalkerSwallowsAndContinues()
     {
-        // Spec 4d: synthesize a method whose IL contains a `call` opcode (0x28) followed by a
-        // metadata token that does NOT bind in the runtime context (a clearly-invalid token like
-        // 0x00FFFFFF). ResolveMethod throws; the walker's try/catch swallows and continues. The
-        // inspector then correctly returns false (no base call detected) rather than crashing.
+        /*
+            Spec 4d: synthesize a method whose IL contains a `call` opcode (0x28) followed by a
+            metadata token that does NOT bind in the runtime context (a clearly-invalid token like
+            0x00FFFFFF). ResolveMethod throws; the walker's try/catch swallows and continues. The
+            inspector then correctly returns false (no base call detected) rather than crashing.
+        */
         AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(
             new AssemblyName("InvalidTokenFixture"),
             AssemblyBuilderAccess.RunAndCollect
@@ -810,11 +848,13 @@ namespace DxMessaging.Unity
             Type.EmptyTypes
         );
         ILGenerator il = method.GetILGenerator();
-        // We cannot easily emit a `call` to a fabricated token via ILGenerator without referring
-        // to a real method; instead we emit a normal `ret` and rely on the no-throw contract for
-        // the walker over a body that contains only valid opcodes. The full invalid-token path
-        // is exercised at runtime via cross-assembly third-party calls; the catch is documented
-        // in BaseCallIlInspector.cs.
+        /*
+            We cannot easily emit a `call` to a fabricated token via ILGenerator without referring
+            to a real method; instead we emit a normal `ret` and rely on the no-throw contract for
+            the walker over a body that contains only valid opcodes. The full invalid-token path
+            is exercised at runtime via cross-assembly third-party calls; the catch is documented
+            in BaseCallIlInspector.cs.
+        */
         il.Emit(OpCodes.Ret);
 
         Type built = tb.CreateType()!;

@@ -976,7 +976,10 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.AreEqual(0, DxPools.DescribeAll().ObjectLists.Cached);
 
                 DxMessagingRuntimeSettingsProvider.ResetForTests();
-                using (DxMessagingRuntimeSettingsProvider.Override(settings)) { }
+                using (DxMessagingRuntimeSettingsProvider.Override(settings))
+                {
+                    // Entering and disposing the scope is the behavior under test.
+                }
 
                 Assert.AreEqual(30L, ReadLongField(bus, "_idleEvictionTicks"));
                 Assert.AreEqual(5d, ReadDoubleField(bus, "_evictionTickIntervalSeconds"));

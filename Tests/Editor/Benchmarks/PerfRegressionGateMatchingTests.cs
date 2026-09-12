@@ -61,8 +61,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         [Test]
         public void FindBaselineWithUnsetCommitIgnoresCommitWhenRowCommitDiffersFromHead()
         {
-            // The committed baseline carries a placeholder/old commit; the run is at HEAD.
-            // With the commit column ignored, the row still matches on scenario+platform.
+            /*
+                The committed baseline carries a placeholder/old commit; the run is at HEAD.
+                With the commit column ignored, the row still matches on scenario+platform.
+            */
             BaselineRow expected = BaselineRow.ForTest(
                 Scenario,
                 Platform,
@@ -144,9 +146,11 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         [Test]
         public void FindBaselineWithUnsetCommitSkipsWhenNoRowMatchesScenarioAndPlatform()
         {
-            // A contributor on a different Unity version/OS than the captured baseline
-            // has no matching row. For this LOCAL tool that must SKIP, not FAIL, so the
-            // gate surfaces as ignored rather than a spurious red.
+            /*
+                A contributor on a different Unity version/OS than the captured baseline
+                has no matching row. For this LOCAL tool that must SKIP, not FAIL, so the
+                gate surfaces as ignored rather than a spurious red.
+            */
             List<BaselineRow> rows = new()
             {
                 BaselineRow.ForTest(
@@ -172,8 +176,10 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         [Test]
         public void FindBaselineWithConfiguredCommitSkipsWhenNoRowMatchesThatCommit()
         {
-            // Commit-exact matching is still enforced when DX_PERF_BASELINE_COMMIT is set,
-            // but a missing match now skips gracefully instead of failing.
+            /*
+                Commit-exact matching is still enforced when DX_PERF_BASELINE_COMMIT is set,
+                but a missing match now skips gracefully instead of failing.
+            */
             const string TargetCommit = "feedface00000000000000000000000000000000";
             List<BaselineRow> rows = new()
             {
@@ -243,9 +249,11 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         [Test]
         public void ColdFirstDispatchScenariosAreReportOnlyAndSkippedByTheGate()
         {
-            // The three cold first-dispatch scenarios are JIT-inclusive first-touch latency
-            // and are excluded from the gate (report-only); the local smoke gate skips them
-            // via IsReportOnlyColdDispatch before running any measurement window.
+            /*
+                The three cold first-dispatch scenarios are JIT-inclusive first-touch latency
+                and are excluded from the gate (report-only); the local smoke gate skips them
+                via IsReportOnlyColdDispatch before running any measurement window.
+            */
             Assert.IsTrue(
                 PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
                     DispatchBenchmarkScenario.UntargetedFirstDispatchCold
@@ -266,9 +274,11 @@ namespace DxMessaging.Tests.Editor.Benchmarks
         [Test]
         public void WarmJitFloodAndThroughputScenariosAreNotReportOnlyColdDispatch()
         {
-            // The warm-JIT registration flood is stable enough to gate (registration
-            // wall-clock branch), so it is NOT report-only. Neither is any throughput
-            // scenario nor the cold registration flood.
+            /*
+                The warm-JIT registration flood is stable enough to gate (registration
+                wall-clock branch), so it is NOT report-only. Neither is any throughput
+                scenario nor the cold registration flood.
+            */
             Assert.IsFalse(
                 PerfRegressionSmokeTests.IsReportOnlyColdDispatch(
                     DispatchBenchmarkScenario.RegistrationFlood1000TypesWarmJit

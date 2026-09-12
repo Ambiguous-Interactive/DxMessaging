@@ -63,9 +63,11 @@ namespace DxMessaging.Tests.Runtime
                 }
             };
 
-            // Warm the wrapper lambda itself once so the first invocation's
-            // delegate-creation / JIT cost does not show up inside the
-            // AllocatingGCMemoryConstraint measurement below.
+            /*
+                Warm the wrapper lambda itself once so the first invocation's
+                delegate-creation / JIT cost does not show up inside the
+                AllocatingGCMemoryConstraint measurement below.
+            */
             lambdaUnderTest();
 
             ConstraintResult measurement = new AllocatingGCMemoryConstraint().ApplyTo(
@@ -73,8 +75,10 @@ namespace DxMessaging.Tests.Runtime
             );
             if (measurement.IsSuccess)
             {
-                // Negating the constraint hides its allocation count in NUnit's failure
-                // message. Render the original result after the recorder has stopped.
+                /*
+                    Negating the constraint hides its allocation count in NUnit's failure
+                    message. Render the original result after the recorder has stopped.
+                */
                 TextMessageWriter writer = new TextMessageWriter();
                 measurement.WriteMessageTo(writer);
                 if (failureContext != null)

@@ -68,13 +68,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             ValidateCardinality(cardinality);
 
-            // Warm the exact lifecycle path on throwaway state. Preparation, correctness
-            // checks, and allocation probing are deliberately outside the timing trials.
+            /*
+                Warm the exact lifecycle path on throwaway state. Preparation, correctness
+                checks, and allocation probing are deliberately outside the timing trials.
+            */
             _ = ExecuteOnceForContract(operation, cardinality);
 
-            // Collect once before the timing loop. Every trial still prepares fresh state
-            // outside its stopwatch; repeating a forced collection before each sub-millisecond
-            // sample makes the reported floor depend on collection overhead.
+            /*
+                Collect once before the timing loop. Every trial still prepares fresh state
+                outside its stopwatch; repeating a forced collection before each sub-millisecond
+                sample makes the reported floor depend on collection overhead.
+            */
             AllocationProbe.SettleHeapForMeasurement();
             double minElapsedSeconds = double.MaxValue;
             for (int trial = 0; trial < TimingTrials; trial++)
@@ -384,9 +388,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 Cardinality = cardinality;
                 _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
-                // Keep lifecycle measurements independent of the host editor's mutable
-                // global diagnostics preference. Diagnostics have separate coverage;
-                // these rows characterize registration storage and teardown itself.
+                /*
+                    Keep lifecycle measurements independent of the host editor's mutable
+                    global diagnostics preference. Diagnostics have separate coverage;
+                    these rows characterize registration storage and teardown itself.
+                */
                 PrimaryBus = new MessageBus { DiagnosticsMode = false };
                 SecondaryBus = new MessageBus { DiagnosticsMode = false };
                 Counter = new LifecycleCounter();
@@ -558,8 +564,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 for (int attempt = 0; attempt < AllocationAttempts; attempt++)
                 {
                     using RegistrationAttributionState state = new(operation);
-                    // Match BenchmarkProtocol.Measure: warm this exact bus/token state before
-                    // opening the profiler recorder, then measure one same-sized steady-state batch.
+                    /*
+                        Match BenchmarkProtocol.Measure: warm this exact bus/token state before
+                        opening the profiler recorder, then measure one same-sized steady-state batch.
+                    */
                     state.ExecuteCycles(AllocationCycleCount);
                     AllocationProbe.AllocationSample sample;
                     using (AllocationProbe.Window window = AllocationProbe.BeginWindow())
@@ -970,9 +978,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             _ = ExecuteOnceForContract(operation, cardinality: 16);
 
-            // Collect once before the timing loop. Each state is prepared before its stopwatch;
-            // the minimum rejects a trial interrupted by later organic GC or scheduler work
-            // without issuing seven heap-wide collections per row.
+            /*
+                Collect once before the timing loop. Each state is prepared before its stopwatch;
+                the minimum rejects a trial interrupted by later organic GC or scheduler work
+                without issuing seven heap-wide collections per row.
+            */
             AllocationProbe.SettleHeapForMeasurement();
             double minElapsedSeconds = double.MaxValue;
             for (int trial = 0; trial < TimingTrials; trial++)
@@ -1071,10 +1081,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 cardinality: 16
             );
 
-            // Select one joint H/B/B/H floor. All four fresh states in a trial are prepared
-            // before the first stopwatch sample and timed back-to-back. Minimizing the complete
-            // palindrome rejects interrupted trials without combining an arm from another host
-            // phase. Alternate preparation direction so one endpoint is not always hottest.
+            /*
+                Select one joint H/B/B/H floor. All four fresh states in a trial are prepared
+                before the first stopwatch sample and timed back-to-back. Minimizing the complete
+                palindrome rejects interrupted trials without combining an arm from another host
+                phase. Alternate preparation direction so one endpoint is not always hottest.
+            */
             AllocationProbe.SettleHeapForMeasurement();
             DeregistrationAttributionPalindromeSample sample = MeasurePalindromeFloor(
                 out string trialSequence
@@ -1123,7 +1135,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     trial,
                     prepareForward
                 );
-                if (trial > 0)
+                if (0 < trial)
                 {
                     sequence.Append(',');
                 }
@@ -1744,10 +1756,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         private static bool IsFinitePositive(double value) =>
-            value > 0d && !double.IsInfinity(value) && !double.IsNaN(value);
+            0d < value && !double.IsInfinity(value) && !double.IsNaN(value);
 
         private static bool IsFiniteNonNegative(double value) =>
-            value >= 0d && !double.IsInfinity(value) && !double.IsNaN(value);
+            0d <= value && !double.IsInfinity(value) && !double.IsNaN(value);
     }
 
     public readonly struct DeregistrationAttributionObservation

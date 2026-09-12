@@ -192,7 +192,7 @@ namespace DxMessaging.Tests.Editor.Allocations
                 samples.Count
             );
             TestContext.Out.WriteLine(summary);
-            if (medianSlowdown > TargetSlowdown)
+            if (TargetSlowdown < medianSlowdown)
             {
                 UnityEngine.Debug.LogWarning(
                     summary

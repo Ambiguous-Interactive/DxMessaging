@@ -329,7 +329,7 @@ namespace DxMessaging.Editor
                 return handle;
             }
 
-            if (initialHeight > 0f)
+            if (0f < initialHeight)
             {
                 ApplyResizedHeight(target, initialHeight, minHeight, maxHeight, allowTargetShrink);
             }
@@ -338,22 +338,26 @@ namespace DxMessaging.Editor
             float startHeight = 0f;
             handle.RegisterCallback<PointerDownEvent>(evt =>
             {
-                // Only the primary button drags. Without this a right- or middle-click on the
-                // 5px strip captures the pointer and starts a resize nobody asked for.
+                /*
+                    Only the primary button drags. Without this a right- or middle-click on the
+                    5px strip captures the pointer and starts a resize nobody asked for.
+                */
                 if (evt.button != 0)
                 {
                     return;
                 }
 
                 pointerStartY = evt.position.y;
-                // A window-level target may resolve below its remembered inline height when the
-                // window is short. Start that drag from what the reader can see or a small drag
-                // would have to erase hundreds of hidden pixels before anything moved. Fixed-size
-                // targets keep using their inline height so successive drags start where the last
-                // one ended. UI Toolkit reports
-                // `Undefined` when a pixel value IS set and `Null` when none is -- measured, and
-                // the opposite of what the names suggest -- so before the first drag this falls
-                // back to the resolved height rather than reading a `value` of 0 and jumping.
+                /*
+                    A window-level target may resolve below its remembered inline height when the
+                    window is short. Start that drag from what the reader can see or a small drag
+                    would have to erase hundreds of hidden pixels before anything moved. Fixed-size
+                    targets keep using their inline height so successive drags start where the last
+                    one ended. UI Toolkit reports
+                    `Undefined` when a pixel value IS set and `Null` when none is -- measured, and
+                    the opposite of what the names suggest -- so before the first drag this falls
+                    back to the resolved height rather than reading a `value` of 0 and jumping.
+                */
                 startHeight =
                     !allowTargetShrink && target.style.height.keyword == StyleKeyword.Undefined
                         ? target.style.height.value.value
@@ -480,8 +484,10 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                // An absolutely positioned child is out of flow, so it creates no wrapped line
-                // and must not drag the container's height with it.
+                /*
+                    An absolutely positioned child is out of flow, so it creates no wrapped line
+                    and must not drag the container's height with it.
+                */
                 if (child.resolvedStyle.position == Position.Absolute)
                 {
                     continue;
@@ -493,7 +499,7 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                if (childLayout.yMax >= UnboundedLayoutSize)
+                if (UnboundedLayoutSize <= childLayout.yMax)
                 {
                     return 0f;
                 }
@@ -547,7 +553,7 @@ namespace DxMessaging.Editor
                 WatchChildren();
 
                 float required = MeasureWrappedContentHeight(_container);
-                if (required <= 0f || required >= UnboundedLayoutSize)
+                if (required <= 0f || UnboundedLayoutSize <= required)
                 {
                     return;
                 }

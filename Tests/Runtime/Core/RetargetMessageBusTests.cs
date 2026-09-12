@@ -186,8 +186,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                // Retargeting a disabled token must not register anything: the
-                // swap is latent until the next Enable().
+                /*
+                    Retargeting a disabled token must not register anything: the
+                    swap is latent until the next Enable().
+                */
                 token.RetargetMessageBus(newBus, MessageBusRebindMode.RebindActive);
                 Assert.AreEqual(
                     0,
@@ -271,8 +273,10 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                // PreserveRegistrations + same bus takes the strict early-return
-                // path inside RetargetMessageBus.
+                /*
+                    PreserveRegistrations + same bus takes the strict early-return
+                    path inside RetargetMessageBus.
+                */
                 Assert.DoesNotThrow(
                     () => token.RetargetMessageBus(bus, MessageBusRebindMode.PreserveRegistrations),
                     "[{0}] Same-bus retarget (PreserveRegistrations) must not throw.",
@@ -292,9 +296,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     scenario.Kind
                 );
 
-                // RebindActive + same bus tears down and re-registers in place;
-                // observably this must still be a no-op: same count, exactly one
-                // delivery per emission.
+                /*
+                    RebindActive + same bus tears down and re-registers in place;
+                    observably this must still be a no-op: same count, exactly one
+                    delivery per emission.
+                */
                 Assert.DoesNotThrow(
                     () => token.RetargetMessageBus(bus, MessageBusRebindMode.RebindActive),
                     "[{0}] Same-bus retarget (RebindActive) must not throw.",
@@ -370,9 +376,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             )
             {
-                // Handler A (priority 0) retargets the token mid-dispatch;
-                // handler B (priority 1) observes whether the in-flight
-                // snapshot still completes.
+                /*
+                    Handler A (priority 0) retargets the token mid-dispatch;
+                    handler B (priority 1) observes whether the in-flight
+                    snapshot still completes.
+                */
                 _ = ScenarioCallbacks.RegisterCountingHandler(
                     scenario,
                     token,

@@ -37,13 +37,15 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 Assert.Ignore($"{PerfGateEnvVar}=1 is required to run the perf smoke gate.");
             }
 
-            // The cold first-dispatch scenarios are JIT-inclusive first-touch latency and
-            // are far too JIT-noisy to gate, even locally -- they are report-only. Skip them
-            // before measuring so this local gate never trips on cold-dispatch jitter. The
-            // warm-JIT registration flood, by contrast, is stable enough to gate and falls
-            // through to the registration wall-clock branch below (it is a registration
-            // scenario). A JS-side test asserts the cold-dispatch rows are auto-excluded
-            // from the CI gate via emitsPerSecond=0.
+            /*
+                The cold first-dispatch scenarios are JIT-inclusive first-touch latency and
+                are far too JIT-noisy to gate, even locally -- they are report-only. Skip them
+                before measuring so this local gate never trips on cold-dispatch jitter. The
+                warm-JIT registration flood, by contrast, is stable enough to gate and falls
+                through to the registration wall-clock branch below (it is a registration
+                scenario). A JS-side test asserts the cold-dispatch rows are auto-excluded
+                from the CI gate via emitsPerSecond=0.
+            */
             if (IsReportOnlyColdDispatch(scenario))
             {
                 Assert.Ignore(
@@ -79,10 +81,12 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 $"{scenarioName} throughput regressed more than {RegressionMultiplier:0.0}x."
             );
 
-            // Allocation budget is a CALL-COUNT budget now (see AllocationProbe). Enforce it
-            // only when BOTH baseline and current carry a real measured count; either side at
-            // the Unmeasured sentinel (-1) means the probe was non-functional on that run's
-            // backend, so a comparison would be meaningless rather than honest.
+            /*
+                Allocation budget is a CALL-COUNT budget now (see AllocationProbe). Enforce it
+                only when BOTH baseline and current carry a real measured count; either side at
+                the Unmeasured sentinel (-1) means the probe was non-functional on that run's
+                backend, so a comparison would be meaningless rather than honest.
+            */
             if (
                 baseline.GcAllocations != AllocationProbe.Unmeasured
                 && current.GcAllocations != AllocationProbe.Unmeasured
@@ -160,9 +164,11 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             string baselineCommit
         )
         {
-            // A null/empty baselineCommit means DX_PERF_BASELINE_COMMIT was unset, so the
-            // commit column is ignored and matching is on (scenario, platform) only. When
-            // a commit IS configured, it must match exactly (case-insensitive).
+            /*
+                A null/empty baselineCommit means DX_PERF_BASELINE_COMMIT was unset, so the
+                commit column is ignored and matching is on (scenario, platform) only. When
+                a commit IS configured, it must match exactly (case-insensitive).
+            */
             bool matchCommit = !string.IsNullOrWhiteSpace(baselineCommit);
             for (int index = 0; index < rows.Count; index++)
             {
@@ -184,10 +190,12 @@ namespace DxMessaging.Tests.Editor.Benchmarks
                 }
             }
 
-            // This is a LOCAL/manual tool. A contributor running on a different Unity
-            // version or OS than the captured baseline will have no matching row, which
-            // is expected rather than a failure, so skip gracefully. The commit-exact
-            // path (DX_PERF_BASELINE_COMMIT set) likewise skips when no row matches.
+            /*
+                This is a LOCAL/manual tool. A contributor running on a different Unity
+                version or OS than the captured baseline will have no matching row, which
+                is expected rather than a failure, so skip gracefully. The commit-exact
+                path (DX_PERF_BASELINE_COMMIT set) likewise skips when no row matches.
+            */
             string commitQualifier = matchCommit ? $"{baselineCommit} " : string.Empty;
             Assert.Ignore(
                 $"No {commitQualifier}baseline row found for scenario {scenario} on platform {platform}. "
@@ -198,13 +206,15 @@ namespace DxMessaging.Tests.Editor.Benchmarks
 
         internal static string GetBaselineCommit()
         {
-            // When DX_PERF_BASELINE_COMMIT is unset or empty, the gate matches the
-            // baseline row on (scenario, platform) only. A committed master baseline
-            // reflects one historical commit while CI runs at HEAD, so commit-exact
-            // matching would make a permanent gate impossible. Returning null here is
-            // the signal to FindBaseline to ignore the commit column. When the env var
-            // IS set, the original commit-exact path is preserved for local and
-            // historical workflows.
+            /*
+                When DX_PERF_BASELINE_COMMIT is unset or empty, the gate matches the
+                baseline row on (scenario, platform) only. A committed master baseline
+                reflects one historical commit while CI runs at HEAD, so commit-exact
+                matching would make a permanent gate impossible. Returning null here is
+                the signal to FindBaseline to ignore the commit column. When the env var
+                IS set, the original commit-exact path is preserved for local and
+                historical workflows.
+            */
             string configuredCommit = Environment.GetEnvironmentVariable(BaselineCommitEnvVar);
             return string.IsNullOrWhiteSpace(configuredCommit) ? null : configuredCommit;
         }

@@ -124,9 +124,11 @@ namespace DxMessaging.Tests.Editor
             AssertColor(DxMessagingEditorPalette.TraceMessage, ReadTokenColor("--dx-broadcast"));
             AssertColor(DxMessagingEditorPalette.TraceTarget, ReadTokenColor("--dx-accent-soft"));
 
-            // The IMGUI component inspector cannot read the stylesheet, so it reads these two pairs
-            // from the palette instead. Both skins are pinned, because a light-skin value that drifts
-            // is exactly the unreadable label this replaced.
+            /*
+                The IMGUI component inspector cannot read the stylesheet, so it reads these two pairs
+                from the palette instead. Both skins are pinned, because a light-skin value that drifts
+                is exactly the unreadable label this replaced.
+            */
             AssertColor(
                 DxMessagingEditorPalette.BroadcastText,
                 ReadTokenColor("--dx-broadcast-text")
@@ -274,8 +276,10 @@ namespace DxMessaging.Tests.Editor
             List<string> dead = new();
             foreach (string className in declared)
             {
-                // The quoted form only: a class named in an XML doc comment is documentation, not a
-                // surface that renders it.
+                /*
+                    The quoted form only: a class named in an XML doc comment is documentation, not a
+                    surface that renders it.
+                */
                 if (!sources.Contains("\"" + className + "\"", StringComparison.Ordinal))
                 {
                     dead.Add(className);
@@ -417,10 +421,12 @@ namespace DxMessaging.Tests.Editor
                 }
             }
 
-            // The flexible column is the one carrying the message. With the default content basis
-            // a long message name gave the row a wider column than the word MESSAGE gave the
-            // header, so the two drifted out of alignment; the floor keeps it readable at the
-            // Monitor's 420px minimum width.
+            /*
+                The flexible column is the one carrying the message. With the default content basis
+                a long message name gave the row a wider column than the word MESSAGE gave the
+                header, so the two drifted out of alignment; the floor keeps it readable at the
+                Monitor's 420px minimum width.
+            */
             foreach (
                 string flexibleSelector in new[]
                 {
@@ -484,10 +490,12 @@ namespace DxMessaging.Tests.Editor
         /// the point -- a new interactive shape that forgets the cursor fails rather than
         /// shipping the same gap again.
         /// </summary>
-        // The row's CHILDREN are listed on purpose. USS `cursor` is NOT inherited, so a rule on
-        // `.dx-row` alone paints the pointer over its 14px gutter and nothing else -- the column
-        // labels cover the rest of the row and would compute the default arrow, which is the
-        // exact gap #344 reported.
+        /*
+            The row's CHILDREN are listed on purpose. USS `cursor` is NOT inherited, so a rule on
+            `.dx-row` alone paints the pointer over its 14px gutter and nothing else -- the column
+            labels cover the rest of the row and would compute the default arrow, which is the
+            exact gap #344 reported.
+        */
         [TestCase(".dx-tool-btn", "link")]
         [TestCase(".dx-btn-accent", "link")]
         [TestCase(".dx-btn-ghost", "link")]
@@ -744,8 +752,10 @@ namespace DxMessaging.Tests.Editor
         {
             EditorWindow window = CreateWrapProbeWindow();
 
-            // Two children fit on one line, so no editor has to derive a wrapped height and this
-            // reads the same on Unity 2021.3 as it does on 6000.x.
+            /*
+                Two children fit on one line, so no editor has to derive a wrapped height and this
+                reads the same on Unity 2021.3 as it does on 6000.x.
+            */
             VisualElement probe = AddWrapProbe(
                 window,
                 pinnedHeight: 0f,
@@ -761,8 +771,10 @@ namespace DxMessaging.Tests.Editor
                 ),
                 "The probe must already fit, otherwise this asserts the wrong case."
             );
-            // Unity reports an unset inline style as `Null` on 6000.4 and as `Undefined` on
-            // 2021.3 and 2022.3. Both mean the same thing: no inline value was written.
+            /*
+                Unity reports an unset inline style as `Null` on 6000.4 and as `Undefined` on
+                2021.3 and 2022.3. Both mean the same thing: no inline value was written.
+            */
             Assert.That(
                 probe.style.minHeight.keyword,
                 Is.EqualTo(StyleKeyword.Null).Or.EqualTo(StyleKeyword.Undefined),
@@ -799,7 +811,7 @@ namespace DxMessaging.Tests.Editor
                     + "content from its own stylesheet height."
             );
 
-            while (probe.childCount > SingleLineChildCount)
+            while (SingleLineChildCount < probe.childCount)
             {
                 probe.RemoveAt(probe.childCount - 1);
             }
@@ -921,8 +933,10 @@ namespace DxMessaging.Tests.Editor
                 }
             }
 
-            // A stylesheet can turn wrapping on just as well as a source file can, and
-            // nothing would then supply the height either.
+            /*
+                A stylesheet can turn wrapping on just as well as a source file can, and
+                nothing would then supply the height either.
+            */
             foreach (
                 string ussPath in new[]
                 {
@@ -985,7 +999,7 @@ namespace DxMessaging.Tests.Editor
                 probe.style.flexWrap = Wrap.Wrap;
             }
 
-            if (pinnedHeight > 0f)
+            if (0f < pinnedHeight)
             {
                 probe.style.height = pinnedHeight;
             }
@@ -1178,13 +1192,13 @@ namespace DxMessaging.Tests.Editor
 
                 string value = line.Substring(prefix.Length).Trim();
                 int semicolonIndex = value.IndexOf(';');
-                if (semicolonIndex >= 0)
+                if (0 <= semicolonIndex)
                 {
                     value = value.Substring(0, semicolonIndex);
                 }
 
                 int commentIndex = value.IndexOf("/*", StringComparison.Ordinal);
-                if (commentIndex >= 0)
+                if (0 <= commentIndex)
                 {
                     value = value.Substring(0, commentIndex);
                 }

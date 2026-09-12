@@ -312,7 +312,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 () =>
                 {
                     ++invocations;
-                    if (depth >= DeepRecursionLimit)
+                    if (DeepRecursionLimit <= depth)
                     {
                         return;
                     }
@@ -339,12 +339,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 DeepRecursionLimit + 1
             );
 
-            // EmissionId invariant: every emit (outer + each nested re-emit)
-            // bumps the counter once. The 11 invocations are the result of
-            // 11 emits (one outer + ten recursive), so the EmissionId must
-            // advance by at least 11 between entry and exit. Checking
-            // ">=" rather than "==" tolerates background frame emits that
-            // a Unity test runner may interleave.
+            /*
+                EmissionId invariant: every emit (outer + each nested re-emit)
+                bumps the counter once. The 11 invocations are the result of
+                11 emits (one outer + ten recursive), so the EmissionId must
+                advance by at least 11 between entry and exit. Checking
+                ">=" rather than "==" tolerates background frame emits that
+                a Unity test runner may interleave.
+            */
             long deltaEmissions = bus.EmissionId - initialEmissionId;
             Assert.GreaterOrEqual(
                 deltaEmissions,
@@ -376,11 +378,13 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> trace = new List<string>();
             int depth = 0;
 
-            // Three priorities: 0, 5, 10. The middle priority emits a
-            // recursive message; the other two record their slot. Each
-            // emission must record [p0, p5(re-emit), p10] in order, with the
-            // reentrant inner emission interleaved between p5's start and
-            // p10's run on the outer emission.
+            /*
+                Three priorities: 0, 5, 10. The middle priority emits a
+                recursive message; the other two record their slot. Each
+                emission must record [p0, p5(re-emit), p10] in order, with the
+                reentrant inner emission interleaved between p5's start and
+                p10's run on the outer emission.
+            */
             MessageRegistrationHandle p0Handle = RegisterCountingHandler(
                 scenario,
                 token,
@@ -421,17 +425,19 @@ namespace DxMessaging.Tests.Runtime.Core
 
             EmitForScenario(scenario, hostId);
 
-            // Expected sequence at the outer emission:
-            //  d0:p0
-            //  d0:p5-start
-            //   d1:p0
-            //   d1:p5-start (depth==1, no recurse)
-            //   d1:p5-end
-            //   d1:p10
-            //  d0:p5-end
-            //  d0:p10
-            // This shows that priority order is preserved INSIDE each
-            // emission frame, even though the inner emission interleaves.
+            /*
+                Expected sequence at the outer emission:
+                 d0:p0
+                 d0:p5-start
+                  d1:p0
+                  d1:p5-start (depth==1, no recurse)
+                  d1:p5-end
+                  d1:p10
+                 d0:p5-end
+                 d0:p10
+                This shows that priority order is preserved INSIDE each
+                emission frame, even though the inner emission interleaves.
+            */
             string[] expected =
             {
                 "d0:p0",
@@ -573,10 +579,12 @@ namespace DxMessaging.Tests.Runtime.Core
             int innerCount = 0;
             int depth = 0;
 
-            // Outer at p0 self-emits, recursing once. The inner depth-1
-            // handler throws. The exception propagates out of the inner
-            // emission, through the outer p0 handler's body, and aborts
-            // the outer p1 handler.
+            /*
+                Outer at p0 self-emits, recursing once. The inner depth-1
+                handler throws. The exception propagates out of the inner
+                emission, through the outer p0 handler's body, and aborts
+                the outer p1 handler.
+            */
             MessageRegistrationHandle outerHandle = RegisterCountingHandler(
                 scenario,
                 token,
@@ -775,12 +783,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 interceptorCount
             );
 
-            // Explicit ordering assertion: the interceptor must fire BEFORE
-            // each handler bucket walk. The inner emission's interceptor
-            // must run AFTER the outer-start (because the outer handler is
-            // what triggers the inner emit), and the trailing handler must
-            // run AFTER the inner emission completes (vetoed) and on the
-            // outer frame (depth 0).
+            /*
+                Explicit ordering assertion: the interceptor must fire BEFORE
+                each handler bucket walk. The inner emission's interceptor
+                must run AFTER the outer-start (because the outer handler is
+                what triggers the inner emit), and the trailing handler must
+                run AFTER the inner emission completes (vetoed) and on the
+                outer frame (depth 0).
+            */
             string[] expectedTrace =
             {
                 "d0:interceptor",
@@ -822,11 +832,13 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Track interceptor invocations so we can confirm both emissions
-            // hit the interceptor without state bleed. The simple message
-            // structs do not have payloads, so the "freshness" of the inner
-            // emission is asserted indirectly by the interceptor count and
-            // depth monitoring.
+            /*
+                Track interceptor invocations so we can confirm both emissions
+                hit the interceptor without state bleed. The simple message
+                structs do not have payloads, so the "freshness" of the inner
+                emission is asserted indirectly by the interceptor count and
+                depth monitoring.
+            */
             int interceptorInvocations = 0;
             int depth = 0;
             int outerCount = 0;

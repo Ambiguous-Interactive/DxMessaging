@@ -122,9 +122,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                // Register the LATER-priority interceptor first so any accidental
-                // dependence on registration order (instead of priority order)
-                // fails loudly below.
+                /*
+                    Register the LATER-priority interceptor first so any accidental
+                    dependence on registration order (instead of priority order)
+                    fails loudly below.
+                */
                 handles.Add(
                     RegisterMutatingInterceptor(
                         scenario,

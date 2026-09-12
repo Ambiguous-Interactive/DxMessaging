@@ -114,11 +114,13 @@ namespace DxMessaging.Editor.Analyzers
                 "RegisterMessageHandlers",
                 "'{0}' overrides MessageAwareComponent.RegisterMessageHandlers but does not call base.RegisterMessageHandlers(); inherited registrations may not be registered."
             },
-            // Prospective entries. MessageAwareComponent does not currently declare these
-            // methods, so nothing can override or hide them yet and no scanner row ever names
-            // them (ClassifyMethod requires a real base virtual); entries exist so future
-            // changes immediately surface actionable consequence text. Keep aligned with the
-            // analyzer's dictionary.
+            /*
+                Prospective entries. MessageAwareComponent does not currently declare these
+                methods, so nothing can override or hide them yet and no scanner row ever names
+                them (ClassifyMethod requires a real base virtual); entries exist so future
+                changes immediately surface actionable consequence text. Keep aligned with the
+                analyzer's dictionary.
+            */
             {
                 "OnApplicationFocus",
                 "'{0}' overrides MessageAwareComponent.OnApplicationFocus but does not call base.OnApplicationFocus(); the messaging system may not function correctly on this component when focus changes."
@@ -245,9 +247,11 @@ namespace DxMessaging.Editor.Analyzers
                 {
                     continue;
                 }
-                // FullName for nested types uses '+'; the analyzer (and the inspector overlay's
-                // lookup) emits the dotted form. Normalise here so the scanner-produced snapshot
-                // is keyed identically to the analyzer's identifiers.
+                /*
+                    FullName for nested types uses '+'; the analyzer (and the inspector overlay's
+                    lookup) emits the dotted form. Normalise here so the scanner-produced snapshot
+                    is keyed identically to the analyzer's identifiers.
+                */
                 fullName = fullName.Replace('+', '.');
 
                 bool optedOutByAttribute = TypeHasIgnoreAttribute(concrete);
@@ -255,11 +259,13 @@ namespace DxMessaging.Editor.Analyzers
 
                 if (optedOutByAttribute || optedOutByList)
                 {
-                    // Suppression makes the entry an audit-marker (DXMSG008-equivalent). The
-                    // overlay's "ignored" branch handles this via the ignored-types list directly,
-                    // so we don't add it to the snapshot at all; the overlay reads the project
-                    // list to render the "Stop ignoring" HelpBox. This matches the bridge path's
-                    // snapshot semantics (DXMSG008 was never in MissingBaseFor either).
+                    /*
+                        Suppression makes the entry an audit-marker (DXMSG008-equivalent). The
+                        overlay's "ignored" branch handles this via the ignored-types list directly,
+                        so we don't add it to the snapshot at all; the overlay reads the project
+                        list to render the "Stop ignoring" HelpBox. This matches the bridge path's
+                        snapshot semantics (DXMSG008 was never in MissingBaseFor either).
+                    */
                     continue;
                 }
 
@@ -279,8 +285,10 @@ namespace DxMessaging.Editor.Analyzers
 
         private static bool TypeHasIgnoreAttribute(Type type)
         {
-            // [DxIgnoreMissingBaseCall] applies with Inherited=false (matches the analyzer's
-            // attribute declaration), so we inspect only the type itself.
+            /*
+                [DxIgnoreMissingBaseCall] applies with Inherited=false (matches the analyzer's
+                attribute declaration), so we inspect only the type itself.
+            */
             foreach (object attr in type.GetCustomAttributes(inherit: false))
             {
                 if (attr.GetType().FullName == IgnoreAttributeFullName)
@@ -346,12 +354,14 @@ namespace DxMessaging.Editor.Analyzers
                 return;
             }
 
-            // Walk the type chain: first the leaf (concrete), then ancestors via BaseType until we
-            // leave the MessageAwareComponent inheritance subtree. For the leaf we determine which
-            // of DXMSG006/007/009 fires (if any). If the leaf overrides correctly, we walk
-            // ancestor links to detect DXMSG010 (a broken intermediate). Each link's diagnosis is
-            // independent; we only record the FIRST classification for the leaf in
-            // entry.MissingBaseFor since the overlay HelpBox shows one row per method per type.
+            /*
+                Walk the type chain: first the leaf (concrete), then ancestors via BaseType until we
+                leave the MessageAwareComponent inheritance subtree. For the leaf we determine which
+                of DXMSG006/007/009 fires (if any). If the leaf overrides correctly, we walk
+                ancestor links to detect DXMSG010 (a broken intermediate). Each link's diagnosis is
+                independent; we only record the FIRST classification for the leaf in
+                entry.MissingBaseFor since the overlay HelpBox shows one row per method per type.
+            */
 
             MethodInfo? declared = GetDeclaredInstance(concrete, methodName);
             if (declared == null)
@@ -372,14 +382,16 @@ namespace DxMessaging.Editor.Analyzers
                 return;
             }
 
-            // DXMSG009 vs DXMSG007: declares without override (or with `new`); hides the base.
-            // In IL/reflection terms: the method does NOT have the override slot binding
-            // (GetBaseDefinition() returns the method itself) AND the base type has a same-named
-            // virtual we are hiding. The C# compiler emits the same IL for `new void X()` and
-            // `void X()`-with-CS0114, so we cannot perfectly distinguish DXMSG007 from DXMSG009
-            // from IL alone. The compile-time analyzer is authoritative for the precise ID;
-            // here we conservatively classify the case as DXMSG007; both produce the same
-            // overlay outcome (method listed in HelpBox).
+            /*
+                DXMSG009 vs DXMSG007: declares without override (or with `new`); hides the base.
+                In IL/reflection terms: the method does NOT have the override slot binding
+                (GetBaseDefinition() returns the method itself) AND the base type has a same-named
+                virtual we are hiding. The C# compiler emits the same IL for `new void X()` and
+                `void X()`-with-CS0114, so we cannot perfectly distinguish DXMSG007 from DXMSG009
+                from IL alone. The compile-time analyzer is authoritative for the precise ID;
+                here we conservatively classify the case as DXMSG007; both produce the same
+                overlay outcome (method listed in HelpBox).
+            */
             bool isOverride = declared.GetBaseDefinition() != declared;
             bool hasNewKeyword =
                 !isOverride && BaseHasSameNamedVirtual(concrete.BaseType, methodName);
@@ -402,17 +414,21 @@ namespace DxMessaging.Editor.Analyzers
                 return;
             }
 
-            // Leaf calls base. Walk the inheritance chain to look for a broken intermediate
-            // (DXMSG010). Each link's IL is inspected independently; the first broken link found
-            // produces DXMSG010 on the leaf and we stop. Cross-assembly ancestors with no IL body
-            // are trusted (assume-clean); the alternative would be unactionable warnings against
-            // closed-source code.
+            /*
+                Leaf calls base. Walk the inheritance chain to look for a broken intermediate
+                (DXMSG010). Each link's IL is inspected independently; the first broken link found
+                produces DXMSG010 on the leaf and we stop. Cross-assembly ancestors with no IL body
+                are trusted (assume-clean); the alternative would be unactionable warnings against
+                closed-source code.
+            */
             MethodInfo? cursorOverridden = GetOverriddenMethod(declared);
             HashSet<MethodInfo> visited = new();
             while (cursorOverridden != null && visited.Add(cursorOverridden))
             {
-                // Chain reached MessageAwareComponent itself; clean. We compare by full type
-                // name so the helper does not need a hard reference to the Unity-only type.
+                /*
+                    Chain reached MessageAwareComponent itself; clean. We compare by full type
+                    name so the helper does not need a hard reference to the Unity-only type.
+                */
                 Type? cursorDeclaring = cursorOverridden.DeclaringType;
                 if (
                     cursorDeclaring != null
@@ -537,12 +553,14 @@ namespace DxMessaging.Editor.Analyzers
 
         private static MethodInfo? GetOverriddenMethod(MethodInfo derivedOverride)
         {
-            // For an override, GetBaseDefinition() returns the most-base virtual (the originating
-            // declaration). To walk the chain link-by-link we need the closest ancestor that
-            // declares the same-named method directly; we look up each BaseType in turn and
-            // return the first match. This skips intermediate types that don't override the slot
-            // (e.g. a generic intermediate that just passes through), which is exactly what the
-            // chain walk needs to detect DXMSG010 at the broken link rather than the pass-through.
+            /*
+                For an override, GetBaseDefinition() returns the most-base virtual (the originating
+                declaration). To walk the chain link-by-link we need the closest ancestor that
+                declares the same-named method directly; we look up each BaseType in turn and
+                return the first match. This skips intermediate types that don't override the slot
+                (e.g. a generic intermediate that just passes through), which is exactly what the
+                chain walk needs to detect DXMSG010 at the broken link rather than the pass-through.
+            */
             Type? baseType = derivedOverride.DeclaringType?.BaseType;
             Type[] signature = GetParameterTypes(derivedOverride);
             while (baseType != null && baseType != typeof(object))

@@ -73,8 +73,10 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             IMessageBus bus = MessageHandler.MessageBus;
             MessageBusRegistration external = new(123L, "owned-by-a-foreign-bus");
-            // A handle minted by a custom IMessageBus (kind == External) owns no store on the
-            // built-in MessageBus, so deregistering it here must be a no-op (no throw).
+            /*
+                A handle minted by a custom IMessageBus (kind == External) owns no store on the
+                built-in MessageBus, so deregistering it here must be a no-op (no throw).
+            */
             Assert.DoesNotThrow(() => bus.Deregister<SimpleUntargetedMessage>(in external));
         }
 
@@ -87,10 +89,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageHandler handler = new(go) { active = true };
                 IMessageBus bus = MessageHandler.MessageBus;
 
-                // Two distinct Register* calls for the SAME (handler, type, priority) bump the
-                // handler's refcount. Pre-v4 each returned a distinct deregistration delegate;
-                // the v4 handles must likewise be UNEQUAL so a consumer that stores handles in a
-                // set/map and deregisters per-unique-handle does not under-deregister (leak).
+                /*
+                    Two distinct Register* calls for the SAME (handler, type, priority) bump the
+                    handler's refcount. Pre-v4 each returned a distinct deregistration delegate;
+                    the v4 handles must likewise be UNEQUAL so a consumer that stores handles in a
+                    set/map and deregisters per-unique-handle does not under-deregister (leak).
+                */
                 MessageBusRegistration first = bus.RegisterUntargeted<SimpleUntargetedMessage>(
                     handler
                 );

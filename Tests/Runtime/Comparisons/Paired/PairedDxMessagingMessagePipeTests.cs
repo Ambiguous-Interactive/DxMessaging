@@ -27,8 +27,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
                 ComparisonScenario scenario = ComparisonScenarios.All[scenarioIndex];
                 if (
                     !messagePipe.Supports(scenario)
-                    // SYNC: scripts/unity/require-comparison-rows.ps1 derives the same
-                    // MessagePipe scenario set and excludes SubUnsub fail-closed.
+                    /*
+                        SYNC: scripts/unity/require-comparison-rows.ps1 derives the same
+                        MessagePipe scenario set and excludes SubUnsub fail-closed.
+                    */
                     || scenario == ComparisonScenario.SubscribeUnsubscribeChurn
                 )
                 {

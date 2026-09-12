@@ -256,7 +256,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     sweepable => sweepable.StorageFieldName,
                     StringComparer.Ordinal
                 )
-                .Where(group => group.Count() > 1)
+                .Where(group => 1 < group.Count())
                 .Select(group => group.Key)
                 .ToArray();
 

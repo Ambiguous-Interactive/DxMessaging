@@ -102,10 +102,12 @@ namespace DxMessaging.Editor.Analyzers
 #endif
     static class BaseCallLogMessageParser
     {
-        // Roslyn / Unity-style location prefix:  path(line,col): warning DXMSG006:
-        // We don't anchor to the diagnostic id here beyond the leading "DXMSG"; that lets the
-        // same prefix regex serve all five diagnostics (DXMSG006/007/008/009/010). The trailing
-        // `: ` is consumed so the diagnostic-specific regexes only see the message body.
+        /*
+            Roslyn / Unity-style location prefix:  path(line,col): warning DXMSG006:
+            We don't anchor to the diagnostic id here beyond the leading "DXMSG"; that lets the
+            same prefix regex serve all five diagnostics (DXMSG006/007/008/009/010). The trailing
+            `: ` is consumed so the diagnostic-specific regexes only see the message body.
+        */
         private const RegexOptions SharedOptions =
             RegexOptions.Compiled | RegexOptions.CultureInvariant;
 
@@ -114,51 +116,61 @@ namespace DxMessaging.Editor.Analyzers
             SharedOptions
         );
 
-        // DXMSG006 format:
-        //   '{type}' overrides MessageAwareComponent.{method} but does not call base.{method}();
-        //   the messaging system may not function correctly on this component.
-        // The type name is captured from the first single-quoted token; the method from the first
-        // `MessageAwareComponent.{method}` occurrence (the format string repeats `{method}`).
-        // Body regexes anchor to the start of the body (^) so a Debug.Log payload that *contains*
-        // the analyzer's wording mid-string is not surfaced as a real DXMSG006/007/008. The prefix
-        // (when present) is stripped before this match, so ^ here is the start of the message body.
+        /*
+            DXMSG006 format:
+              '{type}' overrides MessageAwareComponent.{method} but does not call base.{method}();
+              the messaging system may not function correctly on this component.
+            The type name is captured from the first single-quoted token; the method from the first
+            `MessageAwareComponent.{method}` occurrence (the format string repeats `{method}`).
+            Body regexes anchor to the start of the body (^) so a Debug.Log payload that *contains*
+            the analyzer's wording mid-string is not surfaced as a real DXMSG006/007/008. The prefix
+            (when present) is stripped before this match, so ^ here is the start of the message body.
+        */
         private static readonly Regex Dxmsg006Regex = new(
             @"^'(?<type>[^']+)'\s+overrides\s+MessageAwareComponent\.(?<method>[A-Za-z_][A-Za-z0-9_]*)\s+but\s+does\s+not\s+call\s+base\.[A-Za-z_][A-Za-z0-9_]*\(\)\s*;\s*the\s+messaging\s+system\s+may\s+not\s+function\s+correctly\s+on\s+this\s+component\.",
             SharedOptions
         );
 
-        // DXMSG007 format:
-        //   '{type}' hides MessageAwareComponent.{method} with 'new'; replace with 'override' and
-        //   call base.{method}() so the messaging system continues to function.
+        /*
+            DXMSG007 format:
+              '{type}' hides MessageAwareComponent.{method} with 'new'; replace with 'override' and
+              call base.{method}() so the messaging system continues to function.
+        */
         private static readonly Regex Dxmsg007Regex = new(
             @"^'(?<type>[^']+)'\s+hides\s+MessageAwareComponent\.(?<method>[A-Za-z_][A-Za-z0-9_]*)\s+with\s+'new'\s*;\s*replace\s+with\s+'override'\s+and\s+call\s+base\.[A-Za-z_][A-Za-z0-9_]*\(\)\s+so\s+the\s+messaging\s+system\s+continues\s+to\s+function\.",
             SharedOptions
         );
 
-        // DXMSG008 format:
-        //   '{type}' is excluded from the DxMessaging base-call check ({source}).
-        // No method name in the message; MethodName is returned as the empty string.
+        /*
+            DXMSG008 format:
+              '{type}' is excluded from the DxMessaging base-call check ({source}).
+            No method name in the message; MethodName is returned as the empty string.
+        */
         private static readonly Regex Dxmsg008Regex = new(
             @"^'(?<type>[^']+)'\s+is\s+excluded\s+from\s+the\s+DxMessaging\s+base-call\s+check\s+\([^)]*\)\.",
             SharedOptions
         );
 
-        // DXMSG009 format:
-        //   '{type}' declares {method} without 'override' or 'new'; this implicitly hides
-        //   MessageAwareComponent.{method} (CS0114) and the messaging system will not function. ...
-        // We anchor on the head of the message and stop after the modifier-tokens phrase so future
-        // wording tweaks to the trailing remediation text don't break the parser.
+        /*
+            DXMSG009 format:
+              '{type}' declares {method} without 'override' or 'new'; this implicitly hides
+              MessageAwareComponent.{method} (CS0114) and the messaging system will not function. ...
+            We anchor on the head of the message and stop after the modifier-tokens phrase so future
+            wording tweaks to the trailing remediation text don't break the parser.
+        */
         private static readonly Regex Dxmsg009Regex = new(
             @"^'(?<type>[^']+)'\s+declares\s+(?<method>[A-Za-z_][A-Za-z0-9_]*)\s+without\s+'override'\s+or\s+'new'",
             SharedOptions
         );
 
-        // DXMSG010 format:
-        //   '{type}' calls base.{method}() but the inherited override on '{broken}' does not
-        //   chain to MessageAwareComponent.{method}; the messaging system will not function
-        //   correctly on this component.
-        // We capture {type} (the class the user is editing), {method}, and the broken-ancestor
-        // FQN so the inspector overlay can mention "broken chain via {broken}" if desired.
+        /*
+            DXMSG010 format:
+              '{type}' calls base.{method}() but the inherited override on '{broken}' does not
+              chain to MessageAwareComponent.{method}; the messaging system will not function
+              correctly on this component.
+            We capture {type} (the class the user is editing), {method}, and the broken-ancestor
+            FQN so the inspector overlay can mention "broken chain via {broken}" if desired.
+        */
         private static readonly Regex Dxmsg010Regex = new(
             @"^'(?<type>[^']+)'\s+calls\s+base\.(?<method>[A-Za-z_][A-Za-z0-9_]*)\(\)\s+but\s+the\s+inherited\s+override\s+on\s+'(?<broken>[^']+)'",
             SharedOptions

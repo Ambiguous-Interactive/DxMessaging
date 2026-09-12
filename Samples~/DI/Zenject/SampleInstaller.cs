@@ -16,13 +16,15 @@ namespace DxMessaging.Samples.DI.Zenject
     {
         public override void InstallBindings()
         {
-            // The MessageBus is bound elsewhere (typically through
-            // ZenjectRegistrationExtensions.BindDxMessagingBus, which uses an explicit factory).
-            // Avoid the bare Container.Bind<MessageBus>().AsSingle() pattern: Zenject today picks
-            // the public parameterless constructor, but its constructor-selection behaviour is
-            // version-sensitive, and a future release could broaden scanning to non-public
-            // constructors -- which would surface a clock-taking overload whose
-            // IDxMessagingClock dependency is not registered. The helper sidesteps that risk.
+            /*
+                The MessageBus is bound elsewhere (typically through
+                ZenjectRegistrationExtensions.BindDxMessagingBus, which uses an explicit factory).
+                Avoid the bare Container.Bind<MessageBus>().AsSingle() pattern: Zenject today picks
+                the public parameterless constructor, but its constructor-selection behaviour is
+                version-sensitive, and a future release could broaden scanning to non-public
+                constructors -- which would surface a clock-taking overload whose
+                IDxMessagingClock dependency is not registered. The helper sidesteps that risk.
+            */
 
             // Ensure the builder is available (provided by DxMessagingRegistrationInstaller).
             Container.BindInterfacesTo<PlayerSpawnTracker>().AsSingle();

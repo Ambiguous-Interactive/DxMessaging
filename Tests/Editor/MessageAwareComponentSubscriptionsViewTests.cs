@@ -162,9 +162,11 @@ namespace DxMessaging.Tests.Editor
             component.ConfigureForEditorTest(messagingComponent);
             component.RegisterTestHandlers();
 
-            // A token inherits IMessageBus.GlobalDiagnosticsMode, which the host project's
-            // DxMessaging settings can leave on. Pin both halves of the behavior here rather
-            // than reading whatever the ambient project default happens to be.
+            /*
+                A token inherits IMessageBus.GlobalDiagnosticsMode, which the host project's
+                DxMessaging settings can leave on. Pin both halves of the behavior here rather
+                than reading whatever the ambient project default happens to be.
+            */
             component.TestToken.DiagnosticMode = false;
             MessageAwareComponentSubscriptionsState quiet =
                 MessageAwareComponentSubscriptionsState.Capture(component);
@@ -530,7 +532,7 @@ namespace DxMessaging.Tests.Editor
             string caseContext =
                 $"selectionCount={selectionCount}, tokenCount={tokenCount}, expectedSummary={expectedSummary}, expectedBody={expectedBody}";
             MessageAwareComponentSubscriptionsState state = new(
-                hasToken: tokenCount > 0,
+                hasToken: 0 < tokenCount,
                 tokenEnabled: false,
                 diagnosticsEnabled: false,
                 rows: new MessageAwareComponentSubscriptionRow[0],
@@ -858,9 +860,11 @@ namespace DxMessaging.Tests.Editor
         }
     }
 
-    // Registrations are normally created in Awake, which the editor never runs for a plain
-    // MonoBehaviour. ConfigureForEditorTest wires the same token the runtime path would, so the
-    // section is exercised against a real MessageRegistrationToken rather than a stand-in.
+    /*
+        Registrations are normally created in Awake, which the editor never runs for a plain
+        MonoBehaviour. ConfigureForEditorTest wires the same token the runtime path would, so the
+        section is exercised against a real MessageRegistrationToken rather than a stand-in.
+    */
     [AddComponentMenu("")]
     internal sealed class SubscriptionsTestComponent : MessageAwareComponent
     {

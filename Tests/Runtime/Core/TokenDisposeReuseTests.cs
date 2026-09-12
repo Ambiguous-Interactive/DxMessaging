@@ -1664,8 +1664,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 scope.Token.Dispose();
                 Assert.IsFalse(scope.Token.Enabled, "Dispose must disable the token.");
 
-                // Pinned: the token has no disposed flag, so registration after
-                // Dispose is accepted (staged, not active) rather than throwing.
+                /*
+                    Pinned: the token has no disposed flag, so registration after
+                    Dispose is accepted (staged, not active) rather than throwing.
+                */
                 Assert.DoesNotThrow(
                     () => _ = RegisterHandler(scenario, scope.Token, context, () => ++handled),
                     "Pinned behavior: registering on a disposed token must not throw "
@@ -2412,7 +2414,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 if (typeof(T) == typeof(SimpleUntargetedMessage))
                 {
                     ++DeregistrationAttempts;
-                    if (_deregistrationFailuresRemaining > 0)
+                    if (0 < _deregistrationFailuresRemaining)
                     {
                         --_deregistrationFailuresRemaining;
                         throw new InvalidOperationException("Rollback deregistration failure.");

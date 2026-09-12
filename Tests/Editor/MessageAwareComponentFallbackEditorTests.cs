@@ -35,32 +35,38 @@ namespace DxMessaging.Tests.Editor
         [SetUp]
         public void SetUp()
         {
-            // Disable diagnostic noise so the overlay's BuildAndRenderOverlay returns early via
-            // the gating phase (no EditorGUILayout calls). Stale entries from a previous session
-            // could otherwise drive the body into shape != 0 and pollute the body assertion.
-            //
-            // We reset the override flag BEFORE the throwing call so that if GetOrCreateSettings
-            // throws, TearDown sees no override and skips restoration. We capture the previous
-            // value into the field BEFORE marking the override as active, so a throw on the
-            // capture or the subsequent write still leaves TearDown with the correct
-            // captured-vs-overridden state.
+            /*
+                Disable diagnostic noise so the overlay's BuildAndRenderOverlay returns early via
+                the gating phase (no EditorGUILayout calls). Stale entries from a previous session
+                could otherwise drive the body into shape != 0 and pollute the body assertion.
+
+                We reset the override flag BEFORE the throwing call so that if GetOrCreateSettings
+                throws, TearDown sees no override and skips restoration. We capture the previous
+                value into the field BEFORE marking the override as active, so a throw on the
+                capture or the subsequent write still leaves TearDown with the correct
+                captured-vs-overridden state.
+            */
             _baseCallCheckOverridden = false;
             DxMessagingSettings settings = DxMessagingSettings.GetOrCreateSettings();
             _previousBaseCallCheckEnabled = settings._baseCallCheckEnabled;
             _baseCallCheckOverridden = true;
             settings._baseCallCheckEnabled = false;
-            // State-transition tests must not inherit asset refresh activity from the editor.
-            // Tests for transient blocking replace this seam explicitly and own their retry queue.
+            /*
+                State-transition tests must not inherit asset refresh activity from the editor.
+                Tests for transient blocking replace this seam explicitly and own their retry queue.
+            */
             MessageAwareComponentInspectorOverlay.InspectorResolutionTransientBlocker = () => false;
         }
 
         [TearDown]
         public void TearDown()
         {
-            // Destroying inspector editors/objects below repaints the inspector, which in
-            // -nographics CI logs benign "No graphic device is available" errors. Unity
-            // resets LogAssert tolerance per phase, so re-assert it for the teardown phase
-            // (headless only; graphics runs keep full strictness).
+            /*
+                Destroying inspector editors/objects below repaints the inspector, which in
+                -nographics CI logs benign "No graphic device is available" errors. Unity
+                resets LogAssert tolerance per phase, so re-assert it for the teardown phase
+                (headless only; graphics runs keep full strictness).
+            */
             EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
             MessageAwareComponentInspectorOverlay.ResetTestSeams();
 
@@ -95,21 +101,23 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void FallbackEditorMustRegisterAsPrimaryNonFallbackEditorForChildClasses()
         {
-            // The [CustomEditor] attribute MUST register this editor as a PRIMARY (non-fallback)
-            // editor for every MessageAwareComponent subclass. Earlier attempts to use
-            // isFallback = true caused Unity to skip our editor entirely and pick GenericInspector
-            // instead; which dropped the missing-base-call HelpBox warnings on every component
-            // because Unity 2021's Editor.finishedDefaultHeaderGUI hook does not reliably fire for
-            // MonoBehaviour subclasses that have no registered [CustomEditor].
-            //
-            // The "empty vertical gap below the header" bug that motivated the isFallback attempt
-            // is solved orthogonally: OnInspectorGUI calls Editor.DrawDefaultInspector(), so the
-            // body matches Unity's GenericInspector exactly (including the disabled "Script" row
-            // every MonoBehaviour shows). There is no missing row to leave a gap.
-            //
-            // CustomEditor.isFallback has been a public field on UnityEditor.CustomEditor since
-            // at least Unity 2017.2; we read it directly without reflection. The contract:
-            // isFallback MUST be false (default), editorForChildClasses MUST be true.
+            /*
+                The [CustomEditor] attribute MUST register this editor as a PRIMARY (non-fallback)
+                editor for every MessageAwareComponent subclass. Earlier attempts to use
+                isFallback = true caused Unity to skip our editor entirely and pick GenericInspector
+                instead; which dropped the missing-base-call HelpBox warnings on every component
+                because Unity 2021's Editor.finishedDefaultHeaderGUI hook does not reliably fire for
+                MonoBehaviour subclasses that have no registered [CustomEditor].
+
+                The "empty vertical gap below the header" bug that motivated the isFallback attempt
+                is solved orthogonally: OnInspectorGUI calls Editor.DrawDefaultInspector(), so the
+                body matches Unity's GenericInspector exactly (including the disabled "Script" row
+                every MonoBehaviour shows). There is no missing row to leave a gap.
+
+                CustomEditor.isFallback has been a public field on UnityEditor.CustomEditor since
+                at least Unity 2017.2; we read it directly without reflection. The contract:
+                isFallback MUST be false (default), editorForChildClasses MUST be true.
+            */
             Type fallbackType = typeof(MessageAwareComponentFallbackEditor);
             object[] attributes = fallbackType.GetCustomAttributes(
                 typeof(CustomEditor),
@@ -148,10 +156,12 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void FallbackEditorIsSelectedForSubclassWithoutCustomEditor()
         {
-            // End-to-end check: Unity must select our editor for MessageAwareComponent
-            // subclasses that have no user-defined [CustomEditor]. With isFallback = false and
-            // editorForChildClasses = true, our editor is the most-specific match for any
-            // MessageAwareComponent subclass that has no dedicated user editor.
+            /*
+                End-to-end check: Unity must select our editor for MessageAwareComponent
+                subclasses that have no user-defined [CustomEditor]. With isFallback = false and
+                editorForChildClasses = true, our editor is the most-specific match for any
+                MessageAwareComponent subclass that has no dedicated user editor.
+            */
             GameObject host = CreateTrackedObject("FallbackEditorSelectionHost");
             EmptyMessageAwareComponentForFallbackTest component =
                 host.AddComponent<EmptyMessageAwareComponentForFallbackTest>();
@@ -176,10 +186,12 @@ namespace DxMessaging.Tests.Editor
         [TestCase(typeof(SerializedFieldMessageAwareComponentForFallbackTest))]
         public void OverlayDoesNotRenderWhenBaseCallCheckIsDisabled(Type componentType)
         {
-            // This test intentionally avoids calling Editor.OnInspectorGUI directly: invoking
-            // DrawDefaultInspector() outside Unity's active IMGUI cycle throws inside
-            // GUILayoutUtility. Instead we assert the overlay body itself short-circuits with
-            // shape == 0 (returns false, emits no UI) when the base-call check is disabled.
+            /*
+                This test intentionally avoids calling Editor.OnInspectorGUI directly: invoking
+                DrawDefaultInspector() outside Unity's active IMGUI cycle throws inside
+                GUILayoutUtility. Instead we assert the overlay body itself short-circuits with
+                shape == 0 (returns false, emits no UI) when the base-call check is disabled.
+            */
             MessageAwareComponent component = CreateTrackedMessageAwareComponent(
                 $"FallbackEditorBodyHost_{componentType.Name}",
                 componentType
@@ -1699,9 +1711,11 @@ namespace DxMessaging.Tests.Editor
         }
     }
 
-    // Helper subclass used by the editor-selection / body-emission tests. Marked internal
-    // because Unity cannot serialize private nested MonoBehaviours during domain reload, and
-    // [AddComponentMenu("")] hides it from the inspector's Add Component picker.
+    /*
+        Helper subclass used by the editor-selection / body-emission tests. Marked internal
+        because Unity cannot serialize private nested MonoBehaviours during domain reload, and
+        [AddComponentMenu("")] hides it from the inspector's Add Component picker.
+    */
     [AddComponentMenu("")]
     internal sealed class EmptyMessageAwareComponentForFallbackTest : MessageAwareComponent { }
 

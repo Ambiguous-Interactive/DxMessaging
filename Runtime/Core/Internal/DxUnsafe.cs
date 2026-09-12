@@ -1,9 +1,11 @@
 namespace DxMessaging.Core.Internal
 {
     using System.Runtime.CompilerServices;
-    // Qualified with global:: because this assembly also declares a DxMessaging.Unity
-    // namespace; an unqualified "using Unity.Collections..." would bind to
-    // DxMessaging.Unity.Collections and fail to resolve.
+    /*
+        Qualified with global:: because this assembly also declares a DxMessaging.Unity
+        namespace; an unqualified "using Unity.Collections..." would bind to
+        DxMessaging.Unity.Collections and fail to resolve.
+    */
 #if UNITY_2021_3_OR_NEWER
     using global::Unity.Collections.LowLevel.Unsafe;
 #else

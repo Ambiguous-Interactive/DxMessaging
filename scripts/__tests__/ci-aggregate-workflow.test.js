@@ -262,7 +262,7 @@ test("script-test path detector covers harness and package contract inputs", () 
     ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
     "scripts/llm/harness.js",
     "scripts/validate-unity-pr-policy.py",
-    ".github/analyzers/Roslynator.CSharp.Analyzers.dll",
+    ".github/analyzers/manifest.json",
     ".github/analyzers/LICENSE.txt",
     ".github/comparison-packages.json",
     ".github/actions/example/metadata.yaml",

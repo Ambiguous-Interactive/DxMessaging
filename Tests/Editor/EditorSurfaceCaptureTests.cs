@@ -23,8 +23,10 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class EditorSurfaceCaptureTests
     {
-        // The canvas is deliberately larger than the surface so the capture can prove that it
-        // crops to the package content rather than silently returning all available slack.
+        /*
+            The canvas is deliberately larger than the surface so the capture can prove that it
+            crops to the package content rather than silently returning all available slack.
+        */
         private const int CanvasWidth = 960;
         private const int CanvasHeight = 600;
         private const int SurfaceWidth = 720;
@@ -146,11 +148,13 @@ namespace DxMessaging.Tests.Editor
             bool previousSrgbWrite = GL.sRGBWrite;
             int windowsBefore = Resources.FindObjectsOfTypeAll<EditorWindow>().Length;
 
-            // The failure has to happen INSIDE the capture's try, after it has taken over the
-            // render target and GL.sRGBWrite and created its host window. An argument-validation
-            // failure would return before any of that and this test would pass even if the whole
-            // finally block were deleted. An oversized surface fails at the crop step, which is
-            // past every piece of state the finally is responsible for putting back.
+            /*
+                The failure has to happen INSIDE the capture's try, after it has taken over the
+                render target and GL.sRGBWrite and created its host window. An argument-validation
+                failure would return before any of that and this test would pass even if the whole
+                finally block were deleted. An oversized surface fails at the crop step, which is
+                past every piece of state the finally is responsible for putting back.
+            */
             VisualElement oversized = CreateOpaqueProbe();
             oversized.style.width = CanvasWidth + 1;
             try
@@ -191,9 +195,11 @@ namespace DxMessaging.Tests.Editor
                 nameof(CaptureRendersTheInspectorWarningPanel)
             );
 
-            // A cleared target has exactly one distinct color. The warning panel carries a
-            // background, an amber border, a title, a body, a method list, and two buttons, so a
-            // frame that really rendered cannot be flat.
+            /*
+                A cleared target has exactly one distinct color. The warning panel carries a
+                background, an amber border, a title, a body, a method list, and two buttons, so a
+                frame that really rendered cannot be flat.
+            */
             Assert.That(
                 result.DistinctColorCount,
                 Is.GreaterThan(1),
@@ -281,8 +287,10 @@ namespace DxMessaging.Tests.Editor
             VisualElement oversized = CreateOpaqueProbe();
             oversized.style.width = CanvasWidth + 1;
 
-            // Clamping into the canvas would write a silently clipped image, which is the exact
-            // defect the screenshot manifest asks reviewers to catch.
+            /*
+                Clamping into the canvas would write a silently clipped image, which is the exact
+                defect the screenshot manifest asks reviewers to catch.
+            */
             InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
                 EditorSurfaceCapture.Capture(
                     oversized,

@@ -100,9 +100,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // The watcher region starts AND ends with exactly one live registration: the
-            // release -> re-register round-trip must net zero bus-side state. The warm emit
-            // above also ensures the message type slot exists before the region opens.
+            /*
+                The watcher region starts AND ends with exactly one live registration: the
+                release -> re-register round-trip must net zero bus-side state. The warm emit
+                above also ensures the message type slot exists before the region opens.
+            */
             using (LeakWatcher watcher = LeakWatcher.Watch(label: "OptInReregister"))
             {
                 MessageRegistrationToken originalToken = listener.Token;
@@ -312,11 +314,13 @@ namespace DxMessaging.Tests.Runtime.Unity
                 "Releasing the registered listener should succeed."
             );
 
-            // Manual recovery path: user code re-creates the token and stages its own
-            // registration between the release and the next enable. The opt-in must
-            // ADOPT this live token instead of keeping the disposed reference, and it
-            // must NOT replay RegisterMessageHandlers onto it (the manual creator owns
-            // staging).
+            /*
+                Manual recovery path: user code re-creates the token and stages its own
+                registration between the release and the next enable. The opt-in must
+                ADOPT this live token instead of keeping the disposed reference, and it
+                must NOT replay RegisterMessageHandlers onto it (the manual creator owns
+                staging).
+            */
             MessageRegistrationToken manualToken = messaging.Create(listener);
             int manualCount = 0;
             _ = manualToken.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++manualCount);
@@ -371,8 +375,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             int count = 0;
             listener.untargetedHandler = () => ++count;
 
-            // With MessageRegistrationTiedToEnableStatus false, the token is never
-            // auto-enabled; mirror the manual contract for the original token.
+            /*
+                With MessageRegistrationTiedToEnableStatus false, the token is never
+                auto-enabled; mirror the manual contract for the original token.
+            */
             listener.Token.Enable();
 
             SimpleUntargetedMessage message = new();
@@ -434,8 +440,10 @@ namespace DxMessaging.Tests.Runtime.Unity
             message.EmitUntargeted();
             Assert.AreEqual(1, count, "Positive control: listener should receive while active.");
 
-            // Warm emit above creates the type slot before the region opens; the region then
-            // starts and ends with one live registration so the recovery nets zero bus state.
+            /*
+                Warm emit above creates the type slot before the region opens; the region then
+                starts and ends with one live registration so the recovery nets zero bus state.
+            */
             using (LeakWatcher watcher = LeakWatcher.Watch(label: "OptInReleaseWhileDisabled"))
             {
                 listener.enabled = false;

@@ -98,15 +98,19 @@ namespace DxMessaging.Editor.CustomEditors
 
         public override void OnInspectorGUI()
         {
-            // Render the overlay BEFORE the default body so the warning appears prominently at
-            // the top of the inspector. The overlay's render body has identical Layout/Repaint
-            // control counts, so we can call it unconditionally here.
+            /*
+                Render the overlay BEFORE the default body so the warning appears prominently at
+                the top of the inspector. The overlay's render body has identical Layout/Repaint
+                control counts, so we can call it unconditionally here.
+            */
             MessageAwareComponentInspectorOverlay.RenderInsideOnInspectorGUI(target);
 
-            // Match Unity's GenericInspector exactly; including the disabled "Script" row that
-            // every MonoBehaviour inspector shows. This is intentional: skipping the script row
-            // creates a visible empty gap below the header for subclasses with no
-            // [SerializeField] fields.
+            /*
+                Match Unity's GenericInspector exactly; including the disabled "Script" row that
+                every MonoBehaviour inspector shows. This is intentional: skipping the script row
+                creates a visible empty gap below the header for subclasses with no
+                [SerializeField] fields.
+            */
             DrawDefaultInspector();
         }
 
@@ -207,7 +211,7 @@ namespace DxMessaging.Editor.CustomEditors
                     host.Clear();
                     return;
                 }
-                if (host.childCount > 0 && state.Revision == revision)
+                if (0 < host.childCount && state.Revision == revision)
                 {
                     return;
                 }

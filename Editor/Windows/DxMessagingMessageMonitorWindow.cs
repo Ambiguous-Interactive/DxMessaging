@@ -182,9 +182,11 @@ namespace DxMessaging.Editor.Windows
         private long _renderedLiveRevision = -1;
 
         private MessageMonitorLiveRecorder LiveRecorder =>
-            // The recorder is deliberately not serialized: a domain reload wipes the bus emission
-            // buffer's contents from under it, so carrying a stale log across one would show rows
-            // that no longer correspond to anything the bus still knows about.
+            /*
+                The recorder is deliberately not serialized: a domain reload wipes the bus emission
+                buffer's contents from under it, so carrying a stale log across one would show rows
+                that no longer correspond to anything the bus still knows about.
+            */
             _liveRecorder ??= new MessageMonitorLiveRecorder();
 
         [MenuItem("Tools/Wallstop Studios/DxMessaging/Message Monitor")]
@@ -221,7 +223,7 @@ namespace DxMessaging.Editor.Windows
             DxMessagingEditorSourceLinks.MessageSourceIndexChanged -=
                 HandleMessageSourceIndexChanged;
             StopLivePump();
-            if (_detailsPaneHeight > 0f)
+            if (0f < _detailsPaneHeight)
             {
                 EditorPrefs.SetFloat(DetailsPaneHeightPreferenceKey, _detailsPaneHeight);
             }
@@ -243,16 +245,20 @@ namespace DxMessaging.Editor.Windows
 
             if (_liveMode)
             {
-                // The live body is re-rendered on a 250ms timer anyway, so rebuilding it here
-                // costs nothing and clears the detail pane's own memoization, which would
-                // otherwise keep showing the linkless pane for as long as the row stays selected.
+                /*
+                    The live body is re-rendered on a 250ms timer anyway, so rebuilding it here
+                    costs nothing and clears the detail pane's own memoization, which would
+                    otherwise keep showing the linkless pane for as long as the row stays selected.
+                */
                 RenderLiveBody();
                 return;
             }
 
-            // Snapshot mode re-renders ONLY the detail pane. A full refresh would rebuild the log
-            // and take the reader's scroll position with it -- the same loss a selection change
-            // deliberately avoids -- for the sake of a link in a pane beside it.
+            /*
+                Snapshot mode re-renders ONLY the detail pane. A full refresh would rebuild the log
+                and take the reader's scroll position with it -- the same loss a selection change
+                deliberately avoids -- for the sake of a link in a pane beside it.
+            */
             _ = TryRerenderDetails(rootVisualElement);
         }
 
@@ -330,8 +336,10 @@ namespace DxMessaging.Editor.Windows
                 rootVisualElement,
                 snapshot,
                 _viewState,
-                // The surface has already re-rendered itself; the window only has to remember what
-                // it is now showing so the next Refresh rebuilds into the same state.
+                /*
+                    The surface has already re-rendered itself; the window only has to remember what
+                    it is now showing so the next Refresh rebuilds into the same state.
+                */
                 viewState => _viewState = viewState,
                 Refresh,
                 exportText => EditorGUIUtility.systemCopyBuffer = exportText,
@@ -359,8 +367,10 @@ namespace DxMessaging.Editor.Windows
 
         private void RefreshLive()
         {
-            // Drain before the first render so switching into live mode shows whatever the bus is
-            // already holding instead of an empty log that fills a poll later.
+            /*
+                Drain before the first render so switching into live mode shows whatever the bus is
+                already holding instead of an empty log that fills a poll later.
+            */
             DrainLiveRecorder();
             _renderedLiveRevision = LiveRecorder.Revision;
             rootVisualElement.Clear();
@@ -478,8 +488,10 @@ namespace DxMessaging.Editor.Windows
                 return;
             }
 
-            // A paused recorder discards the whole capture, and its cursor stops advancing, so it
-            // has to be checked before the idle comparison rather than through it.
+            /*
+                A paused recorder discards the whole capture, and its cursor stops advancing, so it
+                has to be checked before the idle comparison rather than through it.
+            */
             if (!LiveRecorder.Recording)
             {
                 return;
@@ -488,19 +500,23 @@ namespace DxMessaging.Editor.Windows
             long busCursor = messageBus.EmissionId;
             if (busCursor < LiveRecorder.Cursor)
             {
-                // The bus restarted its dispatch counter. Rebasing here rather than leaving it to
-                // Ingest matters because Ingest can only see a restart through the records in the
-                // buffer, and a reset empties that buffer: the log would keep showing the previous
-                // run until the new one happened to emit something. The rewind goes to the start of
-                // the run, not to busCursor, so anything the new run has already buffered is drained
-                // rather than stepped over.
+                /*
+                    The bus restarted its dispatch counter. Rebasing here rather than leaving it to
+                    Ingest matters because Ingest can only see a restart through the records in the
+                    buffer, and a reset empties that buffer: the log would keep showing the previous
+                    run until the new one happened to emit something. The rewind goes to the start of
+                    the run, not to busCursor, so anything the new run has already buffered is drained
+                    rather than stepped over.
+                */
                 LiveRecorder.ResetForNewBusRun();
             }
             else if (busCursor == LiveRecorder.Cursor)
             {
-                // Capturing a snapshot rebuilds an entry for every record in the bus buffer, so an
-                // idle scene should not pay for it four times a second. An exact match means
-                // nothing has been emitted since the last drain.
+                /*
+                    Capturing a snapshot rebuilds an entry for every record in the bus buffer, so an
+                    idle scene should not pay for it four times a second. An exact match means
+                    nothing has been emitted since the last drain.
+                */
                 return;
             }
 
@@ -596,18 +612,22 @@ namespace DxMessaging.Editor.Windows
                 OnDetailsPaneHeightChanged = onDetailsPaneHeightChanged,
             };
 
-            // The surface keeps a handle to its own state so a background source index that
-            // completes later can re-render the one part that shows a link, instead of
-            // rebuilding the window and taking the reader's place in the log with it.
+            /*
+                The surface keeps a handle to its own state so a background source index that
+                completes later can re-render the one part that shows a link, instead of
+                rebuilding the window and taking the reader's place in the log with it.
+            */
             root.userData = ui;
 
             root.Add(CreateToolbar(ui, onEnterLiveMode));
 
             VisualElement content = new() { name = ContentContainerName };
             content.style.flexGrow = 1;
-            // Growing is not enough: UI Toolkit defaults flex-shrink to 0, so a block that only
-            // grows keeps its content height and pushes its siblings off the window as soon as an
-            // expanded disclosure makes that content taller than the space available.
+            /*
+                Growing is not enough: UI Toolkit defaults flex-shrink to 0, so a block that only
+                grows keeps its content height and pushes its siblings off the window as soon as an
+                expanded disclosure makes that content taller than the space available.
+            */
             content.style.flexShrink = 1;
             content.style.minHeight = 0;
             ui.Content = content;
@@ -790,8 +810,10 @@ namespace DxMessaging.Editor.Windows
             {
                 string statusText = CreateStatusText(ui.Snapshot, filteredEntries.Count);
                 ui.Status.text = statusText;
-                // The line is cut off with an ellipsis on a narrow window, so the tooltip is where
-                // the counts stay readable.
+                /*
+                    The line is cut off with an ellipsis on a narrow window, so the tooltip is where
+                    the counts stay readable.
+                */
                 ui.Status.tooltip = statusText;
             }
             SetExportButtonEnabled(ui, filteredEntries.Count);
@@ -827,9 +849,11 @@ namespace DxMessaging.Editor.Windows
             toolbar.style.flexDirection = FlexDirection.Row;
             toolbar.style.alignItems = Align.Center;
 
-            // Every element in this row shrinks except the mode badge, which is the one thing that
-            // must stay legible at any width. UI Toolkit defaults flex-shrink to 0, so a row of
-            // defaults pushes its last child out of a narrow window instead of tightening.
+            /*
+                Every element in this row shrinks except the mode badge, which is the one thing that
+                must stay legible at any width. UI Toolkit defaults flex-shrink to 0, so a row of
+                defaults pushes its last child out of a narrow window instead of tightening.
+            */
             Label title = new(Title);
             title.style.fontSize = 16;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -840,10 +864,12 @@ namespace DxMessaging.Editor.Windows
             title.style.whiteSpace = WhiteSpace.NoWrap;
             toolbar.Add(title);
 
-            // The badge that names the mode is also the control that changes it. Issue #344
-            // reported not being able to leave live mode: the two modes offered their switch in
-            // different places, so a reader who found one had no reason to look where the other
-            // put it. Whichever mode is showing, the switch is on the word that names it.
+            /*
+                The badge that names the mode is also the control that changes it. Issue #344
+                reported not being able to leave live mode: the two modes offered their switch in
+                different places, so a reader who found one had no reason to look where the other
+                put it. Whichever mode is showing, the switch is on the word that names it.
+            */
             Label mode = new(SnapshotModeBadgeText)
             {
                 name = ModeBadgeLabelName,
@@ -1007,11 +1033,13 @@ namespace DxMessaging.Editor.Windows
             ScrollView list = new(ScrollViewMode.Vertical) { name = ListName };
             list.style.flexGrow = 1;
             list.style.flexShrink = 1;
-            // flex-basis 0, not "auto". A hundred buffered rows make the log's content height
-            // enormous, and shrinking is distributed in proportion to basis, so an auto basis lets
-            // the log claim nearly all of the space and starve the sections beside it -- the
-            // Component Diagnostics body ended up with a few pixels even on a 900x620 window.
-            // Sizing it from the space left over instead makes the log the flexible one.
+            /*
+                flex-basis 0, not "auto". A hundred buffered rows make the log's content height
+                enormous, and shrinking is distributed in proportion to basis, so an auto basis lets
+                the log claim nearly all of the space and starve the sections beside it -- the
+                Component Diagnostics body ended up with a few pixels even on a 900x620 window.
+                Sizing it from the space left over instead makes the log the flexible one.
+            */
             list.style.flexBasis = 0;
             list.style.minHeight = MessageListMinHeight;
             int selectedEntryIndex = ClampSelectedIndex(
@@ -1034,10 +1062,12 @@ namespace DxMessaging.Editor.Windows
             ui.List = list;
 
             VisualElement detailsSlot = new();
-            // The detail pane is the one resizable lower area. Its handle sits above it, so an
-            // upward drag grows the pane and gives the scrolling log less room. It remains
-            // shrinkable at short window heights so the existing no-overflow contract wins over
-            // a remembered size from a taller layout.
+            /*
+                The detail pane is the one resizable lower area. Its handle sits above it, so an
+                upward drag grows the pane and gives the scrolling log less room. It remains
+                shrinkable at short window heights so the existing no-overflow contract wins over
+                a remembered size from a taller layout.
+            */
             detailsSlot.style.flexShrink = 1;
             if (ui.DetailsPaneHeight <= 0f)
             {
@@ -1095,11 +1125,13 @@ namespace DxMessaging.Editor.Windows
             VisualElement row = new() { name = RouteKindFilterRowName };
             row.style.flexDirection = FlexDirection.Row;
             row.style.alignItems = Align.Center;
-            // No wrapping. Unity 2021.3 does not resolve a wrapping row's height from the lines it
-            // wraps onto, so a second line lands outside this row and on top of the log below it -
-            // the same defect #435 reported in live mode. Every control here gives space back
-            // instead: the chips shrink to their floor and clip, and the hint already ends in
-            // an ellipsis when it runs out of room.
+            /*
+                No wrapping. Unity 2021.3 does not resolve a wrapping row's height from the lines it
+                wraps onto, so a second line lands outside this row and on top of the log below it -
+                the same defect #435 reported in live mode. Every control here gives space back
+                instead: the chips shrink to their floor and clip, and the hint already ends in
+                an ellipsis when it runs out of room.
+            */
             row.style.paddingLeft = 8;
             row.style.paddingRight = 8;
             row.style.paddingBottom = 6;
@@ -1140,9 +1172,11 @@ namespace DxMessaging.Editor.Windows
             row.Add(ui.TargetedChip);
             row.Add(ui.BroadcastChip);
 
-            // One line, always. Wrapping this sentence turns the chip row into a block several
-            // times its height on a narrow window, which takes the space the log needs; the full
-            // text stays on the badge tooltip and here.
+            /*
+                One line, always. Wrapping this sentence turns the chip row into a block several
+                times its height on a narrow window, which takes the space the log needs; the full
+                text stays on the badge tooltip and here.
+            */
             Label hint = new(SnapshotModeHintText)
             {
                 name = ModeHintLabelName,
@@ -1168,9 +1202,11 @@ namespace DxMessaging.Editor.Windows
             chip.AddToClassList(DxMessagingEditorTheme.ChipWideClassName);
             chip.AddToClassList(DxMessagingEditorTheme.FilterClassName);
 
-            // `.dx-chip` is a fixed letter box and a Toggle reserves a field-label column, both of
-            // which would clip a named chip. The live Monitor collapses the same two pieces the
-            // same way; neither belongs in the shared stylesheet, which the design system owns.
+            /*
+                `.dx-chip` is a fixed letter box and a Toggle reserves a field-label column, both of
+                which would clip a named chip. The live Monitor collapses the same two pieces the
+                same way; neither belongs in the shared stylesheet, which the design system owns.
+            */
             VisualElement checkmark = chip.Q(className: "unity-toggle__checkmark");
             if (checkmark != null)
             {
@@ -1301,7 +1337,7 @@ namespace DxMessaging.Editor.Windows
             string enabled = snapshot.DiagnosticsEnabled ? "On" : "Off";
             if (
                 snapshot.DiagnosticsEnabled
-                && visibleCount >= 0
+                && 0 <= visibleCount
                 && visibleCount != snapshot.Entries.Count
             )
             {
@@ -1340,8 +1376,10 @@ namespace DxMessaging.Editor.Windows
             breakdown.RegisterValueChangedCallback(changed =>
                 ui.BreakdownExpanded = changed.newValue
             );
-            // Expanded, this is the tallest thing in the section, so it has to give space back like
-            // everything else; its lane lists scroll, so shrinking costs nothing unreachable.
+            /*
+                Expanded, this is the tallest thing in the section, so it has to give space back like
+                everything else; its lane lists scroll, so shrinking costs nothing unreachable.
+            */
             breakdown.style.flexShrink = 1;
             breakdown.style.minHeight = FoldoutHeaderMinHeight;
             breakdown.style.marginBottom = 6;
@@ -1426,9 +1464,11 @@ namespace DxMessaging.Editor.Windows
             laneRows.style.flexShrink = 1;
             laneRows.style.minHeight = 0;
             laneRows.style.marginTop = 4;
-            // Derived from the scroll view's own name: this panel is built twice, once for
-            // message-type lanes and once for context lanes, so a shared constant would put the
-            // same element name in the tree twice.
+            /*
+                Derived from the scroll view's own name: this panel is built twice, once for
+                message-type lanes and once for context lanes, so a shared constant would put the
+                same element name in the tree twice.
+            */
             VisualElement laneRowsContent = CreateScrollableWrapRow(scrollViewName + "-row");
             laneRows.Add(laneRowsContent);
             lanesRoot.Add(laneRows);
@@ -1640,7 +1680,7 @@ namespace DxMessaging.Editor.Windows
             HashSet<string> duplicateDisplayNames = new(
                 laneGroups
                     .GroupBy(group => group.MessageTypeName, StringComparer.Ordinal)
-                    .Where(group => group.Count() > 1)
+                    .Where(group => 1 < group.Count())
                     .Select(group => group.Key),
                 StringComparer.Ordinal
             );
@@ -1727,7 +1767,7 @@ namespace DxMessaging.Editor.Windows
             return new HashSet<string>(
                 typeNames
                     .GroupBy(typeName => typeName, StringComparer.Ordinal)
-                    .Where(group => group.Count() > 1)
+                    .Where(group => 1 < group.Count())
                     .Select(group => group.Key),
                 StringComparer.Ordinal
             );
@@ -1799,9 +1839,11 @@ namespace DxMessaging.Editor.Windows
             ui.Filter = filter;
             filterRow.Add(filter);
 
-            // Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
-            // same as the rest of this package's editor UI: Button(Action) installs a Clickable that
-            // only answers pointer down/up, so neither a test nor a script can drive it.
+            /*
+                Buttons are wired through ClickEvent rather than the Button(Action) constructor, the
+                same as the rest of this package's editor UI: Button(Action) installs a Clickable that
+                only answers pointer down/up, so neither a test nor a script can drive it.
+            */
             Button refresh = new()
             {
                 name = RefreshButtonName,
@@ -1947,7 +1989,7 @@ namespace DxMessaging.Editor.Windows
         private static void SetExportButtonEnabled(MonitorUi ui, int visibleEntryCount)
         {
             ui.Export?.SetEnabled(
-                ui.OnCopyExport != null && ui.Snapshot.DiagnosticsEnabled && visibleEntryCount > 0
+                ui.OnCopyExport != null && ui.Snapshot.DiagnosticsEnabled && 0 < visibleEntryCount
             );
         }
 
@@ -2201,19 +2243,23 @@ namespace DxMessaging.Editor.Windows
             foldout.RegisterValueChangedCallback(changed =>
                 ui.ComponentsExpanded = changed.newValue
             );
-            // Shrinks, with a floor at its own header. A zero-shrink item still claims its full
-            // preferred height, so a populated, expanded panel would push past the bottom of a short
-            // window no matter how much the log beside it gave up. The floor is what keeps the
-            // squeeze off the row a reader clicks, and the rows inside scroll.
+            /*
+                Shrinks, with a floor at its own header. A zero-shrink item still claims its full
+                preferred height, so a populated, expanded panel would push past the bottom of a short
+                window no matter how much the log beside it gave up. The floor is what keeps the
+                squeeze off the row a reader clicks, and the rows inside scroll.
+            */
             foldout.style.flexShrink = 1;
             foldout.style.minHeight = FoldoutHeaderMinHeight;
             foldout.style.paddingLeft = 8;
             foldout.style.paddingRight = 8;
             foldout.contentContainer.style.flexShrink = 1;
             foldout.contentContainer.style.minHeight = 0;
-            // Expanded on a window with no room for it, the body is clipped to whatever the section
-            // was given rather than drawn past the bottom edge. The rows inside stay reachable
-            // because they live in their own scroll view, which shrinks with it.
+            /*
+                Expanded on a window with no room for it, the body is clipped to whatever the section
+                was given rather than drawn past the bottom edge. The rows inside stay reachable
+                because they live in their own scroll view, which shrinks with it.
+            */
             foldout.contentContainer.style.overflow = Overflow.Hidden;
             foldout.Add(CreateComponentPanel(ui.Components, ui));
             return foldout;
@@ -2346,8 +2392,10 @@ namespace DxMessaging.Editor.Windows
         {
             VisualElement details = new() { name = DetailsPaneName };
             details.AddToClassList(DxMessagingEditorTheme.DetailClassName);
-            // The pane gives space back when the window is short, and its body scrolls rather than
-            // spilling out of the bottom, so a 320 px window still shows the log above it.
+            /*
+                The pane gives space back when the window is short, and its body scrolls rather than
+                spilling out of the bottom, so a 320 px window still shows the log above it.
+            */
             details.style.flexGrow = 1;
             details.style.flexShrink = 1;
             details.style.minHeight = 0;
@@ -2456,8 +2504,10 @@ namespace DxMessaging.Editor.Windows
                 return row;
             }
 
-            // `Q<T>(null)` matches ANY descendant and would return the key label, so an unnamed
-            // value falls back to the row rather than linking the wrong element.
+            /*
+                `Q<T>(null)` matches ANY descendant and would return the key label, so an unnamed
+                value falls back to the row rather than linking the wrong element.
+            */
             VisualElement value = string.IsNullOrEmpty(valueName)
                 ? null
                 : row.Q<VisualElement>(valueName);
@@ -2484,11 +2534,13 @@ namespace DxMessaging.Editor.Windows
             IReadOnlyList<string> frames = DxMessagingEditorSourceLinks.ReadCallSiteFrames(
                 entry.StackTrace
             );
-            bool captured = frames.Count > 0;
-            // Three distinct facts, and calling any of them by another's name would be a lie:
-            // a trace holding only Unity's capture frames WAS captured; an empty trace while
-            // capture is off is the opt-in setting, not a missing call site; an empty trace while
-            // capture is ON is a record written before it was turned on (or built by hand).
+            bool captured = 0 < frames.Count;
+            /*
+                Three distinct facts, and calling any of them by another's name would be a lie:
+                a trace holding only Unity's capture frames WAS captured; an empty trace while
+                capture is off is the opt-in setting, not a missing call site; an empty trace while
+                capture is ON is a record written before it was turned on (or built by hand).
+            */
             bool captureFramesOnly = !captured && !string.IsNullOrWhiteSpace(entry.StackTrace);
             bool captureDisabled =
                 !captured && !captureFramesOnly && !DxMessagingEmissionCaptureNotice.CaptureEnabled;
@@ -2525,8 +2577,10 @@ namespace DxMessaging.Editor.Windows
             {
                 if (captureDisabled)
                 {
-                    // The switch travels with the explanation: an empty pane that only says
-                    // "off" still leaves the user hunting through project settings.
+                    /*
+                        The switch travels with the explanation: an empty pane that only says
+                        "off" still leaves the user hunting through project settings.
+                    */
                     stackFrames.Add(
                         DxMessagingEmissionCaptureNotice.CreateDisabledNotice(labelName)
                     );
@@ -2539,9 +2593,11 @@ namespace DxMessaging.Editor.Windows
                 }
 
                 stackFoldout.Add(stackFrames);
-                // Opened by default ONLY in the capture-off state: the header alone cannot carry
-                // the reason plus the fix, and a collapsed foldout is exactly how the setting
-                // stayed invisible. A real trace stays collapsed so it cannot bury the log.
+                /*
+                    Opened by default ONLY in the capture-off state: the header alone cannot carry
+                    the reason plus the fix, and a collapsed foldout is exactly how the setting
+                    stayed invisible. A real trace stays collapsed so it cannot bury the log.
+                */
                 stackFoldout.value = captureDisabled;
                 return stackFoldout;
             }
@@ -2556,8 +2612,10 @@ namespace DxMessaging.Editor.Windows
                 frameRow.style.flexShrink = 0;
 
                 Label frameLabel = new(frame) { tooltip = frame };
-                // The first surviving frame is the emitting call site, so it reads as the answer
-                // and the frames beneath it read as the path that led there.
+                /*
+                    The first surviving frame is the emitting call site, so it reads as the answer
+                    and the frames beneath it read as the path that led there.
+                */
                 if (first)
                 {
                     frameLabel.name = labelName;
@@ -2626,7 +2684,7 @@ namespace DxMessaging.Editor.Windows
             {
                 return 0;
             }
-            return selectedEntryIndex >= entryCount ? entryCount - 1 : selectedEntryIndex;
+            return entryCount <= selectedEntryIndex ? entryCount - 1 : selectedEntryIndex;
         }
 
         private static void AppendJsonProperty(
@@ -3117,7 +3175,7 @@ namespace DxMessaging.Editor.Windows
         private static bool Contains(string value, string filterText)
         {
             return !string.IsNullOrEmpty(value)
-                && value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+                && 0 <= value.IndexOf(filterText, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatContext(InstanceId? context)

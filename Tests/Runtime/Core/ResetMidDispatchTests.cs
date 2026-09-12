@@ -176,9 +176,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // Trailing handler lives on a separate component (separate
-            // MessageHandler) so the test observes cross-handler behavior,
-            // not same-wrapper short-circuiting.
+            /*
+                Trailing handler lives on a separate component (separate
+                MessageHandler) so the test observes cross-handler behavior,
+                not same-wrapper short-circuiting.
+            */
             GameObject auxHost = new(
                 nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly) + "Aux" + scenario.Kind,
                 typeof(EmptyMessageAwareComponent)
@@ -235,8 +237,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 trailingCount
             );
 
-            // Post-reset emissions are silent no-ops: nothing is registered,
-            // nothing may fire, nothing may throw.
+            /*
+                Post-reset emissions are silent no-ops: nothing is registered,
+                nothing may fire, nothing may throw.
+            */
             Assert.DoesNotThrow(
                 () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Emitting after the mid-dispatch Reset must not throw.",
@@ -255,8 +259,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind
             );
 
-            // The reset must leave the bus with zero registrations on every
-            // public counter (no corruption / phantom registrations).
+            /*
+                The reset must leave the bus with zero registrations on every
+                public counter (no corruption / phantom registrations).
+            */
             IMessageBus bus = MessageHandler.MessageBus;
             Assert.AreEqual(
                 0,
@@ -283,8 +289,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 scenario.Kind
             );
 
-            // Re-setup afterwards works: a freshly created component can
-            // register on the reset bus and receive emissions normally.
+            /*
+                Re-setup afterwards works: a freshly created component can
+                register on the reset bus and receive emissions normally.
+            */
             GameObject rebornHost = new(
                 nameof(ResetFromInsideHandlerStopsInFlightEmissionCleanly)
                     + "Reborn"
@@ -352,10 +360,12 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(component);
             InstanceId hostId = host;
 
-            // The peer must be a SEPARATE MessageHandler registered at the
-            // SAME priority so it occupies a distinct entry in the same
-            // dispatch bucket. Registration order makes the resetting
-            // handler run first within the bucket.
+            /*
+                The peer must be a SEPARATE MessageHandler registered at the
+                SAME priority so it occupies a distinct entry in the same
+                dispatch bucket. Registration order makes the resetting
+                handler run first within the bucket.
+            */
             GameObject peerHost = new(
                 nameof(ResetFromInsideHandlerWithSamePriorityPeerDoesNotThrow)
                     + "Peer"
@@ -475,10 +485,12 @@ namespace DxMessaging.Tests.Runtime.Core
             int resettingCount = 0;
             int peerCount = 0;
 
-            // BOTH delegates are registered on the SAME token at the SAME
-            // priority for the SAME message type, so they land in the same
-            // per-handler typed-handler list. Registration order makes the
-            // resetting delegate run first within that list.
+            /*
+                BOTH delegates are registered on the SAME token at the SAME
+                priority for the SAME message type, so they land in the same
+                per-handler typed-handler list. Registration order makes the
+                resetting delegate run first within that list.
+            */
             _ = ScenarioCallbacks.RegisterCountingHandler(
                 scenario,
                 token,
@@ -523,8 +535,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 peerCount
             );
 
-            // The bus must remain usable afterwards: post-reset emissions are
-            // silent no-ops for the pre-reset delegates.
+            /*
+                The bus must remain usable afterwards: post-reset emissions are
+                silent no-ops for the pre-reset delegates.
+            */
             Assert.DoesNotThrow(
                 () => ScenarioCallbacks.EmitForKind(scenario, hostId),
                 "[{0}] Emitting after the mid-dispatch Reset must not throw.",

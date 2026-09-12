@@ -134,14 +134,12 @@ namespace DxMessaging.Tests.Editor
                     _originalActiveScene.IsValid()
                     && _originalActiveScene.isLoaded
                     && SceneManager.GetActiveScene().handle != _originalActiveScene.handle
+                    && !SceneManager.SetActiveScene(_originalActiveScene)
                 )
                 {
-                    if (!SceneManager.SetActiveScene(_originalActiveScene))
-                    {
-                        throw new InvalidOperationException(
-                            $"Unity refused to restore active scene '{_originalActiveScene.path}'."
-                        );
-                    }
+                    throw new InvalidOperationException(
+                        $"Unity refused to restore active scene '{_originalActiveScene.path}'."
+                    );
                 }
             }
             catch (Exception exception)
@@ -151,25 +149,23 @@ namespace DxMessaging.Tests.Editor
 
             try
             {
-                if (_scene.IsValid())
+                bool sceneIsValid = _scene.IsValid();
+                if (sceneIsValid && _isPreviewScene)
                 {
-                    if (_isPreviewScene)
+                    if (!EditorSceneManager.ClosePreviewScene(_scene))
                     {
-                        if (!EditorSceneManager.ClosePreviewScene(_scene))
-                        {
-                            throw new InvalidOperationException(
-                                "Unity refused to close the fixture-owned preview scene."
-                            );
-                        }
+                        throw new InvalidOperationException(
+                            "Unity refused to close the fixture-owned preview scene."
+                        );
                     }
-                    else if (_scene.isLoaded)
+                }
+                else if (sceneIsValid && _scene.isLoaded)
+                {
+                    if (!EditorSceneManager.CloseScene(_scene, removeScene: true))
                     {
-                        if (!EditorSceneManager.CloseScene(_scene, removeScene: true))
-                        {
-                            throw new InvalidOperationException(
-                                $"Unity refused to close fixture-owned scene '{_scene.path}'."
-                            );
-                        }
+                        throw new InvalidOperationException(
+                            $"Unity refused to close fixture-owned scene '{_scene.path}'."
+                        );
                     }
                 }
             }
@@ -190,7 +186,7 @@ namespace DxMessaging.Tests.Editor
                 _disposed = false;
                 throw failures[0];
             }
-            if (failures.Count > 1)
+            if (1 < failures.Count)
             {
                 _disposed = false;
                 throw new AggregateException("Fixture-owned scene cleanup failed.", failures);

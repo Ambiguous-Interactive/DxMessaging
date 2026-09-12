@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "id": "Roslynator.Analyzers",
+      "version": "4.16.0",
+      "url": "https://api.nuget.org/v3-flatcontainer/roslynator.analyzers/4.16.0/roslynator.analyzers.4.16.0.nupkg",
+      "sha256": "8fdf744e36778e6d3c00c5ea89e94fd36810588d3cd8a572301d9d9934c28a9b",
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator.CSharp.Analyzers.dll",
+          "sha256": "3f104ae829826e063b36ea4c11df2fd595ae482ddf76c58c09530486e1ebf853",
+          "guid": "3661e954d1b7490b944b35cdb72a3665"
+        },
+        {
+          "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator_Analyzers_Roslynator.Common.dll",
+          "sha256": "4b3133ce1d4f52e17e6b488a1b7e7eb3d768e4d705c50d3482f8ca65e91cc834",
+          "guid": "8ccb09443b614abbb68b8e4bc48fed63"
+        },
+        {
+          "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator_Analyzers_Roslynator.Core.dll",
+          "sha256": "bab462206bdb9653cc61f39b13b47042d82b8fcc189ab73eaf76452f2f369424",
+          "guid": "f4fdc9dd29fa4da897893d2be89437d6"
+        },
+        {
+          "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator_Analyzers_Roslynator.CSharp.dll",
+          "sha256": "c69267920234e720e5c93f0eec218d522547edd1e67ec2e295f42c5a2b89de70",
+          "guid": "bb49eda285bf4387a171485058f6ae80"
+        }
+      ]
+    },
+    {
+      "id": "Microsoft.Unity.Analyzers",
+      "version": "1.22.0",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.unity.analyzers/1.22.0/microsoft.unity.analyzers.1.22.0.nupkg",
+      "sha256": "2e302514cae5fdbe914c237ed7dc2db0d2b6efe45d950c5eceb586e45b0d8607",
+      "license": "MIT",
+      "files": [
+        {
+          "entry": "analyzers/dotnet/cs/Microsoft.Unity.Analyzers.dll",
+          "sha256": "cea5e0cde288d98532a8ed3342fdef0d24be8acd367ef4a5ffe35822e1316376",
+          "guid": "c74a30546e524737811f35f618ab8119"
+        }
+      ]
+    },
+    {
+      "id": "SonarAnalyzer.CSharp",
+      "version": "10.34.0.3385",
+      "url": "https://api.nuget.org/v3-flatcontainer/sonaranalyzer.csharp/10.34.0.3385/sonaranalyzer.csharp.10.34.0.3385.nupkg",
+      "sha256": "00195615df83f27cf7d99a4dc0e5c717a9add62c6e2c398aca8c6ec1d44f5459",
+      "license": "Sonar Source-Available License v1.0",
+      "files": [
+        {
+          "entry": "analyzers/SonarAnalyzer.CSharp.dll",
+          "sha256": "94c3578c197039338b8767d52e9ebf7c6e961c8a138330a379dd7fd95979e382",
+          "guid": "f02db70c3209456394060837586bda5e"
+        }
+      ]
+    },
+    {
+      "id": "Microsoft.CodeAnalysis.NetAnalyzers",
+      "version": "7.0.4",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.codeanalysis.netanalyzers/7.0.4/microsoft.codeanalysis.netanalyzers.7.0.4.nupkg",
+      "sha256": "012955ebdad1b13665ae5f474b4abf0f86fe03886fceb12d93e2649ab2590f74",
+      "license": "MIT",
+      "files": [
+        {
+          "entry": "analyzers/dotnet/cs/Microsoft.CodeAnalysis.NetAnalyzers.dll",
+          "sha256": "14e181ea0ba9862eebac63d654066de62357043d107fb53dad66fbb9d0230d14",
+          "guid": "8604ff938dc8496c8c5294a2cffbdcf5"
+        },
+        {
+          "entry": "analyzers/dotnet/cs/Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll",
+          "sha256": "f90fbc1e475385c177f0b88a806b7514f2a8ae72427ef30f9ee595c7f7db77d3",
+          "guid": "05ff1ac919a44063bd8eac6a9b6cc12e"
+        }
+      ]
+    },
+    {
+      "id": "ErrorProne.NET.CoreAnalyzers",
+      "version": "0.4.0-beta.1",
+      "url": "https://api.nuget.org/v3-flatcontainer/errorprone.net.coreanalyzers/0.4.0-beta.1/errorprone.net.coreanalyzers.0.4.0-beta.1.nupkg",
+      "sha256": "faa033931cb21546dc7c9cb1705e20126b732d952a8db2fd8d43e6bdd5b8bfcc",
+      "license": "MIT",
+      "files": [
+        {
+          "entry": "analyzers/dotnet/cs/ErrorProne.NET.Core.dll",
+          "sha256": "8530658374e63c3faf8c049369ee231e6fe589894a240cee2f38a711edb2d02c",
+          "guid": "832647d755a04046b534b6c3c75185fb"
+        },
+        {
+          "entry": "analyzers/dotnet/cs/ErrorProne.Net.CoreAnalyzers.dll",
+          "sha256": "7f769b69b5389049f18ef6e18c3992edfea347026f15ebdd60af901453e9bfca",
+          "guid": "f4815358561146698676e94b52a484c4"
+        },
+        {
+          "entry": "analyzers/dotnet/cs/RuntimeContracts.dll",
+          "sha256": "2736206c839eef788c9703c20199a6e499b7ac0009cb7ca5dd28de52d1444543",
+          "guid": "b1290e628ed749a58bab55cfb6611a27"
+        }
+      ]
+    }
+  ]
+}

@@ -22,8 +22,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 
         private const int DispatchKey = 0;
 
-        // Single-sourced from the canonical scenario constant so the keyed
-        // lookup-table size stays identical (1:1) across every comparison bridge.
+        /*
+            Single-sourced from the canonical scenario constant so the keyed
+            lookup-table size stays identical (1:1) across every comparison bridge.
+        */
         private const int KeyCount = ComparisonScenarios.KeyedListenerCount;
 
         private ComparisonScenario _scenario;
@@ -83,10 +85,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     Global += Handle;
                     return;
                 case ComparisonScenario.GlobalToManySubscribers:
-                    // Genuinely-distinct subscribers model 16 independent listeners. A multicast
-                    // event would happily invoke the same delegate 16 times, but distinct
-                    // subscribers keep every bridge's fan-out immune to value-equality dedup. See
-                    // FanOut.
+                    /*
+                        Genuinely-distinct subscribers model 16 independent listeners. A multicast
+                        event would happily invoke the same delegate 16 times, but distinct
+                        subscribers keep every bridge's fan-out immune to value-equality dedup. See
+                        FanOut.
+                    */
                     _fanOut = new FanOut(ComparisonScenarios.FanOutSubscribers);
                     foreach (FanOut.Subscriber subscriber in _fanOut.Subscribers)
                     {

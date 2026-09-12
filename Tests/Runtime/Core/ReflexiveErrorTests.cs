@@ -332,10 +332,12 @@ namespace DxMessaging.Tests.Runtime.Core
             comp.reflexiveThreeArgumentHandler = () => ++threeArgCount;
             InstanceId hostId = host;
 
-            // The method name exists, but the argument count does not match any
-            // overload. Failed signature lookups are not retained, and dispatch
-            // remains a silent no-op (no throw, no invocation). This is distinct
-            // from the unknown-name path above.
+            /*
+                The method name exists, but the argument count does not match any
+                overload. Failed signature lookups are not retained, and dispatch
+                remains a silent no-op (no throw, no invocation). This is distinct
+                from the unknown-name path above.
+            */
             ReflexiveMessage wrongArity = new(
                 nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
                 ReflexiveSendMode.Flat,
@@ -358,8 +360,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 "The three-argument method must not be invoked via the two-argument name."
             );
 
-            // Control (anti-vacuity): the same method name with the correct arity
-            // dispatches successfully.
+            /*
+                Control (anti-vacuity): the same method name with the correct arity
+                dispatches successfully.
+            */
             ReflexiveMessage correct = new(
                 nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
                 ReflexiveSendMode.Flat,
@@ -388,9 +392,11 @@ namespace DxMessaging.Tests.Runtime.Core
             comp.reflexiveTwoArgumentHandler = () => ++twoArgCount;
             InstanceId hostId = host;
 
-            // The method name and arity exist, but the parameter types are wrong
-            // (string, string instead of int, int). Pinned behavior: the typed
-            // method lookup finds no match, so dispatch is a silent no-op.
+            /*
+                The method name and arity exist, but the parameter types are wrong
+                (string, string instead of int, int). Pinned behavior: the typed
+                method lookup finds no match, so dispatch is a silent no-op.
+            */
             ReflexiveMessage wrongTypes = new(
                 nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
                 ReflexiveSendMode.Flat,
@@ -408,8 +414,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 "The method must not be invoked with mismatched parameter types."
             );
 
-            // Control (anti-vacuity): the same method name with correctly typed
-            // arguments dispatches successfully.
+            /*
+                Control (anti-vacuity): the same method name with correctly typed
+                arguments dispatches successfully.
+            */
             ReflexiveMessage correct = new(
                 nameof(SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments),
                 ReflexiveSendMode.Flat,

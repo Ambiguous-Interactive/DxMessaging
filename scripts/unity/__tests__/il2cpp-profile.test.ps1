@@ -99,6 +99,27 @@ try {
         Invoke-Expression $definition.Extent.Text
     }
 
+    $repositoryCatalogPath = Join-Path $repoRoot 'scripts/unity/comparison-evidence-catalog-v1.json'
+    $repositoryCatalog = Get-Content -LiteralPath $repositoryCatalogPath -Raw | ConvertFrom-Json
+    foreach ($entry in $repositoryCatalog.sources.PSObject.Properties) {
+        $source = $entry.Value
+        if ($source.origin -cne 'repository') {
+            continue
+        }
+        $sourcePath = Join-Path $repoRoot $source.path
+        $sourceBytes = [System.IO.File]::ReadAllBytes($sourcePath)
+        $portableBytes = [System.Text.Encoding]::UTF8.GetBytes(
+            [System.Text.Encoding]::UTF8.GetString($sourceBytes).Replace("`r`n", "`n")
+        )
+        $hasher = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $portableHash = [BitConverter]::ToString($hasher.ComputeHash($portableBytes)).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $hasher.Dispose()
+        }
+        Assert-That "repository catalog source $($entry.Name) uses portable LF bytes" ($portableHash -ceq $source.sha256)
+    }
+
     $nativeProject = Join-Path $fixtureRoot 'native-project'
     $nativeArtifacts = Join-Path $fixtureRoot 'native-artifacts'
     $nativeLog = Join-Path $fixtureRoot 'native-build.log'

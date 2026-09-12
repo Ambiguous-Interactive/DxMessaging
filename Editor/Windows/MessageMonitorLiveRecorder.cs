@@ -187,20 +187,24 @@ namespace DxMessaging.Editor.Windows
                 return false;
             }
 
-            // A bus reset restarts the dispatch sequence at 0, so a snapshot whose highest sequence
-            // number sits below the cursor is a different run of the counter, not stale data. This
-            // has to be settled before anything is collected, because against the old cursor every
-            // record of the new run looks already-drained. This inference is a best-effort net for a
-            // reset the caller did not announce: a run that emits past the old cursor before the
-            // next poll is indistinguishable from ordinary progress. A caller that knows the bus
-            // restarted should say so through <see cref="ResetForNewBusRun"/> rather than rely on
-            // this.
+            /*
+                A bus reset restarts the dispatch sequence at 0, so a snapshot whose highest sequence
+                number sits below the cursor is a different run of the counter, not stale data. This
+                has to be settled before anything is collected, because against the old cursor every
+                record of the new run looks already-drained. This inference is a best-effort net for a
+                reset the caller did not announce: a run that emits past the old cursor before the
+                next poll is indistinguishable from ordinary progress. A caller that knows the bus
+                restarted should say so through <see cref="ResetForNewBusRun"/> rather than rely on
+                this.
+            */
             if (highestTraceId < Cursor)
             {
-                // Exactly what an announced rebase does, so the inferred and announced paths cannot
-                // disagree: the retained rows belong to the previous run and their "#N" dispatch
-                // labels would collide with the new run's, and the recorded/missed totals describe
-                // a run that is over.
+                /*
+                    Exactly what an announced rebase does, so the inferred and announced paths cannot
+                    disagree: the retained rows belong to the previous run and their "#N" dispatch
+                    labels would collide with the new run's, and the recorded/missed totals describe
+                    a run that is over.
+                */
                 ResetLog(0);
             }
 
@@ -213,7 +217,7 @@ namespace DxMessaging.Editor.Windows
             pending.Sort(CompareByTraceId);
 
             long lowestTraceId = pending[0].TraceId;
-            if (_started && lowestTraceId > Cursor + 1)
+            if (_started && Cursor + 1 < lowestTraceId)
             {
                 MissedCount += lowestTraceId - Cursor - 1;
             }
@@ -304,7 +308,7 @@ namespace DxMessaging.Editor.Windows
             for (int index = 0; index < busEntries.Count; index++)
             {
                 long traceId = busEntries[index].TraceId;
-                if (traceId > highestTraceId)
+                if (highestTraceId < traceId)
                 {
                     highestTraceId = traceId;
                 }
@@ -321,7 +325,7 @@ namespace DxMessaging.Editor.Windows
             for (int index = 0; index < busEntries.Count; index++)
             {
                 MessageMonitorEntry entry = busEntries[index];
-                if (entry.TraceId > 0 && entry.TraceId > Cursor)
+                if (0 < entry.TraceId && Cursor < entry.TraceId)
                 {
                     pending.Add(entry);
                 }
@@ -334,7 +338,7 @@ namespace DxMessaging.Editor.Windows
         {
             ObservedCount++;
             int lastIndex = _entries.Count - 1;
-            if (lastIndex >= 0 && IsSameRun(_entries[lastIndex].Entry, entry))
+            if (0 <= lastIndex && IsSameRun(_entries[lastIndex].Entry, entry))
             {
                 _entries[lastIndex] = _entries[lastIndex].Fold(entry.TraceId, observedSeconds);
                 return;

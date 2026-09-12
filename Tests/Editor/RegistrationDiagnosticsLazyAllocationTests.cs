@@ -83,10 +83,12 @@ namespace DxMessaging.Tests.Editor
             IMessageBus.GlobalMessageBufferSize = _savedBufferSize;
         }
 
-        // Both the common player default (Off) and the diagnostics-enabled case (All): the
-        // diagnostics collections must materialize only at first dispatch, so Create allocates
-        // neither under EITHER setting. Running All too makes the diagnostics state load-bearing
-        // -- it proves the null is a Create-time laziness property, not a side effect of Off.
+        /*
+            Both the common player default (Off) and the diagnostics-enabled case (All): the
+            diagnostics collections must materialize only at first dispatch, so Create allocates
+            neither under EITHER setting. Running All too makes the diagnostics state load-bearing
+            -- it proves the null is a Create-time laziness property, not a side effect of Off.
+        */
         [Test]
         public void TokenCreateDoesNotEagerlyAllocateDiagnosticsCollections(
             [Values(DiagnosticsTarget.Off, DiagnosticsTarget.All)] DiagnosticsTarget diagnostics

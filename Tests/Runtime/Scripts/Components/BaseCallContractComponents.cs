@@ -30,8 +30,10 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
     /// </remarks>
     public static class BaseCallContractComponents
     {
-        // Marker class so the file has a public type matching the file name;
-        // the actual test fixtures live as siblings below.
+        /*
+            Marker class so the file has a public type matching the file name;
+            the actual test fixtures live as siblings below.
+        */
     }
 
     /// <summary>
@@ -105,17 +107,21 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
 
         protected override void OnDisable()
         {
-            // Intentional: do NOT call base.OnDisable(). Without this skip,
-            // Unity's destroy lifecycle (OnDisable -> OnDestroy) would
-            // deregister the handlers via the inherited OnDisable before the
-            // overridden OnDestroy runs, masking the leak the test pins.
+            /*
+                Intentional: do NOT call base.OnDisable(). Without this skip,
+                Unity's destroy lifecycle (OnDisable -> OnDestroy) would
+                deregister the handlers via the inherited OnDisable before the
+                overridden OnDestroy runs, masking the leak the test pins.
+            */
         }
 
         protected override void OnDestroy()
         {
-            // Intentional: do NOT call base.OnDestroy(). The leaked
-            // registration is cleaned up by the test via a bus reset in
-            // teardown.
+            /*
+                Intentional: do NOT call base.OnDestroy(). The leaked
+                registration is cleaned up by the test via a bus reset in
+                teardown.
+            */
         }
     }
 
@@ -138,9 +144,11 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
 
         protected override void OnDestroy()
         {
-            // Intentional: do NOT call base.OnDestroy(). The inherited
-            // base.OnDisable() still runs as part of Unity's destroy
-            // lifecycle and disables the token, so no registration leaks.
+            /*
+                Intentional: do NOT call base.OnDestroy(). The inherited
+                base.OnDisable() still runs as part of Unity's destroy
+                lifecycle and disables the token, so no registration leaks.
+            */
         }
     }
 
@@ -168,9 +176,11 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
 
         protected override void HandleStringComponentMessage(in StringMessage message)
         {
-            // The base class normally registers this as a handler. Without the
-            // base call in RegisterMessageHandlers, this should never run for
-            // emitted StringMessage instances during the test window.
+            /*
+                The base class normally registers this as a handler. Without the
+                base call in RegisterMessageHandlers, this should never run for
+                emitted StringMessage instances during the test window.
+            */
             defaultHandlerInvocations++;
         }
 

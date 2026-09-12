@@ -265,25 +265,27 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnityTearDown]
         public IEnumerator UnityCleanup()
         {
-            // Mark every tracked object for destruction FIRST, then yield a
-            // SINGLE frame. In play mode Object.Destroy is deferred to the
-            // end-of-frame flush, and every destroy queued within the same
-            // frame flushes together, so one yield drains all callbacks at once
-            // -- O(1) per teardown, not the O(n) a yield-per-object loop would
-            // cost a 128-component fixture (~128 teardown frames).
-            //
-            // LIFECYCLE NOTE (verified via the MCP loop on 6000.4; standard
-            // Unity Test Framework ordering): in the normal per-test flow the
-            // synchronous [TearDown] Cleanup() runs BEFORE this [UnityTearDown]
-            // and has already destroyed + cleared _spawned, so this loop
-            // normally iterates an EMPTY set and the drain below is skipped
-            // (destroyedAny stays false). The deferred destroys Cleanup() queued
-            // are flushed by the NEXT test's UnitySetup drain (before its Reset);
-            // that is where the real drain-before-the-next-test guarantee lives,
-            // not here. This destroy+drain path runs only when UnityCleanup() is
-            // invoked DIRECTLY against a populated _spawned
-            // (MessagingTestBaseCleanupRobustnessTests' "unity-*" scenarios),
-            // which is why it is retained rather than folded into Cleanup().
+            /*
+                Mark every tracked object for destruction FIRST, then yield a
+                SINGLE frame. In play mode Object.Destroy is deferred to the
+                end-of-frame flush, and every destroy queued within the same
+                frame flushes together, so one yield drains all callbacks at once
+                -- O(1) per teardown, not the O(n) a yield-per-object loop would
+                cost a 128-component fixture (~128 teardown frames).
+
+                LIFECYCLE NOTE (verified via the MCP loop on 6000.4; standard
+                Unity Test Framework ordering): in the normal per-test flow the
+                synchronous [TearDown] Cleanup() runs BEFORE this [UnityTearDown]
+                and has already destroyed + cleared _spawned, so this loop
+                normally iterates an EMPTY set and the drain below is skipped
+                (destroyedAny stays false). The deferred destroys Cleanup() queued
+                are flushed by the NEXT test's UnitySetup drain (before its Reset);
+                that is where the real drain-before-the-next-test guarantee lives,
+                not here. This destroy+drain path runs only when UnityCleanup() is
+                invoked DIRECTLY against a populated _spawned
+                (MessagingTestBaseCleanupRobustnessTests' "unity-*" scenarios),
+                which is why it is retained rather than folded into Cleanup().
+            */
             bool destroyedAny = false;
             foreach (GameObject spawned in _spawned)
             {
@@ -303,8 +305,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 yield return null;
             }
 
-            // Assert the bus drained fully inside this test, instead of
-            // letting a stuck handler bleed into the next test's logs.
+            /*
+                Assert the bus drained fully inside this test, instead of
+                letting a stuck handler bleed into the next test's logs.
+            */
             IEnumerator freshHandler = WaitUntilMessageHandlerIsFresh();
             while (freshHandler.MoveNext())
             {
@@ -315,21 +319,23 @@ namespace DxMessaging.Tests.Runtime.Core
         [UnitySetUp]
         public virtual IEnumerator UnitySetup()
         {
-            // Drain the prior test's deferred Object.Destroy queue before
-            // wiping bus state. Otherwise queued OnDisable callbacks would
-            // fire against an emptied bus and log over-deregistration errors
-            // against the next test (see ResetState's _resetGeneration guard
-            // for the production-side hardening).
-            //
-            // This single yield is the only per-test frame the harness costs
-            // after the domain/scene reload-off win and the batched teardown
-            // (the WaitUntil...Fresh polls below are zero-frame on the happy
-            // path). It is load-bearing and cannot be removed: many fixtures
-            // call Object.Destroy directly in the test body (lifecycle / mutation
-            // / base-call tests), so the next test cannot safely Reset() until
-            // any such deferred destroy has flushed. Making the harness-tracked
-            // teardown synchronous (DestroyImmediate) would not let this drain
-            // go away while those direct-Destroy fixtures exist.
+            /*
+                Drain the prior test's deferred Object.Destroy queue before
+                wiping bus state. Otherwise queued OnDisable callbacks would
+                fire against an emptied bus and log over-deregistration errors
+                against the next test (see ResetState's _resetGeneration guard
+                for the production-side hardening).
+
+                This single yield is the only per-test frame the harness costs
+                after the domain/scene reload-off win and the batched teardown
+                (the WaitUntil...Fresh polls below are zero-frame on the happy
+                path). It is load-bearing and cannot be removed: many fixtures
+                call Object.Destroy directly in the test body (lifecycle / mutation
+                / base-call tests), so the next test cannot safely Reset() until
+                any such deferred destroy has flushed. Making the harness-tracked
+                teardown synchronous (DestroyImmediate) would not let this drain
+                go away while those direct-Destroy fixtures exist.
+            */
             if (Application.isPlaying)
             {
                 yield return null;
@@ -417,20 +423,24 @@ namespace DxMessaging.Tests.Runtime.Core
             return component.Token;
         }
 
-        // NOTE: This polling loop should eventually be replaced by a bus-side
-        // version-counter check (Issue 14). Until that lands, callers fall back
-        // to the per-frame yield below to detect when the bus has drained.
+        /*
+            NOTE: This polling loop should eventually be replaced by a bus-side
+            version-counter check (Issue 14). Until that lands, callers fall back
+            to the per-frame yield below to detect when the bus has drained.
+        */
         protected IEnumerator WaitUntilMessageHandlerIsFresh()
         {
             IMessageBus messageBus = MessageHandler.MessageBus;
             Assert.IsNotNull(messageBus);
 
-            // Deterministic, runner-speed-independent budget: poll a bounded
-            // NUMBER of frames rather than a wall-clock interval. The loop
-            // exits as soon as state clears (zero-to-one frames on the happy
-            // path), so this only bites under extreme load. Frame counting
-            // cannot flake on a slow CI runner the way the prior 1.5s
-            // wall-clock bound could (see FreshHandlerWaitFrameBudget remarks).
+            /*
+                Deterministic, runner-speed-independent budget: poll a bounded
+                NUMBER of frames rather than a wall-clock interval. The loop
+                exits as soon as state clears (zero-to-one frames on the happy
+                path), so this only bites under extreme load. Frame counting
+                cannot flake on a slow CI runner the way the prior 1.5s
+                wall-clock bound could (see FreshHandlerWaitFrameBudget remarks).
+            */
             int frameBudget = FreshHandlerWaitFrameBudget;
             int framesWaited = 0;
 

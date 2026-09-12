@@ -180,10 +180,12 @@ namespace DxMessaging.Core.Configuration
 
                     if (_newer != null)
                     {
-                        // The immediate child used this override as its restore point.
-                        // Bypass the ended node and carry the root snapshot forward so
-                        // the newest live override eventually restores the nearest
-                        // active ancestor regardless of disposal order.
+                        /*
+                            The immediate child used this override as its restore point.
+                            Bypass the ended node and carry the root snapshot forward so
+                            the newest live override eventually restores the nearest
+                            active ancestor regardless of disposal order.
+                        */
                         _newer._older = _older;
                         _newer._previous = _previous;
                         _newer._previousGlobalMessageBufferSize = _previousGlobalMessageBufferSize;

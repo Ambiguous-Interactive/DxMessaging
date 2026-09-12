@@ -1,12 +1,14 @@
-// Vendored copy of Unity's Il2CppSetOption attribute. The IL2CPP code
-// generator (il2cpp.exe) matches this attribute by its FULL NAME
-// (Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute), not by assembly,
-// so an internal per-assembly copy is the sanctioned way for a package to opt
-// hot methods out of generated null/bounds checks (the same pattern UniTask
-// and other performance-focused packages use). The shape below mirrors the
-// attribute source Unity publishes in the IL2CPP documentation; do not add
-// members or change the namespace. Under Mono (editor, Mono players) the
-// attribute is inert.
+/*
+    Vendored copy of Unity's Il2CppSetOption attribute. The IL2CPP code
+    generator (il2cpp.exe) matches this attribute by its FULL NAME
+    (Unity.IL2CPP.CompilerServices.Il2CppSetOptionAttribute), not by assembly,
+    so an internal per-assembly copy is the sanctioned way for a package to opt
+    hot methods out of generated null/bounds checks (the same pattern UniTask
+    and other performance-focused packages use). The shape below mirrors the
+    attribute source Unity publishes in the IL2CPP documentation; do not add
+    members or change the namespace. Under Mono (editor, Mono players) the
+    attribute is inert.
+*/
 namespace Unity.IL2CPP.CompilerServices
 {
     using System;

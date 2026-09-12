@@ -65,8 +65,10 @@ namespace DxMessaging.Tests.Runtime.Core
 
             if (!File.Exists(snapshotPath))
             {
-                // Auto-generate the snapshot for the developer's convenience, then
-                // FAIL the test so the snapshot is not silently rubber-stamped.
+                /*
+                    Auto-generate the snapshot for the developer's convenience, then
+                    FAIL the test so the snapshot is not silently rubber-stamped.
+                */
                 File.WriteAllText(snapshotPath, liveSnapshot, new UTF8Encoding(false));
                 Assert.Fail(
                     "Public surface snapshot was missing and has been auto-generated at "
@@ -150,8 +152,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 foreach (Type type in EnumerateNamespaceTypes(namespacePrefix))
                 {
-                    // Find types that LOOK public to a naive enumerator but
-                    // are actually clamped down by an internal enclosing type.
+                    /*
+                        Find types that LOOK public to a naive enumerator but
+                        are actually clamped down by an internal enclosing type.
+                    */
                     bool looksPublic = type.IsPublic || type.IsNestedPublic;
                     if (!looksPublic)
                     {
@@ -206,16 +210,20 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Nested public inside top-level public must be effectively public."
             );
 
-            // Nested public inside top-level internal outer => NOT public.
-            // This is the exact shape of the original
-            // CyclicBuffer<T>.CyclicBufferEnumerator leak.
+            /*
+                Nested public inside top-level internal outer => NOT public.
+                This is the exact shape of the original
+                CyclicBuffer<T>.CyclicBufferEnumerator leak.
+            */
             Assert.IsFalse(
                 IsEffectivelyPublic(typeof(SyntheticOuterInternal.SyntheticInnerPublic)),
                 "Nested public inside a top-level internal outer must NOT be effectively public."
             );
 
-            // Three-level deep: outer public, middle non-public, inner public
-            // => NOT public. This exercises the loop's mid-chain break.
+            /*
+                Three-level deep: outer public, middle non-public, inner public
+                => NOT public. This exercises the loop's mid-chain break.
+            */
             Assert.IsFalse(
                 IsEffectivelyPublic(
                     typeof(SyntheticOuterPublicLevel1.SyntheticMiddleInternal.SyntheticInnerPublic)
@@ -259,9 +267,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 StringComparer.Ordinal
             );
 
-            // Walk the source files for the test assembly. We keep a list
-            // of search roots: the parent of one well-known test fixture's
-            // file (resolved from the running assembly metadata).
+            /*
+                Walk the source files for the test assembly. We keep a list
+                of search roots: the parent of one well-known test fixture's
+                file (resolved from the running assembly metadata).
+            */
             List<string> searchRoots = ResolveTestSourceRoots();
             if (searchRoots.Count == 0)
             {
@@ -304,7 +314,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             continue;
                         }
 
-                        if (text.IndexOf(name, StringComparison.Ordinal) >= 0)
+                        if (0 <= text.IndexOf(name, StringComparison.Ordinal))
                         {
                             covered.Add(name);
                         }
@@ -520,18 +530,22 @@ namespace DxMessaging.Tests.Runtime.Core
                 return false;
             }
 
-            // Fast path: top-level internals and nested non-publics
-            // short-circuit immediately so the common case (most types in a
-            // closed-over assembly) does not pay for the walk-up loop. This
-            // restores parity with the original 'IsPublic || IsNestedPublic'
-            // pre-filter that this helper replaced.
+            /*
+                Fast path: top-level internals and nested non-publics
+                short-circuit immediately so the common case (most types in a
+                closed-over assembly) does not pay for the walk-up loop. This
+                restores parity with the original 'IsPublic || IsNestedPublic'
+                pre-filter that this helper replaced.
+            */
             if (!type.IsPublic && !type.IsNestedPublic)
             {
                 return false;
             }
 
-            // Walk outward to the top-level type. Each non-top-level rung must
-            // be IsNestedPublic; the top-level rung must be IsPublic.
+            /*
+                Walk outward to the top-level type. Each non-top-level rung must
+                be IsNestedPublic; the top-level rung must be IsPublic.
+            */
             Type current = type;
             while (current.IsNested)
             {
@@ -552,13 +566,15 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static string TryResolveSnapshotPath(out bool resolved)
         {
-            // Walk up from the running assembly's location toward the
-            // package root. The snapshot lives at
-            // Tests/Runtime/Core/Snapshots/public-surface.txt relative to
-            // the package's content root. Application.dataPath is the
-            // Unity project's Assets/, but the package may be a
-            // package-manager package outside of Assets/, so we instead
-            // probe for the well-known directory chain.
+            /*
+                Walk up from the running assembly's location toward the
+                package root. The snapshot lives at
+                Tests/Runtime/Core/Snapshots/public-surface.txt relative to
+                the package's content root. Application.dataPath is the
+                Unity project's Assets/, but the package may be a
+                package-manager package outside of Assets/, so we instead
+                probe for the well-known directory chain.
+            */
             string[] candidates =
             {
                 Path.Combine(

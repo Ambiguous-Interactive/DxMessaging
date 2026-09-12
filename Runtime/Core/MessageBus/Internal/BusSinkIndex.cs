@@ -24,8 +24,10 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// </remarks>
     internal static class BusSinkIndex
     {
-        // "WithoutContext" unifies the legacy "WithoutTargeting" (Targeted) and
-        // "WithoutSource" (Broadcast) per-axis variants -- both lack an InstanceId.
+        /*
+            "WithoutContext" unifies the legacy "WithoutTargeting" (Targeted) and
+            "WithoutSource" (Broadcast) per-axis variants -- both lack an InstanceId.
+        */
         public const int UntargetedHandleDefault = 0;
         public const int BroadcastHandleWithoutContext = 1;
         public const int TargetedHandleWithoutContext = 2;
