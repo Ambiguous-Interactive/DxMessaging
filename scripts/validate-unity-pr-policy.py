@@ -56,16 +56,15 @@ BLANKET_PR_REJECTION = re.compile(
     r"github\.event_name\s*!=\s*'pull_request'\s*&&"
 )
 # A pull request whose head has moved on must not schedule the licensed matrix:
-# `cancel-in-progress: false` is deliberate, so a superseded run would otherwise
-# hold the concurrency group through every matrix leg while the current head waits.
+# a superseded run must not spend licensed legs before its own head guard or the
+# newer run's cancellation stops it.
 SUPERSEDED_GUARD = re.compile(
     r"needs\.head-check\.outputs\.superseded\s*!=\s*'true'\s*&&"
 )
-# `cancel-in-progress: false` stays, so the concurrency GROUP carries the head
-# instead: push runs serialize per ref, pull-request runs partition per head SHA.
-# Without the SHA a superseded run held the group while its remaining legs waited
-# on a scarce self-hosted runner purely to abort, and the run for the current head
-# sat pending with zero jobs for as long as that took (#332). Every group in the
+# The enrollment contract (build-lock #274) pins literal `cancel-in-progress:
+# true`, so a superseded run is cancelled instead of queueing. The concurrency
+# GROUP still carries the head: push runs serialize per ref, pull-request runs
+# partition per head SHA (#332). Every group in the
 # workflow must use this one key -- a job-level group keyed only by `github.ref`
 # would let a newer run cancel a superseded run's preflight, skipping that run's
 # licensed matrix and leaving its aggregate to report a result shape the gate
@@ -890,9 +889,9 @@ def validate_licensed_workflow_policy(source: str) -> str:
     require(concurrency is not None, "Unity workflow must declare top-level concurrency")
     assert concurrency is not None
     require(
-        re.findall(r"^  cancel-in-progress: false[ \t]*$", concurrency.group("body"), re.MULTILINE)
-        == ["  cancel-in-progress: false"],
-        "Unity workflow concurrency must use one literal cancel-in-progress: false",
+        re.findall(r"^  cancel-in-progress: true[ \t]*$", concurrency.group("body"), re.MULTILINE)
+        == ["  cancel-in-progress: true"],
+        "Unity workflow concurrency must use one literal cancel-in-progress: true (build-lock #274)",
     )
     validate_per_head_concurrency(source, "unity-tests.yml")
 
@@ -4684,8 +4683,8 @@ steps:
     licensed = validate_licensed_workflow_policy(source)
     require_policy_mutation_rejected(
         source,
-        "  cancel-in-progress: false\n",
         "  cancel-in-progress: true\n",
+        "  cancel-in-progress: false\n",
         "top-level cancellation policy",
     )
     require_policy_mutation_rejected(

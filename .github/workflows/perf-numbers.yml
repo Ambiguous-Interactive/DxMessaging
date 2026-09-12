@@ -107,7 +107,7 @@ on:
 # re-checks the pull-request head before it can reach that lock.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # Top-level least-privilege. The default-branch refresh job (commit-perf-doc)
 # pushes with a GitHub App token, so its own GITHUB_TOKEN needs only
