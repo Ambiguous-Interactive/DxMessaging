@@ -459,8 +459,12 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Run comparison contracts
-        id: run_contracts
+      # AllocationProbe deliberately reports Unmeasured in the canonical non-development
+      # player because Unity strips its profiler recorders there. Keep the five bridge-honesty
+      # cases in one focused PlayMode run while moving every backend-independent contract into
+      # the native player below. The focused result is retained inside the combined artifact.
+      - name: Run profiler-backed comparison allocation contracts
+        id: run_allocation_contracts
         if: ${{ matrix.benchmark-suite == 'comparisons' && steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 30
         shell: pwsh
@@ -470,61 +474,29 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
-          DXM_UNITY_TEST_CATEGORY: ComparisonContract
+          DXM_UNITY_TEST_CATEGORY: ComparisonAllocationContract
         run: |
-          # Investigation (2026-08-13): keep this name distinct from
-          # PerfComparison. Unity's category filter uses substring matching,
-          # so the old Comparison name ran the entire published matrix during
-          # the contract preflight.
-          $contractProjectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-comparison-contracts'
+          $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}/allocation-honesty-playmode'
+          $contractProjectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-comparison-allocation'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode 'playmode' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/perf-contracts/${{ matrix.unity-version }}' `
+            -ArtifactsPath $artifactsPath `
             -ProjectPath $contractProjectPath `
             -CachePath $cachePath `
             -LicenseReturnOwner Central `
             -IncludeComparisons
 
-      - name: Verify comparison contracts actually ran
-        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_contracts.outcome == 'success' }}
+      - name: Verify comparison allocation contracts actually ran
+        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_allocation_contracts.outcome == 'success' }}
         timeout-minutes: 10
         uses: ./.github/actions/verify-unity-results
         with:
-          results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
-          label: Comparison contracts ${{ matrix.unity-version }}
-
-      - name: Redact sensitive data from comparison contract artifacts
-        id: redact_contracts
-        # Require this run's Node and dependency install, not files left by a previous run.
-        # An aborted install must also skip uploads, which require successful redaction.
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: |
-            .artifacts/unity
-
-      - name: Upload comparison contract artifacts
-        if: ${{ always() && matrix.benchmark-suite == 'comparisons' && steps.redact_contracts.outcome == 'success' }}
-        timeout-minutes: 10
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: comparison-contracts-${{ matrix.unity-version }}
-          path: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Dump comparison contract log tail on failure or cancellation
-        if: ${{ (failure() || cancelled()) && matrix.benchmark-suite == 'comparisons' }}
-        timeout-minutes: 5
-        uses: ./.github/actions/dump-unity-log-tail
-        with:
-          results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
-          label: Comparison contracts ${{ matrix.unity-version }}
+          results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}/allocation-honesty-playmode
+          label: Comparison allocation contracts ${{ matrix.unity-version }}
 
       - name: Run Unity Test Runner
         id: run_tests
@@ -542,7 +514,10 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DX_PERF_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison' }}
+          # Backend-independent comparison contracts share the canonical IL2CPP
+          # player. Profiler-backed allocation honesty stays in the focused
+          # PlayMode run above because Release strips its measurement signal.
+          DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison;ComparisonContract' }}
           DXM_PERF_AFFINITY_MASK: ${{ steps.cpu_profile.outputs.affinity-mask }}
           DXM_PERF_PRIORITY_CLASS: ${{ steps.cpu_profile.outputs.priority-class }}
         run: |
@@ -1169,6 +1144,7 @@ jobs:
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
+          results-file: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}/results.xml
           label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-suite }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
@@ -1178,13 +1154,13 @@ jobs:
         shell: pwsh
         run: |
           $artifactsPath = '.artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}'
-          $extractInputs = @(Get-ChildItem -LiteralPath $artifactsPath -File -Recurse |
+          $extractInputs = @(Get-ChildItem -LiteralPath $artifactsPath -File |
               Where-Object { $_.Name -in @('unity.log', 'results.xml') } |
               ForEach-Object { $_.FullName })
           if ($extractInputs.Count -eq 0) {
             throw "No comparison result inputs were found under $artifactsPath."
           }
-          $evidenceInputs = @(Get-ChildItem -LiteralPath $artifactsPath -File -Recurse |
+          $evidenceInputs = @(Get-ChildItem -LiteralPath $artifactsPath -File |
               Where-Object { $_.Name -in @('unity.log', 'player.log', 'results.xml') } |
               ForEach-Object { $_.FullName })
           $currentBaseline = Join-Path $artifactsPath 'comparison-rows.csv'

@@ -200,7 +200,11 @@ const path = require("path");
 //     expectations grow, plus the 5 lines this entry itself adds: 24095.
 // 089 Require a free price and AI disclosure in existing Asset Store staging, with
 //     data-driven rejection tests and operator checklist coverage: 24125.
-const TOTAL_BUDGET = 24125;
+// 090 Pin exact top-level Unity result verification so nested profiler output cannot mask a
+//     missing standalone result, and route the Unity Atoms allocation assertion through the
+//     existing focused profiler run. The regression executes the composite PowerShell action;
+//     no workflow job or Unity invocation is added: 24158.
+const TOTAL_BUDGET = 24158;
 const LARGEST_FILE_COUNT = 10;
 const REPO_ROOT = path.resolve(__dirname, "..");
 

@@ -74,14 +74,22 @@ function New-PairedRecord {
 function Write-Evidence {
     param(
         [object[]]$Records,
-        [string]$Path = $evidencePath
+        [string]$Path = $evidencePath,
+        [string[]]$ContractFixtures = @(
+            'DxMessaging.Tests.Runtime.Comparisons.ComparisonDispatchTopologyTests',
+            'DxMessaging.Tests.Runtime.Comparisons.External.MessagePipeSemanticCharacterizationTests'
+        )
     )
 
     $lines = @($Records | ForEach-Object {
         $json = $_ | ConvertTo-Json -Compress
         "<output>DXM_PAIRED_COMPARISON $([System.Net.WebUtility]::HtmlEncode($json))</output>"
     })
-    [System.IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n")
+    $fixtures = @($ContractFixtures | ForEach-Object {
+        "<test-suite type=`"TestFixture`" fullname=`"$_`" result=`"Passed`" total=`"1`" passed=`"1`" failed=`"0`" skipped=`"0`" inconclusive=`"0`" />"
+    })
+    $xml = @('<test-run>') + $fixtures + $lines + @('</test-run>')
+    [System.IO.File]::WriteAllText($Path, ($xml -join "`n") + "`n")
     if ($Path -eq $evidencePath) {
         $playerLines = @('Comparison_DxMessaging_GlobalToOne,chronological-marker') + $lines
         [System.IO.File]::WriteAllText($playerLogPath, ($playerLines -join "`n") + "`n")
@@ -405,7 +413,9 @@ try {
     }
     Write-ExecutionEvidence
 
-    $pairedLine = Get-Content -LiteralPath $evidencePath -TotalCount 1
+    $pairedLine = Get-Content -LiteralPath $evidencePath |
+        Where-Object { $_ -match 'DXM_PAIRED_COMPARISON' } |
+        Select-Object -First 1
     [System.IO.File]::WriteAllText(
         $playerLogPath,
         "$pairedLine`nComparison_DxMessaging_GlobalToOne,late-canonical-marker`n"
@@ -432,6 +442,19 @@ try {
     Write-Evidence -Records @()
     Assert-GateFails -Scenarios $expected -MessagePattern 'chronological player log' -Records $null
     Assert-GateFails -Scenarios $expected -MessagePattern 'pinned scenario set' -Records @($validRecords | Select-Object -SkipLast 1)
+
+    Write-Evidence -Records $validRecords -ContractFixtures @(
+        'DxMessaging.Tests.Runtime.Comparisons.ComparisonDispatchTopologyTests'
+    )
+    try {
+        Invoke-Gate
+        throw 'The comparison row gate accepted missing native semantic contracts.'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'Required native comparison contract fixture') {
+            throw
+        }
+    }
 
     $wrongOrder = @($validRecords)
     $wrongOrder[0] = New-PairedRecord -Scenario 'GlobalToOne' -First 'MessagePipe' -Second 'DxMessaging'

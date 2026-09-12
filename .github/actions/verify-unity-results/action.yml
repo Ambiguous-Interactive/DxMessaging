@@ -7,6 +7,12 @@ inputs:
   results-dir:
     description: "Directory the Unity runner wrote the NUnit results XML into."
     required: true
+  results-file:
+    description: >-
+      Optional exact NUnit XML path. When set, nested XML files cannot satisfy
+      verification if this file is absent or invalid.
+    required: false
+    default: ""
   label:
     description: "Human label used in log lines and annotations."
     required: false
@@ -34,6 +40,7 @@ runs:
       shell: pwsh
       env:
         DXM_EXPECTED_EMPTY: ${{ inputs.expected-empty }}
+        DXM_RESULTS_FILE: ${{ inputs.results-file }}
       run: |
         $dir = "${{ inputs.results-dir }}"
         $label = "${{ inputs.label }}"
@@ -485,9 +492,17 @@ runs:
           Write-Host "::error::No artifacts directory ($dir) -- Unity Test Runner did not produce results for $label"
           exit 1
         }
-        $xml = Get-ChildItem -Path $dir -Recurse -Filter *.xml -ErrorAction SilentlyContinue |
-          Where-Object { Select-String -Path $_.FullName -Pattern '<test-run' -Quiet } |
-          Select-Object -First 1
+        $xml = if (-not [string]::IsNullOrWhiteSpace($env:DXM_RESULTS_FILE)) {
+          Get-Item -LiteralPath $env:DXM_RESULTS_FILE -ErrorAction SilentlyContinue |
+            Where-Object {
+              -not $_.PSIsContainer -and
+              (Select-String -LiteralPath $_.FullName -Pattern '<test-run' -Quiet)
+            }
+        } else {
+          Get-ChildItem -Path $dir -Recurse -Filter *.xml -ErrorAction SilentlyContinue |
+            Where-Object { Select-String -LiteralPath $_.FullName -Pattern '<test-run' -Quiet } |
+            Select-Object -First 1
+        }
         if (-not $xml) {
           # Catastrophic patterns were already scanned at the TOP of this
           # step (see the Write-UnityCatastrophicPatternHits call above the
@@ -495,7 +510,12 @@ runs:
           # `::error::` annotations for the same hits.
           Write-UnityPackageManagerFailureHints -ResultsDir $dir
           Write-EditorValidationDiagnosticsHint -ResultsDir $dir
-          Write-Host "::error::No NUnit results.xml (with a <test-run> element) under $dir -- tests did not run for $label"
+          $expectedLocation = if ([string]::IsNullOrWhiteSpace($env:DXM_RESULTS_FILE)) {
+            "under $dir"
+          } else {
+            "at $($env:DXM_RESULTS_FILE)"
+          }
+          Write-Host "::error::No NUnit results.xml (with a <test-run> element) $expectedLocation -- tests did not run for $label"
           exit 1
         }
         [xml]$doc = Get-Content -LiteralPath $xml.FullName
