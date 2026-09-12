@@ -2838,6 +2838,7 @@ def validate_grouped_unity_correctness() -> None:
         "-ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping'",
         "-ProjectPathRoot $projectPathRoot",
         "-CachePath $cachePath",
+        "-RetainNativePayload:($env:DXM_RETAIN_NATIVE_PAYLOAD -eq 'true')",
     ):
         require(fragment in shipping, f"shipping: grouped run missing {fragment!r}")
     require(
@@ -2911,6 +2912,16 @@ def validate_grouped_unity_correctness() -> None:
         and "unity-${{ matrix.unity-version }}-shipping" in shipping_upload
         and ".artifacts/unity/${{ matrix.unity-version }}-shipping" in shipping_upload,
         "shipping fidelity must upload isolated evidence after lock acquisition, skip cancellation, and fail when it is absent",
+    )
+    native_upload = step_block(job, "Upload shipping native payload")
+    require(
+        "inputs.shipping_native_payload" in native_upload
+        and "steps.run_shipping.outcome == 'success'" in native_upload
+        and "steps.acquire_lock.outputs.acquired == 'true'" in native_upload
+        and "unity-${{ matrix.unity-version }}-shipping-native-payload" in native_upload
+        and ".artifacts/unity/${{ matrix.unity-version }}-shipping-native-payload" in native_upload
+        and "if-no-files-found: error" in native_upload,
+        "shipping native payload must remain manual, isolated, and fail when absent",
     )
     require(
         job.count("-LicenseReturnOwner Central") == 3,

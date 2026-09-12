@@ -383,6 +383,20 @@ metrics because the Release player strips the required profiler recorder (see
   This correctness slice does
   not contribute benchmark rows or change the published performance profile.
 
+  A manual run can also enable `shipping_native_payload` with `shipping_fidelity`.
+  For each endpoint editor, this retains the launcher, `GameAssembly.dll`, and
+  `global-metadata.dat` from the High semantic cell in a separate artifact. The
+  runner checks each source and copied file against the directory manifest that
+  matched before and after both player launches. Pull requests, pushes, scheduled
+  runs, and default manual runs do not copy or upload these files, so this option
+  does not add work to recurring CI.
+
+  GitHub retains this binary artifact for 14 days. Do not treat it as campaign
+  evidence until a maintainer downloads it, checks it for private material,
+  publishes it at an immutable location, restores that publication independently,
+  and verifies the hashes from `source-player-manifest.json`. The regular shipping
+  artifact remains the privacy-scanned text evidence bundle.
+
 - **EditMode leg (not published)** also runs in-editor under Mono with
   `-releaseCodeOptimization`. It remains a fast scope for local iteration, and
   manually dispatched `unity-benchmarks.yml` runs the editmode + playmode
