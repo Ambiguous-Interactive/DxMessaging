@@ -3639,8 +3639,13 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
-            r"DXM_UNITY_TEST_CATEGORY: \$\{\{ matrix\.benchmark-suite == 'internal' && 'PerfBench' \|\| 'PerfComparison' \}\}",
-            "isolated benchmark categories",
+            r"DXM_UNITY_TEST_CATEGORY: \$\{\{ matrix\.benchmark-suite == 'internal' && 'PerfBench' \|\| 'PerfComparison;ComparisonContract' \}\}",
+            "isolated benchmark and native comparison contract categories",
+        ),
+        (
+            benchmark,
+            r"id: run_allocation_contracts[\s\S]*?DXM_UNITY_TEST_CATEGORY: ComparisonAllocationContract[\s\S]*?allocation-honesty-playmode[\s\S]*?-TestMode 'playmode'",
+            "profiler-backed comparison allocation contract scope",
         ),
         (
             benchmark,
@@ -3654,24 +3659,27 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
-            r"DXM_UNITY_TEST_CATEGORY: ComparisonContract",
-            "comparison contract category",
-        ),
-        (
-            benchmark,
             r"name: Run Unity Test Runner\n        id: run_tests\n        if: \$\{\{ success\(\) && steps\.compute\.outputs\.is-empty != 'true' && steps\.acquire_lock\.outputs\.acquired == 'true' \}\}",
             "benchmark runner prior-step success guard",
-        ),
-        (
-            benchmark,
-            r"name: Dump comparison contract log tail on failure or cancellation[\s\S]*?results-dir: \.artifacts/unity/perf-contracts/\$\{\{ matrix\.unity-version \}\}",
-            "comparison contract failure diagnostics",
         ),
         (
             benchmark,
             r"\$evidenceInputs = @\(Get-ChildItem[\s\S]*?"
             r"'unity\.log', 'player\.log', 'results\.xml'",
             "chronological comparison player-log evidence",
+        ),
+        (
+            benchmark,
+            r"\$extractInputs = @\(Get-ChildItem -LiteralPath \$artifactsPath -File \|[\s\S]*?"
+            r"\$evidenceInputs = @\(Get-ChildItem -LiteralPath \$artifactsPath -File \|",
+            "standalone-only comparison result selection",
+        ),
+        (
+            benchmark,
+            r"name: Verify tests actually ran[\s\S]*?results-file: "
+            r"\.artifacts/unity/perf/\$\{\{ matrix\.unity-version \}\}-"
+            r"\$\{\{ matrix\.test-mode \}\}-\$\{\{ matrix\.benchmark-suite \}\}/results\.xml",
+            "exact standalone NUnit verification path",
         ),
         (
             benchmark,
@@ -3723,6 +3731,10 @@ def validate_perf_pr_policy() -> None:
     )
     for block, pattern, label in checks:
         require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
+    require(
+        not re.search(r"id: run_contracts|perf-contracts|comparison-contracts", benchmark),
+        "performance PR policy: backend-independent comparison contracts must share the canonical player",
+    )
     require(
         "${{ env.MEASURED_SHA }}" not in benchmark,
         "performance PR policy: benchmark steps must not read MEASURED_SHA from their own env map",
