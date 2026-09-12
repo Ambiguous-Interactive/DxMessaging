@@ -56,19 +56,17 @@ on:
         default: false
 
 concurrency:
-  # Push runs share one group per ref, so consecutive default-branch pushes stay
-  # serialized. Pull-request runs add the head SHA. Serializing those bought
-  # nothing and cost the head that matters: `cancel-in-progress: false` below is
-  # deliberate (a hard cancel mid-lease is the seat leak the four-layer
-  # license-return guarantee exists to prevent), so a superseded run held the
-  # shared group while its remaining legs waited on a scarce self-hosted runner
-  # purely to abort on the per-leg head guard, and the run for the current head
-  # sat pending with zero jobs for as long as that took -- 33 minutes on #402.
-  # Licensed Unity work is serialized by the organization build lock, not by this
-  # group, and every leg re-checks the pull-request head before it can reach that
-  # lock, so two runs of one pull request can never both do licensed work (#332).
+  # The organization enrollment contract (build-lock #274) requires literal
+  # `cancel-in-progress: true` on this group: a queued superseded run wastes a
+  # paid self-hosted seat. Cancellation is safe for licensed work -- the
+  # acquire action traps cancellation signals and releases before activation,
+  # the cleanup chain runs under `if: always()`, and the scheduled reaper
+  # recovers a holder whose runner died. Licensed Unity work is still
+  # serialized by the organization build lock, not by this group, and every
+  # leg re-checks the pull-request head before it can reach that lock, so two
+  # runs of one pull request can never both do licensed work (#332).
   group: unity-tests-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   actions: read

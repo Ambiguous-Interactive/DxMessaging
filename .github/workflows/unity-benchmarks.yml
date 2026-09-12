@@ -5,7 +5,7 @@ on:
 
 concurrency:
   group: unity-benchmarks-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # Top-level permissions are least-privilege and mirror unity-tests.yml. The
 # licensed matrix jobs (matrix-config, runner-preflight, benchmarks) only need
