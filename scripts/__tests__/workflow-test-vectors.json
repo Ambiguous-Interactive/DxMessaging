@@ -21,7 +21,7 @@
     ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
     ["release.yml", "unity-checks", ["run_tests"]],
     ["release.yml", "unitypackage", ["export_unitypackage"]],
-    ["perf-numbers.yml", "perf-benchmarks", ["run_tests"]]
+    ["perf-numbers.yml", "perf-benchmarks", ["run_allocation_contracts", "run_tests"]]
   ],
   "DOCS_ONLY_PATH_IGNORES": [
     "docs/**",

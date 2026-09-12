@@ -3645,6 +3645,11 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
+            r"id: run_allocation_contracts[\s\S]*?DXM_UNITY_TEST_CATEGORY: ComparisonAllocationContract[\s\S]*?allocation-honesty-playmode[\s\S]*?-TestMode 'playmode'",
+            "profiler-backed comparison allocation contract scope",
+        ),
+        (
+            benchmark,
             r"include-perf: \$\{\{ matrix\.benchmark-suite == 'internal' \}\}",
             "internal perf assembly opt-in",
         ),
@@ -3663,6 +3668,12 @@ def validate_perf_pr_policy() -> None:
             r"\$evidenceInputs = @\(Get-ChildItem[\s\S]*?"
             r"'unity\.log', 'player\.log', 'results\.xml'",
             "chronological comparison player-log evidence",
+        ),
+        (
+            benchmark,
+            r"\$extractInputs = @\(Get-ChildItem -LiteralPath \$artifactsPath -File \|[\s\S]*?"
+            r"\$evidenceInputs = @\(Get-ChildItem -LiteralPath \$artifactsPath -File \|",
+            "standalone-only comparison result selection",
         ),
         (
             benchmark,
@@ -3716,7 +3727,7 @@ def validate_perf_pr_policy() -> None:
         require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
     require(
         not re.search(r"id: run_contracts|perf-contracts|comparison-contracts", benchmark),
-        "performance PR policy: comparison contracts must share the canonical player",
+        "performance PR policy: backend-independent comparison contracts must share the canonical player",
     )
     require(
         "${{ env.MEASURED_SHA }}" not in benchmark,
