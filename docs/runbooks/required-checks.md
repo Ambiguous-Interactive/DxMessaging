@@ -124,16 +124,17 @@ a rerun or a smaller PR; the companion must never turn incomplete data into a
 successful skip. Moving classification inside the licensed workflow requires an
 organization-policy-compatible aggregate change, not an added permissive skip.
 
-The `concurrency` setting keeps `cancel-in-progress: false` on purpose, because
-hard-cancelling a run that holds the organization build lock is the scenario the
-license-return guarantee exists to prevent. The group is keyed by pull-request
-head SHA so that policy does not also queue the current head behind a superseded
-run: push runs keep the `github.ref` key and stay serialized, pull-request runs
-partition per head, and every job-level group in the file uses the same key.
-Nothing is cancelled, and licensed work stays mutually exclusive through the
-organization build lock. A superseded pull-request run still starts, but each
-leg aborts at the `Require current PR head before setup` guard before any
-expensive setup, so a superseded run costs seconds instead of a license seat.
+The top-level `concurrency` setting keeps literal `cancel-in-progress: true`, as
+required by the organization build-lock enrollment contract. Pull-request runs
+share one group keyed by pull-request number, so a new head cancels the
+superseded run instead of leaving its remaining matrix legs queued. Push and
+manual runs share a group per ref. Cancellation is safe because the central
+acquire action handles cancellation signals, every licensed job retains its
+`if: always()` cleanup chain, and the scheduled reaper recovers stale holders.
+The organization build lock still provides mutual exclusion for licensed work.
+The per-leg current-head checks remain as defense in depth before setup and lock
+acquisition. Job-level preflight groups may partition per head because they run
+on GitHub-hosted infrastructure and cannot acquire a licensed seat.
 
 The required Unity check name is the stable aggregate:
 
