@@ -3677,6 +3677,13 @@ def validate_perf_pr_policy() -> None:
         ),
         (
             benchmark,
+            r"name: Verify tests actually ran[\s\S]*?results-file: "
+            r"\.artifacts/unity/perf/\$\{\{ matrix\.unity-version \}\}-"
+            r"\$\{\{ matrix\.test-mode \}\}-\$\{\{ matrix\.benchmark-suite \}\}/results\.xml",
+            "exact standalone NUnit verification path",
+        ),
+        (
+            benchmark,
             r"\$comparisonGateArguments = @\{[\s\S]*?"
             r"BaselinePath = \$currentBaseline[\s\S]*?"
             r"EvidencePaths = \$evidenceInputs[\s\S]*?"

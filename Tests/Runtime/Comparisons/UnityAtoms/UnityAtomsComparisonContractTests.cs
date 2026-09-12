@@ -17,7 +17,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
     /// message. Kept in its OWN assembly so the Unity Atoms dependency can never break the other
     /// comparison bridges.
     /// </summary>
-    [Category("ComparisonContract")]
     public sealed class UnityAtomsComparisonContractTests
     {
         private const int AllocationEmits = 1024;
@@ -42,6 +41,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         }
 
         [Test]
+        [Category("ComparisonContract")]
         [TestCaseSource(nameof(BridgeCases))]
         public void BridgeHasConsistentTechIdentity(
             string rosterKey,
@@ -52,6 +52,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         }
 
         [Test]
+        [Category("ComparisonContract")]
         [TestCaseSource(nameof(BridgeScenarioCases))]
         public void SupportedScenarioEmitOnceAdvancesProgressByDeclaredFanOut(
             string rosterKey,
@@ -63,6 +64,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         }
 
         [Test]
+        [Category("ComparisonContract")]
         [TestCaseSource(nameof(BridgeScenarioCases))]
         public void StructScenarioDispatchesNonPrimitiveStructPayload(
             string rosterKey,
@@ -78,6 +80,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         }
 
         [Test]
+        [Category("ComparisonContract")]
         [TestCaseSource(nameof(SupportedScenarioCases))]
         public void PreparedEventsDisableReplayBuffer(ComparisonScenario scenario)
         {
@@ -106,6 +109,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         }
 
         [Test]
+        [Category("ComparisonContract")]
         [TestCaseSource(nameof(SupportedScenarioCases))]
         public void DisposeDestroysPreparedEventsSynchronously(ComparisonScenario scenario)
         {
@@ -136,6 +140,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons.UnityAtoms
         }
 
         [Test]
+        [Category("ComparisonAllocationContract")]
         [Category("Allocation")]
         public void StructDispatchAllocatesLessThanOneObjectPerEmit()
         {

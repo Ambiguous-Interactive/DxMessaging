@@ -460,7 +460,7 @@ jobs:
         run: exit 1
 
       # AllocationProbe deliberately reports Unmeasured in the canonical non-development
-      # player because Unity strips its profiler recorders there. Keep the four bridge-honesty
+      # player because Unity strips its profiler recorders there. Keep the five bridge-honesty
       # cases in one focused PlayMode run while moving every backend-independent contract into
       # the native player below. The focused result is retained inside the combined artifact.
       - name: Run profiler-backed comparison allocation contracts
@@ -1144,6 +1144,7 @@ jobs:
         uses: ./.github/actions/verify-unity-results
         with:
           results-dir: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
+          results-file: .artifacts/unity/perf/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}/results.xml
           label: Perf ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-suite }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 

@@ -56,7 +56,7 @@ function extractActionScript(actionPath) {
     .join("\n");
 }
 
-function runVerifyUnityResultsAction(resultsDir) {
+function runVerifyUnityResultsAction(resultsDir, resultsFile = "") {
   let script = extractActionScript(VERIFY_ACTION_PATH);
   script = script.replace(
     '$dir = "${{ inputs.results-dir }}"',
@@ -75,7 +75,8 @@ function runVerifyUnityResultsAction(resultsDir) {
       encoding: "utf8",
       env: {
         ...process.env,
-        DXM_EXPECTED_EMPTY: ""
+        DXM_EXPECTED_EMPTY: "",
+        DXM_RESULTS_FILE: resultsFile
       }
     }
   );
@@ -216,6 +217,34 @@ test("Unity result actions scan retry logs alongside or instead of unity.log", (
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  }
+});
+
+test("an exact Unity result file cannot be shadowed by nested NUnit XML", (t) => {
+  if (!HAS_PWSH) {
+    t.skip("PowerShell is not available");
+    return;
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "unity-result-action-exact-"));
+  const nestedDir = path.join(tempDir, "nested");
+  const expectedResult = path.join(tempDir, "results.xml");
+  try {
+    fs.mkdirSync(nestedDir);
+    fs.writeFileSync(
+      path.join(nestedDir, "results.xml"),
+      '<test-run total="1" passed="1" failed="0" skipped="0" />\n',
+      "utf8"
+    );
+
+    const exact = runVerifyUnityResultsAction(tempDir, expectedResult);
+    assert.equal(exact.status, 1, `${exact.stdout}\n${exact.stderr}`);
+    assert.match(`${exact.stdout}\n${exact.stderr}`, /No NUnit results\.xml.* at /);
+
+    const recursive = runVerifyUnityResultsAction(tempDir);
+    assert.equal(recursive.status, 0, `${recursive.stdout}\n${recursive.stderr}`);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
