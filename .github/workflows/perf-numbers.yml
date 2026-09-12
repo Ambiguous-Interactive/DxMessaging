@@ -459,73 +459,6 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Run comparison contracts
-        id: run_contracts
-        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 30
-        shell: pwsh
-        env:
-          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
-          DXM_UNITY_TEST_CATEGORY: ComparisonContract
-        run: |
-          # Investigation (2026-08-13): keep this name distinct from
-          # PerfComparison. Unity's category filter uses substring matching,
-          # so the old Comparison name ran the entire published matrix during
-          # the contract preflight.
-          $contractProjectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\${{ matrix.unity-version }}-comparison-contracts'
-          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
-          ./scripts/unity/run-ci-tests.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -TestMode 'playmode' `
-            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/perf-contracts/${{ matrix.unity-version }}' `
-            -ProjectPath $contractProjectPath `
-            -CachePath $cachePath `
-            -LicenseReturnOwner Central `
-            -IncludeComparisons
-
-      - name: Verify comparison contracts actually ran
-        if: ${{ matrix.benchmark-suite == 'comparisons' && steps.run_contracts.outcome == 'success' }}
-        timeout-minutes: 10
-        uses: ./.github/actions/verify-unity-results
-        with:
-          results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
-          label: Comparison contracts ${{ matrix.unity-version }}
-
-      - name: Redact sensitive data from comparison contract artifacts
-        id: redact_contracts
-        # Require this run's Node and dependency install, not files left by a previous run.
-        # An aborted install must also skip uploads, which require successful redaction.
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: |
-            .artifacts/unity
-
-      - name: Upload comparison contract artifacts
-        if: ${{ always() && matrix.benchmark-suite == 'comparisons' && steps.redact_contracts.outcome == 'success' }}
-        timeout-minutes: 10
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: comparison-contracts-${{ matrix.unity-version }}
-          path: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Dump comparison contract log tail on failure or cancellation
-        if: ${{ (failure() || cancelled()) && matrix.benchmark-suite == 'comparisons' }}
-        timeout-minutes: 5
-        uses: ./.github/actions/dump-unity-log-tail
-        with:
-          results-dir: .artifacts/unity/perf-contracts/${{ matrix.unity-version }}
-          label: Comparison contracts ${{ matrix.unity-version }}
-
       - name: Run Unity Test Runner
         id: run_tests
         if: ${{ success() && steps.compute.outputs.is-empty != 'true' && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -542,7 +475,10 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DX_PERF_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison' }}
+          # Comparison contracts share the canonical IL2CPP player. This keeps
+          # their coverage at the highest-fidelity scope and removes the former
+          # separate PlayMode editor launch without changing benchmark windows.
+          DXM_UNITY_TEST_CATEGORY: ${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison;ComparisonContract' }}
           DXM_PERF_AFFINITY_MASK: ${{ steps.cpu_profile.outputs.affinity-mask }}
           DXM_PERF_PRIORITY_CLASS: ${{ steps.cpu_profile.outputs.priority-class }}
         run: |

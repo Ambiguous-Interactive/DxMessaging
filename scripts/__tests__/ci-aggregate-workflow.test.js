@@ -921,7 +921,7 @@ test("active automation rejects direct Unity Helpers dependencies and pins exter
   }
   for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-    if (file === "perf-numbers.yml") { assert.match(source, /\n  pull_request:/, file); assert.match(source, /\n  comment-perf-doc:/, file); }
+    if (file === "perf-numbers.yml") { assert.match(source, /\n  pull_request:/, file); assert.match(source, /\n  comment-perf-doc:/, file); assert.doesNotMatch(source, /id: run_contracts|perf-contracts|comparison-contracts/); assert.equal(YAML.parse(source).jobs["perf-benchmarks"].steps.find((step) => step.id === "run_tests").env.DXM_UNITY_TEST_CATEGORY, "${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison;ComparisonContract' }}"); }
     else assert.match(getJobBlock(source, jobId, file), /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
   }
 });
