@@ -6480,14 +6480,73 @@ function Write-ShippingPackageResolutionEvidence {
         -Value $manifest `
         -Expected @('dependencies') `
         -Label 'Shipping package manifest'
-    $manifestDependencyNames = @($manifest.dependencies.PSObject.Properties.Name)
-    if (
-        $manifestDependencyNames.Count -ne 1 -or
-        $manifestDependencyNames[0] -cne 'com.wallstop-studios.dxmessaging'
-    ) {
-        throw 'Shipping package manifest differs from the single reviewed file dependency.'
+    $packageId = 'com.wallstop-studios.dxmessaging'
+    # Unity 2021/2022 can append this exact official Linux cross-toolchain set
+    # while switching a warm generated project to StandaloneWindows64 + IL2CPP.
+    # It is not package-under-test input: keep requiring exactly one local file
+    # dependency and fail closed on every other root package shape.
+    $allowedUnityManagedManifestDependencies = [ordered]@{
+        'com.unity.toolchain.win-x86_64-linux-x86_64' = '2.0.11'
     }
-    $manifestDependency = $manifest.dependencies.'com.wallstop-studios.dxmessaging'
+    $allowedUnityManagedLockDependencies = [ordered]@{
+        'com.unity.sysroot' = [ordered]@{
+            Version = '2.0.10'
+            Depth = 1
+            Dependencies = [ordered]@{}
+        }
+        'com.unity.sysroot.linux-x86_64' = [ordered]@{
+            Version = '2.0.9'
+            Depth = 1
+            Dependencies = [ordered]@{}
+        }
+        'com.unity.toolchain.win-x86_64-linux-x86_64' = [ordered]@{
+            Version = '2.0.11'
+            Depth = 0
+            Dependencies = [ordered]@{
+                'com.unity.sysroot' = '2.0.10'
+                'com.unity.sysroot.linux-x86_64' = '2.0.9'
+            }
+        }
+    }
+    $manifestDependencyNames = @(
+        $manifest.dependencies.PSObject.Properties |
+            ForEach-Object { $_.Name } |
+            Sort-Object
+    )
+    if ($manifestDependencyNames -cnotcontains $packageId) {
+        throw 'Shipping package manifest is missing the single reviewed file dependency.'
+    }
+    $unityManagedManifestDependencyNames = @(
+        $manifestDependencyNames |
+            Where-Object { $_ -cne $packageId }
+    )
+    $expectedUnityManagedManifestDependencyNames = @(
+        $allowedUnityManagedManifestDependencies.Keys |
+            Sort-Object
+    )
+    if (
+        $unityManagedManifestDependencyNames.Count -ne 0 -and
+        ($unityManagedManifestDependencyNames -join "`n") -cne
+            ($expectedUnityManagedManifestDependencyNames -join "`n")
+    ) {
+        throw "Shipping package manifest has unsupported root dependencies: $($manifestDependencyNames -join ', ')."
+    }
+    foreach ($unityManagedPackageName in $unityManagedManifestDependencyNames) {
+        $unityManagedManifestDependency = $manifest.dependencies.PSObject.Properties[
+            $unityManagedPackageName
+        ].Value
+        Assert-JsonValueType `
+            -Value $unityManagedManifestDependency `
+            -ExpectedKind string `
+            -Path "shippingPackageManifest.dependencies.$unityManagedPackageName"
+        if (
+            [string]$unityManagedManifestDependency -cne
+            [string]$allowedUnityManagedManifestDependencies[$unityManagedPackageName]
+        ) {
+            throw "Shipping package manifest has an unsupported Unity-managed dependency version for $unityManagedPackageName."
+        }
+    }
+    $manifestDependency = $manifest.dependencies.$packageId
     Assert-JsonValueType `
         -Value $manifestDependency `
         -ExpectedKind string `
@@ -6505,12 +6564,18 @@ function Write-ShippingPackageResolutionEvidence {
         -Value $packageLock `
         -Expected @('dependencies') `
         -Label 'Shipping packages-lock'
-    $lockDependencyNames = @($packageLock.dependencies.PSObject.Properties.Name)
-    if (
-        $lockDependencyNames.Count -ne 1 -or
-        $lockDependencyNames[0] -cne 'com.wallstop-studios.dxmessaging'
-    ) {
-        throw 'Shipping packages-lock differs from the exact one-package graph.'
+    $lockDependencyNames = @(
+        $packageLock.dependencies.PSObject.Properties |
+            ForEach-Object { $_.Name } |
+            Sort-Object
+    )
+    $expectedLockDependencyNames = @($packageId)
+    if ($unityManagedManifestDependencyNames.Count -ne 0) {
+        $expectedLockDependencyNames += @($allowedUnityManagedLockDependencies.Keys)
+    }
+    $expectedLockDependencyNames = @($expectedLockDependencyNames | Sort-Object)
+    if (($lockDependencyNames -join "`n") -cne ($expectedLockDependencyNames -join "`n")) {
+        throw 'Shipping packages-lock differs from the exact validated package graph.'
     }
     $lockDependencyProperty = $packageLock.dependencies.PSObject.Properties[
         'com.wallstop-studios.dxmessaging'
@@ -6549,6 +6614,90 @@ function Write-ShippingPackageResolutionEvidence {
         throw 'Shipping packages-lock does not exactly resolve the reviewed checkout as one direct local dependency.'
     }
 
+    $unityManagedPackageRecords = [System.Collections.Generic.List[object]]::new()
+    $unityManagedLockDependencyNames = @(
+        $lockDependencyNames |
+            Where-Object { $_ -cne $packageId }
+    )
+    foreach ($unityManagedPackageName in $unityManagedLockDependencyNames) {
+        $unityManagedLockDependency = $packageLock.dependencies.PSObject.Properties[
+            $unityManagedPackageName
+        ].Value
+        Assert-ExactJsonPropertyNames `
+            -Value $unityManagedLockDependency `
+            -Expected @('version', 'depth', 'source', 'dependencies', 'url') `
+            -Label "Shipping packages-lock Unity-managed dependency $unityManagedPackageName"
+        Assert-JsonValueType `
+            -Value $unityManagedLockDependency.version `
+            -ExpectedKind string `
+            -Path "shippingPackagesLock.$unityManagedPackageName.version"
+        Assert-JsonValueType `
+            -Value $unityManagedLockDependency.depth `
+            -ExpectedKind integer `
+            -Path "shippingPackagesLock.$unityManagedPackageName.depth"
+        Assert-JsonValueType `
+            -Value $unityManagedLockDependency.source `
+            -ExpectedKind string `
+            -Path "shippingPackagesLock.$unityManagedPackageName.source"
+        Assert-JsonValueType `
+            -Value $unityManagedLockDependency.url `
+            -ExpectedKind string `
+            -Path "shippingPackagesLock.$unityManagedPackageName.url"
+        if ($unityManagedLockDependency.dependencies -isnot [pscustomobject]) {
+            throw "Shipping packages-lock dependencies for $unityManagedPackageName must be a JSON object."
+        }
+        if (
+            [string]$unityManagedLockDependency.version -cne
+                [string]$allowedUnityManagedLockDependencies[$unityManagedPackageName].Version -or
+            [int]$unityManagedLockDependency.depth -ne
+                [int]$allowedUnityManagedLockDependencies[$unityManagedPackageName].Depth -or
+            [string]$unityManagedLockDependency.source -cne 'registry' -or
+            [string]$unityManagedLockDependency.url -cne 'https://packages.unity.com'
+        ) {
+            throw "Shipping packages-lock does not exactly resolve official Unity-managed dependency $unityManagedPackageName."
+        }
+        $unityManagedTransitiveNames = @(
+            $unityManagedLockDependency.dependencies.PSObject.Properties |
+                ForEach-Object { $_.Name } |
+                Sort-Object
+        )
+        $expectedUnityManagedTransitiveNames = @(
+            $allowedUnityManagedLockDependencies[$unityManagedPackageName].Dependencies.Keys |
+                Sort-Object
+        )
+        if (
+            ($unityManagedTransitiveNames -join "`n") -cne
+            ($expectedUnityManagedTransitiveNames -join "`n")
+        ) {
+            throw "Shipping packages-lock Unity-managed dependency $unityManagedPackageName differs from the exact validated dependency graph."
+        }
+        foreach ($unityManagedTransitiveName in $unityManagedTransitiveNames) {
+            Assert-JsonValueType `
+                -Value $unityManagedLockDependency.dependencies.PSObject.Properties[
+                    $unityManagedTransitiveName
+                ].Value `
+                -ExpectedKind string `
+                -Path "shippingPackagesLock.$unityManagedPackageName.dependencies.$unityManagedTransitiveName"
+            if (
+                [string]$unityManagedLockDependency.dependencies.PSObject.Properties[
+                    $unityManagedTransitiveName
+                ].Value -cne
+                [string]$allowedUnityManagedLockDependencies[
+                    $unityManagedPackageName
+                ].Dependencies[$unityManagedTransitiveName]
+            ) {
+                throw "Shipping packages-lock Unity-managed dependency $unityManagedPackageName requests an unvalidated version of $unityManagedTransitiveName."
+            }
+        }
+        $unityManagedPackageRecords.Add([ordered]@{
+                packageId = $unityManagedPackageName
+                version = [string]$unityManagedLockDependency.version
+                source = 'registry'
+                depth = [int]$unityManagedLockDependency.depth
+                registry = 'https://packages.unity.com'
+            })
+    }
+
     $resolvedInputEntries = New-Object System.Collections.Generic.List[object]
     foreach ($resolvedInputPath in @($manifestPath, $lockPath)) {
         $resolvedInputEntries.Add([ordered]@{
@@ -6560,13 +6709,14 @@ function Write-ShippingPackageResolutionEvidence {
     Write-JsonArtifact `
         -Path (Join-Path $ArtifactsPath 'shipping-resolved-package-inputs.json') `
         -Value ([ordered]@{
-            schemaVersion = 1
+            schemaVersion = 2
             resolvedPackage = [ordered]@{
-                packageId = 'com.wallstop-studios.dxmessaging'
+                packageId = $packageId
                 source = 'local'
                 depth = 0
                 versionScheme = 'file'
             }
+            unityManagedPackages = @($unityManagedPackageRecords.ToArray())
             files = @($resolvedInputEntries.ToArray())
         })
 }

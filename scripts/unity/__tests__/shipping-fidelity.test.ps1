@@ -822,14 +822,126 @@ if (
         -Raw |
         ConvertFrom-Json
     Assert-That 'shipping resolution evidence hashes the exact manifest and generated lock' (
+        [int]$resolvedPackageEvidence.schemaVersion -eq 2 -and
         @($resolvedPackageEvidence.files).Count -eq 2 -and
         @($resolvedPackageEvidence.files.path)[0] -ceq 'Packages/manifest.json' -and
         @($resolvedPackageEvidence.files.path)[1] -ceq 'Packages/packages-lock.json' -and
         $resolvedPackageEvidence.resolvedPackage.packageId -ceq 'com.wallstop-studios.dxmessaging' -and
         $resolvedPackageEvidence.resolvedPackage.source -ceq 'local' -and
         [int]$resolvedPackageEvidence.resolvedPackage.depth -eq 0 -and
-        $resolvedPackageEvidence.resolvedPackage.versionScheme -ceq 'file'
+        $resolvedPackageEvidence.resolvedPackage.versionScheme -ceq 'file' -and
+        @($resolvedPackageEvidence.unityManagedPackages).Count -eq 0
     )
+    # 2026-09-13: a warm Unity 2021.3 IL2CPP project appended this exact official
+    # cross-toolchain set after the generated manifest had already been reviewed.
+    # Accept that engine-managed state without permitting another local, Git, or
+    # third-party registry dependency into the shipping consumer.
+    $unityManagedPackages = [ordered]@{
+        'com.unity.sysroot' = [ordered]@{ Version = '2.0.10'; Depth = 1 }
+        'com.unity.sysroot.linux-x86_64' = [ordered]@{ Version = '2.0.9'; Depth = 1 }
+        'com.unity.toolchain.win-x86_64-linux-x86_64' = [ordered]@{ Version = '2.0.11'; Depth = 0 }
+    }
+    $unityManagedManifest = Copy-JsonValue -Value $manifest
+    $unityManagedLock = Copy-JsonValue -Value $packageLock
+    $unityManagedManifest.dependencies | Add-Member `
+        -NotePropertyName 'com.unity.toolchain.win-x86_64-linux-x86_64' `
+        -NotePropertyValue '2.0.11'
+    foreach ($unityManagedPackageName in $unityManagedPackages.Keys) {
+        $unityManagedVersion = [string]$unityManagedPackages[$unityManagedPackageName].Version
+        $unityManagedDependencies = if (
+            $unityManagedPackageName -ceq 'com.unity.toolchain.win-x86_64-linux-x86_64'
+        ) {
+            [pscustomobject]@{
+                'com.unity.sysroot' = '2.0.10'
+                'com.unity.sysroot.linux-x86_64' = '2.0.9'
+            }
+        } else {
+            [pscustomobject]@{}
+        }
+        $unityManagedLock.dependencies | Add-Member `
+            -NotePropertyName $unityManagedPackageName `
+            -NotePropertyValue ([pscustomobject]@{
+                version = $unityManagedVersion
+                depth = [int]$unityManagedPackages[$unityManagedPackageName].Depth
+                source = 'registry'
+                dependencies = $unityManagedDependencies
+                url = 'https://packages.unity.com'
+            })
+    }
+    [System.IO.File]::WriteAllText(
+        $generatedManifestPath,
+        ($unityManagedManifest | ConvertTo-Json -Depth 10)
+    )
+    [System.IO.File]::WriteAllText(
+        $packageLockPath,
+        ($unityManagedLock | ConvertTo-Json -Depth 10)
+    )
+    Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    $unityManagedEvidence = Get-Content `
+        -LiteralPath (Join-Path $artifactsPath 'shipping-resolved-package-inputs.json') `
+        -Raw |
+        ConvertFrom-Json
+    Assert-That 'shipping resolution accepts only the observed official Unity toolchain set' (
+        [int]$unityManagedEvidence.schemaVersion -eq 2 -and
+        @($unityManagedEvidence.unityManagedPackages).Count -eq 3 -and
+        (@($unityManagedEvidence.unityManagedPackages.packageId) -join "`n") -ceq
+            (@($unityManagedPackages.Keys | Sort-Object) -join "`n")
+    )
+    $unsupportedUnityManagedManifest = Copy-JsonValue -Value $unityManagedManifest
+    $unsupportedUnityManagedManifest.dependencies | Add-Member `
+        -NotePropertyName 'com.unity.sysroot' `
+        -NotePropertyValue '2.0.10'
+    [System.IO.File]::WriteAllText(
+        $generatedManifestPath,
+        ($unsupportedUnityManagedManifest | ConvertTo-Json -Depth 10)
+    )
+    Assert-Fails 'shipping manifest rejects a Unity transitive promoted to a root dependency' {
+        Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    } 'unsupported root dependencies'
+    $wrongUnityManagedManifest = Copy-JsonValue -Value $unityManagedManifest
+    $wrongUnityManagedManifest.dependencies.'com.unity.toolchain.win-x86_64-linux-x86_64' = '2.0.12'
+    [System.IO.File]::WriteAllText(
+        $generatedManifestPath,
+        ($wrongUnityManagedManifest | ConvertTo-Json -Depth 10)
+    )
+    Assert-Fails 'shipping manifest rejects an unreviewed Unity-managed version' {
+        Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    } 'unsupported Unity-managed dependency version'
+    [System.IO.File]::WriteAllText(
+        $generatedManifestPath,
+        ($unityManagedManifest | ConvertTo-Json -Depth 10)
+    )
+    $wrongRegistryLock = Copy-JsonValue -Value $unityManagedLock
+    $wrongRegistryLock.dependencies.'com.unity.sysroot'.url = 'https://example.invalid'
+    [System.IO.File]::WriteAllText(
+        $packageLockPath,
+        ($wrongRegistryLock | ConvertTo-Json -Depth 10)
+    )
+    Assert-Fails 'shipping lock rejects a Unity-shaped package from another registry' {
+        Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    } 'does not exactly resolve official Unity-managed dependency'
+    $wrongUnityDependencyLock = Copy-JsonValue -Value $unityManagedLock
+    $wrongUnityDependencyLock.dependencies.'com.unity.toolchain.win-x86_64-linux-x86_64'.dependencies.'com.unity.sysroot' = '2.0.11'
+    [System.IO.File]::WriteAllText(
+        $packageLockPath,
+        ($wrongUnityDependencyLock | ConvertTo-Json -Depth 10)
+    )
+    Assert-Fails 'shipping lock rejects a mismatched Unity transitive request' {
+        Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    } 'requests an unvalidated version'
+    $wrongUnityGraphLock = Copy-JsonValue -Value $unityManagedLock
+    $wrongUnityGraphLock.dependencies.'com.unity.sysroot'.dependencies | Add-Member `
+        -NotePropertyName 'com.unity.sysroot.linux-x86_64' `
+        -NotePropertyValue '2.0.9'
+    [System.IO.File]::WriteAllText(
+        $packageLockPath,
+        ($wrongUnityGraphLock | ConvertTo-Json -Depth 10)
+    )
+    Assert-Fails 'shipping lock rejects a changed edge between otherwise allowed Unity packages' {
+        Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    } 'differs from the exact validated dependency graph'
+    [System.IO.File]::WriteAllText($generatedManifestPath, ($manifest | ConvertTo-Json -Depth 10))
+    [System.IO.File]::WriteAllText($packageLockPath, ($packageLock | ConvertTo-Json -Depth 10))
     $badPackageLock = Copy-JsonValue -Value $packageLock
     $badPackageLock.dependencies.'com.wallstop-studios.dxmessaging'.source = 'registry'
     [System.IO.File]::WriteAllText($packageLockPath, ($badPackageLock | ConvertTo-Json -Depth 10))
@@ -855,7 +967,7 @@ if (
     [System.IO.File]::WriteAllText($packageLockPath, ($badPackageLock | ConvertTo-Json -Depth 10))
     Assert-Fails 'shipping package resolution rejects an extra lock dependency' {
         Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
-    } 'exact one-package graph'
+    } 'differs from the exact validated package graph'
     [System.IO.File]::WriteAllText($packageLockPath, ($packageLock | ConvertTo-Json -Depth 10))
     $staleEmbeddedPackagePath = Join-Path $projectPath 'Packages/com.example.stale/package.json'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $staleEmbeddedPackagePath) | Out-Null
