@@ -126,12 +126,13 @@ Run this once the release workflow for the tag is green.
    before it reaches review.
 1. **Sign in.** Open a Unity Editor (any version on the supported matrix for the
    classic path; an editor version supported by the installed UPM publishing
-   tool for the UPM path). The classic payload was exported from the pinned
-   2022.3.45f1. Install the applicable official Asset Store publishing tool and
-   sign in to the publisher account via the Editor's Unity ID login. Complete
-   two-factor authentication when prompted. This cannot be automated because
-   the documented upload is bound to an interactive Unity ID session and Unity
-   documents no service credential.
+   tool for the UPM path). The release creates the classic payload without
+   opening Unity; the clean-project import and validation below provide its
+   editor compatibility gate. Install the applicable official Asset Store
+   publishing tool and sign in to the publisher account via the Editor's Unity
+   ID login. Complete two-factor authentication when prompted. This cannot be
+   automated because the documented upload is bound to an interactive Unity ID
+   session and Unity documents no service credential.
 1. **Upload the classic package.** Skip this step for a UPM submission. Import
    the staged `.unitypackage` into a
    clean project. Confirm the import created
@@ -175,9 +176,9 @@ Run this once the release workflow for the tag is green.
    `_upm.changelog` values with the expected fields. Do not query undocumented
    endpoints to obtain it; the Version History result is the acceptance proof.
 
-If the `.unitypackage` export itself failed, the whole release is blocked rather
-than shipping a half-release (the export is a required asset); fix the export and
-re-run the release workflow before starting this runbook.
+If `.unitypackage` creation failed, the whole release is blocked rather than shipping a
+half-release (the package is a required asset); fix package creation and re-run the release
+workflow before starting this runbook.
 
 ## Credentials and access
 
