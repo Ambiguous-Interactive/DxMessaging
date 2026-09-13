@@ -54,6 +54,10 @@ on:
         description: "Retain the High semantic native payload (requires shipping fidelity)"
         type: boolean
         default: false
+      shipping_incremental_build:
+        description: "Pair High semantic clean and incremental builds (requires shipping fidelity)"
+        type: boolean
+        default: false
       consumer_install_validation:
         description: "Validate Git, UPM tarball, and classic package consumers"
         type: boolean
@@ -187,10 +191,15 @@ jobs:
       # gate, so this input check lives after it. It still fails before any
       # checkout, credential reference, or lock acquisition.
       - name: Require one optional manual validation mode
-        if: ${{ inputs.shipping_fidelity && inputs.consumer_install_validation }}
+        if: >-
+          ${{
+            (inputs.shipping_fidelity && inputs.consumer_install_validation) ||
+            ((inputs.shipping_native_payload || inputs.shipping_incremental_build) && !inputs.shipping_fidelity) ||
+            (inputs.shipping_native_payload && inputs.shipping_incremental_build)
+          }}
         timeout-minutes: 1
         shell: pwsh
-        run: throw 'shipping_fidelity and consumer_install_validation are mutually exclusive.'
+        run: throw 'Shipping fidelity, consumer validation, native payload retention, and incremental evidence inputs are inconsistent; select one compatible manual evidence mode.'
 
       - name: Enable Git long paths
         timeout-minutes: 2
@@ -457,6 +466,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DXM_RETAIN_NATIVE_PAYLOAD: ${{ inputs.shipping_native_payload }}
+          DXM_RUN_INCREMENTAL_HIGH_SEMANTIC: ${{ inputs.shipping_incremental_build }}
         run: |
           $projectPathRoot = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
@@ -466,7 +476,8 @@ jobs:
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping' `
             -ProjectPathRoot $projectPathRoot `
             -CachePath $cachePath `
-            -RetainNativePayload:($env:DXM_RETAIN_NATIVE_PAYLOAD -eq 'true')
+            -RetainNativePayload:($env:DXM_RETAIN_NATIVE_PAYLOAD -eq 'true') `
+            -RunIncrementalHighSemantic:($env:DXM_RUN_INCREMENTAL_HIGH_SEMANTIC -eq 'true')
 
       # A mode failure is tolerated until the test modes and shipping group have
       # had a chance to run. Preserve diagnostics and result verification, then fail

@@ -208,7 +208,7 @@ try {
         $node -is [System.Management.Automation.Language.CommandAst] -and
             $node.GetCommandName() -ceq 'Write-NativeBuildInputEvidence'
     }, $true))
-    Assert-That 'shipping and canonical standalone both retain native inputs after their build' ($nativeCallSites.Count -eq 2)
+    Assert-That 'clean shipping, incremental shipping, and canonical standalone retain native inputs after their build' ($nativeCallSites.Count -eq 3)
 
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
