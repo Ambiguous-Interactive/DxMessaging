@@ -786,9 +786,15 @@ if (
         ProjectPath = $projectPath
         ArtifactsPath = $artifactsPath
         ExpectedRepoRoot = $repoRoot
-        ExpectedManifestSha256 = $generatedManifestSha256
     }
     [System.IO.File]::WriteAllText($packageLockPath, ($packageLock | ConvertTo-Json -Depth 10))
+    Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    $semanticallyEquivalentManifest = $manifest | ConvertTo-Json -Depth 10 -Compress
+    [System.IO.File]::WriteAllText($generatedManifestPath, $semanticallyEquivalentManifest)
+    Assert-That 'shipping manifest fixture changes bytes without changing semantics' (
+        (Get-FileHash -LiteralPath $generatedManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+        $generatedManifestSha256
+    )
     Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
     $resolvedPackageEvidence = Get-Content `
         -LiteralPath (Join-Path $artifactsPath 'shipping-resolved-package-inputs.json') `
@@ -842,7 +848,7 @@ if (
     [System.IO.File]::WriteAllText($generatedManifestPath, ($mutatedManifest | ConvertTo-Json -Depth 10))
     Assert-Fails 'shipping package resolution rejects post-resolution manifest drift' {
         Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
-    } 'manifest hash changed'
+    } 'does not reference the reviewed repository root'
     [System.IO.File]::WriteAllText($generatedManifestPath, ($manifest | ConvertTo-Json -Depth 10))
 
     $configuratorText = Get-Content -LiteralPath (Join-Path $projectPath 'Assets/Editor/DxmCiTestConfigurator.cs') -Raw

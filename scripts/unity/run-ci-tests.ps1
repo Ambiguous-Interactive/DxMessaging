@@ -6422,8 +6422,7 @@ function Write-ShippingPackageResolutionEvidence {
     param(
         [Parameter(Mandatory = $true)][string]$ProjectPath,
         [Parameter(Mandatory = $true)][string]$ArtifactsPath,
-        [Parameter(Mandatory = $true)][string]$ExpectedRepoRoot,
-        [Parameter(Mandatory = $true)][string]$ExpectedManifestSha256
+        [Parameter(Mandatory = $true)][string]$ExpectedRepoRoot
     )
 
     $packagesPath = Join-Path $ProjectPath 'Packages'
@@ -6442,10 +6441,6 @@ function Write-ShippingPackageResolutionEvidence {
 
     $manifestPath = Join-Path $packagesPath 'manifest.json'
     $lockPath = Join-Path $packagesPath 'packages-lock.json'
-    $resolvedManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($resolvedManifestSha256 -cne $ExpectedManifestSha256) {
-        throw 'Shipping package manifest hash changed during package resolution.'
-    }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest -isnot [pscustomobject] -or $manifest.dependencies -isnot [pscustomobject]) {
         throw 'Shipping package manifest and dependencies must be JSON objects.'
@@ -6909,14 +6904,6 @@ $ProjectPath = Initialize-EphemeralProject `
     -ShippingMessageTypeCount $ShippingMessageTypeCount `
     -RepoRoot $RepoRoot `
     -ArtifactsPath $ArtifactsPath
-$shippingPreResolutionManifestSha256 = ''
-if ($isShippingFidelity) {
-    $shippingPreResolutionManifestSha256 = (
-        Get-FileHash `
-            -LiteralPath (Join-Path $ProjectPath 'Packages/manifest.json') `
-            -Algorithm SHA256
-    ).Hash.ToLowerInvariant()
-}
 $LibraryPath = Join-Path $ProjectPath 'Library'
 $LibraryEntries = @(
     if (Test-Path -LiteralPath $LibraryPath -PathType Container) {
@@ -7190,8 +7177,7 @@ try {
         Write-ShippingPackageResolutionEvidence `
             -ProjectPath $ProjectPath `
             -ArtifactsPath $ArtifactsPath `
-            -ExpectedRepoRoot $RepoRoot `
-            -ExpectedManifestSha256 $shippingPreResolutionManifestSha256
+            -ExpectedRepoRoot $RepoRoot
         # Build a stripped consumer through BuildPipeline directly. This path does
         # not invoke Unity Test Framework, add test assemblies, or establish a
         # PlayerConnection. The same immutable binary runs both the positive AOT
