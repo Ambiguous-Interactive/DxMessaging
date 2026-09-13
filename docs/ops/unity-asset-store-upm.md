@@ -113,7 +113,8 @@ Every tagged release stages the Asset Store submission inputs automatically.
 The `release.yml` publish job uploads an `asset-store-submission` workflow
 artifact containing:
 
-- the `.unitypackage` exported by `scripts/unity/export-unitypackage.ps1`
+- the `.unitypackage` created without opening Unity by
+  `scripts/unity/create_unitypackage.py`
 - the npm `.tgz` (the exact UPM payload, for reference and diffing)
 - `.sha256` checksums for both
 - tracked store media under `media/`
@@ -130,8 +131,8 @@ screenshot width. It then adds the package version, minimum Unity version, and
 matching changelog section and writes the reviewed portal inputs and media order to
 `ASSET-STORE-LISTING.json`. Unity still decides whether a submission passes review.
 
-The export stages the `npm pack` payload into an ephemeral Unity project
-under `Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
+The portable writer stages the `npm pack` payload under
+`Assets/WallstopStudios/DxMessaging/` with two Assets-form changes:
 `SourceGenerators/**` is excluded (the loose generator sources would compile
 into `Assembly-CSharp` under `Assets/` and fail; consumers get the source
 generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under

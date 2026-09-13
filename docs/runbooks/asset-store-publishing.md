@@ -74,8 +74,8 @@ Before npm publish, that job uploads an
 `asset-store-submission` workflow artifact (30-day retention) containing the
 exact inputs for the Asset Store upload:
 
-- the `.unitypackage` exported by
-  [`scripts/unity/export-unitypackage.ps1`](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/unity/export-unitypackage.ps1)
+- the `.unitypackage` created without opening Unity by
+  [`scripts/unity/create_unitypackage.py`](../../scripts/unity/create_unitypackage.py)
   (the Assets-form payload: `Samples~` renamed to `Samples`, the loose generator
   sources replaced by the shipped `Runtime/Analyzers/` RoslynAnalyzer DLLs);
 - the npm `.tgz` (the exact UPM payload, for reference and diffing);

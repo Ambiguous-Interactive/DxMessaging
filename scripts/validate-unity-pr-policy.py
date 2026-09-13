@@ -32,7 +32,6 @@ LICENSED_LOCK_WINDOWS = (
     (Path(".github/workflows/unity-benchmarks.yml"), "benchmarks"),
     (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
     (Path(".github/workflows/release.yml"), "unity-checks"),
-    (Path(".github/workflows/release.yml"), "unitypackage"),
 )
 UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES = 60
 UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
@@ -3992,6 +3991,45 @@ def validate_unity_aggregate_steps(gate: str) -> None:
             == [("actions", "read")], "Unity aggregate needs only Actions read permission")
 
 
+def validate_license_free_unitypackage_release() -> None:
+    source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    package_job = job_block(source, "unitypackage")
+    require("    runs-on: ubuntu-latest\n" in package_job, "unitypackage must use ubuntu-latest")
+    require(
+        "    needs:\n      - verify-tag\n      - validate\n" in package_job,
+        "unitypackage must follow validation and remain independent of licensed Unity work",
+    )
+    require("    timeout-minutes: 20\n" in package_job, "unitypackage timeout must stay bounded")
+    require(
+        "python3 scripts/unity/create_unitypackage.py --output" in package_job
+        and "sha256sum -c" in package_job
+        and "name: release-unitypackage" in package_job
+        and ".artifacts/release-unitypackage/" in package_job
+        and ".artifacts/unity/" not in package_job
+        and "if-no-files-found: error" in package_job,
+        "unitypackage must create, verify, and require the portable archive",
+    )
+    forbidden = re.compile(
+        r"UNITY_(?:SERIAL|EMAIL|PASSWORD)|validate-unity-license|acquire-build-lock|"
+        r"return-unity-license|ensure-unity-editor|export-unitypackage\.ps1|"
+        r"runs-on:.*self-hosted",
+        re.IGNORECASE,
+    )
+    require(forbidden.search(package_job) is None, "unitypackage must not consume Unity or its lock")
+    export_gate = job_block(source, "release-export-success")
+    require(
+        "    needs: unitypackage\n" in export_gate
+        and "needs.unitypackage.result" in export_gate
+        and "runner-preflight" not in export_gate,
+        "release export gate must depend only on the portable package job",
+    )
+    publish = job_block(source, "publish")
+    require(
+        "      - unitypackage\n" in publish and "      - release-export-success\n" in publish,
+        "publication must remain blocked on portable package creation",
+    )
+
+
 def validate() -> None:
     timeout_fixture = f"""  fixture:
     timeout-minutes: 70
@@ -4695,6 +4733,7 @@ steps:
         validate_lock_window_timeout_budget(window, f"{workflow}:{job_id}")
         validate_cleanup_gate_not_attempted_input(window, f"{workflow}:{job_id}")
         validate_editor_gate_bindings(window, f"{workflow}:{job_id}")
+    validate_license_free_unitypackage_release()
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)

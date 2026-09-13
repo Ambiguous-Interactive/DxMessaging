@@ -450,251 +450,55 @@ jobs:
           incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
 
   unitypackage:
-    name: Export .unitypackage
-    # Runs AFTER unity-checks so the licensed editmode gate has already proven
-    # the payload compiles before we spend another licensed editor session on
-    # the export. REQUIRED, release-blocking: publish needs this job, so a failed
-    # export blocks the whole release (including the irreversible npm publish);
-    # the release is atomic and never ships without the .unitypackage.
+    name: Create .unitypackage
+    # The trusted Unity release checks still prove the package in the pinned
+    # editor. Archive construction itself is a deterministic packaging task:
+    # run it in parallel without occupying a self-hosted runner or license seat.
+    # This remains release-blocking, so a failed or missing package prevents the
+    # irreversible npm publish and keeps the release atomic.
     needs:
       - verify-tag
-      - runner-preflight
-      - unity-checks
-    runs-on: [self-hosted, Windows, RAM-64GB]
+      - validate
+    runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
-    timeout-minutes: 900
+    timeout-minutes: 20
     steps:
-      # Contract item 3: the central immutable gate validates the runner-owned
-      # editor before any credential reference or checkout. CI never installs,
-      # repairs, or provisions an editor; a missing or unhealthy editor is an
-      # offline runner-maintenance failure. The editor check exposes its
-      # validated executable itself, so the former unity-helpers validator
-      # checkout, binding step, and diagnostics upload are gone.
-      - name: Require manually installed Unity editor
-        id: ensure_unity_editor
-        timeout-minutes: 10
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
-        with:
-          unity-version: 2022.3.45f1
-          install-root: ${{ runner.tool_cache }}\u6-v3
-          provisioning-profile: EditorOnly
-          diagnostics-path: unity-editor-check.json
-          ci-managed-only: true
-          require-healthy-existing: true
-
-      - name: Enable Git long paths
-        timeout-minutes: 2
-        shell: pwsh
-        env:
-          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
-        run: git config --global core.longpaths true
-
       - name: Checkout
-        timeout-minutes: 30
+        timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        env:
-          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
         with:
           lfs: true
           persist-credentials: false
 
-      - name: Print runner diagnostics
-        timeout-minutes: 2
-        # Composite action runs PowerShell internally; never use plain
-        # `shell: bash` on self-hosted Windows runners (see unity-checks).
-        uses: ./.github/actions/print-self-hosted-runner-diagnostics
-
       - name: Setup Node.js
-        id: setup_node
         timeout-minutes: 5
-        # export-unitypackage.ps1 stages the payload with `npm pack`, so the
-        # shipped bytes are identical to the npm/UPM artifact.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.18.0"
 
-      - name: Install artifact tooling dependencies
-        id: install_dependencies
-        timeout-minutes: 2
-        shell: pwsh
-        # Unity imports node_modules beside the local package. Keep tooling under a
-        # hidden directory so dependency installation does not add thousands of assets.
-        run: |
-          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
-          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
-          Copy-Item package.json, package-lock.json -Destination $tooling
-          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
-
-      - name: Validate Unity license secrets
-        timeout-minutes: 2
-        uses: ./.github/actions/validate-unity-license
+      - name: Create the .unitypackage
+        id: create_unitypackage
+        timeout-minutes: 5
         env:
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-
-      - name: Acquire organization Unity lock
-        id: acquire_lock
-        timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: release-unitypackage
-          runner-id: ${{ runner.name }}
-          github-token: ${{ github.token }}
-          timeout-minutes: "300"
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require acquired Unity lock
-        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
-        timeout-minutes: 1
-        shell: pwsh
-        run: exit 1
-
-      - name: Redact sensitive data from Unity unitypackage artifacts
-        id: redact_validation
-        # Require this run's Node and dependency install, not files left by a previous run.
-        # An aborted install must also skip uploads, which require successful redaction.
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: |
-            .artifacts/unity
-
-      - name: Export the .unitypackage
-        id: export_unitypackage
-        if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 120
-        shell: pwsh
-        env:
-          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
         run: |
-          $dist = '.artifacts/unity/release-unitypackage-dist'
-          New-Item -ItemType Directory -Force -Path $dist | Out-Null
-          $output = Join-Path $dist "com.wallstop-studios.dxmessaging-$env:PACKAGE_VERSION.unitypackage"
-          ./scripts/unity/export-unitypackage.ps1 `
-            -UnityVersion '2022.3.45f1' `
-            -OutputPath $output `
-            -ArtifactsPath '.artifacts/unity/release-unitypackage' `
-            -LicenseReturnOwner Central
-
-      - name: Dump Unity log tail on failure or cancellation
-        if: ${{ failure() || cancelled() }}
-        timeout-minutes: 5
-        uses: ./.github/actions/dump-unity-log-tail
-        with:
-          results-dir: .artifacts/unity/release-unitypackage
-          label: Unity release unitypackage export
-
-      - name: Redact sensitive data from unitypackage artifacts
-        id: redact_unitypackage
-        # Require this run's Node and dependency install, not files left by a previous run.
-        # An aborted install must also skip uploads, which require successful redaction.
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: |
-            .artifacts/unity
+          set -euo pipefail
+          dist='.artifacts/release-unitypackage'
+          output="${dist}/com.wallstop-studios.dxmessaging-${PACKAGE_VERSION}.unitypackage"
+          python3 scripts/unity/create_unitypackage.py --output "${output}"
+          test -s "${output}"
+          (cd "${dist}" && sha256sum -c "$(basename "${output}").sha256")
 
       - name: Upload the .unitypackage artifact
-        # This step had no condition, which implies success(). Naming any condition removes that
-        # implicit guard, so success() has to be restated alongside the redaction gate.
-        if: ${{ success() && steps.redact_unitypackage.outcome == 'success' }}
-        timeout-minutes: 20
+        timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-unitypackage
-          path: .artifacts/unity/release-unitypackage-dist/
+          path: .artifacts/release-unitypackage/
           if-no-files-found: error
           retention-days: 14
           overwrite: true
-
-      - name: Upload export diagnostics
-        if: ${{ always() && steps.redact_unitypackage.outcome == 'success' }}
-        timeout-minutes: 10
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: unity-release-unitypackage
-          path: .artifacts/unity/release-unitypackage
-          if-no-files-found: warn
-          retention-days: 14
-          overwrite: true
-
-      - name: Return Unity license
-        id: return_unity_license
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@d79e1cc2acc892b619db2ca46f78291ca427016b
-        with:
-          unity-version: 2022.3.45f1
-          tool-cache: ${{ runner.tool_cache }}
-          unity-email: ${{ secrets.UNITY_EMAIL }}
-          unity-password: ${{ secrets.UNITY_PASSWORD }}
-          evidence-suffix: release-unitypackage
-
-      - name: Classify Unity cleanup evidence
-        id: cleanup_classification
-        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
-        timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@d79e1cc2acc892b619db2ca46f78291ca427016b
-        with:
-          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
-          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
-          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
-          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
-          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
-
-      - name: Release organization Unity lock
-        id: release_unity_lock
-        if: always()
-        timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
-        with:
-          lock-name: wallstop-organization-builds
-          holder-id-suffix: release-unitypackage
-          runner-id: ${{ runner.name }}
-          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
-          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
-          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
-        env:
-          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
-          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
-
-      - name: Require confirmed Unity cleanup
-        if: always()
-        timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@d79e1cc2acc892b619db2ca46f78291ca427016b
-        with:
-          # Typed binding to the one acquire step, exactly as the enrollment
-          # contract requires. A leg that aborts before acquire ran reports an
-          # empty output, and the gate itself treats missing or invalid
-          # acquisition state as fail-closed; only the literal `acquired=false`
-          # from a completed acquire marks cleanup as not applicable.
-          acquired: ${{ steps.acquire_lock.outputs.acquired }}
-          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
-          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
-          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
-          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
-          release-outcome: ${{ steps.release_unity_lock.outcome }}
-          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
-          released: ${{ steps.release_unity_lock.outputs.released }}
-          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
-          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
-          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
-          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-          incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
 
   release-checks-success:
     name: Release Checks Success
@@ -714,16 +518,13 @@ jobs:
   release-export-success:
     name: Release Export Success
     if: always()
-    needs:
-      - runner-preflight
-      - unitypackage
+    needs: unitypackage
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require release export validation
         shell: bash
         run: |
-          test "${{ needs.runner-preflight.result }}" = success
           test "${{ needs.unitypackage.result }}" = success
 
   publish:
