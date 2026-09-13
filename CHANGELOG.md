@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the
+  EditMode correctness matrix instead of reporting three permanently skipped shim sentinels
+  ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Make `MessagingComponentInstaller` honor its documented explicit-bus precedence when both an
   explicit bus and provider are assigned ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Make null provider and empty provider-handle configuration replace a prior explicit component bus

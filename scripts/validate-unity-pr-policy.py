@@ -16,6 +16,7 @@ from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 DOCS_GATE = Path(".github/workflows/unity-docs-gate.yml")
+COMPUTE_ASSEMBLIES_ACTION = Path(".github/actions/compute-unity-assemblies/action.yml")
 WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
@@ -2681,6 +2682,16 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
 def validate_grouped_unity_correctness() -> None:
     """Pin per-editor mode isolation and execute the terminal result truth table."""
     source = WORKFLOW.read_text(encoding="utf-8")
+    compute_action = COMPUTE_ASSEMBLIES_ACTION.read_text(encoding="utf-8")
+    for fragment in (
+        "  include-integrations:\n",
+        'if ("${{ inputs.include-integrations }}" -eq "true") { '
+        '$parts += "includeIntegrations: true" }',
+    ):
+        require(
+            fragment in compute_action,
+            f"integration assembly discovery input is not wired through the shared action: {fragment!r}",
+        )
     validate_shipping_event_policy(source)
     mutations = [
         ("manual shipping enabled by default", "default: false", "default: true"),
@@ -2772,6 +2783,11 @@ def validate_grouped_unity_correctness() -> None:
             f"id: {compute_id}" in compute and f"target: {mode}" in compute,
             f"{mode}: assembly discovery must remain independent",
         )
+        if mode == "editmode":
+            require(
+                'include-integrations: "true"' in compute,
+                "EditMode correctness must execute the already-compiled DI integration suites",
+            )
         if mode == "standalone":
             require('runtime-only: "true"' in compute, "standalone discovery must be runtime-only")
 

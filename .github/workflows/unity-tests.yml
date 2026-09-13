@@ -260,6 +260,7 @@ jobs:
         uses: ./.github/actions/compute-unity-assemblies
         with:
           target: editmode
+          include-integrations: "true"
 
       - name: Compute PlayMode test assembly list
         id: compute_playmode

@@ -13,6 +13,10 @@ inputs:
     description: "Include the comparison-suite assemblies (OpenUPM-pinned messaging libs)."
     required: false
     default: "false"
+  include-integrations:
+    description: "Include the Zenject, VContainer, and Reflex integration test assemblies."
+    required: false
+    default: "false"
   runtime-only:
     description: "Drop editor-only asmdefs (standalone player flow cannot run EditMode tests)."
     required: false
@@ -40,6 +44,7 @@ runs:
         $parts = @()
         if ("${{ inputs.include-perf }}" -eq "true") { $parts += "includePerf: true" }
         if ("${{ inputs.include-comparisons }}" -eq "true") { $parts += "includeComparisons: true" }
+        if ("${{ inputs.include-integrations }}" -eq "true") { $parts += "includeIntegrations: true" }
         if ("${{ inputs.runtime-only }}" -eq "true") { $parts += "runtimeOnly: true" }
         if ("${{ inputs.target }}" -ne "") { $parts += "target: '${{ inputs.target }}'" }
         $opts = if ($parts.Count) { "{ " + ($parts -join ", ") + " }" } else { "{}" }

@@ -51,7 +51,10 @@ namespace DxMessaging.Tests.Runtime.Zenject
             DiContainer container = new();
             container.BindInterfacesAndSelfTo<MessageBus>().AsSingle();
 
-            DxMessagingRegistrationInstaller installer = new DxMessagingRegistrationInstaller();
+            DxMessagingRegistrationInstaller installer = Track(
+                    new GameObject(nameof(RegistrationInstallerProvidesBuilderBoundToContainerBus))
+                )
+                .AddComponent<DxMessagingRegistrationInstaller>();
             installer.RunInstallBindings(container);
 
             IMessageRegistrationBuilder registrationBuilder =
@@ -79,7 +82,10 @@ namespace DxMessaging.Tests.Runtime.Zenject
                 .AsSingle();
             container.BindInterfacesAndSelfTo<MessageBus>().AsSingle();
 
-            DxMessagingRegistrationInstaller installer = new DxMessagingRegistrationInstaller();
+            DxMessagingRegistrationInstaller installer = Track(
+                    new GameObject(nameof(RegistrationInstallerPrefersBoundProvider))
+                )
+                .AddComponent<DxMessagingRegistrationInstaller>();
             installer.RunInstallBindings(container);
 
             IMessageRegistrationBuilder registrationBuilder =

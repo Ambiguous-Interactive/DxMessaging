@@ -75,7 +75,7 @@ Before npm publish, that job uploads an
 exact inputs for the Asset Store upload:
 
 - the `.unitypackage` created without opening Unity by
-  [`scripts/unity/create_unitypackage.py`](../../scripts/unity/create_unitypackage.py)
+  `scripts/unity/create_unitypackage.py`
   (the Assets-form payload: `Samples~` renamed to `Samples`, the loose generator
   sources replaced by the shipped `Runtime/Analyzers/` RoslynAnalyzer DLLs);
 - the npm `.tgz` (the exact UPM payload, for reference and diffing);
