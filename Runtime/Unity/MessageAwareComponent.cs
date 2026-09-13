@@ -279,7 +279,10 @@ namespace DxMessaging.Unity
         /// <summary>
         /// Supplies an <see cref="IMessageBusProvider"/> for this component's underlying <see cref="MessageHandler"/>.
         /// </summary>
-        /// <param name="messageBusProvider">Provider used to resolve buses for this component.</param>
+        /// <param name="messageBusProvider">
+        /// Provider used to resolve buses for this component. Pass <see langword="null"/> to replace
+        /// any prior direct bus with the global fallback.
+        /// </param>
         /// <param name="rebindMode">Controls whether existing handlers should migrate to the provided bus immediately.</param>
         public virtual void ConfigureMessageBus(
             IMessageBusProvider messageBusProvider,
@@ -287,9 +290,9 @@ namespace DxMessaging.Unity
         )
         {
             _configuredMessageBusProvider = messageBusProvider;
+            _configuredMessageBus = null;
             if (messageBusProvider != null)
             {
-                _configuredMessageBus = null;
                 _configuredMessageBusProviderHandle = MessageBusProviderHandle.FromProvider(
                     messageBusProvider
                 );
@@ -305,7 +308,10 @@ namespace DxMessaging.Unity
         /// <summary>
         /// Supplies a serialized handle that resolves an <see cref="IMessageBusProvider"/>.
         /// </summary>
-        /// <param name="providerHandle">Handle referencing the provider.</param>
+        /// <param name="providerHandle">
+        /// Handle referencing the provider. An empty or unavailable handle replaces any prior direct
+        /// bus with the global fallback.
+        /// </param>
         /// <param name="rebindMode">Controls whether existing handlers should migrate to the provided bus immediately.</param>
         public virtual void ConfigureMessageBus(
             MessageBusProviderHandle providerHandle,
@@ -313,10 +319,10 @@ namespace DxMessaging.Unity
         )
         {
             _configuredMessageBusProviderHandle = providerHandle;
+            _configuredMessageBus = null;
             if (providerHandle.TryGetProvider(out IMessageBusProvider provider))
             {
                 _configuredMessageBusProvider = provider;
-                _configuredMessageBus = null;
             }
             else
             {

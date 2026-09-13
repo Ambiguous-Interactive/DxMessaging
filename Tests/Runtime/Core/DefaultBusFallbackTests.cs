@@ -332,6 +332,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 component.Received,
                 "Global bus should no longer deliver to the component after override."
             );
+
+            AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
+                ProviderConfigurationClearKind.NullProvider
+            );
+            AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
+                ProviderConfigurationClearKind.EmptyHandle
+            );
         }
 
         [UnityTest]
@@ -386,6 +393,85 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        private void AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
+            ProviderConfigurationClearKind clearKind
+        )
+        {
+            MessageBus previousExplicitBus = new();
+            IMessageBus globalBus = MessageHandler.MessageBus;
+            using (
+                LeakWatcher globalWatcher = new(
+                    globalBus,
+                    label: $"MessageAwareClear-{clearKind}-global"
+                )
+            )
+            using (
+                LeakWatcher previousWatcher = new(
+                    previousExplicitBus,
+                    label: $"MessageAwareClear-{clearKind}-previous"
+                )
+            )
+            {
+                GameObject go = new($"MessageAwareProviderConfigurationClear-{clearKind}");
+                go.SetActive(false);
+                _spawned.Add(go);
+                BusAwareComponent component = go.AddComponent<BusAwareComponent>();
+                component.ConfigureMessageBus(
+                    previousExplicitBus,
+                    MessageBusRebindMode.RebindActive
+                );
+                ClearProviderConfiguration(component, clearKind);
+
+                go.SetActive(true);
+
+                SimpleUntargetedMessage message = new();
+                message.EmitUntargeted(previousExplicitBus);
+                int receivedFromPreviousBus = component.Received;
+
+                message.EmitUntargeted();
+                int receivedAfterGlobalBus = component.Received;
+
+                _ = _spawned.Remove(go);
+                Object.DestroyImmediate(go);
+
+                Assert.AreEqual(
+                    0,
+                    receivedFromPreviousBus,
+                    $"Clearing with {clearKind} should detach the prior explicit bus."
+                );
+                Assert.AreEqual(
+                    1,
+                    receivedAfterGlobalBus,
+                    $"Clearing with {clearKind} should restore the global bus."
+                );
+            }
+        }
+
+        private static void ClearProviderConfiguration(
+            MessageAwareComponent component,
+            ProviderConfigurationClearKind clearKind
+        )
+        {
+            switch (clearKind)
+            {
+                case ProviderConfigurationClearKind.NullProvider:
+                    component.ConfigureMessageBus(
+                        (IMessageBusProvider)null,
+                        MessageBusRebindMode.RebindActive
+                    );
+                    return;
+                case ProviderConfigurationClearKind.EmptyHandle:
+                    component.ConfigureMessageBus(
+                        MessageBusProviderHandle.Empty,
+                        MessageBusRebindMode.RebindActive
+                    );
+                    return;
+                default:
+                    Assert.Fail($"Unsupported provider configuration clear kind: {clearKind}.");
+                    return;
+            }
+        }
+
         private sealed class BusAwareComponent : MessageAwareComponent
         {
             internal int Received { get; private set; }
@@ -395,6 +481,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 base.RegisterMessageHandlers();
                 _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++Received);
             }
+        }
+
+        private enum ProviderConfigurationClearKind
+        {
+            NullProvider,
+            EmptyHandle,
         }
     }
 }

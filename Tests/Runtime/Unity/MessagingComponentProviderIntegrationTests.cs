@@ -7,6 +7,7 @@ namespace DxMessaging.Tests.Runtime.Unity
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
+    using DxMessaging.Tests.Runtime;
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEngine;
@@ -220,6 +221,78 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 Assert.AreSame(messageBus, lease.MessageBus);
             }
+
+            AssertClearingProviderConfigurationRevertsToGlobalBus(
+                ProviderConfigurationClearKind.NullProvider
+            );
+            AssertClearingProviderConfigurationRevertsToGlobalBus(
+                ProviderConfigurationClearKind.EmptyHandle
+            );
+        }
+
+        private void AssertClearingProviderConfigurationRevertsToGlobalBus(
+            ProviderConfigurationClearKind clearKind
+        )
+        {
+            MessageBus previousExplicitBus = new();
+            IMessageBus globalBus = MessageHandler.MessageBus;
+            Assert.IsNotNull(globalBus);
+            int received = 0;
+            int receivedFromPreviousBus;
+            int receivedAfterGlobalBus;
+
+            GameObject owner = Track(new GameObject("ProviderConfigurationClearOwner"));
+            MessagingComponent messagingComponent = owner.AddComponent<MessagingComponent>();
+            messagingComponent.Configure(previousExplicitBus, MessageBusRebindMode.RebindActive);
+
+            ClearProviderConfiguration(messagingComponent, clearKind);
+
+            using (
+                LeakWatcher globalWatcher = new(
+                    globalBus,
+                    label: $"MessagingComponentClear-{clearKind}-global"
+                )
+            )
+            using (
+                LeakWatcher previousWatcher = new(
+                    previousExplicitBus,
+                    label: $"MessagingComponentClear-{clearKind}-previous"
+                )
+            )
+            using (
+                MessageRegistrationLease lease = messagingComponent
+                    .CreateRegistrationBuilder()
+                    .Build(
+                        new MessageRegistrationBuildOptions
+                        {
+                            ActivateOnBuild = true,
+                            Configure = token =>
+                                _ = token.RegisterUntargeted<TestUntargetedMessage>(
+                                    (in TestUntargetedMessage _) => ++received
+                                ),
+                        }
+                    )
+            )
+            {
+                TestUntargetedMessage message = new(1);
+                previousExplicitBus.UntargetedBroadcast(ref message);
+                receivedFromPreviousBus = received;
+
+                message = new TestUntargetedMessage(2);
+                globalBus.UntargetedBroadcast(ref message);
+                receivedAfterGlobalBus = received;
+            }
+
+            Assert.AreEqual(
+                0,
+                receivedFromPreviousBus,
+                $"Clearing with {clearKind} should detach the prior explicit bus."
+            );
+            Assert.AreEqual(
+                1,
+                receivedAfterGlobalBus,
+                $"Clearing with {clearKind} should restore the global bus."
+            );
         }
 
         [UnityTest]
@@ -366,6 +439,31 @@ namespace DxMessaging.Tests.Runtime.Unity
             return unityObject;
         }
 
+        private static void ClearProviderConfiguration(
+            MessagingComponent messagingComponent,
+            ProviderConfigurationClearKind clearKind
+        )
+        {
+            switch (clearKind)
+            {
+                case ProviderConfigurationClearKind.NullProvider:
+                    messagingComponent.Configure(
+                        (IMessageBusProvider)null,
+                        MessageBusRebindMode.RebindActive
+                    );
+                    return;
+                case ProviderConfigurationClearKind.EmptyHandle:
+                    messagingComponent.Configure(
+                        MessageBusProviderHandle.Empty,
+                        MessageBusRebindMode.RebindActive
+                    );
+                    return;
+                default:
+                    Assert.Fail($"Unsupported provider configuration clear kind: {clearKind}.");
+                    return;
+            }
+        }
+
         private sealed class TestListener : MonoBehaviour
         {
             private MessageRegistrationToken _token;
@@ -427,6 +525,12 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
 
             public int Value { get; }
+        }
+
+        private enum ProviderConfigurationClearKind
+        {
+            NullProvider,
+            EmptyHandle,
         }
     }
 }

@@ -150,7 +150,10 @@ namespace DxMessaging.Unity
         /// <summary>
         /// Configures the component to resolve message buses via the supplied provider.
         /// </summary>
-        /// <param name="messageBusProvider">Provider to use for subsequent handler/token resolution.</param>
+        /// <param name="messageBusProvider">
+        /// Provider to use for subsequent handler/token resolution. Pass <c>null</c> to replace any
+        /// prior explicit bus with the global fallback.
+        /// </param>
         /// <param name="rebindMode">Controls whether existing listeners should migrate immediately.</param>
         public void Configure(
             IMessageBusProvider messageBusProvider,
@@ -158,10 +161,7 @@ namespace DxMessaging.Unity
         )
         {
             _messageBusProvider = messageBusProvider;
-            if (messageBusProvider != null)
-            {
-                _messageBusOverride = null;
-            }
+            _messageBusOverride = null;
 
             _serializedProviderHandle =
                 messageBusProvider != null
@@ -173,7 +173,10 @@ namespace DxMessaging.Unity
         /// <summary>
         /// Configures the component using a serialized provider handle.
         /// </summary>
-        /// <param name="providerHandle">Handle that resolves the preferred provider.</param>
+        /// <param name="providerHandle">
+        /// Handle that resolves the preferred provider. An empty or unavailable handle replaces any
+        /// prior explicit bus with the global fallback.
+        /// </param>
         /// <param name="rebindMode">Controls whether existing listeners should migrate immediately.</param>
         public void Configure(
             MessageBusProviderHandle providerHandle,
@@ -181,10 +184,10 @@ namespace DxMessaging.Unity
         )
         {
             _serializedProviderHandle = providerHandle;
+            _messageBusOverride = null;
             if (providerHandle.TryGetProvider(out IMessageBusProvider provider))
             {
                 _messageBusProvider = provider;
-                _messageBusOverride = null;
             }
             else
             {
