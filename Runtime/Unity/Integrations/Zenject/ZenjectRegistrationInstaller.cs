@@ -29,7 +29,7 @@ namespace DxMessaging.Unity.Integrations.Zenject
         private static IMessageRegistrationBuilder CreateBuilder(InjectContext context)
         {
             IMessageBusProvider provider = context.Container.TryResolve<IMessageBusProvider>();
-            if (provider != null)
+            if (MessageBusProviderUtility.IsAvailable(provider))
             {
                 return new MessageRegistrationBuilder(provider);
             }

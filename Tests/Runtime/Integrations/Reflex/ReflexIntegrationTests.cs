@@ -56,10 +56,15 @@ namespace DxMessaging.Tests.Runtime.Reflex
             DxMessagingInstaller coreInstaller = new();
             coreInstaller.InstallBindings(builder);
 
-            ReflexContainerBuilderCompatibility.RegisterSingletonType(
+            TestScriptableMessageBusProvider provider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
+            MessageBus providerBus = new();
+            provider.Configure(providerBus);
+            ReflexContainerBuilderCompatibility.RegisterSingletonFactory(
                 builder,
-                typeof(StaticMessageBusProvider),
-                typeof(StaticMessageBusProvider),
+                _ => provider,
+                typeof(TestScriptableMessageBusProvider),
                 typeof(IMessageBusProvider)
             );
 
@@ -68,8 +73,6 @@ namespace DxMessaging.Tests.Runtime.Reflex
 
             Container container = TrackDisposable(builder.Build());
 
-            StaticMessageBusProvider provider = container.Resolve<StaticMessageBusProvider>();
-
             IMessageRegistrationBuilder registrationBuilder =
                 container.Resolve<IMessageRegistrationBuilder>();
             using MessageRegistrationLease lease = registrationBuilder.Build(
@@ -77,9 +80,21 @@ namespace DxMessaging.Tests.Runtime.Reflex
             );
 
             Assert.AreSame(
-                provider.Bus,
+                providerBus,
                 lease.MessageBus,
                 "Reflex registration installer should prefer the registered IMessageBusProvider."
+            );
+
+            UnityEngine.Object.DestroyImmediate(provider);
+
+            using MessageRegistrationLease fallbackLease = registrationBuilder.Build(
+                new MessageRegistrationBuildOptions()
+            );
+
+            Assert.AreSame(
+                container.Resolve<IMessageBus>(),
+                fallbackLease.MessageBus,
+                "Reflex registration installer should retain the container bus fallback when its provider has been destroyed."
             );
         }
 
@@ -318,13 +333,16 @@ namespace DxMessaging.Tests.Runtime.Reflex
             }
         }
 
-        private sealed class StaticMessageBusProvider : IMessageBusProvider
+        private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
         {
-            private readonly IMessageBus _bus = new MessageBus();
+            private IMessageBus _bus;
 
-            public IMessageBus Bus => _bus;
+            public void Configure(IMessageBus bus)
+            {
+                _bus = bus;
+            }
 
-            public IMessageBus Resolve()
+            public override IMessageBus Resolve()
             {
                 return _bus;
             }

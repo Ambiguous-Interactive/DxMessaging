@@ -46,8 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix provider fallback selection in registration builders and components, including destroyed
-  Unity-backed providers, deferred per-build resolution, and live serialized-handle fallbacks
+- Fix provider fallback selection in registration builders, components, and dependency-injection
+  adapters, including destroyed Unity-backed providers, deferred per-build resolution, scoped
+  container fallbacks, and live serialized-handle fallbacks
   ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the
   EditMode correctness matrix instead of reporting three permanently skipped shim sentinels

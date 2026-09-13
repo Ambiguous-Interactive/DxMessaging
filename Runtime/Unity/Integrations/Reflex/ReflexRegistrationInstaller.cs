@@ -49,7 +49,7 @@ namespace DxMessaging.Unity.Integrations.Reflex
             private MessageRegistrationBuilder ResolveInnerBuilder()
             {
                 IMessageBusProvider provider = TryResolveProvider();
-                if (provider != null)
+                if (MessageBusProviderUtility.IsAvailable(provider))
                 {
                     return new MessageRegistrationBuilder(provider);
                 }
