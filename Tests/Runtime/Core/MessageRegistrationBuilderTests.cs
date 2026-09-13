@@ -151,6 +151,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageBus providerBus = new MessageBus();
             TestScriptableMessageBusProvider provider =
                 ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider deferringProvider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             try
             {
                 provider.Configure(providerBus);
@@ -172,6 +174,27 @@ namespace DxMessaging.Tests.Runtime.Core
                     fallbackLease.MessageBus,
                     "A destroyed per-build provider should reveal the live builder default."
                 );
+
+                options.MessageBusProvider = deferringProvider;
+                using MessageRegistrationLease deferredLease = _builder.Build(options);
+                Assert.AreSame(
+                    _defaultBus,
+                    deferredLease.MessageBus,
+                    "A live per-build provider that defers should use the builder default."
+                );
+
+                MessageRegistrationBuilder sameProviderBuilder = new MessageRegistrationBuilder(
+                    deferringProvider
+                );
+                using MessageRegistrationLease sameProviderLease = sameProviderBuilder.Build(
+                    options
+                );
+                Assert.IsNull(sameProviderLease.MessageBus);
+                Assert.AreEqual(
+                    2,
+                    deferringProvider.ResolveCount,
+                    "The same deferring provider should resolve only once per build."
+                );
             }
             finally
             {
@@ -179,12 +202,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     UnityEngine.Object.DestroyImmediate(provider);
                 }
+
+                UnityEngine.Object.DestroyImmediate(deferringProvider);
             }
         }
 
         private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
         {
             private IMessageBus _messageBus;
+
+            internal int ResolveCount { get; private set; }
 
             internal void Configure(IMessageBus messageBus)
             {
@@ -193,6 +220,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public override IMessageBus Resolve()
             {
+                ++ResolveCount;
                 return _messageBus;
             }
         }
