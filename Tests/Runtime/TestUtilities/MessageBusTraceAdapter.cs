@@ -165,6 +165,11 @@ namespace DxMessaging.Tests.Runtime
                     case BusTraceOperationKind.SetHandlerActive:
                         SetHandlerActive(operation.Token, operation.HandlerActive);
                         break;
+                    case BusTraceOperationKind.MoveHostToScene:
+                    case BusTraceOperationKind.PersistHost:
+                    case BusTraceOperationKind.DestroyHost:
+                        ExecuteHostLifecycle(operation);
+                        break;
                     case BusTraceOperationKind.EmitWithHandlerActive:
                         _handlerActiveOperation = operation;
                         try
@@ -368,6 +373,14 @@ namespace DxMessaging.Tests.Runtime
                 }
                 _globalScope = null;
             }
+            try
+            {
+                DisposeAdapterState();
+            }
+            catch (Exception error)
+            {
+                errors.Add(error);
+            }
             if (0 < errors.Count)
             {
                 throw new AggregateException("Differential replay cleanup failed.", errors);
@@ -421,6 +434,11 @@ namespace DxMessaging.Tests.Runtime
         protected virtual void DisposeGlobalOverride(int slot) => _globalOverrides[slot].Dispose();
 
         protected virtual void DisposeToken(int slot) => _tokens[slot].Dispose();
+
+        protected virtual void ExecuteHostLifecycle(BusTraceOperation operation) =>
+            throw new NotSupportedException("This adapter has no native host lifecycle.");
+
+        protected virtual void DisposeAdapterState() { }
 
         protected virtual string DescribeHandlerActivity()
         {
