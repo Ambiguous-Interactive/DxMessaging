@@ -1,47 +1,7 @@
 #!/usr/bin/env node
-/**
- * validate-unity-versions.js
- *
- * Drift detector for Unity versions across CI.
- *
- * CONTRACT
- * --------
- * `.github/unity-versions.json` is the SINGLE SOURCE OF TRUTH for every Unity
- * version this repository's CI cares about:
- *
- *   {
- *     "all":     ["2021.3.45f1", "2022.3.45f1", "6000.3.16f1", "6000.5.2f1"],
- *     "release": "2022.3.45f1"
- *   }
- *
- * `latest` is DEFINED as the last element of `all` (it is never stored
- * separately). Licensed workflow matrices are literal and static so the
- * organization build-lock analyzer can prove every lock identity before the
- * workflow runs. THIS validator keeps those literals honest and fails CI if any
- * consumer drifts from the canonical file.
- *
- * Per-file policies (see CONSUMER_POLICIES):
- *   - `no-literals`   : the file must contain NO code version literal. Applied by
- *                       default to active workflows not explicitly registered.
- *   - `mirror-all`    : the SET of code literals must equal `all` exactly.
- *   - `mirror-latest` : every code literal must equal the last `all` entry.
- *   - `mirror-release`: every code literal must equal `release`, and there must
- *                       be at least one.
- *
- * Excluded from scanning: `.github/unity-versions.json` itself (it is the
- * source) and everything under `.github/workflows-disabled/` (an intentionally
- * unchecked archive).
- *
- * This script is PURE Node and dependency-free (fs + path + JSON.parse + regex
- * only) so it runs in CI without an `npm install`.
- *
- * @usage
- *   node scripts/validate-unity-versions.js
- *
- * @exitcodes
- *   0 - Success (canonical schema valid, no consumer drift)
- *   1 - Validation failed (bad schema or one or more drift violations)
- */
+// Drift detector for Unity versions across CI. .github/unity-versions.json is
+// authoritative; listed consumers mirror all/latest/release and other active
+// workflows may contain no version literals. Disabled workflows are not scanned.
 
 "use strict";
 
@@ -60,17 +20,6 @@ const CANONICAL_RELATIVE_PATH = ".github/unity-versions.json";
 const VERSION_LITERAL_REGEX = /[0-9]+\.[0-9]+\.[0-9]+[abfp][0-9]+/g;
 const VERSION_LITERAL_ANCHORED_REGEX = /^[0-9]+\.[0-9]+\.[0-9]+[abfp][0-9]+$/;
 
-/**
- * Consumer policy table, keyed by repo-relative POSIX path.
- *
- *   no-literals    -> FAIL on ANY code version literal.
- *   mirror-all     -> the set of code literals must equal `all` exactly.
- *   mirror-release -> every code literal must equal `release` (and >= 1 found).
- *
- * `.github/workflows/*.yml` files NOT listed here default to `no-literals`
- * (see resolveWorkflowPolicy), so a hardcoded version in a new workflow is
- * caught. The disabled-archive directory is excluded entirely.
- */
 const CONSUMER_POLICIES = Object.freeze({
   ".github/workflows/perf-numbers.yml": "mirror-latest",
   ".github/workflows/unity-tests.yml": "mirror-all",
@@ -81,15 +30,6 @@ const CONSUMER_POLICIES = Object.freeze({
   ".github/workflows/release.yml": "mirror-release"
 });
 
-/**
- * Loads and JSON-parses the canonical source file.
- *
- * @param {string} [repoRoot] Repository root (defaults to the repo this script
- *   lives in). Used by tests to point at a fixture file.
- * @returns {{ data: unknown, path: string }} The parsed object and the absolute
- *   path it came from.
- * @throws {Error} When the file is missing or not valid JSON.
- */
 function loadCanonical(repoRoot = REPO_ROOT) {
   const absolutePath = path.join(repoRoot, CANONICAL_RELATIVE_PATH);
   let raw;
@@ -113,13 +53,6 @@ function loadCanonical(repoRoot = REPO_ROOT) {
   return { data, path: absolutePath };
 }
 
-/**
- * Parses the leading major.minor.patch integers from a version literal.
- *
- * @param {string} version A version string such as "6000.3.16f1".
- * @returns {[number, number, number] | null} The numeric triple, or null when
- *   the string does not match the expected shape.
- */
 function parseVersionTriple(version) {
   const match = /^([0-9]+)\.([0-9]+)\.([0-9]+)[abfp][0-9]+$/.exec(version);
   if (!match) {
@@ -128,13 +61,6 @@ function parseVersionTriple(version) {
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
-/**
- * Compares two major.minor.patch triples.
- *
- * @param {[number, number, number]} a First triple.
- * @param {[number, number, number]} b Second triple.
- * @returns {number} Negative when a < b, positive when a > b, 0 when equal.
- */
 function compareTriple(a, b) {
   for (let i = 0; i < 3; i++) {
     if (a[i] !== b[i]) {
@@ -144,20 +70,6 @@ function compareTriple(a, b) {
   return 0;
 }
 
-/**
- * Validates the canonical object's schema.
- *
- * Rules:
- *   - must be a non-null object;
- *   - `all` must be a non-empty array of strings, each matching the version
- *     literal shape;
- *   - no duplicate entries;
- *   - entries strictly ascending by the leading major.minor.patch triple;
- *   - `release` must be a string that is a member of `all`.
- *
- * @param {unknown} data The parsed canonical object.
- * @returns {string[]} A list of human-readable error messages. Empty when valid.
- */
 function validateCanonicalSchema(data) {
   const errors = [];
 
@@ -256,15 +168,6 @@ function stripInlineComment(line, extension) {
   return line;
 }
 
-/**
- * Extracts every code version literal from file content, ignoring comments.
- *
- * @param {string} content The full file content.
- * @param {string} extension The lowercased file extension including the dot
- *   (e.g. ".yml", ".ps1"). Controls comment stripping.
- * @returns {Array<{ version: string, line: number }>} Each literal found in code
- *   (1-indexed line numbers). Order matches source order.
- */
 function extractVersionLiterals(content, extension) {
   const results = [];
   const lines = content.split(/\r?\n/);
@@ -288,20 +191,6 @@ function extractVersionLiterals(content, extension) {
   return results;
 }
 
-/**
- * Applies a consumer policy to a single file's extracted literals.
- *
- * @param {object} params Parameters.
- * @param {string} params.relativePath Repo-relative POSIX path (for messages).
- * @param {string} params.policy One of "no-literals" | "mirror-all" |
- *   "mirror-latest" | "mirror-release".
- * @param {Array<{ version: string, line: number }>} params.literals Literals
- *   from extractVersionLiterals.
- * @param {string[]} params.all The canonical `all` set.
- * @param {string} params.release The canonical `release` value.
- * @returns {string[]} Violation messages of the form
- *   `file:line: <problem>; expected <policy>`. Empty when the file complies.
- */
 function checkConsumer({ relativePath, policy, literals, all, release }) {
   const violations = [];
 
@@ -381,15 +270,6 @@ function checkConsumer({ relativePath, policy, literals, all, release }) {
   throw new Error(`Unknown consumer policy '${policy}' for ${relativePath}.`);
 }
 
-/**
- * Resolves the policy for a workflow file path. Files explicitly listed in
- * CONSUMER_POLICIES keep their declared policy; every other
- * `.github/workflows/*.yml` defaults to `no-literals`.
- *
- * @param {string} relativePath Repo-relative POSIX path.
- * @returns {string | null} The policy, or null when the file is not a policed
- *   active workflow.
- */
 function resolveWorkflowPolicy(relativePath) {
   if (Object.prototype.hasOwnProperty.call(CONSUMER_POLICIES, relativePath)) {
     return CONSUMER_POLICIES[relativePath];

@@ -1,11 +1,16 @@
 "use strict";
+const crypto = require("crypto");
 const { isDeepStrictEqual } = require("node:util");
+const DIFFERENTIAL_CONTRACT = require("./differential-replay-contract.json");
 const { extractRows, buildCsv, deriveScope } = require("./extract-perf-baseline.js");
 const { reducePairedBracket } = require("./reduce-paired-bracket.js");
 // Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
 const CELL_EVIDENCE_SUFFIX = "/shipping-cell-evidence.json";
 const NORMALIZED_SCHEMA_VERSION = 1;
+const DIFFERENTIAL_ENVIRONMENT_NAME = "differential-replay-environment.json";
+const DIFFERENTIAL_PROFILE_NAME = "differential-replay-profile.json";
+const DIFFERENTIAL_KINDS = DIFFERENTIAL_CONTRACT.profile.messageKinds;
 /** Copied verbatim from each cell. These are the columns the matrix characterization publishes. */
 const CELL_FIELDS = Object.freeze([
   "managedStrippingLevel",
@@ -47,6 +52,187 @@ function parseJsonObject(contents, relativePath, characterization = true) {
   )
     throw new Error(`${relativePath} must use characterization schema version 1.`);
   return parsed;
+}
+function requireExactKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`${label} must contain an object.`);
+  if (!isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort()))
+    throw new Error(`${label} has missing or unexpected fields.`);
+  return value;
+}
+function requireReplayString(value, label) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be non-empty.`);
+  return value;
+}
+function requireReplayInteger(value, label, minimum = 0) {
+  if (!Number.isSafeInteger(value) || value < minimum)
+    throw new Error(`${label} must be a safe integer at least ${minimum}.`);
+  return value;
+}
+function contentSha256(contents, relativePath) {
+  return crypto.createHash("sha256").update(requireBytes(contents, relativePath)).digest("hex");
+}
+function validateObservation(value, label) {
+  const observation = requireExactKeys(value, DIFFERENTIAL_CONTRACT.observationFields, label);
+  const arrays = ["callbacks", "finalEmissions", "unmatchedDiagnostics"];
+  const nullableStrings = ["exception", "trimResult"];
+  if (
+    !arrays.every(
+      (field) =>
+        Array.isArray(observation[field]) &&
+        observation[field].every((entry) => typeof entry === "string")
+    ) ||
+    typeof observation.state !== "string" ||
+    !nullableStrings.every(
+      (field) => observation[field] === null || typeof observation[field] === "string"
+    ) ||
+    !["occupiedTypeSlots", "occupiedTargetSlots"].every(
+      (field) => Number.isSafeInteger(observation[field]) && observation[field] >= 0
+    )
+  )
+    throw new Error(`${label} contains an invalid observation value.`);
+  return observation;
+}
+// SYNC: DifferentialBusTrace.Compare in Tests/Runtime/TestUtilities/DifferentialBusTrace.cs.
+function replayMismatchCategory(control, candidate) {
+  if (!isDeepStrictEqual(control.callbacks, candidate.callbacks)) return "callbacks";
+  if (control.exception !== candidate.exception) return "exception";
+  if (control.trimResult !== candidate.trimResult) return "trim";
+  if (control.state !== candidate.state) return "state";
+  if (
+    control.occupiedTypeSlots !== candidate.occupiedTypeSlots ||
+    control.occupiedTargetSlots !== candidate.occupiedTargetSlots
+  )
+    return "storage";
+  if (!isDeepStrictEqual(control.finalEmissions, candidate.finalEmissions)) return "final-emission";
+  if (!isDeepStrictEqual(control.unmatchedDiagnostics, candidate.unmatchedDiagnostics))
+    return "unmatched-diagnostic";
+  return null;
+}
+function validateReplay(value, label) {
+  const replay = requireExactKeys(value, DIFFERENTIAL_CONTRACT.replayFields, label);
+  if (!Array.isArray(replay.operations) || replay.operations.length === 0)
+    throw new Error(`${label}.operations must be non-empty.`);
+  const integerFields = DIFFERENTIAL_CONTRACT.operationIntegerFields;
+  for (const [index, operation] of replay.operations.entries()) {
+    const operationLabel = `${label}.operations[${index}]`;
+    requireExactKeys(operation, ["kind", ...integerFields, "handlerActive"], operationLabel);
+    if (
+      typeof operation.kind !== "string" ||
+      !operation.kind ||
+      typeof operation.handlerActive !== "boolean" ||
+      !integerFields.every((field) => Number.isSafeInteger(operation[field]))
+    )
+      throw new Error(`${operationLabel} contains an invalid operation value.`);
+  }
+  for (const field of ["controlTrace", "candidateTrace"]) {
+    if (!Array.isArray(replay[field]) || replay[field].length !== replay.operations.length)
+      throw new Error(`${label}.${field} must match the operation count.`);
+    replay[field].forEach((entry, index) =>
+      validateObservation(entry, `${label}.${field}[${index}]`)
+    );
+  }
+  let mismatchIndex = -1;
+  let category = null;
+  for (let index = 0; index < replay.operations.length && mismatchIndex < 0; index++) {
+    category = replayMismatchCategory(replay.controlTrace[index], replay.candidateTrace[index]);
+    if (category !== null) mismatchIndex = index;
+  }
+  if (replay.mismatchIndex !== mismatchIndex || replay.category !== category || mismatchIndex < 0)
+    throw new Error(`${label} does not declare its first observable mismatch exactly.`);
+  return replay;
+}
+function isOperationSubsequence(original, minimized) {
+  let cursor = 0;
+  for (const operation of original) {
+    if (isDeepStrictEqual(operation, minimized[cursor])) cursor += 1;
+  }
+  return cursor === minimized.length;
+}
+function reduceDifferentialReplayFailure(contents, { sourceCommit } = {}) {
+  const environment = requireExactKeys(
+    parseJsonObject(contents, DIFFERENTIAL_ENVIRONMENT_NAME, false),
+    DIFFERENTIAL_CONTRACT.environmentFields,
+    DIFFERENTIAL_ENVIRONMENT_NAME
+  );
+  const profile = requireExactKeys(
+    parseJsonObject(contents, DIFFERENTIAL_PROFILE_NAME, false),
+    DIFFERENTIAL_CONTRACT.profileFields,
+    DIFFERENTIAL_PROFILE_NAME
+  );
+  if (
+    environment.schemaVersion !== 1 ||
+    environment.sourceCommit !== sourceCommit ||
+    !/^[0-9a-f]{40}$/.test(environment.sourceTree)
+  )
+    throw new Error(`${DIFFERENTIAL_ENVIRONMENT_NAME} has invalid source identity.`);
+  for (const field of ["unityVersion", "testMode", "scriptingBackend", "testAssembly", "testName"])
+    requireReplayString(environment[field], `${DIFFERENTIAL_ENVIRONMENT_NAME}.${field}`);
+  if (!isDeepStrictEqual(profile, DIFFERENTIAL_CONTRACT.profile))
+    throw new Error(
+      `${DIFFERENTIAL_PROFILE_NAME} does not match the reviewed native lifecycle profile.`
+    );
+  const cases = DIFFERENTIAL_KINDS.map((messageKind) => {
+    const relativePath = `replays/${messageKind.toLowerCase()}.json`;
+    const value = requireExactKeys(
+      parseJsonObject(contents, relativePath, false),
+      DIFFERENTIAL_CONTRACT.caseFields,
+      relativePath
+    );
+    if (
+      value.schemaVersion !== 1 ||
+      value.observationSchemaVersion !== profile.observationSchemaVersion ||
+      value.generatorVersion !== profile.generatorVersion ||
+      value.seed !== profile.seed ||
+      value.messageKind !== messageKind ||
+      value.fault !== profile.fault
+    )
+      throw new Error(`${relativePath} disagrees with the replay profile.`);
+    const original = validateReplay(value.original, `${relativePath}.original`);
+    const minimized = validateReplay(value.minimized, `${relativePath}.minimized`);
+    if (
+      !isDeepStrictEqual(original.operations, DIFFERENTIAL_CONTRACT.operations) ||
+      !isDeepStrictEqual(minimized.operations, [DIFFERENTIAL_CONTRACT.operations[3]]) ||
+      original.mismatchIndex !== 3 ||
+      minimized.mismatchIndex !== 0 ||
+      original.category !== profile.classification ||
+      minimized.category !== profile.classification ||
+      !isOperationSubsequence(original.operations, minimized.operations)
+    )
+      throw new Error(`${relativePath} is not the reviewed deletion-minimal lifecycle failure.`);
+    return {
+      messageKind,
+      originalOperationCount: original.operations.length,
+      originalMismatchIndex: original.mismatchIndex,
+      minimizedOperationCount: minimized.operations.length,
+      minimizedMismatchIndex: minimized.mismatchIndex
+    };
+  });
+  const candidate = requireBytes(contents, "candidate-adapter.txt");
+  requireReplayString(candidate.toString("utf8"), "candidate-adapter.txt");
+  const replayCommand = requireBytes(contents, "replay-command.txt").toString("utf8").trim();
+  requireReplayString(replayCommand, "replay-command.txt");
+  return {
+    schemaVersion: 1,
+    evidenceClass: "differential-replay-failure",
+    sourceCommit,
+    sourceTree: environment.sourceTree,
+    environmentSha256: contentSha256(contents, DIFFERENTIAL_ENVIRONMENT_NAME),
+    profileSha256: contentSha256(contents, DIFFERENTIAL_PROFILE_NAME),
+    candidateSha256: crypto.createHash("sha256").update(candidate).digest("hex"),
+    replayCommand,
+    unityVersion: environment.unityVersion,
+    testMode: environment.testMode,
+    scriptingBackend: environment.scriptingBackend,
+    testAssembly: environment.testAssembly,
+    testName: environment.testName,
+    generatorVersion: profile.generatorVersion,
+    observationSchemaVersion: profile.observationSchemaVersion,
+    seed: profile.seed,
+    fault: profile.fault,
+    classification: profile.classification,
+    cases
+  };
 }
 // Preserve the existing exploratory screen, including every negative or invalid verdict.
 function reducePairedThroughputScreen(contents, { sourceCommit } = {}) {
@@ -214,7 +400,10 @@ function reduceShippingFidelityMatrix(contents) {
 }
 module.exports = {
   CELL_EVIDENCE_SUFFIX,
+  DIFFERENTIAL_ENVIRONMENT_NAME,
+  DIFFERENTIAL_PROFILE_NAME,
   MATRIX_EVIDENCE_NAME,
+  reduceDifferentialReplayFailure,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations,
   reduceShippingFidelityMatrix,

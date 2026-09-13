@@ -6,6 +6,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 const VECTORS = require("./fixtures/unity-redaction-vectors.json");
+const DIFFERENTIAL_FIXTURE = require("./fixtures/differential-replay-failure.json");
+const DIFFERENTIAL_CONTRACT = require("../unity/differential-replay-contract.json");
 const {
   MANIFEST_NAME,
   bundleDigest,
@@ -18,7 +20,10 @@ const {
   verifyBundle,
   writeBundleManifest
 } = require("../unity/perf-evidence-bundle.js");
-const { reduceShippingFidelityMatrix } = require("../unity/perf-evidence-reducers.js");
+const {
+  reduceDifferentialReplayFailure,
+  reduceShippingFidelityMatrix
+} = require("../unity/perf-evidence-reducers.js");
 const SEAL_OPTIONS = Object.freeze({
   experimentId: "shipping-fidelity-matrix-6000.5.2f1",
   artifactClass: "shipping-fidelity-matrix",
@@ -828,4 +833,119 @@ for (const [label, raw] of [
     if (raw !== null) fs.writeFileSync(path.join(root, "comparison-output.log"), raw);
     assert.throws(() => sealBundle(root, SUBUNSUB_OPTIONS), /comparison-output.log/);
   });
+}
+
+const DIFFERENTIAL_OPTIONS = {
+  ...SEAL_OPTIONS,
+  experimentId: "native-lifecycle-replay-failure",
+  artifactClass: "differential-replay-failure",
+  reducer: "differential-replay-failure-v1"
+};
+const reduceDifferential = (root) =>
+  reduceDifferentialReplayFailure(contentsOf(root), DIFFERENTIAL_OPTIONS);
+const observation = (state) => ({ ...DIFFERENTIAL_FIXTURE.observation, state });
+function replayRecord(operations, mismatchIndex) {
+  const controlTrace = operations.map((_, index) => observation(`control-${index}`));
+  const candidateTrace = operations.map((_, index) =>
+    observation(index < mismatchIndex ? `control-${index}` : `candidate-${index}`)
+  );
+  return { operations, controlTrace, candidateTrace, mismatchIndex, category: "state" };
+}
+function writeDifferentialBundle(root = temporaryDirectory()) {
+  fs.mkdirSync(path.join(root, "replays"));
+  writeJson(
+    path.join(root, "differential-replay-environment.json"),
+    DIFFERENTIAL_FIXTURE.environment
+  );
+  writeJson(path.join(root, "differential-replay-profile.json"), DIFFERENTIAL_CONTRACT.profile);
+  fs.writeFileSync(path.join(root, "candidate-adapter.txt"), DIFFERENTIAL_FIXTURE.candidateAdapter);
+  fs.writeFileSync(path.join(root, "replay-command.txt"), DIFFERENTIAL_FIXTURE.replayCommand);
+  const operations = DIFFERENTIAL_CONTRACT.operations;
+  for (const messageKind of DIFFERENTIAL_CONTRACT.profile.messageKinds) {
+    writeJson(path.join(root, "replays", `${messageKind.toLowerCase()}.json`), {
+      schemaVersion: 1,
+      observationSchemaVersion: DIFFERENTIAL_CONTRACT.profile.observationSchemaVersion,
+      generatorVersion: DIFFERENTIAL_CONTRACT.profile.generatorVersion,
+      seed: DIFFERENTIAL_CONTRACT.profile.seed,
+      messageKind,
+      fault: DIFFERENTIAL_CONTRACT.profile.fault,
+      original: replayRecord(operations, 3),
+      minimized: replayRecord([operations[3]], 0)
+    });
+  }
+  return root;
+}
+test("differential replay failures retain and replay three deletion-minimal native cases", (t) => {
+  const root = writeDifferentialBundle();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manifest = sealBundle(root, DIFFERENTIAL_OPTIONS);
+  const manifestPath = writeBundleManifest(root, manifest);
+  const normalized = replayBundle(manifestPath).normalized;
+  assert.deepEqual(
+    normalized.cases.map((entry) => [
+      entry.messageKind,
+      entry.originalOperationCount,
+      entry.minimizedOperationCount
+    ]),
+    [
+      ["Untargeted", 6, 1],
+      ["Targeted", 6, 1],
+      ["Broadcast", 6, 1]
+    ]
+  );
+  assert.equal(normalized.classification, "state");
+  assert.equal(normalized.replayCommand, "run the focused native lifecycle fixture");
+  assert.match(normalized.candidateSha256, /^[0-9a-f]{64}$/);
+});
+for (const [label, mutate, expected] of [
+  [
+    "missing message kind",
+    (root) => fs.rmSync(path.join(root, "replays/broadcast.json")),
+    /broadcast\.json is required/
+  ],
+  [
+    "wrong generator profile",
+    (root) =>
+      mutateJson(root, "differential-replay-profile.json", (value) =>
+        Object.assign(value, { generatorVersion: 11 })
+      ),
+    /reviewed native lifecycle profile/
+  ],
+  [
+    "source disagreement",
+    (root) =>
+      mutateJson(root, "differential-replay-environment.json", (value) =>
+        Object.assign(value, { sourceCommit: "a".repeat(40) })
+      ),
+    /source identity/
+  ],
+  [
+    "false mismatch",
+    (root) =>
+      mutateJson(root, "replays/untargeted.json", (value) =>
+        Object.assign(value.minimized, { candidateTrace: [observation("control-0")] })
+      ),
+    /first observable mismatch/
+  ],
+  [
+    "non-minimal operation",
+    (root) =>
+      mutateJson(root, "replays/targeted.json", (value) =>
+        Object.assign(value.minimized.operations[0], { kind: "Emit" })
+      ),
+    /deletion-minimal/
+  ]
+]) {
+  test(`differential replay evidence rejects ${label}`, (t) => {
+    const root = writeDifferentialBundle();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    mutate(root);
+    assert.throws(() => reduceDifferential(root), expected);
+  });
+}
+function mutateJson(root, relativePath, mutate) {
+  const file = path.join(root, relativePath);
+  const value = JSON.parse(fs.readFileSync(file, "utf8"));
+  mutate(value);
+  writeJson(file, value);
 }

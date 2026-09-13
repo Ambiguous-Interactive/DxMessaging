@@ -1194,6 +1194,7 @@ namespace DxMessaging.Tests.Runtime
             IReadOnlyList<BusTraceObservation> candidate
         )
         {
+            // SYNC: replayMismatchCategory in scripts/unity/perf-evidence-reducers.js.
             if (control == null)
             {
                 throw new ArgumentNullException(nameof(control));
