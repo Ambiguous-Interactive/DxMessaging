@@ -422,16 +422,23 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(EvaluateMutation(minimal)?.Category, Is.EqualTo("callbacks"), report);
         }
 
-        [Test]
-        public void GeneratedActivityReplayMatchesThroughNativeOwners(
+        [UnityTest]
+        [Category("UnityRuntime")]
+        public IEnumerator GeneratedLifecycleReplayMatchesAndShrinksDestroyedHostMutation(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
         {
-            // One bounded native seed supplements the larger managed replay matrix.
-            BusTraceSequence sequence = DifferentialBusTrace.Generate(scenario, 17, 32, 7);
-            IReadOnlyList<BusTraceObservation> control = Replay(sequence);
-            IReadOnlyList<BusTraceObservation> candidate = Replay(sequence);
+            _ownedScene = SceneManager.CreateScene("GeneratedDifferentialScene-" + scenario.Kind);
+            yield return null;
+            BusTraceSequence sequence = DifferentialBusTrace.Generate(
+                scenario,
+                17,
+                32,
+                BusTraceSequence.NativeLifecycleGeneratorVersion
+            );
+            IReadOnlyList<BusTraceObservation> control = Replay(sequence, _ownedScene);
+            IReadOnlyList<BusTraceObservation> candidate = Replay(sequence, _ownedScene);
             BusTraceMismatch mismatch = DifferentialBusTrace.Compare(control, candidate);
             string report = mismatch?.BuildReport(sequence) ?? Report(sequence, control);
             Assert.That(mismatch, Is.Null, report);
@@ -451,10 +458,67 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                 }
             }
+
+            BusTraceSequence lifecycleOnly = DifferentialBusTrace.Generate(
+                scenario,
+                509,
+                6,
+                BusTraceSequence.NativeLifecycleGeneratorVersion
+            );
+            BusTraceMismatch EvaluateDestroyMutation(BusTraceSequence input) =>
+                DifferentialBusTrace.Compare(
+                    Replay(input, _ownedScene),
+                    Replay(input, _ownedScene, ignoreHostDestroy: true)
+                );
+            BusTraceMismatch destroyMismatch = EvaluateDestroyMutation(lifecycleOnly);
+            Assert.That(
+                destroyMismatch,
+                Is.Not.Null,
+                Report(lifecycleOnly, Replay(lifecycleOnly, _ownedScene))
+            );
+            Assert.That(
+                destroyMismatch.Category,
+                Is.EqualTo("state"),
+                destroyMismatch.BuildReport(lifecycleOnly)
+            );
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
+                lifecycleOnly,
+                EvaluateDestroyMutation
+            );
+            CollectionAssert.AreEqual(
+                new[] { BusTraceOperationKind.DestroyHost },
+                minimal.Operations.Select(operation => operation.Kind),
+                destroyMismatch.BuildReport(lifecycleOnly)
+            );
+            Assert.That(
+                DifferentialBusTrace.IsValid(minimal),
+                Is.True,
+                destroyMismatch.BuildReport(lifecycleOnly)
+            );
+            Assert.That(
+                EvaluateDestroyMutation(minimal)?.Category,
+                Is.EqualTo("state"),
+                destroyMismatch.BuildReport(lifecycleOnly)
+            );
         }
 
         private IReadOnlyList<BusTraceObservation> Replay(BusTraceSequence sequence) =>
             DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind));
+
+        private IReadOnlyList<BusTraceObservation> Replay(
+            BusTraceSequence sequence,
+            Scene lifecycleScene,
+            bool ignoreHostDestroy = false
+        ) =>
+            DifferentialBusTrace.Replay(
+                sequence,
+                kind =>
+                    CreateAdapter(
+                        kind,
+                        lifecycleScene: lifecycleScene,
+                        ignoreHostDestroy: ignoreHostDestroy
+                    )
+            );
 
         private BusTraceMismatch EvaluateMutation(BusTraceSequence sequence) =>
             DifferentialBusTrace.Compare(
@@ -471,7 +535,9 @@ namespace DxMessaging.Tests.Runtime.Core
             bool startsActive = true,
             bool receiveWhileDisabled = false,
             Action<int, GameObject> configureHost = null,
-            Action<int> onCallback = null
+            Action<int> onCallback = null,
+            Scene lifecycleScene = default,
+            bool ignoreHostDestroy = false
         )
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
@@ -494,7 +560,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 startsActive,
                 receiveWhileDisabled
             );
-            return new NativeHostAdapter(scenario, bus, owners, ignoreDisable, onCallback);
+            return new NativeHostAdapter(
+                scenario,
+                bus,
+                owners,
+                ignoreDisable,
+                onCallback,
+                lifecycleScene,
+                ignoreHostDestroy
+            );
         }
 
         private static string Report(
@@ -542,19 +616,26 @@ namespace DxMessaging.Tests.Runtime.Core
             private readonly NativeOwners _owners;
             private readonly bool _ignoreDisable;
             private readonly Action<int> _onCallback;
+            private readonly Scene _lifecycleScene;
+            private readonly bool _ignoreHostDestroy;
+            private string _lifecycleObservation = string.Empty;
 
             internal NativeHostAdapter(
                 MessageScenario scenario,
                 MessageBus bus,
                 NativeOwners owners,
                 bool ignoreDisable,
-                Action<int> onCallback
+                Action<int> onCallback,
+                Scene lifecycleScene,
+                bool ignoreHostDestroy
             )
                 : base(scenario, bus, reset: bus.ResetState, tokenFactory: owners.CreateToken)
             {
                 _owners = owners;
                 _ignoreDisable = ignoreDisable;
                 _onCallback = onCallback;
+                _lifecycleScene = lifecycleScene;
+                _ignoreHostDestroy = ignoreHostDestroy;
             }
 
             protected override void OnCallback(int slot, IMessage message) =>
@@ -574,12 +655,49 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
 
+            protected override void ExecuteHostLifecycle(BusTraceOperation operation)
+            {
+                MessagingComponent owner = _owners.Components[operation.Token];
+                switch (operation.Kind)
+                {
+                    case BusTraceOperationKind.MoveHostToScene:
+                        if (!_lifecycleScene.IsValid() || !_lifecycleScene.isLoaded)
+                        {
+                            throw new InvalidOperationException(
+                                "Native lifecycle replay requires a loaded owned scene."
+                            );
+                        }
+                        SceneManager.MoveGameObjectToScene(owner.gameObject, _lifecycleScene);
+                        _lifecycleObservation =
+                            $"move:{operation.Token}:{owner.gameObject.scene.name}";
+                        break;
+                    case BusTraceOperationKind.PersistHost:
+                        UnityEngine.Object.DontDestroyOnLoad(owner.gameObject);
+                        _lifecycleObservation =
+                            $"persist:{operation.Token}:{owner.gameObject.scene.name}";
+                        break;
+                    case BusTraceOperationKind.DestroyHost:
+                        if (!_ignoreHostDestroy)
+                        {
+                            UnityEngine.Object.DestroyImmediate(owner.gameObject);
+                        }
+                        _lifecycleObservation =
+                            $"destroy:{operation.Token}:{(owner == null ? "destroyed" : "alive")}";
+                        break;
+                    default:
+                        base.ExecuteHostLifecycle(operation);
+                        break;
+                }
+            }
+
             // The owner hides its handler. Report observable native state below instead of inferring its flag.
             protected override string DescribeHandlerActivity() => "native-owner";
 
             protected override string DescribeAdapterState()
             {
-                StringBuilder state = new("; adapter=UnityHostSetActive");
+                StringBuilder state = new(
+                    "; adapter=UnityHostSetActive; lifecycle=" + _lifecycleObservation
+                );
                 for (int slot = 0; slot < _owners.Components.Length; ++slot)
                 {
                     MessagingComponent owner = _owners.Components[slot];
@@ -599,6 +717,17 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                 }
                 return state.ToString();
+            }
+
+            protected override void DisposeAdapterState()
+            {
+                foreach (MessagingComponent owner in _owners.Components)
+                {
+                    if (owner != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(owner.gameObject);
+                    }
+                }
             }
 
             protected override void DisposeToken(int slot)

@@ -32,6 +32,9 @@ namespace DxMessaging.Tests.Runtime
         DisposeGlobalOverride,
         ReplaceGlobalBus,
         EmitUntyped,
+        MoveHostToScene,
+        PersistHost,
+        DestroyHost,
     }
 
     /// <summary>Replay input with stable logical token identity, route, payload, and priority.</summary>
@@ -138,6 +141,7 @@ namespace DxMessaging.Tests.Runtime
     internal sealed class BusTraceSequence
     {
         internal const int GeneratorVersion = 11;
+        internal const int NativeLifecycleGeneratorVersion = 12;
         internal const int HandleSlotCount = 8;
         internal const int TokenCount = 4;
         internal const int MaxOperations = 256;
@@ -151,7 +155,7 @@ namespace DxMessaging.Tests.Runtime
         {
             Scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
             Seed = seed;
-            if (generatorVersion < 1 || GeneratorVersion < generatorVersion)
+            if (generatorVersion < 1 || NativeLifecycleGeneratorVersion < generatorVersion)
             {
                 throw new ArgumentOutOfRangeException(nameof(generatorVersion));
             }
@@ -285,6 +289,10 @@ namespace DxMessaging.Tests.Runtime
             if (length < 0 || BusTraceSequence.MaxOperations < length)
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (generatorVersion == BusTraceSequence.NativeLifecycleGeneratorVersion)
+            {
+                return GenerateNativeLifecycle(scenario, seed, length);
             }
             if (generatorVersion == 11)
             {
@@ -552,11 +560,54 @@ namespace DxMessaging.Tests.Runtime
             return new BusTraceSequence(scenario, seed, operations, 11);
         }
 
+        private static BusTraceSequence GenerateNativeLifecycle(
+            MessageScenario scenario,
+            uint seed,
+            int length
+        )
+        {
+            const int lifecycleOperationCount = 6;
+            int managedLength = Math.Max(0, length - lifecycleOperationCount);
+            List<BusTraceOperation> operations = new(
+                Generate(scenario, seed, managedLength, 7).Operations
+            );
+            int persistentSlot = (int)((seed == 0 ? 1U : seed) % BusTraceSequence.TokenCount);
+            int destroyedSlot = (persistentSlot + 1) % BusTraceSequence.TokenCount;
+            BusTraceOperation[] lifecycle =
+            {
+                new(BusTraceOperationKind.MoveHostToScene, token: persistentSlot),
+                new(BusTraceOperationKind.PersistHost, token: persistentSlot),
+                new(BusTraceOperationKind.MoveHostToScene, token: destroyedSlot),
+                new(BusTraceOperationKind.DestroyHost, token: destroyedSlot),
+                new(BusTraceOperationKind.Emit, value: unchecked((int)(seed ^ 0x9e3779b9u))),
+                new(BusTraceOperationKind.Trim, value: 1),
+            };
+            foreach (BusTraceOperation operation in lifecycle)
+            {
+                if (operations.Count == length)
+                {
+                    break;
+                }
+                operations.Add(operation);
+            }
+            return new BusTraceSequence(
+                scenario,
+                seed,
+                operations,
+                BusTraceSequence.NativeLifecycleGeneratorVersion
+            );
+        }
+
         internal static bool IsGlobalOverride(BusTraceOperationKind kind) =>
             kind == BusTraceOperationKind.AcquireGlobalOverride
             || kind == BusTraceOperationKind.CopyGlobalOverride
             || kind == BusTraceOperationKind.DisposeGlobalOverride
             || kind == BusTraceOperationKind.ReplaceGlobalBus;
+
+        internal static bool IsNativeLifecycle(BusTraceOperationKind kind) =>
+            kind == BusTraceOperationKind.MoveHostToScene
+            || kind == BusTraceOperationKind.PersistHost
+            || kind == BusTraceOperationKind.DestroyHost;
 
         /*
             Only logical issuance and alias dependencies are modeled, never the production
@@ -865,6 +916,7 @@ namespace DxMessaging.Tests.Runtime
             }
             bool[] registered = new bool[BusTraceSequence.TokenCount];
             bool[] removed = new bool[BusTraceSequence.TokenCount];
+            bool[] liveHosts = { true, true, true, true };
             HandleDependencies handles = new();
             GlobalOverrideDependencies leases = new();
             foreach (BusTraceOperation operation in sequence.Operations)
@@ -951,6 +1003,26 @@ namespace DxMessaging.Tests.Runtime
                 }
                 switch (operation.Kind)
                 {
+                    case BusTraceOperationKind.MoveHostToScene:
+                    case BusTraceOperationKind.PersistHost:
+                        if (
+                            sequence.Version < BusTraceSequence.NativeLifecycleGeneratorVersion
+                            || !liveHosts[operation.Token]
+                        )
+                        {
+                            return false;
+                        }
+                        break;
+                    case BusTraceOperationKind.DestroyHost:
+                        if (
+                            sequence.Version < BusTraceSequence.NativeLifecycleGeneratorVersion
+                            || !liveHosts[operation.Token]
+                        )
+                        {
+                            return false;
+                        }
+                        liveHosts[operation.Token] = false;
+                        break;
                     case BusTraceOperationKind.Register:
                         if (registered[operation.Token])
                         {
