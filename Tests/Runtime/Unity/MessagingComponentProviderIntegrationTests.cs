@@ -182,15 +182,68 @@ namespace DxMessaging.Tests.Runtime.Unity
         }
 
         [Test]
-        public void CreateRegistrationBuilderUsesConfiguredProviderBus()
+        public void CreateRegistrationBuilderTracksConfiguredProviderAvailability()
         {
-            MessageBus messageBus = new();
-            TestProvider provider = new(messageBus);
+            MessageBus providerBus = new();
+            TestScriptableMessageBusProvider provider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
+            provider.Configure(providerBus);
 
             GameObject owner = Track(new GameObject("BuilderOwner"));
             MessagingComponent messagingComponent = owner.AddComponent<MessagingComponent>();
             messagingComponent.Configure(provider, MessageBusRebindMode.RebindActive);
 
+            AssertRegistrationBuilderUsesBus(
+                messagingComponent,
+                providerBus,
+                "A live configured provider should supply the registration bus."
+            );
+
+            Object.DestroyImmediate(provider);
+
+            AssertRegistrationBuilderUsesBus(
+                messagingComponent,
+                null,
+                "A destroyed configured provider should use the builder's global-bus fallback."
+            );
+
+            MessageBus serializedBus = new();
+            TestScriptableMessageBusProvider serializedProvider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
+            serializedProvider.Configure(serializedBus);
+            MessageBus runtimeBus = new();
+            TestScriptableMessageBusProvider runtimeProvider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
+            runtimeProvider.Configure(runtimeBus);
+            MessageBusProviderHandle handle = new MessageBusProviderHandle(
+                serializedProvider
+            ).WithRuntimeProvider(runtimeProvider);
+            messagingComponent.Configure(handle, MessageBusRebindMode.RebindActive);
+
+            AssertRegistrationBuilderUsesBus(
+                messagingComponent,
+                runtimeBus,
+                "A live runtime provider should override the serialized provider."
+            );
+
+            Object.DestroyImmediate(runtimeProvider);
+
+            AssertRegistrationBuilderUsesBus(
+                messagingComponent,
+                serializedBus,
+                "Destroying the runtime override should reveal the serialized provider."
+            );
+        }
+
+        private static void AssertRegistrationBuilderUsesBus(
+            MessagingComponent messagingComponent,
+            IMessageBus expectedBus,
+            string message
+        )
+        {
             IMessageRegistrationBuilder builder = messagingComponent.CreateRegistrationBuilder();
             using (
                 MessageRegistrationLease lease = builder.Build(
@@ -198,8 +251,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                 )
             )
             {
-                Assert.AreSame(messageBus, lease.MessageBus);
-                Assert.IsFalse(lease.Token.Enabled);
+                Assert.AreSame(expectedBus, lease.MessageBus, message);
+                Assert.IsFalse(
+                    lease.Token.Enabled,
+                    "A newly built registration token should remain disabled by default."
+                );
             }
         }
 

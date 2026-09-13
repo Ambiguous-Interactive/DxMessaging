@@ -50,7 +50,8 @@ namespace DxMessaging.Unity
         internal bool AutoConfigureSerializedProviderOnAwake =>
             autoConfigureSerializedProviderOnAwake;
 
-        internal bool HasRuntimeProvider => _messageBusProvider != null;
+        internal bool HasRuntimeProvider =>
+            MessageBusProviderHandle.IsAvailable(_messageBusProvider);
 
         internal bool HasMessageBusOverride => _messageBusOverride != null;
 
@@ -152,7 +153,8 @@ namespace DxMessaging.Unity
         /// </summary>
         /// <param name="messageBusProvider">
         /// Provider to use for subsequent handler/token resolution. Pass <c>null</c> to replace any
-        /// prior explicit bus with the global fallback.
+        /// prior explicit bus with the global fallback. A destroyed Unity-backed provider is also
+        /// treated as unavailable.
         /// </param>
         /// <param name="rebindMode">Controls whether existing listeners should migrate immediately.</param>
         public void Configure(
@@ -160,12 +162,14 @@ namespace DxMessaging.Unity
             MessageBusRebindMode rebindMode
         )
         {
-            _messageBusProvider = messageBusProvider;
+            _messageBusProvider = MessageBusProviderHandle.IsAvailable(messageBusProvider)
+                ? messageBusProvider
+                : null;
             _messageBusOverride = null;
 
             _serializedProviderHandle =
-                messageBusProvider != null
-                    ? MessageBusProviderHandle.FromProvider(messageBusProvider)
+                _messageBusProvider != null
+                    ? MessageBusProviderHandle.FromProvider(_messageBusProvider)
                     : MessageBusProviderHandle.Empty;
             ApplyMessageBusConfiguration(rebindMode);
         }
@@ -408,9 +412,10 @@ namespace DxMessaging.Unity
                 return _messageBusOverride;
             }
 
-            if (_messageBusProvider != null)
+            IMessageBusProvider provider = ResolveConfiguredProvider();
+            if (provider != null)
             {
-                IMessageBus providedBus = _messageBusProvider.Resolve();
+                IMessageBus providedBus = provider.Resolve();
                 if (providedBus != null)
                 {
                     return providedBus;
@@ -422,16 +427,10 @@ namespace DxMessaging.Unity
 
         private IMessageBusProvider ResolveRegistrationProvider()
         {
-            if (_messageBusProvider != null)
+            IMessageBusProvider provider = ResolveConfiguredProvider();
+            if (provider != null)
             {
-                return _messageBusProvider;
-            }
-
-            if (
-                _serializedProviderHandle.TryGetProvider(out IMessageBusProvider providerFromHandle)
-            )
-            {
-                return providerFromHandle;
+                return provider;
             }
 
             if (_messageBusOverride != null)
@@ -440,6 +439,24 @@ namespace DxMessaging.Unity
             }
 
             return null;
+        }
+
+        private IMessageBusProvider ResolveConfiguredProvider()
+        {
+            if (MessageBusProviderHandle.IsAvailable(_messageBusProvider))
+            {
+                return _messageBusProvider;
+            }
+
+            _messageBusProvider = null;
+            if (
+                _serializedProviderHandle.TryGetProvider(out IMessageBusProvider providerFromHandle)
+            )
+            {
+                _messageBusProvider = providerFromHandle;
+            }
+
+            return _messageBusProvider;
         }
 
 #if UNITY_EDITOR

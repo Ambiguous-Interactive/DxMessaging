@@ -339,6 +339,7 @@ namespace DxMessaging.Tests.Runtime.Core
             AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
                 ProviderConfigurationClearKind.EmptyHandle
             );
+            AssertMessageAwareComponentDestroyedProviderBeforeAwakeRevertsToGlobalBus();
         }
 
         [UnityTest]
@@ -472,6 +473,55 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        private void AssertMessageAwareComponentDestroyedProviderBeforeAwakeRevertsToGlobalBus()
+        {
+            MessageBus providerBus = new();
+            IMessageBus globalBus = MessageHandler.MessageBus;
+            TestScriptableMessageBusProvider provider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            provider.Configure(providerBus);
+            using (
+                LeakWatcher globalWatcher = new(globalBus, label: "MessageAwareDestroyed-global")
+            )
+            using (
+                LeakWatcher providerWatcher = new(
+                    providerBus,
+                    label: "MessageAwareDestroyed-provider"
+                )
+            )
+            {
+                GameObject go = new("MessageAwareDestroyedProvider");
+                go.SetActive(false);
+                _spawned.Add(go);
+                BusAwareComponent component = go.AddComponent<BusAwareComponent>();
+                component.ConfigureMessageBus(provider, MessageBusRebindMode.RebindActive);
+
+                Object.DestroyImmediate(provider);
+                go.SetActive(true);
+
+                SimpleUntargetedMessage message = new();
+                message.EmitUntargeted(providerBus);
+                int receivedFromDestroyedProvider = component.Received;
+
+                message.EmitUntargeted();
+                int receivedAfterGlobalBus = component.Received;
+
+                _ = _spawned.Remove(go);
+                Object.DestroyImmediate(go);
+
+                Assert.AreEqual(
+                    0,
+                    receivedFromDestroyedProvider,
+                    "A provider destroyed before Awake should not retain its former bus."
+                );
+                Assert.AreEqual(
+                    1,
+                    receivedAfterGlobalBus,
+                    "A provider destroyed before Awake should restore the global bus."
+                );
+            }
+        }
+
         private sealed class BusAwareComponent : MessageAwareComponent
         {
             internal int Received { get; private set; }
@@ -480,6 +530,21 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 base.RegisterMessageHandlers();
                 _ = Token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++Received);
+            }
+        }
+
+        private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
+        {
+            private IMessageBus _bus;
+
+            internal void Configure(IMessageBus bus)
+            {
+                _bus = bus;
+            }
+
+            public override IMessageBus Resolve()
+            {
+                return _bus;
             }
         }
 

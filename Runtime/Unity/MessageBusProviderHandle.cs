@@ -83,7 +83,7 @@ namespace DxMessaging.Unity
             return false;
         }
 
-        private static bool IsAvailable(IMessageBusProvider provider) =>
+        internal static bool IsAvailable(IMessageBusProvider provider) =>
             provider != null
             && (!(provider is UnityEngine.Object unityProvider) || unityProvider != null);
 

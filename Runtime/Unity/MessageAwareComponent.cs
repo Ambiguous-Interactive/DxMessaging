@@ -111,20 +111,11 @@ namespace DxMessaging.Unity
         protected virtual void Awake()
         {
             _messagingComponent = GetComponent<MessagingComponent>();
-            if (
-                _configuredMessageBusProvider == null
-                && _configuredMessageBusProviderHandle.TryGetProvider(
-                    out IMessageBusProvider handleProvider
-                )
-            )
-            {
-                _configuredMessageBusProvider = handleProvider;
-            }
-
-            if (_configuredMessageBusProvider != null)
+            IMessageBusProvider configuredProvider = ResolveConfiguredMessageBusProvider();
+            if (configuredProvider != null)
             {
                 _messagingComponent.Configure(
-                    _configuredMessageBusProvider,
+                    configuredProvider,
                     MessageBusRebindMode.PreserveRegistrations
                 );
             }
@@ -281,7 +272,8 @@ namespace DxMessaging.Unity
         /// </summary>
         /// <param name="messageBusProvider">
         /// Provider used to resolve buses for this component. Pass <see langword="null"/> to replace
-        /// any prior direct bus with the global fallback.
+        /// any prior direct bus with the global fallback. A destroyed Unity-backed provider is also
+        /// treated as unavailable.
         /// </param>
         /// <param name="rebindMode">Controls whether existing handlers should migrate to the provided bus immediately.</param>
         public virtual void ConfigureMessageBus(
@@ -289,12 +281,14 @@ namespace DxMessaging.Unity
             MessageBusRebindMode rebindMode
         )
         {
-            _configuredMessageBusProvider = messageBusProvider;
+            _configuredMessageBusProvider = MessageBusProviderHandle.IsAvailable(messageBusProvider)
+                ? messageBusProvider
+                : null;
             _configuredMessageBus = null;
-            if (messageBusProvider != null)
+            if (_configuredMessageBusProvider != null)
             {
                 _configuredMessageBusProviderHandle = MessageBusProviderHandle.FromProvider(
-                    messageBusProvider
+                    _configuredMessageBusProvider
                 );
             }
             else
@@ -331,6 +325,26 @@ namespace DxMessaging.Unity
             }
 
             _messagingComponent?.Configure(providerHandle, rebindMode);
+        }
+
+        private IMessageBusProvider ResolveConfiguredMessageBusProvider()
+        {
+            if (MessageBusProviderHandle.IsAvailable(_configuredMessageBusProvider))
+            {
+                return _configuredMessageBusProvider;
+            }
+
+            _configuredMessageBusProvider = null;
+            if (
+                _configuredMessageBusProviderHandle.TryGetProvider(
+                    out IMessageBusProvider handleProvider
+                )
+            )
+            {
+                _configuredMessageBusProvider = handleProvider;
+            }
+
+            return _configuredMessageBusProvider;
         }
 
         /// <summary>
