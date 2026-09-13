@@ -507,7 +507,7 @@ function structuredText(text, visit, format, depth = 0, rewrite = true) {
     throw new StructuredArtifactError(reason);
   };
   if (depth > 8) invalid("nested-structure-depth");
-  const scalar = (value, key, element) => {
+  const scalar = (value, key = "", element) => {
     if (contextualPattern(key, value, element)) return visit(value, key, element);
     return (
       (/^[\[\{"<]/.test(value.trimStart())
@@ -675,7 +675,7 @@ function contextualPattern(key, value, element) {
   });
 }
 function scalarCacheKey(value, key, element) {
-  return value.length <= 4096 && key.length <= 256 && (element?.length ?? 0) <= 256 ? JSON.stringify([key, element ?? null, value]) : undefined;
+  return value.length <= 4096 && (key?.length ?? 0) <= 256 && (element?.length ?? 0) <= 256 ? JSON.stringify([key ?? null, element ?? null, value]) : undefined;
 }
 const STRUCTURE_FINDING = Object.freeze({ id: "unsafe-structured-data", description: "unsupported structured data" });
 function findSensitiveData(text, format) {
