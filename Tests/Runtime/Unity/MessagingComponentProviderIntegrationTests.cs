@@ -95,6 +95,92 @@ namespace DxMessaging.Tests.Runtime.Unity
         }
 
         [Test]
+        public void InstallerExplicitBusOverridesProviderForChildren()
+        {
+            MessageBus providerBus = new();
+            MessageBus explicitBus = new();
+            TestProvider provider = new(providerBus);
+
+            GameObject root = Track(new GameObject("InstallerPrecedenceRoot"));
+            MessagingComponentInstaller installer =
+                root.AddComponent<MessagingComponentInstaller>();
+            installer.SetProvider(MessageBusProviderHandle.FromProvider(provider));
+            installer.SetExplicitMessageBus(explicitBus);
+
+            GameObject child = Track(new GameObject("InstallerPrecedenceChild"));
+            child.transform.SetParent(root.transform);
+            MessagingComponent messagingComponent = child.AddComponent<MessagingComponent>();
+
+            installer.ApplyConfiguration();
+
+            IMessageRegistrationBuilder builder = messagingComponent.CreateRegistrationBuilder();
+            using (
+                MessageRegistrationLease lease = builder.Build(
+                    new MessageRegistrationBuildOptions()
+                )
+            )
+            {
+                Assert.AreSame(
+                    explicitBus,
+                    lease.MessageBus,
+                    "The explicit installer bus should override its configured provider."
+                );
+            }
+        }
+
+        [Test]
+        public void InstallerRegistrationBuilderPrefersExplicitBusOverProvider()
+        {
+            MessageBus providerBus = new();
+            MessageBus explicitBus = new();
+            TestProvider provider = new(providerBus);
+
+            GameObject owner = Track(new GameObject("InstallerBuilderPrecedenceOwner"));
+            MessagingComponentInstaller installer =
+                owner.AddComponent<MessagingComponentInstaller>();
+            installer.SetProvider(MessageBusProviderHandle.FromProvider(provider));
+            installer.SetExplicitMessageBus(explicitBus);
+
+            IMessageRegistrationBuilder builder = installer.CreateRegistrationBuilder();
+            using (
+                MessageRegistrationLease lease = builder.Build(
+                    new MessageRegistrationBuildOptions()
+                )
+            )
+            {
+                Assert.AreSame(
+                    explicitBus,
+                    lease.MessageBus,
+                    "The installer builder should use the explicit bus before its provider."
+                );
+            }
+        }
+
+        [Test]
+        public void InstallerRegistrationBuilderFallsBackToProviderAfterExplicitBusCleared()
+        {
+            MessageBus providerBus = new();
+            TestProvider provider = new(providerBus);
+
+            GameObject owner = Track(new GameObject("InstallerBuilderFallbackOwner"));
+            MessagingComponentInstaller installer =
+                owner.AddComponent<MessagingComponentInstaller>();
+            installer.SetProvider(MessageBusProviderHandle.FromProvider(provider));
+            installer.SetExplicitMessageBus(new MessageBus());
+            installer.SetExplicitMessageBus(null);
+
+            IMessageRegistrationBuilder builder = installer.CreateRegistrationBuilder();
+            using (
+                MessageRegistrationLease lease = builder.Build(
+                    new MessageRegistrationBuildOptions()
+                )
+            )
+            {
+                Assert.AreSame(providerBus, lease.MessageBus);
+            }
+        }
+
+        [Test]
         public void CreateRegistrationBuilderUsesConfiguredProviderBus()
         {
             MessageBus messageBus = new();
