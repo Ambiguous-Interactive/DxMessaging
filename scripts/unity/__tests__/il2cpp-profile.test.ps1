@@ -208,7 +208,7 @@ try {
         $node -is [System.Management.Automation.Language.CommandAst] -and
             $node.GetCommandName() -ceq 'Write-NativeBuildInputEvidence'
     }, $true))
-    Assert-That 'shipping and canonical standalone both retain native inputs after their build' ($nativeCallSites.Count -eq 2)
+    Assert-That 'clean shipping, incremental shipping, and canonical standalone retain native inputs after their build' ($nativeCallSites.Count -eq 3)
 
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
@@ -477,6 +477,61 @@ $observerSource
                 Assert-Fails "incremental output cannot pass clean profile when labeled $claimedKind" -ExpectedMessage 'buildOptions.cleanBuildCache differs' {
                     & $validatorPath -ProfilePath $profilePath -EvidencePath $evidencePath -EvidenceKind buildOptions -ExpectedUnityVersion $testUnityVersion
                 }
+            }
+            $incrementalProfilePath = Join-Path $repoRoot '.github/perf/shipping-fidelity-il2cpp-profile.v1.json'
+            $incrementalProfile = Get-Content -LiteralPath $incrementalProfilePath -Raw | ConvertFrom-Json
+            $incrementalProfileSha256 = (
+                Get-FileHash -LiteralPath $incrementalProfilePath -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+            $incrementalEvidence = Copy-JsonValue -Value $evidence
+            $incrementalEvidence.profileId = $incrementalProfile.profileId
+            $incrementalEvidence.profileSha256 = $incrementalProfileSha256
+            $incrementalEvidence.values = Copy-JsonValue -Value $incrementalProfile.buildOptions
+            $incrementalEvidence.values.cleanBuildCache = $false
+            $incrementalEvidence.buildProvenance.playerBuildKind = 'incremental'
+            $incrementalEvidence.buildProvenance.libraryStateBeforeBuild = 'populated'
+            $incrementalEvidence.buildProvenance.beeStateBeforeBuild = 'populated'
+            $incrementalEvidence.buildProvenance.il2cppCacheStateBeforeBuild = 'populated'
+            $incrementalEvidence.buildProvenance.playerOutputStateBeforeBuild = 'populated'
+            Write-TestJson -Path $evidencePath -Value $incrementalEvidence
+            & $validatorPath `
+                -ProfilePath $incrementalProfilePath `
+                -EvidencePath $evidencePath `
+                -EvidenceKind buildOptions `
+                -ExpectedUnityVersion $testUnityVersion `
+                -ExpectedBuildFactor incremental
+            foreach ($requiredPopulatedField in @(
+                'libraryStateBeforeBuild',
+                'beeStateBeforeBuild',
+                'playerOutputStateBeforeBuild'
+            )) {
+                $changed = Copy-JsonValue -Value $incrementalEvidence
+                $changed.buildProvenance.$requiredPopulatedField = 'empty'
+                Write-TestJson -Path $evidencePath -Value $changed
+                Assert-Fails "incremental build requires populated $requiredPopulatedField" -ExpectedMessage 'buildProvenance' {
+                    & $validatorPath `
+                        -ProfilePath $incrementalProfilePath `
+                        -EvidencePath $evidencePath `
+                        -EvidenceKind buildOptions `
+                        -ExpectedUnityVersion $testUnityVersion `
+                        -ExpectedBuildFactor incremental
+                }
+            }
+            Write-TestJson -Path $evidencePath -Value $incrementalEvidence
+            Assert-Fails 'incremental evidence cannot pass as the profile build factor' -ExpectedMessage 'buildOptions.cleanBuildCache differs' {
+                & $validatorPath `
+                    -ProfilePath $incrementalProfilePath `
+                    -EvidencePath $evidencePath `
+                    -EvidenceKind buildOptions `
+                    -ExpectedUnityVersion $testUnityVersion
+            }
+            Assert-Fails 'build factor override is rejected for runtime evidence' -ExpectedMessage 'valid only for buildOptions evidence' {
+                & $validatorPath `
+                    -ProfilePath $incrementalProfilePath `
+                    -EvidencePath $evidencePath `
+                    -EvidenceKind runtime `
+                    -ExpectedUnityVersion $testUnityVersion `
+                    -ExpectedBuildFactor incremental
             }
         }
         Write-TestJson -Path $evidencePath -Value $evidence

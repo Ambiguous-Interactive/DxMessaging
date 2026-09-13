@@ -8,7 +8,8 @@ param(
     [Parameter(Mandatory = $true)][string]$CachePath,
     [string]$RepoRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string]$RunnerPath = (Join-Path $PSScriptRoot 'run-ci-tests.ps1'),
-    [switch]$RetainNativePayload
+    [switch]$RetainNativePayload,
+    [switch]$RunIncrementalHighSemantic
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +17,9 @@ $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path -LiteralPath $RunnerPath -PathType Leaf)) {
     throw "Unity CI runner not found: $RunnerPath"
+}
+if ($RetainNativePayload -and $RunIncrementalHighSemantic) {
+    throw 'Native payload retention and the incremental build factor are separate manual evidence modes.'
 }
 
 $shippingProfiles = @(
@@ -178,6 +182,7 @@ foreach ($shippingProfile in $shippingProfiles) {
         $shippingCaseId = "$($shippingProfile.Level)-$($shippingTopology.Id)"
         $cellSucceeded = $false
         try {
+            $runIncremental = $RunIncrementalHighSemantic -and $shippingCaseId -ceq 'high-semantic-18'
             & $RunnerPath `
                 -UnityVersion $UnityVersion `
                 -UnityInstallRoot $UnityInstallRoot `
@@ -190,6 +195,7 @@ foreach ($shippingProfile in $shippingProfiles) {
                 -CanonicalProfilePath (Join-Path $RepoRoot $shippingProfile.Path) `
                 -ShippingTopology $shippingTopology.Kind `
                 -ShippingMessageTypeCount $shippingTopology.MessageTypeCount `
+                -ShippingIncrementalBuild:$runIncremental `
                 -LicenseReturnOwner Central `
                 -ReleaseCodeOptimization `
                 -ReleasePlayerBuild

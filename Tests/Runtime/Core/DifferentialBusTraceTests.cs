@@ -1651,6 +1651,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     .Cast<BusTraceOperationKind>()
                     .Where(kind =>
                         !DifferentialBusTrace.IsGlobalOverride(kind)
+                        && !DifferentialBusTrace.IsNativeLifecycle(kind)
                         && kind != BusTraceOperationKind.EmitUntyped
                     ),
                 kinds,
@@ -2106,6 +2107,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     .Cast<BusTraceOperationKind>()
                     .Where(kind =>
                         !DifferentialBusTrace.IsGlobalOverride(kind)
+                        && !DifferentialBusTrace.IsNativeLifecycle(kind)
                         && kind != BusTraceOperationKind.EmitUntyped
                     ),
                 all,
@@ -3701,7 +3703,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [TestCase(0)]
-        [TestCase(BusTraceSequence.GeneratorVersion + 1)]
+        [TestCase(BusTraceSequence.NativeLifecycleGeneratorVersion + 1)]
         public void UnsupportedGeneratorVersionsAreRejected(int version)
         {
             Assert.Throws<ArgumentOutOfRangeException>(

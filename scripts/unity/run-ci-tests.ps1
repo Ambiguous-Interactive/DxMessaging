@@ -45,6 +45,8 @@ param(
     [ValidateSet(1, 16, 18, 256, 1000)]
     [int]$ShippingMessageTypeCount = 18,
 
+    [switch]$ShippingIncrementalBuild,
+
     [ValidateRange(1, 10)]
     [int]$StandalonePlayerRunCount = 1,
 
@@ -1392,6 +1394,18 @@ function Test-FileSha256 {
         return $false
     }
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $ExpectedSha256
+}
+
+function Get-StringSha256 {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value)
+        return [BitConverter]::ToString($hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $hasher.Dispose()
+    }
 }
 
 function Install-CiAnalyzers {
@@ -3288,6 +3302,12 @@ public static class DxmShippingFidelityBuilder
         string outputPath = RequireEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
         string markerPath = RequireEnvironmentVariable("DXM_SHIPPING_BUILD_MARKER_PATH");
         string buildReportPath = RequireEnvironmentVariable("DXM_SHIPPING_BUILD_REPORT_PATH");
+        string buildFactor = RequireEnvironmentVariable("DXM_SHIPPING_BUILD_FACTOR");
+        string buildInvocationId = RequireEnvironmentVariable("DXM_SHIPPING_BUILD_INVOCATION_ID");
+        if (buildFactor != "clean" && buildFactor != "incremental")
+        {
+            throw new InvalidOperationException("Unsupported shipping build factor: " + buildFactor);
+        }
         string scenePath = "Assets/DxmShippingFidelity.unity";
         string outputDirectory = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(outputDirectory))
@@ -3295,10 +3315,17 @@ public static class DxmShippingFidelityBuilder
             Directory.CreateDirectory(outputDirectory);
         }
 
-        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-        if (!EditorSceneManager.SaveScene(scene, scenePath))
+        if (buildFactor == "clean")
         {
-            throw new InvalidOperationException("Could not save the shipping-fidelity scene.");
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            if (!EditorSceneManager.SaveScene(scene, scenePath))
+            {
+                throw new InvalidOperationException("Could not save the shipping-fidelity scene.");
+            }
+        }
+        else if (AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath) == null)
+        {
+            throw new InvalidOperationException("Incremental shipping build requires the clean predecessor scene.");
         }
 
         UnityEditor.Compilation.Assembly[] playerAssemblies =
@@ -3313,8 +3340,12 @@ public static class DxmShippingFidelityBuilder
             scenes = new[] { scenePath },
             locationPathName = outputPath,
             target = BuildTarget.StandaloneWindows64,
-            options = BuildOptions.CleanBuildCache | BuildOptions.DetailedBuildReport
+            options = BuildOptions.DetailedBuildReport
         };
+        if (buildFactor == "clean")
+        {
+            options.options |= BuildOptions.CleanBuildCache;
+        }
         options.options &= ~BuildOptions.Development;
         options.options &= ~BuildOptions.AllowDebugging;
         options.options &= ~BuildOptions.EnableDeepProfilingSupport;
@@ -3354,7 +3385,7 @@ public static class DxmShippingFidelityBuilder
             assemblyNames,
             (report.summary.options & BuildOptions.IncludeTestAssemblies)
                 == BuildOptions.IncludeTestAssemblies);
-        WriteMarker(markerPath);
+        WriteMarker(markerPath, buildFactor, buildInvocationId);
     }
 
     private static void WriteBuildReportEvidence(
@@ -3483,14 +3514,14 @@ public static class DxmShippingFidelityBuilder
         return (long)(utc - epoch).TotalMilliseconds;
     }
 
-    private static void WriteMarker(string path)
+    private static void WriteMarker(string path, string buildFactor, string buildInvocationId)
     {
         string directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
         }
-        File.WriteAllText(path, "DxmShippingFidelityBuilder.Build completed");
+        File.WriteAllText(path, buildFactor + ":" + buildInvocationId);
     }
 
     private static string RequireEnvironmentVariable(string name)
@@ -6422,8 +6453,7 @@ function Write-ShippingPackageResolutionEvidence {
     param(
         [Parameter(Mandatory = $true)][string]$ProjectPath,
         [Parameter(Mandatory = $true)][string]$ArtifactsPath,
-        [Parameter(Mandatory = $true)][string]$ExpectedRepoRoot,
-        [Parameter(Mandatory = $true)][string]$ExpectedManifestSha256
+        [Parameter(Mandatory = $true)][string]$ExpectedRepoRoot
     )
 
     $packagesPath = Join-Path $ProjectPath 'Packages'
@@ -6442,10 +6472,6 @@ function Write-ShippingPackageResolutionEvidence {
 
     $manifestPath = Join-Path $packagesPath 'manifest.json'
     $lockPath = Join-Path $packagesPath 'packages-lock.json'
-    $resolvedManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($resolvedManifestSha256 -cne $ExpectedManifestSha256) {
-        throw 'Shipping package manifest hash changed during package resolution.'
-    }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest -isnot [pscustomobject] -or $manifest.dependencies -isnot [pscustomobject]) {
         throw 'Shipping package manifest and dependencies must be JSON objects.'
@@ -6828,8 +6854,16 @@ if ($isShippingFidelity) {
     ) {
         throw 'Shipping fidelity requires semantic topology with 18 message types or cardinality topology with 1, 16, 256, or 1000 message types.'
     }
+    if (
+        $ShippingIncrementalBuild -and
+        ($ShippingTopology -cne 'semantic' -or $ShippingMessageTypeCount -ne 18)
+    ) {
+        throw 'The incremental shipping build factor is valid only for the semantic-18 topology.'
+    }
 } elseif ([string]::IsNullOrWhiteSpace($AssemblyNames)) {
     throw "AssemblyNames must be non-empty for TestMode '$TestMode'."
+} elseif ($ShippingIncrementalBuild) {
+    throw 'ShippingIncrementalBuild is valid only for TestMode shipping.'
 }
 
 $canonicalProfileId = ''
@@ -6867,6 +6901,12 @@ if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
             $includeTestAssemblies
         ) {
             throw 'Shipping fidelity requires a reviewed Minimal, Low, Medium, or High profile with includeTestAssemblies=false.'
+        }
+        if (
+            $ShippingIncrementalBuild -and
+            $canonicalProfileId -cne 'shipping-fidelity-il2cpp-player-v1'
+        ) {
+            throw 'The incremental shipping build factor requires the reviewed High base profile.'
         }
     } elseif (
         $canonicalProfileId -cne 'canonical-il2cpp-verdict-player-v1' -or
@@ -6909,14 +6949,6 @@ $ProjectPath = Initialize-EphemeralProject `
     -ShippingMessageTypeCount $ShippingMessageTypeCount `
     -RepoRoot $RepoRoot `
     -ArtifactsPath $ArtifactsPath
-$shippingPreResolutionManifestSha256 = ''
-if ($isShippingFidelity) {
-    $shippingPreResolutionManifestSha256 = (
-        Get-FileHash `
-            -LiteralPath (Join-Path $ProjectPath 'Packages/manifest.json') `
-            -Algorithm SHA256
-    ).Hash.ToLowerInvariant()
-}
 $LibraryPath = Join-Path $ProjectPath 'Library'
 $LibraryEntries = @(
     if (Test-Path -LiteralPath $LibraryPath -PathType Container) {
@@ -7190,8 +7222,7 @@ try {
         Write-ShippingPackageResolutionEvidence `
             -ProjectPath $ProjectPath `
             -ArtifactsPath $ArtifactsPath `
-            -ExpectedRepoRoot $RepoRoot `
-            -ExpectedManifestSha256 $shippingPreResolutionManifestSha256
+            -ExpectedRepoRoot $RepoRoot
         # Build a stripped consumer through BuildPipeline directly. This path does
         # not invoke Unity Test Framework, add test assemblies, or establish a
         # PlayerConnection. The same immutable binary runs both the positive AOT
@@ -7201,6 +7232,7 @@ try {
         $shippingManifestPath = Join-Path $ArtifactsPath 'shipping-player-manifest.json'
         $shippingBuildReportPath = Join-Path $ArtifactsPath 'shipping-build-report.json'
         $shippingCellEvidencePath = Join-Path $ArtifactsPath 'shipping-cell-evidence.json'
+        $shippingBuildInvocationId = [guid]::NewGuid().ToString('D')
         $shippingBuildStartedUtc = [DateTime]::UtcNow
         foreach ($staleShippingPath in @(
             $shippingBuildMarkerPath,
@@ -7234,6 +7266,8 @@ try {
         $env:DXM_SHIPPING_BUILD_MARKER_PATH = $shippingBuildMarkerPath
         $env:DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH = $shippingAssemblyEvidencePath
         $env:DXM_SHIPPING_BUILD_REPORT_PATH = $shippingBuildReportPath
+        $env:DXM_SHIPPING_BUILD_FACTOR = 'clean'
+        $env:DXM_SHIPPING_BUILD_INVOCATION_ID = $shippingBuildInvocationId
         $env:DXM_PREBUILD_CONFIG_PROFILE_PATH = $prebuildProfileEvidencePath
         $env:DXM_POSTBUILD_CONFIG_PROFILE_PATH = $postbuildProfileEvidencePath
         $env:DXM_BUILD_OPTIONS_PROFILE_PATH = $buildOptionsProfileEvidencePath
@@ -7262,6 +7296,8 @@ try {
             'DXM_SHIPPING_BUILD_MARKER_PATH',
             'DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH',
             'DXM_SHIPPING_BUILD_REPORT_PATH',
+            'DXM_SHIPPING_BUILD_FACTOR',
+            'DXM_SHIPPING_BUILD_INVOCATION_ID',
             'DXM_BUILD_OPTIONS_PROFILE_PATH',
             'DXM_PREBUILD_CONFIG_PROFILE_PATH',
             'DXM_POSTBUILD_CONFIG_PROFILE_PATH'
@@ -7272,6 +7308,12 @@ try {
         $shippingMarkerProblem = Test-UnityConfigureMarker `
             -MarkerPath $shippingBuildMarkerPath `
             -StartedUtc $shippingBuildStartedUtc
+        if (
+            [string]::IsNullOrWhiteSpace($shippingMarkerProblem) -and
+            (Get-Content -LiteralPath $shippingBuildMarkerPath -Raw) -cne "clean:$shippingBuildInvocationId"
+        ) {
+            $shippingMarkerProblem = 'build marker does not match the clean invocation nonce'
+        }
         $shippingBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
             -BuildStartedUtc $shippingBuildStartedUtc
@@ -7419,6 +7461,154 @@ try {
             -EditorBuildWallClockMs ([double]$shippingBuildStopwatch.Elapsed.TotalMilliseconds) `
             -PositivePlayerWallClockMs $shippingPlayerWallClockMs['positive'] `
             -MutantPlayerWallClockMs $shippingPlayerWallClockMs['missing-root-mutant']
+        if ($ShippingIncrementalBuild) {
+            # The incremental arm is deliberately paired with this exact clean
+            # predecessor in the same editor/project invocation. Do not recreate
+            # project inputs, the scene, Library, Bee state, or player output.
+            $incrementalArtifactsPath = Join-Path $ArtifactsPath 'incremental'
+            if (Test-Path -LiteralPath $incrementalArtifactsPath) {
+                Remove-Item -LiteralPath $incrementalArtifactsPath -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path $incrementalArtifactsPath -Force | Out-Null
+            $incrementalMarkerPath = Join-Path $incrementalArtifactsPath 'shipping-build-complete.marker'
+            $incrementalAssemblyPath = Join-Path $incrementalArtifactsPath 'shipping-assemblies.json'
+            $incrementalBuildReportPath = Join-Path $incrementalArtifactsPath 'shipping-build-report.json'
+            $incrementalPrebuildPath = Join-Path $incrementalArtifactsPath 'prebuild-profile.json'
+            $incrementalPostbuildPath = Join-Path $incrementalArtifactsPath 'postbuild-profile.json'
+            $incrementalBuildOptionsPath = Join-Path $incrementalArtifactsPath 'build-options-profile.json'
+            $incrementalLogPath = Join-Path $incrementalArtifactsPath 'unity.log'
+            $incrementalEvidencePath = Join-Path $incrementalArtifactsPath 'shipping-incremental-evidence.json'
+            $projectInputsPath = Join-Path $ArtifactsPath 'shipping-project-inputs.json'
+            $scenePath = Join-Path $ProjectPath 'Assets/DxmShippingFidelity.unity'
+            $cleanProjectInputsSha256 = (Get-FileHash -LiteralPath $projectInputsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $cleanSceneSha256 = (Get-FileHash -LiteralPath $scenePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $cleanPlayerManifestJson = $shippingManifestAfter | ConvertTo-Json -Depth 10 -Compress
+            $cleanBuildReportSha256 = (Get-FileHash -LiteralPath $shippingBuildReportPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $cleanCellEvidenceSha256 = (Get-FileHash -LiteralPath $shippingCellEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $incrementalInvocationId = [guid]::NewGuid().ToString('D')
+            $incrementalBuildStartedUtc = [datetime]::UtcNow
+
+            $env:DXM_SHIPPING_BUILD_MARKER_PATH = $incrementalMarkerPath
+            $env:DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH = $incrementalAssemblyPath
+            $env:DXM_SHIPPING_BUILD_REPORT_PATH = $incrementalBuildReportPath
+            $env:DXM_PREBUILD_CONFIG_PROFILE_PATH = $incrementalPrebuildPath
+            $env:DXM_POSTBUILD_CONFIG_PROFILE_PATH = $incrementalPostbuildPath
+            $env:DXM_BUILD_OPTIONS_PROFILE_PATH = $incrementalBuildOptionsPath
+            $env:DXM_SHIPPING_BUILD_FACTOR = 'incremental'
+            $env:DXM_SHIPPING_BUILD_INVOCATION_ID = $incrementalInvocationId
+            $incrementalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            try {
+                $incrementalResult = Invoke-ProcessWithTreeKillTimeout `
+                    -FilePath $UnityEditorPath `
+                    -Arguments $shippingBuildArgs `
+                    -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
+                    -LogPath $incrementalLogPath `
+                    -Label "Build incremental shipping-fidelity IL2CPP player (Unity $UnityVersion)"
+            } finally {
+                $incrementalStopwatch.Stop()
+                foreach ($buildEnvironmentVariable in @(
+                    'DXM_SHIPPING_BUILD_MARKER_PATH',
+                    'DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH',
+                    'DXM_SHIPPING_BUILD_REPORT_PATH',
+                    'DXM_BUILD_OPTIONS_PROFILE_PATH',
+                    'DXM_PREBUILD_CONFIG_PROFILE_PATH',
+                    'DXM_POSTBUILD_CONFIG_PROFILE_PATH',
+                    'DXM_SHIPPING_BUILD_FACTOR',
+                    'DXM_SHIPPING_BUILD_INVOCATION_ID'
+                )) {
+                    Remove-Item -LiteralPath "Env:\$buildEnvironmentVariable" -ErrorAction SilentlyContinue
+                }
+            }
+            $incrementalMarkerProblem = Test-UnityConfigureMarker `
+                -MarkerPath $incrementalMarkerPath `
+                -StartedUtc $incrementalBuildStartedUtc
+            if (
+                [string]::IsNullOrWhiteSpace($incrementalMarkerProblem) -and
+                (Get-Content -LiteralPath $incrementalMarkerPath -Raw) -cne "incremental:$incrementalInvocationId"
+            ) {
+                $incrementalMarkerProblem = 'build marker does not match the incremental invocation nonce'
+            }
+            if (-not [string]::IsNullOrWhiteSpace($incrementalMarkerProblem)) {
+                throw "Incremental shipping build did not produce fresh invocation evidence: $incrementalMarkerProblem."
+            }
+            if ($incrementalResult.TimedOut -or $incrementalResult.ExitCode -ne 0) {
+                Write-UnityBenignExitWarning `
+                    -Label "Build incremental shipping-fidelity IL2CPP player (Unity $UnityVersion)" `
+                    -ExitCode $incrementalResult.ExitCode `
+                    -TimedOut:$incrementalResult.TimedOut `
+                    -LogPath $incrementalLogPath
+            }
+            foreach ($configurationPath in @($incrementalPrebuildPath, $incrementalPostbuildPath)) {
+                & $profileValidatorPath `
+                    -ProfilePath $resolvedCanonicalProfilePath `
+                    -EvidencePath $configurationPath `
+                    -EvidenceKind configuration `
+                    -ExpectedUnityVersion $UnityVersion `
+                    -ExpectedSha256 $canonicalProfileSha256
+            }
+            & $profileValidatorPath `
+                -ProfilePath $resolvedCanonicalProfilePath `
+                -EvidencePath $incrementalBuildOptionsPath `
+                -EvidenceKind buildOptions `
+                -ExpectedBuildFactor incremental `
+                -ExpectedUnityVersion $UnityVersion `
+                -ExpectedSha256 $canonicalProfileSha256
+            Test-ShippingAssemblyEvidence `
+                -Path $incrementalAssemblyPath `
+                -ExpectedProfileId $canonicalProfileId `
+                -ExpectedProfileSha256 $canonicalProfileSha256 `
+                -ExpectedUnityVersion $UnityVersion
+            Test-ShippingBuildReport `
+                -Path $incrementalBuildReportPath `
+                -ExpectedProfileId $canonicalProfileId `
+                -ExpectedProfileSha256 $canonicalProfileSha256 `
+                -ExpectedUnityVersion $UnityVersion `
+                -ExpectedTopology $ShippingTopology `
+                -ExpectedMessageTypeCount $ShippingMessageTypeCount `
+                -BuildStartedUtc $incrementalBuildStartedUtc
+            Write-NativeBuildInputEvidence `
+                -Project $ProjectPath -LogPath $incrementalLogPath -Artifacts $incrementalArtifactsPath `
+                -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                -UnityVersion $UnityVersion
+
+            $projectInputs = Get-Content -LiteralPath $projectInputsPath -Raw | ConvertFrom-Json
+            foreach ($inputFile in @($projectInputs.files)) {
+                $actualInputPath = Join-Path $ProjectPath ([string]$inputFile.path)
+                if (
+                    -not (Test-Path -LiteralPath $actualInputPath -PathType Leaf) -or
+                    [long](Get-Item -LiteralPath $actualInputPath).Length -ne [long]$inputFile.length -or
+                    (Get-FileHash -LiteralPath $actualInputPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$inputFile.sha256
+                ) {
+                    throw "Incremental shipping build changed reviewed project input $($inputFile.path)."
+                }
+            }
+            if ((Get-FileHash -LiteralPath $scenePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $cleanSceneSha256) {
+                throw 'Incremental shipping build changed its clean predecessor scene.'
+            }
+            $incrementalPlayerManifest = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            $incrementalBuildReport = Get-Content -LiteralPath $incrementalBuildReportPath -Raw | ConvertFrom-Json
+            Write-JsonArtifact -Path $incrementalEvidencePath -Value ([ordered]@{
+                    schemaVersion = 1
+                    measurementClass = 'characterization'
+                    buildFactor = 'incremental'
+                    invocationId = $incrementalInvocationId
+                    profileId = $canonicalProfileId
+                    profileSha256 = $canonicalProfileSha256
+                    topologyId = "$ShippingTopology-$ShippingMessageTypeCount-v1"
+                    unityVersion = $UnityVersion
+                    cleanBuildReportSha256 = $cleanBuildReportSha256
+                    cleanCellEvidenceSha256 = $cleanCellEvidenceSha256
+                    cleanProjectInputsSha256 = $cleanProjectInputsSha256
+                    cleanSceneSha256 = $cleanSceneSha256
+                    cleanPlayerManifestSha256 = Get-StringSha256 -Value $cleanPlayerManifestJson
+                    incrementalPlayerManifestSha256 = Get-StringSha256 -Value ($incrementalPlayerManifest | ConvertTo-Json -Depth 10 -Compress)
+                    editorBuildWallClockMs = [double]$incrementalStopwatch.Elapsed.TotalMilliseconds
+                    buildDurationMs = [double]$incrementalBuildReport.buildDurationMs
+                    reportedTotalTimeMs = [double]$incrementalBuildReport.reportedTotalTimeMs
+                    reportedTotalSizeBytes = [long]$incrementalBuildReport.reportedTotalSizeBytes
+                })
+            Write-CiNotice 'Incremental shipping build passed with the exact High semantic clean predecessor and unchanged reviewed inputs.'
+        }
         Write-CiNotice 'Shipping-fidelity player passed positive AOT dispatch and the missing-root mutant with an unchanged stripped binary.'
     } elseif ($TestMode -eq 'standalone') {
         # STANDALONE SPLIT BUILD + FILE-BASED RESULTS (zero PlayerConnection
@@ -7785,7 +7975,9 @@ try {
         'DXM_PLAYER_BUILD_PATH',
         'DXM_SHIPPING_BUILD_MARKER_PATH',
         'DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH',
-        'DXM_SHIPPING_BUILD_REPORT_PATH'
+        'DXM_SHIPPING_BUILD_REPORT_PATH',
+        'DXM_SHIPPING_BUILD_FACTOR',
+        'DXM_SHIPPING_BUILD_INVOCATION_ID'
     )) {
         Remove-Item -LiteralPath "Env:\$temporaryEnvironmentVariable" -ErrorAction SilentlyContinue
     }

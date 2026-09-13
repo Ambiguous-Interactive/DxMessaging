@@ -13,6 +13,9 @@ param(
 
     [string]$ExpectedUnityVersion,
 
+    [ValidateSet('profile', 'clean', 'incremental')]
+    [string]$ExpectedBuildFactor = 'profile',
+
     [switch]$ProfileOnly
 )
 
@@ -222,6 +225,12 @@ foreach ($variantProperty in $selectedVariant.Keys) {
         -Actual $profile.$variantGroup.$variantProperty `
         -Path "profile.$variantGroup.$variantProperty"
 }
+if (
+    $ExpectedBuildFactor -ceq 'incremental' -and
+    $profile.profileId -cne 'shipping-fidelity-il2cpp-player-v1'
+) {
+    throw 'The incremental build factor is valid only for the High shipping-fidelity base profile.'
+}
 
 $profileSha256 = (Get-FileHash -LiteralPath $ProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
 if (
@@ -235,6 +244,9 @@ if ($ProfileOnly) {
     if (-not [string]::IsNullOrWhiteSpace($EvidencePath) -or -not [string]::IsNullOrWhiteSpace($EvidenceKind)) {
         throw 'Do not pass EvidencePath or EvidenceKind with ProfileOnly.'
     }
+    if ($ExpectedBuildFactor -cne 'profile') {
+        throw 'ExpectedBuildFactor is valid only for buildOptions evidence.'
+    }
     Write-Host "Validated IL2CPP profile $($profile.profileId) ($profileSha256)."
     return
 }
@@ -244,6 +256,9 @@ if ([string]::IsNullOrWhiteSpace($EvidencePath) -or [string]::IsNullOrWhiteSpace
 
 if ([string]::IsNullOrWhiteSpace($ExpectedUnityVersion)) {
     throw 'ExpectedUnityVersion is required when validating profile evidence.'
+}
+if ($EvidenceKind -cne 'buildOptions' -and $ExpectedBuildFactor -cne 'profile') {
+    throw 'ExpectedBuildFactor is valid only for buildOptions evidence.'
 }
 
 $evidence = Get-RequiredJsonObject -Path $EvidencePath -Label "$EvidenceKind profile evidence"
@@ -287,8 +302,16 @@ Assert-ExactProperties `
     -Label "$EvidenceKind profile evidence values"
 
 foreach ($property in $expectedValues.PSObject.Properties) {
+    $expectedValue = $property.Value
+    if (
+        $EvidenceKind -ceq 'buildOptions' -and
+        $property.Name -ceq 'cleanBuildCache' -and
+        $ExpectedBuildFactor -cne 'profile'
+    ) {
+        $expectedValue = $ExpectedBuildFactor -ceq 'clean'
+    }
     Assert-EquivalentJsonValue `
-        -Expected $property.Value `
+        -Expected $expectedValue `
         -Actual $evidence.values.($property.Name) `
         -Path "$EvidenceKind.$($property.Name)"
 }
@@ -311,8 +334,21 @@ if ($EvidenceKind -ceq 'buildOptions') {
         ($provenance.beeStateBeforeBuild -cne 'missing' -or $provenance.il2cppCacheStateBeforeBuild -cne 'missing')) {
         throw 'buildProvenance contains cache directories inside a missing or empty Library.'
     }
-    if ($provenance.playerOutputStateBeforeBuild -ceq 'populated') {
-        throw 'buildProvenance records reused player output; this runner requires empty or missing output before building.'
+    if (
+        $expectedBuildKind -ceq 'clean' -and
+        $provenance.playerOutputStateBeforeBuild -ceq 'populated'
+    ) {
+        throw 'buildProvenance records reused player output for a clean build.'
+    }
+    if (
+        $expectedBuildKind -ceq 'incremental' -and
+        (
+            $provenance.libraryStateBeforeBuild -cne 'populated' -or
+            $provenance.beeStateBeforeBuild -cne 'populated' -or
+            $provenance.playerOutputStateBeforeBuild -cne 'populated'
+        )
+    ) {
+        throw 'buildProvenance incremental builds require populated Library, Bee, and player output from the validated clean predecessor.'
     }
 }
 

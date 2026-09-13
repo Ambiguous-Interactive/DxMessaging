@@ -90,6 +90,7 @@ param(
     [string]`$CanonicalProfilePath,
     [string]`$ShippingTopology,
     [int]`$ShippingMessageTypeCount,
+    [switch]`$ShippingIncrementalBuild,
     [string]`$LicenseReturnOwner,
     [switch]`$ReleaseCodeOptimization,
     [switch]`$ReleasePlayerBuild
@@ -107,6 +108,7 @@ Add-Content -LiteralPath '$escapedMatrixInvocationLogPath' -Value (([ordered]@{
     canonicalProfilePath = `$CanonicalProfilePath
     shippingTopology = `$ShippingTopology
     shippingMessageTypeCount = `$ShippingMessageTypeCount
+    shippingIncrementalBuild = `$ShippingIncrementalBuild.IsPresent
     licenseReturnOwner = `$LicenseReturnOwner
     releaseCodeOptimization = `$ReleaseCodeOptimization.IsPresent
     releasePlayerBuild = `$ReleasePlayerBuild.IsPresent
@@ -239,6 +241,7 @@ if (
             ) -and
             $matrixInvocation.shippingTopology -ceq $expectedMatrixCase.Topology -and
             [int]$matrixInvocation.shippingMessageTypeCount -eq $expectedMatrixCase.MessageTypeCount -and
+            $matrixInvocation.shippingIncrementalBuild -eq $false -and
             $matrixInvocation.licenseReturnOwner -ceq 'Central' -and
             $matrixInvocation.releaseCodeOptimization -eq $true -and
             $matrixInvocation.releasePlayerBuild -eq $true
@@ -301,6 +304,12 @@ if (
     )
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
+    $matrixRunnerText = Get-Content -LiteralPath $matrixRunnerPath -Raw
+    Assert-That 'shipping matrix scopes the optional incremental arm to High semantic only' (
+        $matrixRunnerText.Contains("`$runIncremental = `$RunIncrementalHighSemantic -and `$shippingCaseId -ceq 'high-semantic-18'") -and
+        $matrixRunnerText.Contains('-ShippingIncrementalBuild:$runIncremental') -and
+        $matrixRunnerText.Contains('Native payload retention and the incremental build factor are separate manual evidence modes.')
+    )
     Assert-That 'cardinality generation uses PowerShell 5.1-safe typed phase call lists' (
         $runnerText.Contains('$probeCalls = [System.Collections.Generic.List[string]]::new()') -and
         $runnerText.Contains('$registrationCalls = [System.Collections.Generic.List[string]]::new()') -and
@@ -448,12 +457,24 @@ if (
         $builderSourceText.Contains('reportedTotalSizeBytes = (long)report.summary.totalSize') -and
         $builderSourceText.Contains('reportedTotalTimeMs = report.summary.totalTime.TotalMilliseconds')
     )
-    Assert-That 'shipping runner passes the build report path and clears it afterwards' (
+    Assert-That 'shipping builder selects clean versus incremental options without changing generated source' (
+        $builderSourceText.Contains('RequireEnvironmentVariable("DXM_SHIPPING_BUILD_FACTOR")') -and
+        $builderSourceText.Contains('RequireEnvironmentVariable("DXM_SHIPPING_BUILD_INVOCATION_ID")') -and
+        $builderSourceText.Contains('if (buildFactor == "clean")') -and
+        $builderSourceText.Contains('options.options |= BuildOptions.CleanBuildCache;') -and
+        $builderSourceText.Contains('Incremental shipping build requires the clean predecessor scene.') -and
+        $builderSourceText.Contains('WriteMarker(markerPath, buildFactor, buildInvocationId);')
+    )
+    Assert-That 'shipping runner passes clean and incremental build report paths and clears them afterwards' (
         [regex]::Matches(
             $runnerText,
             '\$env:DXM_SHIPPING_BUILD_REPORT_PATH = \$shippingBuildReportPath'
         ).Count -eq 1 -and
-        [regex]::Matches($runnerText, "'DXM_SHIPPING_BUILD_REPORT_PATH'").Count -eq 2
+        [regex]::Matches(
+            $runnerText,
+            '\$env:DXM_SHIPPING_BUILD_REPORT_PATH = \$incrementalBuildReportPath'
+        ).Count -eq 1 -and
+        [regex]::Matches($runnerText, "'DXM_SHIPPING_BUILD_REPORT_PATH'").Count -eq 3
     )
 
     foreach ($cardinality in @(1, 16, 256, 1000)) {
@@ -786,9 +807,15 @@ if (
         ProjectPath = $projectPath
         ArtifactsPath = $artifactsPath
         ExpectedRepoRoot = $repoRoot
-        ExpectedManifestSha256 = $generatedManifestSha256
     }
     [System.IO.File]::WriteAllText($packageLockPath, ($packageLock | ConvertTo-Json -Depth 10))
+    Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    $semanticallyEquivalentManifest = $manifest | ConvertTo-Json -Depth 10 -Compress
+    [System.IO.File]::WriteAllText($generatedManifestPath, $semanticallyEquivalentManifest)
+    Assert-That 'shipping manifest fixture changes bytes without changing semantics' (
+        (Get-FileHash -LiteralPath $generatedManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+        $generatedManifestSha256
+    )
     Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
     $resolvedPackageEvidence = Get-Content `
         -LiteralPath (Join-Path $artifactsPath 'shipping-resolved-package-inputs.json') `
@@ -842,7 +869,7 @@ if (
     [System.IO.File]::WriteAllText($generatedManifestPath, ($mutatedManifest | ConvertTo-Json -Depth 10))
     Assert-Fails 'shipping package resolution rejects post-resolution manifest drift' {
         Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
-    } 'manifest hash changed'
+    } 'does not reference the reviewed repository root'
     [System.IO.File]::WriteAllText($generatedManifestPath, ($manifest | ConvertTo-Json -Depth 10))
 
     $configuratorText = Get-Content -LiteralPath (Join-Path $projectPath 'Assets/Editor/DxmCiTestConfigurator.cs') -Raw
@@ -2075,6 +2102,48 @@ if (
             -CanonicalProfilePath $profilePath `
             -GenerateOnly
     } 'AssemblyNames must be empty'
+
+    & $runnerPath `
+        -UnityVersion '6000.3.16f1' `
+        -TestMode shipping `
+        -AssemblyNames '' `
+        -ArtifactsPath (Join-Path $fixtureRoot 'incremental-generate-artifacts') `
+        -RepoRoot $repoRoot `
+        -ProjectPath (Join-Path $fixtureRoot 'incremental-generate-project') `
+        -CachePath (Join-Path $fixtureRoot 'incremental-generate-cache') `
+        -CanonicalProfilePath $profilePath `
+        -ShippingTopology semantic `
+        -ShippingMessageTypeCount 18 `
+        -ShippingIncrementalBuild `
+        -GenerateOnly
+    Assert-Fails 'incremental shipping factor rejects a non-High base profile' {
+        & $runnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath (Join-Path $fixtureRoot 'incremental-low-artifacts') `
+            -RepoRoot $repoRoot `
+            -ProjectPath (Join-Path $fixtureRoot 'incremental-low-project') `
+            -CachePath (Join-Path $fixtureRoot 'incremental-low-cache') `
+            -CanonicalProfilePath (Join-Path $repoRoot '.github/perf/shipping-fidelity-il2cpp-low-profile.v1.json') `
+            -ShippingIncrementalBuild `
+            -GenerateOnly
+    } 'requires the reviewed High base profile'
+    Assert-Fails 'incremental shipping factor rejects a cardinality topology' {
+        & $runnerPath `
+            -UnityVersion '6000.3.16f1' `
+            -TestMode shipping `
+            -AssemblyNames '' `
+            -ArtifactsPath (Join-Path $fixtureRoot 'incremental-cardinality-artifacts') `
+            -RepoRoot $repoRoot `
+            -ProjectPath (Join-Path $fixtureRoot 'incremental-cardinality-project') `
+            -CachePath (Join-Path $fixtureRoot 'incremental-cardinality-cache') `
+            -CanonicalProfilePath $profilePath `
+            -ShippingTopology cardinality `
+            -ShippingMessageTypeCount 16 `
+            -ShippingIncrementalBuild `
+            -GenerateOnly
+    } 'valid only for the semantic-18 topology'
 
     Write-Host 'Shipping-fidelity harness contract tests passed.'
 } finally {
