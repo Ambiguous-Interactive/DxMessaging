@@ -465,12 +465,24 @@ namespace DxMessaging.Tests.Runtime.Core
                 6,
                 BusTraceSequence.NativeLifecycleGeneratorVersion
             );
+            IReadOnlyList<BusTraceObservation> lifecycleControl = Replay(
+                lifecycleOnly,
+                _ownedScene
+            );
+            IReadOnlyList<BusTraceObservation> lifecycleCandidate = Replay(
+                lifecycleOnly,
+                _ownedScene,
+                ignoreHostDestroy: true
+            );
             BusTraceMismatch EvaluateDestroyMutation(BusTraceSequence input) =>
                 DifferentialBusTrace.Compare(
                     Replay(input, _ownedScene),
                     Replay(input, _ownedScene, ignoreHostDestroy: true)
                 );
-            BusTraceMismatch destroyMismatch = EvaluateDestroyMutation(lifecycleOnly);
+            BusTraceMismatch destroyMismatch = DifferentialBusTrace.Compare(
+                lifecycleControl,
+                lifecycleCandidate
+            );
             Assert.That(
                 destroyMismatch,
                 Is.Not.Null,
@@ -495,10 +507,31 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.True,
                 destroyMismatch.BuildReport(lifecycleOnly)
             );
+            IReadOnlyList<BusTraceObservation> minimalControl = Replay(minimal, _ownedScene);
+            IReadOnlyList<BusTraceObservation> minimalCandidate = Replay(
+                minimal,
+                _ownedScene,
+                ignoreHostDestroy: true
+            );
+            BusTraceMismatch minimalMismatch = DifferentialBusTrace.Compare(
+                minimalControl,
+                minimalCandidate
+            );
             Assert.That(
-                EvaluateDestroyMutation(minimal)?.Category,
+                minimalMismatch?.Category,
                 Is.EqualTo("state"),
                 destroyMismatch.BuildReport(lifecycleOnly)
+            );
+            DifferentialReplayEvidence.TryWrite(
+                lifecycleOnly,
+                lifecycleControl,
+                lifecycleCandidate,
+                destroyMismatch,
+                minimal,
+                minimalControl,
+                minimalCandidate,
+                minimalMismatch,
+                "skip-host-destroy"
             );
         }
 

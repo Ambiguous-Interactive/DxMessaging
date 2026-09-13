@@ -67,7 +67,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
         }
 
         [Test]
-        public void EmitUntargetedWithNullProviderFallsBackToGlobalBus()
+        public void EmitUntargetedWithUnavailableProviderFallsBackToGlobalBus()
         {
             MessageHandler globalHandler = new(new InstanceId(201)) { active = true };
             MessageRegistrationToken globalToken = MessageRegistrationToken.Create(
@@ -84,6 +84,19 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
 
             Assert.AreEqual(1, provider.ResolveCount);
             Assert.AreEqual(1, globalCount);
+
+            TestScriptableMessageBusProvider destroyedProvider =
+                UnityEngine.ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            destroyedProvider.Configure(new MessageBus());
+            UnityEngine.Object.DestroyImmediate(destroyedProvider);
+
+            message.EmitUntargeted(messageBusProvider: destroyedProvider);
+
+            Assert.AreEqual(
+                2,
+                globalCount,
+                "A destroyed Unity provider should be unavailable and preserve the global fallback."
+            );
 
             globalToken.Disable();
         }
@@ -367,6 +380,22 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             {
                 ResolveCount++;
                 return null;
+            }
+        }
+
+        private sealed class TestScriptableMessageBusProvider
+            : DxMessaging.Unity.ScriptableMessageBusProvider
+        {
+            private IMessageBus _bus;
+
+            public void Configure(IMessageBus bus)
+            {
+                _bus = bus;
+            }
+
+            public override IMessageBus Resolve()
+            {
+                return _bus;
             }
         }
 

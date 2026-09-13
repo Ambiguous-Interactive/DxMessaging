@@ -5,7 +5,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
+    using DxMessaging.Unity;
     using NUnit.Framework;
+    using UnityEngine;
 
     public sealed class MessageRegistrationBuilderTests
     {
@@ -51,6 +53,34 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreSame(_defaultBus, lease.MessageBus);
             Assert.IsNotNull(lease.Token);
             Assert.IsFalse(lease.Token.Enabled);
+
+            MessageBus providerBus = new MessageBus();
+            TestScriptableMessageBusProvider provider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            try
+            {
+                provider.Configure(providerBus);
+                MessageRegistrationBuilder builder = new MessageRegistrationBuilder(provider);
+                using (MessageRegistrationLease liveLease = builder.Build(options))
+                {
+                    Assert.AreSame(providerBus, liveLease.MessageBus);
+                }
+
+                UnityEngine.Object.DestroyImmediate(provider);
+
+                using MessageRegistrationLease destroyedLease = builder.Build(options);
+                Assert.IsNull(
+                    destroyedLease.MessageBus,
+                    "A destroyed constructor provider should use the global-bus sentinel."
+                );
+            }
+            finally
+            {
+                if (provider != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(provider);
+                }
+            }
         }
 
         [Test]
@@ -119,13 +149,80 @@ namespace DxMessaging.Tests.Runtime.Core
         public void MessageBusProviderOptionOverridesBuilderDefault()
         {
             MessageBus providerBus = new MessageBus();
-            MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
+            TestScriptableMessageBusProvider provider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider deferringProvider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            try
             {
-                MessageBusProvider = new PassthroughMessageBusProvider(providerBus),
-            };
+                provider.Configure(providerBus);
+                MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
+                {
+                    MessageBusProvider = provider,
+                };
 
-            using MessageRegistrationLease lease = _builder.Build(options);
-            Assert.AreSame(providerBus, lease.MessageBus);
+                using (MessageRegistrationLease lease = _builder.Build(options))
+                {
+                    Assert.AreSame(providerBus, lease.MessageBus);
+                }
+
+                UnityEngine.Object.DestroyImmediate(provider);
+
+                using MessageRegistrationLease fallbackLease = _builder.Build(options);
+                Assert.AreSame(
+                    _defaultBus,
+                    fallbackLease.MessageBus,
+                    "A destroyed per-build provider should reveal the live builder default."
+                );
+
+                options.MessageBusProvider = deferringProvider;
+                using MessageRegistrationLease deferredLease = _builder.Build(options);
+                Assert.AreSame(
+                    _defaultBus,
+                    deferredLease.MessageBus,
+                    "A live per-build provider that defers should use the builder default."
+                );
+
+                MessageRegistrationBuilder sameProviderBuilder = new MessageRegistrationBuilder(
+                    deferringProvider
+                );
+                using MessageRegistrationLease sameProviderLease = sameProviderBuilder.Build(
+                    options
+                );
+                Assert.IsNull(sameProviderLease.MessageBus);
+                Assert.AreEqual(
+                    2,
+                    deferringProvider.ResolveCount,
+                    "The same deferring provider should resolve only once per build."
+                );
+            }
+            finally
+            {
+                if (provider != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(provider);
+                }
+
+                UnityEngine.Object.DestroyImmediate(deferringProvider);
+            }
+        }
+
+        private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
+        {
+            private IMessageBus _messageBus;
+
+            internal int ResolveCount { get; private set; }
+
+            internal void Configure(IMessageBus messageBus)
+            {
+                _messageBus = messageBus;
+            }
+
+            public override IMessageBus Resolve()
+            {
+                ++ResolveCount;
+                return _messageBus;
+            }
         }
 
         [Test]

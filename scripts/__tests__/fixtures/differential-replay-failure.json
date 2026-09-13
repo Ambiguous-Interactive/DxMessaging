@@ -1,0 +1,23 @@
+{
+  "environment": {
+    "schemaVersion": 1,
+    "sourceCommit": "98b47536a0eb1445fcd2a9700899aab0be24897f",
+    "sourceTree": "ffffffffffffffffffffffffffffffffffffffff",
+    "unityVersion": "6000.4.6f1",
+    "testMode": "PlayMode",
+    "scriptingBackend": "Mono",
+    "testAssembly": "WallstopStudios.DxMessaging.Tests.Runtime",
+    "testName": "DxMessaging.Tests.Runtime.Core.DifferentialHostTraceTests.GeneratedLifecycleReplayMatchesAndShrinksDestroyedHostMutation"
+  },
+  "candidateAdapter": "// skip-host-destroy mutant\n",
+  "replayCommand": "run the focused native lifecycle fixture\n",
+  "observation": {
+    "callbacks": [],
+    "exception": null,
+    "trimResult": null,
+    "occupiedTypeSlots": 0,
+    "occupiedTargetSlots": 0,
+    "finalEmissions": [],
+    "unmatchedDiagnostics": []
+  }
+}

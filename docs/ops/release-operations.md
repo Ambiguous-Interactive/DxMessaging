@@ -115,9 +115,10 @@ The release workflow performs these gates:
 1. Attest the packed `.tgz` with GitHub artifact attestations.
 1. Run the trusted Unity release check on the Ambiguous self-hosted Windows
    runner.
-1. Export a classic `.unitypackage` from the npm payload on the self-hosted
-   Windows runner (`scripts/unity/export-unitypackage.ps1`); the job follows
-   the same Unity license and organization-lock discipline as the test jobs.
+1. Create a classic `.unitypackage` directly from the npm payload on an
+   `ubuntu-latest` runner (`scripts/unity/create_unitypackage.py`). The writer
+   does not open Unity or acquire a license seat; it runs in parallel with the
+   separately required trusted Unity release check.
 1. Assemble the `asset-store-submission` workflow artifact before the npm
    publish. The tested generator copies the `.unitypackage`, the `.tgz`,
    checksums, store media, and generated classic/UPM upload checklists plus

@@ -45,21 +45,21 @@ namespace DxMessaging.Unity
                 return;
             }
 
-            if (providerHandle.TryGetProvider(out _))
-            {
-                foreach (MessagingComponent component in _messagingComponents)
-                {
-                    component.Configure(providerHandle, MessageBusRebindMode.RebindActive);
-                }
-
-                return;
-            }
-
             if (explicitMessageBus != null)
             {
                 foreach (MessagingComponent component in _messagingComponents)
                 {
                     component.Configure(explicitMessageBus, MessageBusRebindMode.RebindActive);
+                }
+
+                return;
+            }
+
+            if (providerHandle.TryGetProvider(out _))
+            {
+                foreach (MessagingComponent component in _messagingComponents)
+                {
+                    component.Configure(providerHandle, MessageBusRebindMode.RebindActive);
                 }
 
                 return;
@@ -76,17 +76,17 @@ namespace DxMessaging.Unity
         /// </summary>
         public IMessageRegistrationBuilder CreateRegistrationBuilder()
         {
-            IMessageBusProvider provider = ResolveEffectiveProvider();
-            if (provider != null)
-            {
-                return new MessageRegistrationBuilder(provider);
-            }
-
             if (explicitMessageBus != null)
             {
                 return new MessageRegistrationBuilder(
                     new FixedMessageBusProvider(explicitMessageBus)
                 );
+            }
+
+            IMessageBusProvider provider = ResolveEffectiveProvider();
+            if (provider != null)
+            {
+                return new MessageRegistrationBuilder(provider);
             }
 
             return new MessageRegistrationBuilder();
@@ -103,6 +103,7 @@ namespace DxMessaging.Unity
         /// <summary>
         /// Assigns an explicit message bus that overrides the provider handle when present.
         /// </summary>
+        /// <param name="messageBus">Bus to prefer, or <c>null</c> to resume provider fallback.</param>
         public void SetExplicitMessageBus(IMessageBus messageBus)
         {
             explicitMessageBus = messageBus;

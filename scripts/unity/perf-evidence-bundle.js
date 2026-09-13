@@ -12,6 +12,7 @@ const {
   redactSensitiveData
 } = require("./credential-patterns.js");
 const {
+  reduceDifferentialReplayFailure,
   reduceShippingFidelityMatrix,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations
@@ -24,6 +25,10 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 const REDUCERS = Object.freeze({
+  "differential-replay-failure-v1": {
+    artifactClass: "differential-replay-failure",
+    reduce: reduceDifferentialReplayFailure
+  },
   "allocation-subunsub-observations-v1": {
     artifactClass: "allocation-subunsub-observations",
     reduce: reduceSubUnsubObservations

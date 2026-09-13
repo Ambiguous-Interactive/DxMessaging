@@ -125,7 +125,10 @@ namespace DxMessaging.Unity.Integrations.VContainer
 
         private static IMessageRegistrationBuilder CreateBuilder(IObjectResolver resolver)
         {
-            if (resolver.TryResolve(out IMessageBusProvider provider))
+            if (
+                resolver.TryResolve(out IMessageBusProvider provider)
+                && MessageBusProviderUtility.IsAvailable(provider)
+            )
             {
                 return new MessageRegistrationBuilder(provider);
             }

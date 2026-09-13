@@ -3,7 +3,6 @@
     ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
     ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
     ["release.yml", "unity-checks", "Run Unity Test Runner", true],
-    ["release.yml", "unitypackage", "Export the .unitypackage", false],
     ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
   ],
   "UNITY_EDITOR_PROFILES": {
@@ -20,7 +19,6 @@
     ],
     ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
     ["release.yml", "unity-checks", ["run_tests"]],
-    ["release.yml", "unitypackage", ["export_unitypackage"]],
     ["perf-numbers.yml", "perf-benchmarks", ["run_allocation_contracts", "run_tests"]]
   ],
   "DOCS_ONLY_PATH_IGNORES": [

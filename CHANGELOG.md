@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
+  dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
   exercises to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 - **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
@@ -44,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix provider fallback selection in registration builders, components, dependency-injection
+  adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
+  resolution, scoped container fallbacks, and live serialized-handle fallbacks
+  ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the
+  EditMode correctness matrix instead of reporting three permanently skipped shim sentinels
+  ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Make `MessagingComponentInstaller` honor its documented explicit-bus precedence when both an
+  explicit bus and provider are assigned ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Make null provider and empty provider-handle configuration replace a prior explicit component bus
+  with the global fallback ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Fix `MessagingComponent` retaining registrations after destruction and delivering to inactive
   hosts before activation ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
   [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543)).

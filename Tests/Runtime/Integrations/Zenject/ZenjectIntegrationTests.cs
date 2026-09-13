@@ -51,7 +51,10 @@ namespace DxMessaging.Tests.Runtime.Zenject
             DiContainer container = new();
             container.BindInterfacesAndSelfTo<MessageBus>().AsSingle();
 
-            DxMessagingRegistrationInstaller installer = new DxMessagingRegistrationInstaller();
+            DxMessagingRegistrationInstaller installer = Track(
+                    new GameObject(nameof(RegistrationInstallerProvidesBuilderBoundToContainerBus))
+                )
+                .AddComponent<DxMessagingRegistrationInstaller>();
             installer.RunInstallBindings(container);
 
             IMessageRegistrationBuilder registrationBuilder =
@@ -73,13 +76,17 @@ namespace DxMessaging.Tests.Runtime.Zenject
         {
             DiContainer container = new();
             MessageBus providerBus = new();
-            container
-                .Bind<IMessageBusProvider>()
-                .FromInstance(new FixedMessageBusProvider(providerBus))
-                .AsSingle();
+            TestScriptableMessageBusProvider provider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
+            provider.Configure(providerBus);
+            container.Bind<IMessageBusProvider>().FromInstance(provider).AsSingle();
             container.BindInterfacesAndSelfTo<MessageBus>().AsSingle();
 
-            DxMessagingRegistrationInstaller installer = new DxMessagingRegistrationInstaller();
+            DxMessagingRegistrationInstaller installer = Track(
+                    new GameObject(nameof(RegistrationInstallerPrefersBoundProvider))
+                )
+                .AddComponent<DxMessagingRegistrationInstaller>();
             installer.RunInstallBindings(container);
 
             IMessageRegistrationBuilder registrationBuilder =
@@ -92,6 +99,20 @@ namespace DxMessaging.Tests.Runtime.Zenject
                 providerBus,
                 lease.MessageBus,
                 "Builder should prefer the container-provided IMessageBusProvider when available."
+            );
+
+            UnityEngine.Object.DestroyImmediate(provider);
+
+            IMessageRegistrationBuilder fallbackBuilder =
+                container.Resolve<IMessageRegistrationBuilder>();
+            using MessageRegistrationLease fallbackLease = fallbackBuilder.Build(
+                new MessageRegistrationBuildOptions()
+            );
+
+            Assert.AreSame(
+                container.Resolve<IMessageBus>(),
+                fallbackLease.MessageBus,
+                "Builder should retain the container bus fallback when its bound provider has been destroyed."
             );
         }
 
@@ -284,16 +305,16 @@ namespace DxMessaging.Tests.Runtime.Zenject
             }
         }
 
-        private sealed class FixedMessageBusProvider : IMessageBusProvider
+        private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
         {
-            private readonly IMessageBus _bus;
+            private IMessageBus _bus;
 
-            public FixedMessageBusProvider(IMessageBus bus)
+            public void Configure(IMessageBus bus)
             {
                 _bus = bus;
             }
 
-            public IMessageBus Resolve()
+            public override IMessageBus Resolve()
             {
                 return _bus;
             }

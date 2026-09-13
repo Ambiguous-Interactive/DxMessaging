@@ -711,6 +711,11 @@
       "<test-case name=\"TOKEN=[redacted:credential-assignment]\" result=\"Passed\"/>"
     ],
     [
+      "NUnit document whitespace",
+      "\n<test-case name=\"Machine ID: abc123XYZ=\"/>\n",
+      "\n<test-case name=\"Machine ID: [redacted:unity-machine-id]\"/>"
+    ],
+    [
       "XML credential attribute",
       "<result TOKEN=\"abcdefghijklmnop\" passed=\"1\"/>",
       "<result TOKEN=\"[redacted:credential-assignment]\" passed=\"1\"/>"

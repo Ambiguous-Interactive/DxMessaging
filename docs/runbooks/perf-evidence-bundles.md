@@ -33,6 +33,7 @@ Each reducer accepts only its registered artifact class:
 | `shipping-fidelity-matrix`         | `shipping-fidelity-matrix-v1`         |
 | `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
+| `differential-replay-failure`      | `differential-replay-failure-v1`      |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -222,6 +223,44 @@ These are aggregate benchmark observations. The CSV does not carry probe sample 
 operation denominators, independent build identities, workload schedules, or confirmatory
 intervals. Do not infer per-operation allocation costs or campaign acceptance from this class.
 Local Mono observations retain their scope and cannot establish a Standalone IL2CPP headline.
+
+## Retaining a differential replay failure
+
+Set `DXM_DIFFERENTIAL_REPLAY_EVIDENCE_DIRECTORY` to the bundle's `replays` directory before
+running
+`DifferentialHostTraceTests.GeneratedLifecycleReplayMatchesAndShrinksDestroyedHostMutation`.
+The variable is opt-in: ordinary CI runs do no evidence I/O and execute the same test cases. Use an
+empty directory because the writer refuses to replace a prior capture. The fixture writes one raw
+JSON record for each of `Untargeted`, `Targeted`, and `Broadcast`, retaining the seed,
+generator and observation schema versions, complete original and minimized operations, both
+control/candidate traces, and the first mismatch classification.
+
+Add these reviewed text inputs at the bundle root:
+
+- `differential-replay-environment.json`: schema version, source commit and tree, Unity version,
+  test mode, scripting backend, assembly, and full test name.
+- `differential-replay-profile.json`: the exact `profile` object from
+  `scripts/unity/differential-replay-contract.json`.
+- `candidate-adapter.txt`: the source path, commit, line range, and exact excerpt that implements
+  the injected candidate fault.
+- `replay-command.txt`: the exact command or MCP invocation needed to rerun the focused fixture.
+
+```bash
+node scripts/unity/perf-evidence-bundle.js seal .artifacts/differential-replay-failure \\
+  --experiment-id native-lifecycle-replay-failure \\
+  --artifact-class differential-replay-failure \\
+  --reducer differential-replay-failure-v1 \\
+  --source-commit "$(git rev-parse HEAD)"
+node scripts/unity/perf-evidence-bundle.js replay \\
+  .artifacts/differential-replay-failure/evidence-manifest.json
+```
+
+The v1 reducer is deliberately specific to the reviewed seed-509, six-operation native lifecycle
+profile. It independently locates the first observable mismatch with the same ordered comparison
+categories as the C# oracle. It requires the original operation-kind sequence, a one-operation
+`DestroyHost` deletion-minimal subsequence, matching `state` failures for all three message
+kinds, exact profile/source agreement, and non-empty candidate and replay inputs. A future
+generator profile needs a new reducer version; do not weaken this contract to admit it.
 
 ## Adding a reducer
 

@@ -312,9 +312,11 @@ namespace DxMessaging.Tests.Runtime.VContainer
             builder.RegisterDxMessagingBus();
 
             MessageBus providerBus = new MessageBus();
-            builder
-                .RegisterInstance<IMessageBusProvider>(new StaticMessageBusProvider(providerBus))
-                .As<IMessageBusProvider>();
+            TestScriptableMessageBusProvider provider = Track(
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>()
+            );
+            provider.Configure(providerBus);
+            builder.RegisterInstance<IMessageBusProvider>(provider).As<IMessageBusProvider>();
             builder.RegisterMessageRegistrationBuilder();
 
             IObjectResolver resolver = TrackDisposable(builder.Build());
@@ -328,6 +330,20 @@ namespace DxMessaging.Tests.Runtime.VContainer
                 providerBus,
                 lease.MessageBus,
                 "Registration extensions should prefer an explicitly registered IMessageBusProvider."
+            );
+
+            UnityEngine.Object.DestroyImmediate(provider);
+
+            IMessageRegistrationBuilder fallbackBuilder =
+                resolver.Resolve<IMessageRegistrationBuilder>();
+            using MessageRegistrationLease fallbackLease = fallbackBuilder.Build(
+                new MessageRegistrationBuildOptions()
+            );
+
+            Assert.AreSame(
+                resolver.Resolve<IMessageBus>(),
+                fallbackLease.MessageBus,
+                "Registration extensions should retain the container bus fallback when their resolved provider has been destroyed."
             );
         }
 
@@ -357,16 +373,16 @@ namespace DxMessaging.Tests.Runtime.VContainer
             }
         }
 
-        private sealed class StaticMessageBusProvider : IMessageBusProvider
+        private sealed class TestScriptableMessageBusProvider : ScriptableMessageBusProvider
         {
-            private readonly IMessageBus _bus;
+            private IMessageBus _bus;
 
-            public StaticMessageBusProvider(IMessageBus bus)
+            public void Configure(IMessageBus bus)
             {
                 _bus = bus;
             }
 
-            public IMessageBus Resolve()
+            public override IMessageBus Resolve()
             {
                 return _bus;
             }

@@ -11,4 +11,24 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>The resolved message bus, or <see langword="null"/> to defer to fallbacks.</returns>
         IMessageBus Resolve();
     }
+
+    internal static class MessageBusProviderUtility
+    {
+        internal static bool IsAvailable(IMessageBusProvider provider)
+        {
+            if (provider == null)
+            {
+                return false;
+            }
+
+#if UNITY_2021_3_OR_NEWER
+            if (provider is UnityEngine.Object unityProvider)
+            {
+                return unityProvider != null;
+            }
+#endif
+
+            return true;
+        }
+    }
 }

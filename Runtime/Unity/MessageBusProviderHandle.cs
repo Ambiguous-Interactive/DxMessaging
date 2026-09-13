@@ -67,7 +67,7 @@ namespace DxMessaging.Unity
         /// <returns><c>true</c> when a provider exists; otherwise <c>false</c>.</returns>
         public bool TryGetProvider(out IMessageBusProvider provider)
         {
-            if (_runtimeProvider != null)
+            if (MessageBusProviderUtility.IsAvailable(_runtimeProvider))
             {
                 provider = _runtimeProvider;
                 return true;

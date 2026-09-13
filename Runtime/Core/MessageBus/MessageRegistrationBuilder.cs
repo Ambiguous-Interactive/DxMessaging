@@ -115,6 +115,7 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary>
         /// Overrides the provider used to resolve a message bus when <see cref="PreferredMessageBus"/> is null.
+        /// A null result defers to the builder's provider and then the global bus.
         /// </summary>
         public IMessageBusProvider MessageBusProvider { get; set; }
 
@@ -579,15 +580,24 @@ namespace DxMessaging.Core.MessageBus
                 return options.PreferredMessageBus;
             }
 
-            IMessageBusProvider effectiveProvider =
-                options.MessageBusProvider ?? _messageBusProvider;
-            if (effectiveProvider != null)
+            IMessageBusProvider optionProvider = options.MessageBusProvider;
+            if (MessageBusProviderUtility.IsAvailable(optionProvider))
             {
-                IMessageBus resolved = effectiveProvider.Resolve();
+                IMessageBus resolved = optionProvider.Resolve();
                 if (resolved != null)
                 {
                     return resolved;
                 }
+
+                if (ReferenceEquals(optionProvider, _messageBusProvider))
+                {
+                    return null;
+                }
+            }
+
+            if (MessageBusProviderUtility.IsAvailable(_messageBusProvider))
+            {
+                return _messageBusProvider.Resolve();
             }
 
             return null;

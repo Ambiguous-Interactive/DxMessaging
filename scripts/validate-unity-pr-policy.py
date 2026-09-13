@@ -16,6 +16,10 @@ from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 DOCS_GATE = Path(".github/workflows/unity-docs-gate.yml")
+COMPUTE_ASSEMBLIES_ACTION = Path(".github/actions/compute-unity-assemblies/action.yml")
+ARTIFACT_TOOLING = Path(".github/artifact-tooling/package.json")
+ARTIFACT_TOOLING_LOCK = Path(".github/artifact-tooling/package-lock.json")
+ROOT_PACKAGE_LOCK = Path("package-lock.json")
 WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
@@ -32,7 +36,6 @@ LICENSED_LOCK_WINDOWS = (
     (Path(".github/workflows/unity-benchmarks.yml"), "benchmarks"),
     (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
     (Path(".github/workflows/release.yml"), "unity-checks"),
-    (Path(".github/workflows/release.yml"), "unitypackage"),
 )
 UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES = 60
 UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(
@@ -918,6 +921,47 @@ def validate_licensed_workflow_policy(source: str) -> str:
         )
 
     return licensed
+
+
+def validate_artifact_tooling_dependencies(licensed: str) -> None:
+    """Keep the recurring Unity install minimal and aligned with the root lock."""
+    manifest = json.loads(ARTIFACT_TOOLING.read_text(encoding="utf-8"))
+    artifact_lock = json.loads(ARTIFACT_TOOLING_LOCK.read_text(encoding="utf-8"))
+    root_lock = json.loads(ROOT_PACKAGE_LOCK.read_text(encoding="utf-8"))
+    expected = {"@xmldom/xmldom", "ajv", "jsonc-parser", "yaml"}
+    dependencies = manifest.get("dependencies", {})
+    require(
+        set(dependencies) == expected,
+        f"Unity artifact tooling must contain exactly {sorted(expected)}",
+    )
+    locked_manifest = artifact_lock.get("packages", {}).get("", {}).get("dependencies", {})
+    require(
+        locked_manifest == dependencies,
+        "Unity artifact tooling lock must match its manifest exactly",
+    )
+    for dependency, version in dependencies.items():
+        root_version = root_lock.get("packages", {}).get(
+            f"node_modules/{dependency}", {}
+        ).get("version")
+        require(
+            version == root_version,
+            f"Unity artifact tooling {dependency} must match root lock version {root_version}",
+        )
+
+    install = step_block(licensed, "Install artifact tooling dependencies")
+    require(
+        "Copy-Item .github/artifact-tooling/package.json, "
+        ".github/artifact-tooling/package-lock.json -Destination $tooling" in install,
+        "Unity artifact tooling install must copy the dedicated locked manifest",
+    )
+    require(
+        "Copy-Item package.json, package-lock.json" not in install,
+        "Unity artifact tooling install must not copy the full development manifests",
+    )
+    require(
+        'npm ci --prefix "$tooling"' in install and "--ignore-scripts" in install,
+        "Unity artifact tooling install must use npm ci without lifecycle scripts",
+    )
 
 
 def require_policy_mutation_rejected(source: str, before: str, after: str, name: str) -> None:
@@ -2682,6 +2726,16 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
 def validate_grouped_unity_correctness() -> None:
     """Pin per-editor mode isolation and execute the terminal result truth table."""
     source = WORKFLOW.read_text(encoding="utf-8")
+    compute_action = COMPUTE_ASSEMBLIES_ACTION.read_text(encoding="utf-8")
+    for fragment in (
+        "  include-integrations:\n",
+        'if ("${{ inputs.include-integrations }}" -eq "true") { '
+        '$parts += "includeIntegrations: true" }',
+    ):
+        require(
+            fragment in compute_action,
+            f"integration assembly discovery input is not wired through the shared action: {fragment!r}",
+        )
     validate_shipping_event_policy(source)
     mutations = [
         ("manual shipping enabled by default", "default: false", "default: true"),
@@ -2773,6 +2827,11 @@ def validate_grouped_unity_correctness() -> None:
             f"id: {compute_id}" in compute and f"target: {mode}" in compute,
             f"{mode}: assembly discovery must remain independent",
         )
+        if mode == "editmode":
+            require(
+                'include-integrations: "true"' in compute,
+                "EditMode correctness must execute the already-compiled DI integration suites",
+            )
         if mode == "standalone":
             require('runtime-only: "true"' in compute, "standalone discovery must be runtime-only")
 
@@ -3992,6 +4051,45 @@ def validate_unity_aggregate_steps(gate: str) -> None:
             == [("actions", "read")], "Unity aggregate needs only Actions read permission")
 
 
+def validate_license_free_unitypackage_release() -> None:
+    source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    package_job = job_block(source, "unitypackage")
+    require("    runs-on: ubuntu-latest\n" in package_job, "unitypackage must use ubuntu-latest")
+    require(
+        "    needs:\n      - verify-tag\n      - validate\n" in package_job,
+        "unitypackage must follow validation and remain independent of licensed Unity work",
+    )
+    require("    timeout-minutes: 20\n" in package_job, "unitypackage timeout must stay bounded")
+    require(
+        "python3 scripts/unity/create_unitypackage.py --output" in package_job
+        and "sha256sum -c" in package_job
+        and "name: release-unitypackage" in package_job
+        and ".artifacts/release-unitypackage/" in package_job
+        and ".artifacts/unity/" not in package_job
+        and "if-no-files-found: error" in package_job,
+        "unitypackage must create, verify, and require the portable archive",
+    )
+    forbidden = re.compile(
+        r"UNITY_(?:SERIAL|EMAIL|PASSWORD)|validate-unity-license|acquire-build-lock|"
+        r"return-unity-license|ensure-unity-editor|export-unitypackage\.ps1|"
+        r"runs-on:.*self-hosted",
+        re.IGNORECASE,
+    )
+    require(forbidden.search(package_job) is None, "unitypackage must not consume Unity or its lock")
+    export_gate = job_block(source, "release-export-success")
+    require(
+        "    needs: unitypackage\n" in export_gate
+        and "needs.unitypackage.result" in export_gate
+        and "runner-preflight" not in export_gate,
+        "release export gate must depend only on the portable package job",
+    )
+    publish = job_block(source, "publish")
+    require(
+        "      - unitypackage\n" in publish and "      - release-export-success\n" in publish,
+        "publication must remain blocked on portable package creation",
+    )
+
+
 def validate() -> None:
     timeout_fixture = f"""  fixture:
     timeout-minutes: 70
@@ -4695,9 +4793,11 @@ steps:
         validate_lock_window_timeout_budget(window, f"{workflow}:{job_id}")
         validate_cleanup_gate_not_attempted_input(window, f"{workflow}:{job_id}")
         validate_editor_gate_bindings(window, f"{workflow}:{job_id}")
+    validate_license_free_unitypackage_release()
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)
+    validate_artifact_tooling_dependencies(licensed)
     require_policy_mutation_rejected(
         source,
         "  cancel-in-progress: true\n",

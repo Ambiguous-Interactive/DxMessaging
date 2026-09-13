@@ -1,0 +1,11 @@
+{
+  "name": "dxmessaging-unity-artifact-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "ajv": "8.20.0",
+    "jsonc-parser": "3.3.1",
+    "yaml": "2.9.0"
+  }
+}

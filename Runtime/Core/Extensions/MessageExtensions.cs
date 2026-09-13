@@ -587,7 +587,7 @@ namespace DxMessaging.Core.Extensions
                 return explicitBus;
             }
 
-            if (messageBusProvider != null)
+            if (MessageBusProviderUtility.IsAvailable(messageBusProvider))
             {
                 IMessageBus providedBus = messageBusProvider.Resolve();
                 if (providedBus != null)

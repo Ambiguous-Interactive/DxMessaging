@@ -99,8 +99,9 @@ The release workflow creates:
 - npm `.tgz`
 - `.sha256` checksum
 - GitHub artifact attestation for the `.tgz`
-- a classic `.unitypackage` (plus `.sha256`) exported from the npm payload on
-  the self-hosted Windows runner; a REQUIRED release asset
+- a classic `.unitypackage` (plus `.sha256`) created directly from the npm
+  payload on `ubuntu-latest`, without opening Unity or acquiring a license;
+  a REQUIRED release asset
 - GitHub Release assets containing the `.tgz`, its checksum, and the
   `.unitypackage` pair, verified present by a final post-publish step
 - npm package version published with provenance

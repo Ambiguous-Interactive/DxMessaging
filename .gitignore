@@ -380,6 +380,7 @@ package-lock.json
 package-lock.json.meta
 !/package-lock.json
 !/package-lock.json.meta
+!/.github/artifact-tooling/package-lock.json
 Editor/Analyzers/*.pdb
 Tests/Runtime/bin.meta
 Tests/Runtime/obj.meta
