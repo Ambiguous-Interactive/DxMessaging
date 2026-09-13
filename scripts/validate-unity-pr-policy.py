@@ -17,6 +17,9 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/unity-tests.yml")
 DOCS_GATE = Path(".github/workflows/unity-docs-gate.yml")
 COMPUTE_ASSEMBLIES_ACTION = Path(".github/actions/compute-unity-assemblies/action.yml")
+ARTIFACT_TOOLING = Path(".github/artifact-tooling/package.json")
+ARTIFACT_TOOLING_LOCK = Path(".github/artifact-tooling/package-lock.json")
+ROOT_PACKAGE_LOCK = Path("package-lock.json")
 WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
@@ -918,6 +921,47 @@ def validate_licensed_workflow_policy(source: str) -> str:
         )
 
     return licensed
+
+
+def validate_artifact_tooling_dependencies(licensed: str) -> None:
+    """Keep the recurring Unity install minimal and aligned with the root lock."""
+    manifest = json.loads(ARTIFACT_TOOLING.read_text(encoding="utf-8"))
+    artifact_lock = json.loads(ARTIFACT_TOOLING_LOCK.read_text(encoding="utf-8"))
+    root_lock = json.loads(ROOT_PACKAGE_LOCK.read_text(encoding="utf-8"))
+    expected = {"@xmldom/xmldom", "ajv", "yaml"}
+    dependencies = manifest.get("dependencies", {})
+    require(
+        set(dependencies) == expected,
+        f"Unity artifact tooling must contain exactly {sorted(expected)}",
+    )
+    locked_manifest = artifact_lock.get("packages", {}).get("", {}).get("dependencies", {})
+    require(
+        locked_manifest == dependencies,
+        "Unity artifact tooling lock must match its manifest exactly",
+    )
+    for dependency, version in dependencies.items():
+        root_version = root_lock.get("packages", {}).get(
+            f"node_modules/{dependency}", {}
+        ).get("version")
+        require(
+            version == root_version,
+            f"Unity artifact tooling {dependency} must match root lock version {root_version}",
+        )
+
+    install = step_block(licensed, "Install artifact tooling dependencies")
+    require(
+        "Copy-Item .github/artifact-tooling/package.json, "
+        ".github/artifact-tooling/package-lock.json -Destination $tooling" in install,
+        "Unity artifact tooling install must copy the dedicated locked manifest",
+    )
+    require(
+        "Copy-Item package.json, package-lock.json" not in install,
+        "Unity artifact tooling install must not copy the full development manifests",
+    )
+    require(
+        'npm ci --prefix "$tooling"' in install and "--ignore-scripts" in install,
+        "Unity artifact tooling install must use npm ci without lifecycle scripts",
+    )
 
 
 def require_policy_mutation_rejected(source: str, before: str, after: str, name: str) -> None:
@@ -4753,6 +4797,7 @@ steps:
 
     source = WORKFLOW.read_text(encoding="utf-8")
     licensed = validate_licensed_workflow_policy(source)
+    validate_artifact_tooling_dependencies(licensed)
     require_policy_mutation_rejected(
         source,
         "  cancel-in-progress: true\n",

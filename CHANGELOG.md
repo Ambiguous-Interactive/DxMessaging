@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
+  dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
   exercises to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 - **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
