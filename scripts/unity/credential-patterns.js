@@ -3,31 +3,14 @@ const net = require("node:net");
 const { createHash } = require("node:crypto");
 const { TextDecoder } = require("node:util");
 const { DOMParser, XMLSerializer } = require("@xmldom/xmldom");
-const { parseDocument } = require("yaml");
-const REVIEWED_TEXT_EXTENSIONS = Object.freeze([
-  ".asm",
-  ".cpp",
-  ".csv",
-  ".h",
-  ".json",
-  ".jsonl",
-  ".log",
-  ".map",
-  ".marker",
-  ".md",
-  ".sha256",
-  ".tsv",
-  ".txt",
-  ".xml"
-]);
+const { visit: visitJson } = require("jsonc-parser");
+// prettier-ignore
+const REVIEWED_TEXT_EXTENSIONS = Object.freeze([".asm", ".cpp", ".csv", ".h", ".json", ".jsonl", ".log", ".map", ".marker", ".md", ".sha256", ".tsv", ".txt", ".xml"]);
 const MAXIMUM_STRAY_NUL_BYTES = 8;
 const SERIALIZED_WINDOW_CHARACTERS = 4 * 1024 * 1024;
 const SERIALIZED_ESCAPE =
   /\\(?=u[0-9A-Fa-f]{4}|["\\/bfnrt])|&(?=#(?:x[0-9A-Fa-f]|[0-9])|(?:amp|apos|gt|lt|quot);)/;
-const ENCODED_LIMIT_FINDING = Object.freeze({
-  id: "encoded-sensitive-data",
-  description: "data encoded beyond the inspection limit"
-});
+const ENCODED_LIMIT_FINDING = Object.freeze({ id: "encoded-sensitive-data", description: "data encoded beyond the inspection limit" });
 function canonicalWebHostname(raw) {
   try {
     return new URL(`http://${raw}/`).hostname.replace(/\.+$/, "").toLowerCase();
@@ -57,23 +40,8 @@ function quotedAssignmentReplacement(id) {
 }
 // prettier-ignore
 const CREDENTIAL_PATTERNS = Object.freeze([
-  {
-    id: "pem-private-key",
-    description: "a PEM private key",
-    pattern:
-      /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----|-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*/
-  },
-  {
-    id: "unity-license-id",
-    description: "a Unity license identifier",
-    pattern:
-      /(<License\b[^>]*\bid\s*=\s*)(?:"((?!\[redacted:)(?:\\.|[^"\\])+)"|'((?!\[redacted:)(?:\\.|[^'\\])+)'|"((?!\[redacted:)[^"\r\n]+)(?=\r?$)|'((?!\[redacted:)[^'\r\n]+)(?=\r?$))/im,
-    replacement: (match) => {
-      const quote = match[2] !== undefined || match[4] !== undefined ? '"' : "'";
-      const closing = match[2] !== undefined || match[3] !== undefined ? quote : "";
-      return `${match[1]}${quote}[redacted:unity-license-id]${closing}`;
-    }
-  },
+  { id: "pem-private-key", description: "a PEM private key", pattern: /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----|-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*/ },
+  { id: "unity-license-id", description: "a Unity license identifier", pattern: /(<License\b[^>]*\bid\s*=\s*)(?:"((?!\[redacted:)(?:\\.|[^"\\])+)"|'((?!\[redacted:)(?:\\.|[^'\\])+)'|"((?!\[redacted:)[^"\r\n]+)(?=\r?$)|'((?!\[redacted:)[^'\r\n]+)(?=\r?$))/im, replacement: (match) => { const quote = match[2] !== undefined || match[4] !== undefined ? '"' : "'"; const closing = match[2] !== undefined || match[3] !== undefined ? quote : ""; return `${match[1]}${quote}[redacted:unity-license-id]${closing}`; } },
   { id: "unity-serial", description: "a Unity serial", pattern: /\bS[CBP]-[0-9A-Z]{4}(?:-[0-9A-Z]{4}){4}\b/ },
   { id: "github-token", description: "a GitHub token", pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b/ },
   { id: "aws-access-key-id", description: "an AWS access key id", pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
@@ -81,17 +49,7 @@ const CREDENTIAL_PATTERNS = Object.freeze([
   { id: "unity-password-assignment", description: "a Unity password assignment", pattern: /((?:\bUNITY_PASSWORD["']?\s*[=:]\s*|(?<![\w-])-password(?:[ \t]+|[ \t]*\r?\n[ \t]*)))(?:"((?:""|\\.|[^"\\\r\n])*)"|'((?:''|\\.|[^'\\\r\n])*)'|([^\r\n]+))/i, accept: (match) => isNonEmptyUnmasked(match[2] ?? match[3] ?? match[4]), replacement: quotedAssignmentReplacement("unity-password-assignment") },
   { id: "unity-email-assignment", description: "a Unity account email", pattern: /((?:\bUNITY_EMAIL["']?\s*[=:]\s*|(?<![\w-])-username(?:[ \t]+|[ \t]*\r?\n[ \t]*)))(?:"((?:""|\\.|[^"\\\r\n])*)"(?!@)|'((?:''|\\.|[^'\\\r\n])*)'(?!@)|([^\r\n]+))/i, accept: (match) => isNonEmptyUnmasked(match[2] ?? match[3] ?? match[4]), replacement: quotedAssignmentReplacement("unity-email-assignment") },
   { id: "password-assignment", description: "a password assignment", pattern: /(\b(?!UNITY_PASSWORD\b)[A-Z0-9_]*PASSWORD["']?\s*[=:]\s*)(?:"((?:""|\\.|[^"\\\r\n])*)"|'((?:''|\\.|[^'\\\r\n])*)'|([^\r\n]+))/i, accept: (match) => isNonEmptyUnmasked(match[2] ?? match[3] ?? match[4]), replacement: quotedAssignmentReplacement("password-assignment") },
-  {
-    id: "credential-assignment",
-    description: "a credential assignment",
-    pattern:
-      /(\b(?:UNITY_SERIAL|[A-Z0-9_]*(?:TOKEN|SECRET|API_?KEY|ACCESS_?KEY))["']?\s*[=:]\s*)(?:"((?:""|\\.|[^"\\\r\n])+)"|'((?:''|\\.|[^'\\\r\n])+)'|([^\r\n]+))/i,
-    accept: (match) => {
-      const value = match[2] ?? match[3] ?? match[4];
-      return isUnmaskedValue(value.trim()) && value.trim().length >= 12;
-    },
-    replacement: quotedAssignmentReplacement("credential-assignment")
-  }
+  { id: "credential-assignment", description: "a credential assignment", pattern: /(\b(?:UNITY_SERIAL|[A-Z0-9_]*(?:TOKEN|SECRET|API_?KEY|ACCESS_?KEY))["']?\s*[=:]\s*)(?:"((?:""|\\.|[^"\\\r\n])+)"|'((?:''|\\.|[^'\\\r\n])+)'|([^\r\n]+))/i, accept: (match) => { const value = match[2] ?? match[3] ?? match[4]; return isUnmaskedValue(value.trim()) && value.trim().length >= 12; }, replacement: quotedAssignmentReplacement("credential-assignment") }
 ]);
 // prettier-ignore
 const IDENTIFIER_PATTERNS = Object.freeze([
@@ -139,19 +97,7 @@ const IDENTIFIER_PATTERNS = Object.freeze([
   { id: "unity-editor-hostname", description: "a Unity Editor host name", pattern: /((?:Windows|Linux|OSX)Editor\([0-9]+,["']?)(?!redacted:|\[redacted:)(?:\\.|'(?=[\p{L}\p{N}\p{M}_-])|[^\\<$)\s"'`|])+/u, prefixGroup: 1 },
   { id: "unity-license-client-hostname", description: "a Unity License Client host name", pattern: /((?:^|[^A-Za-z-])LicenseClient-["']?)(?!redacted:|\[redacted:)(?:&(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);|&(?!(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);)|\\u[0-9A-Fa-f]{4}|'(?=[\p{L}\p{N}\p{M}_-])|[^&\\<$)\]};,>\s"'`|])+/u, prefixGroup: 1 },
   { id: "unity-ipc-hostname", description: "a Unity IPC host name", pattern: /((?:\\\\\.\\pipe\\)?Unity-(?:LicenseClient|LicensingClient)-["']?)(?!redacted:|\[redacted:)(?:&(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);|&(?!(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);)|\\u[0-9A-Fa-f]{4}|'(?=[\p{L}\p{N}\p{M}_-])|[^&\\<$,\s"'`()\[\]};>|])+/u, prefixGroup: 1 },
-  {
-    id: "named-account-or-host",
-    description: "a named runner account or host",
-    pattern:
-      /(\b(?:Account Name|Computer Name|Host Name|Machine Name|machineName|COMPUTERNAME|HOSTNAME|LOGNAME|RUNNER_NAME|Runner Name|USER|User Name|USERNAME)["']?[ \t]*[:=][ \t]*)(?:"((?:""|\\.|[^"\\\r\n])+)"|'((?:''|\\.|[^'\\\r\n])+)'|(\S(?:[^\r\n]*?\S)?)([ \t]*)(?=\r?$))/im,
-    accept: (match) => !isRedactionPlaceholder(match[2] ?? match[3] ?? match[4]),
-    replacement: (match) => {
-      const placeholder = "[redacted:named-account-or-host]";
-      if (match[2] !== undefined) return `${match[1]}"${placeholder}"`;
-      if (match[3] !== undefined) return `${match[1]}'${placeholder}'`;
-      return `${match[1]}${placeholder}${match[5]}`;
-    }
-  },
+  { id: "named-account-or-host", description: "a named runner account or host", pattern: /(\b(?:Account Name|Computer Name|Host Name|Machine Name|machineName|COMPUTERNAME|HOSTNAME|LOGNAME|RUNNER_NAME|Runner Name|USER|User Name|USERNAME)["']?[ \t]*[:=][ \t]*)(?:"((?:""|\\.|[^"\\\r\n])+)"|'((?:''|\\.|[^'\\\r\n])+)'|(\S(?:[^\r\n]*?\S)?)([ \t]*)(?=\r?$))/im, accept: (match) => !isRedactionPlaceholder(match[2] ?? match[3] ?? match[4]), replacement: (match) => { const placeholder = "[redacted:named-account-or-host]"; if (match[2] !== undefined) return `${match[1]}"${placeholder}"`; if (match[3] !== undefined) return `${match[1]}'${placeholder}'`; return `${match[1]}${placeholder}${match[5]}`; } },
   { id: "unity-accelerator-endpoint", description: "a Unity Accelerator endpoint", pattern: /(AcceleratorClientConnectionCallback[^\r\n]*?[ \t]+-[ \t]+(?:connected|disconnected)[ \t]+-[ \t]+)(?!\[redacted:)[^\s\r\n][^\r\n]*/, prefixGroup: 1 },
   { id: "unity-cache-server-endpoint", description: "a Unity Cache Server endpoint", pattern: /(-cacheServerEndpoint(?:[ \t]+|[ \t]*\r?\n[ \t]*)["']?)(?!\[redacted:)(?:&(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);|&(?!(?:#[0-9]+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);)|\\u[0-9A-Fa-f]{4}|'(?=[\p{L}\p{N}\p{M}_-])|[^&\\\s"'`()\]};,>|])+/u, prefixGroup: 1 },
   { id: "unity-connect-host", description: "a Unity connection host", pattern: /("connectToHost"[ \t]*:[ \t]*")(?!\[redacted:)(?:\\.|[^"\\])+/, prefixGroup: 1 }
@@ -541,7 +487,22 @@ function neutralizeFormatControls(value, counts) {
   return text;
 }
 class StructuredArtifactError extends Error {}
-function structuredText(text, visit, format, depth = 0) {
+function hasInvalidJsonKeyStructure(text) {
+  const objectKeys = [];
+  let invalid = false;
+  visitJson(text.replace(/^\ufeff/, ""), {
+    onObjectBegin: () => objectKeys.push(new Set()),
+    onObjectProperty: (key) => {
+      const keys = objectKeys.at(-1);
+      if (keys?.has(key)) invalid = true;
+      else keys?.add(key);
+    },
+    onObjectEnd: () => objectKeys.pop(),
+    onError: () => (invalid = true)
+  }, { allowTrailingComma: false, disallowComments: true });
+  return invalid || objectKeys.length !== 0;
+}
+function structuredText(text, visit, format, depth = 0, rewrite = true) {
   const invalid = (reason = "unsupported-structure") => {
     throw new StructuredArtifactError(reason);
   };
@@ -550,7 +511,7 @@ function structuredText(text, visit, format, depth = 0) {
     if (contextualPattern(key, value, element)) return visit(value, key, element);
     return (
       (/^[\[\{"<]/.test(value.trimStart())
-        ? structuredText(value, visit, undefined, depth + 1)
+        ? structuredText(value, visit, undefined, depth + 1, rewrite)
         : undefined) ?? visit(value, key, element)
     );
   };
@@ -562,12 +523,16 @@ function structuredText(text, visit, format, depth = 0) {
     if (findRawSensitiveData(value).length) invalid("sensitive-structure-name");
     if (names.size < 4096 && value.length <= 256) names.add(value);
   };
-  if (format === ".jsonl")
-    return text.replace(/[^\r\n]+/g, (record) =>
-      record.trim() ? structuredText(record, visit, ".json", depth + 1) : record
-    );
-  const trimmed = text.trimStart();
-  if (format === ".xml" || trimmed.startsWith("<")) {
+  if (format === ".jsonl") {
+    if (rewrite)
+      return text.replace(/[^\r\n]+/g, (record) =>
+        record.trim() ? structuredText(record, visit, ".json", depth + 1, true) : record
+      );
+    for (const record of text.matchAll(/[^\r\n]+/g))
+      if (record[0].trim()) structuredText(record[0], visit, ".json", depth + 1, false);
+    return text;
+  }
+  if (format === ".xml" || text.trimStart().startsWith("<")) {
     if (/<!DOCTYPE|<!ENTITY/i.test(text)) invalid();
     // xmldom accepts out-of-range numeric references in attributes. Validate their
     // scalar values before its decoder can wrap them into unrelated characters.
@@ -630,24 +595,23 @@ function structuredText(text, visit, format, depth = 0) {
           name(attribute.name);
           if (attribute.name === "xmlns" || attribute.prefix === "xmlns")
             name(xmlValue(attribute.value));
-          else
-            attribute.value = scalar(
-              xmlValue(attribute.value),
-              attribute.localName,
-              node.localName
-            );
+          else {
+            const next = scalar(xmlValue(attribute.value), attribute.localName, node.localName);
+            if (rewrite) attribute.value = next;
+          }
         }
       } else if ([3, 4, 7, 8].includes(node.nodeType)) {
         if (node.nodeType === 7) name(node.target);
-        node.data = scalar(
+        const next = scalar(
           xmlValue(node.data),
           node.nodeType === 3 || node.nodeType === 4 ? node.parentNode.localName : ""
         );
+        if (rewrite) node.data = next;
       } else if (node.nodeType !== 9) invalid();
       pending.push(...Array.from(node.childNodes ?? []));
     }
-    const output =
-      prefix + new XMLSerializer().serializeToString(document, { requireWellFormed: true });
+    if (!rewrite) return text;
+    const output = prefix + new XMLSerializer().serializeToString(document, { requireWellFormed: true });
     parse(output);
     return output;
   }
@@ -659,13 +623,17 @@ function structuredText(text, visit, format, depth = 0) {
     else return undefined;
   }
   // Native JSON parsing discards earlier duplicate keys, including hidden secrets.
-  if (parseDocument(text, { schema: "json", uniqueKeys: true }).errors.length)
-    invalid("json-key-validation");
+  if (hasInvalidJsonKeyStructure(text)) invalid("json-key-validation");
   const walk = (value, key = "") => {
     if (typeof value === "string") return scalar(value, key);
     // Containers under sensitive keys have ambiguous ownership; scalars retain their JSON type.
-    const context = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
-    if (key && contextualPattern(key, context)) invalid("sensitive-nonstring-value");
+    if (
+      key &&
+      contextualPattern(key, () =>
+        value !== null && typeof value === "object" ? JSON.stringify(value) : value
+      )
+    )
+      invalid("sensitive-nonstring-value");
     if (
       typeof value === "number" &&
       (!Number.isFinite(value) ||
@@ -673,51 +641,68 @@ function structuredText(text, visit, format, depth = 0) {
         (Number.isInteger(value) && !Number.isSafeInteger(value)))
     )
       invalid("json-number-precision");
-    if (Array.isArray(value)) return value.map((item) => walk(item));
+    if (Array.isArray(value)) {
+      if (rewrite) return value.map((item) => walk(item));
+      for (const item of value) walk(item);
+      return value;
+    }
     if (value !== null && typeof value === "object") {
       for (const key of Object.keys(value)) {
         name(key);
-        value[key] = walk(value[key], key);
+        const next = walk(value[key], key);
+        if (rewrite) value[key] = next;
       }
     }
     return value;
   };
-  return (text.startsWith("\ufeff") ? "\ufeff" : "") + JSON.stringify(walk(value));
+  const walked = walk(value);
+  return rewrite ? (text.startsWith("\ufeff") ? "\ufeff" : "") + JSON.stringify(walked) : text;
 }
 function contextualPattern(key, value, element) {
   if (!key) return undefined;
-  const source =
-    element?.toLowerCase() === "license" && key.toLowerCase() === "id"
-      ? `<License id=${JSON.stringify(value)}>`
-      : `${JSON.stringify(key)}:${JSON.stringify(value)}`;
+  value = typeof value === "function" ? value() : value;
+  const keyJson = JSON.stringify(key);
+  const licenseId = element?.toLowerCase() === "license" && key.toLowerCase() === "id";
+  const source = licenseId
+    ? `<License id=${JSON.stringify(value)}>`
+    : `${keyJson}:${JSON.stringify(value)}`;
   return SENSITIVE_PATTERNS.find((entry) => {
     if (!(entry.replacement || entry.prefixGroup)) return false;
     if (!hasPatternAnchor(source, entry)) return false;
+    entry.pattern.lastIndex = 0;
     const match = entry.pattern.exec(source);
-    return (
-      match && match.index < JSON.stringify(key).length && (!entry.accept || entry.accept(match))
-    );
+    return match && match.index < keyJson.length && (!entry.accept || entry.accept(match));
   });
 }
-const STRUCTURE_FINDING = Object.freeze({
-  id: "unsafe-structured-data",
-  description: "unsupported structured data"
-});
+function scalarCacheKey(value, key, element) {
+  return value.length <= 4096 && key.length <= 256 && (element?.length ?? 0) <= 256 ? JSON.stringify([key, element ?? null, value]) : undefined;
+}
+const STRUCTURE_FINDING = Object.freeze({ id: "unsafe-structured-data", description: "unsupported structured data" });
 function findSensitiveData(text, format) {
   const found = new Map();
+  const scalarCache = new Map();
   const inspect = (value, key, element) => {
-    if (/[\p{Cf}\uD800-\uDFFF]/u.test(value)) found.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
-    const context = contextualPattern(key, value, element);
-    for (const entry of [
-      ...findRawSensitiveData(value),
-      ...findIdentifiers(JSON.stringify(value)),
-      ...(context ? [context] : [])
-    ])
-      found.set(entry.id, entry);
+    const cacheKey = scalarCacheKey(value, key, element);
+    let entries = scalarCache.get(cacheKey);
+    if (entries === undefined) {
+      const local = new Map();
+      if (/[\p{Cf}\uD800-\uDFFF]/u.test(value))
+        local.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
+      const context = contextualPattern(key, value, element);
+      for (const entry of [
+        ...findRawSensitiveData(value),
+        ...findIdentifiers(JSON.stringify(value)),
+        ...(context ? [context] : [])
+      ])
+        local.set(entry.id, entry);
+      entries = [...local.values()];
+      if (cacheKey !== undefined && scalarCache.size < 4096) scalarCache.set(cacheKey, entries);
+    }
+    for (const entry of entries) found.set(entry.id, entry);
     return value;
   };
   try {
-    const output = structuredText(text, inspect, format);
+    const output = structuredText(text, inspect, format, 0, false);
     if (output === undefined) return findRawSensitiveData(text.replace(/^\ufeff/, ""));
   } catch (error) {
     found.set(STRUCTURE_FINDING.id, {
@@ -782,7 +767,7 @@ function hasBrokenRedaction(text) {
 }
 function isSerializedRedactionSafe(text, redacted, format) {
   try {
-    if (structuredText(text, (value) => value, format) !== undefined) {
+    if (structuredText(text, (value) => value, format, 0, false) !== undefined) {
       return (
         redacted === redactSensitiveData(text, format).redacted &&
         findSensitiveData(redacted, format).length === 0

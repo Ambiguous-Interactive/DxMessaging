@@ -78,6 +78,11 @@ function decodeStrictText(bytes) {
     return undefined;
   }
 }
+function retainNativeFile(nativeFiles, absolute, bytes) {
+  if (!absolute.split(path.sep).includes("native-build-inputs")) return;
+  const retainedSha256 = createHash("sha256").update(bytes).digest("hex");
+  nativeFiles.set(absolute, { retainedLength: bytes.length, retainedSha256 });
+}
 function redactDirectory(root) {
   if (!isDirectDirectory(root)) {
     fail("Artifact root is not a directory.");
@@ -164,6 +169,14 @@ function redactDirectory(root) {
       } else binaryCount += 1;
       continue;
     }
+    const initialFindings = findSensitiveData(normalized, extension);
+    const hasFormatControls = /\p{Cf}/u.test(
+      normalized.slice(decoded.encoding.startsWith("utf16") ? 1 : 0)
+    );
+    if (initialFindings.length === 0 && nulCount === 0 && !hasFormatControls) {
+      retainNativeFile(nativeFiles, absolute, bytes);
+      continue;
+    }
     const { redacted, counts } = redactSensitiveData(normalized, extension);
     if (
       !isSerializedRedactionSafe(normalized, redacted, extension) ||
@@ -183,13 +196,7 @@ function redactDirectory(root) {
     if (nulCount > 0) {
       counts.set("stray-nul-byte", nulCount);
     }
-    if (absolute.split(path.sep).includes("native-build-inputs")) {
-      const retained = counts.size === 0 ? bytes : encodeText(redacted, decoded.encoding);
-      nativeFiles.set(absolute, {
-        retainedLength: retained.length,
-        retainedSha256: createHash("sha256").update(retained).digest("hex")
-      });
-    }
+    retainNativeFile(nativeFiles, absolute, counts.size ? encodeText(redacted, decoded.encoding) : bytes);
     if (counts.size === 0) {
       continue;
     }

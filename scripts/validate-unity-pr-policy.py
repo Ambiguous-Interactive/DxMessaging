@@ -928,7 +928,7 @@ def validate_artifact_tooling_dependencies(licensed: str) -> None:
     manifest = json.loads(ARTIFACT_TOOLING.read_text(encoding="utf-8"))
     artifact_lock = json.loads(ARTIFACT_TOOLING_LOCK.read_text(encoding="utf-8"))
     root_lock = json.loads(ROOT_PACKAGE_LOCK.read_text(encoding="utf-8"))
-    expected = {"@xmldom/xmldom", "ajv", "yaml"}
+    expected = {"@xmldom/xmldom", "ajv", "jsonc-parser", "yaml"}
     dependencies = manifest.get("dependencies", {})
     require(
         set(dependencies) == expected,
