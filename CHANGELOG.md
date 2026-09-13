@@ -46,8 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Treat destroyed Unity-backed providers as unavailable when components create registrations, and
-  preserve a configured handle's live serialized fallback ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
+- Treat destroyed Unity-backed providers as unavailable in registration builders and components,
+  and preserve a configured handle's live serialized fallback ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the
   EditMode correctness matrix instead of reporting three permanently skipped shim sentinels
   ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).

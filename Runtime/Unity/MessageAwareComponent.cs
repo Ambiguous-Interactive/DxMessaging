@@ -281,7 +281,9 @@ namespace DxMessaging.Unity
             MessageBusRebindMode rebindMode
         )
         {
-            _configuredMessageBusProvider = MessageBusProviderHandle.IsAvailable(messageBusProvider)
+            _configuredMessageBusProvider = MessageBusProviderUtility.IsAvailable(
+                messageBusProvider
+            )
                 ? messageBusProvider
                 : null;
             _configuredMessageBus = null;
@@ -329,7 +331,7 @@ namespace DxMessaging.Unity
 
         private IMessageBusProvider ResolveConfiguredMessageBusProvider()
         {
-            if (MessageBusProviderHandle.IsAvailable(_configuredMessageBusProvider))
+            if (MessageBusProviderUtility.IsAvailable(_configuredMessageBusProvider))
             {
                 return _configuredMessageBusProvider;
             }

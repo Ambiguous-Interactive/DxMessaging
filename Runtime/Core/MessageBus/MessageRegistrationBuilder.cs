@@ -579,9 +579,12 @@ namespace DxMessaging.Core.MessageBus
                 return options.PreferredMessageBus;
             }
 
-            IMessageBusProvider effectiveProvider =
-                options.MessageBusProvider ?? _messageBusProvider;
-            if (effectiveProvider != null)
+            IMessageBusProvider effectiveProvider = MessageBusProviderUtility.IsAvailable(
+                options.MessageBusProvider
+            )
+                ? options.MessageBusProvider
+                : _messageBusProvider;
+            if (MessageBusProviderUtility.IsAvailable(effectiveProvider))
             {
                 IMessageBus resolved = effectiveProvider.Resolve();
                 if (resolved != null)

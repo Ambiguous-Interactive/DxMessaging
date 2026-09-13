@@ -67,7 +67,7 @@ namespace DxMessaging.Unity
         /// <returns><c>true</c> when a provider exists; otherwise <c>false</c>.</returns>
         public bool TryGetProvider(out IMessageBusProvider provider)
         {
-            if (IsAvailable(_runtimeProvider))
+            if (MessageBusProviderUtility.IsAvailable(_runtimeProvider))
             {
                 provider = _runtimeProvider;
                 return true;
@@ -82,10 +82,6 @@ namespace DxMessaging.Unity
             provider = null;
             return false;
         }
-
-        internal static bool IsAvailable(IMessageBusProvider provider) =>
-            provider != null
-            && (!(provider is UnityEngine.Object unityProvider) || unityProvider != null);
 
         /// <summary>
         /// Resolves the effective message bus for this handle.

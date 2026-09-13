@@ -51,7 +51,7 @@ namespace DxMessaging.Unity
             autoConfigureSerializedProviderOnAwake;
 
         internal bool HasRuntimeProvider =>
-            MessageBusProviderHandle.IsAvailable(_messageBusProvider);
+            MessageBusProviderUtility.IsAvailable(_messageBusProvider);
 
         internal bool HasMessageBusOverride => _messageBusOverride != null;
 
@@ -162,7 +162,7 @@ namespace DxMessaging.Unity
             MessageBusRebindMode rebindMode
         )
         {
-            _messageBusProvider = MessageBusProviderHandle.IsAvailable(messageBusProvider)
+            _messageBusProvider = MessageBusProviderUtility.IsAvailable(messageBusProvider)
                 ? messageBusProvider
                 : null;
             _messageBusOverride = null;
@@ -443,7 +443,7 @@ namespace DxMessaging.Unity
 
         private IMessageBusProvider ResolveConfiguredProvider()
         {
-            if (MessageBusProviderHandle.IsAvailable(_messageBusProvider))
+            if (MessageBusProviderUtility.IsAvailable(_messageBusProvider))
             {
                 return _messageBusProvider;
             }
