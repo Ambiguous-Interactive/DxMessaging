@@ -10,12 +10,18 @@ internal sealed class ReflexCompatibilityCompilationTests
     private const string InjectedContainerField = "private Container _container;";
     private const string InitializedContainerField = "private Container _container = null!;";
 
+    /// <remarks>
+    /// The isolated compilation includes production dependencies added by the adapter. A 2026-09-13
+    /// regression omitted <c>IMessageBusProvider.cs</c>, so CI failed while Unity compiled the full assembly.
+    /// </remarks>
     [TestCase(false, TestName = "ProductionReflexAdapterCompilesAgainstPre14Api")]
     [TestCase(true, TestName = "ProductionReflexAdapterCompilesAgainst14OrNewerApi")]
     public void ProductionReflexAdapterCompilesAgainstVersionSpecificApi(bool reflex14OrNewer)
     {
         string adapterPath = LocateAdapterSource();
         string adapterSource = File.ReadAllText(adapterPath);
+        string providerPath = LocateProviderSource();
+        string providerSource = File.ReadAllText(providerPath);
         Assert.That(
             adapterSource,
             Does.Contain(InjectedContainerField),
@@ -48,11 +54,16 @@ internal sealed class ReflexCompatibilityCompilationTests
             parseOptions,
             path: "ReflexApiContracts.cs"
         );
+        SyntaxTree providerTree = CSharpSyntaxTree.ParseText(
+            providerSource,
+            parseOptions,
+            path: providerPath
+        );
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: reflex14OrNewer
                 ? "Reflex14CompatibilityContract"
                 : "ReflexPre14CompatibilityContract",
-            syntaxTrees: new[] { contractTree, adapterTree },
+            syntaxTrees: new[] { contractTree, providerTree, adapterTree },
             references: GeneratorTestUtilities.CompilationReferences,
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
@@ -102,6 +113,37 @@ internal sealed class ReflexCompatibilityCompilationTests
         );
     }
 
+    private static string LocateProviderSource()
+    {
+        string? current =
+            Path.GetDirectoryName(typeof(ReflexCompatibilityCompilationTests).Assembly.Location)
+            ?? Directory.GetCurrentDirectory();
+        for (int hop = 0; hop < 10 && current is not null; hop++)
+        {
+            string candidate = Path.Combine(
+                current,
+                "Runtime",
+                "Core",
+                "MessageBus",
+                "IMessageBusProvider.cs"
+            );
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            current = Path.GetDirectoryName(current);
+        }
+
+        return Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "Runtime",
+            "Core",
+            "MessageBus",
+            "IMessageBusProvider.cs"
+        );
+    }
+
     private const string ReflexApiContracts = """
 namespace DxMessaging.Core.Pooling
 {
@@ -113,11 +155,6 @@ namespace DxMessaging.Core.MessageBus
     using DxMessaging.Core.Pooling;
 
     public interface IMessageBus { }
-
-    public interface IMessageBusProvider
-    {
-        IMessageBus Resolve();
-    }
 
     public sealed class MessageBus : IMessageBus
     {
@@ -145,6 +182,11 @@ namespace DxMessaging.Core.MessageBus
             return new MessageRegistrationLease();
         }
     }
+}
+
+namespace UnityEngine
+{
+    public class Object { }
 }
 
 namespace Reflex.Attributes
