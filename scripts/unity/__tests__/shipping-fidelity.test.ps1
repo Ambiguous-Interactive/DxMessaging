@@ -1385,6 +1385,68 @@ if (
         throw "Function 'Read-ShippingCellEvidence' was not found in run-shipping-fidelity-matrix.ps1."
     }
     Invoke-Expression $readerDefinition.Extent.Text
+    $payloadCopyDefinition = $matrixAst.FindAll(
+        {
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Copy-NativePayloadEvidence'
+        },
+        $true
+    ) | Select-Object -First 1
+    if (-not $payloadCopyDefinition) {
+        throw "Function 'Copy-NativePayloadEvidence' was not found in run-shipping-fidelity-matrix.ps1."
+    }
+    Invoke-Expression $payloadCopyDefinition.Extent.Text
+
+    $nativeMetadataDirectory = Join-Path $cellPlayerDataDirectory 'il2cpp_data/Metadata'
+    New-Item -ItemType Directory -Path $nativeMetadataDirectory -Force | Out-Null
+    $nativeMetadataPath = Join-Path $nativeMetadataDirectory 'global-metadata.dat'
+    [System.IO.File]::WriteAllBytes($nativeMetadataPath, [byte[]](1, 2, 3, 4))
+    $nativePlayerManifest = Get-StandalonePlayerManifest -ExecutablePath $cellPlayerExePath
+    $nativeManifestEnvelope = [ordered]@{
+        schemaVersion = 2
+        topologyId = 'semantic-18-v1'
+        messageTypeCount = 18
+        playerDirectoryManifestMatches = $true
+        playerDirectoryManifestBefore = $nativePlayerManifest
+        playerDirectoryManifestAfter = Copy-JsonValue -Value $nativePlayerManifest
+        runs = @('positive', 'missing-root-mutant')
+    }
+    $nativeCellArtifacts = Join-Path $fixtureRoot 'native-cell-artifacts'
+    New-Item -ItemType Directory -Path $nativeCellArtifacts -Force | Out-Null
+    [System.IO.File]::WriteAllText(
+        (Join-Path $nativeCellArtifacts 'shipping-player-manifest.json'),
+        ($nativeManifestEnvelope | ConvertTo-Json -Depth 10)
+    )
+    $nativeDestination = Join-Path $fixtureRoot 'native-payload'
+    Copy-NativePayloadEvidence `
+        -CellArtifactsPath $nativeCellArtifacts `
+        -PlayerRoot $cellPlayerDirectory `
+        -Destination $nativeDestination
+    Assert-That 'native payload capture retains all three manifest-bound files' (
+        (Test-Path -LiteralPath (Join-Path $nativeDestination 'DxmShippingPlayer.exe') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $nativeDestination 'GameAssembly.dll') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $nativeDestination 'global-metadata.dat') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $nativeDestination 'source-player-manifest.json') -PathType Leaf)
+    )
+    Assert-That 'native payload capture preserves the validated metadata hash' (
+        (Get-FileHash -LiteralPath (Join-Path $nativeDestination 'global-metadata.dat') -Algorithm SHA256).Hash -ceq
+        (Get-FileHash -LiteralPath $nativeMetadataPath -Algorithm SHA256).Hash
+    )
+    Assert-Fails 'native payload capture rejects a stale destination' {
+        Copy-NativePayloadEvidence `
+            -CellArtifactsPath $nativeCellArtifacts `
+            -PlayerRoot $cellPlayerDirectory `
+            -Destination $nativeDestination
+    } 'destination already exists'
+    [System.IO.File]::WriteAllBytes($nativeMetadataPath, [byte[]](4, 3, 2, 1))
+    Assert-Fails 'native payload capture rejects bytes changed after manifest validation' {
+        Copy-NativePayloadEvidence `
+            -CellArtifactsPath $nativeCellArtifacts `
+            -PlayerRoot $cellPlayerDirectory `
+            -Destination (Join-Path $fixtureRoot 'mutated-native-payload')
+    } 'differs from its validated player manifest'
+    [System.IO.File]::WriteAllBytes($nativeMetadataPath, [byte[]](1, 2, 3, 4))
 
     $readerFixturePath = Join-Path $fixtureRoot 'reader-cell-evidence.json'
     $readableCell = Copy-JsonValue -Value $cellEvidence

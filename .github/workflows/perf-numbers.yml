@@ -95,18 +95,14 @@ on:
       - "requirements-brand.txt"
   workflow_dispatch:
 
-# Serialize merge-path runs on the same ref so two post-merge push jobs from
-# this workflow do not race each other. A separate freshness check still guards
-# against unrelated default-branch pushes landing while the benchmarks run. We do
-# NOT cancel in-progress runs -- that would abort an in-flight benchmark.
-#
-# Pull-request runs add the head SHA, so that merge-path serialization does not
-# also queue a pull request's current head behind a superseded run whose only
-# remaining act is to abort on the per-leg head guard (#332). Benchmarks stay
-# mutually exclusive through the organization build lock, and every licensed leg
-# re-checks the pull-request head before it can reach that lock.
+# Pull-request runs share one group across head revisions so
+# `cancel-in-progress: true` actually retires superseded runs. Push and dispatch
+# runs share a group per ref. A separate freshness check still guards against an
+# unrelated default-branch push landing while benchmarks run. Benchmarks remain
+# mutually exclusive through the organization build lock, whose cancellation-safe
+# acquire and cleanup paths protect the licensed seat.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # Top-level least-privilege. The default-branch refresh job (commit-perf-doc)

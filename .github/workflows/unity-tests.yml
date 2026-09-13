@@ -50,6 +50,10 @@ on:
         description: "Run the exhaustive stripped-player matrix"
         type: boolean
         default: false
+      shipping_native_payload:
+        description: "Retain the High semantic native payload (requires shipping fidelity)"
+        type: boolean
+        default: false
       consumer_install_validation:
         description: "Validate Git, UPM tarball, and classic package consumers"
         type: boolean
@@ -63,9 +67,10 @@ concurrency:
   # the cleanup chain runs under `if: always()`, and the scheduled reaper
   # recovers a holder whose runner died. Licensed Unity work is still
   # serialized by the organization build lock, not by this group, and every
-  # leg re-checks the pull-request head before it can reach that lock, so two
-  # runs of one pull request can never both do licensed work (#332).
-  group: unity-tests-${{ github.event.pull_request.number && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || github.ref }}
+  # leg re-checks the pull-request head before it can reach that lock. Pull
+  # requests therefore share one group across head revisions so this setting
+  # actually cancels superseded runs; push and dispatch runs stay keyed by ref.
+  group: unity-tests-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -451,6 +456,7 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DXM_RETAIN_NATIVE_PAYLOAD: ${{ inputs.shipping_native_payload }}
         run: |
           $projectPathRoot = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
@@ -459,7 +465,8 @@ jobs:
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping' `
             -ProjectPathRoot $projectPathRoot `
-            -CachePath $cachePath
+            -CachePath $cachePath `
+            -RetainNativePayload:($env:DXM_RETAIN_NATIVE_PAYLOAD -eq 'true')
 
       # A mode failure is tolerated until the test modes and shipping group have
       # had a chance to run. Preserve diagnostics and result verification, then fail
@@ -647,6 +654,27 @@ jobs:
           name: unity-${{ matrix.unity-version }}-shipping
           path: .artifacts/unity/${{ matrix.unity-version }}-shipping
           include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload shipping native payload
+        if: >-
+          ${{
+            steps.redact_tests.outcome == 'success' &&
+            steps.run_shipping.outcome == 'success' &&
+            steps.acquire_lock.outputs.acquired == 'true' &&
+            always() &&
+            !cancelled() &&
+            github.event_name == 'workflow_dispatch' &&
+            inputs.shipping_fidelity &&
+            inputs.shipping_native_payload &&
+            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')
+          }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unity-${{ matrix.unity-version }}-shipping-native-payload
+          path: .artifacts/unity/${{ matrix.unity-version }}-shipping-native-payload
           if-no-files-found: error
           retention-days: 14
 

@@ -7,7 +7,8 @@ param(
     [Parameter(Mandatory = $true)][string]$ProjectPathRoot,
     [Parameter(Mandatory = $true)][string]$CachePath,
     [string]$RepoRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
-    [string]$RunnerPath = (Join-Path $PSScriptRoot 'run-ci-tests.ps1')
+    [string]$RunnerPath = (Join-Path $PSScriptRoot 'run-ci-tests.ps1'),
+    [switch]$RetainNativePayload
 )
 
 Set-StrictMode -Version Latest
@@ -108,6 +109,65 @@ function Read-ShippingCellEvidence {
     return $row
 }
 
+function Copy-NativePayloadEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$CellArtifactsPath,
+        [Parameter(Mandatory = $true)][string]$PlayerRoot,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $sourceManifestPath = Join-Path $CellArtifactsPath 'shipping-player-manifest.json'
+    $manifest = Get-Content -LiteralPath $sourceManifestPath -Raw | ConvertFrom-Json
+    if (
+        [int]$manifest.schemaVersion -ne 2 -or
+        [string]$manifest.topologyId -cne 'semantic-18-v1' -or
+        -not [bool]$manifest.playerDirectoryManifestMatches
+    ) {
+        throw 'Native payload retention requires the validated High semantic player manifest.'
+    }
+    $roles = @(
+        [ordered]@{ Name = 'DxmShippingPlayer.exe'; Suffix = 'DxmShippingPlayer.exe' },
+        [ordered]@{ Name = 'GameAssembly.dll'; Suffix = 'GameAssembly.dll' },
+        [ordered]@{ Name = 'global-metadata.dat'; Suffix = 'global-metadata.dat' }
+    )
+    if (Test-Path -LiteralPath $Destination) {
+        throw "Native payload destination already exists: $Destination"
+    }
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Copy-Item -LiteralPath $sourceManifestPath -Destination (Join-Path $Destination 'source-player-manifest.json')
+    foreach ($role in $roles) {
+        $matches = @(
+            $manifest.playerDirectoryManifestBefore.files |
+                Where-Object {
+                    $path = [string]$_.path
+                    $path -ceq $role.Suffix -or $path.EndsWith("/$($role.Suffix)", [StringComparison]::Ordinal)
+                }
+        )
+        if ($matches.Count -ne 1) {
+            throw "Native player manifest must contain exactly one $($role.Suffix)."
+        }
+        $sourcePath = $PlayerRoot
+        foreach ($segment in ([string]$matches[0].path).Split('/')) {
+            $sourcePath = Join-Path $sourcePath $segment
+        }
+        $source = Get-Item -LiteralPath $sourcePath -ErrorAction Stop
+        $sourceHash = (Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash
+        if (
+            [long]$source.Length -ne [long]$matches[0].length -or
+            $sourceHash -cne [string]$matches[0].sha256
+        ) {
+            throw "Native payload $($role.Suffix) differs from its validated player manifest."
+        }
+        $destinationPath = Join-Path $Destination $role.Name
+        Copy-Item -LiteralPath $source.FullName -Destination $destinationPath
+        $copy = Get-Item -LiteralPath $destinationPath -ErrorAction Stop
+        $copyHash = (Get-FileHash -LiteralPath $copy.FullName -Algorithm SHA256).Hash
+        if ([long]$copy.Length -ne [long]$matches[0].length -or $copyHash -cne $sourceHash) {
+            throw "Native payload copy $($role.Name) differs from its validated source."
+        }
+    }
+}
+
 $failures = [System.Collections.Generic.List[string]]::new()
 $failedCellIds = [System.Collections.Generic.List[string]]::new()
 $unreadableEvidenceCellIds = [System.Collections.Generic.List[string]]::new()
@@ -148,17 +208,34 @@ foreach ($shippingProfile in $shippingProfiles) {
         # point of this slice, but it is reported as its own class so nobody
         # reads it as a stripping regression.
         try {
-            $cellRows.Add((
-                Read-ShippingCellEvidence `
-                    -Path (Join-Path (Join-Path $ArtifactsPath $shippingCaseId) 'shipping-cell-evidence.json') `
-                    -CellId $shippingCaseId
-            ))
+            $cellRow = Read-ShippingCellEvidence `
+                -Path (Join-Path (Join-Path $ArtifactsPath $shippingCaseId) 'shipping-cell-evidence.json') `
+                -CellId $shippingCaseId
+            $cellRows.Add($cellRow)
         } catch {
             $failure = "{0}: passed its shipping proof but wrote unusable evidence: {1}" -f
                 $shippingCaseId, $_.Exception.Message
             $failures.Add($failure)
             $unreadableEvidenceCellIds.Add($shippingCaseId)
             Write-Warning "Shipping-fidelity cell evidence is unusable; continuing to preserve later evidence. $failure"
+            continue
+        }
+        if ($RetainNativePayload -and $shippingCaseId -ceq 'high-semantic-18') {
+            try {
+                $cellArtifactsPath = Join-Path $ArtifactsPath $shippingCaseId
+                $playerRoot = Join-Path (
+                    Join-Path $ProjectPathRoot "$UnityVersion-shipping-$shippingCaseId"
+                ) 'Build/DxmShippingPlayer'
+                Copy-NativePayloadEvidence `
+                    -CellArtifactsPath $cellArtifactsPath `
+                    -PlayerRoot $playerRoot `
+                    -Destination "$ArtifactsPath-native-payload"
+            } catch {
+                $failure = "{0}: native payload retention failed: {1}" -f
+                    $shippingCaseId, $_.Exception.Message
+                $failures.Add($failure)
+                Write-Warning "Shipping-fidelity native payload is unusable. $failure"
+            }
         }
     }
 }

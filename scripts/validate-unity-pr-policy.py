@@ -63,12 +63,13 @@ SUPERSEDED_GUARD = re.compile(
 )
 # The enrollment contract (build-lock #274) pins literal `cancel-in-progress:
 # true`, so a superseded run is cancelled instead of queueing. The concurrency
-# GROUP still carries the head: push runs serialize per ref, pull-request runs
-# partition per head SHA (#332). Every group in the
-# workflow must use this one key -- a job-level group keyed only by `github.ref`
-# would let a newer run cancel a superseded run's preflight, skipping that run's
-# licensed matrix and leaving its aggregate to report a result shape the gate
-# does not enumerate.
+# GROUP must omit the head SHA: push runs serialize per ref, while every revision
+# of one pull request shares a group so `cancel-in-progress` can retire the old
+# run. Job-level preflight groups may still partition per head; they do not reach
+# licensed work and remain subordinate to the workflow-level cancellation.
+PULL_REQUEST_CONCURRENCY_KEY = (
+    "${{ github.event.pull_request.number || github.ref }}"
+)
 PER_HEAD_CONCURRENCY_KEY = (
     "${{ github.event.pull_request.number && "
     "format('{0}-{1}', github.event.pull_request.number, "
@@ -862,22 +863,15 @@ def concurrency_groups(source: str) -> list[str | None]:
     return groups
 
 
-def validate_per_head_concurrency(source: str, label: str) -> None:
-    """Every concurrency group in a licensed Unity workflow partitions per head SHA."""
+def validate_workflow_concurrency_group(source: str, label: str, prefix: str) -> None:
+    """The workflow group must let a newer PR head cancel the superseded run."""
     groups = concurrency_groups(source)
     require(bool(groups), f"{label}: no concurrency block declared")
-    for group in groups:
-        require(
-            group is not None,
-            f"{label}: every concurrency block must name a group",
-        )
-        assert group is not None
-        require(
-            group.endswith(PER_HEAD_CONCURRENCY_KEY),
-            f"{label}: concurrency group {group!r} must end with the per-head key "
-            f"{PER_HEAD_CONCURRENCY_KEY!r} so a superseded pull-request run cannot "
-            "hold it while the run for the current head waits",
-        )
+    require(
+        groups[0] == f"{prefix}{PULL_REQUEST_CONCURRENCY_KEY}",
+        f"{label}: workflow concurrency group must omit the head SHA so "
+        "cancel-in-progress can retire superseded pull-request runs",
+    )
 
 
 def validate_licensed_workflow_policy(source: str) -> str:
@@ -893,7 +887,7 @@ def validate_licensed_workflow_policy(source: str) -> str:
         == ["  cancel-in-progress: true"],
         "Unity workflow concurrency must use one literal cancel-in-progress: true (build-lock #274)",
     )
-    validate_per_head_concurrency(source, "unity-tests.yml")
+    validate_workflow_concurrency_group(source, "unity-tests.yml", "unity-tests-")
 
     licensed = job_block(source, "unity-tests")
     require(
@@ -2838,6 +2832,7 @@ def validate_grouped_unity_correctness() -> None:
         "-ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-shipping'",
         "-ProjectPathRoot $projectPathRoot",
         "-CachePath $cachePath",
+        "-RetainNativePayload:($env:DXM_RETAIN_NATIVE_PAYLOAD -eq 'true')",
     ):
         require(fragment in shipping, f"shipping: grouped run missing {fragment!r}")
     require(
@@ -2911,6 +2906,16 @@ def validate_grouped_unity_correctness() -> None:
         and "unity-${{ matrix.unity-version }}-shipping" in shipping_upload
         and ".artifacts/unity/${{ matrix.unity-version }}-shipping" in shipping_upload,
         "shipping fidelity must upload isolated evidence after lock acquisition, skip cancellation, and fail when it is absent",
+    )
+    native_upload = step_block(job, "Upload shipping native payload")
+    require(
+        "inputs.shipping_native_payload" in native_upload
+        and "steps.run_shipping.outcome == 'success'" in native_upload
+        and "steps.acquire_lock.outputs.acquired == 'true'" in native_upload
+        and "unity-${{ matrix.unity-version }}-shipping-native-payload" in native_upload
+        and ".artifacts/unity/${{ matrix.unity-version }}-shipping-native-payload" in native_upload
+        and "if-no-files-found: error" in native_upload,
+        "shipping native payload must remain manual, isolated, and fail when absent",
     )
     require(
         job.count("-LicenseReturnOwner Central") == 3,
@@ -3588,7 +3593,7 @@ def validate_perf_pr_policy() -> None:
     """Keep PR performance evidence trusted, current, and credential-free."""
     perf_path = Path(".github/workflows/perf-numbers.yml")
     source = perf_path.read_text(encoding="utf-8")
-    validate_per_head_concurrency(source, "perf-numbers.yml")
+    validate_workflow_concurrency_group(source, "perf-numbers.yml", "${{ github.workflow }}-")
     preflight = job_block(source, "runner-preflight")
     benchmark = job_block(source, "perf-benchmarks")
     comment = job_block(source, "comment-perf-doc")
@@ -4701,9 +4706,9 @@ steps:
     )
     require_policy_mutation_rejected(
         source,
+        f"  group: unity-tests-{PULL_REQUEST_CONCURRENCY_KEY}\n",
         f"  group: unity-tests-{PER_HEAD_CONCURRENCY_KEY}\n",
-        "  group: unity-tests-${{ github.event.pull_request.number || github.ref }}\n",
-        "per-head concurrency group",
+        "pull-request concurrency group",
     )
     require_policy_mutation_rejected(
         source,
