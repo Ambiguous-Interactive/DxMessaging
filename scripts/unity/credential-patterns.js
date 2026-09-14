@@ -677,13 +677,13 @@ function scalarCacheKey(value, key, element) {
   return value.length <= 4096 && (key?.length ?? 0) <= 256 && (element?.length ?? 0) <= 256 ? JSON.stringify([key ?? null, element ?? null, value]) : undefined;
 }
 const STRUCTURE_FINDING = Object.freeze({ id: "unsafe-structured-data", description: "unsupported structured data" });
-function findSensitiveData(text, format) {
-  const found = new Map();
-  const scalarCache = new Map();
+function findSensitiveData(text, format, onUncachedScalar) {
+  const found = new Map(), scalarCache = new Map();
   const inspect = (value, key, element) => {
     const cacheKey = scalarCacheKey(value, key, element);
     let entries = scalarCache.get(cacheKey);
     if (entries === undefined) {
+      onUncachedScalar?.();
       const local = new Map();
       if (/[\p{Cf}\uD800-\uDFFF]/u.test(value))
         local.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
@@ -711,7 +711,7 @@ function findSensitiveData(text, format) {
   }
   return [...found.values()];
 }
-function redactSensitiveData(text, format) {
+function redactSensitiveData(text, format, onUncachedScalar) {
   const counts = new Map(), scalarCache = new Map();
   try {
     const output = structuredText(
@@ -720,7 +720,7 @@ function redactSensitiveData(text, format) {
         const cacheKey = scalarCacheKey(value, key, element);
         let result = cacheKey === undefined ? undefined : scalarCache.get(cacheKey);
         if (result === undefined) {
-          const context = contextualPattern(key, value, element);
+          const context = (onUncachedScalar?.(), contextualPattern(key, value, element));
           if (context)
             result = { redacted: `[redacted:${context.id}]`, counts: new Map([[context.id, 1]]) };
           else {

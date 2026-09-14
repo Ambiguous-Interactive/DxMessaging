@@ -521,13 +521,13 @@ test("entity-heavy account input cannot exhaust the scrubber", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
 });
-test("repeated sensitive Bee JSON scalars do not amplify artifact preparation past a bounded run", () => {
+test("repeated sensitive Bee JSON scalars are scanned once per document", () => {
   // 2026-09-13: repeated Bee paths made the 20-cell shipping redaction gate exceed two minutes.
-  const redactor = JSON.stringify(path.resolve(__dirname, "../unity/redact-unity-artifacts.js"));
-  const script = `const fs=require('fs'),os=require('os'),path=require('path'),r=require(${redactor}),d=fs.mkdtempSync(path.join(os.tmpdir(),'dxm-redact-bee-')),v='C:/Users/runner/Library/Bee/artifacts/WinPlayerBuildProgram/il2cppOutput/build/Data/Metadata/global-metadata.dat',n=Math.floor(1024*1024/(v.length+3));for(let i=0;i<4;i++)fs.writeFileSync(path.join(d,'Player'+i+'-inputdata.json'),JSON.stringify({cell:i,values:Array(n).fill(v)}));const x=r.redactDirectory(d);if(x.changed.length!==4||x.skipped.length||x.totals.get('account-home-path')!==n*4)process.exit(2);fs.rmSync(d,{recursive:true,force:true})`;
-  assert.ok(script.length < 4096, "the child program must stay below Windows argv limits");
-  const result = spawnSync(process.execPath, ["--max-old-space-size=512", "-e", script], { timeout: 5000 });
-  assert.equal(result.status, 0, result.error?.message ?? result.stderr.toString());
+  const value = "C:/Users/runner/Library/Bee/artifacts/WinPlayerBuildProgram/il2cppOutput/build/Data/Metadata/global-metadata.dat";
+  const count = 8192, input = JSON.stringify({ values: Array(count).fill(value) });
+  const scans = [0, 0], findings = findSensitiveData(input, ".json", () => scans[0]++);
+  const result = redactSensitiveData(input, ".json", () => scans[1]++);
+  assert.deepEqual([findings.map(({ id }) => id), scans, result.counts.get("account-home-path"), findSensitiveData(result.redacted, ".json")], [["account-home-path"], [1, 1], count, []]);
 });
 for (const unique of [false, true, "alternating"]) {
   test(`large escaped logs stay within a bounded heap (unique records: ${unique})`, () => {
