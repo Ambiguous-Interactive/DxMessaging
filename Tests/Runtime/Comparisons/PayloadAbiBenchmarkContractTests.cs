@@ -6,7 +6,6 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using System.Linq;
     using NUnit.Framework;
 
-    [Category("PerfBench")]
     public sealed class PayloadAbiBenchmarkContractTests
     {
         [Test]
