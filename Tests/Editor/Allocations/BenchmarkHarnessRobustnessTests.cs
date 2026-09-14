@@ -496,23 +496,41 @@ namespace DxMessaging.Tests.Editor.Allocations
                 2
             ).SetName("DispatchBaselineSetup_BroadcastPostRewrittenPopulatedFinalRoute");
             yield return new TestCaseData(
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingHandler,
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler,
                 1,
                 1,
                 1
-            ).SetName("DispatchBaselineSetup_TargetedWithoutTargeting");
+            ).SetName("DispatchBaselineSetup_TargetedWithoutTargetingAction");
             yield return new TestCaseData(
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceHandler,
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler,
                 1,
                 1,
                 1
-            ).SetName("DispatchBaselineSetup_BroadcastWithoutSource");
+            ).SetName("DispatchBaselineSetup_TargetedWithoutTargetingFast");
             yield return new TestCaseData(
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneHandler,
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler,
                 1,
                 1,
                 1
-            ).SetName("DispatchBaselineSetup_GlobalAcceptAllUntargetedClass");
+            ).SetName("DispatchBaselineSetup_BroadcastWithoutSourceAction");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_BroadcastWithoutSourceFast");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_GlobalAcceptAllUntargetedClassAction");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_GlobalAcceptAllUntargetedClassFast");
         }
 
         [Test]
@@ -551,20 +569,35 @@ namespace DxMessaging.Tests.Editor.Allocations
         private static IEnumerable<TestCaseData> MissingRouteTopologyCases()
         {
             yield return new TestCaseData(
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingHandler,
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler,
                 "bus:0:1:0:0:0:0",
                 "registration:0:TargetedWithoutTargeting:DxMessaging.Tests.Runtime.Scripts.Messages.SimpleTargetedMessage:0:none"
-            ).SetName("MissingRouteTopology_TargetedWithoutTargeting");
+            ).SetName("MissingRouteTopology_TargetedWithoutTargetingAction");
             yield return new TestCaseData(
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceHandler,
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler,
+                "bus:0:1:0:0:0:0",
+                "registration:0:TargetedWithoutTargeting:DxMessaging.Tests.Runtime.Scripts.Messages.SimpleTargetedMessage:0:none"
+            ).SetName("MissingRouteTopology_TargetedWithoutTargetingFast");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler,
                 "bus:0:0:1:0:0:0",
                 "registration:0:BroadcastWithoutSource:DxMessaging.Tests.Runtime.Scripts.Messages.SimpleBroadcastMessage:0:none"
-            ).SetName("MissingRouteTopology_BroadcastWithoutSource");
+            ).SetName("MissingRouteTopology_BroadcastWithoutSourceAction");
             yield return new TestCaseData(
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneHandler,
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler,
+                "bus:0:0:1:0:0:0",
+                "registration:0:BroadcastWithoutSource:DxMessaging.Tests.Runtime.Scripts.Messages.SimpleBroadcastMessage:0:none"
+            ).SetName("MissingRouteTopology_BroadcastWithoutSourceFast");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler,
                 "bus:0:0:0:0:0:1",
                 "registration:0:GlobalAcceptAll:DxMessaging.Core.IMessage:0:none"
-            ).SetName("MissingRouteTopology_GlobalAcceptAllUntargetedClass");
+            ).SetName("MissingRouteTopology_GlobalAcceptAllUntargetedClassAction");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler,
+                "bus:0:0:0:0:0:1",
+                "registration:0:GlobalAcceptAll:DxMessaging.Core.IMessage:0:none"
+            ).SetName("MissingRouteTopology_GlobalAcceptAllUntargetedClassFast");
         }
 
         [Test]

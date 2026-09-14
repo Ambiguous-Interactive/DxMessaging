@@ -876,12 +876,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
                     "TargetedFlood_SixteenListeners",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler => "BroadcastFlood_OneHandler",
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingHandler =>
-                    "TargetedFlood_OneWithoutTargetingHandler",
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceHandler =>
-                    "BroadcastFlood_OneWithoutSourceHandler",
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneHandler =>
-                    "GlobalAcceptAll_UntargetedClass_OneHandler",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler =>
+                    "TargetedFlood_OneWithoutTargeting_ActionHandler",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler =>
+                    "TargetedFlood_OneWithoutTargeting_FastHandler",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler =>
+                    "BroadcastFlood_OneWithoutSource_ActionHandler",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler =>
+                    "BroadcastFlood_OneWithoutSource_FastHandler",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler =>
+                    "GlobalAcceptAll_UntargetedClass_OneActionHandler",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler =>
+                    "GlobalAcceptAll_UntargetedClass_OneFastHandler",
                 DispatchBenchmarkScenario.TargetedPostStableRoute => "TargetedPost_StableRoute",
                 DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
                     "TargetedPost_Rewritten_EmptyFinalRoute",
@@ -952,12 +958,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Targeted Flood (Sixteen Listeners)",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler =>
                     "Broadcast Flood (One Handler)",
-                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingHandler =>
-                    "Targeted Flood (One Without-Targeting Handler)",
-                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceHandler =>
-                    "Broadcast Flood (One Without-Source Handler)",
-                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneHandler =>
-                    "Global Accept-All (Untargeted Class, One Handler)",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler =>
+                    "Targeted Flood (One Without-Targeting Action Handler)",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler =>
+                    "Targeted Flood (One Without-Targeting Fast Handler)",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler =>
+                    "Broadcast Flood (One Without-Source Action Handler)",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler =>
+                    "Broadcast Flood (One Without-Source Fast Handler)",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler =>
+                    "Global Accept-All (Untargeted Class, One Action Handler)",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler =>
+                    "Global Accept-All (Untargeted Class, One Fast Handler)",
                 DispatchBenchmarkScenario.TargetedPostStableRoute => "Targeted Post Route (Stable)",
                 DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
                     "Targeted Post Route (Rewritten, Empty Final Route)",
