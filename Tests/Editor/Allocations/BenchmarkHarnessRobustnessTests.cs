@@ -495,6 +495,24 @@ namespace DxMessaging.Tests.Editor.Allocations
                 1,
                 2
             ).SetName("DispatchBaselineSetup_BroadcastPostRewrittenPopulatedFinalRoute");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_TargetedWithoutTargeting");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_BroadcastWithoutSource");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneHandler,
+                1,
+                1,
+                1
+            ).SetName("DispatchBaselineSetup_GlobalAcceptAllUntargetedClass");
         }
 
         [Test]
@@ -527,6 +545,54 @@ namespace DxMessaging.Tests.Editor.Allocations
                 expectedRegistrationBuckets,
                 observation.RegistrationBuckets,
                 $"Scenario '{scenario}' must configure the expected public bus registration buckets."
+            );
+        }
+
+        private static IEnumerable<TestCaseData> MissingRouteTopologyCases()
+        {
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingHandler,
+                "bus:0:1:0:0:0:0",
+                "registration:0:TargetedWithoutTargeting:DxMessaging.Tests.Runtime.Scripts.Messages.SimpleTargetedMessage:0:none"
+            ).SetName("MissingRouteTopology_TargetedWithoutTargeting");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceHandler,
+                "bus:0:0:1:0:0:0",
+                "registration:0:BroadcastWithoutSource:DxMessaging.Tests.Runtime.Scripts.Messages.SimpleBroadcastMessage:0:none"
+            ).SetName("MissingRouteTopology_BroadcastWithoutSource");
+            yield return new TestCaseData(
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneHandler,
+                "bus:0:0:0:0:0:1",
+                "registration:0:GlobalAcceptAll:DxMessaging.Core.IMessage:0:none"
+            ).SetName("MissingRouteTopology_GlobalAcceptAllUntargetedClass");
+        }
+
+        [Test]
+        [TestCaseSource(nameof(MissingRouteTopologyCases))]
+        public void MissingRouteScenarioUsesOneTokenRegistrationWithNoContext(
+            DispatchBenchmarkScenario scenario,
+            string expectedBusTopology,
+            string expectedRegistration
+        )
+        {
+            (string[] topology, long invocations) =
+                DispatchThroughputBenchmarks.ObserveTopologyForContract(scenario, 1);
+
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    expectedBusTopology,
+                    "diagnostics:False",
+                    "token:0:True:False",
+                    expectedRegistration,
+                },
+                topology,
+                $"Scenario '{scenario}' must isolate one diagnostics-off, token-owned, context-free registration."
+            );
+            Assert.AreEqual(
+                1,
+                invocations,
+                $"Scenario '{scenario}' must invoke its one declared handler exactly once."
             );
         }
 
