@@ -13,6 +13,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using DxMessaging.Core;
     using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
@@ -40,6 +41,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         TargetedFloodOneListener,
         TargetedFloodSixteenListeners,
         BroadcastFloodOneHandler,
+        TargetedFloodOneWithoutTargetingActionHandler,
+        TargetedFloodOneWithoutTargetingFastHandler,
+        BroadcastFloodOneWithoutSourceActionHandler,
+        BroadcastFloodOneWithoutSourceFastHandler,
+        GlobalAcceptAllUntargetedClassOneActionHandler,
+        GlobalAcceptAllUntargetedClassOneFastHandler,
         TargetedPostStableRoute,
         TargetedPostRewrittenEmptyFinalRoute,
         TargetedPostRewrittenPopulatedFinalRoute,
@@ -93,6 +100,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private static readonly InstanceId MissingTarget = new(31003);
         private static readonly InstanceId RewrittenTarget = new(31004);
         private static readonly InstanceId RewrittenSource = new(31005);
+        private static readonly ClassUntargetedMessage GlobalUntargetedMessage = new();
         private static Action<MessageRegistrationToken>[] _registrationFloodBuilders;
 
         /*
@@ -467,6 +475,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.UntargetedFloodOneDirectHandler:
                 case DispatchBenchmarkScenario.TargetedFloodOneListener:
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
+                case DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler:
+                case DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler:
+                case DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler:
+                case DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler:
+                case DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler:
+                case DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler:
                 case DispatchBenchmarkScenario.TargetedPostStableRoute:
                 case DispatchBenchmarkScenario.TargetedPostRewrittenPopulatedFinalRoute:
                 case DispatchBenchmarkScenario.BroadcastPostStableRoute:
@@ -1410,6 +1424,24 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 case DispatchBenchmarkScenario.BroadcastFloodOneHandler:
                     RegisterBroadcast(scope, handlerInvocations, 0);
                     return;
+                case DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler:
+                    RegisterTargetedWithoutTargetingAction(scope, handlerInvocations);
+                    return;
+                case DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler:
+                    RegisterTargetedWithoutTargetingFast(scope, handlerInvocations);
+                    return;
+                case DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler:
+                    RegisterBroadcastWithoutSourceAction(scope, handlerInvocations);
+                    return;
+                case DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler:
+                    RegisterBroadcastWithoutSourceFast(scope, handlerInvocations);
+                    return;
+                case DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler:
+                    RegisterGlobalAcceptAllAction(scope, handlerInvocations);
+                    return;
+                case DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler:
+                    RegisterGlobalAcceptAllFast(scope, handlerInvocations);
+                    return;
                 case DispatchBenchmarkScenario.TargetedPostStableRoute:
                     _ = scope.PrimaryToken.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
                         Target,
@@ -1557,6 +1589,100 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
+        private static void RegisterTargetedWithoutTargetingAction(
+            BenchmarkRegistrationScope scope,
+            InvocationCounter handlerInvocations
+        )
+        {
+            Action<InstanceId, SimpleTargetedMessage> callback = (
+                InstanceId target,
+                SimpleTargetedMessage message
+            ) => handlerInvocations.Increment();
+            _ = scope.PrimaryToken.RegisterTargetedWithoutTargeting(callback);
+        }
+
+        private static void RegisterTargetedWithoutTargetingFast(
+            BenchmarkRegistrationScope scope,
+            InvocationCounter handlerInvocations
+        )
+        {
+            MessageHandler.FastHandlerWithContext<SimpleTargetedMessage> callback = (
+                in InstanceId target,
+                in SimpleTargetedMessage message
+            ) => handlerInvocations.Increment();
+            _ = scope.PrimaryToken.RegisterTargetedWithoutTargeting(callback);
+        }
+
+        private static void RegisterBroadcastWithoutSourceAction(
+            BenchmarkRegistrationScope scope,
+            InvocationCounter handlerInvocations
+        )
+        {
+            Action<InstanceId, SimpleBroadcastMessage> callback = (
+                InstanceId source,
+                SimpleBroadcastMessage message
+            ) => handlerInvocations.Increment();
+            _ = scope.PrimaryToken.RegisterBroadcastWithoutSource(callback);
+        }
+
+        private static void RegisterBroadcastWithoutSourceFast(
+            BenchmarkRegistrationScope scope,
+            InvocationCounter handlerInvocations
+        )
+        {
+            MessageHandler.FastHandlerWithContext<SimpleBroadcastMessage> callback = (
+                in InstanceId source,
+                in SimpleBroadcastMessage message
+            ) => handlerInvocations.Increment();
+            _ = scope.PrimaryToken.RegisterBroadcastWithoutSource(callback);
+        }
+
+        private static void RegisterGlobalAcceptAllAction(
+            BenchmarkRegistrationScope scope,
+            InvocationCounter handlerInvocations
+        )
+        {
+            Action<IUntargetedMessage> untargeted = message => handlerInvocations.Increment();
+            Action<InstanceId, ITargetedMessage> targeted = IgnoreGlobalTargetedAction;
+            Action<InstanceId, IBroadcastMessage> broadcast = IgnoreGlobalBroadcastAction;
+            _ = scope.PrimaryToken.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
+        }
+
+        private static void RegisterGlobalAcceptAllFast(
+            BenchmarkRegistrationScope scope,
+            InvocationCounter handlerInvocations
+        )
+        {
+            MessageHandler.FastHandler<IUntargetedMessage> untargeted = (
+                in IUntargetedMessage message
+            ) => handlerInvocations.Increment();
+            MessageHandler.FastHandlerWithContext<ITargetedMessage> targeted =
+                IgnoreGlobalTargetedFast;
+            MessageHandler.FastHandlerWithContext<IBroadcastMessage> broadcast =
+                IgnoreGlobalBroadcastFast;
+            _ = scope.PrimaryToken.RegisterGlobalAcceptAll(untargeted, targeted, broadcast);
+        }
+
+        private static void IgnoreGlobalTargetedFast(
+            in InstanceId target,
+            in ITargetedMessage message
+        ) { }
+
+        private static void IgnoreGlobalBroadcastFast(
+            in InstanceId source,
+            in IBroadcastMessage message
+        ) { }
+
+        private static void IgnoreGlobalTargetedAction(
+            InstanceId target,
+            ITargetedMessage message
+        ) { }
+
+        private static void IgnoreGlobalBroadcastAction(
+            InstanceId source,
+            IBroadcastMessage message
+        ) { }
+
         private static void EmitMany(MessageBus bus, DispatchBenchmarkScenario scenario, int count)
         {
             switch (scenario)
@@ -1613,6 +1739,32 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     for (int index = 0; index < count; index++)
                     {
                         bus.SourcedBroadcast(ref source, ref broadcast);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler:
+                case DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler:
+                    SimpleTargetedMessage anyTargetMessage = new();
+                    InstanceId anyTarget = Target;
+                    for (int index = 0; index < count; index++)
+                    {
+                        bus.TargetedBroadcast(ref anyTarget, ref anyTargetMessage);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler:
+                case DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler:
+                    SimpleBroadcastMessage anySourceMessage = new();
+                    InstanceId anySource = Source;
+                    for (int index = 0; index < count; index++)
+                    {
+                        bus.SourcedBroadcast(ref anySource, ref anySourceMessage);
+                    }
+                    return;
+                case DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler:
+                case DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler:
+                    ClassUntargetedMessage globalMessage = GlobalUntargetedMessage;
+                    for (int index = 0; index < count; index++)
+                    {
+                        bus.UntargetedBroadcast(ref globalMessage);
                     }
                     return;
                 case DispatchBenchmarkScenario.BroadcastPostRewrittenEmptyFinalRoute:

@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Collections.Generic;
     using System.Globalization;
     using DxMessaging.Core;
+    using DxMessaging.Core.DataStructure;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
@@ -15,6 +16,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         Hit,
         Miss,
         Churn,
+    }
+
+    public enum TargetMapKeyFamily
+    {
+        SequentialSanitized,
+        SignedExtremes,
+        PowerOfTwoStride,
+        UniformSeededRandom,
+        DesignedMixerCollision,
+    }
+
+    public enum TargetMapMissProbeKind
+    {
+        OutsideCluster,
+        InsideCluster,
     }
 
     /// <summary>
@@ -40,7 +56,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public static TargetMapBenchmarkResult RunScenario(TargetMapBenchmarkCase benchmarkCase)
         {
-            using TargetMapState state = new(benchmarkCase.KeyCount);
+            using TargetMapState state = new(benchmarkCase);
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
                 () => state.RunMany(benchmarkCase.Operation, BenchmarkProtocol.WarmupEmits),
                 () =>
@@ -231,7 +247,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TargetMapBenchmarkCase benchmarkCase
         )
         {
-            using TargetMapState state = new(benchmarkCase.KeyCount);
+            using TargetMapState state = new(benchmarkCase);
             InstanceId originalTarget = state.FirstTarget;
             state.RunMany(benchmarkCase.Operation, 1);
             long operationInvocations = state.Invocations;
@@ -256,6 +272,120 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
+        public static TargetMapTopologyAttribution RunTopologyAttribution(
+            TargetMapKeyFamily keyFamily,
+            int keyCount
+        )
+        {
+            TargetMapBenchmarkCase benchmarkCase = new(
+                keyCount,
+                TargetMapBenchmarkOperation.Churn,
+                keyFamily
+            );
+            using TargetMapState state = new(benchmarkCase);
+            long registeredLookupProbes = 0;
+            int maxRegisteredLookupProbes = 0;
+            long missLookupProbes = 0;
+            int maxMissLookupProbes = 0;
+            int initialLongestCluster = state.ObserveLongestCluster();
+
+            for (int index = 0; index < keyCount; ++index)
+            {
+                IntKeyMapTopologyObservation registered = state.ObserveTopology(
+                    state.TargetAt(index)
+                );
+                Assert.IsTrue(registered.Found, $"Registered target {index} must be present.");
+                registeredLookupProbes += registered.LookupProbes;
+                maxRegisteredLookupProbes = Math.Max(
+                    maxRegisteredLookupProbes,
+                    registered.LookupProbes
+                );
+                IntKeyMapTopologyObservation miss = state.ObserveTopology(
+                    state.MissTargetAt(index)
+                );
+                Assert.IsFalse(miss.Found, $"Miss target {index} must remain absent.");
+                missLookupProbes += miss.LookupProbes;
+                maxMissLookupProbes = Math.Max(maxMissLookupProbes, miss.LookupProbes);
+            }
+
+            long churnLookupProbes = 0;
+            long removalScans = 0;
+            long removalMoves = 0;
+            int maxRemovalMoves = 0;
+            int finalLongestCluster = initialLongestCluster;
+            int minimumChurnLongestCluster = int.MaxValue;
+            int maximumChurnLongestCluster = 0;
+            for (int index = 0; index < keyCount; ++index)
+            {
+                IntKeyMapTopologyObservation before = state.ObserveTopology(state.TargetAt(index));
+                Assert.IsTrue(
+                    before.Found,
+                    $"Churn target {index} must be present before removal."
+                );
+                churnLookupProbes += before.LookupProbes;
+                removalScans += before.DeletionScans;
+                removalMoves += before.DeletionMoves;
+                maxRemovalMoves = Math.Max(maxRemovalMoves, before.DeletionMoves);
+
+                state.RunMany(TargetMapBenchmarkOperation.Churn, 1);
+                IntKeyMapTopologyObservation replacement = state.ObserveTopology(
+                    state.TargetAt(index)
+                );
+                Assert.IsTrue(
+                    replacement.Found,
+                    $"Replacement target {index} must be present after churn."
+                );
+                finalLongestCluster = state.ObserveLongestCluster();
+                minimumChurnLongestCluster = Math.Min(
+                    minimumChurnLongestCluster,
+                    finalLongestCluster
+                );
+                maximumChurnLongestCluster = Math.Max(
+                    maximumChurnLongestCluster,
+                    finalLongestCluster
+                );
+                state.ObserveStorage(out int entries, out int capacity);
+                Assert.AreEqual(keyCount, entries, "Churn must preserve exact map cardinality.");
+                Assert.GreaterOrEqual(capacity, entries, "Churn must retain sufficient capacity.");
+            }
+
+            state.ObserveStorage(out int finalEntries, out int finalCapacity);
+            Assert.AreEqual(
+                keyCount,
+                state.RegisteredTargets,
+                "Topology attribution must preserve every logical target registration."
+            );
+            Assert.AreEqual(
+                keyCount,
+                state.PhysicalTargetSlots,
+                "Topology attribution must preserve every physical target slot."
+            );
+            Assert.AreEqual(
+                keyCount,
+                state.Invocations,
+                "Each churn replacement must receive exactly one message."
+            );
+            return new TargetMapTopologyAttribution(
+                keyFamily,
+                keyCount,
+                finalEntries,
+                finalCapacity,
+                initialLongestCluster,
+                finalLongestCluster,
+                minimumChurnLongestCluster,
+                maximumChurnLongestCluster,
+                registeredLookupProbes,
+                maxRegisteredLookupProbes,
+                missLookupProbes,
+                maxMissLookupProbes,
+                churnLookupProbes,
+                removalScans,
+                removalMoves,
+                maxRemovalMoves,
+                state.Invocations
+            );
+        }
+
         private static IEnumerable<TestCaseData> TargetMapBenchmarkCases()
         {
             foreach (TargetMapBenchmarkCase benchmarkCase in TargetMapBenchmarkScenarios.All)
@@ -266,40 +396,51 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private sealed class TargetMapState : IDisposable
         {
-            private const int TargetIdBase = 0x4D00_0000;
-            private const int AlternateTargetIdBase = 0x4D10_0000;
-            private const int MissingTargetIdBase = 0x4D20_0000;
             private readonly IDisposable _contextMapPoolScope;
             private readonly IDisposable _registryScope;
             private readonly MessageRegistrationToken _token;
             private readonly MessageHandler.FastHandler<TargetMapMessage> _handler;
             private readonly InstanceId[] _targets;
+            private readonly InstanceId[] _primaryTargets;
+            private readonly InstanceId[] _replacementTargets;
+            private readonly InstanceId[] _missTargets;
             private readonly MessageRegistrationHandle[] _handles;
             private int _cursor;
 
-            internal TargetMapState(int keyCount)
+            internal TargetMapState(TargetMapBenchmarkCase benchmarkCase)
             {
                 _contextMapPoolScope = MessageBus.IsolateContextMapPoolForBenchmark();
                 _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
                 try
                 {
                     MessageBus = new MessageBus { DiagnosticsMode = false };
-                    MessageHandler messageHandler = new(
-                        new InstanceId(TargetIdBase - 1),
-                        MessageBus
-                    )
+                    MessageHandler messageHandler = new(new InstanceId(0x4CFF_FFFF), MessageBus)
                     {
                         active = true,
                     };
                     _token = MessageRegistrationToken.Create(messageHandler, MessageBus);
                     _token.DiagnosticMode = false;
                     _handler = Handle;
-                    _targets = new InstanceId[keyCount];
-                    _handles = new MessageRegistrationHandle[keyCount];
-                    for (int index = 0; index < keyCount; index++)
+                    TargetMapKeySet keySet = TargetMapBenchmarkKeys.Create(
+                        benchmarkCase.KeyFamily,
+                        benchmarkCase.KeyCount
+                    );
+                    _targets = new InstanceId[benchmarkCase.KeyCount];
+                    _primaryTargets = new InstanceId[benchmarkCase.KeyCount];
+                    _replacementTargets = new InstanceId[benchmarkCase.KeyCount];
+                    int[] missKeys =
+                        benchmarkCase.MissProbeKind == TargetMapMissProbeKind.InsideCluster
+                            ? keySet.InsideClusterMisses
+                            : keySet.OutsideClusterMisses;
+                    _missTargets = new InstanceId[benchmarkCase.KeyCount];
+                    _handles = new MessageRegistrationHandle[benchmarkCase.KeyCount];
+                    for (int index = 0; index < benchmarkCase.KeyCount; index++)
                     {
-                        InstanceId target = new(TargetIdBase + index);
+                        InstanceId target = new(keySet.RegisteredKeys[index]);
                         _targets[index] = target;
+                        _primaryTargets[index] = target;
+                        _replacementTargets[index] = new InstanceId(keySet.ReplacementKeys[index]);
+                        _missTargets[index] = new InstanceId(missKeys[index]);
                         _handles[index] = _token.RegisterTargeted(target, _handler);
                     }
 
@@ -323,6 +464,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             internal int PhysicalTargetSlots => MessageBus.OccupiedTargetSlots;
 
+            internal InstanceId TargetAt(int index) => _targets[index];
+
+            internal InstanceId MissTargetAt(int index) => _missTargets[index];
+
             internal void ObserveStorage(out int entries, out int capacity)
             {
                 if (
@@ -336,6 +481,39 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         "The target-map benchmark must materialize its targeted handle map."
                     );
                 }
+            }
+
+            internal IntKeyMapTopologyObservation ObserveTopology(InstanceId target)
+            {
+                if (
+                    !MessageBus.TryObserveTargetedHandleMapTopologyForBenchmark<TargetMapMessage>(
+                        target,
+                        out IntKeyMapTopologyObservation observation
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The target-map benchmark must materialize its targeted handle map."
+                    );
+                }
+
+                return observation;
+            }
+
+            internal int ObserveLongestCluster()
+            {
+                if (
+                    !MessageBus.TryObserveTargetedHandleMapLongestClusterForBenchmark<TargetMapMessage>(
+                        out int longestCluster
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The target-map benchmark must materialize its targeted handle map."
+                    );
+                }
+
+                return longestCluster;
             }
 
             internal void RunMany(TargetMapBenchmarkOperation operation, int count)
@@ -421,7 +599,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             private void Miss()
             {
-                Emit(new InstanceId(MissingTargetIdBase + NextIndex()));
+                Emit(_missTargets[NextIndex()]);
             }
 
             private void Churn()
@@ -439,9 +617,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     );
                 }
                 InstanceId replacement =
-                    oldTarget.Id < AlternateTargetIdBase
-                        ? new InstanceId(AlternateTargetIdBase + index)
-                        : new InstanceId(TargetIdBase + index);
+                    oldTarget.Id == _primaryTargets[index].Id
+                        ? _replacementTargets[index]
+                        : _primaryTargets[index];
                 _targets[index] = replacement;
                 _handles[index] = _token.RegisterTargeted(replacement, _handler);
                 Emit(replacement);
@@ -509,6 +687,201 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
     }
 
+    internal readonly struct TargetMapKeySet
+    {
+        internal TargetMapKeySet(
+            int[] registeredKeys,
+            int[] replacementKeys,
+            int[] insideClusterMisses,
+            int[] outsideClusterMisses,
+            int expectedCapacity
+        )
+        {
+            RegisteredKeys = registeredKeys;
+            ReplacementKeys = replacementKeys;
+            InsideClusterMisses = insideClusterMisses;
+            OutsideClusterMisses = outsideClusterMisses;
+            ExpectedCapacity = expectedCapacity;
+        }
+
+        internal int[] RegisteredKeys { get; }
+
+        internal int[] ReplacementKeys { get; }
+
+        internal int[] InsideClusterMisses { get; }
+
+        internal int[] OutsideClusterMisses { get; }
+
+        internal int ExpectedCapacity { get; }
+    }
+
+    internal static class TargetMapBenchmarkKeys
+    {
+        private const uint HashMultiplierOne = 0x7FEB352Du;
+        private const uint HashMultiplierTwo = 0x846CA68Bu;
+        private static readonly uint HashMultiplierOneInverse = MultiplicativeInverse(
+            HashMultiplierOne
+        );
+        private static readonly uint HashMultiplierTwoInverse = MultiplicativeInverse(
+            HashMultiplierTwo
+        );
+
+        internal static TargetMapKeySet Create(TargetMapKeyFamily family, int keyCount)
+        {
+            if (keyCount <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(keyCount));
+            }
+            if (!Enum.IsDefined(typeof(TargetMapKeyFamily), family))
+            {
+                throw new ArgumentOutOfRangeException(nameof(family), family, null);
+            }
+
+            int capacity = CapacityForKeyCount(keyCount);
+            HashSet<int> used = new();
+            return new TargetMapKeySet(
+                CreateStream(family, keyCount, 0, false, capacity, used),
+                CreateStream(family, keyCount, 1, false, capacity, used),
+                CreateStream(family, keyCount, 3, false, capacity, used),
+                CreateStream(family, keyCount, 2, true, capacity, used),
+                capacity
+            );
+        }
+
+        internal static int CapacityForKeyCount(int keyCount)
+        {
+            if (keyCount <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(keyCount));
+            }
+
+            int capacity = 4;
+            while (capacity - (capacity >> 2) < keyCount)
+            {
+                capacity <<= 1;
+            }
+            return capacity;
+        }
+
+        private static int[] CreateStream(
+            TargetMapKeyFamily family,
+            int keyCount,
+            int stream,
+            bool outsideCluster,
+            int capacity,
+            HashSet<int> used
+        )
+        {
+            int[] keys = new int[keyCount];
+            uint random = RandomSeed(stream);
+            for (int index = 0; index < keys.Length; ++index)
+            {
+                int key;
+                switch (family)
+                {
+                    case TargetMapKeyFamily.SequentialSanitized:
+                        key = 0x4D00_0000 + stream * 0x0010_0000 + index;
+                        break;
+                    case TargetMapKeyFamily.SignedExtremes:
+                        int offset = stream * 0x0010_0000 + (index >> 1);
+                        key = (index & 1) == 0 ? int.MinValue + offset : int.MaxValue - offset;
+                        break;
+                    case TargetMapKeyFamily.PowerOfTwoStride:
+                        key = 0x0100_0000 + stream * 0x0100_0000 + index * 4096;
+                        break;
+                    case TargetMapKeyFamily.UniformSeededRandom:
+                        do
+                        {
+                            random = NextRandom(random);
+                            key = unchecked((int)random);
+                        } while (used.Contains(key));
+                        break;
+                    case TargetMapKeyFamily.DesignedMixerCollision:
+                        int bucket = outsideCluster ? capacity >> 1 : 0;
+                        int ordinal = stream * keyCount + index;
+                        key = KeyForBucketOrdinal(bucket, capacity, ordinal);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(family), family, null);
+                }
+
+                if (!used.Add(key))
+                {
+                    throw new InvalidOperationException(
+                        $"Target-map key family '{family}' generated duplicate key {key}."
+                    );
+                }
+                keys[index] = key;
+            }
+            return keys;
+        }
+
+        private static int KeyForBucketOrdinal(int bucket, int capacity, int ordinal)
+        {
+            int shift = 0;
+            for (int value = capacity; 1 < value; value >>= 1)
+            {
+                shift++;
+            }
+            uint mixed = ((uint)ordinal << shift) | (uint)bucket;
+            return unchecked((int)InvertHashMix(mixed));
+        }
+
+        private static uint InvertHashMix(uint hash)
+        {
+            hash = InvertXorShiftRight(hash, 16);
+            hash = unchecked(hash * HashMultiplierTwoInverse);
+            hash = InvertXorShiftRight(hash, 15);
+            hash = unchecked(hash * HashMultiplierOneInverse);
+            return InvertXorShiftRight(hash, 16);
+        }
+
+        private static uint InvertXorShiftRight(uint value, int shift)
+        {
+            uint result = value;
+            for (int distance = shift; distance < 32; distance += shift)
+            {
+                result ^= value >> distance;
+            }
+            return result;
+        }
+
+        private static uint MultiplicativeInverse(uint value)
+        {
+            uint inverse = value;
+            for (int iteration = 0; iteration < 5; ++iteration)
+            {
+                inverse = unchecked(inverse * (2u - value * inverse));
+            }
+            return inverse;
+        }
+
+        private static uint RandomSeed(int stream)
+        {
+            switch (stream)
+            {
+                case 0:
+                    return 0xA341_316Cu;
+                case 1:
+                    return 0xC801_3EA4u;
+                case 2:
+                    return 0xAD90_777Du;
+                case 3:
+                    return 0x7E95_761Eu;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(stream));
+            }
+        }
+
+        private static uint NextRandom(uint value)
+        {
+            value ^= value << 13;
+            value ^= value >> 17;
+            value ^= value << 5;
+            return value;
+        }
+    }
+
     public static class TargetMapBenchmarkScenarios
     {
         private static readonly int[] KeyCounts = { 1, 4, 16, 256, 4096 };
@@ -520,9 +893,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TargetMapBenchmarkOperation.Churn,
         };
 
+        private static readonly TargetMapKeyFamily[] ScreeningKeyFamilies =
+        {
+            TargetMapKeyFamily.SignedExtremes,
+            TargetMapKeyFamily.PowerOfTwoStride,
+            TargetMapKeyFamily.UniformSeededRandom,
+            TargetMapKeyFamily.DesignedMixerCollision,
+        };
+
         private static readonly TargetMapBenchmarkCase[] Cases = BuildCases();
+        private static readonly IReadOnlyList<TargetMapBenchmarkCase> ScreeningCases =
+            Array.AsReadOnly(BuildScreeningCases());
 
         public static IReadOnlyList<TargetMapBenchmarkCase> All => Cases;
+
+        public static IReadOnlyList<TargetMapBenchmarkCase> Screening => ScreeningCases;
 
         private static TargetMapBenchmarkCase[] BuildCases()
         {
@@ -543,11 +928,47 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             return cases;
         }
+
+        private static TargetMapBenchmarkCase[] BuildScreeningCases()
+        {
+            TargetMapBenchmarkCase[] cases = new TargetMapBenchmarkCase[
+                Cases.Length + ScreeningKeyFamilies.Length * KeyCounts.Length
+            ];
+            Array.Copy(Cases, cases, Cases.Length);
+            int writeIndex = Cases.Length;
+            foreach (TargetMapKeyFamily family in ScreeningKeyFamilies)
+            {
+                for (int keyIndex = 0; keyIndex < KeyCounts.Length; ++keyIndex)
+                {
+                    TargetMapBenchmarkOperation operation = Operations[
+                        ((int)family + keyIndex) % Operations.Length
+                    ];
+                    TargetMapMissProbeKind missProbeKind =
+                        family == TargetMapKeyFamily.DesignedMixerCollision
+                        && operation == TargetMapBenchmarkOperation.Miss
+                        && KeyCounts[keyIndex] == 1
+                            ? TargetMapMissProbeKind.InsideCluster
+                            : TargetMapMissProbeKind.OutsideCluster;
+                    cases[writeIndex++] = new TargetMapBenchmarkCase(
+                        KeyCounts[keyIndex],
+                        operation,
+                        family,
+                        missProbeKind
+                    );
+                }
+            }
+            return cases;
+        }
     }
 
     public readonly struct TargetMapBenchmarkCase
     {
-        public TargetMapBenchmarkCase(int keyCount, TargetMapBenchmarkOperation operation)
+        public TargetMapBenchmarkCase(
+            int keyCount,
+            TargetMapBenchmarkOperation operation,
+            TargetMapKeyFamily keyFamily = TargetMapKeyFamily.SequentialSanitized,
+            TargetMapMissProbeKind missProbeKind = TargetMapMissProbeKind.OutsideCluster
+        )
         {
             if (keyCount <= 0)
             {
@@ -556,13 +977,23 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             KeyCount = keyCount;
             Operation = operation;
+            KeyFamily = keyFamily;
+            MissProbeKind = missProbeKind;
         }
 
         public int KeyCount { get; }
 
         public TargetMapBenchmarkOperation Operation { get; }
 
-        public string Key => $"TargetMap_{KeyCount}_{Operation}";
+        public TargetMapKeyFamily KeyFamily { get; }
+
+        public TargetMapMissProbeKind MissProbeKind { get; }
+
+        public string Key =>
+            KeyFamily == TargetMapKeyFamily.SequentialSanitized
+            && MissProbeKind == TargetMapMissProbeKind.OutsideCluster
+                ? $"TargetMap_{KeyCount}_{Operation}"
+                : $"TargetMap_{KeyFamily}_{MissProbeKind}_{KeyCount}_{Operation}";
 
         public override string ToString()
         {
@@ -664,6 +1095,113 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
     }
 
+    public readonly struct TargetMapTopologyAttribution
+    {
+        internal TargetMapTopologyAttribution(
+            TargetMapKeyFamily keyFamily,
+            int keyCount,
+            int entries,
+            int capacity,
+            int initialLongestCluster,
+            int finalLongestCluster,
+            int minimumChurnLongestCluster,
+            int maximumChurnLongestCluster,
+            long registeredLookupProbes,
+            int maxRegisteredLookupProbes,
+            long missLookupProbes,
+            int maxMissLookupProbes,
+            long churnLookupProbes,
+            long removalScans,
+            long removalMoves,
+            int maxRemovalMoves,
+            long observedInvocations
+        )
+        {
+            KeyFamily = keyFamily;
+            KeyCount = keyCount;
+            Entries = entries;
+            Capacity = capacity;
+            InitialLongestCluster = initialLongestCluster;
+            FinalLongestCluster = finalLongestCluster;
+            MinimumChurnLongestCluster = minimumChurnLongestCluster;
+            MaximumChurnLongestCluster = maximumChurnLongestCluster;
+            RegisteredLookupProbes = registeredLookupProbes;
+            MaxRegisteredLookupProbes = maxRegisteredLookupProbes;
+            MissLookupProbes = missLookupProbes;
+            MaxMissLookupProbes = maxMissLookupProbes;
+            ChurnLookupProbes = churnLookupProbes;
+            RemovalScans = removalScans;
+            RemovalMoves = removalMoves;
+            MaxRemovalMoves = maxRemovalMoves;
+            ObservedInvocations = observedInvocations;
+        }
+
+        public TargetMapKeyFamily KeyFamily { get; }
+
+        public int KeyCount { get; }
+
+        public int Entries { get; }
+
+        public int Capacity { get; }
+
+        public int InitialLongestCluster { get; }
+
+        public int FinalLongestCluster { get; }
+
+        public int MinimumChurnLongestCluster { get; }
+
+        public int MaximumChurnLongestCluster { get; }
+
+        public long RegisteredLookupProbes { get; }
+
+        public int MaxRegisteredLookupProbes { get; }
+
+        public long MissLookupProbes { get; }
+
+        public int MaxMissLookupProbes { get; }
+
+        public long ChurnLookupProbes { get; }
+
+        public long RemovalScans { get; }
+
+        public long RemovalMoves { get; }
+
+        public int MaxRemovalMoves { get; }
+
+        public long ObservedInvocations { get; }
+
+        public string ToStructuredLog()
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "DXM_TARGET_MAP_TOPOLOGY keyFamily={0} keyCount={1} entries={2} capacity={3} "
+                    + "initialLongestCluster={4} finalLongestCluster={5} "
+                    + "minimumChurnLongestCluster={6} maximumChurnLongestCluster={7} "
+                    + "registeredLookupProbes={8} maxRegisteredLookupProbes={9} "
+                    + "missLookupProbes={10} maxMissLookupProbes={11} churnLookupProbes={12} "
+                    + "removalScans={13} removalMoves={14} maxRemovalMoves={15} "
+                    + "observedInvocations={16}",
+                KeyFamily,
+                KeyCount,
+                Entries,
+                Capacity,
+                InitialLongestCluster,
+                FinalLongestCluster,
+                MinimumChurnLongestCluster,
+                MaximumChurnLongestCluster,
+                RegisteredLookupProbes,
+                MaxRegisteredLookupProbes,
+                MissLookupProbes,
+                MaxMissLookupProbes,
+                ChurnLookupProbes,
+                RemovalScans,
+                RemovalMoves,
+                MaxRemovalMoves,
+                ObservedInvocations
+            );
+        }
+    }
+
     internal readonly struct TargetMapContractObservation
     {
         internal TargetMapContractObservation(
@@ -718,6 +1256,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 CollectionAssert.Contains(expectedKeyCounts, benchmarkCase.KeyCount);
                 CollectionAssert.Contains(expectedOperations, benchmarkCase.Operation);
+                Assert.AreEqual(TargetMapKeyFamily.SequentialSanitized, benchmarkCase.KeyFamily);
+                Assert.AreEqual(TargetMapMissProbeKind.OutsideCluster, benchmarkCase.MissProbeKind);
+                Assert.AreEqual(
+                    $"TargetMap_{benchmarkCase.KeyCount}_{benchmarkCase.Operation}",
+                    benchmarkCase.Key
+                );
                 Assert.That(observedKeys.Add(benchmarkCase.Key), Is.True, benchmarkCase.Key);
             }
 
@@ -725,6 +1269,405 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 expectedKeyCounts.Length * expectedOperations.Length,
                 observedKeys.Count
             );
+        }
+
+        [Test]
+        public void ScreeningMatrixIsBoundedAndCoversFrozenFactorPairs()
+        {
+            int[] expectedKeyCounts = { 1, 4, 16, 256, 4096 };
+            TargetMapKeyFamily[] expectedFamilies =
+            {
+                TargetMapKeyFamily.SequentialSanitized,
+                TargetMapKeyFamily.SignedExtremes,
+                TargetMapKeyFamily.PowerOfTwoStride,
+                TargetMapKeyFamily.UniformSeededRandom,
+                TargetMapKeyFamily.DesignedMixerCollision,
+            };
+            TargetMapBenchmarkOperation[] expectedOperations =
+            {
+                TargetMapBenchmarkOperation.Hit,
+                TargetMapBenchmarkOperation.Miss,
+                TargetMapBenchmarkOperation.Churn,
+            };
+            HashSet<string> keys = new();
+            HashSet<string> familyCardinalityPairs = new();
+            HashSet<string> familyOperationPairs = new();
+            int nonSequentialCases = 0;
+            bool collisionInsideMiss = false;
+            bool collisionOutsideMiss = false;
+
+            Assert.AreEqual(35, TargetMapBenchmarkScenarios.Screening.Count);
+            IList<TargetMapBenchmarkCase> mutableScreening =
+                TargetMapBenchmarkScenarios.Screening as IList<TargetMapBenchmarkCase>;
+            Assert.IsNotNull(mutableScreening);
+            Assert.Throws<NotSupportedException>(() => mutableScreening[0] = default);
+            foreach (TargetMapBenchmarkCase benchmarkCase in TargetMapBenchmarkScenarios.Screening)
+            {
+                Assert.That(keys.Add(benchmarkCase.Key), Is.True, benchmarkCase.Key);
+                familyCardinalityPairs.Add($"{benchmarkCase.KeyFamily}:{benchmarkCase.KeyCount}");
+                familyOperationPairs.Add($"{benchmarkCase.KeyFamily}:{benchmarkCase.Operation}");
+                if (benchmarkCase.KeyFamily != TargetMapKeyFamily.SequentialSanitized)
+                {
+                    nonSequentialCases++;
+                }
+                if (
+                    benchmarkCase.KeyFamily == TargetMapKeyFamily.DesignedMixerCollision
+                    && benchmarkCase.Operation == TargetMapBenchmarkOperation.Miss
+                )
+                {
+                    collisionInsideMiss |=
+                        benchmarkCase.MissProbeKind == TargetMapMissProbeKind.InsideCluster;
+                    collisionOutsideMiss |=
+                        benchmarkCase.MissProbeKind == TargetMapMissProbeKind.OutsideCluster;
+                }
+            }
+
+            Assert.AreEqual(20, nonSequentialCases);
+            foreach (TargetMapBenchmarkCase legacy in TargetMapBenchmarkScenarios.All)
+            {
+                Assert.That(keys, Does.Contain(legacy.Key));
+            }
+            foreach (TargetMapKeyFamily family in expectedFamilies)
+            {
+                foreach (int keyCount in expectedKeyCounts)
+                {
+                    Assert.That(familyCardinalityPairs, Does.Contain($"{family}:{keyCount}"));
+                }
+                foreach (TargetMapBenchmarkOperation operation in expectedOperations)
+                {
+                    Assert.That(familyOperationPairs, Does.Contain($"{family}:{operation}"));
+                }
+            }
+            Assert.IsTrue(collisionInsideMiss);
+            Assert.IsTrue(collisionOutsideMiss);
+        }
+
+        [Test]
+        public void ExactTopologyAttributionExplainsDesignedCollisionChurn()
+        {
+            const int keyCount = 4096;
+            TargetMapTopologyAttribution sequential = TargetMapBenchmarks.RunTopologyAttribution(
+                TargetMapKeyFamily.SequentialSanitized,
+                keyCount
+            );
+            TargetMapTopologyAttribution collision = TargetMapBenchmarks.RunTopologyAttribution(
+                TargetMapKeyFamily.DesignedMixerCollision,
+                keyCount
+            );
+            TestContext.Out.WriteLine(sequential.ToStructuredLog());
+            TestContext.Out.WriteLine(collision.ToStructuredLog());
+
+            Assert.AreEqual(
+                keyCount,
+                sequential.Entries,
+                "Sequential churn must preserve exact map cardinality."
+            );
+            Assert.AreEqual(
+                8192,
+                sequential.Capacity,
+                "Sequential attribution must observe the expected 75%-load capacity."
+            );
+            Assert.AreEqual(
+                keyCount,
+                sequential.ObservedInvocations,
+                "Sequential churn must invoke every replacement exactly once."
+            );
+            Assert.That(
+                sequential.InitialLongestCluster,
+                Is.Positive,
+                "A populated sequential map must contain an occupied cluster."
+            );
+            Assert.That(
+                sequential.FinalLongestCluster,
+                Is.Positive,
+                "Sequential churn must leave an occupied cluster."
+            );
+            Assert.That(
+                sequential.RegisteredLookupProbes,
+                Is.AtLeast(keyCount),
+                "Every registered sequential key must consume at least one lookup probe."
+            );
+            Assert.That(
+                sequential.MissLookupProbes,
+                Is.AtLeast(keyCount),
+                "Every sequential miss must consume at least one lookup probe."
+            );
+            Assert.That(
+                sequential.ChurnLookupProbes,
+                Is.AtLeast(keyCount),
+                "Every sequential churn removal must consume at least one lookup probe."
+            );
+            Assert.That(
+                sequential.RemovalScans,
+                Is.GreaterThanOrEqualTo(0),
+                "Sequential removal scans cannot be negative."
+            );
+            Assert.That(
+                sequential.RemovalMoves,
+                Is.GreaterThanOrEqualTo(0),
+                "Sequential removal moves cannot be negative."
+            );
+
+            Assert.AreEqual(
+                keyCount,
+                collision.Entries,
+                "Designed-collision churn must preserve exact map cardinality."
+            );
+            Assert.AreEqual(
+                8192,
+                collision.Capacity,
+                "Designed-collision attribution must observe the expected 75%-load capacity."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.InitialLongestCluster,
+                "All designed-collision keys must begin in one cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.FinalLongestCluster,
+                "All designed-collision replacements must finish in one cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MinimumChurnLongestCluster,
+                "Designed-collision churn must never shorten the occupied cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MaximumChurnLongestCluster,
+                "Designed-collision churn must never lengthen the occupied cluster."
+            );
+            Assert.AreEqual(
+                8_390_656L,
+                collision.RegisteredLookupProbes,
+                "Registered designed-collision keys must form the declared arithmetic probe sum."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MaxRegisteredLookupProbes,
+                "The final registered collision key must span the full cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MissLookupProbes,
+                "Each outside-cluster miss must stop after its first probe."
+            );
+            Assert.AreEqual(
+                1,
+                collision.MaxMissLookupProbes,
+                "No outside-cluster miss may enter the designed cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.ChurnLookupProbes,
+                "Each churn cursor must remove the collision-cluster head."
+            );
+            Assert.AreEqual(
+                16_773_120L,
+                collision.RemovalScans,
+                "Collision-head removals must scan the declared full-cluster total."
+            );
+            Assert.AreEqual(
+                16_773_120L,
+                collision.RemovalMoves,
+                "Every scanned collision entry must move into the preceding gap."
+            );
+            Assert.AreEqual(
+                keyCount - 1,
+                collision.MaxRemovalMoves,
+                "The first collision-head removal must shift every remaining entry."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.ObservedInvocations,
+                "Designed-collision churn must invoke every replacement exactly once."
+            );
+        }
+
+        [TestCase(TargetMapKeyFamily.SequentialSanitized)]
+        [TestCase(TargetMapKeyFamily.SignedExtremes)]
+        [TestCase(TargetMapKeyFamily.PowerOfTwoStride)]
+        [TestCase(TargetMapKeyFamily.UniformSeededRandom)]
+        [TestCase(TargetMapKeyFamily.DesignedMixerCollision)]
+        public void KeyFamiliesAreDeterministicUniqueAndDisjoint(TargetMapKeyFamily family)
+        {
+            const int keyCount = 256;
+            TargetMapKeySet first = TargetMapBenchmarkKeys.Create(family, keyCount);
+            TargetMapKeySet second = TargetMapBenchmarkKeys.Create(family, keyCount);
+
+            CollectionAssert.AreEqual(first.RegisteredKeys, second.RegisteredKeys);
+            CollectionAssert.AreEqual(first.ReplacementKeys, second.ReplacementKeys);
+            CollectionAssert.AreEqual(first.InsideClusterMisses, second.InsideClusterMisses);
+            CollectionAssert.AreEqual(first.OutsideClusterMisses, second.OutsideClusterMisses);
+            Assert.AreEqual(first.ExpectedCapacity, second.ExpectedCapacity);
+
+            HashSet<int> unique = new();
+            foreach (
+                int[] stream in new[]
+                {
+                    first.RegisteredKeys,
+                    first.ReplacementKeys,
+                    first.InsideClusterMisses,
+                    first.OutsideClusterMisses,
+                }
+            )
+            {
+                Assert.AreEqual(keyCount, stream.Length);
+                foreach (int key in stream)
+                {
+                    Assert.That(unique.Add(key), Is.True, $"Duplicate key {key} in {family}.");
+                }
+            }
+
+            Assert.AreEqual(keyCount * 4, unique.Count);
+        }
+
+        [Test]
+        public void KeyFamiliesRetainTheirDeclaredShapes()
+        {
+            TargetMapKeySet sequential = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.SequentialSanitized,
+                4
+            );
+            CollectionAssert.AreEqual(
+                new[] { 0x4D00_0000, 0x4D00_0001, 0x4D00_0002, 0x4D00_0003 },
+                sequential.RegisteredKeys
+            );
+            CollectionAssert.AreEqual(
+                new[] { 0x4D10_0000, 0x4D10_0001, 0x4D10_0002, 0x4D10_0003 },
+                sequential.ReplacementKeys
+            );
+            CollectionAssert.AreEqual(
+                new[] { 0x4D20_0000, 0x4D20_0001, 0x4D20_0002, 0x4D20_0003 },
+                sequential.OutsideClusterMisses
+            );
+
+            TargetMapKeySet extremes = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.SignedExtremes,
+                4
+            );
+            CollectionAssert.AreEqual(
+                new[] { int.MinValue, int.MaxValue, int.MinValue + 1, int.MaxValue - 1 },
+                extremes.RegisteredKeys
+            );
+
+            TargetMapKeySet strides = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.PowerOfTwoStride,
+                16
+            );
+            for (int index = 0; index < strides.RegisteredKeys.Length; ++index)
+            {
+                Assert.AreEqual(0, strides.RegisteredKeys[index] & 0xFFF);
+                if (0 < index)
+                {
+                    Assert.AreEqual(
+                        4096,
+                        strides.RegisteredKeys[index] - strides.RegisteredKeys[index - 1]
+                    );
+                }
+            }
+
+            TargetMapKeySet random = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.UniformSeededRandom,
+                4
+            );
+            CollectionAssert.AreEqual(
+                new[] { 0x28F2_889A, 0x45DF_792A, unchecked((int)0xF5B7_E6B7u), 0x2541_42E7 },
+                random.RegisteredKeys
+            );
+        }
+
+        [TestCase(1)]
+        [TestCase(4)]
+        [TestCase(16)]
+        [TestCase(256)]
+        [TestCase(4096)]
+        public void DesignedCollisionKeysMapToDeclaredCurrentMixerBuckets(int keyCount)
+        {
+            TargetMapKeySet keys = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.DesignedMixerCollision,
+                keyCount
+            );
+            int mask = keys.ExpectedCapacity - 1;
+            int outsideBucket = keys.ExpectedCapacity >> 1;
+
+            foreach (int key in keys.RegisteredKeys)
+            {
+                Assert.AreEqual(0, IntKeyMap<object>.Bucket(key, mask));
+            }
+            foreach (int key in keys.ReplacementKeys)
+            {
+                Assert.AreEqual(0, IntKeyMap<object>.Bucket(key, mask));
+            }
+            foreach (int key in keys.InsideClusterMisses)
+            {
+                Assert.AreEqual(0, IntKeyMap<object>.Bucket(key, mask));
+            }
+            foreach (int key in keys.OutsideClusterMisses)
+            {
+                Assert.AreEqual(outsideBucket, IntKeyMap<object>.Bucket(key, mask));
+            }
+        }
+
+        [TestCase(TargetMapKeyFamily.SequentialSanitized)]
+        [TestCase(TargetMapKeyFamily.SignedExtremes)]
+        [TestCase(TargetMapKeyFamily.PowerOfTwoStride)]
+        [TestCase(TargetMapKeyFamily.UniformSeededRandom)]
+        [TestCase(TargetMapKeyFamily.DesignedMixerCollision)]
+        public void GeneratedKeyFamiliesRouteThroughProductionMap(TargetMapKeyFamily family)
+        {
+            const int keyCount = 16;
+            TargetMapContractObservation hit = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(keyCount, TargetMapBenchmarkOperation.Hit, family)
+            );
+            TargetMapContractObservation miss = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(keyCount, TargetMapBenchmarkOperation.Miss, family)
+            );
+            TargetMapContractObservation churn = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(keyCount, TargetMapBenchmarkOperation.Churn, family)
+            );
+
+            Assert.AreEqual(1, hit.OperationInvocations);
+            Assert.AreEqual(0, miss.OperationInvocations);
+            Assert.AreEqual(1, churn.OperationInvocations);
+            Assert.AreEqual(0, churn.OriginalTargetInvocations);
+            Assert.AreEqual(1, churn.CurrentTargetInvocations);
+            foreach (TargetMapContractObservation observation in new[] { hit, miss, churn })
+            {
+                Assert.AreEqual(keyCount, observation.RegisteredTargets);
+                Assert.AreEqual(keyCount, observation.PhysicalTargetSlots);
+                Assert.AreEqual(keyCount, observation.TargetMapEntries);
+                Assert.GreaterOrEqual(observation.TargetMapCapacity, keyCount);
+            }
+        }
+
+        [Test]
+        public void CollisionMissProbeKindsRemainDistinctAndAbsent()
+        {
+            const int keyCount = 16;
+            TargetMapContractObservation inside = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(
+                    keyCount,
+                    TargetMapBenchmarkOperation.Miss,
+                    TargetMapKeyFamily.DesignedMixerCollision,
+                    TargetMapMissProbeKind.InsideCluster
+                )
+            );
+            TargetMapContractObservation outside = TargetMapBenchmarks.RunOnceForContract(
+                new TargetMapBenchmarkCase(
+                    keyCount,
+                    TargetMapBenchmarkOperation.Miss,
+                    TargetMapKeyFamily.DesignedMixerCollision,
+                    TargetMapMissProbeKind.OutsideCluster
+                )
+            );
+
+            Assert.AreEqual(0, inside.OperationInvocations);
+            Assert.AreEqual(0, outside.OperationInvocations);
+            Assert.AreEqual(keyCount, inside.TargetMapEntries);
+            Assert.AreEqual(keyCount, outside.TargetMapEntries);
+            Assert.AreEqual(inside.TargetMapCapacity, outside.TargetMapCapacity);
         }
 
         [TestCase(TargetMapBenchmarkOperation.Hit, 1, 1, 1)]

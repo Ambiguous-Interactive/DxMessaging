@@ -17,9 +17,22 @@ one idea per sentence, active voice.
 ## When to use
 
 - Opening a pull request, or editing its title or description.
+- Deciding whether new session work belongs in an existing pull request.
 - A reviewer says a description is long, unclear, or hard to follow.
 - Deciding which measurements, tables, or logs belong in the body.
 - Writing the pull request that closes several issues at once.
+
+## Session delivery boundary
+
+- Open at most one pull request per agent session. Draft and stacked pull requests count toward
+  this limit.
+- Before opening a pull request, check whether the current session already opened one. Reuse that
+  pull request and bundle related commits into it.
+- If more work does not belong in the same review, keep it local and leave a handoff for a later
+  session. Do not open a second pull request.
+- Run practical local checks before the single push. Do not use separate pull requests as CI probes.
+- If a session already opened several pull requests, stop new work. Consolidate into the earliest
+  suitable pull request, close the redundant pull requests, and avoid restarting their workflows.
 
 ## Rules
 

@@ -54,6 +54,25 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         );
 
         /// <summary>
+        /// Isolates benchmarks hosted by dependent test assemblies from the process-wide idle
+        /// sweep registry. Runtime keeps the mechanism internal; this test-only bridge preserves
+        /// one benchmark registry without widening package API visibility.
+        /// </summary>
+        public static IDisposable IsolateIdleSweepRegistry()
+        {
+            return DxMessaging.Core.MessageBus.MessageBus.IsolateIdleSweepRegistryForBenchmark();
+        }
+
+        /// <summary>
+        /// Reports the exact live registration-handle count for benchmarks hosted by dependent
+        /// test assemblies without widening runtime API visibility.
+        /// </summary>
+        public static int CountRegistrations(DxMessaging.Core.MessageRegistrationToken token)
+        {
+            return token._metadata.Count;
+        }
+
+        /// <summary>
         /// Run <paramref name="warmup"/> once, then invoke <paramref name="emitBatch"/>
         /// repeatedly until the measurement window elapses to measure throughput.
         /// <paramref name="emitBatch"/> returns the number of operations it performed;
@@ -876,6 +895,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 DispatchBenchmarkScenario.TargetedFloodSixteenListeners =>
                     "TargetedFlood_SixteenListeners",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler => "BroadcastFlood_OneHandler",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler =>
+                    "TargetedFlood_OneWithoutTargeting_ActionHandler",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler =>
+                    "TargetedFlood_OneWithoutTargeting_FastHandler",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler =>
+                    "BroadcastFlood_OneWithoutSource_ActionHandler",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler =>
+                    "BroadcastFlood_OneWithoutSource_FastHandler",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler =>
+                    "GlobalAcceptAll_UntargetedClass_OneActionHandler",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler =>
+                    "GlobalAcceptAll_UntargetedClass_OneFastHandler",
                 DispatchBenchmarkScenario.TargetedPostStableRoute => "TargetedPost_StableRoute",
                 DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
                     "TargetedPost_Rewritten_EmptyFinalRoute",
@@ -946,6 +977,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     "Targeted Flood (Sixteen Listeners)",
                 DispatchBenchmarkScenario.BroadcastFloodOneHandler =>
                     "Broadcast Flood (One Handler)",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingActionHandler =>
+                    "Targeted Flood (One Without-Targeting Action Handler)",
+                DispatchBenchmarkScenario.TargetedFloodOneWithoutTargetingFastHandler =>
+                    "Targeted Flood (One Without-Targeting Fast Handler)",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceActionHandler =>
+                    "Broadcast Flood (One Without-Source Action Handler)",
+                DispatchBenchmarkScenario.BroadcastFloodOneWithoutSourceFastHandler =>
+                    "Broadcast Flood (One Without-Source Fast Handler)",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneActionHandler =>
+                    "Global Accept-All (Untargeted Class, One Action Handler)",
+                DispatchBenchmarkScenario.GlobalAcceptAllUntargetedClassOneFastHandler =>
+                    "Global Accept-All (Untargeted Class, One Fast Handler)",
                 DispatchBenchmarkScenario.TargetedPostStableRoute => "Targeted Post Route (Stable)",
                 DispatchBenchmarkScenario.TargetedPostRewrittenEmptyFinalRoute =>
                     "Targeted Post Route (Rewritten, Empty Final Route)",

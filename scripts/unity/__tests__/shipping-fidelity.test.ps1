@@ -344,6 +344,8 @@ if (
         'Test-ShippingBuildReport',
         'Test-ShippingStartupTimings',
         'Write-ShippingCellEvidence',
+        'Write-ShippingCleanProjectInputSnapshot',
+        'Test-ShippingCleanProjectInputSnapshot',
         'Assert-ShippingPlayerDirectoryManifest',
         'Test-ShippingPlayerManifestEvidence',
         'Write-ShippingPackageResolutionEvidence',
@@ -475,6 +477,14 @@ if (
             '\$env:DXM_SHIPPING_BUILD_REPORT_PATH = \$incrementalBuildReportPath'
         ).Count -eq 1 -and
         [regex]::Matches($runnerText, "'DXM_SHIPPING_BUILD_REPORT_PATH'").Count -eq 3
+    )
+    Assert-That 'shipping runner binds the incremental audit to a separate clean-predecessor snapshot' (
+        $runnerText.Contains("`$cleanProjectInputsPath = Join-Path `$incrementalArtifactsPath 'clean-project-inputs.json'") -and
+        $runnerText.Contains('Write-ShippingCleanProjectInputSnapshot') -and
+        $runnerText.Contains('Test-ShippingCleanProjectInputSnapshot') -and
+        $runnerText.Contains('-CleanBuildInvocationId $shippingBuildInvocationId') -and
+        $runnerText.Contains('-ExpectedSnapshotSha256 $cleanProjectInputsSha256') -and
+        $runnerText.Contains('cleanProjectInputsSha256 = $cleanProjectInputsSha256')
     )
 
     foreach ($cardinality in @(1, 16, 256, 1000)) {
@@ -662,6 +672,107 @@ if (
         $projectInputPaths -ccontains 'ProjectSettings/EditorSettings.asset' -and
         $projectInputPaths -ccontains 'ProjectSettings/ProjectVersion.txt'
     )
+
+    # The real package configuration pass adds its generated ignore sidecar to
+    # csc.rsp before the clean build. Model that legitimate lifecycle mutation,
+    # then prove the incremental baseline is the clean predecessor while the
+    # original generation manifest remains immutable.
+    $snapshotProjectPath = Join-Path $fixtureRoot 'clean-snapshot-project'
+    Copy-Item -LiteralPath $projectPath -Destination $snapshotProjectPath -Recurse
+    $snapshotCscPath = Join-Path $snapshotProjectPath 'Assets/csc.rsp'
+    $snapshotSidecarPath = Join-Path $snapshotProjectPath 'Assets/Editor/DxMessaging.BaseCallIgnore.txt'
+    [System.IO.File]::WriteAllText($snapshotSidecarPath, '# generated clean compiler input')
+    Add-Content `
+        -LiteralPath $snapshotCscPath `
+        -Value '-additionalfile:"Assets/Editor/DxMessaging.BaseCallIgnore.txt"' `
+        -Encoding UTF8
+    $generatedManifestSha256 = (
+        Get-FileHash -LiteralPath $projectInputManifestPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    $cleanSnapshotPath = Join-Path $fixtureRoot 'clean-project-inputs.json'
+    $cleanInvocationId = '11111111-2222-3333-4444-555555555555'
+    Write-ShippingCleanProjectInputSnapshot `
+        -Path $cleanSnapshotPath `
+        -SourceManifestPath $projectInputManifestPath `
+        -ProjectPath $snapshotProjectPath `
+        -CleanBuildInvocationId $cleanInvocationId
+    $cleanSnapshotSha256 = (
+        Get-FileHash -LiteralPath $cleanSnapshotPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    Test-ShippingCleanProjectInputSnapshot `
+        -Path $cleanSnapshotPath `
+        -ProjectPath $snapshotProjectPath `
+        -ExpectedTopologyId 'semantic-18-v1' `
+        -ExpectedCleanBuildInvocationId $cleanInvocationId `
+        -ExpectedSourceManifestSha256 $generatedManifestSha256 `
+        -ExpectedSnapshotSha256 $cleanSnapshotSha256
+    $cleanSnapshot = Get-Content -LiteralPath $cleanSnapshotPath -Raw | ConvertFrom-Json
+    $generatedCscEntry = @($projectInputManifest.files | Where-Object { $_.path -ceq 'Assets/csc.rsp' })[0]
+    $cleanCscEntry = @($cleanSnapshot.files | Where-Object { $_.path -ceq 'Assets/csc.rsp' })[0]
+    $cleanSidecarEntry = @($cleanSnapshot.files | Where-Object { $_.path -ceq 'Assets/Editor/DxMessaging.BaseCallIgnore.txt' })[0]
+    Assert-That 'clean input snapshot captures configured csc.rsp without rewriting generation evidence' (
+        [int]$cleanSnapshot.schemaVersion -eq 1 -and
+        $cleanSnapshot.evidenceKind -ceq 'cleanProjectInputs' -and
+        $cleanSnapshot.cleanBuildInvocationId -ceq $cleanInvocationId -and
+        $cleanSnapshot.sourceProjectInputsSha256 -ceq $generatedManifestSha256 -and
+        @($cleanSnapshot.files).Count -eq 8 -and
+        $cleanCscEntry.sha256 -cne $generatedCscEntry.sha256 -and
+        $cleanSidecarEntry.sha256 -ceq (Get-FileHash -LiteralPath $snapshotSidecarPath -Algorithm SHA256).Hash.ToLowerInvariant() -and
+        (Get-FileHash -LiteralPath $projectInputManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $generatedManifestSha256
+    )
+
+    $cleanSnapshotBytes = [System.IO.File]::ReadAllBytes($cleanSnapshotPath)
+    Add-Content -LiteralPath $cleanSnapshotPath -Value ' ' -Encoding UTF8
+    Assert-Fails 'clean input snapshot rejects mutation of its own evidence file' {
+        Test-ShippingCleanProjectInputSnapshot `
+            -Path $cleanSnapshotPath `
+            -ProjectPath $snapshotProjectPath `
+            -ExpectedTopologyId 'semantic-18-v1' `
+            -ExpectedCleanBuildInvocationId $cleanInvocationId `
+            -ExpectedSourceManifestSha256 $generatedManifestSha256 `
+            -ExpectedSnapshotSha256 $cleanSnapshotSha256
+    } 'snapshot changed after the clean predecessor was recorded'
+    [System.IO.File]::WriteAllBytes($cleanSnapshotPath, $cleanSnapshotBytes)
+
+    $cleanCscBytes = [System.IO.File]::ReadAllBytes($snapshotCscPath)
+    $sameLengthDrift = [byte[]]$cleanCscBytes.Clone()
+    $sameLengthDrift[0] = $sameLengthDrift[0] -bxor 1
+    [System.IO.File]::WriteAllBytes($snapshotCscPath, $sameLengthDrift)
+    Assert-Fails 'clean input snapshot rejects same-length incremental content drift' {
+        Test-ShippingCleanProjectInputSnapshot `
+            -Path $cleanSnapshotPath `
+            -ProjectPath $snapshotProjectPath `
+            -ExpectedTopologyId 'semantic-18-v1' `
+            -ExpectedCleanBuildInvocationId $cleanInvocationId `
+            -ExpectedSourceManifestSha256 $generatedManifestSha256 `
+            -ExpectedSnapshotSha256 $cleanSnapshotSha256
+    } 'changed clean-predecessor project input Assets/csc.rsp'
+    [System.IO.File]::WriteAllBytes($snapshotCscPath, $cleanCscBytes)
+    Add-Content -LiteralPath $snapshotCscPath -Value 'length drift' -Encoding UTF8
+    Assert-Fails 'clean input snapshot rejects incremental length drift' {
+        Test-ShippingCleanProjectInputSnapshot `
+            -Path $cleanSnapshotPath `
+            -ProjectPath $snapshotProjectPath `
+            -ExpectedTopologyId 'semantic-18-v1' `
+            -ExpectedCleanBuildInvocationId $cleanInvocationId `
+            -ExpectedSourceManifestSha256 $generatedManifestSha256 `
+            -ExpectedSnapshotSha256 $cleanSnapshotSha256
+    } 'changed clean-predecessor project input Assets/csc.rsp'
+    [System.IO.File]::WriteAllBytes($snapshotCscPath, $cleanCscBytes)
+    $missingInputPath = Join-Path $snapshotProjectPath 'Packages/manifest.json'
+    $heldInputPath = "$missingInputPath.missing"
+    Move-Item -LiteralPath $missingInputPath -Destination $heldInputPath
+    Assert-Fails 'clean input snapshot rejects incremental deletion' {
+        Test-ShippingCleanProjectInputSnapshot `
+            -Path $cleanSnapshotPath `
+            -ProjectPath $snapshotProjectPath `
+            -ExpectedTopologyId 'semantic-18-v1' `
+            -ExpectedCleanBuildInvocationId $cleanInvocationId `
+            -ExpectedSourceManifestSha256 $generatedManifestSha256 `
+            -ExpectedSnapshotSha256 $cleanSnapshotSha256
+    } 'changed clean-predecessor project input Packages/manifest.json'
+    Move-Item -LiteralPath $heldInputPath -Destination $missingInputPath
+
     $staleInputPaths = @(
         'Assets/StaleShippingProbe.cs',
         'Assets/StaleShippingPlugin.dll',

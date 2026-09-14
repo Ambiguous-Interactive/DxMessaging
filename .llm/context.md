@@ -54,6 +54,9 @@ index to select and read the canonical instructions.
 - Push to remotes sparingly: every push triggers a full, expensive CI run. Aggregate work in local
   commits, run all practical local verification, and push only when the branch is ready for CI or
   review, or when the user explicitly requests it. Do not push after each commit.
+- Open at most one pull request per agent session. Bundle the session's related commits into that
+  pull request. Keep additional work local for a later session; do not open parallel or stacked
+  pull requests that multiply self-hosted CI runs.
 - For GitHub operations, use the VS Code/Codex GitHub connector or extension first for repository,
   issue, pull-request, review, and workflow metadata or supported writes. Use local `git` second for
   checkout, commit, branch, fetch, rebase, and push operations. Use `gh` only as the final fallback
