@@ -54,6 +54,25 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         );
 
         /// <summary>
+        /// Isolates benchmarks hosted by dependent test assemblies from the process-wide idle
+        /// sweep registry. Runtime keeps the mechanism internal; this test-only bridge preserves
+        /// one benchmark registry without widening package API visibility.
+        /// </summary>
+        public static IDisposable IsolateIdleSweepRegistry()
+        {
+            return DxMessaging.Core.MessageBus.MessageBus.IsolateIdleSweepRegistryForBenchmark();
+        }
+
+        /// <summary>
+        /// Reports the exact live registration-handle count for benchmarks hosted by dependent
+        /// test assemblies without widening runtime API visibility.
+        /// </summary>
+        public static int CountRegistrations(DxMessaging.Core.MessageRegistrationToken token)
+        {
+            return token._metadata.Count;
+        }
+
+        /// <summary>
         /// Run <paramref name="warmup"/> once, then invoke <paramref name="emitBatch"/>
         /// repeatedly until the measurement window elapses to measure throughput.
         /// <paramref name="emitBatch"/> returns the number of operations it performed;
