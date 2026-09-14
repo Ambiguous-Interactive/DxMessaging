@@ -521,12 +521,12 @@ test("entity-heavy account input cannot exhaust the scrubber", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
 });
-test("repeated Bee JSON scalars do not amplify artifact preparation past a bounded run", () => {
+test("repeated sensitive Bee JSON scalars do not amplify artifact preparation past a bounded run", () => {
   // 2026-09-13: repeated Bee paths made the 20-cell shipping redaction gate exceed two minutes.
   const redactor = JSON.stringify(path.resolve(__dirname, "../unity/redact-unity-artifacts.js"));
-  const script = `const fs=require('fs'),os=require('os'),path=require('path'),r=require(${redactor}),d=fs.mkdtempSync(path.join(os.tmpdir(),'dxm-redact-bee-')),v='Library/Bee/artifacts/WinPlayerBuildProgram/il2cppOutput/build/Data/Metadata/global-metadata.dat',n=Math.floor(8*1024*1024/(v.length+3));fs.writeFileSync(path.join(d,'Player-inputdata.json'),JSON.stringify({values:Array(n).fill(v)}));const x=r.redactDirectory(d);if(x.changed.length||x.skipped.length)process.exit(2);fs.rmSync(d,{recursive:true,force:true})`;
+  const script = `const fs=require('fs'),os=require('os'),path=require('path'),r=require(${redactor}),d=fs.mkdtempSync(path.join(os.tmpdir(),'dxm-redact-bee-')),v='C:/Users/runner/Library/Bee/artifacts/WinPlayerBuildProgram/il2cppOutput/build/Data/Metadata/global-metadata.dat',n=Math.floor(1024*1024/(v.length+3));for(let i=0;i<4;i++)fs.writeFileSync(path.join(d,'Player'+i+'-inputdata.json'),JSON.stringify({cell:i,values:Array(n).fill(v)}));const x=r.redactDirectory(d);if(x.changed.length!==4||x.skipped.length||x.totals.get('account-home-path')!==n*4)process.exit(2);fs.rmSync(d,{recursive:true,force:true})`;
   assert.ok(script.length < 4096, "the child program must stay below Windows argv limits");
-  const result = spawnSync(process.execPath, ["--max-old-space-size=512", "-e", script], { timeout: 15000 });
+  const result = spawnSync(process.execPath, ["--max-old-space-size=512", "-e", script], { timeout: 5000 });
   assert.equal(result.status, 0, result.error?.message ?? result.stderr.toString());
 });
 for (const unique of [false, true, "alternating"]) {
