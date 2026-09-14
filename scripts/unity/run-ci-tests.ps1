@@ -6343,6 +6343,163 @@ function Write-ShippingCellEvidence {
     )
 }
 
+function Write-ShippingCleanProjectInputSnapshot {
+    # The generated-input manifest is written before Unity first opens the
+    # project. Package-owned configuration may legitimately finish those inputs
+    # (SetupCscRsp adds its generated ignore sidecar to Assets/csc.rsp), so it is
+    # not the baseline for the later incremental invocation. Preserve that
+    # generation evidence and write a separately bound snapshot of the exact
+    # clean predecessor instead.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$SourceManifestPath,
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string]$CleanBuildInvocationId
+    )
+
+    $sourceManifestSha256 = (
+        Get-FileHash -LiteralPath $SourceManifestPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    $sourceManifest = Get-Content -LiteralPath $SourceManifestPath -Raw | ConvertFrom-Json
+    Assert-ExactJsonPropertyNames `
+        -Value $sourceManifest `
+        -Expected @('schemaVersion', 'topologyId', 'topologyKind', 'messageTypeCount', 'expectedShapes', 'files') `
+        -Label 'Shipping generated project-input manifest'
+    if ([int]$sourceManifest.schemaVersion -ne 2 -or [string]::IsNullOrWhiteSpace($sourceManifest.topologyId)) {
+        throw 'Shipping generated project-input manifest has an unsupported identity.'
+    }
+    if ([string]::IsNullOrWhiteSpace($CleanBuildInvocationId)) {
+        throw 'Shipping clean project-input snapshot requires the clean build invocation identity.'
+    }
+
+    $snapshotFiles = New-Object System.Collections.Generic.List[object]
+    $seenPaths = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    foreach ($sourceFile in @($sourceManifest.files)) {
+        Assert-ExactJsonPropertyNames `
+            -Value $sourceFile `
+            -Expected @('path', 'length', 'sha256') `
+            -Label 'Shipping generated project-input file'
+        $relativePath = [string]$sourceFile.path
+        $normalizedPath = $relativePath.Replace('\', '/')
+        $pathSegments = @($normalizedPath.Split('/'))
+        if (
+            [string]::IsNullOrWhiteSpace($relativePath) -or
+            [System.IO.Path]::IsPathRooted($relativePath) -or
+            $relativePath -cne $normalizedPath -or
+            $pathSegments -contains '' -or
+            $pathSegments -contains '.' -or
+            $pathSegments -contains '..' -or
+            -not $seenPaths.Add($relativePath)
+        ) {
+            throw 'Shipping generated project-input manifest contains an unsafe or duplicate path.'
+        }
+        $fullPath = Join-Path $ProjectPath $relativePath
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+            throw "Clean shipping build is missing reviewed project input $relativePath."
+        }
+        $snapshotFiles.Add([ordered]@{
+                path = $relativePath
+                length = [long](Get-Item -LiteralPath $fullPath).Length
+                sha256 = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            })
+    }
+    # PrepareCompilerInputs creates this package-managed compiler input during
+    # configuration, after the generation manifest is written. It is part of
+    # the clean build's effective inputs and must be protected alongside the
+    # original reviewed file roster.
+    $sidecarRelativePath = 'Assets/Editor/DxMessaging.BaseCallIgnore.txt'
+    if (-not $seenPaths.Contains($sidecarRelativePath)) {
+        $sidecarPath = Join-Path $ProjectPath $sidecarRelativePath
+        if (-not (Test-Path -LiteralPath $sidecarPath -PathType Leaf)) {
+            throw "Clean shipping build is missing package-managed compiler input $sidecarRelativePath."
+        }
+        $seenPaths.Add($sidecarRelativePath) | Out-Null
+        $snapshotFiles.Add([ordered]@{
+                path = $sidecarRelativePath
+                length = [long](Get-Item -LiteralPath $sidecarPath).Length
+                sha256 = (Get-FileHash -LiteralPath $sidecarPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            })
+    }
+    if ($snapshotFiles.Count -lt 1) {
+        throw 'Shipping generated project-input manifest must contain at least one file.'
+    }
+
+    Write-JsonArtifact -Path $Path -Value ([ordered]@{
+            schemaVersion = 1
+            evidenceKind = 'cleanProjectInputs'
+            topologyId = [string]$sourceManifest.topologyId
+            cleanBuildInvocationId = $CleanBuildInvocationId
+            sourceProjectInputsSha256 = $sourceManifestSha256
+            files = @($snapshotFiles.ToArray())
+        })
+}
+
+function Test-ShippingCleanProjectInputSnapshot {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedTopologyId,
+        [Parameter(Mandatory = $true)][string]$ExpectedCleanBuildInvocationId,
+        [Parameter(Mandatory = $true)][string]$ExpectedSourceManifestSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedSnapshotSha256
+    )
+
+    $actualSnapshotSha256 = (
+        Get-FileHash -LiteralPath $Path -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if ($actualSnapshotSha256 -cne $ExpectedSnapshotSha256) {
+        throw 'Shipping clean project-input snapshot changed after the clean predecessor was recorded.'
+    }
+    $snapshot = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    Assert-ExactJsonPropertyNames `
+        -Value $snapshot `
+        -Expected @('schemaVersion', 'evidenceKind', 'topologyId', 'cleanBuildInvocationId', 'sourceProjectInputsSha256', 'files') `
+        -Label 'Shipping clean project-input snapshot'
+    if (
+        [int]$snapshot.schemaVersion -ne 1 -or
+        [string]$snapshot.evidenceKind -cne 'cleanProjectInputs' -or
+        [string]$snapshot.topologyId -cne $ExpectedTopologyId -or
+        [string]$snapshot.cleanBuildInvocationId -cne $ExpectedCleanBuildInvocationId -or
+        [string]$snapshot.sourceProjectInputsSha256 -cne $ExpectedSourceManifestSha256
+    ) {
+        throw 'Shipping clean project-input snapshot identity differs from its clean predecessor.'
+    }
+
+    $seenPaths = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    foreach ($inputFile in @($snapshot.files)) {
+        Assert-ExactJsonPropertyNames `
+            -Value $inputFile `
+            -Expected @('path', 'length', 'sha256') `
+            -Label 'Shipping clean project-input snapshot file'
+        $relativePath = [string]$inputFile.path
+        if ([string]::IsNullOrWhiteSpace($relativePath) -or -not $seenPaths.Add($relativePath)) {
+            throw 'Shipping clean project-input snapshot contains an empty or duplicate path.'
+        }
+        $normalizedPath = $relativePath.Replace('\', '/')
+        $pathSegments = @($normalizedPath.Split('/'))
+        if (
+            [System.IO.Path]::IsPathRooted($relativePath) -or
+            $relativePath -cne $normalizedPath -or
+            $pathSegments -contains '' -or
+            $pathSegments -contains '.' -or
+            $pathSegments -contains '..'
+        ) {
+            throw 'Shipping clean project-input snapshot contains an unsafe path.'
+        }
+        $actualInputPath = Join-Path $ProjectPath $relativePath
+        if (
+            -not (Test-Path -LiteralPath $actualInputPath -PathType Leaf) -or
+            [long](Get-Item -LiteralPath $actualInputPath).Length -ne [long]$inputFile.length -or
+            (Get-FileHash -LiteralPath $actualInputPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$inputFile.sha256
+        ) {
+            throw "Incremental shipping build changed clean-predecessor project input $relativePath."
+        }
+    }
+    if ($seenPaths.Count -lt 1) {
+        throw 'Shipping clean project-input snapshot must contain at least one file.'
+    }
+}
+
 function Assert-ShippingPlayerDirectoryManifest {
     param(
         [Parameter(Mandatory = $true)][object]$Value,
@@ -7631,8 +7788,15 @@ try {
             $incrementalLogPath = Join-Path $incrementalArtifactsPath 'unity.log'
             $incrementalEvidencePath = Join-Path $incrementalArtifactsPath 'shipping-incremental-evidence.json'
             $projectInputsPath = Join-Path $ArtifactsPath 'shipping-project-inputs.json'
+            $cleanProjectInputsPath = Join-Path $incrementalArtifactsPath 'clean-project-inputs.json'
             $scenePath = Join-Path $ProjectPath 'Assets/DxmShippingFidelity.unity'
-            $cleanProjectInputsSha256 = (Get-FileHash -LiteralPath $projectInputsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $sourceProjectInputsSha256 = (Get-FileHash -LiteralPath $projectInputsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-ShippingCleanProjectInputSnapshot `
+                -Path $cleanProjectInputsPath `
+                -SourceManifestPath $projectInputsPath `
+                -ProjectPath $ProjectPath `
+                -CleanBuildInvocationId $shippingBuildInvocationId
+            $cleanProjectInputsSha256 = (Get-FileHash -LiteralPath $cleanProjectInputsPath -Algorithm SHA256).Hash.ToLowerInvariant()
             $cleanSceneSha256 = (Get-FileHash -LiteralPath $scenePath -Algorithm SHA256).Hash.ToLowerInvariant()
             $cleanPlayerManifestJson = $shippingManifestAfter | ConvertTo-Json -Depth 10 -Compress
             $cleanBuildReportSha256 = (Get-FileHash -LiteralPath $shippingBuildReportPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -7723,17 +7887,13 @@ try {
                 -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
                 -UnityVersion $UnityVersion
 
-            $projectInputs = Get-Content -LiteralPath $projectInputsPath -Raw | ConvertFrom-Json
-            foreach ($inputFile in @($projectInputs.files)) {
-                $actualInputPath = Join-Path $ProjectPath ([string]$inputFile.path)
-                if (
-                    -not (Test-Path -LiteralPath $actualInputPath -PathType Leaf) -or
-                    [long](Get-Item -LiteralPath $actualInputPath).Length -ne [long]$inputFile.length -or
-                    (Get-FileHash -LiteralPath $actualInputPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne [string]$inputFile.sha256
-                ) {
-                    throw "Incremental shipping build changed reviewed project input $($inputFile.path)."
-                }
-            }
+            Test-ShippingCleanProjectInputSnapshot `
+                -Path $cleanProjectInputsPath `
+                -ProjectPath $ProjectPath `
+                -ExpectedTopologyId "$ShippingTopology-$ShippingMessageTypeCount-v1" `
+                -ExpectedCleanBuildInvocationId $shippingBuildInvocationId `
+                -ExpectedSourceManifestSha256 $sourceProjectInputsSha256 `
+                -ExpectedSnapshotSha256 $cleanProjectInputsSha256
             if ((Get-FileHash -LiteralPath $scenePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $cleanSceneSha256) {
                 throw 'Incremental shipping build changed its clean predecessor scene.'
             }
