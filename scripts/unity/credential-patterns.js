@@ -515,7 +515,6 @@ function structuredText(text, visit, format, depth = 0, rewrite = true) {
         : undefined) ?? visit(value, key, element)
     );
   };
-  // Cache only validated names within this traversal, never scalar contents.
   const names = new Set();
   const name = (value) => {
     if (names.has(value)) return;
@@ -678,13 +677,13 @@ function scalarCacheKey(value, key, element) {
   return value.length <= 4096 && (key?.length ?? 0) <= 256 && (element?.length ?? 0) <= 256 ? JSON.stringify([key ?? null, element ?? null, value]) : undefined;
 }
 const STRUCTURE_FINDING = Object.freeze({ id: "unsafe-structured-data", description: "unsupported structured data" });
-function findSensitiveData(text, format) {
-  const found = new Map();
-  const scalarCache = new Map();
+function findSensitiveData(text, format, onUncachedScalar) {
+  const found = new Map(), scalarCache = new Map();
   const inspect = (value, key, element) => {
     const cacheKey = scalarCacheKey(value, key, element);
     let entries = scalarCache.get(cacheKey);
     if (entries === undefined) {
+      onUncachedScalar?.();
       const local = new Map();
       if (/[\p{Cf}\uD800-\uDFFF]/u.test(value))
         local.set(STRUCTURE_FINDING.id, STRUCTURE_FINDING);
@@ -712,33 +711,39 @@ function findSensitiveData(text, format) {
   }
   return [...found.values()];
 }
-function redactSensitiveData(text, format) {
-  const counts = new Map();
+function redactSensitiveData(text, format, onUncachedScalar) {
+  const counts = new Map(), scalarCache = new Map();
   try {
     const output = structuredText(
       text,
       (value, key, element) => {
-        const context = contextualPattern(key, value, element);
-        let result;
-        if (context)
-          result = { redacted: `[redacted:${context.id}]`, counts: new Map([[context.id, 1]]) };
-        else {
-          // A quoted scalar gives path rules the complete account/authority boundary.
-          // Only accept a replacement that still parses as a string; credentials run
-          // on the decoded value, never on its surrounding serialization syntax.
-          const quoted = redactPatterns(JSON.stringify(value), IDENTIFIER_PATTERNS);
-          try {
-            const decoded = JSON.parse(quoted.redacted);
-            if (typeof decoded === "string") {
-              value = decoded;
-              for (const [id, count] of quoted.counts)
-                counts.set(id, (counts.get(id) ?? 0) + count);
-            }
-          } catch {}
-          result = redactPatterns(value, SENSITIVE_PATTERNS);
+        const cacheKey = scalarCacheKey(value, key, element);
+        let result = cacheKey === undefined ? undefined : scalarCache.get(cacheKey);
+        if (result === undefined) {
+          const context = (onUncachedScalar?.(), contextualPattern(key, value, element));
+          if (context)
+            result = { redacted: `[redacted:${context.id}]`, counts: new Map([[context.id, 1]]) };
+          else {
+            // Quote scalars so path rules see the full account boundary. Accept only a
+            // replacement that parses back to a string before scanning the decoded value.
+            const quoted = redactPatterns(JSON.stringify(value), IDENTIFIER_PATTERNS);
+            let quotedCounts = [];
+            try {
+              const decoded = JSON.parse(quoted.redacted);
+              if (typeof decoded === "string") {
+                value = decoded;
+                quotedCounts = quoted.counts;
+              }
+            } catch {}
+            result = redactPatterns(value, SENSITIVE_PATTERNS);
+            for (const [id, count] of quotedCounts)
+              result.counts.set(id, (result.counts.get(id) ?? 0) + count);
+          }
+          result.redacted = neutralizeFormatControls(result.redacted, result.counts);
+          if (cacheKey !== undefined && scalarCache.size < 4096) scalarCache.set(cacheKey, result);
         }
         for (const [id, count] of result.counts) counts.set(id, (counts.get(id) ?? 0) + count);
-        return neutralizeFormatControls(result.redacted, counts);
+        return result.redacted;
       },
       format
     );
@@ -766,12 +771,10 @@ function hasBrokenRedaction(text) {
   );
 }
 function isSerializedRedactionSafe(text, redacted, format) {
+  if (findSensitiveData(redacted, format).length > 0) return false;
   try {
     if (structuredText(text, (value) => value, format, 0, false) !== undefined) {
-      return (
-        redacted === redactSensitiveData(text, format).redacted &&
-        findSensitiveData(redacted, format).length === 0
-      );
+      return redacted === redactSensitiveData(text, format).redacted;
     }
   } catch {
     return false;
@@ -781,7 +784,6 @@ function isSerializedRedactionSafe(text, redacted, format) {
   if (large) {
     return (
       !findSensitiveData(text).includes(ENCODED_LIMIT_FINDING) &&
-      findSensitiveData(redacted).length === 0 &&
       !hasBrokenRedaction(redacted)
     );
   }
