@@ -3040,6 +3040,43 @@ namespace DxMessaging.Core.MessageBus
             return true;
         }
 
+        internal bool TryObserveTargetedHandleMapTopologyForBenchmark<TMessage>(
+            InstanceId target,
+            out IntKeyMapTopologyObservation observation
+        )
+            where TMessage : IMessage
+        {
+            MessageCache<ContextHandlerMap> sink = _contextSinks[
+                BusContextIndex.TargetedHandleDefault
+            ];
+            if (!sink.TryGetValue<TMessage>(out ContextHandlerMap handlersByTarget))
+            {
+                observation = default;
+                return false;
+            }
+
+            observation = handlersByTarget.ObserveTopologyForBenchmark(target.Id);
+            return true;
+        }
+
+        internal bool TryObserveTargetedHandleMapLongestClusterForBenchmark<TMessage>(
+            out int longestCluster
+        )
+            where TMessage : IMessage
+        {
+            MessageCache<ContextHandlerMap> sink = _contextSinks[
+                BusContextIndex.TargetedHandleDefault
+            ];
+            if (!sink.TryGetValue<TMessage>(out ContextHandlerMap handlersByTarget))
+            {
+                longestCluster = 0;
+                return false;
+            }
+
+            longestCluster = handlersByTarget.LongestClusterForBenchmark;
+            return true;
+        }
+
         private ContextHandlerMap GetOrRentContextMap<T>(MessageCache<ContextHandlerMap> sinks)
             where T : IMessage
         {

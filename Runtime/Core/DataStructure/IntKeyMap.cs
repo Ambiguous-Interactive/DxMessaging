@@ -3,6 +3,34 @@ namespace DxMessaging.Core.DataStructure
     using System;
     using System.Runtime.CompilerServices;
 
+    internal readonly struct IntKeyMapTopologyObservation
+    {
+        internal IntKeyMapTopologyObservation(
+            bool found,
+            int slotIndex,
+            int lookupProbes,
+            int deletionScans,
+            int deletionMoves
+        )
+        {
+            Found = found;
+            SlotIndex = slotIndex;
+            LookupProbes = lookupProbes;
+            DeletionScans = deletionScans;
+            DeletionMoves = deletionMoves;
+        }
+
+        internal bool Found { get; }
+
+        internal int SlotIndex { get; }
+
+        internal int LookupProbes { get; }
+
+        internal int DeletionScans { get; }
+
+        internal int DeletionMoves { get; }
+    }
+
     /// <summary>
     /// Compact open-addressed map specialized for integer keys and reference values.
     /// </summary>
@@ -59,6 +87,44 @@ namespace DxMessaging.Core.DataStructure
         internal int Count { get; private set; }
 
         internal int Capacity => _values.Length;
+
+        internal int LongestClusterForBenchmark
+        {
+            get
+            {
+                if (Count == 0)
+                {
+                    return 0;
+                }
+
+                int mask = _values.Length - 1;
+                int empty = 0;
+                while (_values[empty] != null)
+                {
+                    empty++;
+                }
+
+                int longest = 0;
+                int current = 0;
+                for (int offset = 1; offset <= _values.Length; ++offset)
+                {
+                    int index = (empty + offset) & mask;
+                    if (_values[index] == null)
+                    {
+                        current = 0;
+                        continue;
+                    }
+
+                    current++;
+                    if (longest < current)
+                    {
+                        longest = current;
+                    }
+                }
+
+                return longest;
+            }
+        }
 
         internal TValue this[int key]
         {
@@ -157,6 +223,58 @@ namespace DxMessaging.Core.DataStructure
             return false;
         }
 
+        internal IntKeyMapTopologyObservation ObserveTopologyForBenchmark(int key)
+        {
+            TValue[] values = _values;
+            if (values.Length == 0)
+            {
+                return new IntKeyMapTopologyObservation(false, -1, 0, 0, 0);
+            }
+
+            int mask = values.Length - 1;
+            int index = Bucket(key, mask);
+            int lookupProbes = 1;
+            while (values[index] != null)
+            {
+                if (_keys[index] == key)
+                {
+                    int deletionScans = 0;
+                    int deletionMoves = 0;
+                    int gap = index;
+                    int scan = (gap + 1) & mask;
+                    /*
+                        SYNC: DeleteAt below. This read-only benchmark observer predicts the
+                        exact gaps that production deletion will fill without instrumenting it.
+                    */
+                    while (values[scan] != null)
+                    {
+                        deletionScans++;
+                        int home = Bucket(_keys[scan], mask);
+                        if (((gap - home) & mask) < ((scan - home) & mask))
+                        {
+                            deletionMoves++;
+                            gap = scan;
+                        }
+
+                        scan = (scan + 1) & mask;
+                    }
+
+                    return new IntKeyMapTopologyObservation(
+                        true,
+                        index,
+                        lookupProbes,
+                        deletionScans,
+                        deletionMoves
+                    );
+                }
+
+                index = (index + 1) & mask;
+                lookupProbes++;
+            }
+
+            return new IntKeyMapTopologyObservation(false, -1, lookupProbes, 0, 0);
+        }
+
         internal void Clear()
         {
             if (Count == 0)
@@ -178,6 +296,10 @@ namespace DxMessaging.Core.DataStructure
         private void DeleteAt(int gap, int mask)
         {
             int scan = (gap + 1) & mask;
+            /*
+                SYNC: ObserveTopologyForBenchmark above. Keep its read-only deletion prediction
+                aligned with this production gap-selection condition.
+            */
             while (_values[scan] != null)
             {
                 int home = Bucket(_keys[scan], mask);

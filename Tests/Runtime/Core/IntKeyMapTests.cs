@@ -93,6 +93,139 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void TopologyObserverReportsExactWrappedProbeAndDeletionWork()
+        {
+            IntKeyMap<string> map = new();
+            IntKeyMapTopologyObservation empty = map.ObserveTopologyForBenchmark(-100);
+
+            Assert.IsFalse(empty.Found, "An empty map cannot contain the requested key.");
+            Assert.AreEqual(-1, empty.SlotIndex, "An empty map must not report a slot index.");
+            Assert.AreEqual(0, empty.LookupProbes, "An unallocated map performs no slot probes.");
+            Assert.AreEqual(0, empty.DeletionScans, "An absent key predicts no deletion scans.");
+            Assert.AreEqual(0, empty.DeletionMoves, "An absent key predicts no deletion moves.");
+            Assert.AreEqual(
+                0,
+                map.LongestClusterForBenchmark,
+                "An empty map must report no occupied cluster."
+            );
+
+            map[-100] = "first";
+            map[-99] = "second";
+            map[-98] = "third";
+
+            IntKeyMapTopologyObservation head = map.ObserveTopologyForBenchmark(-100);
+            IntKeyMapTopologyObservation middle = map.ObserveTopologyForBenchmark(-99);
+            IntKeyMapTopologyObservation tail = map.ObserveTopologyForBenchmark(-98);
+            int collisionMissKey = -97;
+            while (IntKeyMap<string>.Bucket(collisionMissKey, 3) != 3)
+            {
+                collisionMissKey++;
+            }
+            IntKeyMapTopologyObservation collisionMiss = map.ObserveTopologyForBenchmark(
+                collisionMissKey
+            );
+            int emptyBucketMissKey = 0;
+            while (IntKeyMap<string>.Bucket(emptyBucketMissKey, 3) != 2)
+            {
+                emptyBucketMissKey++;
+            }
+            IntKeyMapTopologyObservation emptyBucketMiss = map.ObserveTopologyForBenchmark(
+                emptyBucketMissKey
+            );
+
+            Assert.IsTrue(head.Found, "The wrapped cluster head must be observable.");
+            Assert.AreEqual(3, head.SlotIndex, "The wrapped cluster head must occupy bucket 3.");
+            Assert.AreEqual(1, head.LookupProbes, "The cluster head must resolve in one probe.");
+            Assert.AreEqual(2, head.DeletionScans, "Deleting the head must scan both followers.");
+            Assert.AreEqual(2, head.DeletionMoves, "Deleting the head must move both followers.");
+            Assert.AreEqual(2, middle.LookupProbes, "The middle entry must resolve in two probes.");
+            Assert.AreEqual(1, middle.DeletionScans, "Deleting the middle must scan the tail.");
+            Assert.AreEqual(1, middle.DeletionMoves, "Deleting the middle must move the tail.");
+            Assert.AreEqual(3, tail.LookupProbes, "The tail must resolve in three probes.");
+            Assert.AreEqual(0, tail.DeletionScans, "Deleting the tail must scan no followers.");
+            Assert.AreEqual(0, tail.DeletionMoves, "Deleting the tail must move no followers.");
+            Assert.IsFalse(collisionMiss.Found, "A same-home missing key must remain absent.");
+            Assert.AreEqual(
+                4,
+                collisionMiss.LookupProbes,
+                "A same-home miss must inspect the full wrapped cluster and its empty terminator."
+            );
+            Assert.IsFalse(emptyBucketMiss.Found, "An empty-home missing key must remain absent.");
+            Assert.AreEqual(
+                1,
+                emptyBucketMiss.LookupProbes,
+                "An empty-home miss must stop after one probe."
+            );
+            Assert.AreEqual(
+                3,
+                map.LongestClusterForBenchmark,
+                "The wrapped occupied run must count as one three-entry cluster."
+            );
+
+            Assert.IsTrue(map.Remove(-100), "The observed cluster head must remain removable.");
+            IntKeyMapTopologyObservation shiftedMiddle = map.ObserveTopologyForBenchmark(-99);
+            IntKeyMapTopologyObservation shiftedTail = map.ObserveTopologyForBenchmark(-98);
+            Assert.AreEqual(
+                middle.LookupProbes - 1,
+                shiftedMiddle.LookupProbes,
+                "The predicted first move should close one probe position."
+            );
+            Assert.AreEqual(
+                tail.LookupProbes - 1,
+                shiftedTail.LookupProbes,
+                "The predicted second move should close one probe position."
+            );
+            Assert.AreEqual(
+                2,
+                map.LongestClusterForBenchmark,
+                "Removing the head must leave one two-entry wrapped cluster."
+            );
+        }
+
+        [Test]
+        public void TopologyObserverPredictsSelectiveMovesInMixedHomeCluster()
+        {
+            IntKeyMap<string> map = new();
+            Assert.AreEqual(3, IntKeyMap<string>.Bucket(-195, 3), "The gap key must home at 3.");
+            Assert.AreEqual(
+                0,
+                IntKeyMap<string>.Bucket(-191, 3),
+                "The stationary key must home at 0."
+            );
+            Assert.AreEqual(
+                3,
+                IntKeyMap<string>.Bucket(-192, 3),
+                "The movable key must home at 3."
+            );
+            map[-195] = "gap";
+            map[-191] = "stays-at-home";
+            map[-192] = "moves-across-wrap";
+
+            IntKeyMapTopologyObservation removed = map.ObserveTopologyForBenchmark(-195);
+            IntKeyMapTopologyObservation staying = map.ObserveTopologyForBenchmark(-191);
+            IntKeyMapTopologyObservation moving = map.ObserveTopologyForBenchmark(-192);
+
+            Assert.AreEqual(2, removed.DeletionScans, "Deletion must inspect both followers.");
+            Assert.AreEqual(1, removed.DeletionMoves, "Only one follower may fill the gap.");
+            Assert.AreEqual(0, staying.SlotIndex, "The at-home follower must occupy slot 0.");
+            Assert.AreEqual(1, moving.SlotIndex, "The displaced follower must occupy slot 1.");
+            Assert.IsTrue(map.Remove(-195), "The observed mixed-home cluster head must remove.");
+
+            IntKeyMapTopologyObservation stayed = map.ObserveTopologyForBenchmark(-191);
+            IntKeyMapTopologyObservation moved = map.ObserveTopologyForBenchmark(-192);
+            Assert.AreEqual(
+                staying.SlotIndex,
+                stayed.SlotIndex,
+                "An entry at its home bucket must not move into the wrapped gap."
+            );
+            Assert.AreEqual(
+                3,
+                moved.SlotIndex,
+                "The one predicted movable entry must fill the wrapped gap."
+            );
+        }
+
+        [Test]
         public void ClearReleasesValuesAndKeepsReusableCapacity()
         {
             IntKeyMap<object> map = new();

@@ -272,6 +272,120 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             );
         }
 
+        public static TargetMapTopologyAttribution RunTopologyAttribution(
+            TargetMapKeyFamily keyFamily,
+            int keyCount
+        )
+        {
+            TargetMapBenchmarkCase benchmarkCase = new(
+                keyCount,
+                TargetMapBenchmarkOperation.Churn,
+                keyFamily
+            );
+            using TargetMapState state = new(benchmarkCase);
+            long registeredLookupProbes = 0;
+            int maxRegisteredLookupProbes = 0;
+            long missLookupProbes = 0;
+            int maxMissLookupProbes = 0;
+            int initialLongestCluster = state.ObserveLongestCluster();
+
+            for (int index = 0; index < keyCount; ++index)
+            {
+                IntKeyMapTopologyObservation registered = state.ObserveTopology(
+                    state.TargetAt(index)
+                );
+                Assert.IsTrue(registered.Found, $"Registered target {index} must be present.");
+                registeredLookupProbes += registered.LookupProbes;
+                maxRegisteredLookupProbes = Math.Max(
+                    maxRegisteredLookupProbes,
+                    registered.LookupProbes
+                );
+                IntKeyMapTopologyObservation miss = state.ObserveTopology(
+                    state.MissTargetAt(index)
+                );
+                Assert.IsFalse(miss.Found, $"Miss target {index} must remain absent.");
+                missLookupProbes += miss.LookupProbes;
+                maxMissLookupProbes = Math.Max(maxMissLookupProbes, miss.LookupProbes);
+            }
+
+            long churnLookupProbes = 0;
+            long removalScans = 0;
+            long removalMoves = 0;
+            int maxRemovalMoves = 0;
+            int finalLongestCluster = initialLongestCluster;
+            int minimumChurnLongestCluster = int.MaxValue;
+            int maximumChurnLongestCluster = 0;
+            for (int index = 0; index < keyCount; ++index)
+            {
+                IntKeyMapTopologyObservation before = state.ObserveTopology(state.TargetAt(index));
+                Assert.IsTrue(
+                    before.Found,
+                    $"Churn target {index} must be present before removal."
+                );
+                churnLookupProbes += before.LookupProbes;
+                removalScans += before.DeletionScans;
+                removalMoves += before.DeletionMoves;
+                maxRemovalMoves = Math.Max(maxRemovalMoves, before.DeletionMoves);
+
+                state.RunMany(TargetMapBenchmarkOperation.Churn, 1);
+                IntKeyMapTopologyObservation replacement = state.ObserveTopology(
+                    state.TargetAt(index)
+                );
+                Assert.IsTrue(
+                    replacement.Found,
+                    $"Replacement target {index} must be present after churn."
+                );
+                finalLongestCluster = state.ObserveLongestCluster();
+                minimumChurnLongestCluster = Math.Min(
+                    minimumChurnLongestCluster,
+                    finalLongestCluster
+                );
+                maximumChurnLongestCluster = Math.Max(
+                    maximumChurnLongestCluster,
+                    finalLongestCluster
+                );
+                state.ObserveStorage(out int entries, out int capacity);
+                Assert.AreEqual(keyCount, entries, "Churn must preserve exact map cardinality.");
+                Assert.GreaterOrEqual(capacity, entries, "Churn must retain sufficient capacity.");
+            }
+
+            state.ObserveStorage(out int finalEntries, out int finalCapacity);
+            Assert.AreEqual(
+                keyCount,
+                state.RegisteredTargets,
+                "Topology attribution must preserve every logical target registration."
+            );
+            Assert.AreEqual(
+                keyCount,
+                state.PhysicalTargetSlots,
+                "Topology attribution must preserve every physical target slot."
+            );
+            Assert.AreEqual(
+                keyCount,
+                state.Invocations,
+                "Each churn replacement must receive exactly one message."
+            );
+            return new TargetMapTopologyAttribution(
+                keyFamily,
+                keyCount,
+                finalEntries,
+                finalCapacity,
+                initialLongestCluster,
+                finalLongestCluster,
+                minimumChurnLongestCluster,
+                maximumChurnLongestCluster,
+                registeredLookupProbes,
+                maxRegisteredLookupProbes,
+                missLookupProbes,
+                maxMissLookupProbes,
+                churnLookupProbes,
+                removalScans,
+                removalMoves,
+                maxRemovalMoves,
+                state.Invocations
+            );
+        }
+
         private static IEnumerable<TestCaseData> TargetMapBenchmarkCases()
         {
             foreach (TargetMapBenchmarkCase benchmarkCase in TargetMapBenchmarkScenarios.All)
@@ -350,6 +464,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             internal int PhysicalTargetSlots => MessageBus.OccupiedTargetSlots;
 
+            internal InstanceId TargetAt(int index) => _targets[index];
+
+            internal InstanceId MissTargetAt(int index) => _missTargets[index];
+
             internal void ObserveStorage(out int entries, out int capacity)
             {
                 if (
@@ -363,6 +481,39 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         "The target-map benchmark must materialize its targeted handle map."
                     );
                 }
+            }
+
+            internal IntKeyMapTopologyObservation ObserveTopology(InstanceId target)
+            {
+                if (
+                    !MessageBus.TryObserveTargetedHandleMapTopologyForBenchmark<TargetMapMessage>(
+                        target,
+                        out IntKeyMapTopologyObservation observation
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The target-map benchmark must materialize its targeted handle map."
+                    );
+                }
+
+                return observation;
+            }
+
+            internal int ObserveLongestCluster()
+            {
+                if (
+                    !MessageBus.TryObserveTargetedHandleMapLongestClusterForBenchmark<TargetMapMessage>(
+                        out int longestCluster
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The target-map benchmark must materialize its targeted handle map."
+                    );
+                }
+
+                return longestCluster;
             }
 
             internal void RunMany(TargetMapBenchmarkOperation operation, int count)
@@ -673,10 +824,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 shift++;
             }
             uint mixed = ((uint)ordinal << shift) | (uint)bucket;
-            return unchecked((int)Unmix(mixed));
+            return unchecked((int)InvertHashMix(mixed));
         }
 
-        private static uint Unmix(uint hash)
+        private static uint InvertHashMix(uint hash)
         {
             hash = InvertXorShiftRight(hash, 16);
             hash = unchecked(hash * HashMultiplierTwoInverse);
@@ -944,6 +1095,113 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
     }
 
+    public readonly struct TargetMapTopologyAttribution
+    {
+        internal TargetMapTopologyAttribution(
+            TargetMapKeyFamily keyFamily,
+            int keyCount,
+            int entries,
+            int capacity,
+            int initialLongestCluster,
+            int finalLongestCluster,
+            int minimumChurnLongestCluster,
+            int maximumChurnLongestCluster,
+            long registeredLookupProbes,
+            int maxRegisteredLookupProbes,
+            long missLookupProbes,
+            int maxMissLookupProbes,
+            long churnLookupProbes,
+            long removalScans,
+            long removalMoves,
+            int maxRemovalMoves,
+            long observedInvocations
+        )
+        {
+            KeyFamily = keyFamily;
+            KeyCount = keyCount;
+            Entries = entries;
+            Capacity = capacity;
+            InitialLongestCluster = initialLongestCluster;
+            FinalLongestCluster = finalLongestCluster;
+            MinimumChurnLongestCluster = minimumChurnLongestCluster;
+            MaximumChurnLongestCluster = maximumChurnLongestCluster;
+            RegisteredLookupProbes = registeredLookupProbes;
+            MaxRegisteredLookupProbes = maxRegisteredLookupProbes;
+            MissLookupProbes = missLookupProbes;
+            MaxMissLookupProbes = maxMissLookupProbes;
+            ChurnLookupProbes = churnLookupProbes;
+            RemovalScans = removalScans;
+            RemovalMoves = removalMoves;
+            MaxRemovalMoves = maxRemovalMoves;
+            ObservedInvocations = observedInvocations;
+        }
+
+        public TargetMapKeyFamily KeyFamily { get; }
+
+        public int KeyCount { get; }
+
+        public int Entries { get; }
+
+        public int Capacity { get; }
+
+        public int InitialLongestCluster { get; }
+
+        public int FinalLongestCluster { get; }
+
+        public int MinimumChurnLongestCluster { get; }
+
+        public int MaximumChurnLongestCluster { get; }
+
+        public long RegisteredLookupProbes { get; }
+
+        public int MaxRegisteredLookupProbes { get; }
+
+        public long MissLookupProbes { get; }
+
+        public int MaxMissLookupProbes { get; }
+
+        public long ChurnLookupProbes { get; }
+
+        public long RemovalScans { get; }
+
+        public long RemovalMoves { get; }
+
+        public int MaxRemovalMoves { get; }
+
+        public long ObservedInvocations { get; }
+
+        public string ToStructuredLog()
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "DXM_TARGET_MAP_TOPOLOGY keyFamily={0} keyCount={1} entries={2} capacity={3} "
+                    + "initialLongestCluster={4} finalLongestCluster={5} "
+                    + "minimumChurnLongestCluster={6} maximumChurnLongestCluster={7} "
+                    + "registeredLookupProbes={8} maxRegisteredLookupProbes={9} "
+                    + "missLookupProbes={10} maxMissLookupProbes={11} churnLookupProbes={12} "
+                    + "removalScans={13} removalMoves={14} maxRemovalMoves={15} "
+                    + "observedInvocations={16}",
+                KeyFamily,
+                KeyCount,
+                Entries,
+                Capacity,
+                InitialLongestCluster,
+                FinalLongestCluster,
+                MinimumChurnLongestCluster,
+                MaximumChurnLongestCluster,
+                RegisteredLookupProbes,
+                MaxRegisteredLookupProbes,
+                MissLookupProbes,
+                MaxMissLookupProbes,
+                ChurnLookupProbes,
+                RemovalScans,
+                RemovalMoves,
+                MaxRemovalMoves,
+                ObservedInvocations
+            );
+        }
+    }
+
     internal readonly struct TargetMapContractObservation
     {
         internal TargetMapContractObservation(
@@ -1082,6 +1340,149 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             Assert.IsTrue(collisionInsideMiss);
             Assert.IsTrue(collisionOutsideMiss);
+        }
+
+        [Test]
+        public void ExactTopologyAttributionExplainsDesignedCollisionChurn()
+        {
+            const int keyCount = 4096;
+            TargetMapTopologyAttribution sequential = TargetMapBenchmarks.RunTopologyAttribution(
+                TargetMapKeyFamily.SequentialSanitized,
+                keyCount
+            );
+            TargetMapTopologyAttribution collision = TargetMapBenchmarks.RunTopologyAttribution(
+                TargetMapKeyFamily.DesignedMixerCollision,
+                keyCount
+            );
+            TestContext.Out.WriteLine(sequential.ToStructuredLog());
+            TestContext.Out.WriteLine(collision.ToStructuredLog());
+
+            Assert.AreEqual(
+                keyCount,
+                sequential.Entries,
+                "Sequential churn must preserve exact map cardinality."
+            );
+            Assert.AreEqual(
+                8192,
+                sequential.Capacity,
+                "Sequential attribution must observe the expected 75%-load capacity."
+            );
+            Assert.AreEqual(
+                keyCount,
+                sequential.ObservedInvocations,
+                "Sequential churn must invoke every replacement exactly once."
+            );
+            Assert.That(
+                sequential.InitialLongestCluster,
+                Is.Positive,
+                "A populated sequential map must contain an occupied cluster."
+            );
+            Assert.That(
+                sequential.FinalLongestCluster,
+                Is.Positive,
+                "Sequential churn must leave an occupied cluster."
+            );
+            Assert.That(
+                sequential.RegisteredLookupProbes,
+                Is.AtLeast(keyCount),
+                "Every registered sequential key must consume at least one lookup probe."
+            );
+            Assert.That(
+                sequential.MissLookupProbes,
+                Is.AtLeast(keyCount),
+                "Every sequential miss must consume at least one lookup probe."
+            );
+            Assert.That(
+                sequential.ChurnLookupProbes,
+                Is.AtLeast(keyCount),
+                "Every sequential churn removal must consume at least one lookup probe."
+            );
+            Assert.That(
+                sequential.RemovalScans,
+                Is.GreaterThanOrEqualTo(0),
+                "Sequential removal scans cannot be negative."
+            );
+            Assert.That(
+                sequential.RemovalMoves,
+                Is.GreaterThanOrEqualTo(0),
+                "Sequential removal moves cannot be negative."
+            );
+
+            Assert.AreEqual(
+                keyCount,
+                collision.Entries,
+                "Designed-collision churn must preserve exact map cardinality."
+            );
+            Assert.AreEqual(
+                8192,
+                collision.Capacity,
+                "Designed-collision attribution must observe the expected 75%-load capacity."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.InitialLongestCluster,
+                "All designed-collision keys must begin in one cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.FinalLongestCluster,
+                "All designed-collision replacements must finish in one cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MinimumChurnLongestCluster,
+                "Designed-collision churn must never shorten the occupied cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MaximumChurnLongestCluster,
+                "Designed-collision churn must never lengthen the occupied cluster."
+            );
+            Assert.AreEqual(
+                8_390_656L,
+                collision.RegisteredLookupProbes,
+                "Registered designed-collision keys must form the declared arithmetic probe sum."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MaxRegisteredLookupProbes,
+                "The final registered collision key must span the full cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.MissLookupProbes,
+                "Each outside-cluster miss must stop after its first probe."
+            );
+            Assert.AreEqual(
+                1,
+                collision.MaxMissLookupProbes,
+                "No outside-cluster miss may enter the designed cluster."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.ChurnLookupProbes,
+                "Each churn cursor must remove the collision-cluster head."
+            );
+            Assert.AreEqual(
+                16_773_120L,
+                collision.RemovalScans,
+                "Collision-head removals must scan the declared full-cluster total."
+            );
+            Assert.AreEqual(
+                16_773_120L,
+                collision.RemovalMoves,
+                "Every scanned collision entry must move into the preceding gap."
+            );
+            Assert.AreEqual(
+                keyCount - 1,
+                collision.MaxRemovalMoves,
+                "The first collision-head removal must shift every remaining entry."
+            );
+            Assert.AreEqual(
+                keyCount,
+                collision.ObservedInvocations,
+                "Designed-collision churn must invoke every replacement exactly once."
+            );
         }
 
         [TestCase(TargetMapKeyFamily.SequentialSanitized)]
