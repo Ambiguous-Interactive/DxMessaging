@@ -742,9 +742,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TargetMapBenchmarkOperation.Churn,
         };
 
+        private static readonly TargetMapKeyFamily[] ScreeningKeyFamilies =
+        {
+            TargetMapKeyFamily.SignedExtremes,
+            TargetMapKeyFamily.PowerOfTwoStride,
+            TargetMapKeyFamily.UniformSeededRandom,
+            TargetMapKeyFamily.DesignedMixerCollision,
+        };
+
         private static readonly TargetMapBenchmarkCase[] Cases = BuildCases();
+        private static readonly IReadOnlyList<TargetMapBenchmarkCase> ScreeningCases =
+            Array.AsReadOnly(BuildScreeningCases());
 
         public static IReadOnlyList<TargetMapBenchmarkCase> All => Cases;
+
+        public static IReadOnlyList<TargetMapBenchmarkCase> Screening => ScreeningCases;
 
         private static TargetMapBenchmarkCase[] BuildCases()
         {
@@ -763,6 +775,37 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
+            return cases;
+        }
+
+        private static TargetMapBenchmarkCase[] BuildScreeningCases()
+        {
+            TargetMapBenchmarkCase[] cases = new TargetMapBenchmarkCase[
+                Cases.Length + ScreeningKeyFamilies.Length * KeyCounts.Length
+            ];
+            Array.Copy(Cases, cases, Cases.Length);
+            int writeIndex = Cases.Length;
+            foreach (TargetMapKeyFamily family in ScreeningKeyFamilies)
+            {
+                for (int keyIndex = 0; keyIndex < KeyCounts.Length; ++keyIndex)
+                {
+                    TargetMapBenchmarkOperation operation = Operations[
+                        ((int)family + keyIndex) % Operations.Length
+                    ];
+                    TargetMapMissProbeKind missProbeKind =
+                        family == TargetMapKeyFamily.DesignedMixerCollision
+                        && operation == TargetMapBenchmarkOperation.Miss
+                        && KeyCounts[keyIndex] == 1
+                            ? TargetMapMissProbeKind.InsideCluster
+                            : TargetMapMissProbeKind.OutsideCluster;
+                    cases[writeIndex++] = new TargetMapBenchmarkCase(
+                        KeyCounts[keyIndex],
+                        operation,
+                        family,
+                        missProbeKind
+                    );
+                }
+            }
             return cases;
         }
     }
@@ -968,6 +1011,77 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 expectedKeyCounts.Length * expectedOperations.Length,
                 observedKeys.Count
             );
+        }
+
+        [Test]
+        public void ScreeningMatrixIsBoundedAndCoversFrozenFactorPairs()
+        {
+            int[] expectedKeyCounts = { 1, 4, 16, 256, 4096 };
+            TargetMapKeyFamily[] expectedFamilies =
+            {
+                TargetMapKeyFamily.SequentialSanitized,
+                TargetMapKeyFamily.SignedExtremes,
+                TargetMapKeyFamily.PowerOfTwoStride,
+                TargetMapKeyFamily.UniformSeededRandom,
+                TargetMapKeyFamily.DesignedMixerCollision,
+            };
+            TargetMapBenchmarkOperation[] expectedOperations =
+            {
+                TargetMapBenchmarkOperation.Hit,
+                TargetMapBenchmarkOperation.Miss,
+                TargetMapBenchmarkOperation.Churn,
+            };
+            HashSet<string> keys = new();
+            HashSet<string> familyCardinalityPairs = new();
+            HashSet<string> familyOperationPairs = new();
+            int nonSequentialCases = 0;
+            bool collisionInsideMiss = false;
+            bool collisionOutsideMiss = false;
+
+            Assert.AreEqual(35, TargetMapBenchmarkScenarios.Screening.Count);
+            IList<TargetMapBenchmarkCase> mutableScreening =
+                TargetMapBenchmarkScenarios.Screening as IList<TargetMapBenchmarkCase>;
+            Assert.IsNotNull(mutableScreening);
+            Assert.Throws<NotSupportedException>(() => mutableScreening[0] = default);
+            foreach (TargetMapBenchmarkCase benchmarkCase in TargetMapBenchmarkScenarios.Screening)
+            {
+                Assert.That(keys.Add(benchmarkCase.Key), Is.True, benchmarkCase.Key);
+                familyCardinalityPairs.Add($"{benchmarkCase.KeyFamily}:{benchmarkCase.KeyCount}");
+                familyOperationPairs.Add($"{benchmarkCase.KeyFamily}:{benchmarkCase.Operation}");
+                if (benchmarkCase.KeyFamily != TargetMapKeyFamily.SequentialSanitized)
+                {
+                    nonSequentialCases++;
+                }
+                if (
+                    benchmarkCase.KeyFamily == TargetMapKeyFamily.DesignedMixerCollision
+                    && benchmarkCase.Operation == TargetMapBenchmarkOperation.Miss
+                )
+                {
+                    collisionInsideMiss |=
+                        benchmarkCase.MissProbeKind == TargetMapMissProbeKind.InsideCluster;
+                    collisionOutsideMiss |=
+                        benchmarkCase.MissProbeKind == TargetMapMissProbeKind.OutsideCluster;
+                }
+            }
+
+            Assert.AreEqual(20, nonSequentialCases);
+            foreach (TargetMapBenchmarkCase legacy in TargetMapBenchmarkScenarios.All)
+            {
+                Assert.That(keys, Does.Contain(legacy.Key));
+            }
+            foreach (TargetMapKeyFamily family in expectedFamilies)
+            {
+                foreach (int keyCount in expectedKeyCounts)
+                {
+                    Assert.That(familyCardinalityPairs, Does.Contain($"{family}:{keyCount}"));
+                }
+                foreach (TargetMapBenchmarkOperation operation in expectedOperations)
+                {
+                    Assert.That(familyOperationPairs, Does.Contain($"{family}:{operation}"));
+                }
+            }
+            Assert.IsTrue(collisionInsideMiss);
+            Assert.IsTrue(collisionOutsideMiss);
         }
 
         [TestCase(TargetMapKeyFamily.SequentialSanitized)]
