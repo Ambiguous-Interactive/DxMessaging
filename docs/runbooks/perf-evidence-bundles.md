@@ -438,6 +438,77 @@ directories with normalized ownership and no links. Archive and manifest hashes 
 index. `verify` accepted all 21 declared files, and `replay` reproduced all 20 normalized cells.
 The verifier worktree stayed clean.
 
+### shipping-fidelity-matrix-2021.3.45f1, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This is the
+20-cell Unity 2021.3.45f1 endpoint characterization at the PR #591 merge revision. It covers
+Minimal, Low, Medium, and High stripping with five message-shape and cardinality topologies per
+level. It retains the reviewed text build and result evidence, not player binaries or confirmatory
+performance.
+
+| Identity                        | Value                                                                                                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable Unity 2021.3 shipping-fidelity prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-shipping-fidelity-matrix-2021.3.45f1-r1-cae3ea64)                                               |
+| Release ID                      | `388173149`                                                                                                                                                                                                                           |
+| Asset                           | [Unity 2021.3 shipping-fidelity matrix archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-shipping-fidelity-matrix-2021.3.45f1-r1-cae3ea64/shipping-fidelity-matrix-2021.3.45f1-r1.tar.gz) |
+| Exact asset name                | `shipping-fidelity-matrix-2021.3.45f1-r1.tar.gz`                                                                                                                                                                                      |
+| Asset ID and size               | `562702894`, 4,546,853 bytes                                                                                                                                                                                                          |
+| Archive SHA-256                 | `1da12030d6d4475a83242883f17044084a521224a30429cfd16e4b7a3f308478`                                                                                                                                                                    |
+| Manifest SHA-256                | `cae3ea6433ab4d4d408dfa41372ee33e0f29e051dd1bb7e91752ef9200b90843`                                                                                                                                                                    |
+| Bundle digest                   | `9f6c8923bcc161b38e82aad035180dc2f5aab25afddf780954c6a61dfdedb56c`                                                                                                                                                                    |
+| Measured source                 | `eadc9b8a427a2a44922c4fa49653bb0ae3abb497`                                                                                                                                                                                            |
+| Verifier and release tag commit | `eadc9b8a427a2a44922c4fa49653bb0ae3abb497`                                                                                                                                                                                            |
+| Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                         |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
+the tag resolves to the verifier commit.
+
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
+The archive was downloaded anonymously. Its 542 files were relative regular entries with
+normalized ownership and no links or special files. Archive and manifest hashes matched this
+index. `verify` accepted all 541 declared files, and `replay` reproduced all 20 normalized cells.
+The verifier worktree stayed clean. A denied-access request for actual asset `562702894` with
+invalid credentials returned HTTP 401, produced no file, and did not use a cached fallback.
+
+### shipping-fidelity-matrix-6000.5.2f1, revision 2
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This revision
+retains the exact PR #591 merge endpoint after the repeated-scalar redaction fix. All 20 shipping
+cells completed, and artifact redaction finished inside its unchanged two-minute gate. Revision 1
+remains immutable and available above.
+
+| Identity                        | Value                                                                                                                                                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable Unity 6000.5 shipping-fidelity prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-shipping-fidelity-matrix-6000.5.2f1-r2-cb123041)                                              |
+| Release ID                      | `388173324`                                                                                                                                                                                                                         |
+| Asset                           | [Unity 6000.5 shipping-fidelity matrix archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-shipping-fidelity-matrix-6000.5.2f1-r2-cb123041/shipping-fidelity-matrix-6000.5.2f1-r2.tar.gz) |
+| Exact asset name                | `shipping-fidelity-matrix-6000.5.2f1-r2.tar.gz`                                                                                                                                                                                     |
+| Asset ID and size               | `562703727`, 4,090,916 bytes                                                                                                                                                                                                        |
+| Archive SHA-256                 | `e7dce95484844bd025dfe2c51dd187832ab804f945d5dc32a93dd47a4ced9aa9`                                                                                                                                                                  |
+| Manifest SHA-256                | `cb1230414f98a0db88c07139bd83c9b8ad5e29060188580c1eb822c665940ea2`                                                                                                                                                                  |
+| Bundle digest                   | `f950f2438cce3eee62986c729bc65acfeb8370e73a3cf0ab40d4457d6c188240`                                                                                                                                                                  |
+| Measured source                 | `eadc9b8a427a2a44922c4fa49653bb0ae3abb497`                                                                                                                                                                                          |
+| Verifier and release tag commit | `eadc9b8a427a2a44922c4fa49653bb0ae3abb497`                                                                                                                                                                                          |
+| Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                       |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
+the tag resolves to the verifier commit.
+
+The same new verifier clone downloaded this archive anonymously. Its 582 files were relative
+regular entries with normalized ownership and no links or special files. Archive and manifest
+hashes matched this index. `verify` accepted all 581 declared files, and `replay` reproduced all 20
+normalized cells. The verifier worktree stayed clean. A denied-access request for actual asset
+`562703727` with invalid credentials returned HTTP 401, produced no file, and did not use a cached
+fallback.
+
+The endpoint jobs also retained native player payloads as expiring workflow artifacts. A
+values-suppressed scan found credential or network-identifier pattern classes in every binary.
+Those native bytes remain excluded from immutable publication unless the format-aware
+investigation in issue #508 can prove every finding safe. The text bundles do not establish native
+payload retention.
+
 ### session247-paired-screen-replay, revision 1
 
 Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This historical
