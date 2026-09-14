@@ -535,6 +535,38 @@ normalized cells. The verifier worktree stayed clean. A denied-access request fo
 `562703727` with invalid credentials returned HTTP 401, produced no file, and did not use a cached
 fallback.
 
+### shipping-fidelity-matrix-6000.5.2f1, revision 3
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This revision
+retains the exact PR #593 merge endpoint after the clean-predecessor snapshot correction. All 20
+clean shipping cells and the separately bound High-semantic incremental build completed. Earlier
+revisions remain immutable and available above.
+
+| Identity                        | Value                                                                                                                                                                                                                                              |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable Unity 6000.5 clean and incremental shipping-fidelity prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-shipping-fidelity-matrix-6000.5.2f1-r3-eb7d15ae)                                       |
+| Release ID                      | `388774759`                                                                                                                                                                                                                                        |
+| Asset                           | [Unity 6000.5 clean and incremental shipping-fidelity archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-shipping-fidelity-matrix-6000.5.2f1-r3-eb7d15ae/shipping-fidelity-matrix-6000.5.2f1-r3.tar.gz) |
+| Exact asset name                | `shipping-fidelity-matrix-6000.5.2f1-r3.tar.gz`                                                                                                                                                                                                    |
+| Asset ID and size               | `564455344`, 4,405,971 bytes                                                                                                                                                                                                                       |
+| Archive SHA-256                 | `c914c8b63382be958f31c67a21dd0b1792110fb98dcf813698646318fed35cb1`                                                                                                                                                                                 |
+| Manifest SHA-256                | `eb7d15ae1bfe19831ce8a895b85fc8d87c320d56f2015372637214b9cab11646`                                                                                                                                                                                 |
+| Bundle digest                   | `b02f9a5ff52cd3999f04f401f9c783660ecf5a01772194012f7c83b28ed8a128`                                                                                                                                                                                 |
+| Measured source                 | `b6ce2f59f9c3e2115708226d51d7586c3e8846d1`                                                                                                                                                                                                         |
+| Verifier and release tag commit | `b6ce2f59f9c3e2115708226d51d7586c3e8846d1`                                                                                                                                                                                                         |
+| Reducer                         | `shipping-fidelity-matrix-v1`                                                                                                                                                                                                                      |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and `immutable: true`;
+the tag resolves to the verifier commit.
+
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
+The archive was downloaded anonymously. Its 596 files were relative regular entries with
+normalized ownership and no links or special files. Archive and manifest hashes matched this
+index. `verify` accepted all 595 declared files, and `replay` reproduced all 20 normalized cells.
+The verifier worktree stayed clean. A denied-access request for actual asset `564455344` with
+invalid credentials returned HTTP 401, produced no file, and did not use a cached fallback.
+
 The endpoint jobs also retained native player payloads as expiring workflow artifacts. A
 values-suppressed scan found credential or network-identifier pattern classes in every binary.
 Those native bytes remain excluded from immutable publication unless the format-aware
