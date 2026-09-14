@@ -374,6 +374,39 @@ Repository-wide immutable releases were enabled with maintainer approval on 2026
 authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
 an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
 
+### native-lifecycle-replay-failure, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-13. This is a
+deterministic Unity 6000.4.6f1 PlayMode Mono differential-oracle observation. It retains the seed,
+original and minimized operations, and control and faulty-adapter traces for a skipped host
+destruction across all three message kinds. It is behavioral oracle evidence, not a performance
+claim.
+
+| Identity                        | Value                                                                                                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable native lifecycle replay prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-native-lifecycle-replay-failure-r1-86b25374)                                   |
+| Release ID                      | `388023458`                                                                                                                                                                                                   |
+| Asset                           | [Native lifecycle replay archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-native-lifecycle-replay-failure-r1-86b25374/native-lifecycle-replay-failure-r1.tar.gz) |
+| Exact asset name                | `native-lifecycle-replay-failure-r1.tar.gz`                                                                                                                                                                   |
+| Asset ID and size               | `561869392`, 2,850 bytes                                                                                                                                                                                      |
+| Archive SHA-256                 | `36a23d0772a5cdad44e611ddf1af00f0576ae469ff1af67bcec08667f8dccbc1`                                                                                                                                            |
+| Manifest SHA-256                | `86b25374954df963f18c7c615a24a35224753e3be8425fdcb310d12a3851f414`                                                                                                                                            |
+| Bundle digest                   | `f48c7e80cd3a9f33d056f9eb8e48b7f7de177ea6729ce577f7c451e880652025`                                                                                                                                            |
+| Measured source                 | `39ac059a89bb3aaccdf105a0bb3a15ab764e1032`                                                                                                                                                                    |
+| Verifier and release tag commit | `bef2f36bdf79a92959c09390a5084c724cf4cf43`                                                                                                                                                                    |
+| Reducer                         | `differential-replay-failure-v1`                                                                                                                                                                              |
+
+The draft contained exactly one asset. Its downloaded bytes matched the archive hash before
+publication. Published metadata reported `draft: false`, `prerelease: true`, and
+`immutable: true`; the tag resolves to the verifier commit.
+
+The restore used a new remote clone at the verifier commit and a fresh pinned dependency install.
+The archive was downloaded anonymously. Its eight entries were relative regular files with
+normalized ownership and no links. Archive and manifest hashes matched this index. `verify`
+accepted all seven declared files, and `replay` reproduced the three normalized message-kind
+cases. The verifier worktree stayed clean. A denied-access request for actual asset `561869392`
+with invalid credentials returned HTTP 401, so failed required retrieval remains incomplete.
+
 ### shipping-fidelity-matrix-6000.5.2f1, revision 1
 
 Status: published and restored from GitHub in a fresh verifier clone on 2026-09-11. This is a

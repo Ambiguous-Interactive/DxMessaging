@@ -6497,7 +6497,9 @@ function Write-ShippingPackageResolutionEvidence {
         'com.unity.sysroot.linux-x86_64' = [ordered]@{
             Version = '2.0.9'
             Depth = 1
-            Dependencies = [ordered]@{}
+            Dependencies = [ordered]@{
+                'com.unity.sysroot' = '2.0.10'
+            }
         }
         'com.unity.toolchain.win-x86_64-linux-x86_64' = [ordered]@{
             Version = '2.0.11'

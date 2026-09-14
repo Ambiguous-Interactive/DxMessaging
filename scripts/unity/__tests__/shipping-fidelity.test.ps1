@@ -855,6 +855,10 @@ if (
                 'com.unity.sysroot' = '2.0.10'
                 'com.unity.sysroot.linux-x86_64' = '2.0.9'
             }
+        } elseif ($unityManagedPackageName -ceq 'com.unity.sysroot.linux-x86_64') {
+            [pscustomobject]@{
+                'com.unity.sysroot' = '2.0.10'
+            }
         } else {
             [pscustomobject]@{}
         }
@@ -930,16 +934,25 @@ if (
         Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
     } 'requests an unvalidated version'
     $wrongUnityGraphLock = Copy-JsonValue -Value $unityManagedLock
-    $wrongUnityGraphLock.dependencies.'com.unity.sysroot'.dependencies | Add-Member `
-        -NotePropertyName 'com.unity.sysroot.linux-x86_64' `
-        -NotePropertyValue '2.0.9'
+    $wrongUnityGraphLock.dependencies.'com.unity.sysroot.linux-x86_64'.dependencies.PSObject.Properties.Remove(
+        'com.unity.sysroot'
+    )
     [System.IO.File]::WriteAllText(
         $packageLockPath,
         ($wrongUnityGraphLock | ConvertTo-Json -Depth 10)
     )
-    Assert-Fails 'shipping lock rejects a changed edge between otherwise allowed Unity packages' {
+    Assert-Fails 'shipping lock rejects a missing official Unity dependency edge' {
         Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
     } 'differs from the exact validated dependency graph'
+    $wrongLinuxSysrootDependencyLock = Copy-JsonValue -Value $unityManagedLock
+    $wrongLinuxSysrootDependencyLock.dependencies.'com.unity.sysroot.linux-x86_64'.dependencies.'com.unity.sysroot' = '2.0.11'
+    [System.IO.File]::WriteAllText(
+        $packageLockPath,
+        ($wrongLinuxSysrootDependencyLock | ConvertTo-Json -Depth 10)
+    )
+    Assert-Fails 'shipping lock rejects an unvalidated Linux sysroot dependency version' {
+        Write-ShippingPackageResolutionEvidence @packageEvidenceArguments
+    } 'requests an unvalidated version'
     [System.IO.File]::WriteAllText($generatedManifestPath, ($manifest | ConvertTo-Json -Depth 10))
     [System.IO.File]::WriteAllText($packageLockPath, ($packageLock | ConvertTo-Json -Depth 10))
     $badPackageLock = Copy-JsonValue -Value $packageLock
