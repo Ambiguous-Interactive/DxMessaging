@@ -2,7 +2,7 @@
 #    uv pip compile --universal --python-version 3.11 requirements-brand.in -o requirements-brand.txt
 cairocffi==1.7.1
     # via cairosvg
-cairosvg==2.9.0
+cairosvg==2.9.1
     # via -r requirements-brand.in
 cffi==2.1.1
     # via cairocffi

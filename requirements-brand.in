@@ -15,4 +15,4 @@
 # same-named .txt lock as a reviewed diff. PR #481 confirmed that behavior for
 # the documentation pair; the same configured updater covers this pair.
 
-cairosvg>=2.7.1
+cairosvg>=2.9.1
