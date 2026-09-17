@@ -138,7 +138,52 @@ def clock_runner_result() -> dict:
     }
 
 
+def clock_batch_runner_result() -> dict:
+    pairs = ";".join(f"{index * 100}:{index * 100 + 20 + index % 3}" for index in range(128))
+    return {
+        "passCount": 1, "failCount": 0, "skipCount": 0, "inconclusiveCount": 0,
+        "nodes": [{
+            "name": "TimestampCallBatchesRetainRawWindowPairs", "isSuite": False,
+            "status": "Passed", "output": (
+                "DXM_LATENCY_CLOCK_BATCH_V1 frequencyHz=10000000 "
+                f"callsPerBatch=4096 batchCount=128 pairs={pairs}"
+            ),
+        }],
+        "failures": [],
+    }
+
+
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_batched_clock_windows_rederive_exact_total_and_reject_faults(self) -> None:
+        result = clock_batch_runner_result()
+        reduced = MODULE.audit_clock_batch_result(json.dumps(result).encode())
+        self.assertEqual(reduced["totalCalls"], 524288)
+        self.assertEqual(reduced["totalElapsedTicks"], "2687")
+        self.assertEqual(reduced["zeroWindowCount"], 0)
+        self.assertEqual(reduced["windowQuantilesTicks"], {"p50": "21", "p95": "22", "p99": "22"})
+        output = result["nodes"][0]["output"]
+        for changed in (
+            "",
+            output + "\n" + output,
+            output.replace("callsPerBatch=4096", "callsPerBatch=4095"),
+            output.replace("batchCount=128", "batchCount=127"),
+            output.replace("frequencyHz=10000000", "frequencyHz=0"),
+            output.replace("pairs=0:20;100:121", "pairs=0:20;0:121"),
+            output.replace("pairs=0:20;100:121", "pairs=0:20;100:99"),
+            output.replace("pairs=0:20;100:121;", "pairs=0:20;", 1),
+        ):
+            with self.subTest(change=changed[:80]), self.assertRaises(ValueError):
+                MODULE.audit_clock_batch_result(json.dumps({**result, "nodes": [{**result["nodes"][0], "output": changed}]}).encode())
+        with tempfile.TemporaryDirectory() as temporary:
+            raw_path = Path(temporary) / "clock-batch.json"
+            raw_path.write_bytes(json.dumps(result).encode())
+            command = subprocess.run(
+                [sys.executable, str(SCRIPT), "--clock-batch-result", str(raw_path)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(command.returncode, 0, command.stderr)
+            self.assertEqual(json.loads(command.stdout), reduced)
+
     def test_clock_controls_rederive_exact_elapsed_ticks_and_reject_faults(self) -> None:
         result = clock_runner_result()
         reduced = MODULE.audit_clock_result(json.dumps(result).encode())
@@ -293,6 +338,12 @@ class AuditOpenLoopTraceTests(unittest.TestCase):
         )
         self.assertEqual(clock["runGuid"], guid)
         self.assertEqual(clock["sampleCountPerControl"], 256)
+        batch = MODULE.audit_clock_batch_capture(
+            json.dumps(clock_batch_runner_result()).encode(), json.dumps(run).encode(),
+            json.dumps(cleanup).encode(), b"done", b"done", "result.json",
+        )
+        self.assertEqual(batch["runGuid"], guid)
+        self.assertEqual(batch["totalCalls"], 524288)
         with self.assertRaisesRegex(ValueError, "status"):
             MODULE.audit_clock_capture(
                 json.dumps(clock_runner_result()).encode(), json.dumps(run).encode(),

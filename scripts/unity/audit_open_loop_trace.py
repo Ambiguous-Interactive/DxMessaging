@@ -33,6 +33,10 @@ CLOCK_MARKER = re.compile(
     r"DXM_LATENCY_CLOCK_V1 control=(timer-only|empty-callback) "
     r"frequencyHz=((?:0|[1-9][0-9]*)) callbackCalls=((?:0|[1-9][0-9]*)) pairs=(.+)\Z"
 )
+CLOCK_BATCH_MARKER = re.compile(
+    r"DXM_LATENCY_CLOCK_BATCH_V1 frequencyHz=((?:0|[1-9][0-9]*)) "
+    r"callsPerBatch=((?:0|[1-9][0-9]*)) batchCount=((?:0|[1-9][0-9]*)) pairs=(.+)\Z"
+)
 RUN_FIELDS = {"runGuid", "resultPath"}
 CLEANUP_FIELDS = {
     "observedUtc", "observationError", "frameworkActive", "playing", "compiling",
@@ -375,8 +379,8 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
     return replay
 
 
-def audit_clock_result(raw_result: bytes) -> dict[str, Any]:
-    """Reduce the retained Editor timer-only and empty-callback timestamp controls."""
+def passed_clock_output(raw_result: bytes, method_name: str) -> str:
+    """Require one passed clock fixture and return its raw test output."""
     if not isinstance(raw_result, bytes):
         raise ValueError("clock result must be raw bytes")
     result = parse_json(raw_result)
@@ -392,15 +396,21 @@ def audit_clock_result(raw_result: bytes) -> dict[str, Any]:
         raise ValueError("clock result must have one pass and no other outcome")
     leaves = [node for node in result["nodes"] if isinstance(node, dict) and node.get("isSuite") is False]
     if len(leaves) != 1 or not isinstance(leaves[0].get("name"), str) or not leaves[0]["name"].endswith(
-        "TimerOnlyAndEmptyCallbackRetainMonotonicRawPairs"
+        method_name
     ) or leaves[0].get("status") != "Passed" or not isinstance(leaves[0].get("output"), str):
         raise ValueError("clock result must contain the passed clock fixture exactly once")
     if any(not isinstance(node, dict) or node.get("isSuite") is not True or node.get("status") != "Passed"
            for node in result["nodes"] if node is not leaves[0]):
         raise ValueError("clock result has an invalid suite node")
+    return leaves[0]["output"]
+
+
+def audit_clock_result(raw_result: bytes) -> dict[str, Any]:
+    """Reduce the retained Editor timer-only and empty-callback timestamp controls."""
+    output = passed_clock_output(raw_result, "TimerOnlyAndEmptyCallbackRetainMonotonicRawPairs")
     controls = {}
     frequency = None
-    for line in leaves[0]["output"].splitlines():
+    for line in output.splitlines():
         if not line.startswith("DXM_LATENCY_CLOCK_V1"):
             continue
         matched = CLOCK_MARKER.fullmatch(line)
@@ -450,6 +460,57 @@ def audit_clock_result(raw_result: bytes) -> dict[str, Any]:
         "frequencyHz": frequency,
         "sampleCountPerControl": 256,
         "controls": [controls[name] for name in ("timer-only", "empty-callback")],
+    }
+
+
+def audit_clock_batch_result(raw_result: bytes) -> dict[str, Any]:
+    """Reduce exact batched timestamp-call windows without claiming per-event precision."""
+    output = passed_clock_output(raw_result, "TimestampCallBatchesRetainRawWindowPairs")
+    markers = [line for line in output.splitlines() if line.startswith("DXM_LATENCY_CLOCK_BATCH_V1")]
+    if len(markers) != 1:
+        raise ValueError("clock batch result must contain exactly one marker")
+    matched = CLOCK_BATCH_MARKER.fullmatch(markers[0])
+    if matched is None:
+        raise ValueError("clock batch marker is malformed")
+    raw_frequency, raw_calls, raw_count, raw_pairs = matched.groups()
+    if raw_frequency == "0" or raw_calls != "4096" or raw_count != "128":
+        raise ValueError("clock batch frequency or predeclared dimensions disagree")
+    pairs = raw_pairs.split(";")
+    if len(pairs) != 128:
+        raise ValueError("clock batch must retain exactly 128 raw windows")
+    elapsed = []
+    previous_end = 0
+    for index, pair in enumerate(pairs):
+        values = pair.split(":")
+        if len(values) != 2:
+            raise ValueError(f"clock batch pair {index} is malformed")
+        start = decimal(values[0], f"clock batch pair {index} start")
+        end = decimal(values[1], f"clock batch pair {index} end")
+        if start < previous_end or end < start:
+            raise ValueError(f"clock batch pair {index} is reversed or nonmonotone")
+        elapsed.append(end - start)
+        previous_end = end
+    ordered = sorted(elapsed)
+    total_calls = 128 * 4096
+    total_ticks = sum(elapsed)
+    return {
+        "schemaVersion": 1,
+        "resultClass": "descriptive-only",
+        "rawResultSha256": hashlib.sha256(raw_result).hexdigest(),
+        "frequencyHz": raw_frequency,
+        "callsPerBatch": 4096,
+        "batchCount": 128,
+        "totalCalls": total_calls,
+        "zeroWindowCount": elapsed.count(0),
+        "totalElapsedTicks": str(total_ticks),
+        "aggregateTicksPerCall": rational(Fraction(total_ticks, total_calls)),
+        "aggregateNanosecondsPerCall": rational(Fraction(total_ticks * 1_000_000_000, total_calls * int(raw_frequency))),
+        "quantileConvention": "strict-upper empirical floor(p*n/100), within-run window descriptive",
+        "windowQuantilesTicks": {
+            name: str(ordered[percentile * len(ordered) // 100])
+            for name, percentile in (("p50", 50), ("p95", 95), ("p99", 99))
+        },
+        "windowElapsedTicks": [str(ticks) for ticks in elapsed],
     }
 
 
@@ -533,6 +594,19 @@ def audit_clock_capture(
     return {**audit_clock_result(raw_result), **terminal}
 
 
+def audit_clock_batch_capture(
+    raw_result: bytes,
+    run_bytes: bytes,
+    cleanup_bytes: bytes,
+    result_status: bytes,
+    cleanup_status: bytes,
+    result_name: str,
+) -> dict[str, Any]:
+    """Bind batched timestamp windows to the terminal runner record."""
+    terminal = terminal_metadata(run_bytes, cleanup_bytes, result_status, cleanup_status, result_name)
+    return {**audit_clock_batch_result(raw_result), **terminal}
+
+
 def reduce_capture_contents(contents: dict[str, bytes], source_commit: str) -> dict[str, Any]:
     """Reduce one exact-tree Editor capture using only supplied bundle bytes."""
     if not isinstance(contents, dict) or any(
@@ -600,6 +674,7 @@ def main() -> None:
     parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
     parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
     parser.add_argument("--clock-result", type=Path, help="raw maintained-runner JSON with clock controls")
+    parser.add_argument("--clock-batch-result", type=Path, help="raw maintained-runner JSON with batched clock windows")
     parser.add_argument("--plan", type=Path, help="committed normalized arrival plan for the Unity result")
     parser.add_argument("--run-record", type=Path, help="maintained-runner run identity JSON")
     parser.add_argument("--cleanup-record", type=Path, help="terminal cleanup JSON")
@@ -608,7 +683,7 @@ def main() -> None:
     parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
     if args.bundle_stdin:
-        if any((args.schedule, args.observations, args.unity_result, args.clock_result, args.plan, args.run_record,
+        if any((args.schedule, args.observations, args.unity_result, args.clock_result, args.clock_batch_result, args.plan, args.run_record,
                 args.cleanup_record, args.result_status, args.cleanup_status, args.expected_trace_id)):
             parser.error("--bundle-stdin does not accept file arguments")
         request = fields(parse_json(sys.stdin.buffer.read()), {"sourceCommit", "contents"}, "bundle request")
@@ -624,7 +699,18 @@ def main() -> None:
     capture_files = (args.run_record, args.cleanup_record, args.result_status, args.cleanup_status)
     if any(item is not None for item in capture_files) and not all(item is not None for item in capture_files):
         parser.error("capture sidecars must be supplied together")
-    if args.clock_result is not None:
+    if args.clock_batch_result is not None:
+        if any((args.schedule, args.observations, args.unity_result, args.clock_result, args.plan, args.expected_trace_id)):
+            parser.error("--clock-batch-result accepts no other result or trace inputs")
+        raw_result = args.clock_batch_result.read_bytes()
+        if args.run_record is None:
+            result = audit_clock_batch_result(raw_result)
+        else:
+            result = audit_clock_batch_capture(
+                raw_result, args.run_record.read_bytes(), args.cleanup_record.read_bytes(),
+                args.result_status.read_bytes(), args.cleanup_status.read_bytes(), args.clock_batch_result.name,
+            )
+    elif args.clock_result is not None:
         if any((args.schedule, args.observations, args.unity_result, args.plan, args.expected_trace_id)):
             parser.error("--clock-result accepts no open-loop schedule, plan, or trace IDs")
         raw_result = args.clock_result.read_bytes()
