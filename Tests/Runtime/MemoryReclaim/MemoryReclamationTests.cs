@@ -83,9 +83,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force)
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(false, true)]
+        [TestCase(true, true)]
+        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force, bool prepared)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new FakeClock(),
@@ -98,6 +100,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
+            PreparedUntargetedEmitter<UntargetedOne> bound = prepared ? new(bus) : null;
             Action deregister = null;
             try
             {
@@ -109,7 +112,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     messageBus: bus
                 );
                 UntargetedOne message = new UntargetedOne();
-                bus.UntargetedBroadcast(ref message);
+                if (prepared)
+                {
+                    bound.Emit(ref message);
+                }
+                else
+                {
+                    bus.UntargetedBroadcast(ref message);
+                }
 
                 const BindingFlags declaredInstanceFields =
                     BindingFlags.Instance
@@ -180,6 +190,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.EqualTo(0),
                     "Sweeping stale untargeted plans must reset the cached entry count."
                 );
+                GC.KeepAlive(bound);
             }
             finally
             {

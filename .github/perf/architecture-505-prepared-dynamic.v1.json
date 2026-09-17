@@ -54,7 +54,7 @@
     "batchOneOverhead": "pending #512 timing",
     "breakEven": "pending #512 timing",
     "p99": "N/A until #512 effective-sample and open-loop rules are validated",
-    "retainedMemory": "pending forced-trim and idle-sweep holder checks",
+    "retainedMemory": "local forced and ordinary trim clear the borrowed route with the handle alive; GC retention and idle-sweep holder checks remain pending",
     "playerSize": "pending optional prototype build",
     "buildTime": "pending optional prototype build",
     "stopRule": "Stop on any trace mismatch, stale route, retained evicted sink, or unsupported dynamic fallback; do not promote without a 20% workload gain or distinct supported capability."
@@ -64,7 +64,7 @@
     "sourceSha256": "a1c0299d4bbd344ac5beb967ab793537e817bda0af0394452900418dfabe0531",
     "testSourceSha256": "c6dd09e1fba7890ccc932c2117dcb1af8cfd5542ffa4e8d1ac2ceec8083862e1",
     "profileSha256": null,
-    "evidenceSha256": "b1161ff706aa3d2245bac9a68171151e56bf0a7f708faead738089f509cc0b18",
+    "evidenceSha256": "e7e38e1c78be132a05daaaf46e0bb5070818add8fc43e2da2981c4d3f5d700b3",
     "evidenceLocation": ".artifacts/perf-lab/505-prepared-dynamic-evidence.json (ignored local evidence; #505 records hashes)"
   }
 }
