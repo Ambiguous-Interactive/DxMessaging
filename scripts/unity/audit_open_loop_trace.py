@@ -34,6 +34,10 @@ CLEANUP_FIELDS = {
     "ownedResultPath", "legacyObserverResultPath", "frameworkErrors",
 }
 SCENE_FIELDS = {"path", "dirty", "loaded"}
+CAPTURE_ENVIRONMENT_FIELDS = {
+    "claimClass", "evidenceClass", "executionScope", "planSha256", "runGuid",
+    "runtimeTree", "schemaVersion", "sourceCommit", "sourceTree", "unityVersion",
+}
 
 
 def decimal(value: Any, field: str) -> int:
@@ -417,6 +421,66 @@ def audit_unity_capture(
     replay["resultStatusSha256"] = hashlib.sha256(result_status).hexdigest()
     replay["cleanupStatusSha256"] = hashlib.sha256(cleanup_status).hexdigest()
     return replay
+
+
+def reduce_capture_contents(contents: dict[str, bytes], source_commit: str) -> dict[str, Any]:
+    """Reduce one exact-tree Editor capture using only supplied bundle bytes."""
+    if not isinstance(contents, dict) or any(
+        type(name) is not str or type(raw) is not bytes for name, raw in contents.items()
+    ):
+        raise ValueError("capture contents must map names to raw bytes")
+    common = {"capture-environment.json", "capture-replay.json", "open-loop-editor-plan.json"}
+    candidates = [
+        name for name in contents
+        if name not in common and name.endswith(".json")
+        and not name.endswith((".run.json", ".cleanup.json"))
+    ]
+    if len(candidates) != 1:
+        raise ValueError("capture must contain exactly one raw Unity result")
+    result_name = candidates[0]
+    required = common | {
+        result_name, result_name + ".run.json", result_name + ".cleanup.json",
+        result_name + ".status", result_name + ".cleanup.status",
+    }
+    if set(contents) != required or "/" in result_name or "\\" in result_name:
+        raise ValueError("capture has missing, unexpected, or nonportable files")
+    environment = fields(
+        parse_json(contents["capture-environment.json"]),
+        CAPTURE_ENVIRONMENT_FIELDS,
+        "capture environment",
+    )
+    if (
+        type(environment["schemaVersion"]) is not int or environment["schemaVersion"] != 1
+        or environment["sourceCommit"] != source_commit
+        or not isinstance(source_commit, str) or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
+        or any(
+            not isinstance(environment[field], str)
+            or re.fullmatch(r"[0-9a-f]{40}", environment[field]) is None
+            for field in ("sourceTree", "runtimeTree")
+        )
+        or environment["claimClass"] != "descriptive-only"
+        or environment["evidenceClass"] != "editor-open-loop-protocol-screen"
+        or environment["executionScope"] != "Editor PlayMode Mono"
+        or re.fullmatch(
+            r"[0-9]+\.[0-9]+\.[0-9]+f[0-9]+",
+            identity(environment["unityVersion"], "unityVersion"),
+        ) is None
+        or environment["planSha256"] != hashlib.sha256(contents["open-loop-editor-plan.json"]).hexdigest()
+    ):
+        raise ValueError("capture environment disagrees with source, scope, or plan")
+    replay = audit_unity_capture(
+        contents[result_name], [], contents["open-loop-editor-plan.json"],
+        contents[result_name + ".run.json"], contents[result_name + ".cleanup.json"],
+        contents[result_name + ".status"], contents[result_name + ".cleanup.status"], result_name,
+    )
+    if environment["runGuid"] != replay["runGuid"]:
+        raise ValueError("capture environment run GUID disagrees with terminal records")
+    retained = parse_json(contents["capture-replay.json"])
+    if json.dumps(retained, sort_keys=True, separators=(",", ":")) != json.dumps(
+        replay, sort_keys=True, separators=(",", ":")
+    ):
+        raise ValueError("retained capture replay disagrees with raw inputs")
+    return {"environment": environment, "replay": replay}
 
 
 def main() -> None:

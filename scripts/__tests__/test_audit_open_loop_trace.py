@@ -124,6 +124,55 @@ def tail_runner_result() -> dict:
 
 
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_content_map_rederives_capture_and_binds_source(self) -> None:
+        raw, observed, planned = regular_trace()
+        result = json.dumps(runner_result([(raw, observed)])).encode()
+        plan = json.dumps({"schemaVersion": 1, "traces": [planned]}).encode()
+        guid = "12345678-1234-1234-1234-123456789abc"
+        name = "result.json"
+        path = "Packages/com.wallstop-studios.dxmessaging/.artifacts/result.json"
+        run = {"runGuid": guid, "resultPath": path}
+        cleanup = {
+            "observedUtc": "2026-09-17T00:00:00Z", "observationError": "",
+            "frameworkActive": False, "playing": False, "compiling": False, "updating": False,
+            "mainStage": True, "activeScene": "Assets/Saved.unity",
+            "scenes": [{"path": "Assets/Saved.unity", "dirty": False, "loaded": True}],
+            "runGuid": guid, "resultPath": path, "ownedResultPath": path,
+            "legacyObserverResultPath": "", "frameworkErrors": "",
+        }
+        commit = "a" * 40
+        environment = {
+            "claimClass": "descriptive-only", "evidenceClass": "editor-open-loop-protocol-screen",
+            "executionScope": "Editor PlayMode Mono", "planSha256": hashlib.sha256(plan).hexdigest(),
+            "runGuid": guid, "runtimeTree": "b" * 40, "schemaVersion": 1,
+            "sourceCommit": commit, "sourceTree": "c" * 40, "unityVersion": "6000.4.6f1",
+        }
+        replay = MODULE.audit_unity_capture(
+            result, [], plan, json.dumps(run).encode(), json.dumps(cleanup).encode(),
+            b"done", b"done", name,
+        )
+        contents = {
+            "capture-environment.json": json.dumps(environment).encode(),
+            "capture-replay.json": json.dumps(replay).encode(),
+            "open-loop-editor-plan.json": plan, name: result,
+            name + ".run.json": json.dumps(run).encode(),
+            name + ".cleanup.json": json.dumps(cleanup).encode(),
+            name + ".status": b"done", name + ".cleanup.status": b"done",
+        }
+        self.assertEqual(MODULE.reduce_capture_contents(contents, commit)["replay"], replay)
+        with self.assertRaisesRegex(ValueError, "source"):
+            MODULE.reduce_capture_contents(contents, "d" * 40)
+        with self.assertRaisesRegex(ValueError, "missing"):
+            MODULE.reduce_capture_contents({key: value for key, value in contents.items() if key != name + ".cleanup.status"}, commit)
+        with self.assertRaisesRegex(ValueError, "unexpected"):
+            MODULE.reduce_capture_contents({**contents, "extra.txt": b"ignored"}, commit)
+        changed = {**replay, "traceCount": 2}
+        with self.assertRaisesRegex(ValueError, "retained"):
+            MODULE.reduce_capture_contents({**contents, "capture-replay.json": json.dumps(changed).encode()}, commit)
+        changed = {**environment, "runGuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
+        with self.assertRaisesRegex(ValueError, "GUID"):
+            MODULE.reduce_capture_contents({**contents, "capture-environment.json": json.dumps(changed).encode()}, commit)
+
     def test_capture_sidecars_bind_run_and_terminal_clean_scene(self) -> None:
         raw = json.dumps(runner_result()).encode()
         guid = "12345678-1234-1234-1234-123456789abc"
