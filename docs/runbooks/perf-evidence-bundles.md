@@ -54,7 +54,8 @@ runner ownership and clean-scene state, then recomputes every offered arrival, c
 quantile, and tail effect from the raw result. It rejects a retained replay summary that differs
 from the raw-derived result. The Node bundle tool passes only the supplied file bytes and source
 commit to the Python exact-integer auditor over process stdin; the auditor reads no data files,
-clock, or environment variables. Restorers need `python3` as well as Node. Source-tree and
+clock, or environment variables. Restorers need Python 3 and Node; the three-OS script matrix
+pins Python 3.12 and uses `python` on Windows. Source-tree and
 Unity-assembly identity still require separate remote/source checks.
 
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,

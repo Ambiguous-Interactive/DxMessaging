@@ -250,7 +250,7 @@ function reduceOpenLoopEditorCapture(contents, { sourceCommit } = {}) {
   const encoded = Object.fromEntries([...contents].map(([name, bytes]) => [name, bytes.toString("base64")]));
   const input = JSON.stringify({ sourceCommit, contents: encoded });
   const script = path.join(__dirname, "audit_open_loop_trace.py");
-  const run = spawnSync("python3", [script, "--bundle-stdin"], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const run = spawnSync(process.platform === "win32" ? "python" : "python3", [script, "--bundle-stdin"], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (run.error || run.status !== 0)
     throw new Error(`Open-loop capture replay failed: ${run.error?.message ?? run.stderr?.trim()}`);
   return JSON.parse(run.stdout);

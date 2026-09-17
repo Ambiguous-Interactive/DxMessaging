@@ -767,6 +767,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: package.json
 
+      - name: Setup Python for script reducers
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Setup .NET
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -811,6 +817,13 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: pwsh
         run: ./scripts/__tests__/test-unity-license-activation-retry.ps1 -VerboseOutput
+
+      - name: Test Python script reducers
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: bash
+        run: |
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+          python -m unittest discover -s scripts/unity/__tests__ -p 'test_*.py'
 
       - name: Run MSVC toolchain assertion tests
         if: ${{ needs.changes.outputs.scripts != 'false' }}
