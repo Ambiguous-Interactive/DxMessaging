@@ -18,6 +18,8 @@ SCHEDULE_FIELDS = {"schemaVersion", "traceId", "frequencyHz", "horizonStartTick"
 OFFER_FIELDS = {"id", "arrivalTick"}
 OBSERVATION_FIELDS = {"schemaVersion", "scheduleSha256", "events"}
 EVENT_FIELDS = {"id", "startTick", "completionTick"}
+PLAN_FIELDS = {"schemaVersion", "traces"}
+PLAN_TRACE_FIELDS = {"traceId", "fixture", "frequencyHz", "horizonSpanTicks", "arrivalCount", "arrivalStepTicks"}
 
 
 def decimal(value: Any, field: str) -> int:
@@ -62,6 +64,50 @@ def rate(count: int, frequency: int, span: int) -> dict[str, str]:
 
 def rational(value: Fraction) -> dict[str, str]:
     return {"numerator": str(value.numerator), "denominator": str(value.denominator)}
+
+
+def parse_plan(raw_plan: bytes) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw_plan, bytes):
+        raise ValueError("plan must be raw bytes")
+    plan = fields(parse_json(raw_plan), PLAN_FIELDS, "plan")
+    if type(plan["schemaVersion"]) is not int or plan["schemaVersion"] != 1:
+        raise ValueError("unsupported plan schemaVersion")
+    traces = plan["traces"]
+    if not isinstance(traces, list) or not traces:
+        raise ValueError("plan traces must be a nonempty array")
+    declared = {}
+    for index, raw in enumerate(traces):
+        trace = fields(raw, PLAN_TRACE_FIELDS, f"plan.traces[{index}]")
+        trace_id = identity(trace["traceId"], f"plan.traces[{index}].traceId")
+        identity(trace["fixture"], f"plan.traces[{index}].fixture")
+        frequency = decimal(trace["frequencyHz"], f"plan.traces[{index}].frequencyHz")
+        span = decimal(trace["horizonSpanTicks"], f"plan.traces[{index}].horizonSpanTicks")
+        count = trace["arrivalCount"]
+        step = decimal(trace["arrivalStepTicks"], f"plan.traces[{index}].arrivalStepTicks")
+        if (
+            trace_id in declared
+            or frequency == 0
+            or span == 0
+            or type(count) is not int
+            or count <= 0
+            or (count - 1) * step >= span
+        ):
+            raise ValueError("duplicate or invalid planned trace")
+        declared[trace_id] = trace
+    return declared
+
+
+def check_plan_trace(planned: dict[str, Any], fixture: str, reduced: dict[str, Any]) -> None:
+    if planned["fixture"] != fixture or planned["frequencyHz"] != reduced["frequencyHz"]:
+        raise ValueError(f"planned fixture or frequency mismatch: {reduced['traceId']}")
+    span = int(reduced["horizonEndTick"]) - int(reduced["horizonStartTick"])
+    if span != int(planned["horizonSpanTicks"]) or len(reduced["events"]) != planned["arrivalCount"]:
+        raise ValueError(f"planned horizon or arrival count mismatch: {reduced['traceId']}")
+    origin = int(reduced["horizonStartTick"])
+    step = int(planned["arrivalStepTicks"])
+    for index, event in enumerate(reduced["events"]):
+        if event["id"] != str(index) or int(event["arrivalTick"]) - origin != index * step:
+            raise ValueError(f"planned arrival mismatch: {reduced['traceId']} at {index}")
 
 
 def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
@@ -164,13 +210,18 @@ def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
     }
 
 
-def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str]) -> dict[str, Any]:
+def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_bytes: bytes | None = None) -> dict[str, Any]:
     """Replay every trace from one raw maintained-runner result against declared IDs."""
-    if not isinstance(raw_result, bytes) or not expected_trace_ids:
+    plan = parse_plan(plan_bytes) if plan_bytes is not None else None
+    if not isinstance(raw_result, bytes) or (not expected_trace_ids and plan is None):
         raise ValueError("raw result bytes and expected trace IDs are required")
+    if plan is not None and not expected_trace_ids:
+        expected_trace_ids = list(plan)
     expected = {identity(value, "expected trace ID") for value in expected_trace_ids}
     if len(expected) != len(expected_trace_ids):
         raise ValueError("expected trace IDs must be distinct")
+    if plan is not None and expected != plan.keys():
+        raise ValueError("expected trace IDs do not match the plan")
     result = parse_json(raw_result)
     required = {"passCount", "failCount", "skipCount", "inconclusiveCount", "nodes", "failures"}
     if not isinstance(result, dict) or not required.issubset(result):
@@ -214,6 +265,8 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str]) -> dict
                 trace_id = reduced["traceId"]
                 if trace_id not in expected or trace_id in seen:
                     raise ValueError(f"unexpected or duplicate trace ID: {trace_id}")
+                if plan is not None:
+                    check_plan_trace(plan[trace_id], name, reduced)
                 seen.add(trace_id)
                 traces.append({
                     "fixture": name,
@@ -237,7 +290,7 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str]) -> dict
             raise ValueError(f"{name} has missing or unpaired trace markers")
     if passed_leaves != result["passCount"] or seen != expected:
         raise ValueError("Unity pass count or expected trace IDs do not match replayed fixtures")
-    return {
+    replay = {
         "schemaVersion": 1,
         "resultClass": "descriptive-only",
         "rawResultSha256": hashlib.sha256(raw_result).hexdigest(),
@@ -245,6 +298,9 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str]) -> dict
         "traceCount": len(traces),
         "traces": traces,
     }
+    if plan_bytes is not None:
+        replay["planSha256"] = hashlib.sha256(plan_bytes).hexdigest()
+    return replay
 
 
 def main() -> None:
@@ -252,14 +308,19 @@ def main() -> None:
     parser.add_argument("schedule", nargs="?", type=Path, help="predeclared raw schedule JSON")
     parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
     parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
+    parser.add_argument("--plan", type=Path, help="committed normalized arrival plan for the Unity result")
     parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
     if args.unity_result is not None:
-        if args.schedule is not None or args.observations is not None or not args.expected_trace_id:
-            parser.error("--unity-result requires expected trace IDs and no positional files")
-        result = audit_unity_result(args.unity_result.read_bytes(), args.expected_trace_id)
+        if args.schedule is not None or args.observations is not None or (not args.expected_trace_id and args.plan is None):
+            parser.error("--unity-result requires expected trace IDs or --plan and no positional files")
+        result = audit_unity_result(
+            args.unity_result.read_bytes(),
+            args.expected_trace_id,
+            args.plan.read_bytes() if args.plan is not None else None,
+        )
     else:
-        if args.schedule is None or args.observations is None or args.expected_trace_id:
+        if args.schedule is None or args.observations is None or args.expected_trace_id or args.plan is not None:
             parser.error("schedule and observations are required without --unity-result")
         result = audit(args.schedule.read_bytes(), parse_json(args.observations.read_bytes()))
     print(json.dumps(result, indent=2, sort_keys=True))

@@ -73,7 +73,69 @@ def runner_result(pairs: list[tuple[bytes, dict]] | None = None) -> dict:
     }
 
 
+def regular_trace() -> tuple[bytes, dict, dict]:
+    planned = schedule()
+    planned["horizonEndTick"] = str(BASE + 15000000)
+    planned["arrivals"][2]["arrivalTick"] = str(BASE + 10000000)
+    for index, arrival in enumerate(planned["arrivals"]):
+        arrival["id"] = str(index)
+    raw = raw_schedule(planned)
+    observed = observations(raw)
+    for event in observed["events"]:
+        event["id"] = {"a": "0", "b": "1", "c": "2"}[event["id"]]
+    trace_plan = {
+        "traceId": "trace-1",
+        "fixture": "Fixture.Case",
+        "frequencyHz": "10000000",
+        "horizonSpanTicks": "15000000",
+        "arrivalCount": 3,
+        "arrivalStepTicks": "5000000",
+    }
+    return raw, observed, trace_plan
+
+
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_committed_plan_binds_normalized_arrivals_and_fixture(self) -> None:
+        raw, observed, trace_plan = regular_trace()
+        result = json.dumps(runner_result([(raw, observed)])).encode()
+        plan = json.dumps({"schemaVersion": 1, "traces": [trace_plan]}).encode()
+        replay = MODULE.audit_unity_result(result, [], plan)
+        self.assertEqual(replay["planSha256"], hashlib.sha256(plan).hexdigest())
+        self.assertEqual(replay["expectedTraceIds"], ["trace-1"])
+
+        mutations = [
+            {**trace_plan, "fixture": "Other.Case"},
+            {**trace_plan, "frequencyHz": "10000001"},
+            {**trace_plan, "horizonSpanTicks": "14999999"},
+            {**trace_plan, "arrivalCount": 2},
+            {**trace_plan, "arrivalStepTicks": "5000001"},
+            {**trace_plan, "traceId": "other"},
+            {**trace_plan, "arrivalCount": True},
+            {**trace_plan, "arrivalStepTicks": "01"},
+            {**trace_plan, "horizonSpanTicks": "10000000"},
+        ]
+        for changed in mutations:
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                MODULE.audit_unity_result(result, [], json.dumps({"schemaVersion": 1, "traces": [changed]}).encode())
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_result(result, ["wrong"], plan)
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_result(result, [], b'{"schemaVersion":1,"schemaVersion":1}')
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_result(result, [], json.dumps({"schemaVersion": 1, "traces": [trace_plan, trace_plan]}).encode())
+
+    def test_committed_plan_rejects_rebased_arrival_even_with_matching_observation_hash(self) -> None:
+        raw, observed, trace_plan = regular_trace()
+        changed = json.loads(raw)
+        changed["arrivals"][1]["arrivalTick"] = str(BASE + 5000001)
+        changed_raw = raw_schedule(changed)
+        observed["scheduleSha256"] = hashlib.sha256(changed_raw).hexdigest()
+        observed["events"][2]["startTick"] = str(BASE + 5000001)
+        result = json.dumps(runner_result([(changed_raw, observed)])).encode()
+        plan = json.dumps({"schemaVersion": 1, "traces": [trace_plan]}).encode()
+        with self.assertRaisesRegex(ValueError, "planned arrival mismatch"):
+            MODULE.audit_unity_result(result, [], plan)
+
     def test_raw_unity_result_replays_every_declared_trace(self) -> None:
         second = {**schedule(), "traceId": "trace-2"}
         raw_second = raw_schedule(second)
