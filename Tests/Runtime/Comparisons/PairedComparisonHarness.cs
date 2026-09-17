@@ -80,6 +80,9 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 $"Paired comparison second bridge '{second.TechKey}' declared the wrong fan-out for '{scenario}'."
             );
 
+#if DXM_PILOT_CONTROL
+            RequirePilotCpuWorkAssignment();
+#endif
             first.Prepare(scenario);
             second.Prepare(scenario);
             AllocationProbe.SettleHeapForMeasurement();
@@ -135,6 +138,18 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 $"{PilotOrderVariable} must be ABBABAAB or BAABABBA; observed '{requestedOrder}'."
             );
         }
+
+#if DXM_PILOT_CONTROL
+        internal static void RequirePilotCpuWorkAssignment()
+        {
+            if (Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH") == null)
+            {
+                throw new InvalidOperationException(
+                    "Pilot paired comparisons require an explicit DXM_PILOT_CPU_WORK_PER_BATCH assignment."
+                );
+            }
+        }
+#endif
 
         private static int EmitBatch(IMessagingTechBridge bridge)
         {

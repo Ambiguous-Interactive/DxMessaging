@@ -94,7 +94,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         {
             _scenario = scenario;
 #if DXM_PILOT_CONTROL
-            string workText = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            string workText =
+                Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH") ?? "0";
             if (
                 !int.TryParse(
                     workText,

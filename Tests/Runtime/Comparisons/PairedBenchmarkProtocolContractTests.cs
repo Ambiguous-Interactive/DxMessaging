@@ -314,6 +314,28 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         }
 
         [Test]
+        public void PilotPairRequiresExplicitWorkAssignmentWhileOtherContractsDefaultToZero()
+        {
+            string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            try
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
+                using DxMessagingBridge bridge = new();
+                bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber);
+                Assert.AreEqual(0, bridge.PilotCpuWorkIterationsPerBatch);
+                Assert.Throws<InvalidOperationException>(() =>
+                    PairedComparisonHarness.RequirePilotCpuWorkAssignment()
+                );
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "0");
+                Assert.DoesNotThrow(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+            }
+        }
+
+        [Test]
         public void PilotCpuWorkRejectsUnassignedWorkLevel()
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
