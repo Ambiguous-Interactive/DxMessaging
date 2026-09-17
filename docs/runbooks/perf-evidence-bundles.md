@@ -35,6 +35,7 @@ Each reducer accepts only its registered artifact class:
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 | `differential-replay-failure`      | `differential-replay-failure-v1`      |
 | `open-loop-editor-capture`         | `open-loop-editor-capture-v1`         |
+| `editor-latency-clock-capture`     | `editor-latency-clock-capture-v1`     |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -57,6 +58,14 @@ commit to the Python exact-integer auditor over process stdin; the auditor reads
 clock, or environment variables. Restorers need Python 3 and Node; the three-OS script matrix
 pins Python 3.12 and uses `python` on Windows. Source-tree and
 Unity-assembly identity still require separate remote/source checks.
+
+The Editor clock class requires exactly seven text files: `clock-environment.json`,
+`clock-replay.json`, one raw maintained-runner result JSON, and that result's four run/cleanup
+sidecars. The strict environment descriptor selects either the single-pair or batched clock
+control. The reducer binds source commit and run GUID, requires terminal clean-scene capture,
+rederives all ticks and descriptive summaries from the raw result, and rejects a retained replay
+that differs. These controls measure Editor Mono timer behavior only. Batched elapsed time includes
+loop and checksum work; neither control establishes individual player p99 resolution or IL2CPP cost.
 
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
 Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode
