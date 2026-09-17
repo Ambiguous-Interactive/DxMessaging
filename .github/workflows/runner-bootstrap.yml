@@ -159,7 +159,10 @@ jobs:
               throw 'Performance host characterization is pinned to ELI-MACHINE.'
           }
           $path = '.artifacts/runner-bootstrap/host-characterization.json'
-          ./scripts/unity/collect-perf-host-characterization.ps1 -OutputPath $path -SampleCount 120
+          $profile = '.artifacts/runner-bootstrap/performance-cpu-profile.json'
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profile
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -OutputPath $path -CpuProfilePath $profile -SampleCount 120
           $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
           "- Outcome-free host characterization SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 

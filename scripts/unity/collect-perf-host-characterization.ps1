@@ -3,6 +3,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
+    [Parameter(Mandatory = $true)][string]$CpuProfilePath,
     [ValidateRange(2, 600)][int]$SampleCount = 120
 )
 
@@ -11,6 +12,18 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 if (-not $IsWindows) {
     throw 'Performance host characterization requires Windows.'
+}
+$cpuProfile = Get-Content -LiteralPath $CpuProfilePath -Raw | ConvertFrom-Json
+if (
+    $cpuProfile.executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1' -or
+    $cpuProfile.cpuModel -notmatch 'i9-13900KF' -or
+    $cpuProfile.logicalProcessorCount -ne [Environment]::ProcessorCount -or
+    $cpuProfile.selectedLogicalProcessorCount -ne 16 -or
+    $cpuProfile.selectedCoreCount -ne 8 -or
+    @($cpuProfile.selectedLogicalProcessorIndices).Count -ne $cpuProfile.selectedLogicalProcessorCount -or
+    $cpuProfile.affinityMask -cnotmatch '^0x[0-9A-F]+$'
+) {
+    throw 'Performance host characterization requires a valid pinned CPU profile.'
 }
 
 # This is a manual, outcome-free availability and cadence probe. Numerical limits are
@@ -212,6 +225,12 @@ $record = [ordered]@{
     osVersion = [Environment]::OSVersion.VersionString
     powerShellVersion = $PSVersionTable.PSVersion.ToString()
     processorCount = [Environment]::ProcessorCount
+    cpuProfile = [ordered]@{
+        sha256 = (Get-FileHash -LiteralPath $CpuProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        executionProfileId = $cpuProfile.executionProfileId
+        affinityMask = $cpuProfile.affinityMask
+        selectedLogicalProcessorIndices = @($cpuProfile.selectedLogicalProcessorIndices)
+    }
     requestedSampleCount = $SampleCount
     requestedCadenceSeconds = 1
     powerBefore = $before
