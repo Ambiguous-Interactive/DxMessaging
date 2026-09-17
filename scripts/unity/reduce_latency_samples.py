@@ -14,6 +14,28 @@ from typing import Any
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 FIELDS = ("unitId", "playerSha256", "profileSha256", "startTick", "endTick", "frequencyHz")
+PERCENTILES = (("p50", 50), ("p95", 95), ("p99", 99))
+
+
+def _rank_bounds(count: int, percent: int) -> tuple[int | None, int | None]:
+    """Exact equal-tail 95% binomial order ranks, with absent finite sides."""
+    success = percent
+    failure = 100 - percent
+    total = 100**count
+    tail_numerator = total  # Compare 40 * tail mass <= total (alpha/2 = 1/40).
+    mass = failure**count
+    cumulative = mass
+    lower = None
+    upper = None
+    for rank in range(1, count + 1):
+        if 40 * cumulative <= tail_numerator:
+            lower = rank
+        if upper is None and 40 * (total - cumulative) <= tail_numerator:
+            upper = rank
+        if rank < count:
+            mass = mass * (count - rank + 1) * success // (rank * failure)
+            cumulative += mass
+    return lower, upper
 
 
 def _decimal(value: Any, field: str) -> int:
@@ -56,10 +78,17 @@ def reduce_samples(records: Any) -> dict[str, Any]:
         ordered.append((nanoseconds, sample))
     ordered.sort(key=lambda item: (item[0], item[1]["unitId"]))
     count = len(ordered)
-    quantiles = {
-        name: ordered[percent * count // 100][1]
-        for name, percent in (("p50", 50), ("p95", 95), ("p99", 99))
-    }
+    quantiles = {name: ordered[percent * count // 100][1] for name, percent in PERCENTILES}
+    rank_bounds = {}
+    for name, percent in PERCENTILES:
+        lower, upper = _rank_bounds(count, percent)
+        rank_bounds[name] = {
+            "status": "finite" if lower is not None and upper is not None else "N/A",
+            "lowerRank": lower,
+            "upperRank": upper,
+            "lowerSample": ordered[lower - 1][1] if lower is not None else None,
+            "upperSample": ordered[upper - 1][1] if upper is not None else None,
+        }
     return {
         "schemaVersion": 1,
         "resultClass": "descriptive-only",
@@ -68,6 +97,10 @@ def reduce_samples(records: Any) -> dict[str, Any]:
         "independentUnitCount": count,
         "orderedSamples": [sample for _, sample in ordered],
         "quantiles": quantiles,
+        "conditionalRankBounds95": rank_bounds,
+        "rankBoundMethod": "exact-binomial-equal-tail-order-statistics",
+        "rankBoundConfidence": {"numerator": "19", "denominator": "20"},
+        "rankBoundAssumptions": "iid-independent-units-unverified",
     }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,33 @@ class ReduceLatencySamplesTests(unittest.TestCase):
         self.assertEqual(result["quantileConvention"], "strict-upper-empirical")
         self.assertEqual(result["quantiles"]["p99"]["roundedNanoseconds"], "1000001")
         self.assertEqual(result["quantiles"]["p95"]["roundedNanoseconds"], "1")
+        self.assertEqual(result["conditionalRankBounds95"]["p99"]["status"], "N/A")
+        self.assertIsNone(result["conditionalRankBounds95"]["p99"]["upperRank"])
+
+    def test_exact_binomial_rank_boundary_and_ties(self) -> None:
+        self.assertEqual(MODULE._rank_bounds(10, 50), (2, 9))
+        denominator = 100**368
+        lower_tail = sum(math.comb(368, k) * 99**k for k in range(360))
+        upper_tail = 99**368
+        self.assertLessEqual(40 * lower_tail, denominator)
+        self.assertLessEqual(40 * upper_tail, denominator)
+        for count, finite in ((100, False), (367, False), (368, True)):
+            records = [sample(f"session-{index}", 10) for index in range(count)]
+            bounds = MODULE.reduce_samples(records)["conditionalRankBounds95"]["p99"]
+            with self.subTest(count=count):
+                self.assertEqual(bounds["status"] == "finite", finite)
+                self.assertEqual(bounds["upperRank"], count if finite else None)
+                self.assertIsNotNone(bounds["lowerRank"])
+                if finite:
+                    self.assertEqual(bounds["lowerSample"]["roundedNanoseconds"], "10")
+                    self.assertEqual(bounds["upperSample"]["roundedNanoseconds"], "10")
+                    self.assertEqual(bounds["lowerRank"], 360)
+
+    def test_sparse_unit_count_has_no_two_sided_interval(self) -> None:
+        result = MODULE.reduce_samples([sample("one", 1)])
+        for bounds in result["conditionalRankBounds95"].values():
+            self.assertEqual(bounds["status"], "N/A")
+            self.assertTrue(bounds["lowerRank"] is None or bounds["upperRank"] is None)
 
     def test_invalid_clock_provenance_and_independence_are_rejected(self) -> None:
         valid = sample("one", 1)
