@@ -239,6 +239,7 @@ function Get-SensorSample {
     $errors = New-Object System.Collections.Generic.List[string]
     $processorCounters = @()
     $thermalZones = @()
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $members = @(
             'ProcessorFrequency', 'PercentMaximumFrequency', 'PercentProcessorPerformance',
@@ -253,16 +254,31 @@ function Get-SensorSample {
             $item
         })
     } catch { $errors.Add("processorCounters: $($_.Exception.Message)") }
-    try {
-        $thermalZones = @(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | ForEach-Object {
-            [ordered]@{ instanceName = [string]$_.InstanceName; rawTenthsKelvin = $_.CurrentTemperature }
-        })
-    } catch { $errors.Add("acpiThermalZones: $($_.Exception.Message)") }
+    $processorCounterReadMilliseconds = $clock.Elapsed.TotalMilliseconds
+    # The available ACPI zone has no verified CPU-package identity. Probe it
+    # during host characterization, but keep this uninformative WMI read out
+    # of each time-sensitive player sample.
+    if (-not $StopSignalPath) {
+        try {
+            $thermalZones = @(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | ForEach-Object {
+                [ordered]@{ instanceName = [string]$_.InstanceName; rawTenthsKelvin = $_.CurrentTemperature }
+            })
+        } catch { $errors.Add("acpiThermalZones: $($_.Exception.Message)") }
+    }
+    $beforeNativeMilliseconds = $clock.Elapsed.TotalMilliseconds
+    $nativePower = Get-NativePowerState
     return [ordered]@{
         timestampUtc = [DateTime]::UtcNow.ToString('O')
         processorCounters = $processorCounters
         acpiThermalZones = $thermalZones
-        nativePower = Get-NativePowerState
+        acpiThermalZoneStatus = if ($StopSignalPath) { 'unmeasured-player-time' } else { 'probed' }
+        nativePower = $nativePower
+        sensorReadMilliseconds = [ordered]@{
+            processorCounters = $processorCounterReadMilliseconds
+            acpiThermalZoneStep = $beforeNativeMilliseconds - $processorCounterReadMilliseconds
+            nativePower = $clock.Elapsed.TotalMilliseconds - $beforeNativeMilliseconds
+            total = $clock.Elapsed.TotalMilliseconds
+        }
         errors = @($errors.ToArray())
     }
 }
