@@ -30,7 +30,8 @@ const REDUCERS = Object.freeze({
   "allocation-subunsub-observations-v1": { artifactClass: "allocation-subunsub-observations", reduce: reduceSubUnsubObservations },
   "paired-throughput-screen-v1": { artifactClass: "paired-throughput-screen", reduce: reducePairedThroughputScreen },
   "shipping-fidelity-matrix-v1": { artifactClass: "shipping-fidelity-matrix", reduce: reduceShippingFidelityMatrix },
-  "open-loop-editor-capture-v1": { artifactClass: "open-loop-editor-capture", reduce: reduceOpenLoopEditorCapture }
+  "open-loop-editor-capture-v1": { artifactClass: "open-loop-editor-capture", reduce: reduceOpenLoopEditorCapture },
+  "editor-latency-clock-capture-v1": { artifactClass: "editor-latency-clock-capture", reduce: (contents, options) => reduceOpenLoopEditorCapture(contents, options, true) }
 });
 function fail(message) {
   throw new Error(message);

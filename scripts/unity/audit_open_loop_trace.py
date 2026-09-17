@@ -48,6 +48,7 @@ CAPTURE_ENVIRONMENT_FIELDS = {
     "claimClass", "evidenceClass", "executionScope", "planSha256", "runGuid",
     "runtimeTree", "schemaVersion", "sourceCommit", "sourceTree", "unityVersion",
 }
+CLOCK_CAPTURE_ENVIRONMENT_FIELDS = CAPTURE_ENVIRONMENT_FIELDS - {"planSha256"}
 
 
 def decimal(value: Any, field: str) -> int:
@@ -667,9 +668,75 @@ def reduce_capture_contents(contents: dict[str, bytes], source_commit: str) -> d
     return {"environment": environment, "replay": replay}
 
 
+def reduce_clock_capture_contents(contents: dict[str, bytes], source_commit: str) -> dict[str, Any]:
+    """Replay exactly one scrubbed Editor clock control and its terminal sidecars."""
+    if not isinstance(contents, dict) or any(
+        type(name) is not str or type(raw) is not bytes for name, raw in contents.items()
+    ):
+        raise ValueError("clock capture contents must map names to raw bytes")
+    common = {"clock-environment.json", "clock-replay.json"}
+    candidates = [
+        name for name in contents
+        if name not in common and name.endswith(".json")
+        and not name.endswith((".run.json", ".cleanup.json"))
+    ]
+    if len(candidates) != 1:
+        raise ValueError("clock capture must contain exactly one raw Unity result")
+    result_name = candidates[0]
+    required = common | {
+        result_name, result_name + ".run.json", result_name + ".cleanup.json",
+        result_name + ".status", result_name + ".cleanup.status",
+    }
+    if set(contents) != required or "/" in result_name or "\\" in result_name:
+        raise ValueError("clock capture has missing, unexpected, or nonportable files")
+    environment = fields(
+        parse_json(contents["clock-environment.json"]),
+        CLOCK_CAPTURE_ENVIRONMENT_FIELDS,
+        "clock capture environment",
+    )
+    if (
+        type(environment["schemaVersion"]) is not int or environment["schemaVersion"] != 1
+        or not isinstance(source_commit, str) or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
+        or environment["sourceCommit"] != source_commit
+        or any(
+            not isinstance(environment[field], str)
+            or re.fullmatch(r"[0-9a-f]{40}", environment[field]) is None
+            for field in ("sourceTree", "runtimeTree")
+        )
+        or environment["claimClass"] != "descriptive-only"
+        or environment["evidenceClass"] not in {
+            "editor-latency-clock-control", "editor-latency-clock-batch-control",
+        }
+        or environment["executionScope"] != "Editor PlayMode Mono"
+        or re.fullmatch(
+            r"[0-9]+\.[0-9]+\.[0-9]+f[0-9]+",
+            identity(environment["unityVersion"], "unityVersion"),
+        ) is None
+    ):
+        raise ValueError("clock capture environment disagrees with source or scope")
+    audit = (
+        audit_clock_capture if environment["evidenceClass"] == "editor-latency-clock-control"
+        else audit_clock_batch_capture
+    )
+    replay = audit(
+        contents[result_name], contents[result_name + ".run.json"],
+        contents[result_name + ".cleanup.json"], contents[result_name + ".status"],
+        contents[result_name + ".cleanup.status"], result_name,
+    )
+    if environment["runGuid"] != replay["runGuid"]:
+        raise ValueError("clock capture environment run GUID disagrees with terminal records")
+    retained = parse_json(contents["clock-replay.json"])
+    if json.dumps(retained, sort_keys=True, separators=(",", ":")) != json.dumps(
+        replay, sort_keys=True, separators=(",", ":")
+    ):
+        raise ValueError("retained clock replay disagrees with raw inputs")
+    return {"environment": environment, "replay": replay}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle-stdin", action="store_true", help="read source identity and base64 evidence from stdin")
+    parser.add_argument("--clock-bundle-stdin", action="store_true", help="read clock capture identity and base64 evidence from stdin")
     parser.add_argument("schedule", nargs="?", type=Path, help="predeclared raw schedule JSON")
     parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
     parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
@@ -682,7 +749,9 @@ def main() -> None:
     parser.add_argument("--cleanup-status", type=Path, help="cleanup status sidecar")
     parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
-    if args.bundle_stdin:
+    if args.bundle_stdin or args.clock_bundle_stdin:
+        if args.bundle_stdin and args.clock_bundle_stdin:
+            parser.error("bundle input modes are mutually exclusive")
         if any((args.schedule, args.observations, args.unity_result, args.clock_result, args.clock_batch_result, args.plan, args.run_record,
                 args.cleanup_record, args.result_status, args.cleanup_status, args.expected_trace_id)):
             parser.error("--bundle-stdin does not accept file arguments")
@@ -694,7 +763,8 @@ def main() -> None:
             name: base64.b64decode(value, validate=True)
             for name, value in encoded.items()
         }
-        print(json.dumps(reduce_capture_contents(contents, request["sourceCommit"]), sort_keys=True))
+        reduce = reduce_clock_capture_contents if args.clock_bundle_stdin else reduce_capture_contents
+        print(json.dumps(reduce(contents, request["sourceCommit"]), sort_keys=True))
         return
     capture_files = (args.run_record, args.cleanup_record, args.result_status, args.cleanup_status)
     if any(item is not None for item in capture_files) and not all(item is not None for item in capture_files):

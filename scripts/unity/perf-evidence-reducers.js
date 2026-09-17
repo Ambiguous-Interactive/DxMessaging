@@ -6,7 +6,6 @@ const { isDeepStrictEqual } = require("node:util");
 const DIFFERENTIAL_CONTRACT = require("./differential-replay-contract.json");
 const { extractRows, buildCsv, deriveScope } = require("./extract-perf-baseline.js");
 const { reducePairedBracket } = require("./reduce-paired-bracket.js");
-// Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
 const CELL_EVIDENCE_SUFFIX = "/shipping-cell-evidence.json";
 const NORMALIZED_SCHEMA_VERSION = 1;
@@ -246,11 +245,11 @@ function reducePairedThroughputScreen(contents, { sourceCommit } = {}) {
     throw new Error("Paired screen sourceCommit must match the first run's commit.");
   return result;
 }
-function reduceOpenLoopEditorCapture(contents, { sourceCommit } = {}) {
+function reduceOpenLoopEditorCapture(contents, { sourceCommit } = {}, clock = false) {
   const encoded = Object.fromEntries([...contents].map(([name, bytes]) => [name, bytes.toString("base64")]));
   const input = JSON.stringify({ sourceCommit, contents: encoded });
   const script = path.join(__dirname, "audit_open_loop_trace.py");
-  const run = spawnSync(process.platform === "win32" ? "python" : "python3", [script, "--bundle-stdin"], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const run = spawnSync(process.platform === "win32" ? "python" : "python3", [script, clock ? "--clock-bundle-stdin" : "--bundle-stdin"], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (run.error || run.status !== 0)
     throw new Error(`Open-loop capture replay failed: ${run.error?.message ?? run.stderr?.trim()}`);
   return JSON.parse(run.stdout);

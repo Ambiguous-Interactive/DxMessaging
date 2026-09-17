@@ -153,7 +153,86 @@ def clock_batch_runner_result() -> dict:
     }
 
 
+def clock_capture_fixture(batch: bool) -> tuple[dict[str, bytes], str]:
+    name = "clock.json"
+    guid = "12345678-1234-1234-1234-123456789abc"
+    path = "Packages/com.wallstop-studios.dxmessaging/.artifacts/clock.json"
+    raw = json.dumps(clock_batch_runner_result() if batch else clock_runner_result()).encode()
+    run = json.dumps({"runGuid": guid, "resultPath": path}).encode()
+    cleanup = json.dumps({
+        "observedUtc": "2026-09-17T00:00:00Z", "observationError": "",
+        "frameworkActive": False, "playing": False, "compiling": False, "updating": False,
+        "mainStage": True, "activeScene": "Assets/Saved.unity",
+        "scenes": [{"path": "Assets/Saved.unity", "dirty": False, "loaded": True}],
+        "runGuid": guid, "resultPath": path, "ownedResultPath": path,
+        "legacyObserverResultPath": "", "frameworkErrors": "",
+    }).encode()
+    commit = "a" * 40
+    environment = {
+        "schemaVersion": 1, "claimClass": "descriptive-only",
+        "evidenceClass": "editor-latency-clock-batch-control" if batch else "editor-latency-clock-control",
+        "executionScope": "Editor PlayMode Mono", "sourceCommit": commit,
+        "sourceTree": "b" * 40, "runtimeTree": "c" * 40,
+        "unityVersion": "6000.4.6f1", "runGuid": guid,
+    }
+    audit = MODULE.audit_clock_batch_capture if batch else MODULE.audit_clock_capture
+    replay = audit(raw, run, cleanup, b"done", b"done", name)
+    return {
+        "clock-environment.json": json.dumps(environment).encode(),
+        "clock-replay.json": json.dumps(replay).encode(), name: raw,
+        name + ".run.json": run, name + ".cleanup.json": cleanup,
+        name + ".status": b"done", name + ".cleanup.status": b"done",
+    }, commit
+
+
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_clock_content_map_and_bundle_replay_bind_both_probe_classes(self) -> None:
+        bundle_tool = SCRIPT.with_name("perf-evidence-bundle.js")
+        for batch in (False, True):
+            with self.subTest(batch=batch):
+                contents, commit = clock_capture_fixture(batch)
+                reduced = MODULE.reduce_clock_capture_contents(contents, commit)
+                self.assertEqual(reduced["replay"]["runGuid"], "12345678-1234-1234-1234-123456789abc")
+                with self.assertRaisesRegex(ValueError, "source"):
+                    MODULE.reduce_clock_capture_contents(contents, "d" * 40)
+                with self.assertRaisesRegex(ValueError, "missing"):
+                    MODULE.reduce_clock_capture_contents({k: v for k, v in contents.items() if k != "clock.json.cleanup.status"}, commit)
+                with self.assertRaisesRegex(ValueError, "unexpected"):
+                    MODULE.reduce_clock_capture_contents({**contents, "extra.txt": b"ignored"}, commit)
+                with self.assertRaisesRegex(ValueError, "status"):
+                    MODULE.reduce_clock_capture_contents({**contents, "clock.json.status": b"running"}, commit)
+                changed = {**json.loads(contents["clock-environment.json"]), "runGuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
+                with self.assertRaisesRegex(ValueError, "GUID"):
+                    MODULE.reduce_clock_capture_contents({**contents, "clock-environment.json": json.dumps(changed).encode()}, commit)
+                changed = {**json.loads(contents["clock-replay.json"]), "frequencyHz": "1"}
+                with self.assertRaisesRegex(ValueError, "retained"):
+                    MODULE.reduce_clock_capture_contents({**contents, "clock-replay.json": json.dumps(changed).encode()}, commit)
+                with self.assertRaisesRegex(ValueError, "one pass"):
+                    MODULE.reduce_clock_capture_contents({**contents, "clock.json": contents["clock.json"].replace(b'"passCount": 1', b'"passCount": 2')}, commit)
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    for filename, data in contents.items():
+                        (root / filename).write_bytes(data)
+                    command = [
+                        "node", str(bundle_tool), "seal", str(root), "--experiment-id", "clock-fixture",
+                        "--artifact-class", "editor-latency-clock-capture",
+                        "--reducer", "editor-latency-clock-capture-v1", "--source-commit", commit,
+                    ]
+                    sealed = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(sealed.returncode, 0, sealed.stderr)
+                    replayed = subprocess.run(
+                        ["node", str(bundle_tool), "replay", str(root / "evidence-manifest.json")],
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(replayed.returncode, 0, replayed.stderr)
+                    (root / "clock.json").write_bytes(contents["clock.json"].replace(b'"passCount": 1', b'"passCount": 2'))
+                    corrupted = subprocess.run(
+                        ["node", str(bundle_tool), "replay", str(root / "evidence-manifest.json")],
+                        capture_output=True, text=True,
+                    )
+                    self.assertNotEqual(corrupted.returncode, 0)
+                    self.assertIn("hashes to", corrupted.stderr)
+
     def test_batched_clock_windows_rederive_exact_total_and_reject_faults(self) -> None:
         result = clock_batch_runner_result()
         reduced = MODULE.audit_clock_batch_result(json.dumps(result).encode())
