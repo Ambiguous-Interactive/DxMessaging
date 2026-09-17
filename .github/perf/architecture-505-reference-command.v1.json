@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "505-managed-reference-command-lab-control",
+  "semanticClass": "queued",
+  "ownership": {
+    "bus": "The control owns no IMessageBus; it stores Action commands and invokes them during an explicit drain on the caller's thread.",
+    "payloadLifetime": "An accepted delegate and its captured target stay in the bounded ring until dequeue, reset, or disposal. The dequeued command is caller-executing work and is no longer cancellable by the queue.",
+    "managedReferences": "Accepted Action targets can retain arbitrary managed or Unity objects. Dequeue, reset, and disposal clear queue slots; callback and caller references are outside queue ownership.",
+    "alignment": "Managed Action references in a managed T[] only; no native payload arena or alignment promise.",
+    "reclamation": "The underlying fixed ring clears a slot before invoking a callback. Reset and disposal clear pending slots under its monitor."
+  },
+  "topology": {
+    "producers": "multiple",
+    "consumers": "single",
+    "threadAffinity": "The underlying locked ring admits managed worker producers; the owning caller drains commands. The callback may call Unity APIs, so its drain thread must meet the callback's affinity contract.",
+    "playerLoopPhase": "No automatic scheduling is built in; a future consumer must declare its drain phase and maximum work policy."
+  },
+  "ordering": {
+    "guarantee": "linearizable-per-item",
+    "linearizationPoint": "Enqueue and dequeue commit under the underlying ring monitor; commands run after dequeue outside that monitor, in one consumer's FIFO drain order.",
+    "routeAmortization": false
+  },
+  "capacity": {
+    "policy": "fixed",
+    "overflow": "try-fail",
+    "wait": "blocking-lab-only"
+  },
+  "lifecycle": {
+    "reset": "Reset drops all commands still queued and returns their count. It cannot undo a callback already dequeued for execution.",
+    "cancellation": "No per-command cancellation. Reset drops only pending commands; a dequeued or executing callback remains outside queue ownership.",
+    "disposal": "Disposal is idempotent and clears pending delegates, but cannot cancel a callback already dequeued for execution.",
+    "exceptions": "Null commands and nonpositive drain budgets are rejected. A callback exception propagates, consumes that command, and leaves later pending commands queued. No callback runs under the queue monitor.",
+    "producerAbandon": "There is no reservation state; a producer that stops before TryEnqueue publishes nothing. A successful enqueue retains the delegate until drain or maintenance.",
+    "partialPublication": "The monitor-protected ring publishes or rejects one whole delegate. A dequeued callback can throw after its command has left the queue."
+  },
+  "dynamicDifferences": "Deferred callbacks observe state at drain rather than at synchronous Emit. Captured commands can retain targets and can execute after registration or object state changes. This is an intentionally changed contract.",
+  "compatibility": {
+    "unity": ["6000.4.6f1"],
+    "backends": ["Mono"],
+    "platforms": ["macOS"],
+    "packages": []
+  },
+  "decision": {
+    "workload": "Bounded managed reference-command payload control for the queued architecture bakeoff; compare cost and retained references with generated and native payloads only after #510 and #512 controls.",
+    "thresholdPercent": 20,
+    "capabilityException": "none; this control supplies no Burst or unmanaged capability",
+    "batchOneOverhead": "unmeasured; delegate construction and one enqueue plus dequeue require calibrated controls",
+    "breakEven": "unmeasured",
+    "p99": "N/A until independent #512 open-loop player sessions support an interval",
+    "retainedMemory": "queue slot clearing asserted locally; captured target retained bytes and GC effects are unmeasured",
+    "playerSize": "unmeasured test-only code; no production assembly addition",
+    "buildTime": "unmeasured test-only code; no production assembly addition",
+    "stopRule": "Reject as an exact synchronous replacement because callbacks run at drain and can outlive registration state. Any separate queued API needs bounded frame work, ownership review, measured allocations and retention, and calibrated evidence of at least 20% gain or a supported unique capability."
+  },
+  "evidence": {
+    "state": "tested",
+    "queueSourceSha256": "26c423f0b4e107eab809a64ccb3cc2ebae64eaf1d6536c9a4ca2bdc043c7a80b",
+    "sourceSha256": "1b8c4fb59978eb9ca8a6368a975fe4897461b5692f65631f0d8ebe8fc5dcc156",
+    "testSourceSha256": "ca7b73daec897e052f5a95db4f65176edcc48c3a0f72ce23815e70b8bec2392e",
+    "profileSha256": null,
+    "evidenceSha256": "fc9cf5c69dad5cee8f2a1ae741105e8023f0c577df739bb424ad72144b784f1b",
+    "evidenceLocation": ".artifacts/perf-lab/505-reference-command-evidence.json (ignored local semantic screen; #505 records hashes)"
+  }
+}
