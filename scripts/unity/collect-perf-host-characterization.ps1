@@ -20,10 +20,15 @@ if ($ReadySignalPath -and -not $StopSignalPath) {
     throw '-ReadySignalPath requires -StopSignalPath.'
 }
 $cpuProfile = Get-Content -LiteralPath $CpuProfilePath -Raw | ConvertFrom-Json
+# The player-time sampler is pinned outside the selected player CPUs. .NET's
+# ProcessorCount follows that process affinity, so use the host topology here.
+$hostLogicalProcessorCount = [int](
+    (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum
+)
 if (
     $cpuProfile.executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1' -or
     $cpuProfile.cpuModel -notmatch 'i9-13900KF' -or
-    $cpuProfile.logicalProcessorCount -ne [Environment]::ProcessorCount -or
+    $cpuProfile.logicalProcessorCount -ne $hostLogicalProcessorCount -or
     $cpuProfile.selectedLogicalProcessorCount -ne 16 -or
     $cpuProfile.selectedCoreCount -ne 8 -or
     @($cpuProfile.selectedLogicalProcessorIndices).Count -ne $cpuProfile.selectedLogicalProcessorCount -or
