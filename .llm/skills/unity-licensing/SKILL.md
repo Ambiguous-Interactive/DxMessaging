@@ -8,7 +8,7 @@ metadata:
 
 # Unity Licensing
 
-CI activates Unity with a classic serial and returns it on every exit path. A serial has no server-side reclaim and only about two concurrent seats, so the return layers are the only thing that frees one.
+CI activates Unity with a classic serial and attempts return on every exit path. A serial has no server-side reclaim and only about two concurrent seats, so successful return is required to free one.
 
 ## When to use
 
@@ -28,15 +28,15 @@ Local Unity verification needs NO license. The devcontainer ships no Unity build
 - The floating licensing server is RETIRED. `UNITY_LICENSING_SERVER` must not be reintroduced; the `./.github/actions/validate-unity-license` action rejects it, and `findForbiddenUnityLicenseSecretViolations` plus the static guard fail any workflow that re-wires it.
 - `scripts/unity/run-ci-tests.ps1` wraps the CLI in two functions with deliberately different failure semantics. `Invoke-UnityLicenseActivate` runs `-serial <UNITY_SERIAL> -username <UNITY_EMAIL> -password <UNITY_PASSWORD>` and THROWS on failure, so a job that cannot activate fails loudly instead of running unlicensed. `Invoke-UnityLicenseReturn` runs `-returnlicense` best-effort and NEVER throws, so a return attempt cannot mask the real job result.
 
-### The four-layer always-return guarantee
+### The four-layer return attempt contract
 
-1. **Return-at-start.** Each job calls `Invoke-UnityLicenseReturn` defensively before activating, reclaiming any seat a prior force-killed run leaked on that persistent runner.
-1. **PowerShell `try`/`finally`.** `run-ci-tests.ps1` activates inside a `try` and returns in the `finally`, covering both a clean exit and an editor throw or non-zero exit.
+1. **Return-at-start.** Each job calls `Invoke-UnityLicenseReturn` defensively before activating, attempting to reclaim any seat a prior force-killed run leaked on that persistent runner.
+1. **PowerShell `try`/`finally`.** `run-ci-tests.ps1` activates inside a `try` and attempts return in the `finally`, covering both a clean exit and an editor throw or non-zero exit.
 1. **Workflow terminal return step.** Every Unity workflow invokes the
    centrally pinned `return-unity-license` action after diagnostics and before
    classify/release/gate, scoped to an acquired lock, so a failed Unity step
-   still returns the license before the next job acquires the lock.
-1. **The next run's return-at-start.** If the whole runner process is killed and the three layers above never run, layer 1 of the next run on that machine reclaims the seat.
+   still attempts to return the license before the next job acquires the lock.
+1. **The next run's return-at-start.** If the whole runner process is killed and the three layers above never run, layer 1 of the next run on that machine retries the return.
 
 ### Per-job flow
 
@@ -59,17 +59,17 @@ Keeping activation logs out of the artifact tree is necessary but not sufficient
 
 ### The seat-limit tradeoff, stated honestly
 
-A serial has no server-side reclaim and typically about two concurrent activations, and the schema-5 organization lock admits at most two distinct runners. Because the runners are persistent, a leaked seat is normally freed by the next job landing on the same machine. But the reaper can only quarantine a stale lock holder; it cannot return an activation in Unity's portal. If both machines leak, operators must reconcile the portal manually. The four layers make a permanent leak very unlikely; the small seat pool remains a real constraint.
+A serial has no server-side reclaim and typically about two concurrent activations, and the schema-5 organization lock admits at most two distinct runners. Because the runners are persistent, the next job on the same machine attempts to return a leaked seat. The reaper can quarantine a stale holder and later auto-recover that lock reservation after the owning run is terminal and its lease expires. Neither transition returns an activation in Unity's portal. A completed return command with `return-ulf-skipped` also leaves cleanup unconfirmed. Check portal activation state before further licensed work when return evidence is inconclusive; reconcile a remaining seat there. The four return layers reduce leak risk, but the small seat pool remains a real constraint.
 
 ### Common failures
 
-| Signature                                                       | Cause                                         | Remediation                                                                     |
-| --------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
-| `UNITY_SERIAL is required`                                      | One of the three secrets is unset             | Set all three repository secrets                                                |
-| `Retired Unity activation secret UNITY_LICENSING_SERVER is set` | Retired secret still present                  | Remove it from the repository and workflows                                     |
-| `Failed to activate` / `No valid Unity Editor license found`    | Serial unset or invalid, or wrong credentials | Verify the three secrets against the Unity dashboard                            |
-| `License client failed to start`                                | Activation hiccup or wrong credentials        | Retry, then verify the serial and credentials                                   |
-| All serial seats consumed                                       | A prior run leaked a seat, or both are held   | The next run's return-at-start reclaims it; if persistent, raise the seat count |
+| Signature                                                       | Cause                                         | Remediation                                                         |
+| --------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------- |
+| `UNITY_SERIAL is required`                                      | One of the three secrets is unset             | Set all three repository secrets                                    |
+| `Retired Unity activation secret UNITY_LICENSING_SERVER is set` | Retired secret still present                  | Remove it from the repository and workflows                         |
+| `Failed to activate` / `No valid Unity Editor license found`    | Serial unset or invalid, or wrong credentials | Verify the three secrets against the Unity dashboard                |
+| `License client failed to start`                                | Activation hiccup or wrong credentials        | Retry, then verify the serial and credentials                       |
+| All serial seats consumed                                       | A prior run leaked a seat, or both are held   | Attempt same-runner return; confirm cleanup or reconcile the portal |
 
 ## References
 

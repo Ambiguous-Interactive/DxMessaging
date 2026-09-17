@@ -2,7 +2,7 @@
 
 # Unity License Return Guarantee
 
-> **One-line summary**: CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and returns the license on EVERY exit path through four redundant layers (return-at-start, PowerShell `try`/`finally`, an `if: always()` workflow step, and the next run's return-at-start) so a crashed or force-killed run cannot permanently squat one of the very few serial activation seats.
+> **One-line summary**: CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and attempts return through four redundant layers (return-at-start, PowerShell `try`/`finally`, an `if: always()` workflow step, and the next run's return-at-start). Cleanup evidence or the Unity portal must confirm the seat was actually freed.
 
 ## When to Use
 
@@ -25,8 +25,8 @@ activation behind on that machine across runs. The schema-5 organization lock
 admits at most two distinct runners and reduces effective capacity for
 quarantines or an account incident. A single un-returned activation plus one
 clean concurrent activation can still exhaust the portal seats. The
-always-return guarantee below exists so no failure mode leaves an activation
-behind for longer than the next job's return-at-start.
+return layers below give the next job on that runner another return attempt.
+They cannot prove a portal return from a command exit code alone.
 
 ## The Activation and Return Contract
 
@@ -51,26 +51,25 @@ Unity.exe -quit -batchmode -nographics -returnlicense \
   throws, so a return attempt can never mask the real job result or fail the
   cleanup path.
 
-## The Four-Layer Always-Return Guarantee
+## The Four-Layer Return Attempt Contract
 
-The license is returned on every exit path by four independent, redundant
-layers. There is no floating server and no server-side reclaim, so these four
-layers are the ONLY things that free a seat:
+Four independent layers attempt to return the license on normal and failed
+exit paths. There is no floating server or server-side reclaim. A successful
+return frees a seat; the attempt alone does not prove that it did:
 
 1. **Return-at-START of each job.** Before activating, the job runs a defensive
-   `Invoke-UnityLicenseReturn`. On a persistent runner this reclaims any seat a
-   prior force-killed run leaked on that machine, so a leak survives at most
-   until the next run starts on the same runner.
+   `Invoke-UnityLicenseReturn`. On a persistent runner this can reclaim a seat
+   a prior force-killed run leaked on that machine.
 1. **PowerShell `try`/`finally` return.** `run-ci-tests.ps1` activates inside a
    `try` and calls `Invoke-UnityLicenseReturn` in the `finally`, so a clean exit
-   AND an editor throw / non-zero both return the license.
+   AND an editor throw / non-zero both attempt the return.
 1. **Workflow terminal return step.** Every Unity workflow invokes the
    centrally pinned `return-unity-license` action after diagnostics and before
    classify/release/gate, scoped to an acquired lock. A failed Unity step still
    reaches this terminal cleanup chain before another job can acquire the lock.
 1. **The next run's return-at-start.** On a persistent self-hosted runner, if all
    three layers above are somehow skipped (for example the whole runner process
-   is killed), layer 1 of the NEXT run reclaims the leaked seat on that machine.
+   is killed), layer 1 of the NEXT run retries the return on that machine.
 
 ## The Per-Job Flow (7 steps)
 
@@ -81,7 +80,7 @@ Each Unity job follows this order:
    the retired `UNITY_LICENSING_SERVER`) BEFORE acquiring the org lock.
 1. Acquire the org build lock (`wallstop-organization-builds`, `max-parallel: 1`).
 1. Return-at-start: `run-ci-tests.ps1` calls `Invoke-UnityLicenseReturn` to
-   reclaim any seat a prior killed run leaked on this persistent runner.
+   attempt to reclaim any seat a prior killed run leaked on this persistent runner.
 1. Activate: `Invoke-UnityLicenseActivate` runs the serial activation (throws on
    failure).
 1. Run Unity (editmode / playmode / standalone IL2CPP) against the generated
@@ -101,12 +100,14 @@ This is the accepted cost of leaving the floating licensing server behind:
 - **Very few seats.** A serial typically allows only about two concurrent
   activations. With two persistent Windows runners, both can hold a seat at once.
 - **How return-at-start compensates.** Because the runners are persistent, the
-  return-at-start (layer 1) reclaims any seat the previous run on that machine
-  leaked. So in normal operation a leaked seat is freed by the next job that
-  lands on the same runner -- the seat is not lost forever.
+  next job on the same machine attempts `-returnlicense` before activation. A
+  completed command is not proof of a returned seat when cleanup classification
+  reports `return-ulf-skipped` or another unknown result.
 - **Accepted residual risk.** The scheduled lock reaper can quarantine a stale
-  holder and stop new admissions, but it cannot return an activation in Unity's
-  portal. If both machines leak, operators must reconcile the portal and perform
+  holder and later auto-recover a reservation after its lease and owning run
+  end. This restores lock capacity but cannot return an activation in Unity's
+  portal. Reconcile inconclusive cleanup in the portal before further licensed
+  work. If both machines leak, operators must reconcile the portal and perform
   exact-incident recovery before capacity is restored.
 
 Do not oversell the guarantee: the four layers make a permanent leak very
@@ -126,9 +127,9 @@ a solved problem.
 
 ## Leak Failure Modes
 
-Each failure mode is covered by at least one of the four return layers. With no
-server-side reclaim, the return-at-start of the next run is the final backstop on
-a persistent runner.
+Each failure mode has at least one return attempt. With no server-side reclaim,
+the return-at-start of the next run is the final automatic retry on a
+persistent runner. An unknown cleanup classification still needs portal review.
 
 | Failure mode                 | What happens                                     | Covered by                                                                            |
 | ---------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -136,7 +137,7 @@ a persistent runner.
 | Editor throws / non-zero     | Editor exits non-zero; script reaches `finally`. | `try`/`finally` `Invoke-UnityLicenseReturn`.                                          |
 | Step timeout / killed script | Script process is killed; no `finally` runs.     | `if: always()` `return-unity-license` step in the org-lock window.                    |
 | Whole runner process killed  | No `finally` and no `if: always()` step run.     | Return-at-start of the NEXT run on the same persistent runner.                        |
-| Prior run leaked a seat      | A seat is still activated from a previous run.   | Return-at-start (defensive `-returnlicense` before activating).                       |
+| Prior run leaked a seat      | A seat is still activated from a previous run.   | Return-at-start attempts `-returnlicense`; require confirmed cleanup evidence.        |
 | Both machines leak at once   | Zero seats free; a new run cannot activate.      | Schema 5 blocks admission; operators clean the portal and recover the exact incident. |
 
 ## Contract Invariants (review these on every change)
@@ -163,8 +164,8 @@ exit.
 ### Dropping the if:always() step
 
 Without the `if: always()` workflow step, a killed or timed-out script never runs
-its `finally`. On a persistent runner the seat is then reclaimed only by the next
-run's return-at-start; do not rely on that alone -- keep the `if: always()` step
+its `finally`. On a persistent runner the next run's return-at-start then gets
+another chance to reclaim the seat; do not rely on that alone -- keep the `if: always()` step
 inside the org-lock window.
 
 ### Echoing or logging the serial / password
@@ -195,5 +196,6 @@ The cutover removed `UNITY_LICENSING_SERVER`. Re-wiring it is rejected by
 
 | Version | Date       | Changes                                                                                                                                                                            |
 | ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.0.1   | 2026-09-17 | Clarified that a return attempt or recovered lock reservation does not prove portal cleanup.                                                                                       |
 | 2.0.0   | 2026-05-22 | Rewritten for classic serial activation: four-layer always-return guarantee, 7-step per-job flow, the ~2-seat / no-reclaim tradeoff, security, and the renamed enforcement layers. |
 | 1.0.0   | 2026-05-21 | Initial version: floating-license acquire/return bracket, services-config placement, leak failure modes, and four enforcement layers (superseded by the serial cutover).           |
