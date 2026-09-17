@@ -94,7 +94,63 @@ def regular_trace() -> tuple[bytes, dict, dict]:
     return raw, observed, trace_plan
 
 
+def tail_runner_result() -> dict:
+    pairs = []
+    for trace_id, latencies in (("editor-tail-baseline", (1, 2, 3)), ("editor-tail-stalled", (1, 2, 30))):
+        planned = {
+            "schemaVersion": 1,
+            "traceId": trace_id,
+            "frequencyHz": "10000000",
+            "horizonStartTick": str(BASE),
+            "horizonEndTick": str(BASE + 100),
+            "arrivals": [{"id": str(index), "arrivalTick": str(BASE)} for index in range(3)],
+        }
+        raw = raw_schedule(planned)
+        observed = {
+            "schemaVersion": 1,
+            "scheduleSha256": hashlib.sha256(raw).hexdigest(),
+            "events": [
+                {"id": str(index), "startTick": str(BASE), "completionTick": str(BASE + ticks)}
+                for index, ticks in enumerate(latencies)
+            ],
+        }
+        pairs.append((raw, observed))
+    result = runner_result(pairs)
+    result["nodes"][0]["output"] += (
+        "\nDXM_OPEN_LOOP_TAIL_EFFECT_V1 p99ShiftTicks=27 "
+        "meanShiftNumeratorTicks=27 meanShiftDenominator=3"
+    )
+    return result
+
+
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_tail_marker_is_recomputed_from_raw_events(self) -> None:
+        result = tail_runner_result()
+        expected = ["editor-tail-baseline", "editor-tail-stalled"]
+        replay = MODULE.audit_unity_result(json.dumps(result).encode(), expected)
+        self.assertEqual(replay["effects"], [{
+            "fixture": "Fixture.Case",
+            "p99ShiftTicks": "27",
+            "meanShiftNumeratorTicks": "27",
+            "meanShiftDenominator": "3",
+        }])
+        output = result["nodes"][0]["output"]
+        for altered in (
+            output.replace("p99ShiftTicks=27", "p99ShiftTicks=28"),
+            output.replace("meanShiftNumeratorTicks=27", "meanShiftNumeratorTicks=28"),
+            output.replace("meanShiftDenominator=3", "meanShiftDenominator=2"),
+            output.replace("meanShiftDenominator=3", "meanShiftDenominator=03"),
+            output.rsplit("\n", 1)[0],
+            output + "\n" + output.splitlines()[-1],
+        ):
+            with self.subTest(altered=altered[-100:]), self.assertRaises(ValueError):
+                changed = {**result, "nodes": [{**result["nodes"][0], "output": altered}]}
+                MODULE.audit_unity_result(json.dumps(changed).encode(), expected)
+        unrelated = runner_result()
+        unrelated["nodes"][0]["output"] += "\n" + output.splitlines()[-1]
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_result(json.dumps(unrelated).encode(), ["trace-1"])
+
     def test_committed_plan_binds_normalized_arrivals_and_fixture(self) -> None:
         raw, observed, trace_plan = regular_trace()
         result = json.dumps(runner_result([(raw, observed)])).encode()

@@ -20,6 +20,12 @@ OBSERVATION_FIELDS = {"schemaVersion", "scheduleSha256", "events"}
 EVENT_FIELDS = {"id", "startTick", "completionTick"}
 PLAN_FIELDS = {"schemaVersion", "traces"}
 PLAN_TRACE_FIELDS = {"traceId", "fixture", "frequencyHz", "horizonSpanTicks", "arrivalCount", "arrivalStepTicks"}
+TAIL_IDS = {"editor-tail-baseline", "editor-tail-stalled"}
+TAIL_EFFECT = re.compile(
+    r"DXM_OPEN_LOOP_TAIL_EFFECT_V1 p99ShiftTicks=((?:0|[1-9][0-9]*)) "
+    r"meanShiftNumeratorTicks=((?:0|[1-9][0-9]*)) "
+    r"meanShiftDenominator=((?:0|[1-9][0-9]*))\Z"
+)
 
 
 def decimal(value: Any, field: str) -> int:
@@ -108,6 +114,41 @@ def check_plan_trace(planned: dict[str, Any], fixture: str, reduced: dict[str, A
     for index, event in enumerate(reduced["events"]):
         if event["id"] != str(index) or int(event["arrivalTick"]) - origin != index * step:
             raise ValueError(f"planned arrival mismatch: {reduced['traceId']} at {index}")
+
+
+def check_tail_effect(fixture: str, traces: dict[str, dict[str, Any]], marker: tuple[str, str, str] | None) -> dict[str, str] | None:
+    present = TAIL_IDS & traces.keys()
+    if not present and marker is None:
+        return None
+    if present != TAIL_IDS or marker is None:
+        raise ValueError(f"{fixture} has missing tail trace or effect marker")
+    baseline = traces["editor-tail-baseline"]
+    stalled = traces["editor-tail-stalled"]
+    if baseline["frequencyHz"] != stalled["frequencyHz"] or len(baseline["events"]) != len(stalled["events"]):
+        raise ValueError(f"{fixture} has incomparable tail schedules")
+    base_origin = int(baseline["horizonStartTick"])
+    stalled_origin = int(stalled["horizonStartTick"])
+    if int(baseline["horizonEndTick"]) - base_origin != int(stalled["horizonEndTick"]) - stalled_origin:
+        raise ValueError(f"{fixture} has incomparable tail horizons")
+    for before, after in zip(baseline["events"], stalled["events"]):
+        if before["id"] != after["id"] or int(before["arrivalTick"]) - base_origin != int(after["arrivalTick"]) - stalled_origin:
+            raise ValueError(f"{fixture} has incomparable tail arrivals")
+    count = len(baseline["events"])
+    p99_shift = int(stalled["completionLatencyQuantiles"]["p99"]["latencyTicks"]) - int(
+        baseline["completionLatencyQuantiles"]["p99"]["latencyTicks"]
+    )
+    mean_numerator = sum(int(row["completionLatencyTicks"]) for row in stalled["events"]) - sum(
+        int(row["completionLatencyTicks"]) for row in baseline["events"]
+    )
+    expected = (str(p99_shift), str(mean_numerator), str(count))
+    if marker != expected:
+        raise ValueError(f"{fixture} tail effect marker disagrees with raw timestamps")
+    return {
+        "fixture": fixture,
+        "p99ShiftTicks": expected[0],
+        "meanShiftNumeratorTicks": expected[1],
+        "meanShiftDenominator": expected[2],
+    }
 
 
 def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
@@ -236,6 +277,7 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
 
     passed_leaves = 0
     traces = []
+    effects = []
     seen: set[str] = set()
     for index, node in enumerate(result["nodes"]):
         if not isinstance(node, dict) or not {"name", "isSuite", "status", "output"}.issubset(node):
@@ -252,6 +294,8 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
         passed_leaves += 1
         pending = None
         pairs = 0
+        leaf_traces: dict[str, dict[str, Any]] = {}
+        effect_marker = None
         for line in node["output"].splitlines():
             if line.startswith("DXM_OPEN_LOOP_SCHEDULE_V1 "):
                 if pending is not None:
@@ -268,6 +312,7 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
                 if plan is not None:
                     check_plan_trace(plan[trace_id], name, reduced)
                 seen.add(trace_id)
+                leaf_traces[trace_id] = reduced
                 traces.append({
                     "fixture": name,
                     "traceId": trace_id,
@@ -286,8 +331,16 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
                 })
                 pending = None
                 pairs += 1
+            elif line.startswith("DXM_OPEN_LOOP_TAIL_EFFECT_V1"):
+                matched = TAIL_EFFECT.fullmatch(line)
+                if matched is None or effect_marker is not None or pending is not None:
+                    raise ValueError(f"{name} has malformed or duplicate tail effect marker")
+                effect_marker = matched.groups()
         if pending is not None or pairs == 0:
             raise ValueError(f"{name} has missing or unpaired trace markers")
+        effect = check_tail_effect(name, leaf_traces, effect_marker)
+        if effect is not None:
+            effects.append(effect)
     if passed_leaves != result["passCount"] or seen != expected:
         raise ValueError("Unity pass count or expected trace IDs do not match replayed fixtures")
     replay = {
@@ -297,6 +350,7 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
         "expectedTraceIds": sorted(expected),
         "traceCount": len(traces),
         "traces": traces,
+        "effects": effects,
     }
     if plan_bytes is not None:
         replay["planSha256"] = hashlib.sha256(plan_bytes).hexdigest()
