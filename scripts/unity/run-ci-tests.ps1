@@ -8370,6 +8370,10 @@ try {
         }
 
         if ($pilotBatchOrders.Count -gt 0) {
+            $pilotTrackedChangesAfterBuild = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+            if ($LASTEXITCODE -ne 0 -or $pilotTrackedChangesAfterBuild.Count -ne 0) {
+                throw 'Pilot player build changed tracked source files.'
+            }
             $pilotBuildFinishedUtc = [DateTime]::UtcNow
             $pilotPlayerManifest = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
             Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'pilot-build-evidence.json') -Value ([ordered]@{
