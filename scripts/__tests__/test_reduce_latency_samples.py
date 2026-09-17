@@ -135,6 +135,24 @@ class ReduceLatencySamplesTests(unittest.TestCase):
             )
         self.assertEqual(json.loads(completed.stdout), MODULE.reduce_samples(records))
 
+    def test_cli_rejects_duplicate_raw_json_keys(self) -> None:
+        record_json = json.dumps(sample("one", 10))
+        with tempfile.TemporaryDirectory(prefix="dxm-latency-duplicates-") as temporary:
+            input_path = Path(temporary) / "input.json"
+            for field in ("experimentSha256", "profileSha256", "startTick"):
+                duplicated = record_json.replace(
+                    f'"{field}": ', f'"{field}": "shadow", "{field}": ', 1
+                )
+                input_path.write_text(f"[{duplicated}]", encoding="utf-8")
+                with self.subTest(field=field):
+                    completed = subprocess.run(
+                        [sys.executable, str(SCRIPT), str(input_path)],
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(f"duplicate JSON key: {field}", completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

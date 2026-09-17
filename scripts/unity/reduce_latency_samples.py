@@ -20,6 +20,15 @@ FIELDS = (
 PERCENTILES = (("p50", 50), ("p95", 95), ("p99", 99))
 
 
+def _unique_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
 def _rank_bounds(count: int, percent: int) -> tuple[int | None, int | None]:
     """Exact equal-tail 95% binomial order ranks, with absent finite sides."""
     success = percent
@@ -120,7 +129,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="JSON array of one timestamp pair per independent unit")
     args = parser.parse_args()
-    result = reduce_samples(json.loads(args.input.read_text(encoding="utf-8")))
+    result = reduce_samples(json.loads(args.input.read_text(encoding="utf-8"), object_pairs_hook=_unique_fields))
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
