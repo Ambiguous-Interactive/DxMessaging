@@ -195,7 +195,7 @@ def inspect_workflow_job(path, expected_sha, expected_run_id, expected_commit, b
     build_started = utc_time(build["buildStartedUtc"], "buildStartedUtc")
     build_finished = utc_time(build["buildFinishedUtc"], "buildFinishedUtc")
     require(started <= build_started < build_finished <= completed, f"{path}: job/build time envelope drift")
-    return {"workflowRunId": expected_run_id, "workflowJobId": job["id"], "jobEvidenceSha256": expected_sha, "jobSeconds": (completed - started).total_seconds()}
+    return {"workflowRunId": expected_run_id, "workflowJobId": job["id"], "jobEvidenceSha256": expected_sha, "jobCompletedUtc": job["completed_at"], "jobSeconds": (completed - started).total_seconds()}
 
 
 def preflight(schedule_bytes, manifest, expected_commit, base_path):
