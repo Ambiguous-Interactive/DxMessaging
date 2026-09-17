@@ -178,6 +178,116 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void ConcurrentProducerAndConsumerPreserveEveryItemAcrossWrap()
+        {
+            const int producers = 4;
+            const int itemsPerProducer = 128;
+            const int total = producers * itemsPerProducer;
+            using LockedFixedRingControl<Item> ring = new(8);
+            using ManualResetEventSlim start = new(false);
+            Item[] observed = new Item[total];
+            Exception[] failures = new Exception[producers + 1];
+            Thread[] threads = new Thread[producers + 1];
+            int stop = 0;
+            int drained = 0;
+
+            for (int producer = 0; producer < producers; ++producer)
+            {
+                int owner = producer;
+                threads[producer] = new Thread(() =>
+                {
+                    try
+                    {
+                        start.Wait();
+                        SpinWait spin = new();
+                        for (int index = 0; index < itemsPerProducer; ++index)
+                        {
+                            Item item = new(owner, index);
+                            while (!ring.TryEnqueue(item))
+                            {
+                                if (Volatile.Read(ref stop) != 0)
+                                {
+                                    return;
+                                }
+                                spin.SpinOnce();
+                            }
+                        }
+                    }
+                    catch (Exception error)
+                    {
+                        failures[owner] = error;
+                        Interlocked.Exchange(ref stop, 1);
+                    }
+                })
+                {
+                    IsBackground = true,
+                };
+                threads[producer].Start();
+            }
+
+            threads[producers] = new Thread(() =>
+            {
+                try
+                {
+                    start.Wait();
+                    SpinWait spin = new();
+                    while (drained < total && Volatile.Read(ref stop) == 0)
+                    {
+                        if (ring.TryDequeue(out Item item))
+                        {
+                            observed[drained++] = item;
+                        }
+                        else
+                        {
+                            spin.SpinOnce();
+                        }
+                    }
+                }
+                catch (Exception error)
+                {
+                    failures[producers] = error;
+                    Interlocked.Exchange(ref stop, 1);
+                }
+            })
+            {
+                IsBackground = true,
+            };
+            threads[producers].Start();
+            start.Set();
+
+            bool allFinished = true;
+            foreach (Thread thread in threads)
+            {
+                if (!thread.Join(TimeSpan.FromSeconds(10)))
+                {
+                    allFinished = false;
+                    Interlocked.Exchange(ref stop, 1);
+                }
+            }
+            foreach (Thread thread in threads)
+            {
+                if (thread.IsAlive)
+                {
+                    thread.Join(TimeSpan.FromSeconds(1));
+                }
+            }
+            Assert.That(allFinished, Is.True, "All producer and consumer workers must finish.");
+            Assert.That(failures.All(error => error == null), Is.True, "No worker may fail.");
+            Assert.That(drained, Is.EqualTo(total), "The consumer must observe every item.");
+
+            int[] next = new int[producers];
+            HashSet<int> seen = new();
+            foreach (Item item in observed)
+            {
+                Assert.That(item.Producer, Is.InRange(0, producers - 1));
+                Assert.That(item.Index, Is.EqualTo(next[item.Producer]++));
+                Assert.That(seen.Add(item.Producer * itemsPerProducer + item.Index), Is.True);
+            }
+            Assert.That(seen.Count, Is.EqualTo(total), "Every item must appear exactly once.");
+            Assert.That(ring.Count, Is.Zero, "The consumer must leave no retained items.");
+        }
+
+        [Test]
         public void InvalidCapacityIsRejected()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => new LockedFixedRingControl<int>(0));
