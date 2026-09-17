@@ -51,7 +51,7 @@
     "Runtime.meta"
   ],
   "scripts": {
-    "test": "node --test scripts/ && python3 scripts/__tests__/test_create_unitypackage.py",
+    "test": "node --test scripts/ && python3 -m unittest discover -s scripts/__tests__ -p 'test_*.py'",
     "format": "prettier --write \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "lint:markdown": "markdownlint-cli2 \"**/*.md\" \"**/*.markdown\"",
