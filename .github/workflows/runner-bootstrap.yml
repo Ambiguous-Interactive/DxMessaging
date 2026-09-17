@@ -559,9 +559,20 @@ jobs:
             if ($health.valid -ne $true -or @($health.reasons).Count -ne 0) {
               throw "Calibration host health failed on launch $($run.runIndex)."
             }
-            $xml = Get-Content -LiteralPath (Join-Path $root $run.resultsPath) -Raw
-            $matches = [regex]::Matches($xml, 'DXM_PAIRED_COMPARISON\s+(\{[^\r\n<]+\})')
-            $rows = @($matches | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
+            $xml = [xml](Get-Content -LiteralPath (Join-Path $root $run.resultsPath) -Raw)
+            $rows = @(
+              foreach ($case in $xml.SelectNodes('//test-case')) {
+                $output = $case.SelectSingleNode('output')
+                if ($null -eq $output) { continue }
+                $pairedMatches = [regex]::Matches($output.InnerText, 'DXM_PAIRED_COMPARISON\s+(\{[^\r\n<]+\})')
+                if ($pairedMatches.Count -eq 0) { continue }
+                $payloads = @($pairedMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+                if ($payloads.Count -ne 1) {
+                  throw "Calibration launch $($run.runIndex) contains conflicting markers in one test case."
+                }
+                $payloads[0] | ConvertFrom-Json
+              }
+            )
             $actualScenarios = (@($rows.scenario | Sort-Object) -join ',')
             $requiredScenarios = (@($expectedScenarios | Sort-Object) -join ',')
             if ($rows.Count -ne 7 -or $actualScenarios -cne $requiredScenarios) {
