@@ -657,3 +657,40 @@ separate temporary process with deliberately invalid credentials. GitHub returne
 the experiment remained incomplete. The drill did not change the release, fabricate a missing
 asset URL, or use cached evidence as a fallback. This proves the operator procedure's refusal;
 there is no automated remote restore service implied by this result.
+
+### s336-open-loop-editor, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-17. This is an
+Editor PlayMode Mono protocol screen on Unity 6000.4.6f1. Its 12 traces and one tail-control
+effect are descriptive; they do not establish an independent player session, IL2CPP confirmation,
+an interval estimate, or a performance promotion verdict.
+
+| Identity                        | Value                                                                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable s336 Editor evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s336-open-loop-editor-r1-7da590ac)                         |
+| Release ID                      | `390857962`                                                                                                                                                                            |
+| Asset                           | [s336 Editor evidence archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-s336-open-loop-editor-r1-7da590ac/s336-open-loop-editor-r1.tar.gz) |
+| Exact asset name                | `s336-open-loop-editor-r1.tar.gz`                                                                                                                                                      |
+| Asset ID and size               | `570580334`, 21,824 bytes                                                                                                                                                              |
+| Archive SHA-256                 | `a7bb9e40e8afe83e691a9c4a5c7154986fc94ba2aff8e6facca75ef1f2c13259`                                                                                                                     |
+| Manifest SHA-256                | `7da590ac55e36a8a8a92c6e9e5c2fe3c325189e6f71eea0c9d28b1352b10fb8e`                                                                                                                     |
+| Bundle digest                   | `8ef62f844f1c3e4533679df2df7ec19cc50955fcbe1ad8748425c3c6b4a2871f`                                                                                                                     |
+| Measured source                 | `fe8fe99ec0382eaa2b85ad054b51209776f1d53c`                                                                                                                                             |
+| Verifier and release tag commit | `79279da3d50e52a7e452e86f5ef515a873b69be3`                                                                                                                                             |
+| Reducer                         | `open-loop-editor-capture-v1`                                                                                                                                                          |
+
+The draft held exactly one asset. Its fresh download matched the archive hash, and the extracted
+manifest matched the index before publication. Published metadata reported `draft: false`,
+`prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+
+An anonymous postpublication download into a new directory matched the indexed archive hash.
+The archive contained eight relative regular files plus the manifest and one directory entry,
+with normalized ownership and no links or special files. A new remote verifier clone checked out
+the exact commit with clean status, installed pinned dependencies with `npm ci --ignore-scripts`,
+and reproduced the indexed manifest hash. `verify` accepted all eight declared files and `replay`
+reproduced the sealed result; both exited zero, and the worktree stayed clean.
+
+The denied-access drill requested actual asset `570580334` through GitHub's release-asset API with
+deliberately invalid credentials. GitHub returned HTTP 401 and `curl --fail` exited 22. No asset
+file was produced, and verification and replay were not attempted. The inaccessible experiment
+remained incomplete without using a cached fallback.
