@@ -300,9 +300,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         )
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            string priorVector = Environment.GetEnvironmentVariable(
+                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
+            );
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "7");
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", null);
                 using DxMessagingBridge bridge = new();
                 bridge.Prepare(scenario);
                 Assert.AreEqual(expected, bridge.PilotCpuWorkIterationsPerBatch);
@@ -310,6 +314,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             finally
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", priorVector);
             }
         }
 
@@ -317,9 +322,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void PilotPairRequiresExplicitWorkAssignmentWhileOtherContractsDefaultToZero()
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            string priorVector = Environment.GetEnvironmentVariable(
+                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
+            );
             try
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", null);
                 using DxMessagingBridge bridge = new();
                 bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber);
                 Assert.AreEqual(0, bridge.PilotCpuWorkIterationsPerBatch);
@@ -328,20 +337,69 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 );
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "0");
                 Assert.DoesNotThrow(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", "1,2,3,4,5");
+                Assert.Throws<InvalidOperationException>(() =>
+                    PairedComparisonHarness.RequirePilotCpuWorkAssignment()
+                );
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
+                Assert.DoesNotThrow(() => PairedComparisonHarness.RequirePilotCpuWorkAssignment());
             }
             finally
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", priorVector);
             }
         }
 
-        [Test]
-        public void PilotCpuWorkRejectsUnassignedWorkLevel()
+        [TestCase(ComparisonScenario.GlobalToOneSubscriber, 11)]
+        [TestCase(ComparisonScenario.StructMessageNoBoxing, 22)]
+        [TestCase(ComparisonScenario.FilteredDispatch, 33)]
+        [TestCase(ComparisonScenario.PostProcessingDispatch, 44)]
+        [TestCase(ComparisonScenario.InterceptedPostProcessingDispatch, 55)]
+        [TestCase(ComparisonScenario.GlobalToManySubscribers, 0)]
+        [TestCase(ComparisonScenario.KeyedToOneOfMany, 0)]
+        public void PilotCpuWorkVectorUsesOnlyItsDeclaredTarget(
+            ComparisonScenario scenario,
+            int expected
+        )
         {
             string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            string priorVector = Environment.GetEnvironmentVariable(
+                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
+            );
             try
             {
-                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "invalid");
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
+                Environment.SetEnvironmentVariable(
+                    "DXM_PILOT_CPU_WORK_BY_SCENARIO",
+                    "11,22,33,44,55"
+                );
+                using DxMessagingBridge bridge = new();
+                bridge.Prepare(scenario);
+                Assert.AreEqual(expected, bridge.PilotCpuWorkIterationsPerBatch);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", priorVector);
+            }
+        }
+
+        [TestCase("1,2,3,4")]
+        [TestCase("1,2,3,4,5,6")]
+        [TestCase("1,2,broken,4,5")]
+        [TestCase("1,2,1000001,4,5")]
+        [TestCase("1,2,-1,4,5")]
+        public void PilotCpuWorkVectorRejectsMalformedAssignments(string assignment)
+        {
+            string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            string priorVector = Environment.GetEnvironmentVariable(
+                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
+            );
+            try
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", null);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", assignment);
                 using DxMessagingBridge bridge = new();
                 Assert.Throws<InvalidOperationException>(() =>
                     bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber)
@@ -350,6 +408,30 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             finally
             {
                 Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", priorVector);
+            }
+        }
+
+        [Test]
+        public void PilotCpuWorkRejectsUnassignedWorkLevel()
+        {
+            string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            string priorVector = Environment.GetEnvironmentVariable(
+                "DXM_PILOT_CPU_WORK_BY_SCENARIO"
+            );
+            try
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "invalid");
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", null);
+                using DxMessagingBridge bridge = new();
+                Assert.Throws<InvalidOperationException>(() =>
+                    bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber)
+                );
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO", priorVector);
             }
         }
 #endif

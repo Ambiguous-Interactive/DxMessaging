@@ -142,10 +142,14 @@ namespace DxMessaging.Tests.Runtime.Comparisons
 #if DXM_PILOT_CONTROL
         internal static void RequirePilotCpuWorkAssignment()
         {
-            if (Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH") == null)
+            bool scalar =
+                Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH") != null;
+            bool vector =
+                Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_BY_SCENARIO") != null;
+            if (scalar == vector)
             {
                 throw new InvalidOperationException(
-                    "Pilot paired comparisons require an explicit DXM_PILOT_CPU_WORK_PER_BATCH assignment."
+                    "Pilot paired comparisons require exactly one scalar or per-scenario CPU work assignment."
                 );
             }
         }

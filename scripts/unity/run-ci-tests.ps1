@@ -56,6 +56,9 @@ param(
     [ValidateRange(0, 1000000)]
     [int]$StandalonePilotCpuWorkIterationsPerBatch = 0,
 
+    # Five target values: GlobalToOne, StructNoBox, Filtered, PostProcess, FilteredPostProcess.
+    [string]$StandalonePilotCpuWorkByScenario = '',
+
     [ValidateRange(0, [long]::MaxValue)]
     [long]$StandalonePlayerProcessorAffinityMask = 0,
 
@@ -89,6 +92,30 @@ if (-not [string]::IsNullOrEmpty($StandalonePlayerBatchOrders)) {
 }
 if ($StandalonePilotCpuWorkIterationsPerBatch -gt 0 -and $pilotBatchOrders.Count -eq 0) {
     throw '-StandalonePilotCpuWorkIterationsPerBatch requires -StandalonePlayerBatchOrders.'
+}
+$pilotWorkVector = $null
+if (-not [string]::IsNullOrEmpty($StandalonePilotCpuWorkByScenario)) {
+    if ($pilotBatchOrders.Count -eq 0 -or $StandalonePilotCpuWorkIterationsPerBatch -ne 0) {
+        throw '-StandalonePilotCpuWorkByScenario requires pilot batch orders and excludes scalar work.'
+    }
+    $workFields = @($StandalonePilotCpuWorkByScenario.Split(','))
+    if ($workFields.Count -ne 5) {
+        throw '-StandalonePilotCpuWorkByScenario requires five comma-separated values.'
+    }
+    $workValues = foreach ($field in $workFields) {
+        if ($field -cnotmatch '^[0-9]{1,7}$' -or [int]$field -gt 1000000) {
+            throw '-StandalonePilotCpuWorkByScenario values must be integers from 0 through 1000000.'
+        }
+        [int]$field
+    }
+    $pilotWorkVector = [ordered]@{
+        GlobalToOne = $workValues[0]
+        StructNoBox = $workValues[1]
+        Filtered = $workValues[2]
+        PostProcess = $workValues[3]
+        FilteredPostProcess = $workValues[4]
+    }
+    $StandalonePilotCpuWorkByScenario = @($workValues) -join ','
 }
 
 # PowerShell 7.4 introduced $PSNativeCommandUseErrorActionPreference (stabilizing
@@ -8472,13 +8499,16 @@ try {
 
             $priorBatchOrder = $env:DXM_PAIRED_BATCH_ORDER
             $priorPilotWork = $env:DXM_PILOT_CPU_WORK_PER_BATCH
+            $priorPilotWorkVector = $env:DXM_PILOT_CPU_WORK_BY_SCENARIO
             try {
                 if ($pilotBatchOrders.Count -gt 0) {
                     $env:DXM_PAIRED_BATCH_ORDER = $pilotBatchOrders[$playerRunIndex - 1]
-                    $env:DXM_PILOT_CPU_WORK_PER_BATCH = [string]$StandalonePilotCpuWorkIterationsPerBatch
+                    $env:DXM_PILOT_CPU_WORK_PER_BATCH = if ($pilotWorkVector) { $null } else { [string]$StandalonePilotCpuWorkIterationsPerBatch }
+                    $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = if ($pilotWorkVector) { $StandalonePilotCpuWorkByScenario } else { $null }
                 } else {
                     $env:DXM_PAIRED_BATCH_ORDER = $null
                     $env:DXM_PILOT_CPU_WORK_PER_BATCH = $null
+                    $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = $null
                 }
                 $playerResult = Invoke-StandaloneTestPlayer `
                     -EditorBuiltExePath $standaloneExe `
@@ -8497,6 +8527,7 @@ try {
             } finally {
                 $env:DXM_PAIRED_BATCH_ORDER = $priorBatchOrder
                 $env:DXM_PILOT_CPU_WORK_PER_BATCH = $priorPilotWork
+                $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = $priorPilotWorkVector
             }
 
             # A watchdog timeout is fatal ONLY when the player wrote no results. If
@@ -8561,7 +8592,8 @@ try {
                         processId = $playerResult.ProcessId
                         processorAffinityMask = $playerResult.ProcessorAffinityMask
                         batchOrder = if ($pilotBatchOrders.Count -gt 0) { $pilotBatchOrders[$playerRunIndex - 1] } else { $null }
-                        pilotCpuWorkIterationsPerBatch = if ($pilotBatchOrders.Count -gt 0) { $StandalonePilotCpuWorkIterationsPerBatch } else { $null }
+                        pilotCpuWorkIterationsPerBatch = if ($pilotBatchOrders.Count -gt 0 -and -not $pilotWorkVector) { $StandalonePilotCpuWorkIterationsPerBatch } else { $null }
+                        pilotCpuWorkByScenario = $pilotWorkVector
                         timedOut = $playerResult.TimedOut
                     })
             }

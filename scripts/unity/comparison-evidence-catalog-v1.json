@@ -3,7 +3,7 @@
     "dxBridge": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
-      "sha256": "cd419a1fcf822018646dde1a41b08bbbc70361629342069c1f225b04d07379d2"
+      "sha256": "d852b1e7833dc865a78dcb31c666df34ac18c9175a4faafab14c60c2b014905b"
     },
     "mpBridge": {
       "origin": "repository",
