@@ -7515,6 +7515,33 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion -Path $C
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
+$pilotBuildInvocationId = $null
+$pilotSourceCommit = $null
+$pilotSourceTree = $null
+if ($pilotBatchOrders.Count -gt 0) {
+    $pilotProjectPath = if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
+        [System.IO.Path]::Combine($RepoRoot, '.artifacts', 'u', "$UnityVersion-$TestMode")
+    } else {
+        Resolve-FullPath -Path $ProjectPath
+    }
+    if (Test-Path -LiteralPath $pilotProjectPath) {
+        throw "Pilot clean build requires a previously absent Unity project path: $pilotProjectPath"
+    }
+    $trackedChanges = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+    if ($LASTEXITCODE -ne 0 -or $trackedChanges.Count -ne 0) {
+        throw 'Pilot build requires a clean tracked source checkout.'
+    }
+    $pilotSourceCommit = [string](& git -C $RepoRoot rev-parse HEAD)
+    if ($LASTEXITCODE -ne 0 -or $pilotSourceCommit -notmatch '^[0-9a-f]{40}$') {
+        throw 'Pilot build could not resolve its source commit.'
+    }
+    $pilotSourceTree = [string](& git -C $RepoRoot rev-parse 'HEAD^{tree}')
+    if ($LASTEXITCODE -ne 0 -or $pilotSourceTree -notmatch '^[0-9a-f]{40}$') {
+        throw 'Pilot build could not resolve its source tree.'
+    }
+    $pilotBuildInvocationId = [guid]::NewGuid().ToString('D')
+}
+
 $ProjectPath = Initialize-EphemeralProject `
     -Root $RepoRoot `
     -Version $UnityVersion `
@@ -8340,6 +8367,27 @@ try {
             $comparisonSourcesAfter['playerDirectoryManifest'] = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
             $comparisonSourcesAfter['runs'] = @()
             Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'comparison-source-evidence.json') -Value $comparisonSourcesAfter
+        }
+
+        if ($pilotBatchOrders.Count -gt 0) {
+            $pilotBuildFinishedUtc = [DateTime]::UtcNow
+            $pilotPlayerManifest = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'pilot-build-evidence.json') -Value ([ordered]@{
+                    schemaVersion = 1
+                    buildInvocationId = $pilotBuildInvocationId
+                    sourceCommit = $pilotSourceCommit
+                    sourceTree = $pilotSourceTree
+                    projectWasAbsentBefore = $true
+                    projectPathSha256 = Get-StringSha256 -Value $ProjectPath
+                    unityVersion = $UnityVersion
+                    canonicalProfileId = $canonicalProfileId
+                    canonicalProfileSha256 = $canonicalProfileSha256
+                    buildStartedUtc = $standaloneBuildStartedUtc.ToString('O')
+                    buildFinishedUtc = $pilotBuildFinishedUtc.ToString('O')
+                    buildWallClockSeconds = ($pilotBuildFinishedUtc - $standaloneBuildStartedUtc).TotalSeconds
+                    buildLogSha256 = (Get-FileHash -LiteralPath $logPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    playerDirectoryManifest = $pilotPlayerManifest
+                })
         }
 
         # (2b) RUN the built exe directly (no PlayerConnection), under the watchdog.

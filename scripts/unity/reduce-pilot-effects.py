@@ -76,7 +76,7 @@ def reduce(schedule, assignments, builds):
         require(isinstance(build_id, str) and build_id and build_id not in seen_builds, "shared or missing build identity")
         seen_builds.add(build_id)
         source_tree = build.get("sourceTree")
-        require(isinstance(source_tree, str) and re.fullmatch(r"[0-9a-f]{64}", source_tree), "missing source tree")
+        require(isinstance(source_tree, str) and re.fullmatch(r"[0-9a-f]{40}", source_tree), "missing source tree")
         source_trees.add(source_tree)
         launches = build.get("launches")
         require(isinstance(launches, list) and len(launches) == 5, "build requires five launches")

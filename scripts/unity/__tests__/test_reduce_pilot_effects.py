@@ -49,7 +49,7 @@ def fixture():
                             "unitId": unit_id,
                             "slot": slot,
                             "buildId": f"{unit_id}-{slot}",
-                            "sourceTree": "a" * 64,
+                            "sourceTree": "a" * 40,
                             "launches": launches,
                         }
                     )
@@ -111,7 +111,7 @@ class PilotReducerTests(unittest.TestCase):
 
     def test_rejects_source_mismatch(self):
         schedule, assignments, builds = fixture()
-        builds[0]["sourceTree"] = "b" * 64
+        builds[0]["sourceTree"] = "b" * 40
         with self.assertRaisesRegex(ValueError, "source tree mismatch"):
             PILOT.reduce(schedule, assignments, builds)
 
