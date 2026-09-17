@@ -157,6 +157,46 @@ class PilotReducerTests(unittest.TestCase):
             PILOT.pilot_intervals(effects)
 
 
+class EliBudgetLedgerTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.runs = []
+        self.snapshots = []
+        for index, runner in enumerate(("ELI-MACHINE", "DAD-MACHINE"), 1):
+            run = {"id": 100 + index, "name": "Runner Audit (Windows)", "event": "workflow_dispatch", "status": "completed", "created_at": f"2026-09-17T00:0{index}:00Z", "head_sha": "a" * 40}
+            self.runs.append(run)
+            job = {"id": 200 + index, "run_id": run["id"], "head_sha": run["head_sha"], "status": "completed", "conclusion": "failure" if index == 1 else "success", "runner_name": runner, "started_at": f"2026-09-17T00:0{index}:00Z", "completed_at": f"2026-09-17T00:0{index}:40Z"}
+            path = self.root / f"jobs-{index}.json"
+            path.write_text(json.dumps({"total_count": 1, "jobs": [job]}))
+            self.snapshots.append({"runId": run["id"], "path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+        self.pages = []
+        for index, run in enumerate(self.runs, 1):
+            path = self.root / f"runs-{index}.json"
+            path.write_text(json.dumps({"total_count": 2, "workflow_runs": [run]}))
+            self.pages.append({"page": index, "path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+        self.ledger = {"schemaVersion": 1, "purpose": "510-serialized-eli-budget", "workflowRunPages": self.pages, "jobSnapshots": self.snapshots}
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def test_complete_pages_count_failed_eli_job(self):
+        result = PILOT.validate_eli_budget(self.ledger, self.root)
+        self.assertEqual(result["workflowRunCount"], 2)
+        self.assertEqual(result["totalSeconds"], 40)
+        self.assertEqual(result["eliJobs"][0]["conclusion"], "failure")
+
+    def test_missing_or_changed_snapshot_cannot_understate_budget(self):
+        self.ledger["jobSnapshots"] = self.snapshots[:-1]
+        with self.assertRaisesRegex(ValueError, "incomplete ELI workflow run index"):
+            PILOT.validate_eli_budget(self.ledger, self.root)
+        self.ledger["jobSnapshots"] = self.snapshots
+        path = self.root / self.snapshots[0]["path"]
+        path.write_text(path.read_text() + " ")
+        with self.assertRaisesRegex(ValueError, "ELI job snapshot SHA-256 drift"):
+            PILOT.validate_eli_budget(self.ledger, self.root)
+
+
 class PilotArtifactPreflightTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -403,7 +443,7 @@ class PilotArtifactPreflightTests(unittest.TestCase):
         try:
             work = {condition: {scenario: 0 if condition == "AA" else (index + 1) * 10 for scenario in PILOT.TARGET_ORDER} for index, condition in enumerate(conditions)}
             calibration_bytes = json.dumps({"schemaVersion": 1, "purpose": "control-only-work-calibration", "targets": {scenario: {"proposedIterations": {condition: work[condition][scenario] for condition in ("P03", "P05", "P10")}} for scenario in PILOT.TARGET_ORDER}}).encode()
-            confirmation_bytes = json.dumps({"schemaVersion": 1, "purpose": "510-independent-physical-control-confirmation", "passesPhysicalSanity": True, "sourceCommit": self.commit, "sourceTree": "b" * 40, "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "analyzerSourceSha256": hashlib.sha256(PILOT.CONFIRMATION_PATH.read_bytes()).hexdigest(), "pilotReducerSourceSha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(), "extractorSourceSha256": hashlib.sha256(PILOT.EXTRACTOR_PATH.read_bytes()).hexdigest()}).encode()
+            confirmation_bytes = json.dumps({"schemaVersion": 1, "purpose": "510-independent-physical-control-confirmation", "passesPhysicalSanity": True, "sourceCommit": self.commit, "sourceTree": "b" * 40, "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "analyzerSourceSha256": hashlib.sha256(PILOT.CONFIRMATION_PATH.read_bytes()).hexdigest(), "pilotReducerSourceSha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(), "extractorSourceSha256": hashlib.sha256(PILOT.EXTRACTOR_PATH.read_bytes()).hexdigest(), "eliBudgetLedgerSha256": "e" * 64, "totalSerializedEliSeconds": 500}).encode()
             settings = {"schemaVersion": 1, "purpose": "510-pilot-work-settings", "scheduleSha256": PILOT.SCHEDULE_SHA256, "sourceCommit": self.commit, "sourceTree": "b" * 40, "serializedEliSecondsBeforePilot": 600, "reducerSha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(), "extractorSha256": hashlib.sha256(PILOT.EXTRACTOR_PATH.read_bytes()).hexdigest(), "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "physicalConfirmationSha256": hashlib.sha256(confirmation_bytes).hexdigest(), "workByCondition": work}
             conditions_by_unit = {assignment["unitId"]: assignment["condition"] for assignment in assignments}
             zero = {scenario: 0 for scenario in PILOT.TARGET_ORDER}
@@ -418,32 +458,40 @@ class PilotArtifactPreflightTests(unittest.TestCase):
                 self.write_artifact(path, build_index, scheduled, work=vector, multiplier=multiplier)
                 entry["artifactSha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             validity = self.preflight()
-            report = PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root)
+            budget = {"totalSeconds": int(600 + validity["pilotJobSeconds"]), "eliJobs": [{"runId": build["workflowRunId"], "jobId": build["workflowJobId"], "seconds": build["jobSeconds"]} for build in validity["builds"]]}
+            report = PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root, budget, "e" * 64)
             self.assertEqual(len(report["effects"]["P05"]["GlobalToOne"]), 6)
             self.assertAlmostEqual(report["intervals"]["P05"]["GlobalToOne"]["meanLogEffect"], math.log(1.05))
             self.assertTrue(report["intervals"]["P05"]["GlobalToOne"]["aboveThreePercent"])
+            incomplete_budget = {**budget, "eliJobs": budget["eliJobs"][:-1]}
+            with self.assertRaisesRegex(ValueError, "pilot jobs missing from ELI budget"):
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root, incomplete_budget, "e" * 64)
             failed_confirmation = json.loads(confirmation_bytes)
             failed_confirmation["passesPhysicalSanity"] = False
             failed_bytes = json.dumps(failed_confirmation).encode()
             failed_settings = {**settings, "physicalConfirmationSha256": hashlib.sha256(failed_bytes).hexdigest()}
             with self.assertRaisesRegex(ValueError, "physical control confirmation did not pass"):
-                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, failed_settings, calibration_bytes, failed_bytes, self.commit, self.root)
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, failed_settings, calibration_bytes, failed_bytes, self.commit, self.root, budget, "e" * 64)
             invalid_validity = json.loads(json.dumps(validity))
             invalid_validity["builds"][0]["sourceTree"] = "f" * 40
             with self.assertRaisesRegex(ValueError, "sealed arm-blind validity manifest drift"):
-                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, invalid_validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root)
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, invalid_validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root, budget, "e" * 64)
             with self.assertRaisesRegex(ValueError, "sealed assignment key SHA-256 drift"):
-                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes + b" ", settings, calibration_bytes, confirmation_bytes, self.commit, self.root)
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes + b" ", settings, calibration_bytes, confirmation_bytes, self.commit, self.root, budget, "e" * 64)
             with self.assertRaisesRegex(ValueError, "physical control evidence hash drift"):
-                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes + b" ", self.commit, self.root)
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes + b" ", self.commit, self.root, budget, "e" * 64)
             settings["serializedEliSecondsBeforePilot"] = 54_000
+            with self.assertRaisesRegex(ValueError, "pre-pilot ELI subtotal drift"):
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root, budget, "e" * 64)
+            settings["serializedEliSecondsBeforePilot"] = 54_001 - validity["pilotJobSeconds"]
+            over_budget = {**budget, "totalSeconds": 54_001}
             with self.assertRaisesRegex(ValueError, "approved serialized ELI time cap exceeded"):
-                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root)
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root, over_budget, "e" * 64)
             settings["serializedEliSecondsBeforePilot"] = 600
             self.edit_member(0, "same-player-repeats/same-player-evidence.json", lambda same: same["runs"][0]["pilotCpuWorkByScenario"].update(GlobalToOne=999))
             changed_validity = self.preflight()
             with self.assertRaisesRegex(ValueError, "pilot vector assignment drift"):
-                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, changed_validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root)
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, changed_validity, key_bytes, settings, calibration_bytes, confirmation_bytes, self.commit, self.root, budget, "e" * 64)
         finally:
             PILOT.SCHEDULE_SHA256 = original_sha
 

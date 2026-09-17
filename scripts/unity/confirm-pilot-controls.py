@@ -4,6 +4,8 @@
 The manifest lists six artifact and job-evidence commitments in the fixed
 P03 B/A, P05 A/B, P10 B/A order. All six are validated before raw paired
 ratios are extracted. The output is descriptive, with no interval claim.
+The budget ledger contains complete raw Actions workflow/job snapshots through
+the final confirmation job.
 """
 
 import argparse
@@ -34,11 +36,12 @@ def module_from(path, name):
     return module
 
 
-def confirmation(manifest, calibration_bytes, expected_commit, base_path, spent_before_seconds):
+def confirmation(manifest, calibration_bytes, expected_commit, base_path, budget, budget_sha):
     reducer = module_from(REDUCER_PATH, "pilot_effects")
     extractor = module_from(EXTRACTOR_PATH, "pilot_extractor")
     require = reducer.require
-    require(type(spent_before_seconds) in (int, float) and math.isfinite(spent_before_seconds) and 0 <= spent_before_seconds, "invalid pre-confirmation ELI time")
+    require(isinstance(budget, dict) and type(budget.get("totalSeconds")) is int and isinstance(budget.get("eliJobs"), list), "validated ELI budget required")
+    require(isinstance(budget_sha, str) and len(budget_sha) == 64, "ELI budget SHA-256 required")
     require(isinstance(manifest, dict) and manifest.get("schemaVersion") == 1 and manifest.get("purpose") == "510-independent-physical-control-confirmation", "confirmation manifest drift")
     entries = manifest.get("builds")
     require(isinstance(entries, list) and len(entries) == 6, "confirmation requires six fresh builds")
@@ -103,7 +106,10 @@ def confirmation(manifest, calibration_bytes, expected_commit, base_path, spent_
         inspected.append({"condition": condition, "arm": arm, "artifactPath": path, "artifactSha256": artifact_sha, "jobEvidenceSha256": job_sha, **build, **job})
     require(len(trees) == 1, "confirmation source tree drift")
     require(next(iter(trees)) == next(iter(calibration_builds.values()))["sourceTree"], "confirmation/calibration source tree drift")
-    require(spent_before_seconds + total_job_seconds <= 54_000, "approved serialized ELI time cap exceeded")
+    budget_jobs = {job["jobId"]: job for job in budget["eliJobs"]}
+    require(all(build["workflowJobId"] in budget_jobs and budget_jobs[build["workflowJobId"]]["runId"] == build["workflowRunId"] and budget_jobs[build["workflowJobId"]]["seconds"] == build["jobSeconds"] for build in inspected), "confirmation jobs missing from ELI budget")
+    spent_before_seconds = budget["totalSeconds"] - total_job_seconds
+    require(spent_before_seconds >= 0 and budget["totalSeconds"] <= 54_000, "approved serialized ELI time cap exceeded")
 
     platforms = set()
     values = {}
@@ -135,7 +141,7 @@ def confirmation(manifest, calibration_bytes, expected_commit, base_path, spent_
         targets_pass = all(effect > {"P03": math.log(0.97), "P05": 0.0, "P10": math.log(1.03)}[condition] for effect in effects.values())
         sentinels_pass = all(math.log(0.97) < effect < math.log(1.03) for effect in sentinel_differences.values())
         results[condition] = {"proposedWork": proposals[condition], "targetLogEffects": effects, "sentinelLogDifferences": sentinel_differences, "targetsPass": targets_pass, "sentinelsPass": sentinels_pass}
-    return {"schemaVersion": 1, "purpose": "510-independent-physical-control-confirmation", "sourceCommit": expected_commit, "sourceTree": next(iter(trees)), "platform": next(iter(platforms)), "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "analyzerSourceSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "pilotReducerSourceSha256": hashlib.sha256(REDUCER_PATH.read_bytes()).hexdigest(), "extractorSourceSha256": hashlib.sha256(EXTRACTOR_PATH.read_bytes()).hexdigest(), "spentBeforeSeconds": spent_before_seconds, "confirmationJobSeconds": total_job_seconds, "totalSerializedEliSeconds": spent_before_seconds + total_job_seconds, "builds": [{key: value for key, value in build.items() if key != "artifactPath"} for build in inspected], "conditions": results, "passesPhysicalSanity": all(row["targetsPass"] and row["sentinelsPass"] for row in results.values())}
+    return {"schemaVersion": 1, "purpose": "510-independent-physical-control-confirmation", "sourceCommit": expected_commit, "sourceTree": next(iter(trees)), "platform": next(iter(platforms)), "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "analyzerSourceSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "pilotReducerSourceSha256": hashlib.sha256(REDUCER_PATH.read_bytes()).hexdigest(), "extractorSourceSha256": hashlib.sha256(EXTRACTOR_PATH.read_bytes()).hexdigest(), "eliBudgetLedgerSha256": budget_sha, "spentBeforeSeconds": spent_before_seconds, "confirmationJobSeconds": total_job_seconds, "totalSerializedEliSeconds": budget["totalSeconds"], "builds": [{key: value for key, value in build.items() if key != "artifactPath"} for build in inspected], "conditions": results, "passesPhysicalSanity": all(row["targetsPass"] and row["sentinelsPass"] for row in results.values())}
 
 
 def main():
@@ -143,13 +149,15 @@ def main():
     parser.add_argument("--artifact-manifest", type=Path, required=True)
     parser.add_argument("--calibration-report", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
-    parser.add_argument("--spent-before-seconds", type=float, required=True)
+    parser.add_argument("--budget-ledger", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
         reducer = module_from(REDUCER_PATH, "pilot_effects")
         manifest = json.loads(args.artifact_manifest.read_bytes(), object_pairs_hook=reducer.unique_json)
-        report = confirmation(manifest, args.calibration_report.read_bytes(), args.expected_commit, args.artifact_manifest.parent, args.spent_before_seconds)
+        budget_bytes = args.budget_ledger.read_bytes()
+        budget = reducer.validate_eli_budget(json.loads(budget_bytes, object_pairs_hook=reducer.unique_json), args.budget_ledger.parent)
+        report = confirmation(manifest, args.calibration_report.read_bytes(), args.expected_commit, args.artifact_manifest.parent, budget, hashlib.sha256(budget_bytes).hexdigest())
         with args.output.open("x", encoding="utf-8") as output:
             output.write(json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n")
     except (OSError, ValueError, TypeError, KeyError, ET.ParseError, zipfile.BadZipFile) as error:

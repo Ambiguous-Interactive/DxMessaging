@@ -11,7 +11,8 @@ the job JSON is the raw GitHub Actions jobs/{job_id} response.
 Run --preflight first and seal its output. --analyze requires that exact output,
 the sealed assignment key, and work settings pinned to the final source tree,
 calibration, physical confirmation, analysis source hashes, and audited ELI
-time spent before the pilot.
+time spent before the pilot. Analysis also requires a complete raw Actions
+workflow/job ledger through the last pilot build for the 15-hour cap.
 """
 
 import argparse
@@ -99,6 +100,56 @@ def checked_member(name, prefix=None):
     if prefix is not None:
         require(name.startswith(prefix) and len(name) > len(prefix), "unexpected archive member path")
     return name
+
+
+def validate_eli_budget(ledger, base_path):
+    """Sum every ELI job in complete raw Actions run/job snapshots since approval."""
+    require(isinstance(ledger, dict) and ledger.get("schemaVersion") == 1 and ledger.get("purpose") == "510-serialized-eli-budget", "ELI budget ledger drift")
+    pages = ledger.get("workflowRunPages")
+    snapshots = ledger.get("jobSnapshots")
+    require(isinstance(pages, list) and pages and isinstance(snapshots, list) and snapshots, "ELI budget snapshots missing")
+    runs = {}
+    expected_count = None
+    for page_number, entry in enumerate(pages, 1):
+        require(isinstance(entry, dict) and entry.get("page") == page_number, "ELI workflow page order drift")
+        path = base_path / checked_member(entry.get("path"))
+        require(re.fullmatch(r"[0-9a-f]{64}", entry.get("sha256", "")) and sha256_file(path) == entry["sha256"], "ELI workflow page SHA-256 drift")
+        page = json.loads(path.read_bytes(), object_pairs_hook=unique_json)
+        require(isinstance(page, dict) and type(page.get("total_count")) is int and isinstance(page.get("workflow_runs"), list), "malformed ELI workflow page")
+        require(expected_count is None or expected_count == page["total_count"], "ELI workflow page count drift")
+        expected_count = page["total_count"]
+        for run in page["workflow_runs"]:
+            require(isinstance(run, dict) and type(run.get("id")) is int and run["id"] not in runs, "duplicate ELI workflow run")
+            require(run.get("event") == "workflow_dispatch" and run.get("name") == "Runner Audit (Windows)" and run.get("status") == "completed", "ELI workflow provenance drift")
+            require(utc_time(run.get("created_at"), "workflow.created_at") >= utc_time("2026-09-16T17:24:16Z", "approval"), "ELI workflow predates approval")
+            runs[run["id"]] = run
+    require(len(runs) == expected_count and len(snapshots) == expected_count, "incomplete ELI workflow run index")
+    seen_runs = set()
+    eli_jobs = []
+    for entry in snapshots:
+        require(isinstance(entry, dict) and type(entry.get("runId")) is int and entry["runId"] in runs and entry["runId"] not in seen_runs, "ELI job snapshot run drift")
+        seen_runs.add(entry["runId"])
+        path = base_path / checked_member(entry.get("path"))
+        require(re.fullmatch(r"[0-9a-f]{64}", entry.get("sha256", "")) and sha256_file(path) == entry["sha256"], "ELI job snapshot SHA-256 drift")
+        snapshot = json.loads(path.read_bytes(), object_pairs_hook=unique_json)
+        jobs = snapshot.get("jobs") if isinstance(snapshot, dict) else None
+        require(isinstance(jobs, list) and snapshot.get("total_count") == len(jobs), "incomplete ELI job snapshot")
+        for job in jobs:
+            require(isinstance(job, dict) and job.get("run_id") == entry["runId"] and job.get("head_sha") == runs[entry["runId"]].get("head_sha"), "ELI job source drift")
+            require(job.get("status") == "completed", "unfinished ELI job snapshot")
+            if job.get("runner_name") != "ELI-MACHINE":
+                continue
+            started = utc_time(job.get("started_at"), "ELI job.started_at")
+            completed = utc_time(job.get("completed_at"), "ELI job.completed_at")
+            require(started < completed and type(job.get("id")) is int and job["id"] > 0, "invalid ELI job duration or ID")
+            eli_jobs.append({"runId": entry["runId"], "jobId": job["id"], "startedUtc": job["started_at"], "completedUtc": job["completed_at"], "seconds": math.ceil((completed - started).total_seconds()), "conclusion": job.get("conclusion")})
+    require(seen_runs == runs.keys(), "missing ELI job snapshot")
+    eli_jobs.sort(key=lambda job: (job["startedUtc"], job["jobId"]))
+    require(len({job["jobId"] for job in eli_jobs}) == len(eli_jobs), "duplicate ELI job ID")
+    require(all(left["completedUtc"] <= right["startedUtc"] for left, right in zip(eli_jobs, eli_jobs[1:])), "overlapping ELI jobs")
+    total_seconds = sum(job["seconds"] for job in eli_jobs)
+    require(total_seconds <= 54_000, "approved serialized ELI time cap exceeded")
+    return {"totalSeconds": total_seconds, "workflowRunCount": len(runs), "eliJobs": eli_jobs}
 
 
 def paired_cases_valid(xml_bytes, expected_order):
@@ -267,6 +318,7 @@ def validate_work_settings(settings, expected_commit, source_tree, calibration_b
     require(isinstance(confirmation, dict) and confirmation.get("schemaVersion") == 1 and confirmation.get("purpose") == "510-independent-physical-control-confirmation" and confirmation.get("passesPhysicalSanity") is True, "physical control confirmation did not pass")
     require(confirmation.get("sourceCommit") == expected_commit and confirmation.get("sourceTree") == source_tree and confirmation.get("calibrationReportSha256") == settings["calibrationReportSha256"], "physical control provenance drift")
     require(confirmation.get("analyzerSourceSha256") == sha256_file(CONFIRMATION_PATH) and confirmation.get("pilotReducerSourceSha256") == source_sha and confirmation.get("extractorSourceSha256") == extractor_sha, "physical control analysis source drift")
+    require(re.fullmatch(r"[0-9a-f]{64}", confirmation.get("eliBudgetLedgerSha256", "")) and type(confirmation.get("totalSerializedEliSeconds")) is int and confirmation["totalSerializedEliSeconds"] <= prior_seconds, "physical control ELI budget drift")
     vectors = settings.get("workByCondition")
     require(isinstance(vectors, dict) and vectors.keys() == CONDITIONS, "pilot work condition set drift")
     for condition, vector in vectors.items():
@@ -283,7 +335,7 @@ def validate_work_settings(settings, expected_commit, source_tree, calibration_b
     return vectors
 
 
-def analyze_artifacts(schedule_bytes, manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, expected_commit, base_path):
+def analyze_artifacts(schedule_bytes, manifest, validity, key_bytes, settings, calibration_bytes, confirmation_bytes, expected_commit, base_path, budget, budget_sha):
     verified = preflight(schedule_bytes, manifest, expected_commit, base_path)
     require(isinstance(validity, dict), "sealed validity manifest must be an object")
     require(verified == validity, "sealed arm-blind validity manifest drift")
@@ -295,7 +347,11 @@ def analyze_artifacts(schedule_bytes, manifest, validity, key_bytes, settings, c
     assignments = key.get("assignments")
     require(isinstance(assignments, list) and len(assignments) == 24, "pilot assignment count drift")
     vectors = validate_work_settings(settings, expected_commit, validity["sourceTree"], calibration_bytes, confirmation_bytes)
-    require(settings["serializedEliSecondsBeforePilot"] + validity["pilotJobSeconds"] <= schedule["hardSerializedRunnerSeconds"], "approved serialized ELI time cap exceeded")
+    require(isinstance(budget, dict) and type(budget.get("totalSeconds")) is int and isinstance(budget.get("eliJobs"), list) and re.fullmatch(r"[0-9a-f]{64}", budget_sha), "validated ELI budget required")
+    budget_jobs = {job["jobId"]: job for job in budget["eliJobs"]}
+    require(all(build["workflowJobId"] in budget_jobs and budget_jobs[build["workflowJobId"]]["runId"] == build["workflowRunId"] and budget_jobs[build["workflowJobId"]]["seconds"] == build["jobSeconds"] for build in validity["builds"]), "pilot jobs missing from ELI budget")
+    require(settings["serializedEliSecondsBeforePilot"] + validity["pilotJobSeconds"] == budget["totalSeconds"], "pre-pilot ELI subtotal drift")
+    require(budget["totalSeconds"] <= schedule["hardSerializedRunnerSeconds"], "approved serialized ELI time cap exceeded")
     spec = importlib.util.spec_from_file_location("pilot_paired_extractor", EXTRACTOR_PATH)
     extractor = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(extractor)
@@ -324,7 +380,7 @@ def analyze_artifacts(schedule_bytes, manifest, validity, key_bytes, settings, c
     require(len(platforms) == 1, "pilot platform drift")
     effects = reduce(schedule["units"], assignments, builds)
     intervals = pilot_intervals(effects)
-    return {"schemaVersion": 1, "purpose": "510-pilot-hierarchical-effects", "sourceCommit": expected_commit, "sourceTree": validity["sourceTree"], "platform": next(iter(platforms)), "serializedEliSecondsTotal": settings["serializedEliSecondsBeforePilot"] + validity["pilotJobSeconds"], "serializedEliSecondsCap": schedule["hardSerializedRunnerSeconds"], "validityManifestCanonicalSha256": hashlib.sha256(json.dumps(validity, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), "assignmentKeySha256": schedule["assignmentKeySha256"], "workSettingsCanonicalSha256": hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), "effects": effects, "intervals": intervals}
+    return {"schemaVersion": 1, "purpose": "510-pilot-hierarchical-effects", "sourceCommit": expected_commit, "sourceTree": validity["sourceTree"], "platform": next(iter(platforms)), "serializedEliSecondsTotal": budget["totalSeconds"], "serializedEliSecondsCap": schedule["hardSerializedRunnerSeconds"], "eliBudgetLedgerSha256": budget_sha, "validityManifestCanonicalSha256": hashlib.sha256(json.dumps(validity, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), "assignmentKeySha256": schedule["assignmentKeySha256"], "workSettingsCanonicalSha256": hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), "effects": effects, "intervals": intervals}
 
 
 def launch_effects(ratios):
@@ -469,19 +525,22 @@ def main():
     parser.add_argument("--work-settings", type=Path)
     parser.add_argument("--calibration-report", type=Path)
     parser.add_argument("--physical-confirmation-report", type=Path)
+    parser.add_argument("--budget-ledger", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
         manifest = json.loads(args.artifact_manifest.read_bytes(), object_pairs_hook=unique_json)
         schedule_bytes = args.schedule.read_bytes()
         if args.preflight:
-            require(not any((args.validity_manifest, args.assignment_key, args.work_settings, args.calibration_report, args.physical_confirmation_report)), "preflight must not read assignment or analysis inputs")
+            require(not any((args.validity_manifest, args.assignment_key, args.work_settings, args.calibration_report, args.physical_confirmation_report, args.budget_ledger)), "preflight must not read assignment or analysis inputs")
             report = preflight(schedule_bytes, manifest, args.expected_commit, args.artifact_manifest.parent)
         else:
-            require(all((args.validity_manifest, args.assignment_key, args.work_settings, args.calibration_report, args.physical_confirmation_report)), "analysis requires sealed validity, assignment key, work settings, and physical control reports")
+            require(all((args.validity_manifest, args.assignment_key, args.work_settings, args.calibration_report, args.physical_confirmation_report, args.budget_ledger)), "analysis requires sealed validity, assignment key, work settings, physical control reports, and budget ledger")
             validity = json.loads(args.validity_manifest.read_bytes(), object_pairs_hook=unique_json)
             settings = json.loads(args.work_settings.read_bytes(), object_pairs_hook=unique_json)
-            report = analyze_artifacts(schedule_bytes, manifest, validity, args.assignment_key.read_bytes(), settings, args.calibration_report.read_bytes(), args.physical_confirmation_report.read_bytes(), args.expected_commit, args.artifact_manifest.parent)
+            budget_bytes = args.budget_ledger.read_bytes()
+            budget = validate_eli_budget(json.loads(budget_bytes, object_pairs_hook=unique_json), args.budget_ledger.parent)
+            report = analyze_artifacts(schedule_bytes, manifest, validity, args.assignment_key.read_bytes(), settings, args.calibration_report.read_bytes(), args.physical_confirmation_report.read_bytes(), args.expected_commit, args.artifact_manifest.parent, budget, hashlib.sha256(budget_bytes).hexdigest())
         with args.output.open("x", encoding="utf-8") as output:
             output.write(json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n")
     except (OSError, ValueError, TypeError, KeyError, ET.ParseError, zipfile.BadZipFile) as error:
