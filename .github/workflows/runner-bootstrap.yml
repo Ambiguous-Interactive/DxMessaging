@@ -79,6 +79,16 @@ on:
           - '32768'
           - '131072'
           - '524288'
+      perf-pilot-work-vector:
+        description: 'Optional #510 physical control or pilot: five target CPU-work integers in fixed scenario order.'
+        required: false
+        type: string
+        default: ''
+      perf-pilot-batch-orders:
+        description: 'Five comma-separated paired batch orders; custom orders require vector mode.'
+        required: false
+        type: string
+        default: 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB'
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
@@ -371,8 +381,12 @@ jobs:
           retention-days: 30
 
   pilot-contract-smoke:
-    name: Pilot IL2CPP contract, calibration, or license recovery on ELI
-    if: ${{ inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' || inputs['perf-license-recovery'] }}
+    name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
+    if: >-
+      ${{ inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+      inputs['perf-pilot-work-vector'] != '' ||
+      inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
+      inputs['perf-license-recovery'] }}
     needs:
       - runner-preflight
       - bootstrap
@@ -382,17 +396,45 @@ jobs:
       - name: Require ELI request and runner
         shell: pwsh
         timeout-minutes: 1
+        env:
+          DXM_PILOT_WORK_VECTOR: ${{ inputs['perf-pilot-work-vector'] }}
+          DXM_PILOT_BATCH_ORDERS: ${{ inputs['perf-pilot-batch-orders'] }}
         run: |
           if ('${{ inputs.runner-label }}' -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
             throw 'Pilot contract smoke requires an ELI-MACHINE request and the ELI-MACHINE runner.'
           }
-          if ('${{ inputs['perf-pilot-contract-smoke'] }}' -ceq 'true' -and '${{ inputs['perf-pilot-calibration-work'] }}' -cne 'none') {
-            throw 'Pilot contract and calibration modes are mutually exclusive.'
+          $vector = $env:DXM_PILOT_WORK_VECTOR
+          $fixedOrders = 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB'
+          $modes = @(
+            ('${{ inputs['perf-pilot-contract-smoke'] }}' -ceq 'true'),
+            ('${{ inputs['perf-pilot-calibration-work'] }}' -cne 'none'),
+            (-not [string]::IsNullOrEmpty($vector)),
+            ('${{ inputs['perf-license-recovery'] }}' -ceq 'true')
+          )
+          if ($modes[3] -and ($modes[0] -or $modes[1] -or $modes[2])) {
+            throw 'License recovery cannot launch a player.'
           }
-          if ('${{ inputs['perf-license-recovery'] }}' -ceq 'true' -and (
-            '${{ inputs['perf-pilot-contract-smoke'] }}' -ceq 'true' -or
-            '${{ inputs['perf-pilot-calibration-work'] }}' -cne 'none'
-          )) { throw 'License recovery cannot launch a player.' }
+          if (@($modes | Where-Object { $_ }).Count -ne 1) {
+            throw 'Select exactly one pilot contract, scalar calibration, vector, or license recovery mode.'
+          }
+          if (-not [string]::IsNullOrEmpty($vector)) {
+            $values = @($vector.Split(','))
+            if ($values.Count -ne 5) { throw 'Vector mode requires exactly five CPU-work values.' }
+            foreach ($value in $values) {
+              if ($value -cnotmatch '^(0|[1-9][0-9]{0,6})$' -or [int]$value -gt 1000000) {
+                throw 'Vector CPU-work values must be canonical integers from 0 through 1000000.'
+              }
+            }
+            $orders = @($env:DXM_PILOT_BATCH_ORDERS.Split(','))
+            if ($orders.Count -ne 5 -or @($orders | Where-Object { $_ -cne 'ABBABAAB' -and $_ -cne 'BAABABBA' }).Count -ne 0) {
+              throw 'Vector mode requires exactly five declared paired batch orders.'
+            }
+            if (@($orders | Where-Object { $_ -ceq 'ABBABAAB' }).Count -notin @(2, 3)) {
+              throw 'Vector mode requires a balanced two/three split of paired batch orders.'
+            }
+          } elseif ($env:DXM_PILOT_BATCH_ORDERS -cne $fixedOrders) {
+            throw 'Custom pilot batch orders require vector mode.'
+          }
 
       - name: Require manually installed Unity editor
         id: ensure_unity_editor
@@ -515,6 +557,8 @@ jobs:
         timeout-minutes: 120
         shell: pwsh
         env:
+          DXM_PILOT_WORK_VECTOR: ${{ inputs['perf-pilot-work-vector'] }}
+          DXM_PILOT_BATCH_ORDERS: ${{ inputs['perf-pilot-batch-orders'] }}
           UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -527,8 +571,14 @@ jobs:
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\6000.5.2f1'
           $calibrationWorkText = '${{ inputs['perf-pilot-calibration-work'] }}'
           $calibration = $calibrationWorkText -cne 'none'
+          $vector = $env:DXM_PILOT_WORK_VECTOR
           $work = if ($calibration) { [int]$calibrationWorkText } else { 0 }
-          $testCategory = if ($calibration) { 'PairedPerf' } else { 'ComparisonContract' }
+          $testCategory = if ($calibration -or $vector) { 'PairedPerf' } else { 'ComparisonContract' }
+          $pilotWorkParameters = if ($vector) {
+            @{ StandalonePilotCpuWorkByScenario = $vector }
+          } else {
+            @{ StandalonePilotCpuWorkIterationsPerBatch = $work }
+          }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion 6000.5.2f1 `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
@@ -541,8 +591,8 @@ jobs:
             -IncludeComparisons `
             -CanonicalProfilePath '.github/perf/canonical-il2cpp-profile.v1.json' `
             -StandalonePlayerRunCount 5 `
-            -StandalonePlayerBatchOrders 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' `
-            -StandalonePilotCpuWorkIterationsPerBatch $work `
+            -StandalonePlayerBatchOrders $env:DXM_PILOT_BATCH_ORDERS `
+            @pilotWorkParameters `
             -StandalonePlayerProcessorAffinityMask 65535 `
             -StandalonePlayerPriorityClass Normal `
             -LicenseReturnOwner Central `
@@ -550,7 +600,7 @@ jobs:
             -ReleasePlayerBuild
 
       - name: Require five contract-only player launches and valid host health
-        if: ${{ steps.run_contracts.outcome == 'success' && inputs['perf-pilot-calibration-work'] == 'none' }}
+        if: ${{ steps.run_contracts.outcome == 'success' && inputs['perf-pilot-calibration-work'] == 'none' && inputs['perf-pilot-work-vector'] == '' }}
         timeout-minutes: 2
         shell: pwsh
         run: |
@@ -574,19 +624,50 @@ jobs:
           }
           "- Pilot contract smoke: five healthy launches, no paired throughput rows; build invocation ``$($build.buildInvocationId)``." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
-      - name: Require five calibration launches with complete paired rows
-        if: ${{ steps.run_contracts.outcome == 'success' && inputs['perf-pilot-calibration-work'] != 'none' }}
+      - name: Require five control launches with complete paired rows
+        if: ${{ steps.run_contracts.outcome == 'success' && (inputs['perf-pilot-calibration-work'] != 'none' || inputs['perf-pilot-work-vector'] != '') }}
         timeout-minutes: 2
         shell: pwsh
+        env:
+          DXM_PILOT_WORK_VECTOR: ${{ inputs['perf-pilot-work-vector'] }}
+          DXM_PILOT_BATCH_ORDERS: ${{ inputs['perf-pilot-batch-orders'] }}
         run: |
           $root = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
-          $work = [int]'${{ inputs['perf-pilot-calibration-work'] }}'
+          $vector = $env:DXM_PILOT_WORK_VECTOR
+          $work = if ($vector) { $null } else { [int]'${{ inputs['perf-pilot-calibration-work'] }}' }
+          $targetScenarios = @('GlobalToOne', 'StructNoBox', 'Filtered', 'PostProcess', 'FilteredPostProcess')
+          $vectorValues = if ($vector) { @($vector.Split(',') | ForEach-Object { [int]$_ }) } else { @() }
+          $expectedOrders = @($env:DXM_PILOT_BATCH_ORDERS.Split(','))
           $evidence = Get-Content -LiteralPath (Join-Path $root 'same-player-repeats/same-player-evidence.json') -Raw | ConvertFrom-Json
           if ($evidence.runCount -ne 5 -or @($evidence.runs).Count -ne 5 -or $evidence.playerDirectoryManifestMatches -ne $true) {
             throw 'Calibration did not retain five launches of one unchanged player.'
           }
           $expectedScenarios = @('GlobalToOne', 'GlobalToMany', 'KeyedToOne', 'StructNoBox', 'Filtered', 'PostProcess', 'FilteredPostProcess')
+          $expectedRunIndex = 1
           foreach ($run in $evidence.runs) {
+            if ($run.runIndex -ne $expectedRunIndex) {
+              throw "Control launch index drift; expected $expectedRunIndex."
+            }
+            if ($run.batchOrder -cne $expectedOrders[$run.runIndex - 1]) {
+              throw "Control launch $($run.runIndex) has scheduled batch order drift."
+            }
+            if ($vector) {
+              $recordedNames = @($run.pilotCpuWorkByScenario.PSObject.Properties.Name | Sort-Object)
+              if ((@($recordedNames) -join ',') -cne (@($targetScenarios | Sort-Object) -join ',')) {
+                throw "Vector launch $($run.runIndex) lacks the complete named work assignment."
+              }
+              foreach ($index in 0..4) {
+                $name = $targetScenarios[$index]
+                if ($run.pilotCpuWorkByScenario.$name -ne $vectorValues[$index]) {
+                  throw "Vector launch $($run.runIndex) has recorded work drift for $name."
+                }
+              }
+              if ($null -ne $run.pilotCpuWorkIterationsPerBatch) {
+                throw "Vector launch $($run.runIndex) recorded scalar work."
+              }
+            } elseif ($run.pilotCpuWorkIterationsPerBatch -ne $work) {
+              throw "Calibration launch $($run.runIndex) has recorded scalar work drift."
+            }
             $health = Get-Content -LiteralPath (Join-Path $root "same-player-repeats/$($run.hostTelemetryHealthFile)") -Raw | ConvertFrom-Json
             if ($health.valid -ne $true -or @($health.reasons).Count -ne 0) {
               throw "Calibration host health failed on launch $($run.runIndex)."
@@ -611,17 +692,23 @@ jobs:
               throw "Calibration launch $($run.runIndex) lacks exactly seven distinct paired rows."
             }
             foreach ($row in $rows) {
-              $expectedWork = if ($row.scenario -in @('GlobalToMany', 'KeyedToOne')) { 0 } else { $work }
+              $expectedWork = if ($row.scenario -in @('GlobalToMany', 'KeyedToOne')) {
+                0
+              } elseif ($vector) {
+                $vectorValues[[array]::IndexOf($targetScenarios, $row.scenario)]
+              } else { $work }
               if ($row.batchOrder -cne $run.batchOrder -or $row.pilotCpuWorkIterationsPerBatch -ne $expectedWork) {
-                throw "Calibration launch $($run.runIndex) has order or target-only work drift."
+                throw "Control launch $($run.runIndex) has order or target-only work drift."
               }
             }
+            $expectedRunIndex++
           }
           $build = Get-Content -LiteralPath (Join-Path $root 'pilot-build-evidence.json') -Raw | ConvertFrom-Json
           if ($build.projectWasAbsentBefore -ne $true -or $build.sourceCommit -cne '${{ github.sha }}') {
             throw 'Calibration build provenance does not match the checked-out source.'
           }
-          $summary = "- Pilot control calibration: work level $work, five healthy paired launches, " +
+          $setting = if ($vector) { 'per-scenario target vector' } else { "work level $work" }
+          $summary = "- Pilot control run: $setting, five healthy paired launches, " +
             "one clean build; build invocation ``$($build.buildInvocationId)``. No rate interpreted in this job."
           $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
