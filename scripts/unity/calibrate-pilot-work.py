@@ -26,6 +26,7 @@ SENTINELS = ("GlobalToMany", "KeyedToOne")
 TRUTH_RATIOS = {"P03": 1.03, "P05": 1.05, "P10": 1.10}
 ORDERS = ("ABBABAAB", "BAABABBA")
 EXTRACTOR_PATH = Path(__file__).with_name("extract-pilot-paired.py")
+PILOT_REDUCER_PATH = Path(__file__).with_name("reduce-pilot-effects.py")
 
 
 def require(condition, message):
@@ -50,6 +51,57 @@ def load_extractor():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_pilot_reducer():
+    spec = importlib.util.spec_from_file_location("pilot_effects", PILOT_REDUCER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def preflight(manifest, expected_commit, base_path):
+    """Validate all six builds and terminal jobs before opening paired rates."""
+    pilot = load_pilot_reducer()
+    require(isinstance(manifest, dict) and manifest.get("schemaVersion") == 1 and manifest.get("purpose") == "510-control-only-work-calibration-evidence", "calibration evidence manifest drift")
+    entries = manifest.get("builds")
+    require(isinstance(entries, list) and len(entries) == 6, "six calibration artifact and job commitments required")
+    profile_sha = pilot.sha256_file(pilot.PROFILE_PATH)
+    collector_sha = pilot.sha256_file(pilot.COLLECTOR_PATH)
+    fixed_orders = (ORDERS[0], ORDERS[1], ORDERS[0], ORDERS[1], ORDERS[0])
+    artifacts = {}
+    jobs = {}
+    seen_builds = set()
+    seen_runs = set()
+    seen_jobs = set()
+    trees = set()
+    previous_job_end = None
+    for entry, level in zip(entries, DISPATCH_ORDER):
+        require(isinstance(entry, dict) and type(entry.get("work")) is int and entry["work"] == level, "calibration dispatch order drift")
+        path = base_path / pilot.checked_member(entry.get("artifactPath"))
+        job_path = base_path / pilot.checked_member(entry.get("jobEvidencePath"))
+        artifact_sha = entry.get("artifactSha256")
+        job_sha = entry.get("jobEvidenceSha256")
+        require(isinstance(artifact_sha, str) and re.fullmatch(r"[0-9a-f]{64}", artifact_sha) and isinstance(job_sha, str) and re.fullmatch(r"[0-9a-f]{64}", job_sha), "calibration evidence SHA-256 missing")
+        build = pilot.inspect_pilot_zip(path, artifact_sha, expected_commit, fixed_orders, profile_sha, collector_sha)
+        with zipfile.ZipFile(path) as archive:
+            same = pilot.read_json(archive, "same-player-repeats/same-player-evidence.json")
+            require(all(run.get("pilotCpuWorkIterationsPerBatch") == level and run.get("pilotCpuWorkByScenario") is None for run in same["runs"]), "calibration scalar work drift")
+        run_id = entry.get("workflowRunId")
+        require(type(run_id) is int and run_id > 0 and run_id not in seen_runs, "reused calibration workflow run")
+        job = pilot.inspect_workflow_job(job_path, job_sha, run_id, expected_commit, build)
+        require(build["buildId"] not in seen_builds and job["workflowJobId"] not in seen_jobs, "reused calibration build or job")
+        started = pilot.utc_time(build["buildStartedUtc"], "buildStartedUtc")
+        require(previous_job_end is None or previous_job_end < started, "calibration job order drift")
+        previous_job_end = pilot.utc_time(job["jobCompletedUtc"], "job.completed_at")
+        seen_builds.add(build["buildId"])
+        seen_runs.add(run_id)
+        seen_jobs.add(job["workflowJobId"])
+        trees.add(build["sourceTree"])
+        artifacts[level] = path
+        jobs[str(level)] = job
+    require(len(trees) == 1, "calibration source tree drift")
+    return artifacts, jobs
 
 
 def isotonic_nonnegative(values):
@@ -154,7 +206,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
-    parser.add_argument("--artifact", action="append", required=True, help="WORK=artifact.zip; all six fixed levels required")
+    parser.add_argument("--artifact-manifest", type=Path, required=True, help="six ordered artifact ZIP and raw Actions job commitments")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -166,16 +218,19 @@ def main():
         require(config.get("pythonVersion") == platform.python_version(), "Python runtime drift")
         require(config.get("targetRateRatios") == TRUTH_RATIOS, "calibration target drift")
         require(config.get("sourceSha256") == hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "calibration reducer source drift")
+        require(config.get("pilotReducerSha256") == hashlib.sha256(PILOT_REDUCER_PATH.read_bytes()).hexdigest(), "shared pilot validity source drift")
         require(config.get("extractorSha256") == hashlib.sha256(EXTRACTOR_PATH.read_bytes()).hexdigest(), "paired extractor source drift")
         require(re.fullmatch(r"[0-9a-f]{40}", args.expected_commit), "expected commit must be a 40-character Git ID")
-        artifacts = {}
-        for entry in args.artifact:
-            level, separator, name = entry.partition("=")
-            require(separator and level.isdecimal() and int(level) not in artifacts, "duplicate or malformed calibration artifact")
-            artifacts[int(level)] = Path(name)
+        manifest_bytes = args.artifact_manifest.read_bytes()
+        manifest = json.loads(manifest_bytes, object_pairs_hook=unique_json)
+        artifacts, jobs = preflight(manifest, args.expected_commit, args.artifact_manifest.parent)
         report = calibrate(artifacts, args.expected_commit, load_extractor())
         report["configSha256"] = hashlib.sha256(config_bytes).hexdigest()
-        args.output.write_text(json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n")
+        report["evidenceManifestSha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+        report["workflowJobs"] = jobs
+        report["calibrationJobSeconds"] = sum(job["jobSeconds"] for job in jobs.values())
+        with args.output.open("x", encoding="utf-8") as output:
+            output.write(json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n")
     except (OSError, ValueError, TypeError, KeyError, ET.ParseError, zipfile.BadZipFile) as error:
         print(f"invalid pilot calibration: {error}", file=sys.stderr)
         return 1

@@ -49,6 +49,7 @@ PILOT_T_95_DF5 = 2.0150483733330233
 SCHEDULE_SHA256 = "49e71387743b8814d2e297f6bc433988041bf7944c1bfa61dc14de5d894c0429"
 PROFILE_PATH = Path(__file__).parents[2] / ".github/perf/canonical-il2cpp-profile.v1.json"
 EXTRACTOR_PATH = Path(__file__).with_name("extract-pilot-paired.py")
+CONFIRMATION_PATH = Path(__file__).with_name("confirm-pilot-controls.py")
 COLLECTOR_PATH = Path(__file__).with_name("collect-perf-host-characterization.ps1")
 TARGET_ORDER = ("GlobalToOne", "StructNoBox", "Filtered", "PostProcess", "FilteredPostProcess")
 REQUIRED_JOB_STEPS = (
@@ -262,6 +263,10 @@ def validate_work_settings(settings, expected_commit, source_tree, calibration_b
     require(hashlib.sha256(calibration_bytes).hexdigest() == settings["calibrationReportSha256"] and hashlib.sha256(confirmation_bytes).hexdigest() == settings["physicalConfirmationSha256"], "physical control evidence hash drift")
     calibration = json.loads(calibration_bytes, object_pairs_hook=unique_json)
     require(isinstance(calibration, dict) and calibration.get("schemaVersion") == 1 and calibration.get("purpose") == "control-only-work-calibration", "control calibration report drift")
+    confirmation = json.loads(confirmation_bytes, object_pairs_hook=unique_json)
+    require(isinstance(confirmation, dict) and confirmation.get("schemaVersion") == 1 and confirmation.get("purpose") == "510-independent-physical-control-confirmation" and confirmation.get("passesPhysicalSanity") is True, "physical control confirmation did not pass")
+    require(confirmation.get("sourceCommit") == expected_commit and confirmation.get("sourceTree") == source_tree and confirmation.get("calibrationReportSha256") == settings["calibrationReportSha256"], "physical control provenance drift")
+    require(confirmation.get("analyzerSourceSha256") == sha256_file(CONFIRMATION_PATH) and confirmation.get("pilotReducerSourceSha256") == source_sha and confirmation.get("extractorSourceSha256") == extractor_sha, "physical control analysis source drift")
     vectors = settings.get("workByCondition")
     require(isinstance(vectors, dict) and vectors.keys() == CONDITIONS, "pilot work condition set drift")
     for condition, vector in vectors.items():

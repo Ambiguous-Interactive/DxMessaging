@@ -46,12 +46,19 @@ def confirmation(manifest, calibration_bytes, expected_commit, base_path, spent_
     require(isinstance(calibration, dict) and calibration.get("schemaVersion") == 1 and calibration.get("purpose") == "control-only-work-calibration", "calibration report drift")
     levels = (0, 2048, 8192, 32768, 131072, 524288)
     require(calibration.get("levels") == list(levels) and isinstance(calibration.get("builds"), dict) and calibration["builds"].keys() == {str(level) for level in levels}, "complete six-build calibration report required")
-    require(isinstance(calibration.get("sourceCommit"), str) and len(calibration["sourceCommit"]) == 40 and calibration.get("configSha256") == reducer.sha256_file(CALIBRATION_CONFIG_PATH), "calibration provenance drift")
+    require(calibration.get("sourceCommit") == expected_commit and calibration.get("configSha256") == reducer.sha256_file(CALIBRATION_CONFIG_PATH), "calibration provenance drift")
     calibration_builds = calibration["builds"]
     require(all(isinstance(build, dict) for build in calibration_builds.values()), "malformed calibration build record")
     require(len({build.get("buildInvocationId") for build in calibration_builds.values()}) == 6 and len({build.get("sourceTree") for build in calibration_builds.values()}) == 1, "calibration build identity drift")
     for build in calibration_builds.values():
         require(isinstance(build.get("archiveSha256"), str) and len(build["archiveSha256"]) == 64 and isinstance(build.get("buildStartedUtc"), str), "calibration artifact provenance drift")
+    calibration_jobs = calibration.get("workflowJobs")
+    require(isinstance(calibration_jobs, dict) and calibration_jobs.keys() == calibration_builds.keys(), "complete six-job calibration cleanup evidence required")
+    require(isinstance(calibration.get("evidenceManifestSha256"), str) and len(calibration["evidenceManifestSha256"]) == 64, "calibration evidence manifest commitment missing")
+    require(all(isinstance(job, dict) and isinstance(job.get("jobEvidenceSha256"), str) and len(job["jobEvidenceSha256"]) == 64 and type(job.get("jobSeconds")) in (int, float) and math.isfinite(job["jobSeconds"]) and job["jobSeconds"] > 0 for job in calibration_jobs.values()), "calibration job provenance drift")
+    require(len({job.get("workflowRunId") for job in calibration_jobs.values()}) == 6 and len({job.get("workflowJobId") for job in calibration_jobs.values()}) == 6, "reused calibration job evidence")
+    require(calibration.get("calibrationJobSeconds") == sum(job["jobSeconds"] for job in calibration_jobs.values()), "calibration job time drift")
+    calibration_end = max(reducer.utc_time(job.get("jobCompletedUtc"), "calibration.jobCompletedUtc") for job in calibration_jobs.values())
     proposals = {}
     for condition in ("P03", "P05", "P10"):
         proposals[condition] = {}
@@ -89,11 +96,13 @@ def confirmation(manifest, calibration_bytes, expected_commit, base_path, spent_
         seen_jobs.add(job["workflowJobId"])
         trees.add(build["sourceTree"])
         started = reducer.utc_time(build["buildStartedUtc"], "buildStartedUtc")
+        require(calibration_end < started, "confirmation build predates calibration completion")
         require(previous_job_end is None or previous_job_end < started, "confirmation build order drift")
         previous_job_end = reducer.utc_time(job["jobCompletedUtc"], "job.completed_at")
         total_job_seconds += job["jobSeconds"]
         inspected.append({"condition": condition, "arm": arm, "artifactPath": path, "artifactSha256": artifact_sha, "jobEvidenceSha256": job_sha, **build, **job})
     require(len(trees) == 1, "confirmation source tree drift")
+    require(next(iter(trees)) == next(iter(calibration_builds.values()))["sourceTree"], "confirmation/calibration source tree drift")
     require(spent_before_seconds + total_job_seconds <= 54_000, "approved serialized ELI time cap exceeded")
 
     platforms = set()

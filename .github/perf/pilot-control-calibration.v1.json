@@ -2,14 +2,29 @@
   "schemaVersion": 1,
   "purpose": "510-control-only-work-calibration",
   "pythonVersion": "3.11.2",
-  "workLevels": [0, 2048, 8192, 32768, 131072, 524288],
-  "dispatchOrder": [32768, 0, 131072, 2048, 524288, 8192],
+  "workLevels": [
+    0,
+    2048,
+    8192,
+    32768,
+    131072,
+    524288
+  ],
+  "dispatchOrder": [
+    32768,
+    0,
+    131072,
+    2048,
+    524288,
+    8192
+  ],
   "playerLaunchesPerCleanBuild": 5,
   "targetRateRatios": {
     "P03": 1.03,
     "P05": 1.05,
     "P10": 1.1
   },
-  "sourceSha256": "ce0ffa1deacb004f4dabbc6fafbec14e1c61325e6c63864be5aefb17d8e97ccb",
-  "extractorSha256": "7664944c30c80c7d796b64b36a44a8733ddc93d942604d0286eed8a9bac6bf04"
+  "sourceSha256": "dda9ec292c6126864cc3e06987ab19f4142e27db3558771007ab131513cffacb",
+  "extractorSha256": "7664944c30c80c7d796b64b36a44a8733ddc93d942604d0286eed8a9bac6bf04",
+  "pilotReducerSha256": "187d6bd11a9eb0baea4e55e4a5a035b18e9439a61519f948bd8b72210fd6acc5"
 }

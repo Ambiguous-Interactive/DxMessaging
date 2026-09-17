@@ -403,7 +403,7 @@ class PilotArtifactPreflightTests(unittest.TestCase):
         try:
             work = {condition: {scenario: 0 if condition == "AA" else (index + 1) * 10 for scenario in PILOT.TARGET_ORDER} for index, condition in enumerate(conditions)}
             calibration_bytes = json.dumps({"schemaVersion": 1, "purpose": "control-only-work-calibration", "targets": {scenario: {"proposedIterations": {condition: work[condition][scenario] for condition in ("P03", "P05", "P10")}} for scenario in PILOT.TARGET_ORDER}}).encode()
-            confirmation_bytes = b'{"schemaVersion":1,"purpose":"synthetic-physical-confirmation"}'
+            confirmation_bytes = json.dumps({"schemaVersion": 1, "purpose": "510-independent-physical-control-confirmation", "passesPhysicalSanity": True, "sourceCommit": self.commit, "sourceTree": "b" * 40, "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "analyzerSourceSha256": hashlib.sha256(PILOT.CONFIRMATION_PATH.read_bytes()).hexdigest(), "pilotReducerSourceSha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(), "extractorSourceSha256": hashlib.sha256(PILOT.EXTRACTOR_PATH.read_bytes()).hexdigest()}).encode()
             settings = {"schemaVersion": 1, "purpose": "510-pilot-work-settings", "scheduleSha256": PILOT.SCHEDULE_SHA256, "sourceCommit": self.commit, "sourceTree": "b" * 40, "serializedEliSecondsBeforePilot": 600, "reducerSha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(), "extractorSha256": hashlib.sha256(PILOT.EXTRACTOR_PATH.read_bytes()).hexdigest(), "calibrationReportSha256": hashlib.sha256(calibration_bytes).hexdigest(), "physicalConfirmationSha256": hashlib.sha256(confirmation_bytes).hexdigest(), "workByCondition": work}
             conditions_by_unit = {assignment["unitId"]: assignment["condition"] for assignment in assignments}
             zero = {scenario: 0 for scenario in PILOT.TARGET_ORDER}
@@ -422,6 +422,12 @@ class PilotArtifactPreflightTests(unittest.TestCase):
             self.assertEqual(len(report["effects"]["P05"]["GlobalToOne"]), 6)
             self.assertAlmostEqual(report["intervals"]["P05"]["GlobalToOne"]["meanLogEffect"], math.log(1.05))
             self.assertTrue(report["intervals"]["P05"]["GlobalToOne"]["aboveThreePercent"])
+            failed_confirmation = json.loads(confirmation_bytes)
+            failed_confirmation["passesPhysicalSanity"] = False
+            failed_bytes = json.dumps(failed_confirmation).encode()
+            failed_settings = {**settings, "physicalConfirmationSha256": hashlib.sha256(failed_bytes).hexdigest()}
+            with self.assertRaisesRegex(ValueError, "physical control confirmation did not pass"):
+                PILOT.analyze_artifacts(self.schedule_bytes, self.manifest, validity, key_bytes, failed_settings, calibration_bytes, failed_bytes, self.commit, self.root)
             invalid_validity = json.loads(json.dumps(validity))
             invalid_validity["builds"][0]["sourceTree"] = "f" * 40
             with self.assertRaisesRegex(ValueError, "sealed arm-blind validity manifest drift"):

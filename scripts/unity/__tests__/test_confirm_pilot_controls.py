@@ -45,6 +45,18 @@ class PhysicalConfirmationTests(unittest.TestCase):
                     }
                     for index, level in enumerate((0, 2048, 8192, 32768, 131072, 524288))
                 },
+                "evidenceManifestSha256": "c" * 64,
+                "workflowJobs": {
+                    str(level): {
+                        "workflowRunId": 3000 + index,
+                        "workflowJobId": 4000 + index,
+                        "jobEvidenceSha256": "d" * 64,
+                        "jobSeconds": 40,
+                        "jobCompletedUtc": f"2026-09-16T23:{index:02d}:40Z",
+                    }
+                    for index, level in enumerate((0, 2048, 8192, 32768, 131072, 524288))
+                },
+                "calibrationJobSeconds": 240,
                 "targets": {
                     scenario: {
                         "proposedIterations": {
@@ -113,6 +125,20 @@ class PhysicalConfirmationTests(unittest.TestCase):
         )
         self.assertEqual(report["confirmationJobSeconds"], 6 * 40)
         self.assertNotIn("intervals", report)
+
+    def test_requires_all_six_calibration_terminal_jobs(self):
+        calibration = json.loads(self.calibration_bytes)
+        del calibration["workflowJobs"]["2048"]
+        self.calibration_bytes = json.dumps(calibration).encode()
+        with self.assertRaisesRegex(ValueError, "complete six-job calibration cleanup evidence"):
+            self.confirm()
+
+    def test_confirmation_must_follow_completed_calibration(self):
+        calibration = json.loads(self.calibration_bytes)
+        calibration["workflowJobs"]["2048"]["jobCompletedUtc"] = "2026-09-17T00:00:01Z"
+        self.calibration_bytes = json.dumps(calibration).encode()
+        with self.assertRaisesRegex(ValueError, "confirmation build predates calibration completion"):
+            self.confirm()
 
     def test_failing_physical_effect_stops_confirmation(self):
         self.build_fixture(failed_effect="P10")
