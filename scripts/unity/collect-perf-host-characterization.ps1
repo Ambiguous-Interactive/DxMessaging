@@ -4,6 +4,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
     [Parameter(Mandatory = $true)][string]$CpuProfilePath,
+    [switch]$CpuLoad,
     [ValidateRange(2, 600)][int]$SampleCount = 120
 )
 
@@ -30,7 +31,9 @@ if (
 # frozen only after inspecting this artifact and before any pilot player is launched.
 Add-Type -TypeDefinition @'
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 public static class DxmPowerInformation
 {
@@ -71,6 +74,63 @@ public static class DxmPowerInformation
             return processors;
         }
         finally { Marshal.FreeHGlobal(output); }
+    }
+}
+
+public static class DxmSelectedCpuLoad
+{
+    private static volatile bool stopping;
+    private static Thread[] workers;
+    private static long[] sinks;
+    private static IntPtr originalAffinity;
+
+    public static void Start(int count, long affinityMask)
+    {
+        if (workers != null) throw new InvalidOperationException("CPU load is already active.");
+        Process process = Process.GetCurrentProcess();
+        originalAffinity = process.ProcessorAffinity;
+        process.ProcessorAffinity = new IntPtr(affinityMask);
+        stopping = false;
+        sinks = new long[count];
+        workers = new Thread[count];
+        try
+        {
+            for (int index = 0; index < count; index++)
+            {
+                int slot = index;
+                workers[index] = new Thread(() =>
+                {
+                    ulong value = (ulong)(slot + 1);
+                    while (!stopping)
+                    {
+                        for (int step = 0; step < 10000; step++)
+                            value ^= value << 13 ^ value >> 7 ^ value << 17;
+                        Interlocked.Exchange(ref sinks[slot], unchecked((long)value));
+                    }
+                });
+                workers[index].IsBackground = true;
+                workers[index].Start();
+            }
+        }
+        catch { Stop(); throw; }
+    }
+
+    public static void Stop()
+    {
+        if (workers == null) return;
+        stopping = true;
+        try
+        {
+            foreach (Thread worker in workers)
+                if (worker != null && !worker.Join(10000))
+                    throw new TimeoutException("A CPU load worker did not stop.");
+        }
+        finally
+        {
+            Process.GetCurrentProcess().ProcessorAffinity = originalAffinity;
+            workers = null;
+            sinks = null;
+        }
     }
 }
 '@
@@ -201,13 +261,22 @@ $startedUtc = [DateTime]::UtcNow.ToString('O')
 $before = Get-PowerState
 $sleepBefore = Get-SleepEvidence
 $samples = New-Object System.Collections.Generic.List[object]
-$clock = [System.Diagnostics.Stopwatch]::StartNew()
-for ($index = 0; $index -lt $SampleCount; $index++) {
-    $samples.Add((Get-SensorSample))
-    $remaining = ($index + 1) - $clock.Elapsed.TotalSeconds
-    if ($index + 1 -lt $SampleCount -and $remaining -gt 0) {
-        Start-Sleep -Milliseconds ([int][Math]::Ceiling($remaining * 1000))
+$loadMode = if ($CpuLoad) { 'selected-cpu-spin-v1' } else { 'idle-observation-v1' }
+try {
+    if ($CpuLoad) {
+        $mask = [Convert]::ToInt64($cpuProfile.affinityMask.Substring(2), 16)
+        [DxmSelectedCpuLoad]::Start($cpuProfile.selectedLogicalProcessorCount, $mask)
     }
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    for ($index = 0; $index -lt $SampleCount; $index++) {
+        $samples.Add((Get-SensorSample))
+        $remaining = ($index + 1) - $clock.Elapsed.TotalSeconds
+        if ($index + 1 -lt $SampleCount -and $remaining -gt 0) {
+            Start-Sleep -Milliseconds ([int][Math]::Ceiling($remaining * 1000))
+        }
+    }
+} finally {
+    if ($CpuLoad) { [DxmSelectedCpuLoad]::Stop() }
 }
 $after = Get-PowerState
 $sleepAfter = Get-SleepEvidence
@@ -233,6 +302,7 @@ $record = [ordered]@{
     }
     requestedSampleCount = $SampleCount
     requestedCadenceSeconds = 1
+    loadMode = $loadMode
     powerBefore = $before
     powerAfter = $after
     sleepBefore = $sleepBefore

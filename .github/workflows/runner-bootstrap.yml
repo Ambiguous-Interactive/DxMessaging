@@ -43,6 +43,11 @@ on:
         required: false
         type: boolean
         default: false
+      perf-host-load:
+        description: 'Apply synthetic load to the selected ELI-MACHINE processors during the sensor probe.'
+        required: false
+        type: boolean
+        default: false
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
@@ -149,11 +154,12 @@ jobs:
           }
 
       - name: Capture outcome-free performance host conditions
-        if: ${{ inputs['perf-host-characterization'] }}
+        if: ${{ inputs['perf-host-characterization'] || inputs['perf-host-load'] }}
         shell: pwsh
         timeout-minutes: 6
         env:
           DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_PERF_HOST_LOAD: ${{ inputs.perf-host-load }}
         run: |
           if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
               throw 'Performance host characterization is pinned to ELI-MACHINE.'
@@ -161,8 +167,9 @@ jobs:
           $path = '.artifacts/runner-bootstrap/host-characterization.json'
           $profile = '.artifacts/runner-bootstrap/performance-cpu-profile.json'
           ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profile
+          $applyLoad = $env:DXM_PERF_HOST_LOAD -eq 'true'
           ./scripts/unity/collect-perf-host-characterization.ps1 `
-            -OutputPath $path -CpuProfilePath $profile -SampleCount 120
+            -OutputPath $path -CpuProfilePath $profile -CpuLoad:$applyLoad -SampleCount 120
           $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
           "- Outcome-free host characterization SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
