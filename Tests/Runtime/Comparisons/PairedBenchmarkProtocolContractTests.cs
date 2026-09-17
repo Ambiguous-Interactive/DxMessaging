@@ -134,6 +134,61 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
         }
 
+        [Test]
+        public void MeasurePairedComplementaryOrderBalancesPositionsAndOperations()
+        {
+            List<char> order = new();
+            PairedBenchmarkMeasurement measurement = BenchmarkProtocol.MeasurePaired(
+                null,
+                () => RecordBatch(order, 'A', 10),
+                null,
+                () => RecordBatch(order, 'B', 20),
+                cycles: 1,
+                minimumCycleActiveDuration: TimeSpan.FromTicks(1),
+                complementaryOrder: true
+            );
+
+            CollectionAssert.AreEqual(
+                new[] { 'B', 'A', 'A', 'B', 'A', 'B', 'B', 'A' },
+                order,
+                "The complementary selector must run BAAB then ABBA without changing either workload."
+            );
+            Assert.AreEqual(
+                40,
+                measurement.First.TotalOperations,
+                "The complementary order must retain all four first-workload batches."
+            );
+            Assert.AreEqual(
+                80,
+                measurement.Second.TotalOperations,
+                "The complementary order must retain all four second-workload batches."
+            );
+        }
+
+        [TestCase(null, false)]
+        [TestCase("", false)]
+        [TestCase("ABBABAAB", false)]
+        [TestCase("BAABABBA", true)]
+        public void PilotOrderSelectorAcceptsOnlyDeclaredOrders(string order, bool expected)
+        {
+            Assert.AreEqual(
+                expected,
+                PairedComparisonHarness.ResolveComplementaryOrder(order),
+                "The pilot selector must preserve the legacy default and accept its complement."
+            );
+        }
+
+        [TestCase("abba baab")]
+        [TestCase("BAABABBA ")]
+        [TestCase("ABABABAB")]
+        public void PilotOrderSelectorRejectsUnsealedOrders(string order)
+        {
+            Assert.Throws<InvalidOperationException>(
+                () => PairedComparisonHarness.ResolveComplementaryOrder(order),
+                "An unsealed batch order must fail before any benchmark batch executes."
+            );
+        }
+
         [TestCase(0)]
         [TestCase(-1)]
         public void MeasurePairedRejectsNonPositiveCycleCount(int cycles)

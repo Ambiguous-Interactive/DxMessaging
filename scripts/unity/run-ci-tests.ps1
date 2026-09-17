@@ -50,6 +50,8 @@ param(
     [ValidateRange(1, 10)]
     [int]$StandalonePlayerRunCount = 1,
 
+    [string]$StandalonePlayerBatchOrders = '',
+
     [ValidateRange(0, [long]::MaxValue)]
     [long]$StandalonePlayerProcessorAffinityMask = 0,
 
@@ -66,6 +68,21 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$pilotBatchOrders = @()
+if (-not [string]::IsNullOrEmpty($StandalonePlayerBatchOrders)) {
+    if ($TestMode -cne 'standalone' -or -not $IncludeComparisons) {
+        throw '-StandalonePlayerBatchOrders requires a standalone comparison player.'
+    }
+    $pilotBatchOrders = @($StandalonePlayerBatchOrders.Split(','))
+    if ($pilotBatchOrders.Count -ne $StandalonePlayerRunCount) {
+        throw '-StandalonePlayerBatchOrders must declare exactly one order per player launch.'
+    }
+    foreach ($pilotBatchOrder in $pilotBatchOrders) {
+        if ($pilotBatchOrder -cne 'ABBABAAB' -and $pilotBatchOrder -cne 'BAABABBA') {
+            throw "Invalid pilot batch order '$pilotBatchOrder'."
+        }
+    }
+}
 
 # PowerShell 7.4 introduced $PSNativeCommandUseErrorActionPreference (stabilizing
 # the native-error experimental feature). Its default is $false on current builds,
@@ -8137,18 +8154,28 @@ try {
                 }
             }
 
-            $playerResult = Invoke-StandaloneTestPlayer `
-                -EditorBuiltExePath $standaloneExe `
-                -ResultsPath $currentResultsPath `
-                -LogPath $currentPlayerLogPath `
-                -RuntimeProfilePath $currentRuntimeProfilePath `
-                -TimeoutSeconds $playerTimeoutSeconds `
-                -HostConditionEvidencePath $hostConditionEvidencePath `
-                -ProcessEvidencePath $processEvidencePath `
-                -ProcessorAffinityMask $StandalonePlayerProcessorAffinityMask `
-                -PriorityClass $StandalonePlayerPriorityClass `
-                -RunIndex $playerRunIndex `
-                -RunCount $StandalonePlayerRunCount
+            $priorBatchOrder = $env:DXM_PAIRED_BATCH_ORDER
+            try {
+                if ($pilotBatchOrders.Count -gt 0) {
+                    $env:DXM_PAIRED_BATCH_ORDER = $pilotBatchOrders[$playerRunIndex - 1]
+                } else {
+                    $env:DXM_PAIRED_BATCH_ORDER = $null
+                }
+                $playerResult = Invoke-StandaloneTestPlayer `
+                    -EditorBuiltExePath $standaloneExe `
+                    -ResultsPath $currentResultsPath `
+                    -LogPath $currentPlayerLogPath `
+                    -RuntimeProfilePath $currentRuntimeProfilePath `
+                    -TimeoutSeconds $playerTimeoutSeconds `
+                    -HostConditionEvidencePath $hostConditionEvidencePath `
+                    -ProcessEvidencePath $processEvidencePath `
+                    -ProcessorAffinityMask $StandalonePlayerProcessorAffinityMask `
+                    -PriorityClass $StandalonePlayerPriorityClass `
+                    -RunIndex $playerRunIndex `
+                    -RunCount $StandalonePlayerRunCount
+            } finally {
+                $env:DXM_PAIRED_BATCH_ORDER = $priorBatchOrder
+            }
 
             # A watchdog timeout is fatal ONLY when the player wrote no results. If
             # results exist, validate them and treat deferred Application.Quit as a
@@ -8208,6 +8235,7 @@ try {
                         hostConditionsFile = [System.IO.Path]::GetFileName($hostConditionEvidencePath)
                         processId = $playerResult.ProcessId
                         processorAffinityMask = $playerResult.ProcessorAffinityMask
+                        batchOrder = if ($pilotBatchOrders.Count -gt 0) { $pilotBatchOrders[$playerRunIndex - 1] } else { $null }
                         timedOut = $playerResult.TimedOut
                     })
             }

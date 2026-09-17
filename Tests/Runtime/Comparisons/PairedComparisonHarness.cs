@@ -16,6 +16,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     /// </summary>
     public static class PairedComparisonHarness
     {
+        private const string PilotOrderVariable = "DXM_PAIRED_BATCH_ORDER";
+
         public static PairedBenchmarkMeasurement Run(
             Func<IMessagingTechBridge> firstFactory,
             Func<IMessagingTechBridge> secondFactory,
@@ -84,12 +86,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             long firstStartProgress = first.ProgressMarker;
             long secondStartProgress = second.ProgressMarker;
             int warmupEmits = ComparisonScenarios.WarmupEmits(scenario);
+            string requestedOrder = Environment.GetEnvironmentVariable(PilotOrderVariable);
+            bool complementaryOrder = ResolveComplementaryOrder(requestedOrder);
 
             PairedBenchmarkMeasurement measurement = BenchmarkProtocol.MeasurePaired(
                 () => EmitMany(first, warmupEmits),
                 () => EmitBatch(first),
                 () => EmitMany(second, warmupEmits),
-                () => EmitBatch(second)
+                () => EmitBatch(second),
+                BenchmarkProtocol.PairedMeasurementCycles,
+                TimeSpan.FromMilliseconds(BenchmarkProtocol.PairedMinimumCycleActiveMilliseconds),
+                complementaryOrder
             );
 
             AssertProgress(
@@ -108,8 +115,25 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 warmupEmits,
                 measurement.Second.TotalOperations
             );
-            WriteEvidence(first, second, scenario, measurement);
+            WriteEvidence(first, second, scenario, measurement, complementaryOrder);
             return measurement;
+        }
+
+        internal static bool ResolveComplementaryOrder(string requestedOrder)
+        {
+            if (string.IsNullOrEmpty(requestedOrder) || requestedOrder == "ABBABAAB")
+            {
+                return false;
+            }
+
+            if (requestedOrder == "BAABABBA")
+            {
+                return true;
+            }
+
+            throw new InvalidOperationException(
+                $"{PilotOrderVariable} must be ABBABAAB or BAABABBA; observed '{requestedOrder}'."
+            );
         }
 
         private static int EmitBatch(IMessagingTechBridge bridge)
@@ -150,7 +174,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             IMessagingTechBridge first,
             IMessagingTechBridge second,
             ComparisonScenario scenario,
-            PairedBenchmarkMeasurement measurement
+            PairedBenchmarkMeasurement measurement,
+            bool complementaryOrder
         )
         {
             string scenarioKey = ComparisonScenarios.Key(scenario);
@@ -168,7 +193,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                 second,
                 scenarioKey,
                 firstResult,
-                measurement
+                measurement,
+                complementaryOrder
             );
             if (
                 BenchmarkProtocol.PairedMaterialityBandPercent < measurement.CycleRatioSpreadPercent
@@ -188,7 +214,8 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             IMessagingTechBridge second,
             string scenarioKey,
             DispatchBenchmarkResult result,
-            PairedBenchmarkMeasurement measurement
+            PairedBenchmarkMeasurement measurement,
+            bool complementaryOrder
         )
         {
             StringBuilder builder = new();
@@ -203,7 +230,15 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             builder.Append(',');
             AppendJsonString(builder, "commit", result.Commit);
             builder.Append(',');
-            AppendJsonString(builder, "protocol", BenchmarkProtocol.PairedProtocolId);
+            AppendJsonString(
+                builder,
+                "protocol",
+                complementaryOrder
+                    ? "interleaved-baab-abba-pilot-v1"
+                    : BenchmarkProtocol.PairedProtocolId
+            );
+            builder.Append(',');
+            AppendJsonString(builder, "batchOrder", complementaryOrder ? "BAABABBA" : "ABBABAAB");
             builder.Append(",\"cycles\":");
             builder.Append(BenchmarkProtocol.PairedMeasurementCycles);
             builder.Append(",\"minimumCycleActiveMilliseconds\":");
