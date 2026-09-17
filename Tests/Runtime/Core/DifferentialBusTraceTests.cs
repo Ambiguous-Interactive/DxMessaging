@@ -28,6 +28,97 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TearDown() => _diagnostics.Dispose();
 
         [Test]
+        public void ExactSequentialBatchControlMatchesPerItemReplay(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("Remove", "Disable", "Reset", "Nested", "Throw", "Diagnostics")] string boundary
+        )
+        {
+            BusTraceOperation item = boundary switch
+            {
+                "Remove" => new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                "Disable" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithDisable,
+                    token: 0,
+                    value: 2
+                ),
+                "Reset" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithReset,
+                    token: 0,
+                    value: 2
+                ),
+                "Nested" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitNested,
+                    token: 0,
+                    nestedToken: 1,
+                    depth: 1,
+                    value: 2
+                ),
+                "Throw" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithThrow,
+                    token: 0,
+                    value: 2
+                ),
+                "Diagnostics" => new BusTraceOperation(
+                    BusTraceOperationKind.SetDiagnostics,
+                    value: 1
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(boundary)),
+            };
+            BusTraceSequence sequence = new(
+                scenario,
+                505,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 1),
+                    item,
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 3),
+                },
+                7
+            );
+            string report = $"kind={scenario.Kind}, boundary={boundary}";
+            Assert.That(DifferentialBusTrace.IsValid(sequence), Is.True, report);
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            List<BusTraceObservation> candidate = new();
+            using (MessageBusTraceAdapter adapter = CreateAdapter(scenario, false))
+            {
+                ExactSequentialBatchControl.Execute(
+                    sequence.Operations,
+                    operation => candidate.Add(adapter.Execute(operation))
+                );
+            }
+            Assert.That(candidate.Count, Is.EqualTo(sequence.Operations.Count), report);
+            Assert.That(DifferentialBusTrace.Compare(control, candidate), Is.Null, report);
+        }
+
+        [Test]
+        public void ExactSequentialBatchControlPreservesThrownExceptionAndCompletedPrefix()
+        {
+            InvalidOperationException failure = new("item 2 failed");
+            List<int> called = new();
+            InvalidOperationException observed = Assert.Throws<InvalidOperationException>(() =>
+                ExactSequentialBatchControl.Execute(
+                    new[] { 1, 2, 3 },
+                    item =>
+                    {
+                        called.Add(item);
+                        if (item == 2)
+                        {
+                            throw failure;
+                        }
+                    }
+                )
+            );
+            Assert.That(observed, Is.SameAs(failure));
+            CollectionAssert.AreEqual(new[] { 1, 2 }, called);
+        }
+
+        [Test]
         public void EmissionObservationScopesRestoreGlobalsAfterCompletionThrowResetAndNestedUnmatched(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,

@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DxMessaging performance architecture record",
+  "type": "object",
+  "required": ["schemaVersion", "candidateId", "semanticClass", "ownership", "topology", "ordering", "capacity", "lifecycle", "dynamicDifferences", "compatibility", "decision", "evidence"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "semanticClass": { "enum": ["exact-sequential", "prepared-dynamic", "frozen", "relaxed-bulk", "grouped", "queued"] },
+    "ownership": {
+      "type": "object",
+      "required": ["bus", "payloadLifetime", "managedReferences", "alignment", "reclamation"],
+      "properties": {
+        "bus": { "type": "string", "minLength": 1 },
+        "payloadLifetime": { "type": "string", "minLength": 1 },
+        "managedReferences": { "type": "string", "minLength": 1 },
+        "alignment": { "type": "string", "minLength": 1 },
+        "reclamation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "required": ["producers", "consumers", "threadAffinity", "playerLoopPhase"],
+      "properties": {
+        "producers": { "enum": ["single", "multiple"] },
+        "consumers": { "enum": ["single", "multiple"] },
+        "threadAffinity": { "type": "string", "minLength": 1 },
+        "playerLoopPhase": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ordering": {
+      "type": "object",
+      "required": ["guarantee", "linearizationPoint", "routeAmortization"],
+      "properties": {
+        "guarantee": { "enum": ["linearizable-per-item", "partitioned", "reproducible", "changed-cross-route"] },
+        "linearizationPoint": { "type": "string", "minLength": 1 },
+        "routeAmortization": { "type": "boolean" }
+      }
+    },
+    "capacity": {
+      "type": "object",
+      "required": ["policy", "overflow", "wait"],
+      "properties": {
+        "policy": { "enum": ["caller-length", "fixed", "growable"] },
+        "overflow": { "enum": ["none", "try-fail", "drop", "overwrite", "blocking-lab-only"] },
+        "wait": { "enum": ["none", "busy-spin-lab-only", "blocking-lab-only"] }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["reset", "cancellation", "disposal", "exceptions", "producerAbandon", "partialPublication"],
+      "properties": {
+        "reset": { "type": "string", "minLength": 1 },
+        "cancellation": { "type": "string", "minLength": 1 },
+        "disposal": { "type": "string", "minLength": 1 },
+        "exceptions": { "type": "string", "minLength": 1 },
+        "producerAbandon": { "type": "string", "minLength": 1 },
+        "partialPublication": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dynamicDifferences": { "type": "string", "minLength": 1 },
+    "compatibility": {
+      "type": "object",
+      "required": ["unity", "backends", "platforms", "packages"],
+      "properties": {
+        "unity": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "backends": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "platforms": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "packages": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["workload", "thresholdPercent", "capabilityException", "batchOneOverhead", "breakEven", "p99", "retainedMemory", "playerSize", "buildTime", "stopRule"],
+      "properties": {
+        "workload": { "type": "string", "minLength": 1 },
+        "thresholdPercent": { "type": "number", "minimum": 20 },
+        "capabilityException": { "type": "string", "minLength": 1 },
+        "batchOneOverhead": { "type": "string", "minLength": 1 },
+        "breakEven": { "type": "string", "minLength": 1 },
+        "p99": { "type": "string", "minLength": 1 },
+        "retainedMemory": { "type": "string", "minLength": 1 },
+        "playerSize": { "type": "string", "minLength": 1 },
+        "buildTime": { "type": "string", "minLength": 1 },
+        "stopRule": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["state", "sourceSha256", "testSourceSha256", "profileSha256", "evidenceSha256", "evidenceLocation"],
+      "properties": {
+        "state": { "enum": ["protocol-only", "tested", "measured"] },
+        "sourceSha256": { "type": ["string", "null"] },
+        "testSourceSha256": { "type": ["string", "null"] },
+        "profileSha256": { "type": ["string", "null"] },
+        "evidenceSha256": { "type": ["string", "null"] },
+        "evidenceLocation": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "type": "object", "properties": { "semanticClass": { "const": "exact-sequential" } } },
+      "then": {
+        "type": "object",
+        "properties": {
+          "ordering": { "type": "object", "properties": { "guarantee": { "const": "linearizable-per-item" }, "routeAmortization": { "const": false } } },
+          "capacity": { "type": "object", "properties": { "policy": { "const": "caller-length" }, "overflow": { "const": "none" }, "wait": { "const": "none" } } },
+          "dynamicDifferences": { "const": "none" }
+        }
+      }
+    },
+    {
+      "if": { "type": "object", "properties": { "evidence": { "type": "object", "properties": { "state": { "enum": ["tested", "measured"] } } } } },
+      "then": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "sourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "testSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "evidenceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
