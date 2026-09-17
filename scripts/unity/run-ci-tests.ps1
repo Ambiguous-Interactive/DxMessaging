@@ -5215,6 +5215,141 @@ function Invoke-ProcessWithTreeKillTimeout {
     }
 }
 
+function Test-StandalonePilotHostTelemetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$TelemetryPath,
+        [Parameter(Mandatory = $true)][string]$EnvelopePath,
+        [Parameter(Mandatory = $true)][string]$CpuProfilePath,
+        [string]$CollectorPath = (Join-Path $PSScriptRoot 'collect-perf-host-characterization.ps1')
+    )
+
+    # Frozen from the outcome-free ELI-MACHINE idle and selected-CPU load probes.
+    # These interfaces expose limit flags, not an identified package thermometer
+    # or an independently validated effective clock. Neither is imputed here.
+    $expectedSchemeGuid = '381b4222-f694-41f0-9685-ff5bb260df2e'
+    $expectedProcessorQuerySha256 = 'a12f432bf3f070fd84e28fa53073a3326b89fd1962713ea1c9b2fde0506d06ba'
+    $violations = New-Object System.Collections.Generic.List[string]
+    $telemetry = Get-Content -LiteralPath $TelemetryPath -Raw | ConvertFrom-Json
+    $envelope = Get-Content -LiteralPath $EnvelopePath -Raw | ConvertFrom-Json
+    $profile = Get-Content -LiteralPath $CpuProfilePath -Raw | ConvertFrom-Json
+    $profileSha256 = (Get-FileHash -LiteralPath $CpuProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $telemetrySha256 = (Get-FileHash -LiteralPath $TelemetryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $collectorSha256 = (Get-FileHash -LiteralPath $CollectorPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (
+        $telemetry.schemaVersion -ne 1 -or
+        $telemetry.purpose -cne 'player-time-host-telemetry' -or
+        $telemetry.loadMode -cne 'player-workload-v1' -or
+        $telemetry.stopReason -cne 'player-finished' -or
+        $telemetry.requestedSampleCount -ne 3600 -or
+        $telemetry.requestedCadenceSeconds -ne 1 -or
+        $telemetry.actualSampleCount -ne @($telemetry.samples).Count -or
+        @($telemetry.samples).Count -lt 2
+    ) { $violations.Add('telemetry-schema-or-completeness') }
+    if ($telemetry.sourceSha256 -cne $collectorSha256) { $violations.Add('telemetry-collector-source-drift') }
+    if (
+        $telemetry.cpuProfile.sha256 -cne $profileSha256 -or
+        $telemetry.cpuProfile.affinityMask -cne $profile.affinityMask -or
+        $telemetry.cpuProfile.executionProfileId -cne $profile.executionProfileId -or
+        $telemetry.processorCount -ne $profile.logicalProcessorCount
+    ) { $violations.Add('cpu-profile-drift') }
+    if (
+        $envelope.schemaVersion -ne 1 -or
+        $envelope.unredactedTelemetrySha256 -cne $telemetrySha256 -or
+        $envelope.telemetryProcessorAffinityMask -cne '0xFFFF0000'
+    ) { $violations.Add('telemetry-envelope-or-affinity') }
+
+    try {
+        $readyUtc = ([DateTime]$envelope.telemetryReadyUtc).ToUniversalTime()
+        $playerStartUtc = ([DateTime]$envelope.playerStartUtc).ToUniversalTime()
+        $playerEndUtc = ([DateTime]$envelope.playerEndUtc).ToUniversalTime()
+        $stopUtc = ([DateTime]$envelope.telemetryStopUtc).ToUniversalTime()
+        if ($readyUtc -gt $playerStartUtc -or $playerStartUtc -gt $playerEndUtc -or $playerEndUtc -gt $stopUtc) {
+            $violations.Add('telemetry-does-not-envelope-player')
+        }
+        $previousSampleUtc = $null
+        for ($sampleIndex = 0; $sampleIndex -lt @($telemetry.samples).Count; $sampleIndex++) {
+            $sampleUtc = ([DateTime]$telemetry.samples[$sampleIndex].timestampUtc).ToUniversalTime()
+            if ($sampleUtc -gt $stopUtc) { $violations.Add('sample-after-player-stop'); break }
+            if ($null -ne $previousSampleUtc) {
+                $interval = ($sampleUtc - $previousSampleUtc).TotalSeconds
+                if ($interval -le 0 -or $interval -gt 1.5 -or ($sampleIndex -gt 1 -and $interval -lt 0.5)) {
+                    $violations.Add('sample-cadence-outside-frozen-range')
+                    break
+                }
+            }
+            $previousSampleUtc = $sampleUtc
+        }
+        if ($null -ne $previousSampleUtc -and ($playerEndUtc - $previousSampleUtc).TotalSeconds -gt 1.5) {
+            $violations.Add('telemetry-gap-at-player-end')
+        }
+    } catch { $violations.Add('invalid-telemetry-timestamps') }
+
+    foreach ($power in @($telemetry.powerBefore, $telemetry.powerAfter)) {
+        if (
+            $power.active.exitCode -ne 0 -or
+            $power.active.text -notmatch [regex]::Escape($expectedSchemeGuid) -or
+            $power.processorQuery.exitCode -ne 0 -or
+            $power.processorQuerySha256 -cne $expectedProcessorQuerySha256
+        ) { $violations.Add('power-plan-drift'); break }
+    }
+    foreach ($sleep in @($telemetry.sleepBefore, $telemetry.sleepAfter)) {
+        if (
+            -not $sleep.lastBootUpTimeUtc -or
+            @($sleep.errors).Count -ne 0 -or
+            @($sleep.queries).Count -ne 2 -or
+            @($sleep.queries | Where-Object { $_.status -cne 'ok' -and $_.status -cne 'no-matches' }).Count -ne 0
+        ) { $violations.Add('sleep-evidence-missing'); break }
+    }
+    if ($telemetry.sleepBefore.lastBootUpTimeUtc -cne $telemetry.sleepAfter.lastBootUpTimeUtc) {
+        $violations.Add('reboot-during-player')
+    }
+    $eventsBefore = @($telemetry.sleepBefore.recentSleepWakeEvents | ForEach-Object { "$($_.provider):$($_.recordId)" })
+    $eventsAfter = @($telemetry.sleepAfter.recentSleepWakeEvents | ForEach-Object { "$($_.provider):$($_.recordId)" })
+    if (($eventsBefore -join ',') -cne ($eventsAfter -join ',')) { $violations.Add('sleep-wake-event-drift') }
+
+    $selectedIndices = @($profile.selectedLogicalProcessorIndices)
+    $firstNativePower = if (@($telemetry.samples).Count -gt 0) { $telemetry.samples[0].nativePower } else { $null }
+    foreach ($sample in @($telemetry.samples)) {
+        if (@($sample.errors).Count -ne 0 -or @($sample.nativePower.errors).Count -ne 0) {
+            $violations.Add('sensor-read-error'); break
+        }
+        if (
+            $sample.nativePower.lastSleepInterruptTime100ns -ne $firstNativePower.lastSleepInterruptTime100ns -or
+            $sample.nativePower.lastWakeInterruptTime100ns -ne $firstNativePower.lastWakeInterruptTime100ns
+        ) { $violations.Add('sleep-wake-marker-drift'); break }
+        foreach ($index in $selectedIndices) {
+            $counters = @($sample.processorCounters | Where-Object { $_.name -ceq "0,$index" })
+            $native = @($sample.nativePower.processors | Where-Object { $_.number -eq $index })
+            if ($counters.Count -ne 1 -or $native.Count -ne 1) {
+                $violations.Add('selected-processor-sample-missing-or-duplicate'); break
+            }
+            if (
+                $null -eq $counters[0].ProcessorFrequency -or
+                $null -eq $counters[0].PercentProcessorPerformance -or
+                $null -eq $counters[0].PercentProcessorTime -or
+                $counters[0].PercentPerformanceLimit -ne 100 -or
+                $counters[0].PerformanceLimitFlags -ne 0 -or
+                $native[0].maxMhz -le 0 -or
+                $native[0].mhzLimit -ne $native[0].maxMhz
+            ) { $violations.Add('processor-limit-detected'); break }
+        }
+        if ($violations.Count -gt 0) { break }
+    }
+    if (@($telemetry.nativeAfter.errors).Count -ne 0) { $violations.Add('post-player-native-read-error') }
+
+    $verdict = [ordered]@{
+        schemaVersion = 1
+        valid = $violations.Count -eq 0
+        reasons = @($violations.ToArray())
+        telemetrySha256 = $telemetrySha256
+        cpuProfileSha256 = $profileSha256
+        thermalPackageTemperature = 'unmeasured'
+        effectiveProcessorFrequency = 'unmeasured'
+    }
+    Write-JsonArtifact -Path "$TelemetryPath.health.json" -Value $verdict
+    return $verdict.valid
+}
+
 function Invoke-StandaloneTestPlayer {
     # RUN the editor-built standalone IL2CPP test player DIRECTLY (no
     # PlayerConnection): the player-side TestRunCallback writes NUnit XML to the
@@ -5414,6 +5549,13 @@ function Invoke-StandaloneTestPlayer {
             after = $after
         }
         Write-JsonArtifact -Path $HostConditionEvidencePath -Value $evidence
+    }
+
+    if ($HostTelemetryEvidencePath -and -not (Test-StandalonePilotHostTelemetry `
+            -TelemetryPath $HostTelemetryEvidencePath `
+            -EnvelopePath "$HostTelemetryEvidencePath.envelope.json" `
+            -CpuProfilePath $HostTelemetryCpuProfilePath)) {
+        throw "Player-time host telemetry failed frozen health rules; see $HostTelemetryEvidencePath.health.json."
     }
 
     # Exit 2 means the player received no -dxmTestResults arg (a harness-contract
@@ -8251,6 +8393,7 @@ try {
                 $hostConditionEvidencePath,
                 $hostTelemetryEvidencePath,
                 $(if ($hostTelemetryEvidencePath) { "$hostTelemetryEvidencePath.envelope.json" } else { '' }),
+                $(if ($hostTelemetryEvidencePath) { "$hostTelemetryEvidencePath.health.json" } else { '' }),
                 $processEvidencePath,
                 $currentRuntimeProfilePath
             )) {
@@ -8345,6 +8488,7 @@ try {
                         hostConditionsFile = [System.IO.Path]::GetFileName($hostConditionEvidencePath)
                         hostTelemetryFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName($hostTelemetryEvidencePath) } else { $null }
                         hostTelemetryEnvelopeFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName("$hostTelemetryEvidencePath.envelope.json") } else { $null }
+                        hostTelemetryHealthFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName("$hostTelemetryEvidencePath.health.json") } else { $null }
                         processId = $playerResult.ProcessId
                         processorAffinityMask = $playerResult.ProcessorAffinityMask
                         batchOrder = if ($pilotBatchOrders.Count -gt 0) { $pilotBatchOrders[$playerRunIndex - 1] } else { $null }

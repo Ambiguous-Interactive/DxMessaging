@@ -1,4 +1,5 @@
 name: Runner Audit (Windows)
+# cspell:ignore PSHOME
 
 # Operator-driven, workflow_dispatch-only audit of a self-hosted Windows
 # runner's host prerequisites, exact Unity editors, and required modules.
@@ -45,6 +46,11 @@ on:
         default: false
       perf-host-load:
         description: 'Apply synthetic load to the selected ELI-MACHINE processors during the sensor probe.'
+        required: false
+        type: boolean
+        default: false
+      perf-host-monitor-smoke:
+        description: 'Exercise #510 player-time sampler ready/stop signals without a Unity player.'
         required: false
         type: boolean
         default: false
@@ -172,6 +178,67 @@ jobs:
             -OutputPath $path -CpuProfilePath $profile -CpuLoad:$applyLoad -SampleCount 120
           $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
           "- Outcome-free host characterization SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Smoke-test player-time host sampler signals
+        if: ${{ inputs['perf-host-monitor-smoke'] }}
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          if ($env:RUNNER_NAME -cne 'ELI-MACHINE') {
+              throw 'Performance host sampler smoke test is pinned to ELI-MACHINE.'
+          }
+          $root = '.artifacts/runner-bootstrap'
+          $profile = Join-Path $root 'performance-cpu-profile.json'
+          $output = Join-Path $root 'host-monitor-smoke.json'
+          $ready = "$output.ready"
+          $stop = "$output.stop"
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profile
+          $start = [System.Diagnostics.ProcessStartInfo]::new()
+          $start.FileName = Join-Path $PSHOME 'pwsh.exe'
+          foreach ($argument in @(
+              '-NoProfile', '-NonInteractive', '-File',
+              (Join-Path $PWD 'scripts/unity/collect-perf-host-characterization.ps1'),
+              '-OutputPath', (Join-Path $PWD $output),
+              '-CpuProfilePath', (Join-Path $PWD $profile),
+              '-ReadySignalPath', (Join-Path $PWD $ready),
+              '-StopSignalPath', (Join-Path $PWD $stop),
+              '-SampleCount', '20'
+          )) { [void]$start.ArgumentList.Add($argument) }
+          $start.UseShellExecute = $false
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          $process = [System.Diagnostics.Process]::Start($start)
+          try {
+              $deadline = [DateTime]::UtcNow.AddSeconds(60)
+              while (-not (Test-Path -LiteralPath $ready -PathType Leaf)) {
+                  if ($process.HasExited -or [DateTime]::UtcNow -ge $deadline) {
+                      throw 'Host sampler did not become ready.'
+                  }
+                  Start-Sleep -Milliseconds 100
+              }
+              Start-Sleep -Seconds 7
+              Set-Content -LiteralPath $stop -Value ([DateTime]::UtcNow.ToString('O'))
+              if (-not $process.WaitForExit(120000)) { throw 'Host sampler did not stop.' }
+              if ($process.ExitCode -ne 0) {
+                  throw "Host sampler failed: $($process.StandardError.ReadToEnd())"
+              }
+              $record = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+              if (
+                  $record.purpose -cne 'player-time-host-telemetry' -or
+                  $record.loadMode -cne 'player-workload-v1' -or
+                  $record.stopReason -cne 'player-finished' -or
+                  $record.actualSampleCount -lt 2 -or
+                  $record.actualSampleCount -ge 20
+              ) { throw 'Host sampler signal contract failed.' }
+              $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+              "- Player-time sampler smoke SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          } finally {
+              if (-not $process.HasExited) {
+                  $process.Kill($true)
+                  [void]$process.WaitForExit(5000)
+              }
+              $process.Dispose()
+          }
 
       - name: Run runner audit (single-step transcript)
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes

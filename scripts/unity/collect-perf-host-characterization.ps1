@@ -266,7 +266,13 @@ $startedUtc = [DateTime]::UtcNow.ToString('O')
 $before = Get-PowerState
 $sleepBefore = Get-SleepEvidence
 $samples = New-Object System.Collections.Generic.List[object]
-$loadMode = if ($CpuLoad) { 'selected-cpu-spin-v1' } else { 'idle-observation-v1' }
+$loadMode = if ($CpuLoad) {
+    'selected-cpu-spin-v1'
+} elseif ($StopSignalPath) {
+    'player-workload-v1'
+} else {
+    'idle-observation-v1'
+}
 $stopReason = 'sample-count-limit'
 try {
     if ($CpuLoad) {
