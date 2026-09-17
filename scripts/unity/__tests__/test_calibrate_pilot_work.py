@@ -4,6 +4,7 @@ import importlib.util
 import hashlib
 import json
 import math
+import platform
 import subprocess
 import sys
 import tempfile
@@ -127,14 +128,24 @@ class PilotCalibrationTests(unittest.TestCase):
         manifest_path = self.root / "manifest.json"
         manifest_path.write_text(json.dumps(self.manifest))
         output_path = self.root / "calibration.json"
-        config = Path(__file__).parents[3] / ".github/perf/pilot-control-calibration.v1.json"
-        command = [sys.executable, str(SOURCE), "--config", str(config), "--expected-commit", COMMIT, "--artifact-manifest", str(manifest_path), "--output", str(output_path)]
+        frozen_config = Path(__file__).parents[3] / ".github/perf/pilot-control-calibration.v1.json"
+        config = json.loads(frozen_config.read_text())
+        config["pythonVersion"] = platform.python_version()
+        config_path = self.root / "config.json"
+        config_path.write_text(json.dumps(config))
+        command = [sys.executable, str(SOURCE), "--config", str(config_path), "--expected-commit", COMMIT, "--artifact-manifest", str(manifest_path), "--output", str(output_path)]
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(output_path.read_text())
         self.assertEqual(report["calibrationJobSeconds"], 240)
         self.assertEqual(set(report["workflowJobs"]), {str(level) for level in CALIBRATION.WORK_LEVELS})
         output_path.unlink()
+        config_path.write_text(json.dumps({**config, "pythonVersion": "0.0.0"}))
+        drift = subprocess.run(command, capture_output=True, text=True, check=False)
+        self.assertNotEqual(drift.returncode, 0)
+        self.assertIn("Python runtime drift", drift.stderr)
+        self.assertFalse(output_path.exists())
+        config_path.write_text(json.dumps(config))
         job_path = self.root / "2048.job.json"
         job(job_path, 2048, return_success=False)
         next(entry for entry in self.manifest["builds"] if entry["work"] == 2048)["jobEvidenceSha256"] = hashlib.sha256(job_path.read_bytes()).hexdigest()

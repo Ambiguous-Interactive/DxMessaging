@@ -40,7 +40,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             void OnMessage(in LoadMessage message)
             {
-                if (message.Id < 0 || message.Id >= OfferCount || callbackCount >= OfferCount)
+                if (message.Id < 0 || OfferCount <= message.Id || OfferCount <= callbackCount)
                 {
                     throw new InvalidOperationException("Load callback ID or count is invalid.");
                 }

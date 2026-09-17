@@ -124,7 +124,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                             out int value
                         )
                         || value < 0
-                        || value > 1000000
+                        || 1000000 < value
                     )
                     {
                         throw new InvalidOperationException(
@@ -156,7 +156,7 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     );
                 }
                 _pilotCpuWorkIterationsPerBatch =
-                    PilotTargetIndex(scenario) >= 0 ? workIterations : 0;
+                    0 <= PilotTargetIndex(scenario) ? workIterations : 0;
             }
 #endif
             _bus = new MessageBus { DiagnosticsMode = false };

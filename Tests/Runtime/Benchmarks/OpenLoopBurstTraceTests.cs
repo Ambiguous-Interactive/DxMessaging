@@ -35,7 +35,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             void OnMessage(in BurstMessage message)
             {
-                if (message.Id < 0 || message.Id >= burstSize || callbackCount >= burstSize)
+                if (message.Id < 0 || burstSize <= message.Id || burstSize <= callbackCount)
                 {
                     throw new InvalidOperationException("Burst callback ID or count is invalid.");
                 }

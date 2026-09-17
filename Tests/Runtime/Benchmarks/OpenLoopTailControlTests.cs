@@ -32,10 +32,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 if (
                     current == null
                     || message.BurstIndex < 0
-                    || message.BurstIndex >= BurstCount
+                    || BurstCount <= message.BurstIndex
                     || message.ItemIndex < 0
-                    || message.ItemIndex >= MessagesPerBurst
-                    || current.CallbackCount >= BurstCount * MessagesPerBurst
+                    || MessagesPerBurst <= message.ItemIndex
+                    || BurstCount * MessagesPerBurst <= current.CallbackCount
                 )
                 {
                     throw new InvalidOperationException("Tail callback ID or count is invalid.");
