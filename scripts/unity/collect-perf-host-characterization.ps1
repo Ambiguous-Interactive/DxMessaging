@@ -5,7 +5,9 @@ param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
     [Parameter(Mandatory = $true)][string]$CpuProfilePath,
     [switch]$CpuLoad,
-    [ValidateRange(2, 600)][int]$SampleCount = 120
+    [ValidateRange(2, 3600)][int]$SampleCount = 120,
+    [string]$StopSignalPath,
+    [string]$ReadySignalPath
 )
 
 Set-StrictMode -Version Latest
@@ -13,6 +15,9 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 if (-not $IsWindows) {
     throw 'Performance host characterization requires Windows.'
+}
+if ($ReadySignalPath -and -not $StopSignalPath) {
+    throw '-ReadySignalPath requires -StopSignalPath.'
 }
 $cpuProfile = Get-Content -LiteralPath $CpuProfilePath -Raw | ConvertFrom-Json
 if (
@@ -262,6 +267,7 @@ $before = Get-PowerState
 $sleepBefore = Get-SleepEvidence
 $samples = New-Object System.Collections.Generic.List[object]
 $loadMode = if ($CpuLoad) { 'selected-cpu-spin-v1' } else { 'idle-observation-v1' }
+$stopReason = 'sample-count-limit'
 try {
     if ($CpuLoad) {
         $mask = [Convert]::ToInt64($cpuProfile.affinityMask.Substring(2), 16)
@@ -270,6 +276,13 @@ try {
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     for ($index = 0; $index -lt $SampleCount; $index++) {
         $samples.Add((Get-SensorSample))
+        if ($index -eq 0 -and $ReadySignalPath) {
+            Set-Content -LiteralPath $ReadySignalPath -Value ([DateTime]::UtcNow.ToString('O')) -Encoding utf8
+        }
+        if ($StopSignalPath -and (Test-Path -LiteralPath $StopSignalPath -PathType Leaf)) {
+            $stopReason = 'player-finished'
+            break
+        }
         $remaining = ($index + 1) - $clock.Elapsed.TotalSeconds
         if ($index + 1 -lt $SampleCount -and $remaining -gt 0) {
             Start-Sleep -Milliseconds ([int][Math]::Ceiling($remaining * 1000))
@@ -283,7 +296,7 @@ $sleepAfter = Get-SleepEvidence
 $nativeAfter = Get-NativePowerState
 $record = [ordered]@{
     schemaVersion = 1
-    purpose = 'outcome-blind-host-characterization'
+    purpose = if ($StopSignalPath) { 'player-time-host-telemetry' } else { 'outcome-blind-host-characterization' }
     sourceSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
     gitCommit = $env:GITHUB_SHA
     runId = $env:GITHUB_RUN_ID
@@ -301,7 +314,9 @@ $record = [ordered]@{
         selectedLogicalProcessorIndices = @($cpuProfile.selectedLogicalProcessorIndices)
     }
     requestedSampleCount = $SampleCount
+    actualSampleCount = $samples.Count
     requestedCadenceSeconds = 1
+    stopReason = $stopReason
     loadMode = $loadMode
     powerBefore = $before
     powerAfter = $after

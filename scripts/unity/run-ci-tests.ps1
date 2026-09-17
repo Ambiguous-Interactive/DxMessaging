@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+# cspell:ignore PSHOME
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -5235,6 +5236,8 @@ function Invoke-StandaloneTestPlayer {
         [string]$RuntimeProfilePath,
         [int]$TimeoutSeconds = 1800,
         [string]$HostConditionEvidencePath,
+        [string]$HostTelemetryEvidencePath,
+        [string]$HostTelemetryCpuProfilePath,
         [string]$ProcessEvidencePath,
         [ValidateRange(0, [long]::MaxValue)][long]$ProcessorAffinityMask = 0,
         [ValidateSet('Normal', 'AboveNormal', 'High')][string]$PriorityClass = 'Normal',
@@ -5262,14 +5265,112 @@ function Invoke-StandaloneTestPlayer {
         $before = Get-StandaloneHostConditionSnapshot -Phase 'before'
     }
 
-    $result = Invoke-ProcessWithTreeKillTimeout `
-        -FilePath $EditorBuiltExePath `
-        -Arguments $playerArgs `
-        -TimeoutSeconds $TimeoutSeconds `
-        -LogPath $LogPath `
-        -Label 'Run standalone test player' `
-        -ProcessorAffinityMask $ProcessorAffinityMask `
-        -PriorityClass $PriorityClass
+    $telemetryProcess = $null
+    $telemetryStopPath = "$HostTelemetryEvidencePath.stop"
+    $telemetryReadyPath = "$HostTelemetryEvidencePath.ready"
+    $playerStartUtc = $null
+    $playerEndUtc = $null
+    try {
+        if ($HostTelemetryEvidencePath) {
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                throw 'Player-time host telemetry requires PowerShell 7.'
+            }
+            foreach ($signalPath in @($telemetryStopPath, $telemetryReadyPath)) {
+                if (Test-Path -LiteralPath $signalPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $signalPath -Force
+                }
+            }
+            $telemetryProfile = Get-Content -LiteralPath $HostTelemetryCpuProfilePath -Raw | ConvertFrom-Json
+            $profileAffinityMask = [Convert]::ToInt64($telemetryProfile.affinityMask.Substring(2), 16)
+            if ($profileAffinityMask -ne $ProcessorAffinityMask) {
+                throw 'Player and telemetry CPU profiles have different selected affinity masks.'
+            }
+            $telemetryStart = New-Object System.Diagnostics.ProcessStartInfo
+            $telemetryStart.FileName = Join-Path $PSHOME 'pwsh.exe'
+            foreach ($argument in @(
+                '-NoProfile', '-NonInteractive', '-File',
+                (Join-Path $PSScriptRoot 'collect-perf-host-characterization.ps1'),
+                '-OutputPath', $HostTelemetryEvidencePath,
+                '-CpuProfilePath', $HostTelemetryCpuProfilePath,
+                '-StopSignalPath', $telemetryStopPath,
+                '-ReadySignalPath', $telemetryReadyPath,
+                '-SampleCount', '3600'
+            )) {
+                [void]$telemetryStart.ArgumentList.Add($argument)
+            }
+            $telemetryStart.UseShellExecute = $false
+            $telemetryStart.CreateNoWindow = $true
+            $telemetryStart.RedirectStandardOutput = $true
+            $telemetryStart.RedirectStandardError = $true
+            $telemetryProcess = New-Object System.Diagnostics.Process
+            $telemetryProcess.StartInfo = $telemetryStart
+            [void]$telemetryProcess.Start()
+            $telemetryAvailableMask = $telemetryProcess.ProcessorAffinity.ToInt64()
+            $telemetryAffinityMask = $telemetryAvailableMask -band (-bnot $ProcessorAffinityMask)
+            if ($telemetryAffinityMask -eq 0) {
+                throw 'No logical processors remain outside the player affinity for host telemetry.'
+            }
+            $telemetryProcess.ProcessorAffinity = [IntPtr]::new($telemetryAffinityMask)
+            if ($telemetryProcess.ProcessorAffinity.ToInt64() -ne $telemetryAffinityMask) {
+                throw 'Host telemetry affinity verification failed.'
+            }
+            $readyDeadline = [DateTime]::UtcNow.AddSeconds(120)
+            while (-not (Test-Path -LiteralPath $telemetryReadyPath -PathType Leaf)) {
+                if ($telemetryProcess.HasExited -or [DateTime]::UtcNow -ge $readyDeadline) {
+                    throw 'Player-time host telemetry did not become ready within 120 seconds.'
+                }
+                Start-Sleep -Milliseconds 100
+            }
+        }
+
+        $playerStartUtc = [DateTime]::UtcNow.ToString('O')
+        $result = Invoke-ProcessWithTreeKillTimeout `
+            -FilePath $EditorBuiltExePath `
+            -Arguments $playerArgs `
+            -TimeoutSeconds $TimeoutSeconds `
+            -LogPath $LogPath `
+            -Label 'Run standalone test player' `
+            -ProcessorAffinityMask $ProcessorAffinityMask `
+            -PriorityClass $PriorityClass
+        $playerEndUtc = [DateTime]::UtcNow.ToString('O')
+    } finally {
+        if ($telemetryProcess) {
+            if (-not $playerEndUtc) { $playerEndUtc = [DateTime]::UtcNow.ToString('O') }
+            Set-Content -LiteralPath $telemetryStopPath -Value ([DateTime]::UtcNow.ToString('O')) -Encoding utf8
+            if (-not $telemetryProcess.WaitForExit(120000)) {
+                $telemetryProcess.Kill($true)
+                [void]$telemetryProcess.WaitForExit(5000)
+                throw 'Player-time host telemetry did not stop within 120 seconds.'
+            }
+            $telemetryStdout = $telemetryProcess.StandardOutput.ReadToEnd()
+            $telemetryStderr = $telemetryProcess.StandardError.ReadToEnd()
+            $telemetryExitCode = $telemetryProcess.ExitCode
+            $telemetryProcess.Dispose()
+            if ($telemetryExitCode -ne 0) {
+                throw "Player-time host telemetry failed with exit $telemetryExitCode`: $telemetryStderr"
+            }
+            if (-not (Test-Path -LiteralPath $HostTelemetryEvidencePath -PathType Leaf)) {
+                throw "Player-time host telemetry did not write $HostTelemetryEvidencePath`: $telemetryStdout"
+            }
+            $telemetryEvidence = Get-Content -LiteralPath $HostTelemetryEvidencePath -Raw | ConvertFrom-Json
+            if ($telemetryEvidence.stopReason -cne 'player-finished' -or $telemetryEvidence.actualSampleCount -lt 2) {
+                throw "Player-time host telemetry ended without full coverage: $($telemetryEvidence.stopReason), $($telemetryEvidence.actualSampleCount) samples."
+            }
+            $telemetryEnvelopePath = "$HostTelemetryEvidencePath.envelope.json"
+            Write-JsonArtifact -Path $telemetryEnvelopePath -Value ([ordered]@{
+                    schemaVersion = 1
+                    playerStartUtc = $playerStartUtc
+                    playerEndUtc = $playerEndUtc
+                    telemetryReadyUtc = (Get-Content -LiteralPath $telemetryReadyPath -Raw).Trim()
+                    telemetryStopUtc = (Get-Content -LiteralPath $telemetryStopPath -Raw).Trim()
+                    telemetryProcessorAffinityMask = '0x{0:X}' -f $telemetryAffinityMask
+                    unredactedTelemetrySha256 = (Get-FileHash -LiteralPath $HostTelemetryEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                })
+            foreach ($signalPath in @($telemetryStopPath, $telemetryReadyPath)) {
+                Remove-Item -LiteralPath $signalPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($ProcessEvidencePath)) {
         $requestedAffinityMask = if ($ProcessorAffinityMask -gt 0) {
@@ -8124,6 +8225,11 @@ try {
             } else {
                 ''
             }
+            $hostTelemetryEvidencePath = if ($pilotBatchOrders.Count -gt 0) {
+                Join-Path $samePlayerEvidenceRoot "run-$runNumber-host-telemetry.json"
+            } else {
+                ''
+            }
             $processEvidencePath = if ($playerRunIndex -eq 1) {
                 Join-Path $ArtifactsPath 'standalone-process.json'
             } else {
@@ -8143,6 +8249,8 @@ try {
                 $currentResultsPath,
                 $currentPlayerLogPath,
                 $hostConditionEvidencePath,
+                $hostTelemetryEvidencePath,
+                $(if ($hostTelemetryEvidencePath) { "$hostTelemetryEvidencePath.envelope.json" } else { '' }),
                 $processEvidencePath,
                 $currentRuntimeProfilePath
             )) {
@@ -8168,6 +8276,8 @@ try {
                     -RuntimeProfilePath $currentRuntimeProfilePath `
                     -TimeoutSeconds $playerTimeoutSeconds `
                     -HostConditionEvidencePath $hostConditionEvidencePath `
+                    -HostTelemetryEvidencePath $hostTelemetryEvidencePath `
+                    -HostTelemetryCpuProfilePath (Join-Path $ArtifactsPath 'performance-cpu-profile.json') `
                     -ProcessEvidencePath $processEvidencePath `
                     -ProcessorAffinityMask $StandalonePlayerProcessorAffinityMask `
                     -PriorityClass $StandalonePlayerPriorityClass `
@@ -8233,6 +8343,8 @@ try {
                         resultsPath = $relativeResultsPath
                         playerLogPath = $relativePlayerLogPath
                         hostConditionsFile = [System.IO.Path]::GetFileName($hostConditionEvidencePath)
+                        hostTelemetryFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName($hostTelemetryEvidencePath) } else { $null }
+                        hostTelemetryEnvelopeFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName("$hostTelemetryEvidencePath.envelope.json") } else { $null }
                         processId = $playerResult.ProcessId
                         processorAffinityMask = $playerResult.ProcessorAffinityMask
                         batchOrder = if ($pilotBatchOrders.Count -gt 0) { $pilotBatchOrders[$playerRunIndex - 1] } else { $null }
