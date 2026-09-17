@@ -105,6 +105,53 @@ function Get-NativePowerState {
     }
 }
 
+function Get-SleepEvidence {
+    $errors = New-Object System.Collections.Generic.List[string]
+    $events = New-Object System.Collections.Generic.List[object]
+    $queries = New-Object System.Collections.Generic.List[object]
+    $bootTimeUtc = $null
+    try {
+        $system = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $bootTimeUtc = $system.LastBootUpTime.ToUniversalTime().ToString('O')
+    } catch { $errors.Add("lastBootUpTime: $($_.Exception.Message)") }
+    foreach ($filter in @(
+        @{ ProviderName = 'Microsoft-Windows-Kernel-Power'; Id = 42 },
+        @{ ProviderName = 'Microsoft-Windows-Power-Troubleshooter'; Id = 1 }
+    )) {
+        $status = 'ok'
+        try {
+            $query = @{
+                LogName = 'System'
+                ProviderName = $filter.ProviderName
+                Id = $filter.Id
+                StartTime = (Get-Date).AddDays(-7)
+            }
+            Get-WinEvent -FilterHashtable $query -MaxEvents 100 -ErrorAction Stop | ForEach-Object {
+                $events.Add([ordered]@{
+                        provider = $_.ProviderName
+                        id = $_.Id
+                        recordId = $_.RecordId
+                        timeUtc = $_.TimeCreated.ToUniversalTime().ToString('O')
+                    })
+            }
+        } catch {
+            if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
+                $status = 'no-matches'
+            } else {
+                $status = 'error'
+                $errors.Add("$($filter.ProviderName) event query: $($_.Exception.Message)")
+            }
+        }
+        $queries.Add([ordered]@{ provider = $filter.ProviderName; id = $filter.Id; status = $status })
+    }
+    return [ordered]@{
+        lastBootUpTimeUtc = $bootTimeUtc
+        recentSleepWakeEvents = @($events.ToArray())
+        queries = @($queries.ToArray())
+        errors = @($errors.ToArray())
+    }
+}
+
 function Get-SensorSample {
     $errors = New-Object System.Collections.Generic.List[string]
     $processorCounters = @()
@@ -139,6 +186,7 @@ function Get-SensorSample {
 
 $startedUtc = [DateTime]::UtcNow.ToString('O')
 $before = Get-PowerState
+$sleepBefore = Get-SleepEvidence
 $samples = New-Object System.Collections.Generic.List[object]
 $clock = [System.Diagnostics.Stopwatch]::StartNew()
 for ($index = 0; $index -lt $SampleCount; $index++) {
@@ -149,6 +197,7 @@ for ($index = 0; $index -lt $SampleCount; $index++) {
     }
 }
 $after = Get-PowerState
+$sleepAfter = Get-SleepEvidence
 $nativeAfter = Get-NativePowerState
 $record = [ordered]@{
     schemaVersion = 1
@@ -167,6 +216,8 @@ $record = [ordered]@{
     requestedCadenceSeconds = 1
     powerBefore = $before
     powerAfter = $after
+    sleepBefore = $sleepBefore
+    sleepAfter = $sleepAfter
     nativeAfter = $nativeAfter
     samples = @($samples.ToArray())
 }
