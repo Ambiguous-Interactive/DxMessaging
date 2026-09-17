@@ -8,6 +8,7 @@ reduction; it never treats launches or cycles as independent observations.
 
 import math
 import re
+import statistics
 from collections import defaultdict
 
 
@@ -25,6 +26,9 @@ SCENARIOS = frozenset(
 SENTINELS = frozenset(("GlobalToMany", "KeyedToOne"))
 TARGETS = SCENARIOS - SENTINELS
 CONDITIONS = frozenset(("AA", "P03", "P05", "P10"))
+NOMINAL_RATIOS = {"AA": 1.0, "P03": 1.03, "P05": 1.05, "P10": 1.10}
+# scipy.stats.t.ppf(0.95, df=5), SciPy 1.16.2. Pilot N is fixed at six.
+PILOT_T_95_DF5 = 2.0150483733330233
 
 
 def require(condition, message):
@@ -102,6 +106,7 @@ def reduce(schedule, assignments, builds):
         condition = assignment.get("condition")
         require(condition in CONDITIONS and assignment.get("treatmentArm") == "B", "condition or treatment drift")
         require(assignment.get("shimArm") == (None if condition == "AA" else "A"), "shim arm drift")
+        require(assignment.get("nominalTreatmentRateRatio") == NOMINAL_RATIOS[condition], "nominal ratio drift")
         slots = [actual[(unit_id, slot)] for slot in (1, 2, 3)]
         orientation = "".join(slot["arm"] for slot in slots)
         require(orientation in ("ABA", "BAB"), "changed outer arms")
@@ -118,3 +123,43 @@ def reduce(schedule, assignments, builds):
         for scenario in SCENARIOS:
             require(len(effects[condition][scenario]) == 6, "condition lacks six independent units")
     return {condition: dict(rows) for condition, rows in effects.items()}
+
+
+def pilot_intervals(effects):
+    """Compute pilot Student-t intervals using six palindromes per condition.
+
+    The one-sided 95% lower bound and two-sided 90% TOST interval share the
+    same t critical value. Flags are row diagnostics, not a global pilot verdict.
+    """
+    require(isinstance(effects, dict) and effects.keys() == CONDITIONS, "pilot condition set drift")
+    result = {}
+    for condition in sorted(CONDITIONS):
+        rows = effects[condition]
+        require(isinstance(rows, dict) and rows.keys() == SCENARIOS, "pilot scenario set drift")
+        result[condition] = {}
+        for scenario in sorted(SCENARIOS):
+            units = rows[scenario]
+            require(isinstance(units, list) and len(units) == 6, "interval needs six independent palindromes")
+            identities = [unit.get("unitId") for unit in units]
+            require(all(isinstance(identity, str) and identity for identity in identities), "missing palindrome identity")
+            require(len(set(identities)) == 6, "pseudo-replicated palindrome identity")
+            values = [unit.get("logEffect") for unit in units]
+            require(all(type(value) in (int, float) and math.isfinite(value) for value in values), "invalid unit effect")
+            mean = statistics.mean(values)
+            standard_error = statistics.stdev(values) / math.sqrt(6)
+            half_width = PILOT_T_95_DF5 * standard_error
+            lower = mean - half_width
+            upper = mean + half_width
+            result[condition][scenario] = {
+                "nIndependentPalindromes": 6,
+                "meanLogEffect": mean,
+                "sampleStandardDeviation": statistics.stdev(values),
+                "lower95OneSidedLog": lower,
+                "lower90TwoSidedLog": lower,
+                "upper90TwoSidedLog": upper,
+                "aboveThreePercent": lower > math.log(1.03),
+                "affectedRowSafe": lower > math.log(0.97),
+                "equivalentWithinThreePercent": lower > math.log(0.97)
+                and upper < math.log(1.03),
+            }
+    return result

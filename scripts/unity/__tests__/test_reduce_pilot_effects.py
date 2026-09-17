@@ -62,6 +62,7 @@ def fixture():
                         "condition": condition,
                         "treatmentArm": "B",
                         "shimArm": None if condition == "AA" else "A",
+                        "nominalTreatmentRateRatio": PILOT.NOMINAL_RATIOS[condition],
                     }
                 )
     return schedule, assignments, builds
@@ -113,6 +114,35 @@ class PilotReducerTests(unittest.TestCase):
         builds[0]["sourceTree"] = "b" * 64
         with self.assertRaisesRegex(ValueError, "source tree mismatch"):
             PILOT.reduce(schedule, assignments, builds)
+
+    def test_fixed_six_unit_t_interval_and_equivalence(self):
+        intervals = PILOT.pilot_intervals(PILOT.reduce(*fixture()))
+        positive = intervals["P05"]["GlobalToOne"]
+        self.assertEqual(positive["nIndependentPalindromes"], 6)
+        self.assertAlmostEqual(positive["meanLogEffect"], math.log(1.05))
+        self.assertTrue(positive["aboveThreePercent"])
+        self.assertTrue(intervals["AA"]["GlobalToOne"]["equivalentWithinThreePercent"])
+        self.assertTrue(intervals["P05"]["GlobalToMany"]["equivalentWithinThreePercent"])
+
+    def test_t_interval_uses_sample_variance_over_six_units(self):
+        effects = PILOT.reduce(*fixture())
+        units = effects["AA"]["GlobalToOne"]
+        for index, unit in enumerate(units):
+            unit["logEffect"] = index / 100
+        interval = PILOT.pilot_intervals(effects)["AA"]["GlobalToOne"]
+        expected_standard_error = math.sqrt(0.00035) / math.sqrt(6)
+        self.assertAlmostEqual(interval["meanLogEffect"], 0.025)
+        self.assertAlmostEqual(
+            interval["lower95OneSidedLog"],
+            0.025 - PILOT.PILOT_T_95_DF5 * expected_standard_error,
+        )
+
+    def test_interval_rejects_pseudoreplicated_units(self):
+        effects = PILOT.reduce(*fixture())
+        units = effects["AA"]["GlobalToOne"]
+        units[1]["unitId"] = units[0]["unitId"]
+        with self.assertRaisesRegex(ValueError, "pseudo-replicated palindrome"):
+            PILOT.pilot_intervals(effects)
 
 
 if __name__ == "__main__":
