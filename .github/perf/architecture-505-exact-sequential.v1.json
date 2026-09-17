@@ -54,10 +54,10 @@
   },
   "evidence": {
     "state": "tested",
-    "sourceSha256": "ffb62bcc414b639322394bcad60de2b32eb1b2a4ad42b120469956b187026325",
-    "testSourceSha256": "86bb31e26eec454e6ed9b50c81f4587b94c3569c9cb86755867d7a23393b32d0",
+    "sourceSha256": "053ba9844b5807b8bb08f9fb0afcef5dfc24205f9ae0f10e0f91d3dfc4f00869",
+    "testSourceSha256": "6bea3cde84a06ea31df723190c8421aed7bf04286df5bdd6ceeeeffcbda5c497",
     "profileSha256": null,
-    "evidenceSha256": "19f9a7ce2621ed9058664337484cad8729fae4a7765c63d6043f0f0897b04ce7",
-    "evidenceLocation": ".artifacts/perf-lab/505-exact-sequential-evidence.json (ignored local evidence; #505 records hashes)"
+    "evidenceSha256": "8b10127d608df5a8ea5e118ee18ed62a2f4f585ece1683424ea7a32c4365b85a",
+    "evidenceLocation": ".artifacts/perf-lab/505-exact-sequential-evidence-v2.json (ignored local index of initial differential and ref-semantic evidence; #505 records hashes)"
   }
 }
