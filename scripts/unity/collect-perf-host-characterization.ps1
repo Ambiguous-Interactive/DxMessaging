@@ -172,7 +172,7 @@ function Get-NativePowerState {
     try { $sleep = [DxmPowerInformation]::ReadInterruptTime(15) } catch { $errors.Add("lastSleep: $($_.Exception.Message)") }
     try { $wake = [DxmPowerInformation]::ReadInterruptTime(14) } catch { $errors.Add("lastWake: $($_.Exception.Message)") }
     try {
-        $raw = [DxmPowerInformation]::ReadProcessors([Environment]::ProcessorCount)
+        $raw = [DxmPowerInformation]::ReadProcessors($hostLogicalProcessorCount)
         $processors = @($raw | ForEach-Object {
             [ordered]@{
                 number = $_[0]; maxMhz = $_[1]; currentMhz = $_[2]
@@ -286,11 +286,18 @@ try {
     }
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     for ($index = 0; $index -lt $SampleCount; $index++) {
+        if ($index -gt 0 -and $StopSignalPath -and (Test-Path -LiteralPath $StopSignalPath -PathType Leaf)) {
+            $stopReason = 'player-finished'
+            break
+        }
         $samples.Add((Get-SensorSample))
         if ($index -eq 0 -and $ReadySignalPath) {
             Set-Content -LiteralPath $ReadySignalPath -Value ([DateTime]::UtcNow.ToString('O')) -Encoding utf8
         }
         if ($StopSignalPath -and (Test-Path -LiteralPath $StopSignalPath -PathType Leaf)) {
+            $stopUtc = ([DateTime](Get-Content -LiteralPath $StopSignalPath -Raw)).ToUniversalTime()
+            $sampleUtc = ([DateTime]$samples[$samples.Count - 1].timestampUtc).ToUniversalTime()
+            if ($sampleUtc -gt $stopUtc) { $samples.RemoveAt($samples.Count - 1) }
             $stopReason = 'player-finished'
             break
         }
@@ -317,7 +324,7 @@ $record = [ordered]@{
     hostName = [Environment]::MachineName
     osVersion = [Environment]::OSVersion.VersionString
     powerShellVersion = $PSVersionTable.PSVersion.ToString()
-    processorCount = [Environment]::ProcessorCount
+    processorCount = $hostLogicalProcessorCount
     cpuProfile = [ordered]@{
         sha256 = (Get-FileHash -LiteralPath $CpuProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
         executionProfileId = $cpuProfile.executionProfileId
