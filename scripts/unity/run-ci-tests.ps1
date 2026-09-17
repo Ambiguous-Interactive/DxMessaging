@@ -53,6 +53,9 @@ param(
 
     [string]$StandalonePlayerBatchOrders = '',
 
+    [ValidateRange(0, 1000000)]
+    [int]$StandalonePilotCpuWorkIterationsPerBatch = 0,
+
     [ValidateRange(0, [long]::MaxValue)]
     [long]$StandalonePlayerProcessorAffinityMask = 0,
 
@@ -83,6 +86,9 @@ if (-not [string]::IsNullOrEmpty($StandalonePlayerBatchOrders)) {
             throw "Invalid pilot batch order '$pilotBatchOrder'."
         }
     }
+}
+if ($StandalonePilotCpuWorkIterationsPerBatch -gt 0 -and $pilotBatchOrders.Count -eq 0) {
+    throw '-StandalonePilotCpuWorkIterationsPerBatch requires -StandalonePlayerBatchOrders.'
 }
 
 # PowerShell 7.4 introduced $PSNativeCommandUseErrorActionPreference (stabilizing
@@ -1947,7 +1953,8 @@ public static class DxmCiTestConfigurator
 function New-StandaloneBuildModifierSource {
     param(
         [bool]$DevelopmentBuild = $false,
-        [string]$CanonicalProfileId = ''
+        [string]$CanonicalProfileId = '',
+        [bool]$PilotControl = $false
     )
 
     # The Development BuildOptions flag is opt-in only. Unity CI defaults to a true
@@ -1964,6 +1971,9 @@ function New-StandaloneBuildModifierSource {
     # DOUBLE-quoted here-string so $developmentOption interpolates; the generated C#
     # contains no other dollar signs or backticks, so nothing else needs escaping.
     $developmentOption = if ($DevelopmentBuild) { '        playerOptions.options |= BuildOptions.Development;' } else { '        playerOptions.options &= ~BuildOptions.Development;' }
+    $pilotDefineOption = if ($PilotControl) {
+        '        playerOptions.extraScriptingDefines = (playerOptions.extraScriptingDefines ?? Array.Empty<string>()).Concat(new[] { "DXM_PILOT_CONTROL" }).ToArray();'
+    } else { '' }
     @"
 using System;
 using System.IO;
@@ -2007,6 +2017,7 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
             playerOptions.options |= BuildOptions.DetailedBuildReport;
         }
 $developmentOption
+$pilotDefineOption
         string outPath = Environment.GetEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
         if (!string.IsNullOrEmpty(outPath))
         {
@@ -3709,6 +3720,7 @@ function Initialize-EphemeralProject {
         [ValidateSet('Disabled', 'Minimal', 'Low', 'Medium', 'High')]
         [string]$ManagedStrippingLevel = 'Disabled',
         [bool]$DevelopmentBuild = $false,
+        [bool]$PilotControl = $false,
         [string]$CanonicalProfileId = '',
         [string]$CanonicalProfileSha256 = '',
         [ValidateSet('semantic', 'cardinality')]
@@ -3891,7 +3903,7 @@ EditorSettings:
     # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId -PilotControl $PilotControl) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
@@ -7512,6 +7524,7 @@ $ProjectPath = Initialize-EphemeralProject `
     -Backend $StandaloneScriptingBackend `
     -ManagedStrippingLevel $managedStrippingLevel `
     -DevelopmentBuild:(-not $UseReleasePlayerBuild) `
+    -PilotControl:($pilotBatchOrders.Count -gt 0) `
     -CanonicalProfileId $canonicalProfileId `
     -CanonicalProfileSha256 $canonicalProfileSha256 `
     -ShippingTopology $ShippingTopology `
@@ -8406,11 +8419,14 @@ try {
             }
 
             $priorBatchOrder = $env:DXM_PAIRED_BATCH_ORDER
+            $priorPilotWork = $env:DXM_PILOT_CPU_WORK_PER_BATCH
             try {
                 if ($pilotBatchOrders.Count -gt 0) {
                     $env:DXM_PAIRED_BATCH_ORDER = $pilotBatchOrders[$playerRunIndex - 1]
+                    $env:DXM_PILOT_CPU_WORK_PER_BATCH = [string]$StandalonePilotCpuWorkIterationsPerBatch
                 } else {
                     $env:DXM_PAIRED_BATCH_ORDER = $null
+                    $env:DXM_PILOT_CPU_WORK_PER_BATCH = $null
                 }
                 $playerResult = Invoke-StandaloneTestPlayer `
                     -EditorBuiltExePath $standaloneExe `
@@ -8428,6 +8444,7 @@ try {
                     -RunCount $StandalonePlayerRunCount
             } finally {
                 $env:DXM_PAIRED_BATCH_ORDER = $priorBatchOrder
+                $env:DXM_PILOT_CPU_WORK_PER_BATCH = $priorPilotWork
             }
 
             # A watchdog timeout is fatal ONLY when the player wrote no results. If
@@ -8492,6 +8509,7 @@ try {
                         processId = $playerResult.ProcessId
                         processorAffinityMask = $playerResult.ProcessorAffinityMask
                         batchOrder = if ($pilotBatchOrders.Count -gt 0) { $pilotBatchOrders[$playerRunIndex - 1] } else { $null }
+                        pilotCpuWorkIterationsPerBatch = if ($pilotBatchOrders.Count -gt 0) { $StandalonePilotCpuWorkIterationsPerBatch } else { $null }
                         timedOut = $playerResult.TimedOut
                     })
             }

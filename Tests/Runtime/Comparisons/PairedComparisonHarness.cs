@@ -148,6 +148,12 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             {
                 bridge.EmitOnce();
             }
+#if DXM_PILOT_CONTROL
+            if (bridge is DxMessagingBridge pilotBridge)
+            {
+                pilotBridge.ApplyPilotCpuWorkForBatch();
+            }
+#endif
         }
 
         private static void AssertProgress(
@@ -245,6 +251,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             builder.Append(BenchmarkProtocol.PairedMinimumCycleActiveMilliseconds);
             builder.Append(",\"batchOperations\":");
             builder.Append(BenchmarkProtocol.BatchSize);
+#if DXM_PILOT_CONTROL
+            if (first is DxMessagingBridge pilotBridge)
+            {
+                builder.Append(",\"pilotCpuWorkIterationsPerBatch\":");
+                builder.Append(pilotBridge.PilotCpuWorkIterationsPerBatch);
+            }
+#endif
             builder.Append(",\"firstToSecondRatio\":");
             builder.Append(
                 measurement.FirstToSecondRatio.ToString("R", CultureInfo.InvariantCulture)

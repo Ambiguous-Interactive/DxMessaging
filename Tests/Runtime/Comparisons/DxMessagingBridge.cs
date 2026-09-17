@@ -7,6 +7,10 @@ namespace DxMessaging.Tests.Runtime.Comparisons
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Benchmarks;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
+#if DXM_PILOT_CONTROL
+    using System.Globalization;
+    using System.Threading;
+#endif
 
 #pragma warning disable RCS1242 // Fast handlers intentionally observe mutable messages by readonly reference.
     /// <summary>
@@ -42,6 +46,11 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         private MessageRegistrationToken _token;
         private ComparisonScenario _scenario;
         private long _progress;
+#if DXM_PILOT_CONTROL
+        private int _pilotCpuWorkIterationsPerBatch;
+
+        internal int PilotCpuWorkIterationsPerBatch => _pilotCpuWorkIterationsPerBatch;
+#endif
 
         private SimpleUntargetedMessage _untargeted;
         private ComparisonStructPayload _structPayload = new(1);
@@ -84,6 +93,25 @@ namespace DxMessaging.Tests.Runtime.Comparisons
         public void Prepare(ComparisonScenario scenario)
         {
             _scenario = scenario;
+#if DXM_PILOT_CONTROL
+            string workText = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            if (
+                !int.TryParse(
+                    workText,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int workIterations
+                )
+                || workIterations < 0
+                || 1000000 < workIterations
+            )
+            {
+                throw new InvalidOperationException(
+                    "DXM_PILOT_CPU_WORK_PER_BATCH must be an integer from 0 through 1000000."
+                );
+            }
+            _pilotCpuWorkIterationsPerBatch = IsPilotTargetScenario(scenario) ? workIterations : 0;
+#endif
             _bus = new MessageBus { DiagnosticsMode = false };
             _token = CreateToken();
 
@@ -199,6 +227,23 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     return;
             }
         }
+
+#if DXM_PILOT_CONTROL
+        internal void ApplyPilotCpuWorkForBatch()
+        {
+            if (_pilotCpuWorkIterationsPerBatch != 0)
+            {
+                Thread.SpinWait(_pilotCpuWorkIterationsPerBatch);
+            }
+        }
+
+        private static bool IsPilotTargetScenario(ComparisonScenario scenario) =>
+            scenario == ComparisonScenario.GlobalToOneSubscriber
+            || scenario == ComparisonScenario.StructMessageNoBoxing
+            || scenario == ComparisonScenario.FilteredDispatch
+            || scenario == ComparisonScenario.PostProcessingDispatch
+            || scenario == ComparisonScenario.InterceptedPostProcessingDispatch;
+#endif
 
         public void Dispose()
         {

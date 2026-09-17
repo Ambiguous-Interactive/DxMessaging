@@ -285,6 +285,53 @@ namespace DxMessaging.Tests.Runtime.Comparisons
             );
         }
 
+#if DXM_PILOT_CONTROL
+        [TestCase(ComparisonScenario.GlobalToOneSubscriber, 7)]
+        [TestCase(ComparisonScenario.StructMessageNoBoxing, 7)]
+        [TestCase(ComparisonScenario.FilteredDispatch, 7)]
+        [TestCase(ComparisonScenario.PostProcessingDispatch, 7)]
+        [TestCase(ComparisonScenario.InterceptedPostProcessingDispatch, 7)]
+        [TestCase(ComparisonScenario.GlobalToManySubscribers, 0)]
+        [TestCase(ComparisonScenario.KeyedToOneOfMany, 0)]
+        [TestCase(ComparisonScenario.SubscribeUnsubscribeChurn, 0)]
+        public void PilotCpuWorkTouchesOnlyDeclaredTargets(
+            ComparisonScenario scenario,
+            int expected
+        )
+        {
+            string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            try
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "7");
+                using DxMessagingBridge bridge = new();
+                bridge.Prepare(scenario);
+                Assert.AreEqual(expected, bridge.PilotCpuWorkIterationsPerBatch);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+            }
+        }
+
+        [Test]
+        public void PilotCpuWorkRejectsUnassignedWorkLevel()
+        {
+            string prior = Environment.GetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH");
+            try
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", "invalid");
+                using DxMessagingBridge bridge = new();
+                Assert.Throws<InvalidOperationException>(() =>
+                    bridge.Prepare(ComparisonScenario.GlobalToOneSubscriber)
+                );
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("DXM_PILOT_CPU_WORK_PER_BATCH", prior);
+            }
+        }
+#endif
+
         private static int RecordBatch(List<char> order, char workload, int operations)
         {
             order.Add(workload);
