@@ -119,6 +119,109 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void PreparedDynamicEmitterMatchesDirectCallsAfterChanges(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(
+                "Register",
+                "Remove",
+                "Disable",
+                "Reset",
+                "Nested",
+                "Throw",
+                "Diagnostics",
+                "Trim",
+                "Activity"
+            )]
+                string boundary
+        )
+        {
+            BusTraceOperation item = boundary switch
+            {
+                "Register" => new BusTraceOperation(BusTraceOperationKind.Register, token: 2),
+                "Remove" => new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                "Disable" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithDisable,
+                    token: 0,
+                    value: 2
+                ),
+                "Reset" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithReset,
+                    token: 0,
+                    value: 2
+                ),
+                "Nested" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitNested,
+                    token: 0,
+                    nestedToken: 1,
+                    depth: 1,
+                    value: 2
+                ),
+                "Throw" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithThrow,
+                    token: 0,
+                    value: 2
+                ),
+                "Diagnostics" => new BusTraceOperation(
+                    BusTraceOperationKind.SetDiagnostics,
+                    value: 1
+                ),
+                "Trim" => new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                "Activity" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithHandlerActive,
+                    token: 0,
+                    handlerToken: 1,
+                    handlerActive: false,
+                    value: 2
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(boundary)),
+            };
+            BusTraceSequence sequence = new(
+                scenario,
+                5051,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 1),
+                    item,
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 3),
+                },
+                7
+            );
+            string report = $"kind={scenario.Kind}, boundary={boundary}";
+            Assert.That(DifferentialBusTrace.IsValid(sequence), Is.True, report);
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(
+                DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false)),
+                DifferentialBusTrace.Replay(sequence, CreatePreparedAdapter)
+            );
+            Assert.That(mismatch, Is.Null, report);
+        }
+
+        [Test]
+        public void PreparedDynamicEmitterKeepsPrivateUnlistedMessageAvailableAfterTrim()
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            PreparedUntargetedEmitter<PrivatePreparedPayload> prepared = new(bus);
+            PrivatePreparedPayload first = new();
+            prepared.Emit(ref first);
+            long firstId = bus.EmissionId;
+            Assert.That(firstId, Is.GreaterThan(0));
+            bus.Trim(force: true);
+            PrivatePreparedPayload second = new();
+            prepared.Emit(ref second);
+            Assert.That(bus.EmissionId, Is.EqualTo(firstId + 1));
+            bus.ResetState();
+        }
+
+        private struct PrivatePreparedPayload : IUntargetedMessage { }
+
+        [Test]
         public void EmissionObservationScopesRestoreGlobalsAfterCompletionThrowResetAndNestedUnmatched(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
@@ -4913,6 +5016,30 @@ namespace DxMessaging.Tests.Runtime.Core
                         ? new FinalValueEmitter(bus, observationFault, throwAfterEmit)
                     : delayed,
                 delayed != null ? delayed.RequestReset : bus.ResetState
+            );
+        }
+
+        private static MessageBusTraceAdapter CreatePreparedAdapter(MessageScenario scenario)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            bus.DiagnosticsMode = false;
+            PreparedUntargetedEmitter<MessageBusTraceAdapter.UntargetedPayload> untargeted = new(
+                bus
+            );
+            PreparedTargetedEmitter<MessageBusTraceAdapter.TargetedPayload> targeted = new(bus);
+            PreparedBroadcastEmitter<MessageBusTraceAdapter.BroadcastPayload> broadcast = new(bus);
+            return new MessageBusTraceAdapter(
+                scenario,
+                bus,
+                reset: bus.ResetState,
+                untargetedEmission: untargeted.Emit,
+                targetedEmission: targeted.Emit,
+                broadcastEmission: broadcast.Emit
             );
         }
 

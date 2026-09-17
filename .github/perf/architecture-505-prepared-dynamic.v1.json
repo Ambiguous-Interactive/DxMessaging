@@ -60,11 +60,11 @@
     "stopRule": "Stop on any trace mismatch, stale route, retained evicted sink, or unsupported dynamic fallback; do not promote without a 20% workload gain or distinct supported capability."
   },
   "evidence": {
-    "state": "protocol-only",
-    "sourceSha256": null,
-    "testSourceSha256": null,
+    "state": "tested",
+    "sourceSha256": "a1c0299d4bbd344ac5beb967ab793537e817bda0af0394452900418dfabe0531",
+    "testSourceSha256": "c6dd09e1fba7890ccc932c2117dcb1af8cfd5542ffa4e8d1ac2ceec8083862e1",
     "profileSha256": null,
-    "evidenceSha256": null,
-    "evidenceLocation": "#505 issue comment 5714789657; local prepared-dynamic prototype pending"
+    "evidenceSha256": "b1161ff706aa3d2245bac9a68171151e56bf0a7f708faead738089f509cc0b18",
+    "evidenceLocation": ".artifacts/perf-lab/505-prepared-dynamic-evidence.json (ignored local evidence; #505 records hashes)"
   }
 }
