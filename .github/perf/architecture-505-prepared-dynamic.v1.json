@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "505-prepared-dynamic-bus-type",
+  "semanticClass": "prepared-dynamic",
+  "ownership": {
+    "bus": "The caller owns the existing MessageBus; the bound handle holds that bus only and cannot outlive it safely.",
+    "payloadLifetime": "The caller owns each synchronous message through the public emission boundary; the handle retains no payload.",
+    "managedReferences": "The handle may retain its bus and generic message type but no callback, sink array, or dispatch snapshot.",
+    "alignment": "Existing managed message layout is unchanged; no native arena is introduced.",
+    "reclamation": "A forced or idle sweep must release the bus's evicted sink references; the handle retains none and validates after the sweep."
+  },
+  "topology": {
+    "producers": "single",
+    "consumers": "single",
+    "threadAffinity": "The existing bus owner thread performs each synchronous emission.",
+    "playerLoopPhase": "The caller's current phase; the handle adds no scheduling."
+  },
+  "ordering": {
+    "guarantee": "linearizable-per-item",
+    "linearizationPoint": "Each use enters the existing public emission boundary after any idle sweep and current-plan validation.",
+    "routeAmortization": true
+  },
+  "capacity": {
+    "policy": "caller-length",
+    "overflow": "none",
+    "wait": "none"
+  },
+  "lifecycle": {
+    "reset": "A reset invalidates the bus plan; the next use refreshes before dispatch and observes the reset state.",
+    "cancellation": "Only the existing per-emission cancellation semantics apply; no handle cancellation state exists.",
+    "disposal": "A use after bus disposal follows the existing public emission behavior, with no retained route bypass.",
+    "exceptions": "The original callback exception propagates with its identity and completed prefix unchanged.",
+    "producerAbandon": "No reservation exists; an abandoned caller publishes no later message.",
+    "partialPublication": "Completed earlier calls remain observable; no rollback or deferred publication is added."
+  },
+  "dynamicDifferences": "none",
+  "prepared": {
+    "binding": "bus-and-type",
+    "stalenessPolicy": "transparent-refresh",
+    "validatesAfterSweep": true,
+    "retainsEvictedSinks": false,
+    "dynamicFallback": true
+  },
+  "compatibility": {
+    "unity": ["2021.3.45f1", "2022.3.45f1", "6000.5.2f1"],
+    "backends": ["Mono", "IL2CPP"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "packages": []
+  },
+  "decision": {
+    "workload": "Same-route batch sizes 1, 4, 16, 64, 128, and 256 after prewarm; direct public emission is the control.",
+    "thresholdPercent": 20,
+    "capabilityException": "none",
+    "batchOneOverhead": "pending #512 timing",
+    "breakEven": "pending #512 timing",
+    "p99": "N/A until #512 effective-sample and open-loop rules are validated",
+    "retainedMemory": "pending forced-trim and idle-sweep holder checks",
+    "playerSize": "pending optional prototype build",
+    "buildTime": "pending optional prototype build",
+    "stopRule": "Stop on any trace mismatch, stale route, retained evicted sink, or unsupported dynamic fallback; do not promote without a 20% workload gain or distinct supported capability."
+  },
+  "evidence": {
+    "state": "protocol-only",
+    "sourceSha256": null,
+    "testSourceSha256": null,
+    "profileSha256": null,
+    "evidenceSha256": null,
+    "evidenceLocation": "#505 issue comment 5714789657; local prepared-dynamic prototype pending"
+  }
+}

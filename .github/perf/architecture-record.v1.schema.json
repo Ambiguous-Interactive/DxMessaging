@@ -59,6 +59,17 @@
       }
     },
     "dynamicDifferences": { "type": "string", "minLength": 1 },
+    "prepared": {
+      "type": "object",
+      "required": ["binding", "stalenessPolicy", "validatesAfterSweep", "retainsEvictedSinks", "dynamicFallback"],
+      "properties": {
+        "binding": { "enum": ["bus-and-type", "bus-type-route-key"] },
+        "stalenessPolicy": { "enum": ["transparent-refresh", "explicit-stale-result", "fail-before-dispatch"] },
+        "validatesAfterSweep": { "const": true },
+        "retainsEvictedSinks": { "const": false },
+        "dynamicFallback": { "const": true }
+      }
+    },
     "compatibility": {
       "type": "object",
       "required": ["unity", "backends", "platforms", "packages"],
@@ -109,6 +120,28 @@
           "dynamicDifferences": { "const": "none" }
         }
       }
+    },
+    {
+      "if": { "type": "object", "properties": { "semanticClass": { "const": "prepared-dynamic" } } },
+      "then": {
+        "required": ["prepared"],
+        "properties": {
+          "prepared": { "type": "object" },
+          "ordering": { "type": "object", "properties": { "guarantee": { "const": "linearizable-per-item" } } },
+          "capacity": { "type": "object", "properties": { "policy": { "const": "caller-length" }, "overflow": { "const": "none" }, "wait": { "const": "none" } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "semanticClass": { "const": "prepared-dynamic" },
+          "prepared": { "type": "object", "properties": { "stalenessPolicy": { "const": "transparent-refresh" } } }
+        },
+        "required": ["prepared"]
+      },
+      "then": { "properties": { "dynamicDifferences": { "const": "none" } } }
     },
     {
       "if": { "type": "object", "properties": { "evidence": { "type": "object", "properties": { "state": { "enum": ["tested", "measured"] } } } } },
