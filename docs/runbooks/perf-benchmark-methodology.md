@@ -244,6 +244,36 @@ requires an explanation, a fix, or an explicit reviewer-approved exception. A
 count of `Unmeasured` (rendered `n/a`) is neither a pass nor a fail -- it means no
 reliable probe was available on that backend, so the budget cannot be evaluated.
 
+### Experimental latency quantiles
+
+Issue [#512](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512)
+keeps cold, burst, and queued latency separate from the warmed throughput rows
+above. The current exact reducer reports a strict-upper empirical percentile:
+for `n` sorted observations, p99 selects the zero-based rank `floor(99*n/100)`.
+For an exactly one-in-100 deterministic tail-control trace, that selects the
+delayed observation. This verifies the protocol's rank response, not a
+population p99 estimate.
+
+The reducer also reports exact equal-tail 95% binomial order-statistic rank
+bounds, conditional on independent, identically distributed units. A finite
+two-sided p99 interval first becomes possible at 368 such units. At 72 units,
+the ranks are 69 and no finite upper endpoint. Even 368 units do not guarantee
+a narrow interval or a sound claim when the clock, host, or workload is unstable.
+The [#512 unit and interval boundary](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512#issuecomment-5717971411)
+records the pre-player stop rule and the remaining interval-width decision.
+
+Count a fresh clean build/player start once for process-cold work. Retain the
+type shape, order, build, and player identities for type-cold work; shapes in
+one player form a cluster. Burst and queue traces may contain many frames or
+messages, but one complete host-stable player session is one replication unit.
+Within-session quantiles remain descriptive. A percentile of session p99 values
+describes session p99 variation; it is not the percentile of pooled messages.
+Do not use the number of messages, frames, or repeated launches as the
+independent-unit count. Report the population interval and verdict as `N/A`
+when a bound is absent, while retaining the labeled descriptive observation.
+The exact reducer does not verify independence; source and session evidence
+must establish it before inference.
+
 ## Build and runtime configuration
 
 The published numbers are measured under **Standalone IL2CPP + .NET Standard
