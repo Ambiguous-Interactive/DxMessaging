@@ -2,6 +2,7 @@ name: Runner Audit (Windows)
 
 # Operator-driven, workflow_dispatch-only audit of a self-hosted Windows
 # runner's host prerequisites, exact Unity editors, and required modules.
+# The optional #510 probe records outcome-free performance host sensors on ELI-MACHINE.
 # This workflow is intentionally validation-only: GitHub Actions does not have
 # the administrator credentials required to install or repair runner software.
 # An administrator performs all installation and repair directly on the host,
@@ -40,6 +41,11 @@ on:
         options:
           - DAD-MACHINE
           - ELI-MACHINE
+      perf-host-characterization:
+        description: 'Capture the outcome-free #510 performance-host sensor probe on ELI-MACHINE.'
+        required: false
+        type: boolean
+        default: false
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
@@ -149,6 +155,21 @@ jobs:
           if ($env:GITHUB_STEP_SUMMARY) {
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
           }
+
+      - name: Capture outcome-free performance host conditions
+        if: ${{ inputs['perf-host-characterization'] }}
+        shell: pwsh
+        timeout-minutes: 6
+        env:
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+              throw 'Performance host characterization is pinned to ELI-MACHINE.'
+          }
+          $path = '.artifacts/runner-bootstrap/host-characterization.json'
+          ./scripts/unity/collect-perf-host-characterization.ps1 -OutputPath $path -SampleCount 120
+          $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          "- Outcome-free host characterization SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Run runner audit (single-step transcript)
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
