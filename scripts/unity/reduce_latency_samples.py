@@ -13,7 +13,10 @@ from typing import Any
 
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
-FIELDS = ("unitId", "playerSha256", "profileSha256", "startTick", "endTick", "frequencyHz")
+FIELDS = (
+    "unitId", "playerSha256", "profileSha256", "experimentSha256",
+    "startTick", "endTick", "frequencyHz",
+)
 PERCENTILES = (("p50", 50), ("p95", 95), ("p99", 99))
 
 
@@ -50,6 +53,8 @@ def reduce_samples(records: Any) -> dict[str, Any]:
         raise ValueError("records must be a nonempty array of independent units")
     seen: set[str] = set()
     ordered: list[tuple[Fraction, dict[str, str]]] = []
+    cohort_profile = None
+    cohort_experiment = None
     for index, record in enumerate(records):
         if not isinstance(record, dict) or set(record) != set(FIELDS):
             raise ValueError(f"records[{index}] must have exactly the required fields")
@@ -59,9 +64,14 @@ def reduce_samples(records: Any) -> dict[str, Any]:
         if unit in seen:
             raise ValueError(f"duplicate independent unitId: {unit}")
         seen.add(unit)
-        for field in ("playerSha256", "profileSha256"):
+        for field in ("playerSha256", "profileSha256", "experimentSha256"):
             if not isinstance(record[field], str) or SHA256.fullmatch(record[field]) is None:
                 raise ValueError(f"records[{index}].{field} must be a SHA-256 hex digest")
+        if cohort_profile is None:
+            cohort_profile = record["profileSha256"]
+            cohort_experiment = record["experimentSha256"]
+        elif record["profileSha256"] != cohort_profile or record["experimentSha256"] != cohort_experiment:
+            raise ValueError("all records must share profileSha256 and experimentSha256")
         start = _decimal(record["startTick"], f"records[{index}].startTick")
         end = _decimal(record["endTick"], f"records[{index}].endTick")
         frequency = _decimal(record["frequencyHz"], f"records[{index}].frequencyHz")
@@ -95,6 +105,8 @@ def reduce_samples(records: Any) -> dict[str, Any]:
         "quantileConvention": "strict-upper-empirical",
         "nanosecondRounding": "nearest-integer-half-up",
         "independentUnitCount": count,
+        "profileSha256": cohort_profile,
+        "experimentSha256": cohort_experiment,
         "orderedSamples": [sample for _, sample in ordered],
         "quantiles": quantiles,
         "conditionalRankBounds95": rank_bounds,

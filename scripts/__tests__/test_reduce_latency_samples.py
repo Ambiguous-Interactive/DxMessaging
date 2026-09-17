@@ -25,6 +25,7 @@ def sample(unit: str, duration: int, frequency: int = 1_000_000_000) -> dict[str
         "unitId": unit,
         "playerSha256": "a" * 64,
         "profileSha256": "b" * 64,
+        "experimentSha256": "c" * 64,
         "startTick": "9007199254740993000000",
         "endTick": str(9007199254740993000000 + duration),
         "frequencyHz": str(frequency),
@@ -87,6 +88,21 @@ class ReduceLatencySamplesTests(unittest.TestCase):
             self.assertEqual(bounds["status"], "N/A")
             self.assertTrue(bounds["lowerRank"] is None or bounds["upperRank"] is None)
 
+    def test_mixed_profile_or_experiment_cohort_is_rejected(self) -> None:
+        first = sample("first", 1)
+        second = sample("second", 2)
+        second["playerSha256"] = "d" * 64
+        result = MODULE.reduce_samples([first, second])
+        self.assertEqual(result["profileSha256"], "b" * 64)
+        self.assertEqual(result["experimentSha256"], "c" * 64)
+        for field in ("profileSha256", "experimentSha256"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                MODULE.reduce_samples([first, {**second, field: "e" * 64}])
+        without_experiment = dict(second)
+        del without_experiment["experimentSha256"]
+        with self.assertRaises(ValueError):
+            MODULE.reduce_samples([first, without_experiment])
+
     def test_invalid_clock_provenance_and_independence_are_rejected(self) -> None:
         valid = sample("one", 1)
         failures = [
@@ -95,6 +111,7 @@ class ReduceLatencySamplesTests(unittest.TestCase):
             [{**valid, "unitId": " "}],
             [{**valid, "playerSha256": "bad"}],
             [{**valid, "profileSha256": ""}],
+            [{**valid, "experimentSha256": ""}],
             [{**valid, "startTick": "-1"}],
             [{**valid, "endTick": str(int(valid["startTick"]) - 1)}],
             [{**valid, "frequencyHz": "0"}],
