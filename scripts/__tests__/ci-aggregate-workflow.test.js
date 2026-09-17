@@ -516,6 +516,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   assert.match(runnerAuditJob, /\n\s+DetectOnly = \$true\n/);
   assert.match(runnerAuditJob, /Join-Path \$env:RUNNER_TOOL_CACHE 'u6-v3'/);
   assert.doesNotMatch(runnerAuditJob, /\binputs\.detect-only\b/);
+  assert.match(getStepBlock(getJobBlock(runnerAudit, "pilot-contract-smoke", "runner-bootstrap.yml"), "Require ELI request and runner"), /License recovery cannot launch a player/);
   // prettier-ignore
   const hostPrereqAction = fs.readFileSync(path.join(WORKFLOW_DIR, "..", "actions", "assert-unity-host-prereqs", "action.yml"), "utf8");
   assert.doesNotMatch(hostPrereqAction, /^\s+auto-install:$/m);
@@ -525,7 +526,6 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const count = workflowSources.reduce((sum, source) => sum + source.split(action).length - 1, 0);
     assert.equal(count, UNITY_LOCK_WINDOWS.length, action);
   }
-
   // The central editor gate exposes the validated executable through its
   // editor-path output. The invocation invariant: every Unity-consuming step
   // binds that output as UNITY_EDITOR_PATH step env, so licensed work runs the
@@ -535,7 +535,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
 
   for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
-    const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
+    const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'${file === "runner-bootstrap.yml" ? " && !inputs\\['perf-license-recovery'\\]" : ""}`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
     const install = getStepBlock(job, "Install artifact tooling dependencies");
     assert.match(
