@@ -14,6 +14,7 @@ const {
 const {
   reduceDifferentialReplayFailure,
   reduceShippingFidelityMatrix,
+  reduceOpenLoopEditorCapture,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations
 } = require("./perf-evidence-reducers.js");
@@ -25,22 +26,11 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 const REDUCERS = Object.freeze({
-  "differential-replay-failure-v1": {
-    artifactClass: "differential-replay-failure",
-    reduce: reduceDifferentialReplayFailure
-  },
-  "allocation-subunsub-observations-v1": {
-    artifactClass: "allocation-subunsub-observations",
-    reduce: reduceSubUnsubObservations
-  },
-  "paired-throughput-screen-v1": {
-    artifactClass: "paired-throughput-screen",
-    reduce: reducePairedThroughputScreen
-  },
-  "shipping-fidelity-matrix-v1": {
-    artifactClass: "shipping-fidelity-matrix",
-    reduce: reduceShippingFidelityMatrix
-  }
+  "differential-replay-failure-v1": { artifactClass: "differential-replay-failure", reduce: reduceDifferentialReplayFailure },
+  "allocation-subunsub-observations-v1": { artifactClass: "allocation-subunsub-observations", reduce: reduceSubUnsubObservations },
+  "paired-throughput-screen-v1": { artifactClass: "paired-throughput-screen", reduce: reducePairedThroughputScreen },
+  "shipping-fidelity-matrix-v1": { artifactClass: "shipping-fidelity-matrix", reduce: reduceShippingFidelityMatrix },
+  "open-loop-editor-capture-v1": { artifactClass: "open-loop-editor-capture", reduce: reduceOpenLoopEditorCapture }
 });
 function fail(message) {
   throw new Error(message);

@@ -34,6 +34,7 @@ Each reducer accepts only its registered artifact class:
 | `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 | `differential-replay-failure`      | `differential-replay-failure-v1`      |
+| `open-loop-editor-capture`         | `open-loop-editor-capture-v1`         |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -41,6 +42,20 @@ supply confirmatory intervals, native binaries, or the full paired-throughput ca
 The SubUnsub class retains individual benchmark observations, including unmeasured allocation
 probes. Allocation-heavy SubUnsub campaigns, cold latency, frame/queue latency, WPR/PMU native
 mapping, and ARM64 energy still need their complete raw-input contracts and reducers under #508.
+The Editor open-loop class is a descriptive protocol screen; it does not establish an independent
+player session, interval precision, or a latency promotion verdict.
+
+The open-loop class requires exactly eight text files: `capture-environment.json`,
+`capture-replay.json`, `open-loop-editor-plan.json`, one maintained-runner result JSON, and that
+result's `.run.json`, `.cleanup.json`, `.status`, and `.cleanup.status` sidecars. The `.status`
+extension receives the same reviewed-text privacy scan as other admitted extensions. The reducer
+binds the manifest source commit to the environment descriptor, hashes the plan, checks terminal
+runner ownership and clean-scene state, then recomputes every offered arrival, completion, exact
+quantile, and tail effect from the raw result. It rejects a retained replay summary that differs
+from the raw-derived result. The Node bundle tool passes only the supplied file bytes and source
+commit to the Python exact-integer auditor over process stdin; the auditor reads no data files,
+clock, or environment variables. Restorers need `python3` as well as Node. Source-tree and
+Unity-assembly identity still require separate remote/source checks.
 
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
 Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode

@@ -173,6 +173,47 @@ class AuditOpenLoopTraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "GUID"):
             MODULE.reduce_capture_contents({**contents, "capture-environment.json": json.dumps(changed).encode()}, commit)
 
+        bundle_tool = SCRIPT.with_name("perf-evidence-bundle.js")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for filename, data in contents.items():
+                (root / filename).write_bytes(data)
+            command = [
+                "node", str(bundle_tool), "seal", str(root), "--experiment-id", "open-loop-fixture",
+                "--artifact-class", "open-loop-editor-capture", "--reducer", "open-loop-editor-capture-v1",
+                "--source-commit", commit,
+            ]
+            sealed = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(sealed.returncode, 0, sealed.stderr)
+            replayed = subprocess.run(
+                ["node", str(bundle_tool), "replay", str(root / "evidence-manifest.json")],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(replayed.returncode, 0, replayed.stderr)
+            (root / name).write_bytes(result.replace(b'"passCount": 1', b'"passCount": 2'))
+            corrupted = subprocess.run(
+                ["node", str(bundle_tool), "replay", str(root / "evidence-manifest.json")],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(corrupted.returncode, 0)
+            self.assertIn("hashes to", corrupted.stderr)
+            (root / "evidence-manifest.json").unlink()
+            (root / name).write_bytes(result)
+            (root / (name + ".cleanup.status")).unlink()
+            missing = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("missing", missing.stderr)
+            status_file = root / (name + ".cleanup.status")
+            status_file.write_bytes(b"Machine ID: FAKEmachineID000000000000=\n")
+            private = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(private.returncode, 0)
+            self.assertIn("scrub it before sealing", private.stderr)
+            status_file.write_bytes(b"done")
+            (root / "capture-replay.json").write_bytes(json.dumps({**replay, "traceCount": 2}).encode())
+            mismatched = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(mismatched.returncode, 0)
+            self.assertIn("retained", mismatched.stderr)
+
     def test_capture_sidecars_bind_run_and_terminal_clean_scene(self) -> None:
         raw = json.dumps(runner_result()).encode()
         guid = "12345678-1234-1234-1234-123456789abc"

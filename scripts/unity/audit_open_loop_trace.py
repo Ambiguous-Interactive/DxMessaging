@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import re
+import sys
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -485,6 +487,7 @@ def reduce_capture_contents(contents: dict[str, bytes], source_commit: str) -> d
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bundle-stdin", action="store_true", help="read source identity and base64 evidence from stdin")
     parser.add_argument("schedule", nargs="?", type=Path, help="predeclared raw schedule JSON")
     parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
     parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
@@ -495,6 +498,20 @@ def main() -> None:
     parser.add_argument("--cleanup-status", type=Path, help="cleanup status sidecar")
     parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
+    if args.bundle_stdin:
+        if any((args.schedule, args.observations, args.unity_result, args.plan, args.run_record,
+                args.cleanup_record, args.result_status, args.cleanup_status, args.expected_trace_id)):
+            parser.error("--bundle-stdin does not accept file arguments")
+        request = fields(parse_json(sys.stdin.buffer.read()), {"sourceCommit", "contents"}, "bundle request")
+        encoded = request["contents"]
+        if not isinstance(encoded, dict):
+            raise ValueError("bundle contents must be an object")
+        contents = {
+            name: base64.b64decode(value, validate=True)
+            for name, value in encoded.items()
+        }
+        print(json.dumps(reduce_capture_contents(contents, request["sourceCommit"]), sort_keys=True))
+        return
     capture_files = (args.run_record, args.cleanup_record, args.result_status, args.cleanup_status)
     if any(item is not None for item in capture_files) and not all(item is not None for item in capture_files):
         parser.error("capture sidecars must be supplied together")
@@ -519,4 +536,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, KeyError, TypeError, base64.binascii.Error) as error:
+        print(f"open-loop evidence error: {error}", file=sys.stderr)
+        raise SystemExit(1) from None
