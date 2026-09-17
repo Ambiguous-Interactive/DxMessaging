@@ -183,7 +183,7 @@ def inspect_workflow_job(path, expected_sha, expected_run_id, expected_commit, b
     job = json.loads(path.read_bytes(), object_pairs_hook=unique_json)
     require(isinstance(job, dict), f"{path}: malformed workflow job evidence")
     require(job.get("run_id") == expected_run_id and type(job.get("id")) is int and job["id"] > 0, f"{path}: workflow job identity drift")
-    require(job.get("head_sha") == expected_commit and job.get("name") == "Pilot IL2CPP contract, calibration, vector, or license recovery on ELI", f"{path}: workflow source or job drift")
+    require(job.get("head_sha") == expected_commit and job.get("name") == "Pilot IL2CPP contract, calibration, vector, or license recovery on ELI" and job.get("runner_name") == "ELI-MACHINE", f"{path}: workflow source, job, or runner drift")
     require(job.get("status") == "completed" and job.get("conclusion") == "success", f"{path}: workflow job did not succeed")
     steps = job.get("steps")
     require(isinstance(steps, list) and all(isinstance(step, dict) for step in steps), f"{path}: missing workflow step evidence")

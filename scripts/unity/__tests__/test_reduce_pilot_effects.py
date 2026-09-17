@@ -183,7 +183,7 @@ class PilotArtifactPreflightTests(unittest.TestCase):
             job_started = self.start + timedelta(minutes=build_index, seconds=-5)
             job_completed = self.start + timedelta(minutes=build_index, seconds=35)
             timestamp = lambda value: value.isoformat().replace("+00:00", "Z")
-            job_path.write_text(json.dumps({"id": 1000 + build_index, "run_id": 2000 + build_index, "head_sha": self.commit, "name": "Pilot IL2CPP contract, calibration, vector, or license recovery on ELI", "status": "completed", "conclusion": "success", "started_at": timestamp(job_started), "completed_at": timestamp(job_completed), "steps": [{"name": name, "status": "completed", "conclusion": "success"} for name in PILOT.REQUIRED_JOB_STEPS]}))
+            job_path.write_text(json.dumps({"id": 1000 + build_index, "run_id": 2000 + build_index, "head_sha": self.commit, "name": "Pilot IL2CPP contract, calibration, vector, or license recovery on ELI", "runner_name": "ELI-MACHINE", "status": "completed", "conclusion": "success", "started_at": timestamp(job_started), "completed_at": timestamp(job_completed), "steps": [{"name": name, "status": "completed", "conclusion": "success"} for name in PILOT.REQUIRED_JOB_STEPS]}))
             self.manifest["builds"].append(
                 {
                     "unitId": unit["unitId"],
@@ -328,6 +328,16 @@ class PilotArtifactPreflightTests(unittest.TestCase):
         path.write_text(json.dumps(job))
         entry["jobEvidenceSha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
         with self.assertRaisesRegex(ValueError, "unconfirmed workflow step: Return Unity license"):
+            self.preflight()
+
+    def test_rejects_job_on_another_runner(self):
+        entry = self.manifest["builds"][0]
+        path = self.root / entry["jobEvidencePath"]
+        job = json.loads(path.read_text())
+        job["runner_name"] = "DAD-MACHINE"
+        path.write_text(json.dumps(job))
+        entry["jobEvidenceSha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, "runner drift"):
             self.preflight()
 
     def test_rejects_artifact_hash_and_schedule_drift(self):
