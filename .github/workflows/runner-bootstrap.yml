@@ -9,12 +9,9 @@ name: Runner Audit (Windows)
 # then dispatches this audit to confirm the runner is ready.
 #
 # Targeting a SPECIFIC runner (HARD-FAIL on wrong target):
-#   * The repo's runner topology currently labels both Windows runners
-#     uniformly (`self-hosted, Windows, RAM-64GB`); only ELI-MACHINE carries
-#     the additional `fast` label (per docs/ops/ci-and-github-settings.md).
-#   * To audit one specific machine without affecting the other, take
-#     the OTHER runner offline (gh CLI or Actions UI -> Runners) BEFORE
-#     dispatching this workflow, then bring it back online afterwards.
+#   * ELI-MACHINE alone carries the `fast` label, so ELI requests select it.
+#   * DAD-MACHINE shares the generic Windows labels. To guarantee a DAD audit,
+#     take ELI offline before dispatch and restore it afterward.
 #   * If the dispatch lands on the wrong runner the workflow HARD-FAILS with
 #     `::error::` and exit 1 (NOT a silent ::warning::). This is by design:
 #     a silent audit of the WRONG machine would be operator-fatal.
@@ -88,14 +85,9 @@ jobs:
     name: Audit ${{ inputs.runner-label }}
     needs:
       - runner-preflight
-    # Cannot dynamically pin to a specific runner without machine-name labels
-    # configured on the runners themselves (operator action; not yet done in
-    # this org). Use the documented allowlisted set; operator takes the
-    # unwanted runner offline before dispatching when targeting is needed.
-    # The "Confirm runner identity" step below HARD-FAILS if the dispatch
-    # lands on the wrong machine (see header comment for the chicken-and-egg
-    # rationale around `shell: powershell` for the rest of this job).
-    runs-on: [self-hosted, Windows, RAM-64GB]
+    # ELI has a unique fast label; DAD still needs the identity guard because
+    # it has no unique label. The generic set remains available for DAD audits.
+    runs-on: ${{ inputs.runner-label == 'ELI-MACHINE' && fromJSON('["self-hosted","Windows","RAM-64GB","fast"]') || fromJSON('["self-hosted","Windows","RAM-64GB"]') }}
     # F13: inherit workflow-level permissions (contents: read, actions: read).
     # No job-level override -- the previous explicit block silently dropped
     # `actions: read` and shadowed the workflow-level intent.
