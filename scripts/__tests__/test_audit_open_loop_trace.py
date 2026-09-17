@@ -123,7 +123,51 @@ def tail_runner_result() -> dict:
     return result
 
 
+def clock_runner_result() -> dict:
+    def marker(control: str, calls: int, offset: int) -> str:
+        pairs = ";".join(f"{index * 10}:{index * 10 + (index + offset) % 3}"
+                         for index in range(256))
+        return f"DXM_LATENCY_CLOCK_V1 control={control} frequencyHz=10000000 callbackCalls={calls} pairs={pairs}"
+    return {
+        "passCount": 1, "failCount": 0, "skipCount": 0, "inconclusiveCount": 0,
+        "nodes": [{
+            "name": "TimerOnlyAndEmptyCallbackRetainMonotonicRawPairs", "isSuite": False,
+            "status": "Passed", "output": "\n".join((marker("timer-only", 0, 0), marker("empty-callback", 256, 1))),
+        }],
+        "failures": [],
+    }
+
+
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_clock_controls_rederive_exact_elapsed_ticks_and_reject_faults(self) -> None:
+        result = clock_runner_result()
+        reduced = MODULE.audit_clock_result(json.dumps(result).encode())
+        self.assertEqual(reduced["sampleCountPerControl"], 256)
+        self.assertEqual([control["callbackCalls"] for control in reduced["controls"]], [0, 256])
+        self.assertEqual(reduced["controls"][0]["zeroElapsedCount"], 86)
+        self.assertEqual(reduced["controls"][0]["elapsedQuantiles"]["p99"]["ticks"], "2")
+        output = result["nodes"][0]["output"]
+        for changed in (
+            output.splitlines()[0],
+            output + "\n" + output.splitlines()[0],
+            output.replace("callbackCalls=256", "callbackCalls=255"),
+            output.replace("frequencyHz=10000000 callbackCalls=256", "frequencyHz=10000001 callbackCalls=256"),
+            output.replace("pairs=0:0;10:11", "pairs=0:1;0:11"),
+            output.replace("pairs=0:0;10:11", "pairs=0:1;10:9"),
+            output.replace("pairs=0:0;10:11;", "pairs=0:0;", 1),
+        ):
+            with self.subTest(change=changed[:80]), self.assertRaises(ValueError):
+                MODULE.audit_clock_result(json.dumps({**result, "nodes": [{**result["nodes"][0], "output": changed}]}).encode())
+        with tempfile.TemporaryDirectory() as temporary:
+            raw_path = Path(temporary) / "clock.json"
+            raw_path.write_bytes(json.dumps(result).encode())
+            command = subprocess.run(
+                [sys.executable, str(SCRIPT), "--clock-result", str(raw_path)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(command.returncode, 0, command.stderr)
+            self.assertEqual(json.loads(command.stdout), reduced)
+
     def test_content_map_rederives_capture_and_binds_source(self) -> None:
         raw, observed, planned = regular_trace()
         result = json.dumps(runner_result([(raw, observed)])).encode()
@@ -243,6 +287,17 @@ class AuditOpenLoopTraceTests(unittest.TestCase):
         self.assertEqual(replay["runGuid"], guid)
         self.assertEqual(replay["runRecordSha256"], hashlib.sha256(json.dumps(run).encode()).hexdigest())
         self.assertEqual(replay["traceCount"], 1)
+        clock = MODULE.audit_clock_capture(
+            json.dumps(clock_runner_result()).encode(), json.dumps(run).encode(),
+            json.dumps(cleanup).encode(), b"done", b"done", "result.json",
+        )
+        self.assertEqual(clock["runGuid"], guid)
+        self.assertEqual(clock["sampleCountPerControl"], 256)
+        with self.assertRaisesRegex(ValueError, "status"):
+            MODULE.audit_clock_capture(
+                json.dumps(clock_runner_result()).encode(), json.dumps(run).encode(),
+                json.dumps(cleanup).encode(), b"running", b"done", "result.json",
+            )
         for field, value in (
             ("runGuid", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             ("resultPath", r"C:\lab\other.json"),

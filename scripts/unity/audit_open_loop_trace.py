@@ -29,6 +29,10 @@ TAIL_EFFECT = re.compile(
     r"meanShiftNumeratorTicks=((?:0|[1-9][0-9]*)) "
     r"meanShiftDenominator=((?:0|[1-9][0-9]*))\Z"
 )
+CLOCK_MARKER = re.compile(
+    r"DXM_LATENCY_CLOCK_V1 control=(timer-only|empty-callback) "
+    r"frequencyHz=((?:0|[1-9][0-9]*)) callbackCalls=((?:0|[1-9][0-9]*)) pairs=(.+)\Z"
+)
 RUN_FIELDS = {"runGuid", "resultPath"}
 CLEANUP_FIELDS = {
     "observedUtc", "observationError", "frameworkActive", "playing", "compiling",
@@ -371,17 +375,92 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
     return replay
 
 
-def audit_unity_capture(
-    raw_result: bytes,
-    expected_trace_ids: list[str],
-    plan_bytes: bytes | None,
+def audit_clock_result(raw_result: bytes) -> dict[str, Any]:
+    """Reduce the retained Editor timer-only and empty-callback timestamp controls."""
+    if not isinstance(raw_result, bytes):
+        raise ValueError("clock result must be raw bytes")
+    result = parse_json(raw_result)
+    required = {"passCount", "failCount", "skipCount", "inconclusiveCount", "nodes", "failures"}
+    if not isinstance(result, dict) or not required.issubset(result):
+        raise ValueError("clock result is missing runner fields")
+    if (
+        type(result["passCount"]) is not int or result["passCount"] != 1
+        or any(type(result[field]) is not int or result[field] != 0
+               for field in ("failCount", "skipCount", "inconclusiveCount"))
+        or result["failures"] != [] or not isinstance(result["nodes"], list)
+    ):
+        raise ValueError("clock result must have one pass and no other outcome")
+    leaves = [node for node in result["nodes"] if isinstance(node, dict) and node.get("isSuite") is False]
+    if len(leaves) != 1 or not isinstance(leaves[0].get("name"), str) or not leaves[0]["name"].endswith(
+        "TimerOnlyAndEmptyCallbackRetainMonotonicRawPairs"
+    ) or leaves[0].get("status") != "Passed" or not isinstance(leaves[0].get("output"), str):
+        raise ValueError("clock result must contain the passed clock fixture exactly once")
+    if any(not isinstance(node, dict) or node.get("isSuite") is not True or node.get("status") != "Passed"
+           for node in result["nodes"] if node is not leaves[0]):
+        raise ValueError("clock result has an invalid suite node")
+    controls = {}
+    frequency = None
+    for line in leaves[0]["output"].splitlines():
+        if not line.startswith("DXM_LATENCY_CLOCK_V1"):
+            continue
+        matched = CLOCK_MARKER.fullmatch(line)
+        if matched is None:
+            raise ValueError("clock marker is malformed")
+        control, raw_frequency, raw_calls, raw_pairs = matched.groups()
+        if control in controls or raw_frequency == "0" or (frequency is not None and frequency != raw_frequency):
+            raise ValueError("clock control is duplicated or has inconsistent frequency")
+        if raw_calls != ("0" if control == "timer-only" else "256"):
+            raise ValueError("clock callback count disagrees with control")
+        pairs = raw_pairs.split(";")
+        if len(pairs) != 256:
+            raise ValueError("clock control must retain exactly 256 timestamp pairs")
+        elapsed = []
+        previous_end = 0
+        for index, pair in enumerate(pairs):
+            values = pair.split(":")
+            if len(values) != 2:
+                raise ValueError(f"clock pair {index} is malformed")
+            start = decimal(values[0], f"clock pair {index} start")
+            end = decimal(values[1], f"clock pair {index} end")
+            if start < previous_end or end < start:
+                raise ValueError(f"clock pair {index} is reversed or nonmonotone")
+            elapsed.append(end - start)
+            previous_end = end
+        ordered = sorted(elapsed)
+        controls[control] = {
+            "control": control,
+            "callbackCalls": int(raw_calls),
+            "zeroElapsedCount": elapsed.count(0),
+            "minElapsedTicks": str(ordered[0]),
+            "maxElapsedTicks": str(ordered[-1]),
+            "quantileConvention": "strict-upper empirical floor(p*n/100), within-control descriptive",
+            "elapsedQuantiles": {name: {
+                "ticks": str(ordered[percentile * len(ordered) // 100]),
+                "nanoseconds": rational(Fraction(ordered[percentile * len(ordered) // 100] * 1_000_000_000, int(raw_frequency))),
+            } for name, percentile in (("p50", 50), ("p95", 95), ("p99", 99))},
+            "elapsedTicks": [str(ticks) for ticks in elapsed],
+        }
+        frequency = raw_frequency
+    if set(controls) != {"timer-only", "empty-callback"}:
+        raise ValueError("clock result is missing a required control marker")
+    return {
+        "schemaVersion": 1,
+        "resultClass": "descriptive-only",
+        "rawResultSha256": hashlib.sha256(raw_result).hexdigest(),
+        "frequencyHz": frequency,
+        "sampleCountPerControl": 256,
+        "controls": [controls[name] for name in ("timer-only", "empty-callback")],
+    }
+
+
+def terminal_metadata(
     run_bytes: bytes,
     cleanup_bytes: bytes,
     result_status: bytes,
     cleanup_status: bytes,
     result_name: str,
-) -> dict[str, Any]:
-    """Bind replay to the maintained runner's terminal ownership and clean-scene record."""
+) -> dict[str, str]:
+    """Validate maintained-runner ownership and terminal clean-scene state."""
     if result_status != b"done" or cleanup_status != b"done":
         raise ValueError("result and cleanup status must both be done")
     run = fields(parse_json(run_bytes), RUN_FIELDS, "run record")
@@ -415,14 +494,43 @@ def audit_unity_capture(
         paths.add(scene_path)
     if active not in paths:
         raise ValueError("cleanup active scene is not among loaded scenes")
+    return {
+        "runGuid": guid,
+        "resultName": result_name,
+        "runRecordSha256": hashlib.sha256(run_bytes).hexdigest(),
+        "cleanupRecordSha256": hashlib.sha256(cleanup_bytes).hexdigest(),
+        "resultStatusSha256": hashlib.sha256(result_status).hexdigest(),
+        "cleanupStatusSha256": hashlib.sha256(cleanup_status).hexdigest(),
+    }
+
+
+def audit_unity_capture(
+    raw_result: bytes,
+    expected_trace_ids: list[str],
+    plan_bytes: bytes | None,
+    run_bytes: bytes,
+    cleanup_bytes: bytes,
+    result_status: bytes,
+    cleanup_status: bytes,
+    result_name: str,
+) -> dict[str, Any]:
+    """Bind open-loop replay to the maintained runner's terminal record."""
+    terminal = terminal_metadata(run_bytes, cleanup_bytes, result_status, cleanup_status, result_name)
     replay = audit_unity_result(raw_result, expected_trace_ids, plan_bytes)
-    replay["runGuid"] = guid
-    replay["resultName"] = result_name
-    replay["runRecordSha256"] = hashlib.sha256(run_bytes).hexdigest()
-    replay["cleanupRecordSha256"] = hashlib.sha256(cleanup_bytes).hexdigest()
-    replay["resultStatusSha256"] = hashlib.sha256(result_status).hexdigest()
-    replay["cleanupStatusSha256"] = hashlib.sha256(cleanup_status).hexdigest()
-    return replay
+    return {**replay, **terminal}
+
+
+def audit_clock_capture(
+    raw_result: bytes,
+    run_bytes: bytes,
+    cleanup_bytes: bytes,
+    result_status: bytes,
+    cleanup_status: bytes,
+    result_name: str,
+) -> dict[str, Any]:
+    """Bind raw clock controls to the same terminal runner record."""
+    terminal = terminal_metadata(run_bytes, cleanup_bytes, result_status, cleanup_status, result_name)
+    return {**audit_clock_result(raw_result), **terminal}
 
 
 def reduce_capture_contents(contents: dict[str, bytes], source_commit: str) -> dict[str, Any]:
@@ -491,6 +599,7 @@ def main() -> None:
     parser.add_argument("schedule", nargs="?", type=Path, help="predeclared raw schedule JSON")
     parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
     parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
+    parser.add_argument("--clock-result", type=Path, help="raw maintained-runner JSON with clock controls")
     parser.add_argument("--plan", type=Path, help="committed normalized arrival plan for the Unity result")
     parser.add_argument("--run-record", type=Path, help="maintained-runner run identity JSON")
     parser.add_argument("--cleanup-record", type=Path, help="terminal cleanup JSON")
@@ -499,7 +608,7 @@ def main() -> None:
     parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
     if args.bundle_stdin:
-        if any((args.schedule, args.observations, args.unity_result, args.plan, args.run_record,
+        if any((args.schedule, args.observations, args.unity_result, args.clock_result, args.plan, args.run_record,
                 args.cleanup_record, args.result_status, args.cleanup_status, args.expected_trace_id)):
             parser.error("--bundle-stdin does not accept file arguments")
         request = fields(parse_json(sys.stdin.buffer.read()), {"sourceCommit", "contents"}, "bundle request")
@@ -515,7 +624,18 @@ def main() -> None:
     capture_files = (args.run_record, args.cleanup_record, args.result_status, args.cleanup_status)
     if any(item is not None for item in capture_files) and not all(item is not None for item in capture_files):
         parser.error("capture sidecars must be supplied together")
-    if args.unity_result is not None:
+    if args.clock_result is not None:
+        if any((args.schedule, args.observations, args.unity_result, args.plan, args.expected_trace_id)):
+            parser.error("--clock-result accepts no open-loop schedule, plan, or trace IDs")
+        raw_result = args.clock_result.read_bytes()
+        if args.run_record is None:
+            result = audit_clock_result(raw_result)
+        else:
+            result = audit_clock_capture(
+                raw_result, args.run_record.read_bytes(), args.cleanup_record.read_bytes(),
+                args.result_status.read_bytes(), args.cleanup_status.read_bytes(), args.clock_result.name,
+            )
+    elif args.unity_result is not None:
         if args.schedule is not None or args.observations is not None or (not args.expected_trace_id and args.plan is None):
             parser.error("--unity-result requires expected trace IDs or --plan and no positional files")
         raw_result = args.unity_result.read_bytes()
