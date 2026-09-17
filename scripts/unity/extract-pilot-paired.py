@@ -49,10 +49,10 @@ def close(actual, expected, label, tolerance=1e-12):
     require(abs(actual - expected) <= tolerance * expected, f"{label} does not match raw cycles")
 
 
-def extract(path, order, work):
+def extract_xml(xml_bytes, order, work):
     require(order in PROTOCOLS, "unknown scheduled batch order")
     require(type(work) is int and 0 <= work <= 1_000_000, "invalid scheduled CPU work")
-    root = ET.parse(path).getroot()
+    root = ET.fromstring(xml_bytes)
     require(root.tag == "test-run", "expected NUnit test-run XML")
     require(root.get("failed") == "0", "NUnit launch has failed tests")
     rows = {}
@@ -113,6 +113,10 @@ def extract(path, order, work):
         rows[scenario] = {"ratio": geometric, "cycleRatios": ratios}
     require(rows.keys() == SCENARIOS, f"paired scenario set mismatch: {sorted(SCENARIOS - rows.keys())}")
     return {"schemaVersion": 1, "commit": commit, "platform": platform, "batchOrder": order, "pilotCpuWorkIterationsPerBatch": work, "rows": rows}
+
+
+def extract(path, order, work):
+    return extract_xml(Path(path).read_bytes(), order, work)
 
 
 def main():

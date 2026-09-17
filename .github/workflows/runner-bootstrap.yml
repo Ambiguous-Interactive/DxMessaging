@@ -3,8 +3,9 @@ name: Runner Audit (Windows)
 
 # Operator-driven, workflow_dispatch-only audit of a self-hosted Windows
 # runner's host prerequisites, exact Unity editors, and required modules.
-# The optional #510 probes record outcome-free host sensors and validate one
-# pilot IL2CPP comparison player's contract path on ELI-MACHINE.
+# The optional #510 probes record outcome-free host sensors, validate one
+# pilot IL2CPP comparison player's contract path, and calibrate the control
+# shim separately from the blinded pilot on ELI-MACHINE.
 # This workflow is intentionally validation-only: GitHub Actions does not have
 # the administrator credentials required to install or repair runner software.
 # An administrator performs all installation and repair directly on the host,
@@ -60,6 +61,19 @@ on:
         required: false
         type: boolean
         default: false
+      perf-pilot-calibration-work:
+        description: 'Optional #510 control-only calibration; one clean player, five PairedPerf launches at the selected CPU-work level.'
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - '0'
+          - '2048'
+          - '8192'
+          - '32768'
+          - '131072'
+          - '524288'
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
@@ -329,8 +343,8 @@ jobs:
           retention-days: 30
 
   pilot-contract-smoke:
-    name: Pilot IL2CPP contract smoke on ELI
-    if: ${{ inputs['perf-pilot-contract-smoke'] }}
+    name: Pilot IL2CPP contract or calibration on ELI
+    if: ${{ inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' }}
     needs:
       - runner-preflight
       - bootstrap
@@ -343,6 +357,9 @@ jobs:
         run: |
           if ('${{ inputs.runner-label }}' -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
             throw 'Pilot contract smoke requires an ELI-MACHINE request and the ELI-MACHINE runner.'
+          }
+          if ('${{ inputs['perf-pilot-contract-smoke'] }}' -ceq 'true' -and '${{ inputs['perf-pilot-calibration-work'] }}' -cne 'none') {
+            throw 'Pilot contract and calibration modes are mutually exclusive.'
           }
 
       - name: Require manually installed Unity editor
@@ -460,7 +477,7 @@ jobs:
         shell: pwsh
         run: exit 1
 
-      - name: Build and run pilot comparison contracts
+      - name: Build and run pilot comparison contracts or calibration
         id: run_contracts
         if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 120
@@ -476,6 +493,10 @@ jobs:
           $artifactsPath = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\pc${{ github.run_id }}a${{ github.run_attempt }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\6000.5.2f1'
+          $calibrationWorkText = '${{ inputs['perf-pilot-calibration-work'] }}'
+          $calibration = $calibrationWorkText -cne 'none'
+          $work = if ($calibration) { [int]$calibrationWorkText } else { 0 }
+          $testCategory = if ($calibration) { 'PairedPerf' } else { 'ComparisonContract' }
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion 6000.5.2f1 `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
@@ -484,12 +505,12 @@ jobs:
             -ArtifactsPath $artifactsPath `
             -ProjectPath $projectPath `
             -CachePath $cachePath `
-            -TestCategory ComparisonContract `
+            -TestCategory $testCategory `
             -IncludeComparisons `
             -CanonicalProfilePath '.github/perf/canonical-il2cpp-profile.v1.json' `
             -StandalonePlayerRunCount 5 `
             -StandalonePlayerBatchOrders 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' `
-            -StandalonePilotCpuWorkIterationsPerBatch 0 `
+            -StandalonePilotCpuWorkIterationsPerBatch $work `
             -StandalonePlayerProcessorAffinityMask 65535 `
             -StandalonePlayerPriorityClass Normal `
             -LicenseReturnOwner Central `
@@ -497,7 +518,7 @@ jobs:
             -ReleasePlayerBuild
 
       - name: Require five contract-only player launches and valid host health
-        if: ${{ steps.run_contracts.outcome == 'success' }}
+        if: ${{ steps.run_contracts.outcome == 'success' && inputs['perf-pilot-calibration-work'] == 'none' }}
         timeout-minutes: 2
         shell: pwsh
         run: |
@@ -520,6 +541,46 @@ jobs:
             throw 'Pilot contract smoke build provenance does not match the checked-out source.'
           }
           "- Pilot contract smoke: five healthy launches, no paired throughput rows; build invocation ``$($build.buildInvocationId)``." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Require five calibration launches with complete paired rows
+        if: ${{ steps.run_contracts.outcome == 'success' && inputs['perf-pilot-calibration-work'] != 'none' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $root = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          $work = [int]'${{ inputs['perf-pilot-calibration-work'] }}'
+          $evidence = Get-Content -LiteralPath (Join-Path $root 'same-player-repeats/same-player-evidence.json') -Raw | ConvertFrom-Json
+          if ($evidence.runCount -ne 5 -or @($evidence.runs).Count -ne 5 -or $evidence.playerDirectoryManifestMatches -ne $true) {
+            throw 'Calibration did not retain five launches of one unchanged player.'
+          }
+          $expectedScenarios = @('GlobalToOne', 'GlobalToMany', 'KeyedToOne', 'StructNoBox', 'Filtered', 'PostProcess', 'FilteredPostProcess')
+          foreach ($run in $evidence.runs) {
+            $health = Get-Content -LiteralPath (Join-Path $root "same-player-repeats/$($run.hostTelemetryHealthFile)") -Raw | ConvertFrom-Json
+            if ($health.valid -ne $true -or @($health.reasons).Count -ne 0) {
+              throw "Calibration host health failed on launch $($run.runIndex)."
+            }
+            $xml = Get-Content -LiteralPath (Join-Path $root $run.resultsPath) -Raw
+            $matches = [regex]::Matches($xml, 'DXM_PAIRED_COMPARISON\s+(\{[^\r\n<]+\})')
+            $rows = @($matches | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
+            $actualScenarios = (@($rows.scenario | Sort-Object) -join ',')
+            $requiredScenarios = (@($expectedScenarios | Sort-Object) -join ',')
+            if ($rows.Count -ne 7 -or $actualScenarios -cne $requiredScenarios) {
+              throw "Calibration launch $($run.runIndex) lacks exactly seven distinct paired rows."
+            }
+            foreach ($row in $rows) {
+              $expectedWork = if ($row.scenario -in @('GlobalToMany', 'KeyedToOne')) { 0 } else { $work }
+              if ($row.batchOrder -cne $run.batchOrder -or $row.pilotCpuWorkIterationsPerBatch -ne $expectedWork) {
+                throw "Calibration launch $($run.runIndex) has order or target-only work drift."
+              }
+            }
+          }
+          $build = Get-Content -LiteralPath (Join-Path $root 'pilot-build-evidence.json') -Raw | ConvertFrom-Json
+          if ($build.projectWasAbsentBefore -ne $true -or $build.sourceCommit -cne '${{ github.sha }}') {
+            throw 'Calibration build provenance does not match the checked-out source.'
+          }
+          $summary = "- Pilot control calibration: work level $work, five healthy paired launches, " +
+            "one clean build; build invocation ``$($build.buildInvocationId)``. No rate interpreted in this job."
+          $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Redact pilot contract artifacts
         id: redact_pilot

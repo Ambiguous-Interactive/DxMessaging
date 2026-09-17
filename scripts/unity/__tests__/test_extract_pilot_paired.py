@@ -69,6 +69,7 @@ class PilotExtractorTests(unittest.TestCase):
         result = PILOT.extract(self.path, "BAABABBA", 23)
         self.assertEqual(set(result["rows"]), PILOT.SCENARIOS)
         self.assertEqual(result["rows"]["GlobalToOne"]["ratio"], 0.5)
+        self.assertEqual(PILOT.extract_xml(self.path.read_bytes(), "BAABABBA", 23), result)
 
     def test_rejects_scheduled_order_drift(self):
         write_xml(self.path, fixture_rows())

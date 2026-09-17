@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "purpose": "510-control-only-work-calibration",
+  "pythonVersion": "3.11.2",
+  "workLevels": [0, 2048, 8192, 32768, 131072, 524288],
+  "dispatchOrder": [32768, 0, 131072, 2048, 524288, 8192],
+  "playerLaunchesPerCleanBuild": 5,
+  "targetRateRatios": {
+    "P03": 1.03,
+    "P05": 1.05,
+    "P10": 1.1
+  },
+  "sourceSha256": "ce0ffa1deacb004f4dabbc6fafbec14e1c61325e6c63864be5aefb17d8e97ccb",
+  "extractorSha256": "7ccde7a0f5be23e8abe2908b53acbffd3f1ea6a946e83dffafcd0205b8487b2f"
+}

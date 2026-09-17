@@ -7,7 +7,7 @@
     [
       "runner-bootstrap.yml",
       "pilot-contract-smoke",
-      "Build and run pilot comparison contracts",
+      "Build and run pilot comparison contracts or calibration",
       false
     ]
   ],
