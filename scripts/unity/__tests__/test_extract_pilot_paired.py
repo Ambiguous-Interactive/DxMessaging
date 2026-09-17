@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -25,7 +27,11 @@ def fixture_rows(order="BAABABBA", work=23):
             "commit": "a" * 40,
             "protocol": PILOT.PROTOCOLS[order],
             "batchOrder": order,
-            "pilotCpuWorkIterationsPerBatch": work if scenario in PILOT.TARGETS else 0,
+            "pilotCpuWorkIterationsPerBatch": (
+                (work[scenario] if type(work) is dict else work)
+                if scenario in PILOT.TARGETS
+                else 0
+            ),
             "cycles": 4,
             "minimumCycleActiveMilliseconds": 625,
             "batchOperations": 10_000,
@@ -71,6 +77,57 @@ class PilotExtractorTests(unittest.TestCase):
         self.assertEqual(result["rows"]["GlobalToOne"]["ratio"], 0.5)
         self.assertEqual(PILOT.extract_xml(self.path.read_bytes(), "BAABABBA", 23), result)
 
+    def test_extracts_named_vector_and_checks_each_target(self):
+        work = dict(zip(PILOT.TARGET_ORDER, (11, 22, 33, 44, 55)))
+        write_xml(self.path, fixture_rows(work=work))
+        result = PILOT.extract(self.path, "BAABABBA", work)
+        self.assertEqual(result["pilotCpuWorkByScenario"], work)
+        self.assertNotIn("pilotCpuWorkIterationsPerBatch", result)
+        rows = fixture_rows(work=work)
+        next(row for row in rows if row["scenario"] == "Filtered")[
+            "pilotCpuWorkIterationsPerBatch"
+        ] = 22
+        write_xml(self.path, rows)
+        with self.assertRaisesRegex(ValueError, "Filtered: scheduled CPU work drift"):
+            PILOT.extract(self.path, "BAABABBA", work)
+
+    def test_vector_cli_and_invalid_vectors(self):
+        work = dict(zip(PILOT.TARGET_ORDER, (11, 22, 33, 44, 55)))
+        write_xml(self.path, fixture_rows(work=work))
+        command = [
+            sys.executable,
+            str(SOURCE),
+            str(self.path),
+            "--batch-order",
+            "BAABABBA",
+            "--cpu-work-by-scenario",
+        ]
+        valid = subprocess.run(
+            command + ["11,22,33,44,55"], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(json.loads(valid.stdout)["pilotCpuWorkByScenario"], work)
+        for vector in (
+            "1,2,3,4",
+            "1,2,3,4,5,6",
+            "1,2,-3,4,5",
+            "1,2,3,4,1000001",
+            "1,2,3,4,05",
+        ):
+            with self.subTest(vector=vector):
+                invalid = subprocess.run(command + [vector], capture_output=True, text=True)
+                self.assertEqual(invalid.returncode, 1)
+                self.assertIn("invalid scheduled CPU work vector", invalid.stderr)
+
+    def test_rejects_noncanonical_vector_mapping(self):
+        for work in (
+            {"GlobalToOne": 1},
+            dict(zip(PILOT.TARGET_ORDER, (1, 2, 3, 4, True))),
+        ):
+            with self.subTest(work=work), self.assertRaisesRegex(
+                ValueError, "invalid scheduled CPU work vector"
+            ):
+                PILOT.extract_xml(b"<test-run/>", "BAABABBA", work)
+
     def test_rejects_scheduled_order_drift(self):
         write_xml(self.path, fixture_rows())
         with self.assertRaisesRegex(ValueError, "scheduled order drift"):
@@ -84,6 +141,15 @@ class PilotExtractorTests(unittest.TestCase):
         write_xml(self.path, rows)
         with self.assertRaisesRegex(ValueError, "scheduled CPU work drift"):
             PILOT.extract(self.path, "BAABABBA", 23)
+
+    def test_rejects_boolean_work_marker(self):
+        rows = fixture_rows(work=0)
+        next(row for row in rows if row["scenario"] == "GlobalToOne")[
+            "pilotCpuWorkIterationsPerBatch"
+        ] = False
+        write_xml(self.path, rows)
+        with self.assertRaisesRegex(ValueError, "scheduled CPU work drift"):
+            PILOT.extract(self.path, "BAABABBA", 0)
 
     def test_rejects_pseudoreplicated_or_tampered_cycles(self):
         rows = fixture_rows()

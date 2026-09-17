@@ -22,6 +22,7 @@ SCENARIOS = frozenset(
     )
 )
 TARGETS = frozenset(SCENARIOS - {"GlobalToMany", "KeyedToOne"})
+TARGET_ORDER = ("GlobalToOne", "StructNoBox", "Filtered", "PostProcess", "FilteredPostProcess")
 PROTOCOLS = {
     "ABBABAAB": "interleaved-abba-baab-v1",
     "BAABABBA": "interleaved-baab-abba-pilot-v1",
@@ -49,9 +50,18 @@ def close(actual, expected, label, tolerance=1e-12):
     require(abs(actual - expected) <= tolerance * expected, f"{label} does not match raw cycles")
 
 
+def scheduled_work(work):
+    if type(work) is int:
+        require(0 <= work <= 1_000_000, "invalid scheduled CPU work")
+        return {scenario: work for scenario in TARGET_ORDER}
+    require(type(work) is dict and set(work) == set(TARGET_ORDER), "invalid scheduled CPU work vector")
+    require(all(type(value) is int and 0 <= value <= 1_000_000 for value in work.values()), "invalid scheduled CPU work vector")
+    return work
+
+
 def extract_xml(xml_bytes, order, work):
     require(order in PROTOCOLS, "unknown scheduled batch order")
-    require(type(work) is int and 0 <= work <= 1_000_000, "invalid scheduled CPU work")
+    target_work = scheduled_work(work)
     root = ET.fromstring(xml_bytes)
     require(root.tag == "test-run", "expected NUnit test-run XML")
     require(root.get("failed") == "0", "NUnit launch has failed tests")
@@ -71,8 +81,8 @@ def extract_xml(xml_bytes, order, work):
         require(scenario not in rows, f"duplicate paired scenario: {scenario}")
         require(row.get("first") == "DxMessaging" and row.get("second") == "MessagePipe", f"{scenario}: wrong bridge order")
         require(row.get("batchOrder") == order and row.get("protocol") == PROTOCOLS[order], f"{scenario}: scheduled order drift")
-        expected_work = work if scenario in TARGETS else 0
-        require(row.get("pilotCpuWorkIterationsPerBatch") == expected_work, f"{scenario}: scheduled CPU work drift")
+        expected_work = target_work[scenario] if scenario in TARGETS else 0
+        require(type(row.get("pilotCpuWorkIterationsPerBatch")) is int and row["pilotCpuWorkIterationsPerBatch"] == expected_work, f"{scenario}: scheduled CPU work drift")
         require(row.get("cycles") == 4 and row.get("batchOperations") == 10_000, f"{scenario}: cycle contract drift")
         minimum_ms = exact_integer(row.get("minimumCycleActiveMilliseconds"), f"{scenario}.minimumCycleActiveMilliseconds")
         require(minimum_ms == 625, f"{scenario}: minimum cycle time drift")
@@ -112,7 +122,12 @@ def extract_xml(xml_bytes, order, work):
         require((row["commit"], row["platform"]) == (commit, platform), f"{scenario}: provenance drift")
         rows[scenario] = {"ratio": geometric, "cycleRatios": ratios}
     require(rows.keys() == SCENARIOS, f"paired scenario set mismatch: {sorted(SCENARIOS - rows.keys())}")
-    return {"schemaVersion": 1, "commit": commit, "platform": platform, "batchOrder": order, "pilotCpuWorkIterationsPerBatch": work, "rows": rows}
+    result = {"schemaVersion": 1, "commit": commit, "platform": platform, "batchOrder": order, "rows": rows}
+    if type(work) is int:
+        result["pilotCpuWorkIterationsPerBatch"] = work
+    else:
+        result["pilotCpuWorkByScenario"] = {scenario: target_work[scenario] for scenario in TARGET_ORDER}
+    return result
 
 
 def extract(path, order, work):
@@ -123,10 +138,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("results_xml", type=Path)
     parser.add_argument("--batch-order", choices=tuple(PROTOCOLS), required=True)
-    parser.add_argument("--cpu-work", type=int, required=True)
+    work_group = parser.add_mutually_exclusive_group(required=True)
+    work_group.add_argument("--cpu-work", type=int)
+    work_group.add_argument("--cpu-work-by-scenario", help="five comma-separated integers in the fixed target order")
     args = parser.parse_args()
     try:
-        print(json.dumps(extract(args.results_xml, args.batch_order, args.cpu_work), sort_keys=True, separators=(",", ":")))
+        work = args.cpu_work
+        if args.cpu_work_by_scenario is not None:
+            parts = args.cpu_work_by_scenario.split(",")
+            require(len(parts) == len(TARGET_ORDER) and all(re.fullmatch(r"(?:0|[1-9][0-9]*)", part) for part in parts), "invalid scheduled CPU work vector")
+            work = dict(zip(TARGET_ORDER, map(int, parts)))
+        print(json.dumps(extract(args.results_xml, args.batch_order, work), sort_keys=True, separators=(",", ":")))
     except (ET.ParseError, OSError, ValueError, TypeError) as error:
         print(f"invalid pilot launch: {error}", file=sys.stderr)
         return 1
