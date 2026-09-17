@@ -14,6 +14,7 @@ from typing import Any
 
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+GUID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\Z")
 SCHEDULE_FIELDS = {"schemaVersion", "traceId", "frequencyHz", "horizonStartTick", "horizonEndTick", "arrivals"}
 OFFER_FIELDS = {"id", "arrivalTick"}
 OBSERVATION_FIELDS = {"schemaVersion", "scheduleSha256", "events"}
@@ -26,6 +27,13 @@ TAIL_EFFECT = re.compile(
     r"meanShiftNumeratorTicks=((?:0|[1-9][0-9]*)) "
     r"meanShiftDenominator=((?:0|[1-9][0-9]*))\Z"
 )
+RUN_FIELDS = {"runGuid", "resultPath"}
+CLEANUP_FIELDS = {
+    "observedUtc", "observationError", "frameworkActive", "playing", "compiling",
+    "updating", "mainStage", "activeScene", "scenes", "runGuid", "resultPath",
+    "ownedResultPath", "legacyObserverResultPath", "frameworkErrors",
+}
+SCENE_FIELDS = {"path", "dirty", "loaded"}
 
 
 def decimal(value: Any, field: str) -> int:
@@ -357,24 +365,90 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str], plan_by
     return replay
 
 
+def audit_unity_capture(
+    raw_result: bytes,
+    expected_trace_ids: list[str],
+    plan_bytes: bytes | None,
+    run_bytes: bytes,
+    cleanup_bytes: bytes,
+    result_status: bytes,
+    cleanup_status: bytes,
+    result_name: str,
+) -> dict[str, Any]:
+    """Bind replay to the maintained runner's terminal ownership and clean-scene record."""
+    if result_status != b"done" or cleanup_status != b"done":
+        raise ValueError("result and cleanup status must both be done")
+    run = fields(parse_json(run_bytes), RUN_FIELDS, "run record")
+    cleanup = fields(parse_json(cleanup_bytes), CLEANUP_FIELDS, "cleanup record")
+    guid = run["runGuid"]
+    path = identity(run["resultPath"], "run resultPath")
+    if not isinstance(guid, str) or GUID.fullmatch(guid) is None:
+        raise ValueError("run GUID must be canonical lowercase UUID")
+    if not isinstance(result_name, str) or not result_name.endswith(".json") or path.replace("\\", "/").rsplit("/", 1)[-1] != result_name:
+        raise ValueError("run resultPath does not match the supplied result file name")
+    if cleanup["runGuid"] != guid or cleanup["resultPath"] != path or cleanup["ownedResultPath"] != path:
+        raise ValueError("cleanup does not own the same run GUID and result path")
+    for field in ("frameworkActive", "playing", "compiling", "updating"):
+        if cleanup[field] is not False:
+            raise ValueError(f"cleanup {field} must be false")
+    if cleanup["mainStage"] is not True or cleanup["observationError"] != "" or cleanup["frameworkErrors"] != "":
+        raise ValueError("cleanup has stage or framework errors")
+    if cleanup["legacyObserverResultPath"] != "":
+        raise ValueError("cleanup retains a legacy observer result path")
+    identity(cleanup["observedUtc"], "cleanup observedUtc")
+    active = identity(cleanup["activeScene"], "cleanup activeScene")
+    scenes = cleanup["scenes"]
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("cleanup scenes must be a nonempty array")
+    paths = set()
+    for index, raw in enumerate(scenes):
+        scene = fields(raw, SCENE_FIELDS, f"cleanup.scenes[{index}]")
+        scene_path = identity(scene["path"], f"cleanup.scenes[{index}].path")
+        if scene_path in paths or scene["dirty"] is not False or scene["loaded"] is not True:
+            raise ValueError("cleanup has duplicate, dirty, or unloaded scenes")
+        paths.add(scene_path)
+    if active not in paths:
+        raise ValueError("cleanup active scene is not among loaded scenes")
+    replay = audit_unity_result(raw_result, expected_trace_ids, plan_bytes)
+    replay["runGuid"] = guid
+    replay["resultName"] = result_name
+    replay["runRecordSha256"] = hashlib.sha256(run_bytes).hexdigest()
+    replay["cleanupRecordSha256"] = hashlib.sha256(cleanup_bytes).hexdigest()
+    replay["resultStatusSha256"] = hashlib.sha256(result_status).hexdigest()
+    replay["cleanupStatusSha256"] = hashlib.sha256(cleanup_status).hexdigest()
+    return replay
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("schedule", nargs="?", type=Path, help="predeclared raw schedule JSON")
     parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
     parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
     parser.add_argument("--plan", type=Path, help="committed normalized arrival plan for the Unity result")
+    parser.add_argument("--run-record", type=Path, help="maintained-runner run identity JSON")
+    parser.add_argument("--cleanup-record", type=Path, help="terminal cleanup JSON")
+    parser.add_argument("--result-status", type=Path, help="result status sidecar")
+    parser.add_argument("--cleanup-status", type=Path, help="cleanup status sidecar")
     parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
+    capture_files = (args.run_record, args.cleanup_record, args.result_status, args.cleanup_status)
+    if any(item is not None for item in capture_files) and not all(item is not None for item in capture_files):
+        parser.error("capture sidecars must be supplied together")
     if args.unity_result is not None:
         if args.schedule is not None or args.observations is not None or (not args.expected_trace_id and args.plan is None):
             parser.error("--unity-result requires expected trace IDs or --plan and no positional files")
-        result = audit_unity_result(
-            args.unity_result.read_bytes(),
-            args.expected_trace_id,
-            args.plan.read_bytes() if args.plan is not None else None,
-        )
+        raw_result = args.unity_result.read_bytes()
+        plan_bytes = args.plan.read_bytes() if args.plan is not None else None
+        if args.run_record is None:
+            result = audit_unity_result(raw_result, args.expected_trace_id, plan_bytes)
+        else:
+            result = audit_unity_capture(
+                raw_result, args.expected_trace_id, plan_bytes,
+                args.run_record.read_bytes(), args.cleanup_record.read_bytes(),
+                args.result_status.read_bytes(), args.cleanup_status.read_bytes(), args.unity_result.name,
+            )
     else:
-        if args.schedule is None or args.observations is None or args.expected_trace_id or args.plan is not None:
+        if args.schedule is None or args.observations is None or args.expected_trace_id or args.plan is not None or args.run_record is not None:
             parser.error("schedule and observations are required without --unity-result")
         result = audit(args.schedule.read_bytes(), parse_json(args.observations.read_bytes()))
     print(json.dumps(result, indent=2, sort_keys=True))

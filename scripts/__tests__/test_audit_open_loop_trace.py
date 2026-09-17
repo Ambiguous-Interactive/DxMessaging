@@ -124,6 +124,70 @@ def tail_runner_result() -> dict:
 
 
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_capture_sidecars_bind_run_and_terminal_clean_scene(self) -> None:
+        raw = json.dumps(runner_result()).encode()
+        guid = "12345678-1234-1234-1234-123456789abc"
+        path = r"C:\lab\result.json"
+        run = {"runGuid": guid, "resultPath": path}
+        cleanup = {
+            "observedUtc": "2026-09-17T00:00:00Z",
+            "observationError": "",
+            "frameworkActive": False,
+            "playing": False,
+            "compiling": False,
+            "updating": False,
+            "mainStage": True,
+            "activeScene": "Assets/Saved.unity",
+            "scenes": [{"path": "Assets/Saved.unity", "dirty": False, "loaded": True}],
+            "runGuid": guid,
+            "resultPath": path,
+            "ownedResultPath": path,
+            "legacyObserverResultPath": "",
+            "frameworkErrors": "",
+        }
+        capture = lambda run_record, cleanup_record, status=b"done", terminal=b"done": MODULE.audit_unity_capture(
+            raw, ["trace-1"], None, json.dumps(run_record).encode(), json.dumps(cleanup_record).encode(),
+            status, terminal, "result.json",
+        )
+        replay = capture(run, cleanup)
+        self.assertEqual(replay["runGuid"], guid)
+        self.assertEqual(replay["runRecordSha256"], hashlib.sha256(json.dumps(run).encode()).hexdigest())
+        self.assertEqual(replay["traceCount"], 1)
+        for field, value in (
+            ("runGuid", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ("resultPath", r"C:\lab\other.json"),
+            ("ownedResultPath", r"C:\lab\other.json"),
+            ("frameworkActive", True),
+            ("playing", True),
+            ("compiling", True),
+            ("updating", True),
+            ("mainStage", False),
+            ("observationError", "error"),
+            ("frameworkErrors", "error"),
+            ("legacyObserverResultPath", path),
+            ("activeScene", "Assets/Other.unity"),
+            ("scenes", [{"path": "Assets/Saved.unity", "dirty": True, "loaded": True}]),
+            ("scenes", [{"path": "Assets/Saved.unity", "dirty": False, "loaded": False}]),
+            ("scenes", []),
+        ):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                capture(run, {**cleanup, field: value})
+        for status, terminal in ((b"running", b"done"), (b"done", b"running"), (b"done\n", b"done")):
+            with self.subTest(status=status, terminal=terminal), self.assertRaises(ValueError):
+                capture(run, cleanup, status, terminal)
+        with self.assertRaises(ValueError):
+            capture({**run, "runGuid": "not-a-guid"}, cleanup)
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_capture(
+                raw, ["trace-1"], None, b'{"runGuid":"x","runGuid":"y"}',
+                json.dumps(cleanup).encode(), b"done", b"done", "result.json",
+            )
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_capture(
+                raw, ["trace-1"], None, json.dumps(run).encode(),
+                b'{"runGuid":"x","runGuid":"y"}', b"done", b"done", "result.json",
+            )
+
     def test_tail_marker_is_recomputed_from_raw_events(self) -> None:
         result = tail_runner_result()
         expected = ["editor-tail-baseline", "editor-tail-stalled"]
@@ -243,6 +307,12 @@ class AuditOpenLoopTraceTests(unittest.TestCase):
             self.assertEqual(json.loads(good.stdout)["traceCount"], 1)
             bad = subprocess.run([sys.executable, str(SCRIPT), "--unity-result", str(path)], capture_output=True, text=True)
             self.assertNotEqual(bad.returncode, 0)
+            partial = subprocess.run(
+                [sys.executable, str(SCRIPT), "--unity-result", str(path), "--expected-trace-id", "trace-1",
+                 "--run-record", str(path)], capture_output=True, text=True,
+            )
+            self.assertNotEqual(partial.returncode, 0)
+            self.assertIn("capture sidecars must be supplied together", partial.stderr)
 
     def test_exact_rates_late_completions_and_large_ticks(self) -> None:
         raw = raw_schedule()
