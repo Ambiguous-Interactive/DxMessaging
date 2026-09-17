@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "505-locked-fixed-ring-lab-control",
+  "semanticClass": "queued",
+  "ownership": {
+    "bus": "The control owns no IMessageBus and invokes no handler; a future consumer owns dispatch after dequeue.",
+    "payloadLifetime": "The ring owns each accepted payload until dequeue, reset, or disposal; rejected payloads remain caller-owned.",
+    "managedReferences": "Consumed and dropped slots are cleared before capacity is reused; disposal clears the whole fixed array.",
+    "alignment": "Managed T[] layout only; no native payload arena or alignment promise.",
+    "reclamation": "Dequeue clears one slot; reset and disposal clear every slot under the same monitor."
+  },
+  "topology": {
+    "producers": "multiple",
+    "consumers": "single",
+    "threadAffinity": "Managed producers may call from worker threads; one consumer drains on the owning thread. No Unity API is called inside the queue.",
+    "playerLoopPhase": "No scheduling is built in; a future consumer must declare its drain phase."
+  },
+  "ordering": {
+    "guarantee": "linearizable-per-item",
+    "linearizationPoint": "Accepted enqueue and dequeue update count inside their respective monitor critical sections; cross-producer order follows monitor acquisition.",
+    "routeAmortization": false
+  },
+  "capacity": {
+    "policy": "fixed",
+    "overflow": "try-fail",
+    "wait": "blocking-lab-only"
+  },
+  "lifecycle": {
+    "reset": "Reset atomically discards all pending values, clears all slots, and returns the dropped count.",
+    "cancellation": "A producer may refrain from enqueueing; individual accepted items cannot be cancelled. Reset drops the whole queue.",
+    "disposal": "Disposal is idempotent, clears all slots, and permanently rejects later operations.",
+    "exceptions": "No user callback runs under the monitor; failed capacity checks do not change queue state. The lock statement releases the monitor on exceptions.",
+    "producerAbandon": "There is no reservation state; a producer that stops before TryEnqueue publishes nothing.",
+    "partialPublication": "Each operation commits or does not commit under one monitor; no half-visible slot is exposed."
+  },
+  "dynamicDifferences": "Queued delivery defers handling and changes synchronous Emit timing; this ring alone provides no cancellation, handler lifecycle, or dispatch-equivalence contract.",
+  "compatibility": {
+    "unity": ["6000.4.6f1"],
+    "backends": ["Mono"],
+    "platforms": ["macOS"],
+    "packages": []
+  },
+  "decision": {
+    "workload": "Bounded multiple-producer, single-consumer fixed-ring laboratory control; compare against single-producer, multiple-producer, and native queue topologies at batch sizes 1, 4, 16, 64, 128, and 256 after #510 calibration.",
+    "thresholdPercent": 20,
+    "capabilityException": "none; this control supplies no Burst/unmanaged capability",
+    "batchOneOverhead": "unmeasured; lock contention and no-contender cost require calibrated IL2CPP controls",
+    "breakEven": "unmeasured",
+    "p99": "N/A until #512 open-loop queued timing has independent sessions and adequate intervals",
+    "retainedMemory": "slot clearing asserted locally; GC-retained bytes and native memory are unmeasured",
+    "playerSize": "unmeasured test-only code; no production assembly addition",
+    "buildTime": "unmeasured test-only code; no production assembly addition",
+    "stopRule": "Reject on lost, duplicated, reordered-per-producer, overwritten, or retained payloads; do not promote this blocking laboratory control without a separate reviewed production contract and at least 20% gain or unique supported capability."
+  },
+  "evidence": {
+    "state": "tested",
+    "sourceSha256": "26c423f0b4e107eab809a64ccb3cc2ebae64eaf1d6536c9a4ca2bdc043c7a80b",
+    "testSourceSha256": "93039e490f153c43cfa6e94fea3aa71c6692d4e49b9f8c78c77a00fd74aa429d",
+    "profileSha256": null,
+    "evidenceSha256": "bc1c765e76898c0753573208fdf1fcdeb39e7410427927668ed312a827432283",
+    "evidenceLocation": ".artifacts/perf-lab/505-locked-fixed-ring-evidence.json (ignored local semantic screen; #505 records hashes)"
+  }
+}

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PERF = ROOT / ".github" / "perf"
 EXACT = json.loads((PERF / "architecture-505-exact-sequential.v1.json").read_text())
 PREPARED = json.loads((PERF / "architecture-505-prepared-dynamic.v1.json").read_text())
+LOCKED_RING = json.loads((PERF / "architecture-505-locked-fixed-ring.v1.json").read_text())
 NODE_VALIDATOR = """
 const fs = require('fs');
 const Ajv = require('ajv');
@@ -39,7 +40,7 @@ def validate_many(*candidates: dict) -> list[bool]:
 
 class ArchitectureRecordTests(unittest.TestCase):
     def test_records_are_admitted(self) -> None:
-        self.assertEqual(validate_many(EXACT, PREPARED), [True, True])
+        self.assertEqual(validate_many(EXACT, PREPARED, LOCKED_RING), [True, True, True])
 
     def test_exact_control_record_matches_current_sources(self) -> None:
         for field, relative in (
@@ -49,6 +50,22 @@ class ArchitectureRecordTests(unittest.TestCase):
             with self.subTest(field=field):
                 actual = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
                 self.assertEqual(EXACT["evidence"][field], actual)
+
+    def test_locked_ring_record_matches_current_sources_and_contract(self) -> None:
+        for field, relative in (
+            ("sourceSha256", "Tests/Runtime/TestUtilities/LockedFixedRingControl.cs"),
+            ("testSourceSha256", "Tests/Runtime/Core/LockedFixedRingControlTests.cs"),
+        ):
+            with self.subTest(field=field):
+                actual = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+                self.assertEqual(LOCKED_RING["evidence"][field], actual)
+        self.assertEqual(LOCKED_RING["semanticClass"], "queued")
+        self.assertEqual(
+            LOCKED_RING["capacity"],
+            {"policy": "fixed", "overflow": "try-fail", "wait": "blocking-lab-only"},
+        )
+        self.assertEqual(LOCKED_RING["topology"]["producers"], "multiple")
+        self.assertEqual(LOCKED_RING["topology"]["consumers"], "single")
 
     def test_missing_admission_fields_are_rejected(self) -> None:
         candidates = []
