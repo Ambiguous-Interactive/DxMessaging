@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     using System.Globalization;
     using System.Security.Cryptography;
     using System.Text;
+    using System.Threading;
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
@@ -55,11 +56,29 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Array.Clear(completions, 0, burstSize);
 
             long frequency = Stopwatch.Frequency;
-            long offeredTick = Stopwatch.GetTimestamp();
+            long offeredTick = checked(Stopwatch.GetTimestamp() + frequency / 10);
             long horizonEndTick = checked(offeredTick + frequency / 60);
             for (int id = 0; id < burstSize; ++id)
             {
                 arrivals[id] = offeredTick;
+            }
+            string schedule = BuildSchedule(
+                "editor-immediate-burst-" + burstSize.ToString(CultureInfo.InvariantCulture),
+                frequency,
+                offeredTick,
+                horizonEndTick,
+                arrivals
+            );
+            string digest = Digest(schedule);
+            TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + schedule);
+            Assert.That(
+                Stopwatch.GetTimestamp(),
+                Is.LessThan(offeredTick),
+                "schedule missed offer"
+            );
+            while (Stopwatch.GetTimestamp() < offeredTick)
+            {
+                Thread.SpinWait(32);
             }
             for (int id = 0; id < burstSize; ++id)
             {
@@ -80,16 +99,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             }
 
-            string schedule = BuildSchedule(
-                "editor-immediate-burst-" + burstSize.ToString(CultureInfo.InvariantCulture),
-                frequency,
-                offeredTick,
-                horizonEndTick,
-                arrivals
-            );
-            string digest = Digest(schedule);
             string observations = BuildObservations(burstSize, digest, starts, completions);
-            TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + schedule);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_OBSERVATIONS_V1 " + observations);
         }
 

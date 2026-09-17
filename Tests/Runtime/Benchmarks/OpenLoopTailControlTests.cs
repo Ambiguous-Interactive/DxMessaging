@@ -70,6 +70,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TailRun Capture(bool injectStall, string traceId)
             {
                 TailRun run = new(injectStall, frequency, traceId);
+                TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + run.Schedule);
+                Assert.That(
+                    Stopwatch.GetTimestamp(),
+                    Is.LessThan(run.Arrivals[0]),
+                    "schedule missed offer"
+                );
                 current = run;
                 for (int burst = 0; burst < BurstCount; ++burst)
                 {
@@ -96,6 +102,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         Assert.That(run.ObservedItems[position], Is.EqualTo(item));
                     }
                 }
+                Report(run);
                 return run;
             }
 
@@ -111,9 +118,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 stalled.Completions[StallBurst],
                 Is.GreaterThanOrEqualTo(stalled.HorizonEnd)
             );
-
-            Report(baseline);
-            Report(stalled);
 
             long baselineP99 = 0;
             long stalledP99 = 0;
@@ -151,7 +155,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 run.Starts,
                 run.Completions
             );
-            TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + run.Schedule);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_OBSERVATIONS_V1 " + observations);
         }
 
@@ -166,7 +169,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ObservedBursts = new int[BurstCount * MessagesPerBurst];
                 ObservedItems = new int[BurstCount * MessagesPerBurst];
                 long spacing = frequency / 1_000;
-                long first = checked(Stopwatch.GetTimestamp() + frequency / 100);
+                long first = checked(Stopwatch.GetTimestamp() + frequency / 10);
                 for (int burst = 0; burst < BurstCount; ++burst)
                 {
                     Arrivals[burst] = checked(first + burst * spacing);

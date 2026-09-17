@@ -66,7 +66,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             callbackCount = 0;
             Array.Clear(completions, 0, OfferCount);
 
-            long firstOffer = checked(Stopwatch.GetTimestamp() + frequency / 100);
+            long firstOffer = checked(Stopwatch.GetTimestamp() + frequency / 10);
             long horizonEnd = checked(firstOffer + OfferCount * spacingTicks);
             for (int id = 0; id < OfferCount; ++id)
             {
@@ -80,6 +80,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 arrivals
             );
             string digest = OpenLoopBurstTraceTests.Digest(schedule);
+            TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + schedule);
+            Assert.That(Stopwatch.GetTimestamp(), Is.LessThan(firstOffer), "schedule missed offer");
             serviceEnabled = true;
             for (int id = 0; id < OfferCount; ++id)
             {
@@ -114,7 +116,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 starts,
                 completions
             );
-            TestContext.Out.WriteLine("DXM_OPEN_LOOP_SCHEDULE_V1 " + schedule);
             TestContext.Out.WriteLine("DXM_OPEN_LOOP_OBSERVATIONS_V1 " + observations);
             TestContext.Out.WriteLine(
                 "DXM_OPEN_LOOP_LOAD_V1 control="
