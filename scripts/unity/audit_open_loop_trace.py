@@ -60,8 +60,12 @@ def rate(count: int, frequency: int, span: int) -> dict[str, str]:
     return {"numerator": str(value.numerator), "denominator": str(value.denominator)}
 
 
+def rational(value: Fraction) -> dict[str, str]:
+    return {"numerator": str(value.numerator), "denominator": str(value.denominator)}
+
+
 def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
-    """Return descriptive exact rates and every raw timestamp for a hash-bound schedule."""
+    """Return descriptive exact rates, latency ranks, and raw timestamps for a hash-bound schedule."""
     if not isinstance(schedule_bytes, bytes):
         raise ValueError("schedule must be raw bytes")
     schedule_sha = hashlib.sha256(schedule_bytes).hexdigest()
@@ -110,12 +114,15 @@ def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
         raise ValueError("every offered event needs one observed completion")
 
     rows = []
+    latencies = []
     started_within = 0
     completed_within = 0
     for event_id, arrival in offered.items():
         begun, completed = observed[event_id]
         started_within += begun < end
         completed_within += completed < end
+        latency = completed - arrival
+        latencies.append((latency, event_id))
         rows.append({
             "id": event_id,
             "arrivalTick": str(arrival),
@@ -123,9 +130,18 @@ def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
             "completionTick": str(completed),
             "queueDelayTicks": str(begun - arrival),
             "serviceTicks": str(completed - begun),
-            "completionLatencyTicks": str(completed - arrival),
+            "completionLatencyTicks": str(latency),
         })
     count = len(offered)
+    ordered = sorted(latencies)
+    quantiles = {}
+    for name, percentile in (("p50", 50), ("p95", 95), ("p99", 99)):
+        ticks, event_id = ordered[percentile * count // 100]
+        quantiles[name] = {
+            "id": event_id,
+            "latencyTicks": str(ticks),
+            "latencyNanoseconds": rational(Fraction(ticks * 1_000_000_000, frequency)),
+        }
     return {
         "schemaVersion": 1,
         "resultClass": "descriptive-only",
@@ -141,6 +157,9 @@ def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
         "backlogAtHorizon": count - completed_within,
         "offeredPerSecond": rate(count, frequency, end - start),
         "achievedWithinHorizonPerSecond": rate(completed_within, frequency, end - start),
+        "completionQuantileConvention": "strict-upper empirical floor(p*n/100), within-trace descriptive",
+        "completionLatencyQuantiles": quantiles,
+        "meanCompletionLatencyTicks": rational(Fraction(sum(ticks for ticks, _ in latencies), count)),
         "events": rows,
     }
 
@@ -208,6 +227,9 @@ def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str]) -> dict
                     "backlogAtHorizon": reduced["backlogAtHorizon"],
                     "offeredPerSecond": reduced["offeredPerSecond"],
                     "achievedWithinHorizonPerSecond": reduced["achievedWithinHorizonPerSecond"],
+                    "completionQuantileConvention": reduced["completionQuantileConvention"],
+                    "completionLatencyQuantiles": reduced["completionLatencyQuantiles"],
+                    "meanCompletionLatencyTicks": reduced["meanCompletionLatencyTicks"],
                 })
                 pending = None
                 pairs += 1

@@ -85,6 +85,7 @@ class AuditOpenLoopTraceTests(unittest.TestCase):
         self.assertEqual([item["traceId"] for item in replay["traces"]], ["trace-1", "trace-2"])
         self.assertEqual(replay["traces"][0]["fixture"], "Fixture.Case")
         self.assertEqual(replay["traces"][0]["backlogAtHorizon"], 2)
+        self.assertEqual(replay["traces"][0]["completionLatencyQuantiles"]["p99"]["id"], "c")
 
     def test_raw_unity_result_rejects_incomplete_or_ambiguous_capture(self) -> None:
         valid = runner_result()
@@ -141,6 +142,35 @@ class AuditOpenLoopTraceTests(unittest.TestCase):
         self.assertEqual(result["events"][2]["queueDelayTicks"], "7000000")
         self.assertEqual(result["events"][2]["completionLatencyTicks"], "8000000")
         self.assertEqual(result["events"][0]["arrivalTick"], str(BASE))
+        self.assertEqual(result["completionLatencyQuantiles"]["p50"]["latencyTicks"], "6000000")
+        self.assertEqual(result["completionLatencyQuantiles"]["p99"]["id"], "c")
+        self.assertEqual(result["meanCompletionLatencyTicks"], {"numerator": "4666700", "denominator": "1"})
+
+    def test_strict_upper_p99_selects_one_delayed_completion_in_100(self) -> None:
+        planned = schedule()
+        planned["frequencyHz"] = "3"
+        planned["arrivals"] = [{"id": f"event-{index:03}", "arrivalTick": str(BASE)} for index in range(100)]
+        raw = raw_schedule(planned)
+        observed = {
+            "schemaVersion": 1,
+            "scheduleSha256": hashlib.sha256(raw).hexdigest(),
+            "events": [
+                {
+                    "id": f"event-{index:03}",
+                    "startTick": str(BASE),
+                    "completionTick": str(BASE + (1000 if index == 99 else 1)),
+                }
+                for index in range(100)
+            ],
+        }
+        result = MODULE.audit(raw, observed)
+        self.assertEqual(result["completionLatencyQuantiles"]["p95"]["latencyTicks"], "1")
+        self.assertEqual(result["completionLatencyQuantiles"]["p99"], {
+            "id": "event-099",
+            "latencyTicks": "1000",
+            "latencyNanoseconds": {"numerator": "1000000000000", "denominator": "3"},
+        })
+        self.assertEqual(result["meanCompletionLatencyTicks"], {"numerator": "1099", "denominator": "100"})
 
     def test_missing_extra_duplicate_or_invalid_observation_is_red(self) -> None:
         valid = observations()
