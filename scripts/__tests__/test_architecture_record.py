@@ -16,6 +16,7 @@ PERF = ROOT / ".github" / "perf"
 EXACT = json.loads((PERF / "architecture-505-exact-sequential.v1.json").read_text())
 PREPARED = json.loads((PERF / "architecture-505-prepared-dynamic.v1.json").read_text())
 LOCKED_RING = json.loads((PERF / "architecture-505-locked-fixed-ring.v1.json").read_text())
+SPSC_RING = json.loads((PERF / "architecture-505-spsc-fixed-ring.v1.json").read_text())
 NODE_VALIDATOR = """
 const fs = require('fs');
 const Ajv = require('ajv');
@@ -40,7 +41,7 @@ def validate_many(*candidates: dict) -> list[bool]:
 
 class ArchitectureRecordTests(unittest.TestCase):
     def test_records_are_admitted(self) -> None:
-        self.assertEqual(validate_many(EXACT, PREPARED, LOCKED_RING), [True, True, True])
+        self.assertEqual(validate_many(EXACT, PREPARED, LOCKED_RING, SPSC_RING), [True] * 4)
 
     def test_exact_control_record_matches_current_sources(self) -> None:
         for field, relative in (
@@ -66,6 +67,21 @@ class ArchitectureRecordTests(unittest.TestCase):
         )
         self.assertEqual(LOCKED_RING["topology"]["producers"], "multiple")
         self.assertEqual(LOCKED_RING["topology"]["consumers"], "single")
+
+    def test_spsc_ring_record_matches_current_sources_and_abandon_limit(self) -> None:
+        for field, relative in (
+            ("sourceSha256", "Tests/Runtime/TestUtilities/SpscFixedRingControl.cs"),
+            ("testSourceSha256", "Tests/Runtime/Core/SpscFixedRingControlTests.cs"),
+        ):
+            with self.subTest(field=field):
+                actual = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+                self.assertEqual(SPSC_RING["evidence"][field], actual)
+        self.assertEqual(SPSC_RING["topology"]["producers"], "single")
+        self.assertEqual(SPSC_RING["topology"]["consumers"], "single")
+        self.assertEqual(
+            SPSC_RING["capacity"], {"policy": "fixed", "overflow": "try-fail", "wait": "none"}
+        )
+        self.assertIn("unresolved holder", SPSC_RING["lifecycle"]["producerAbandon"])
 
     def test_missing_admission_fields_are_rejected(self) -> None:
         candidates = []

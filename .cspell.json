@@ -342,6 +342,7 @@
     "SLRU",
     "slugify",
     "smol",
+    "SPSC",
     "stcf",
     "stefanzweifel",
     "strs",

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "505-spsc-fixed-ring-lab-prototype",
+  "semanticClass": "queued",
+  "ownership": {
+    "bus": "The ring owns no IMessageBus and calls no handler; a future consumer owns dispatch after dequeue.",
+    "payloadLifetime": "Accepted payloads remain in the fixed array until dequeue, reset, or disposal. A producer terminated after slot write but before publication can leave an unpublished payload until later reuse or maintenance.",
+    "managedReferences": "Consumed slots are cleared before head publication; reset and disposal clear the array after entered operations drain. Abrupt producer termination can retain an unpublished reference.",
+    "alignment": "Managed T[] layout only; no unmanaged arena or alignment promise.",
+    "reclamation": "Dequeue clears one slot; reset and disposal clear every slot. Unpublished abandoned slots require reuse, reset, or disposal."
+  },
+  "topology": {
+    "producers": "single",
+    "consumers": "single",
+    "threadAffinity": "Exactly one producer and one consumer are required; ownership is a caller precondition and is not dynamically enforced. No Unity API runs in queue operations.",
+    "playerLoopPhase": "No scheduling is built in; a future consumer must declare its drain phase."
+  },
+  "ordering": {
+    "guarantee": "linearizable-per-item",
+    "linearizationPoint": "Enqueue publishes the owned tail after payload write; dequeue publishes the owned head after payload read and slot clear. The peer reads its sequence with acquire semantics.",
+    "routeAmortization": false
+  },
+  "capacity": {
+    "policy": "fixed",
+    "overflow": "try-fail",
+    "wait": "none"
+  },
+  "lifecycle": {
+    "reset": "Reset rejects new hot operations, waits for entered operations, atomically discards pending values, clears all slots, resets counters, and returns the dropped count. Concurrent hot calls may receive an InvalidOperationException.",
+    "cancellation": "Individual accepted items cannot be cancelled; reset drops the whole queue.",
+    "disposal": "Disposal rejects new work, waits for entered operations, clears all slots, and is idempotent. Maintenance may spin while an entered operation finishes.",
+    "exceptions": "No user callback runs in an operation. Calls during reset throw InvalidOperationException; calls after disposal throw ObjectDisposedException. Hot paths use Interlocked lifecycle entry and do not wait for capacity.",
+    "producerAbandon": "No external reservation exists, but abrupt termination between slot write and tail publication can retain an unpublished payload. This unresolved holder blocks production promotion.",
+    "partialPublication": "The consumer cannot observe a slot before tail publication. Abrupt termination after slot write may leave that slot unpublished until reuse or maintenance."
+  },
+  "dynamicDifferences": "Queued delivery defers handling and changes synchronous Emit timing; this ring alone has no handler lifecycle, routing, or dispatch-equivalence contract.",
+  "compatibility": {
+    "unity": ["6000.4.6f1"],
+    "backends": ["Mono"],
+    "platforms": ["macOS"],
+    "packages": []
+  },
+  "decision": {
+    "workload": "Bounded single-producer, single-consumer fixed-ring semantic prototype; compare against the locked control and other queue topologies after #510 calibration and #512 queue timing.",
+    "thresholdPercent": 20,
+    "capabilityException": "none; no Burst or unmanaged tier is supplied",
+    "batchOneOverhead": "unmeasured; lifecycle entry adds two atomic operations per hot call",
+    "breakEven": "unmeasured",
+    "p99": "N/A until independent #512 open-loop player sessions support an interval",
+    "retainedMemory": "slot clearing asserted locally; abrupt producer-abandon retention and GC-retained bytes remain unresolved",
+    "playerSize": "unmeasured test-only code; no production assembly addition",
+    "buildTime": "unmeasured test-only code; no production assembly addition",
+    "stopRule": "Reject on lost, duplicate, reordered, prematurely visible, or retained published payloads. Do not promote with unresolved abrupt-producer retention or without calibrated IL2CPP evidence of at least 20% gain or a supported unique capability."
+  },
+  "evidence": {
+    "state": "tested",
+    "sourceSha256": "eeb0d1e53f2973d7cb82bb54cd1757b6528b7992888d4d579c2b4db02d521eff",
+    "testSourceSha256": "a783a6c50cb92fcb91f065fb5bff1f9eabe74c8fcdd58a55e097ed05cd97339f",
+    "profileSha256": null,
+    "evidenceSha256": "831527d6c8c55e1c9cc87fe13147c375878f04a2d7e1ed8dddaa2f2b8757a5e5",
+    "evidenceLocation": ".artifacts/perf-lab/505-spsc-fixed-ring-evidence.json (ignored local semantic screen; #505 records hashes)"
+  }
+}
