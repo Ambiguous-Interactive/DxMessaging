@@ -3,7 +3,8 @@ name: Runner Audit (Windows)
 
 # Operator-driven, workflow_dispatch-only audit of a self-hosted Windows
 # runner's host prerequisites, exact Unity editors, and required modules.
-# The optional #510 probe records outcome-free performance host sensors on ELI-MACHINE.
+# The optional #510 probes record outcome-free host sensors and validate one
+# pilot IL2CPP comparison player's contract path on ELI-MACHINE.
 # This workflow is intentionally validation-only: GitHub Actions does not have
 # the administrator credentials required to install or repair runner software.
 # An administrator performs all installation and repair directly on the host,
@@ -54,13 +55,18 @@ on:
         required: false
         type: boolean
         default: false
+      perf-pilot-contract-smoke:
+        description: 'Build one pilot-only IL2CPP comparison player and run contract tests on ELI without throughput rows.'
+        required: false
+        type: boolean
+        default: false
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
 # concurrency: any in-flight audit anywhere blocks another audit from starting.
-# Distinct from `wallstop-organization-builds` (the Unity build lock) -- this
-# workflow does not enter the Unity license seat path, so it must not block
-# Unity jobs and Unity jobs must not block it.
+# Distinct from `wallstop-organization-builds` (the Unity build lock) -- host
+# audits do not enter the Unity license seat path. The optional IL2CPP contract
+# smoke acquires that lock before using the Unity license seat.
 concurrency:
   group: runner-audit-windows
   cancel-in-progress: false
@@ -321,3 +327,272 @@ jobs:
           path: .artifacts/runner-bootstrap/**
           if-no-files-found: error
           retention-days: 30
+
+  pilot-contract-smoke:
+    name: Pilot IL2CPP contract smoke on ELI
+    if: ${{ inputs['perf-pilot-contract-smoke'] }}
+    needs:
+      - runner-preflight
+      - bootstrap
+    runs-on: [self-hosted, Windows, RAM-64GB, fast]
+    timeout-minutes: 600
+    steps:
+      - name: Require ELI request and runner
+        shell: pwsh
+        timeout-minutes: 1
+        run: |
+          if ('${{ inputs.runner-label }}' -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Pilot contract smoke requires an ELI-MACHINE request and the ELI-MACHINE runner.'
+          }
+
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        with:
+          unity-version: 6000.5.2f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
+      - name: Enable Git long paths
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        timeout-minutes: 30
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Setup Node.js
+        id: setup_node
+        timeout-minutes: 5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Compute comparison assembly list
+        id: compute_standalone
+        timeout-minutes: 5
+        uses: ./.github/actions/compute-unity-assemblies
+        with:
+          include-comparisons: 'true'
+          target: standalone
+
+      - name: Require comparison assemblies
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          if ('${{ steps.compute_standalone.outputs.is-empty }}' -ne 'false') {
+            throw 'Pilot contract smoke requires the comparison test assemblies.'
+          }
+
+      - name: Resolve pinned performance CPU profile
+        id: cpu_profile
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          New-Item -ItemType Directory -Force -Path $artifactsPath | Out-Null
+          $profilePath = Join-Path $artifactsPath 'performance-cpu-profile.json'
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profilePath
+          $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+          if (
+            $profile.schemaVersion -ne 1 -or
+            $profile.executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1' -or
+            $profile.cpuModel -notmatch 'i9-13900KF' -or
+            $profile.affinityMask -cne '0xFFFF' -or
+            $profile.priorityClass -cne 'Normal'
+          ) { throw 'Pilot contract smoke CPU profile does not match the pinned ELI selection.' }
+          "affinity-mask=$($profile.affinityMask)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+
+      - name: Require MSVC C++ toolchain
+        timeout-minutes: 3
+        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
+        run: ./scripts/unity/assert-msvc-toolchain.ps1
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        timeout-minutes: 305
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: pilot-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: exit 1
+
+      - name: Build and run pilot comparison contracts
+        id: run_contracts
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DX_PERF_COMMIT: ${{ github.sha }}
+        run: |
+          $artifactsPath = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\pc${{ github.run_id }}a${{ github.run_attempt }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\6000.5.2f1'
+          ./scripts/unity/run-ci-tests.ps1 `
+            -UnityVersion 6000.5.2f1 `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -TestMode standalone `
+            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+            -ArtifactsPath $artifactsPath `
+            -ProjectPath $projectPath `
+            -CachePath $cachePath `
+            -TestCategory ComparisonContract `
+            -IncludeComparisons `
+            -CanonicalProfilePath '.github/perf/canonical-il2cpp-profile.v1.json' `
+            -StandalonePlayerRunCount 5 `
+            -StandalonePlayerBatchOrders 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' `
+            -StandalonePilotCpuWorkIterationsPerBatch 0 `
+            -StandalonePlayerProcessorAffinityMask 65535 `
+            -StandalonePlayerPriorityClass Normal `
+            -LicenseReturnOwner Central `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild
+
+      - name: Require five contract-only player launches and valid host health
+        if: ${{ steps.run_contracts.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $root = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          $evidence = Get-Content -LiteralPath (Join-Path $root 'same-player-repeats/same-player-evidence.json') -Raw | ConvertFrom-Json
+          if ($evidence.runCount -ne 5 -or @($evidence.runs).Count -ne 5 -or $evidence.playerDirectoryManifestMatches -ne $true) {
+            throw 'Pilot contract smoke did not retain five launches of one unchanged player.'
+          }
+          foreach ($run in $evidence.runs) {
+            $health = Get-Content -LiteralPath (Join-Path $root "same-player-repeats/$($run.hostTelemetryHealthFile)") -Raw | ConvertFrom-Json
+            if ($health.valid -ne $true -or @($health.reasons).Count -ne 0) {
+              throw "Pilot contract smoke host health failed on launch $($run.runIndex)."
+            }
+            if (Select-String -LiteralPath (Join-Path $root $run.resultsPath) -Pattern 'DXM_PAIRED_COMPARISON' -Quiet) {
+              throw "Pilot contract smoke unexpectedly measured paired throughput on launch $($run.runIndex)."
+            }
+          }
+          $build = Get-Content -LiteralPath (Join-Path $root 'pilot-build-evidence.json') -Raw | ConvertFrom-Json
+          if ($build.projectWasAbsentBefore -ne $true -or $build.sourceCommit -cne '${{ github.sha }}') {
+            throw 'Pilot contract smoke build provenance does not match the checked-out source.'
+          }
+          "- Pilot contract smoke: five healthy launches, no paired throughput rows; build invocation ``$($build.buildInvocationId)``." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Redact pilot contract artifacts
+        id: redact_pilot
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload pilot contract artifacts
+        if: ${{ always() && steps.redact_pilot.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pilot-contract-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@d79e1cc2acc892b619db2ca46f78291ca427016b
+        with:
+          unity-version: 6000.5.2f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: pilot-contract-smoke
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@d79e1cc2acc892b619db2ca46f78291ca427016b
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: pilot-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@d79e1cc2acc892b619db2ca46f78291ca427016b
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}

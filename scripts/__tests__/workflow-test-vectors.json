@@ -3,13 +3,20 @@
     ["unity-tests.yml", "unity-tests", "Run Unity Test Runner", true],
     ["unity-benchmarks.yml", "benchmarks", "Run Unity Test Runner", true],
     ["release.yml", "unity-checks", "Run Unity Test Runner", true],
-    ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true]
+    ["perf-numbers.yml", "perf-benchmarks", "Run Unity Test Runner", true],
+    [
+      "runner-bootstrap.yml",
+      "pilot-contract-smoke",
+      "Build and run pilot comparison contracts",
+      false
+    ]
   ],
   "UNITY_EDITOR_PROFILES": {
     "unity-tests.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}",
     "unity-benchmarks.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}",
     "release.yml": "EditorOnly",
-    "perf-numbers.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}"
+    "perf-numbers.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}",
+    "runner-bootstrap.yml": "StandaloneWindowsIl2Cpp"
   },
   "UNITY_EDITOR_CONSUMERS": [
     [
@@ -19,7 +26,8 @@
     ],
     ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
     ["release.yml", "unity-checks", ["run_tests"]],
-    ["perf-numbers.yml", "perf-benchmarks", ["run_allocation_contracts", "run_tests"]]
+    ["perf-numbers.yml", "perf-benchmarks", ["run_allocation_contracts", "run_tests"]],
+    ["runner-bootstrap.yml", "pilot-contract-smoke", ["run_contracts"]]
   ],
   "DOCS_ONLY_PATH_IGNORES": [
     "docs/**",

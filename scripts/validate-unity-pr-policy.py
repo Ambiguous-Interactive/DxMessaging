@@ -27,6 +27,7 @@ REGISTERED_UNITY_AUTOMATION = {
     ".github/actions/validate-unity-license/action.yml",
     ".github/workflows/perf-numbers.yml",
     ".github/workflows/release.yml",
+    ".github/workflows/runner-bootstrap.yml",
     ".github/workflows/unity-benchmarks.yml",
     ".github/workflows/unity-tests.yml",
 }
@@ -36,6 +37,7 @@ LICENSED_LOCK_WINDOWS = (
     (Path(".github/workflows/unity-benchmarks.yml"), "benchmarks"),
     (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
     (Path(".github/workflows/release.yml"), "unity-checks"),
+    (Path(".github/workflows/runner-bootstrap.yml"), "pilot-contract-smoke"),
 )
 UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES = 60
 UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(

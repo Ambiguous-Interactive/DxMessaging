@@ -557,7 +557,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
         `${label}: failed installs cannot authorize redaction or uploads`
       );
     }
-    const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : 900;
+    const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : file === "runner-bootstrap.yml" ? 600 : 900;
     // prettier-ignore
     assert.match(job, new RegExp(`\\n    timeout-minutes: ${expectedJobTimeout}\\n`), `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {

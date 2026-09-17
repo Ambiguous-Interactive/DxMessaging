@@ -117,7 +117,7 @@ test("every Unity artifact upload is preceded by sensitive-data redaction in the
   const uploads = unityUploads();
   assert.equal(
     uploads.length,
-    8,
+    9,
     "the number of Unity artifact uploads changed; confirm each one is still redacted"
   );
   const unprotected = uploads.filter((upload) => !covers(upload.inForce, upload.uploadedPath));
