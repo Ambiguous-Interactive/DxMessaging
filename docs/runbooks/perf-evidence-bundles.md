@@ -703,3 +703,61 @@ The denied-access drill requested actual asset `570580334` through GitHub's rele
 deliberately invalid credentials. GitHub returned HTTP 401 and `curl --fail` exited 22. No asset
 file was produced, and verification and replay were not attempted. The inaccessible experiment
 remained incomplete without using a cached fallback.
+
+### s337-editor-clock-control, revision 1
+
+Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode
+Mono control retains raw timer-only and empty-callback timestamp pairs. At 10 MHz, 226/256 and
+239/256 pairs, respectively, measured zero ticks. This is a quantization observation, not an
+individual player p99 or IL2CPP precision claim.
+
+| Identity                        | Value                                                                                                                                                                        |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable s337 clock evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s337-editor-clock-control-r1-9c890828)            |
+| Release ID                      | `390880212`                                                                                                                                                                  |
+| Asset                           | [s337 clock archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-s337-editor-clock-control-r1-9c890828/s337-editor-clock-r1.tar.gz) |
+| Exact asset name                | `s337-editor-clock-r1.tar.gz`                                                                                                                                                |
+| Asset ID and size               | `570627932`, 3,414 bytes                                                                                                                                                     |
+| Archive SHA-256                 | `f058f0ebc9fdafb2c8cf545f2055e31933be0b7b899d5ca3d4a6a8ccc9b48ec9`                                                                                                           |
+| Manifest SHA-256                | `9c890828c941e03e8e515bd9704b0254fec36452db0df3d9a973e106166053a5`                                                                                                           |
+| Bundle digest                   | `811010e735874682cd0c7eae610b9a9f703ea06e6dd9d084ff99ffeb729838e2`                                                                                                           |
+| Measured source                 | `2e5cd91d72180016ee2f6ac3b64bece2532e94fe`                                                                                                                                   |
+| Verifier and release tag commit | `f22d7ab35c214a23b3332b5ffcb67a74b30a6252`                                                                                                                                   |
+| Reducer                         | `editor-latency-clock-capture-v1`                                                                                                                                            |
+
+### s338-editor-clock-batch-control, revision 1
+
+Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode
+Mono control retains 128 nonzero elapsed windows for 4,096 timestamp calls each. Summed elapsed
+time was 59,636 ticks at 10 MHz across 524,288 calls. The 11.374664306640625 ns aggregate per
+call includes loop, checksum, and window boundary work; it does not isolate Stopwatch cost or
+establish an individual player p99 or IL2CPP precision claim.
+
+| Identity                        | Value                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable s338 clock evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s338-editor-clock-batch-control-r1-6f6df9ec)            |
+| Release ID                      | `390880898`                                                                                                                                                                        |
+| Asset                           | [s338 clock archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-s338-editor-clock-batch-control-r1-6f6df9ec/s338-editor-clock-r1.tar.gz) |
+| Exact asset name                | `s338-editor-clock-r1.tar.gz`                                                                                                                                                      |
+| Asset ID and size               | `570629904`, 3,846 bytes                                                                                                                                                           |
+| Archive SHA-256                 | `1aa797afbb89c77f3c3210e848918bbd79bef8935f30799d276a9b60e159b8ac`                                                                                                                 |
+| Manifest SHA-256                | `6f6df9ec760fc4d11d15b3ec3d37719a44c36ece4a166bcbb38477a3aaeb2f80`                                                                                                                 |
+| Bundle digest                   | `c15a9149e53d8ed5a19122586d262be2a315c10f75493830e191a4807746a31b`                                                                                                                 |
+| Measured source                 | `2ac9e191a21bbd594f3c543b6b73d6b4eeab9e7d`                                                                                                                                         |
+| Verifier and release tag commit | `f22d7ab35c214a23b3332b5ffcb67a74b30a6252`                                                                                                                                         |
+| Reducer                         | `editor-latency-clock-capture-v1`                                                                                                                                                  |
+
+Each draft contained exactly its one named asset. Fresh draft downloads matched the archive and
+manifest hashes, and clean remote verifier clones with `npm ci --ignore-scripts` passed `verify`
+and `replay` before publication. The published releases each reported `draft: false`,
+`prerelease: true`, and `immutable: true`; both tags resolve to the verifier commit, and their
+asset API digests match the index. A separate fresh verifier clone restored both anonymous
+postpublication downloads with clean status and exact replay. Each archive has seven declared
+regular files, a manifest, and one directory entry; paths are relative, ownership and timestamps
+are normalized, and there are no links or special files. A denied-access request to each actual
+asset API ID with invalid credentials returned HTTP 401 and `curl --fail` exit 22, produced no
+file, and did not start verification or replay. Static CI run
+[35246207564](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/35246207564)
+passed the reducer suites on Linux, macOS, and Windows at the verifier commit. This CI run tests
+the code on those operating systems; the independent archive restore was performed in a fresh
+Linux reviewer environment.
