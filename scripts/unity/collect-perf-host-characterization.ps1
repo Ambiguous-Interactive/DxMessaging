@@ -241,18 +241,27 @@ function Get-SensorSample {
     $thermalZones = @()
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $members = @(
-            'ProcessorFrequency', 'PercentMaximumFrequency', 'PercentProcessorPerformance',
-            'PercentPerformanceLimit', 'PerformanceLimitFlags', 'PercentProcessorTime'
-        )
-        $processorCounters = @(Get-CimInstance -ClassName Win32_PerfFormattedData_Counters_ProcessorInformation -ErrorAction Stop | ForEach-Object {
-            $item = [ordered]@{ name = [string]$_.Name }
-            foreach ($member in $members) {
-                $property = $_.PSObject.Properties[$member]
-                if ($null -ne $property) { $item[$member] = $property.Value }
+        $counterNames = [ordered]@{
+            'Processor Frequency' = 'ProcessorFrequency'
+            '% of Maximum Frequency' = 'PercentMaximumFrequency'
+            '% Processor Performance' = 'PercentProcessorPerformance'
+            '% Performance Limit' = 'PercentPerformanceLimit'
+            'Performance Limit Flags' = 'PerformanceLimitFlags'
+            '% Processor Time' = 'PercentProcessorTime'
+        }
+        $paths = @($counterNames.Keys | ForEach-Object { "\Processor Information(*)\$_" })
+        $byInstance = @{}
+        foreach ($counter in (Get-Counter -Counter $paths -ErrorAction Stop).CounterSamples) {
+            $instance = [string]$counter.InstanceName
+            if (-not $byInstance.ContainsKey($instance)) {
+                $byInstance[$instance] = [ordered]@{ name = $instance }
             }
-            $item
-        })
+            $counterName = ($counter.Path -split '\\')[-1]
+            $member = $counterNames[$counterName]
+            if (-not $member) { throw "Unexpected processor counter path: $($counter.Path)" }
+            $byInstance[$instance][$member] = $counter.CookedValue
+        }
+        $processorCounters = @($byInstance.Values)
     } catch { $errors.Add("processorCounters: $($_.Exception.Message)") }
     $processorCounterReadMilliseconds = $clock.Elapsed.TotalMilliseconds
     # The available ACPI zone has no verified CPU-package identity. Probe it

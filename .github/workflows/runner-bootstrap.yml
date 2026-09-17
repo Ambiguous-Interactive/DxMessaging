@@ -222,7 +222,7 @@ jobs:
               '-CpuProfilePath', (Join-Path $PWD $profile),
               '-ReadySignalPath', (Join-Path $PWD $ready),
               '-StopSignalPath', (Join-Path $PWD $stop),
-              '-SampleCount', '20'
+              '-SampleCount', '120'
           )) { [void]$start.ArgumentList.Add($argument) }
           $start.UseShellExecute = $false
           $start.RedirectStandardOutput = $true
@@ -236,7 +236,7 @@ jobs:
                   }
                   Start-Sleep -Milliseconds 100
               }
-              Start-Sleep -Seconds 7
+              Start-Sleep -Seconds 90
               Set-Content -LiteralPath $stop -Value ([DateTime]::UtcNow.ToString('O'))
               if (-not $process.WaitForExit(120000)) { throw 'Host sampler did not stop.' }
               if ($process.ExitCode -ne 0) {
@@ -248,8 +248,31 @@ jobs:
                   $record.loadMode -cne 'player-workload-v1' -or
                   $record.stopReason -cne 'player-finished' -or
                   $record.actualSampleCount -lt 2 -or
-                  $record.actualSampleCount -ge 20
+                  $record.actualSampleCount -ge 120
               ) { throw 'Host sampler signal contract failed.' }
+              $indices = @(0..15 | ForEach-Object { "0,$_" })
+              $previous = $null
+              foreach ($sample in $record.samples) {
+                  if (@($sample.errors).Count -ne 0) { throw 'Host sampler sensor read failed.' }
+                  if ($previous) {
+                      $interval = ([DateTime]$sample.timestampUtc - [DateTime]$previous.timestampUtc).TotalSeconds
+                      if ($interval -lt 0.5 -or $interval -gt 1.5) {
+                          throw "Host sampler cadence failed: $interval seconds."
+                      }
+                  }
+                  foreach ($name in $indices) {
+                      $counter = @($sample.processorCounters | Where-Object { $_.name -ceq $name })
+                      if (
+                          $counter.Count -ne 1 -or
+                          $null -eq $counter[0].ProcessorFrequency -or
+                          $null -eq $counter[0].PercentProcessorPerformance -or
+                          $null -eq $counter[0].PercentProcessorTime -or
+                          $counter[0].PercentPerformanceLimit -ne 100 -or
+                          $counter[0].PerformanceLimitFlags -ne 0
+                      ) { throw "Host sampler processor counter failed: $name." }
+                  }
+                  $previous = $sample
+              }
               $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
               "- Player-time sampler smoke SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           } finally {
