@@ -145,12 +145,101 @@ def audit(schedule_bytes: bytes, observations: Any) -> dict[str, Any]:
     }
 
 
+def audit_unity_result(raw_result: bytes, expected_trace_ids: list[str]) -> dict[str, Any]:
+    """Replay every trace from one raw maintained-runner result against declared IDs."""
+    if not isinstance(raw_result, bytes) or not expected_trace_ids:
+        raise ValueError("raw result bytes and expected trace IDs are required")
+    expected = {identity(value, "expected trace ID") for value in expected_trace_ids}
+    if len(expected) != len(expected_trace_ids):
+        raise ValueError("expected trace IDs must be distinct")
+    result = parse_json(raw_result)
+    required = {"passCount", "failCount", "skipCount", "inconclusiveCount", "nodes", "failures"}
+    if not isinstance(result, dict) or not required.issubset(result):
+        raise ValueError("Unity result is missing required fields")
+    for name in ("passCount", "failCount", "skipCount", "inconclusiveCount"):
+        if type(result[name]) is not int or result[name] < 0:
+            raise ValueError(f"Unity result {name} must be a nonnegative integer")
+    if result["passCount"] == 0 or any(result[name] != 0 for name in ("failCount", "skipCount", "inconclusiveCount")):
+        raise ValueError("Unity result must have positive passes and no failed, skipped, or inconclusive tests")
+    if result["failures"] != [] or not isinstance(result["nodes"], list):
+        raise ValueError("Unity result has failures or invalid nodes")
+
+    passed_leaves = 0
+    traces = []
+    seen: set[str] = set()
+    for index, node in enumerate(result["nodes"]):
+        if not isinstance(node, dict) or not {"name", "isSuite", "status", "output"}.issubset(node):
+            raise ValueError(f"nodes[{index}] has invalid shape")
+        if type(node["isSuite"]) is not bool:
+            raise ValueError(f"nodes[{index}].isSuite must be boolean")
+        if node["isSuite"]:
+            if node["status"] != "Passed":
+                raise ValueError(f"nodes[{index}] is not a passed suite")
+            continue
+        name = identity(node["name"], f"nodes[{index}].name")
+        if node["status"] != "Passed" or not isinstance(node["output"], str):
+            raise ValueError(f"nodes[{index}] is not a passed trace fixture")
+        passed_leaves += 1
+        pending = None
+        pairs = 0
+        for line in node["output"].splitlines():
+            if line.startswith("DXM_OPEN_LOOP_SCHEDULE_V1 "):
+                if pending is not None:
+                    raise ValueError(f"{name} has an unpaired schedule")
+                pending = line.removeprefix("DXM_OPEN_LOOP_SCHEDULE_V1 ").encode("utf-8")
+            elif line.startswith("DXM_OPEN_LOOP_OBSERVATIONS_V1 "):
+                if pending is None:
+                    raise ValueError(f"{name} has an unpaired observation")
+                observed = parse_json(line.removeprefix("DXM_OPEN_LOOP_OBSERVATIONS_V1 "))
+                reduced = audit(pending, observed)
+                trace_id = reduced["traceId"]
+                if trace_id not in expected or trace_id in seen:
+                    raise ValueError(f"unexpected or duplicate trace ID: {trace_id}")
+                seen.add(trace_id)
+                traces.append({
+                    "fixture": name,
+                    "traceId": trace_id,
+                    "scheduleSha256": reduced["scheduleSha256"],
+                    "frequencyHz": reduced["frequencyHz"],
+                    "offeredCount": reduced["offeredCount"],
+                    "startedWithinHorizon": reduced["startedWithinHorizon"],
+                    "completedWithinHorizon": reduced["completedWithinHorizon"],
+                    "completedEventual": reduced["completedEventual"],
+                    "backlogAtHorizon": reduced["backlogAtHorizon"],
+                    "offeredPerSecond": reduced["offeredPerSecond"],
+                    "achievedWithinHorizonPerSecond": reduced["achievedWithinHorizonPerSecond"],
+                })
+                pending = None
+                pairs += 1
+        if pending is not None or pairs == 0:
+            raise ValueError(f"{name} has missing or unpaired trace markers")
+    if passed_leaves != result["passCount"] or seen != expected:
+        raise ValueError("Unity pass count or expected trace IDs do not match replayed fixtures")
+    return {
+        "schemaVersion": 1,
+        "resultClass": "descriptive-only",
+        "rawResultSha256": hashlib.sha256(raw_result).hexdigest(),
+        "expectedTraceIds": sorted(expected),
+        "traceCount": len(traces),
+        "traces": traces,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("schedule", type=Path, help="predeclared raw schedule JSON")
-    parser.add_argument("observations", type=Path, help="observation JSON bound to schedule SHA-256")
+    parser.add_argument("schedule", nargs="?", type=Path, help="predeclared raw schedule JSON")
+    parser.add_argument("observations", nargs="?", type=Path, help="observation JSON bound to schedule SHA-256")
+    parser.add_argument("--unity-result", type=Path, help="raw maintained-runner JSON with embedded traces")
+    parser.add_argument("--expected-trace-id", action="append", default=[], help="one required trace ID; repeat per trace")
     args = parser.parse_args()
-    result = audit(args.schedule.read_bytes(), parse_json(args.observations.read_bytes()))
+    if args.unity_result is not None:
+        if args.schedule is not None or args.observations is not None or not args.expected_trace_id:
+            parser.error("--unity-result requires expected trace IDs and no positional files")
+        result = audit_unity_result(args.unity_result.read_bytes(), args.expected_trace_id)
+    else:
+        if args.schedule is None or args.observations is None or args.expected_trace_id:
+            parser.error("schedule and observations are required without --unity-result")
+        result = audit(args.schedule.read_bytes(), parse_json(args.observations.read_bytes()))
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

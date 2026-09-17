@@ -53,7 +53,78 @@ def observations(raw: bytes | None = None) -> dict:
     }
 
 
+def runner_result(pairs: list[tuple[bytes, dict]] | None = None) -> dict:
+    pairs = pairs if pairs is not None else [(raw_schedule(), observations())]
+    output = "\n".join(
+        line
+        for raw, observed in pairs
+        for line in (
+            "DXM_OPEN_LOOP_SCHEDULE_V1 " + raw.decode(),
+            "DXM_OPEN_LOOP_OBSERVATIONS_V1 " + json.dumps(observed),
+        )
+    )
+    return {
+        "passCount": 1,
+        "failCount": 0,
+        "skipCount": 0,
+        "inconclusiveCount": 0,
+        "nodes": [{"name": "Fixture.Case", "isSuite": False, "status": "Passed", "output": output}],
+        "failures": [],
+    }
+
+
 class AuditOpenLoopTraceTests(unittest.TestCase):
+    def test_raw_unity_result_replays_every_declared_trace(self) -> None:
+        second = {**schedule(), "traceId": "trace-2"}
+        raw_second = raw_schedule(second)
+        result = runner_result([(raw_schedule(), observations()), (raw_second, observations(raw_second))])
+        raw_result = json.dumps(result).encode()
+        replay = MODULE.audit_unity_result(raw_result, ["trace-1", "trace-2"])
+        self.assertEqual(replay["rawResultSha256"], hashlib.sha256(raw_result).hexdigest())
+        self.assertEqual(replay["traceCount"], 2)
+        self.assertEqual([item["traceId"] for item in replay["traces"]], ["trace-1", "trace-2"])
+        self.assertEqual(replay["traces"][0]["fixture"], "Fixture.Case")
+        self.assertEqual(replay["traces"][0]["backlogAtHorizon"], 2)
+
+    def test_raw_unity_result_rejects_incomplete_or_ambiguous_capture(self) -> None:
+        valid = runner_result()
+        marker = valid["nodes"][0]["output"]
+        first_line = marker.splitlines()[0]
+        failures = [
+            ({**valid, "passCount": 2}, ["trace-1"]),
+            ({**valid, "failCount": 1}, ["trace-1"]),
+            ({**valid, "skipCount": 1}, ["trace-1"]),
+            ({**valid, "inconclusiveCount": 1}, ["trace-1"]),
+            ({**valid, "failures": ["failure"]}, ["trace-1"]),
+            ({**valid, "nodes": [{**valid["nodes"][0], "status": "Failed"}]}, ["trace-1"]),
+            ({**valid, "nodes": [{"name": "Suite", "isSuite": True, "status": "Failed", "output": ""}, valid["nodes"][0]]}, ["trace-1"]),
+            ({**valid, "nodes": [{**valid["nodes"][0], "output": first_line}]}, ["trace-1"]),
+            ({**valid, "nodes": [{**valid["nodes"][0], "output": marker + "\n" + first_line}]}, ["trace-1"]),
+            ({**valid, "nodes": [{**valid["nodes"][0], "output": marker + "\n" + marker}]}, ["trace-1"]),
+            (valid, ["missing"]),
+            (valid, ["trace-1", "trace-1"]),
+            (valid, []),
+        ]
+        for result, expected in failures:
+            with self.subTest(result=result, expected=expected), self.assertRaises(ValueError):
+                MODULE.audit_unity_result(json.dumps(result).encode(), expected)
+        with self.assertRaises(ValueError):
+            MODULE.audit_unity_result(b'{"passCount":1,"passCount":1}', ["trace-1"])
+
+    def test_raw_unity_result_cli_requires_expected_ids(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="dxm-open-loop-result-") as temporary:
+            path = Path(temporary) / "result.json"
+            path.write_text(json.dumps(runner_result()), encoding="utf-8")
+            good = subprocess.run(
+                [sys.executable, str(SCRIPT), "--unity-result", str(path), "--expected-trace-id", "trace-1"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(good.returncode, 0, good.stderr)
+            self.assertEqual(json.loads(good.stdout)["traceCount"], 1)
+            bad = subprocess.run([sys.executable, str(SCRIPT), "--unity-result", str(path)], capture_output=True, text=True)
+            self.assertNotEqual(bad.returncode, 0)
+
     def test_exact_rates_late_completions_and_large_ticks(self) -> None:
         raw = raw_schedule()
         result = MODULE.audit(raw, observations(raw))
