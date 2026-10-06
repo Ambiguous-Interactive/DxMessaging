@@ -33,7 +33,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -69,7 +69,7 @@ jobs:
       - name: Require manually installed Unity editor
         id: ensure_unity_editor
         timeout-minutes: 10
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           unity-version: ${{ matrix.unity-version }}
           install-root: ${{ runner.tool_cache }}\u6-v3
@@ -163,7 +163,7 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -278,7 +278,7 @@ jobs:
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           unity-version: ${{ matrix.unity-version }}
           tool-cache: ${{ runner.tool_cache }}
@@ -290,7 +290,7 @@ jobs:
         id: cleanup_classification
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
           return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
@@ -302,7 +302,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -317,7 +317,7 @@ jobs:
       - name: Require confirmed Unity cleanup
         if: always()
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@c5463a9e0d09e5089c7172f41425bf09b7752da2 # v1.16.1
         with:
           # Typed binding to the one acquire step, exactly as the enrollment
           # contract requires. A leg that aborts before acquire ran reports an
