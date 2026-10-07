@@ -79,7 +79,9 @@ Each Unity job follows this order:
 1. Validate the Unity secrets via `./.github/actions/validate-unity-license`
    (checks `UNITY_SERIAL` / `UNITY_EMAIL` / `UNITY_PASSWORD` presence and rejects
    the retired `UNITY_LICENSING_SERVER`) BEFORE acquiring the org lock.
-1. Acquire the org build lock (`wallstop-organization-builds`, `max-parallel: 1`).
+1. Acquire `wallstop-organization-builds` through the pinned central action,
+   supplying the physical `runner-id`. The shared configuration controls the
+   two-holder limit and serializes each runner across repositories.
 1. Return-at-start: `run-ci-tests.ps1` calls `Invoke-UnityLicenseReturn` to
    reclaim any seat a prior killed run leaked on this persistent runner.
 1. Activate: `Invoke-UnityLicenseActivate` runs the serial activation (throws on
@@ -91,6 +93,12 @@ Each Unity job follows this order:
 1. The acquired-scoped central return action runs inside the org-lock window,
    followed by cleanup classification, exact lock release, and the final
    fail-closed cleanup gate.
+
+The [central lock configuration](https://github.com/Ambiguous-Interactive/ambiguous-organization-build-lock/blob/main/locks/wallstop-organization-builds.config.json)
+owns admission and lifecycle policy. Normal CI dispatch uses the automatic chain
+above. Portal reconciliation is recovery work for an actual active account
+incident; it is not a prerequisite for ordinary admission. Consumers keep no
+separate lock state or runner reservation policy.
 
 ## The Seat-Limit Tradeoff (documented honestly)
 
