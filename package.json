@@ -82,14 +82,14 @@
     "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run llm:check && npm run check:issue-template-versions && npm run check:upm-changelog"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@xmldom/xmldom": "0.9.12",
     "ajv": "8.20.0",
     "cspell": "10.2.2",
     "jsonc-parser": "3.3.1",
-    "markdownlint-cli2": "0.23.2",
+    "markdownlint-cli2": "0.23.3",
     "prettier": "3.9.6",
-    "smol-toml": "1.8.0",
+    "smol-toml": "1.9.0",
     "yaml": "^2.9.0"
   },
   "overrides": {
