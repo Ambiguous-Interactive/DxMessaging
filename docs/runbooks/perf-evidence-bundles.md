@@ -431,6 +431,43 @@ Repository-wide immutable releases were enabled with maintainer approval on 2026
 authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
 an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
 
+### editor-settings-cache-613-6000.4.6f1, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the #613 native Unity 6000.4.6f1 Editor characterization, its stopped baseline, adaptive descriptive
+followup, native test/control results, and source/fixture restoration observations. It is not
+supported-version matrix, player performance, allocation-recorder, leak, or OOM-cause evidence.
+
+| Identity                | Value                                                                                                                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                 | [Immutable Editor settings cache prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-editor-settings-cache-613-6000.4.6f1-r1-ab70b721)                                        |
+| Release ID              | `406044866`                                                                                                                                                                                                           |
+| Asset                   | [Editor settings cache archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-editor-settings-cache-613-6000.4.6f1-r1-ab70b721/editor-settings-cache-613-6000.4.6f1-r1.tar.gz) |
+| Exact asset name        | `editor-settings-cache-613-6000.4.6f1-r1.tar.gz`                                                                                                                                                                      |
+| Asset ID and size       | `619463560`, 110,982 bytes                                                                                                                                                                                            |
+| Archive SHA-256         | `9ceee5073dc0b093f3ebf793b58b1a1df32e8bceb91b62f73b6d7bd9a2c919d9`                                                                                                                                                    |
+| Manifest SHA-256        | `ab70b72136a2d26845b19dfd6a260087b05ca4e3780a7e1545b9df9ba58c3c88`                                                                                                                                                    |
+| Bundle digest           | `cf39d348d6b4be154fbf4ad8d55877b77d479490c251f7f417589d405b45db1f`                                                                                                                                                    |
+| Measured source         | `ae79805245bc2fbcbf3479354260bb1908b08899`                                                                                                                                                                            |
+| Measured source tree    | `d011bc50e868c33ac9f4d9b59775a274ec7a6ef5`                                                                                                                                                                            |
+| Verifier commit         | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                            |
+| Inventory               | 70 declared files plus the manifest; archive members are relative regular files                                                                                                                                       |
+| Reviewer commands       | Fresh remote clone; clean checkout; `npm ci --ignore-scripts`; Node.js `v24.21.0`; `verify` exit 0; `replay` exit 0                                                                                                   |
+| Publication checks      | Authenticated setting `enabled: true`; complete draft download verified before publication; published `draft: false`, `prerelease: true`, `immutable: true`; tag resolves to verifier commit                          |
+| Independent restore     | New published-asset download; full archive/manifest digests, inventory and identity match; normalized replay identical; verifier checkout remains clean                                                               |
+| Original source restore | All 12 original overlay source hashes match a separate checkout of the measured commit, including the one scrubbed source excerpt                                                                                     |
+| Denied access           | Actual required asset `619463560` returned HTTP 401 and retrieval exit 1 with isolated invalid authentication; no fallback; experiment remained incomplete in that context                                            |
+| Verifier CI             | [All 17 static jobs succeeded at the verifier commit](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/37666819976)                                                                                  |
+
+The full ordinary Editor suite passed 975 leaves, including all 13 imported sample quality cases.
+The postprocessor negative control retains three expected failures; candidate import tests passed.
+The original 64-call legacy phase stopped at 3,931.2884 ms before any paired B phase. The separately
+preregistered 8-call followup retains all four ABBA/BAAB blocks: 64 legacy searches, 64 cached calls
+and zero cached searches. Signed working-set and live-memory changes remain in the normalized
+result. No speedup ratio or confirmatory interval is reported. Original samples, package sources
+and the clean saved scene were restored. Supported shipping Editor/player gates and maintainer
+review remain pending; this publication does not close #613.
+
 ### native-lifecycle-replay-failure, revision 1
 
 Status: published and restored from GitHub in a fresh verifier clone on 2026-09-13. This is a
