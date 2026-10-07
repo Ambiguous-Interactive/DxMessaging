@@ -37,11 +37,7 @@ const DEFAULT_ROWS = PERF_TEST_VECTORS.defaultRows;
 const DEFAULT_FACTORS = Object.fromEntries(DEFAULT_ROWS.map((row) => [row.scenario, 1]));
 DEFAULT_FACTORS[TARGET] = 1.06;
 DEFAULT_FACTORS[AFFECTED] = 0.99;
-const COMMITS = [
-  "98b47536a0eb1445fcd2a9700899aab0be24897f",
-  "261b1867e052723517db8a77048c209a20108204",
-  "da5439ac21e60d5e04e4f453e3766e03daff0486"
-];
+const COMMITS = PERF_TEST_VECTORS.commits;
 const OUTER_TREE = "a".repeat(40);
 const CENTER_TREE = "b".repeat(40);
 const OUTER_CANDIDATE_SOURCE = "c".repeat(64);
@@ -250,6 +246,14 @@ function writeBracket(directory, bracket) {
   return { manifestPath, summaryPaths };
 }
 
+function bracketArguments({ manifestPath, summaryPaths }) {
+  return [
+    "--manifest",
+    manifestPath,
+    ...summaryPaths.flatMap((file, index) => [`--${PERF_TEST_VECTORS.positions[index]}`, file])
+  ];
+}
+
 function spawnReducer(arguments_) {
   return spawnSync(
     process.execPath,
@@ -271,16 +275,7 @@ test("CLI validates manifests and preserves the accepted, rejected, and invalid 
 
   await t.test("accepted stdout", () => {
     const { manifestPath, summaryPaths } = writeBracket(directory, makeBracket());
-    const result = spawnReducer([
-      "--manifest",
-      manifestPath,
-      "--first",
-      summaryPaths[0],
-      "--center",
-      summaryPaths[1],
-      "--last",
-      summaryPaths[2]
-    ]);
+    const result = spawnReducer(bracketArguments({ manifestPath, summaryPaths }));
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).status, "accepted");
   });
@@ -290,14 +285,7 @@ test("CLI validates manifests and preserves the accepted, rejected, and invalid 
     const { manifestPath, summaryPaths } = writeBracket(directory, bracket);
     const outputPath = path.join(directory, "verdict.json");
     const result = spawnReducer([
-      "--manifest",
-      manifestPath,
-      "--first",
-      summaryPaths[0],
-      "--center",
-      summaryPaths[1],
-      "--last",
-      summaryPaths[2],
+      ...bracketArguments({ manifestPath, summaryPaths }),
       "--output",
       outputPath
     ]);
@@ -308,16 +296,7 @@ test("CLI validates manifests and preserves the accepted, rejected, and invalid 
   await t.test("malformed evidence status 1", () => {
     const { manifestPath, summaryPaths } = writeBracket(directory, makeBracket());
     fs.writeFileSync(summaryPaths[1], "not-json\n");
-    const result = spawnReducer([
-      "--manifest",
-      manifestPath,
-      "--first",
-      summaryPaths[0],
-      "--center",
-      summaryPaths[1],
-      "--last",
-      summaryPaths[2]
-    ]);
+    const result = spawnReducer(bracketArguments({ manifestPath, summaryPaths }));
     assert.equal(result.status, 1);
     assert.notEqual(result.stderr.trim(), "");
   });
@@ -440,66 +419,10 @@ test("the session 240 artifact-shaped bracket fails its sentinel gate", () => {
 });
 
 test("manifest validation rejects incomplete, reordered, unknown, and unsupported classifications", async (t) => {
-  const cases = [
-    [
-      "empty candidate source scope",
-      { ...makeManifest(), candidatePaths: [] },
-      /candidatePaths must be a non-empty array/
-    ],
-    [
-      "candidate path outside Runtime",
-      { ...makeManifest(), candidatePaths: ["docs/architecture/performance.md"] },
-      /normalized path below Runtime/
-    ],
-    [
-      "fewer than two sentinels",
-      makeManifest(
-        undefined,
-        DEFAULT_ROWS.map((row, index) =>
-          row.role === "sentinel" && index > 0 ? { ...row, role: "affected" } : row
-        )
-      ),
-      /at least two sentinel/
-    ],
-    [
-      "no target",
-      makeManifest(
-        undefined,
-        DEFAULT_ROWS.map((row) => ({ ...row, role: "sentinel" }))
-      ),
-      /at least one target/
-    ],
-    [
-      "omitted scenario",
-      makeManifest(undefined, DEFAULT_ROWS.slice(0, -1)),
-      /classify every paired scenario/
-    ],
-    [
-      "reordered scenario",
-      makeManifest(undefined, [DEFAULT_ROWS[1], DEFAULT_ROWS[0], ...DEFAULT_ROWS.slice(2)]),
-      /classify every paired scenario/
-    ],
-    [
-      "unknown scenario",
-      makeManifest(
-        undefined,
-        DEFAULT_ROWS.map((row, index) =>
-          index === DEFAULT_ROWS.length - 1 ? { ...row, scenario: "Unknown" } : row
-        )
-      ),
-      /classify every paired scenario/
-    ],
-    [
-      "canonical-only role",
-      makeManifest(
-        undefined,
-        DEFAULT_ROWS.map((row, index) => (index === 1 ? { ...row, role: "canonical-only" } : row))
-      ),
-      /unsupported role/
-    ]
-  ];
-  for (const [name, manifest, pattern] of cases) {
-    await t.test(name, () => assert.throws(() => validateManifest(manifest), pattern));
+  for (const [name, manifest, pattern] of PERF_TEST_VECTORS.invalidManifestCases) {
+    await t.test(name, () =>
+      assert.throws(() => validateManifest(structuredClone(manifest)), new RegExp(pattern))
+    );
   }
 });
 
@@ -536,82 +459,24 @@ test("retained artifact reduction does not depend on the current HEAD path inven
 
 test("summary validation rejects omitted, extra, reordered, and mismatched-manifest evidence", async (t) => {
   const bracket = makeBracket();
-  const cases = [
-    ["omitted row", (summaries) => summaries[0].rows.pop(), /row count/],
-    [
-      "extra row",
-      (summaries) =>
-        summaries[0].rows.push({
-          scenario: "Extra",
-          firstToSecondRatio: 1,
-          cycleRatioSpreadPercent: 1,
-          cycleRatios: [1, 1, 1, 1]
-        }),
-      /row count/
-    ],
-    ["reordered row", (summaries) => summaries[0].rows.reverse(), /summary row 0/],
-    [
-      "duplicated row",
-      (summaries) => {
-        summaries[0].rows[1] = clone(summaries[0].rows[0]);
-      },
-      /summary row 1/
-    ],
-    [
-      "manifest digest mismatch",
-      (summaries) => {
-        summaries[1].bracketManifestSha256 = "0".repeat(64);
-      },
-      /manifest digest/
-    ],
-    [
-      "execution profile mismatch",
-      (summaries) => {
-        summaries[2].executionProfile.affinityMask = "0xFFFFFFFF";
-      },
-      /execution profile/
-    ],
-    [
-      "duplicate commit provenance",
-      (summaries) => {
-        summaries[2].commit = summaries[0].commit;
-      },
-      /distinct commits/
-    ],
-    [
-      "different outer source trees",
-      (summaries) => {
-        summaries[2].sourceTree = "c".repeat(40);
-      },
-      /outer summaries.*same source tree/
-    ],
-    [
-      "identical center source tree",
-      (summaries) => {
-        summaries[1].sourceTree = summaries[0].sourceTree;
-      },
-      /outer and center.*different source trees/
-    ],
-    [
-      "different outer candidate source",
-      (summaries) => {
-        summaries[2].candidateSourceSha256 = "e".repeat(64);
-      },
-      /outer summaries.*same candidate-source digest/
-    ],
-    [
-      "unchanged candidate source in center",
-      (summaries) => {
-        summaries[1].candidateSourceSha256 = summaries[0].candidateSourceSha256;
-      },
-      /outer and center.*different candidate-source digests/
-    ]
-  ];
-  for (const [name, mutate, pattern] of cases) {
+  for (const [
+    name,
+    operation,
+    field,
+    literal,
+    from,
+    pattern
+  ] of PERF_TEST_VECTORS.summaryEvidenceMutations) {
     await t.test(name, () => {
       const summaries = clone(bracket.summaries);
-      mutate(summaries);
-      assert.throws(() => reducePairedBracket(bracket.manifestBytes, summaries), pattern);
+      const resolve = (path) => path.split(".").reduce((value, key) => value[key], summaries);
+      if (operation === "set") mutateField(summaries, field, from ? clone(resolve(from)) : literal);
+      else if (operation === "push") resolve(field).push(structuredClone(literal));
+      else resolve(field)[operation]();
+      assert.throws(
+        () => reducePairedBracket(bracket.manifestBytes, summaries),
+        new RegExp(pattern)
+      );
     });
   }
 });
@@ -668,37 +533,14 @@ test("extreme finite inputs cannot overflow or underflow into an accepted verdic
 
 test("three consistently wrong summaries cannot define their own profile or protocol", async (t) => {
   const bracket = makeBracket();
-  const cases = [
-    ["missing commit", "commit", undefined, /summary commit/],
-    ["missing source tree", "sourceTree", undefined, /sourceTree/],
-    ["missing candidate source", "candidateSourceSha256", undefined, /candidateSourceSha256/],
-    ["Mono platform", "platform", "PlayMode Mono", /platform/],
-    ["missing profile", "executionProfile", undefined, /execution profile/],
-    ["CPU model", "executionProfile.cpuModel", "other", /profile topology/],
-    ["missing CPU model", "executionProfile.cpuModel", undefined, /must contain exactly/],
-    ["profile source", "executionProfile.source", "other", /profile topology/],
-    ["selection policy", "executionProfile.selectionPolicy", "other", /profile topology/],
-    ["efficiency class", "executionProfile.selectedEfficiencyClass", -1, /profile topology/],
-    [
-      "logical processors",
-      "executionProfile.selectedLogicalProcessorIndices",
-      [1, 2],
-      /profile topology/
-    ],
-    ["profile", "executionProfile.id", "other", /execution profile/],
-    ["affinity", "executionProfile.affinityMask", "0xFFFFFFFF", /execution profile/],
-    ["priority", "executionProfile.priorityClass", "High", /execution profile/],
-    ["missing protocol", "protocol", undefined, /protocol constants/],
-    ["protocol", "protocol", "other", /protocol constants/],
-    ["cycles", "cycles", 1, /protocol constants/],
-    ["active time", "minimumCycleActiveMilliseconds", 1, /protocol constants/],
-    ["batch", "batchOperations", 1, /protocol constants/]
-  ];
-  for (const [name, field, value, pattern] of cases) {
+  for (const [name, field, value, pattern, remove] of PERF_TEST_VECTORS.invalidSummaryProfiles) {
     await t.test(name, () => {
       const summaries = clone(bracket.summaries);
-      summaries.forEach((summary) => mutateField(summary, field, value));
-      assert.throws(() => reducePairedBracket(bracket.manifestBytes, summaries), pattern);
+      summaries.forEach((summary) => mutateField(summary, field, remove ? undefined : value));
+      assert.throws(
+        () => reducePairedBracket(bracket.manifestBytes, summaries),
+        new RegExp(pattern)
+      );
     });
   }
 });

@@ -193,5 +193,430 @@
         "description": "Changed capacity"
       }
     ]
-  ]
+  ],
+  "invalidManifestCases": [
+    [
+      "empty candidate source scope",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": [],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "StructNoBox",
+            "role": "sentinel"
+          }
+        ]
+      },
+      "candidatePaths must be a non-empty array"
+    ],
+    [
+      "candidate path outside Runtime",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["docs/architecture/performance.md"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "StructNoBox",
+            "role": "sentinel"
+          }
+        ]
+      },
+      "normalized path below Runtime"
+    ],
+    [
+      "fewer than two sentinels",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "affected"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "affected"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "StructNoBox",
+            "role": "affected"
+          }
+        ]
+      },
+      "at least two sentinel"
+    ],
+    [
+      "no target",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "StructNoBox",
+            "role": "sentinel"
+          }
+        ]
+      },
+      "at least one target"
+    ],
+    [
+      "omitted scenario",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          }
+        ]
+      },
+      "classify every paired scenario"
+    ],
+    [
+      "reordered scenario",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToMany",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "StructNoBox",
+            "role": "sentinel"
+          }
+        ]
+      },
+      "classify every paired scenario"
+    ],
+    [
+      "unknown scenario",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "Unknown",
+            "role": "sentinel"
+          }
+        ]
+      },
+      "classify every paired scenario"
+    ],
+    [
+      "canonical-only role",
+      {
+        "schemaVersion": 1,
+        "bracketId": "test-bracket",
+        "materialityBandPercent": 3,
+        "candidatePaths": ["Runtime/Core/MessageBus/MessageBus.cs"],
+        "orientation": "candidate-control-candidate",
+        "rows": [
+          {
+            "scenario": "GlobalToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "GlobalToMany",
+            "role": "canonical-only"
+          },
+          {
+            "scenario": "KeyedToOne",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "Filtered",
+            "role": "target"
+          },
+          {
+            "scenario": "PostProcess",
+            "role": "sentinel"
+          },
+          {
+            "scenario": "FilteredPostProcess",
+            "role": "affected"
+          },
+          {
+            "scenario": "StructNoBox",
+            "role": "sentinel"
+          }
+        ]
+      },
+      "unsupported role"
+    ]
+  ],
+  "invalidSummaryProfiles": [
+    ["missing commit", "commit", null, "summary commit", true],
+    ["missing source tree", "sourceTree", null, "sourceTree", true],
+    ["missing candidate source", "candidateSourceSha256", null, "candidateSourceSha256", true],
+    ["Mono platform", "platform", "PlayMode Mono", "platform"],
+    ["missing profile", "executionProfile", null, "execution profile", true],
+    ["CPU model", "executionProfile.cpuModel", "other", "profile topology"],
+    ["missing CPU model", "executionProfile.cpuModel", null, "must contain exactly", true],
+    ["profile source", "executionProfile.source", "other", "profile topology"],
+    ["selection policy", "executionProfile.selectionPolicy", "other", "profile topology"],
+    ["efficiency class", "executionProfile.selectedEfficiencyClass", -1, "profile topology"],
+    [
+      "logical processors",
+      "executionProfile.selectedLogicalProcessorIndices",
+      [1, 2],
+      "profile topology"
+    ],
+    ["profile", "executionProfile.id", "other", "execution profile"],
+    ["affinity", "executionProfile.affinityMask", "0xFFFFFFFF", "execution profile"],
+    ["priority", "executionProfile.priorityClass", "High", "execution profile"],
+    ["missing protocol", "protocol", null, "protocol constants", true],
+    ["protocol", "protocol", "other", "protocol constants"],
+    ["cycles", "cycles", 1, "protocol constants"],
+    ["active time", "minimumCycleActiveMilliseconds", 1, "protocol constants"],
+    ["batch", "batchOperations", 1, "protocol constants"]
+  ],
+  "summaryEvidenceMutations": [
+    ["omitted row", "pop", "0.rows", null, null, "row count"],
+    [
+      "extra row",
+      "push",
+      "0.rows",
+      {
+        "scenario": "Extra",
+        "firstToSecondRatio": 1,
+        "cycleRatioSpreadPercent": 1,
+        "cycleRatios": [1, 1, 1, 1]
+      },
+      null,
+      "row count"
+    ],
+    ["reordered row", "reverse", "0.rows", null, null, "summary row 0"],
+    ["duplicated row", "set", "0.rows.1", null, "0.rows.0", "summary row 1"],
+    [
+      "manifest digest mismatch",
+      "set",
+      "1.bracketManifestSha256",
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      null,
+      "manifest digest"
+    ],
+    [
+      "execution profile mismatch",
+      "set",
+      "2.executionProfile.affinityMask",
+      "0xFFFFFFFF",
+      null,
+      "execution profile"
+    ],
+    ["duplicate commit provenance", "set", "2.commit", null, "0.commit", "distinct commits"],
+    [
+      "different outer source trees",
+      "set",
+      "2.sourceTree",
+      "cccccccccccccccccccccccccccccccccccccccc",
+      null,
+      "outer summaries.*same source tree"
+    ],
+    [
+      "identical center source tree",
+      "set",
+      "1.sourceTree",
+      null,
+      "0.sourceTree",
+      "outer and center.*different source trees"
+    ],
+    [
+      "different outer candidate source",
+      "set",
+      "2.candidateSourceSha256",
+      "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      null,
+      "outer summaries.*same candidate-source digest"
+    ],
+    [
+      "unchanged candidate source in center",
+      "set",
+      "1.candidateSourceSha256",
+      null,
+      "0.candidateSourceSha256",
+      "outer and center.*different candidate-source digests"
+    ]
+  ],
+  "commits": [
+    "98b47536a0eb1445fcd2a9700899aab0be24897f",
+    "261b1867e052723517db8a77048c209a20108204",
+    "da5439ac21e60d5e04e4f453e3766e03daff0486"
+  ],
+  "positions": ["first", "center", "last"]
 }

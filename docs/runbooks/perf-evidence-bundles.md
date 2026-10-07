@@ -34,6 +34,7 @@ Each reducer accepts only its registered artifact class:
 | `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 | `differential-replay-failure`      | `differential-replay-failure-v1`      |
+| `editor-settings-cache`            | `editor-settings-cache-v1`            |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -261,6 +262,62 @@ categories as the C# oracle. It requires the original operation-kind sequence, a
 `DestroyHost` deletion-minimal subsequence, matching `state` failures for all three message
 kinds, exact profile/source agreement, and non-empty candidate and replay inputs. A future
 generator profile needs a new reducer version; do not weaken this contract to admit it.
+
+## Retaining native Editor settings cache evidence
+
+The `editor-settings-cache-v1` reducer retains the specific #613 native Editor characterization
+profile in `scripts/unity/editor-settings-cache-contract.json`. It requires the stopped 64-call
+legacy phase and the separately preregistered 8-call followup: four complete ABBA/BAAB blocks,
+one warmup call per arm, the two-second stopping rule, and the 128 MiB growth limit. It checks
+every call, found-object and search counter, schedule position, numeric value, and stopping reason.
+Its block timing check sums the recorded phase times; the original probe did not retain the
+whole-block stopwatch values. The producer's complete block timing cannot be reconstructed.
+
+Retain these inputs at the bundle root:
+
+- `editor-settings-profile.json`: the contract's exact `profile` object.
+- `stopped-baseline.json` and `followup.json`: the original MCP `result` objects, including all
+  memory readings and the stopped row. Keep the original requests alongside them.
+- For each of `focused`, `import`, `control`, `affected`, and `full`: `<id>.result.json`,
+  `<id>.run.json`, `<id>.cleanup.json`, `<id>.status.txt`, and `<id>.cleanup.status.txt`.
+- `source-proof.json` and `candidate/<source-path>.txt`: measured commit/tree, complete overlay
+  inventory, original and retained source hashes, redaction counts, and package restoration proof.
+- `freshness.json`, `samples.json`, `preflight.json`, and `restoration.json`: assembly timestamps,
+  imported sample/source equality, saved original scene, and final fixture cleanup observations.
+- `original-samples.json` and `restored-samples.json`: all original file hashes and root metadata.
+
+The reducer derives leaf counts from native result nodes and checks the declared summaries:
+22 focused passes, four import passes, the expected three control failures and one control pass,
+117 affected passes, and 975 full Editor passes. It requires matching run ownership, terminal
+status, an inactive framework, and restoration of the clean original scene. The control's cleanup
+status remains its original expected test-failure error; it is not changed to `done`.
+The full run also requires fresh package and sample assemblies before its preflight. Earlier
+focused runs used selected Editor/test overlays; only the full run used the complete candidate
+Unity tree. A different workload or coverage profile requires a new reducer version.
+
+The normalized result retains the stopped baseline and every followup row, with signed live-memory
+changes and search counts. These are descriptive observations. They establish no speedup ratio,
+confidence interval, managed allocation count, leak, OOM cause, or player performance result.
+The existing settings asset was preserved, so absence transitions have native test coverage but
+no native absence timing. Background processes and same-object equivalence of the two present
+settings lookups were not measured.
+
+Privacy preparation can redact ordinary token assignments in a source excerpt. Keep its original
+`candidateSha256`, the scrubbed `retainedSha256`, and explicit `redactionCounts`; replay verifies
+the retained bytes and the declared redaction relationship. During independent restoration,
+compare every original candidate source hash with the measured commit's checkout. A retained
+redacted excerpt is not the original compiled source. Keep the original hash and sanitized hash
+provenance for diagnostic outputs too; never include license-bearing historical crash logs.
+
+```bash
+node scripts/unity/perf-evidence-bundle.js seal .artifacts/editor-settings-cache \
+  --experiment-id editor-settings-cache-613-6000.4.6f1 \
+  --artifact-class editor-settings-cache \
+  --reducer editor-settings-cache-v1 \
+  --source-commit "$MEASURED_SOURCE_COMMIT"
+node scripts/unity/perf-evidence-bundle.js replay \
+  .artifacts/editor-settings-cache/evidence-manifest.json
+```
 
 ## Adding a reducer
 

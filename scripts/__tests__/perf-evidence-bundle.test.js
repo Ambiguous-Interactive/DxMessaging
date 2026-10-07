@@ -24,74 +24,26 @@ const {
   reduceDifferentialReplayFailure,
   reduceShippingFidelityMatrix
 } = require("../unity/perf-evidence-reducers.js");
-const SEAL_OPTIONS = Object.freeze({
-  experimentId: "shipping-fidelity-matrix-6000.5.2f1",
-  artifactClass: "shipping-fidelity-matrix",
-  reducer: "shipping-fidelity-matrix-v1",
-  sourceCommit: "98b47536a0eb1445fcd2a9700899aab0be24897f"
-});
-const STRIPPING_LEVELS = ["High", "Minimal"];
-const TOPOLOGIES = [
-  ["semantic-18", 18],
-  ["cardinality-16", 16]
-];
+const EXAMPLES = require("./fixtures/perf-evidence-examples.json");
+const SEAL_OPTIONS = Object.freeze(EXAMPLES.sealOptions);
 function temporaryDirectory() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "perf-evidence-bundle-test-"));
 }
 function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
-function cellEvidence(level, topologyId, messageTypeCount, index) {
-  return {
-    schemaVersion: 1,
-    measurementClass: "characterization",
-    profileId: `shipping-fidelity-il2cpp-${level.toLowerCase()}-player-v1`,
-    managedStrippingLevel: level,
-    topologyId: `${topologyId}-v1`,
-    messageTypeCount,
-    unityVersion: "6000.5.2f1",
-    libraryState: "cold",
-    diagnostics: ["first", "second"],
-    buildDurationMs: 120000 + index,
-    editorBuildWallClockMs: 130000 + index,
-    playerTotalBytes: 40000000 + index * 1000,
-    gameAssemblyBytes: 9000000 + index * 100,
-    timings: {
-      engineStartToRunMs: 300 + index,
-      firstTypedDispatchUs: 40 + index,
-      dispatchLoopNsPerOp: 21 + index,
-      dispatchLoopShape: "class"
-    }
-  };
-}
-/** A miniature but structurally faithful two-level, two-topology matrix bundle. */
+/** Fixed matrix data stays in JSON; every invocation owns a fresh copy. */
 function writeMatrixBundle(root, { extraFiles = {} } = {}) {
-  const cells = [];
-  let index = 0;
-  for (const level of STRIPPING_LEVELS) {
-    for (const [topologyId, messageTypeCount] of TOPOLOGIES) {
-      const cellId = `${level.toLowerCase()}-${topologyId}`;
-      const evidence = cellEvidence(level, topologyId, messageTypeCount, index++);
-      const cellDirectory = path.join(root, cellId);
-      fs.mkdirSync(cellDirectory, { recursive: true });
-      writeJson(path.join(cellDirectory, "shipping-cell-evidence.json"), evidence);
-      fs.writeFileSync(
-        path.join(cellDirectory, "shipping-positive-player.log"),
-        `cell ${cellId} completed\n`
-      );
-      cells.push({ cellId, ...evidence });
-    }
+  const matrix = structuredClone(EXAMPLES.matrix);
+  for (const { cellId, ...evidence } of matrix.cells) {
+    fs.mkdirSync(path.join(root, cellId), { recursive: true });
+    writeJson(path.join(root, cellId, "shipping-cell-evidence.json"), evidence);
+    fs.writeFileSync(
+      path.join(root, cellId, "shipping-positive-player.log"),
+      `cell ${cellId} completed\n`
+    );
   }
-  writeJson(path.join(root, "shipping-matrix-evidence.json"), {
-    schemaVersion: 1,
-    measurementClass: "characterization",
-    unityVersion: "6000.5.2f1",
-    cellCount: cells.length,
-    completedCellCount: cells.length,
-    failedCells: [],
-    unreadableEvidenceCells: [],
-    cells
-  });
+  writeJson(path.join(root, "shipping-matrix-evidence.json"), matrix);
   for (const [relativePath, content] of Object.entries(extraFiles)) {
     const absolute = path.join(root, ...relativePath.split("/"));
     fs.mkdirSync(path.dirname(absolute), { recursive: true });
@@ -662,12 +614,7 @@ for (const [target, field, value, remove] of VECTORS.invalidShippingInputs) {
     );
   });
 }
-for (const defect of [
-  "missing raw cell",
-  "duplicate row",
-  "summary timing",
-  "missing summary column"
-]) {
+for (const defect of EXAMPLES.shippingDefects) {
   test(`shipping reducer rejects ${defect}`, () => {
     const root = writeMatrixBundle(temporaryDirectory());
     const file = path.join(root, "shipping-matrix-evidence.json");
@@ -719,24 +666,8 @@ test("shipping reducer preserves explicit failed outcomes and ignores row order"
 });
 
 const { buildCsv } = require("../unity/extract-perf-baseline.js");
-const SUBUNSUB_OPTIONS = {
-  ...SEAL_OPTIONS,
-  experimentId: "subunsub-observations",
-  artifactClass: "allocation-subunsub-observations",
-  reducer: "allocation-subunsub-observations-v1"
-};
-function subunsubRows() {
-  return ["DxMessaging", "CsEvent"].map((technology, index) => ({
-    scenario: `Comparison_${technology}_SubUnsub`,
-    platform: "PlayMode Mono (LinuxEditor; Unity 6000.5.2f1)",
-    commit: SEAL_OPTIONS.sourceCommit,
-    runIndex: "-1",
-    emitsPerSecond: "1000.000",
-    gcAllocations: index ? "-1" : "12",
-    wallClockMs: "5000.000",
-    gcAllocatedBytes: index ? "-1" : "384"
-  }));
-}
+const SUBUNSUB_OPTIONS = { ...SEAL_OPTIONS, ...EXAMPLES.subunsubOptions };
+const subunsubRows = () => structuredClone(EXAMPLES.subunsubRows);
 test("SubUnsub observations replay measured and unmeasured allocation fields exactly", (t) => {
   const root = temporaryDirectory();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -835,12 +766,7 @@ for (const [label, raw] of [
   });
 }
 
-const DIFFERENTIAL_OPTIONS = {
-  ...SEAL_OPTIONS,
-  experimentId: "native-lifecycle-replay-failure",
-  artifactClass: "differential-replay-failure",
-  reducer: "differential-replay-failure-v1"
-};
+const DIFFERENTIAL_OPTIONS = { ...SEAL_OPTIONS, ...EXAMPLES.differentialOptions };
 const reduceDifferential = (root) =>
   reduceDifferentialReplayFailure(contentsOf(root), DIFFERENTIAL_OPTIONS);
 const observation = (state) => ({ ...DIFFERENTIAL_FIXTURE.observation, state });
@@ -887,61 +813,24 @@ test("differential replay failures retain and replay three deletion-minimal nati
       entry.originalOperationCount,
       entry.minimizedOperationCount
     ]),
-    [
-      ["Untargeted", 6, 1],
-      ["Targeted", 6, 1],
-      ["Broadcast", 6, 1]
-    ]
+    EXAMPLES.differentialExpectedCases
   );
   assert.equal(normalized.classification, "state");
   assert.equal(normalized.replayCommand, "run the focused native lifecycle fixture");
   assert.match(normalized.candidateSha256, /^[0-9a-f]{64}$/);
 });
-for (const [label, mutate, expected] of [
-  [
-    "missing message kind",
-    (root) => fs.rmSync(path.join(root, "replays/broadcast.json")),
-    /broadcast\.json is required/
-  ],
-  [
-    "wrong generator profile",
-    (root) =>
-      mutateJson(root, "differential-replay-profile.json", (value) =>
-        Object.assign(value, { generatorVersion: 11 })
-      ),
-    /reviewed native lifecycle profile/
-  ],
-  [
-    "source disagreement",
-    (root) =>
-      mutateJson(root, "differential-replay-environment.json", (value) =>
-        Object.assign(value, { sourceCommit: "a".repeat(40) })
-      ),
-    /source identity/
-  ],
-  [
-    "false mismatch",
-    (root) =>
-      mutateJson(root, "replays/untargeted.json", (value) =>
-        Object.assign(value.minimized, { candidateTrace: [observation("control-0")] })
-      ),
-    /first observable mismatch/
-  ],
-  [
-    "non-minimal operation",
-    (root) =>
-      mutateJson(root, "replays/targeted.json", (value) =>
-        Object.assign(value.minimized.operations[0], { kind: "Emit" })
-      ),
-    /deletion-minimal/
-  ]
-]) {
+for (const [label, file, field, value, expected] of EXAMPLES.differentialMutations) {
   test(`differential replay evidence rejects ${label}`, (t) => {
     const root = writeDifferentialBundle();
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    mutate(root);
-    assert.throws(() => reduceDifferential(root), expected);
+    if (!field) fs.rmSync(path.join(root, file));
+    else mutateJson(root, file, (data) => setJsonField(data, field, structuredClone(value)));
+    assert.throws(() => reduceDifferential(root), new RegExp(expected));
   });
+}
+function setJsonField(data, field, value) {
+  const keys = field.split(".");
+  keys.slice(0, -1).reduce((owner, key) => owner[key], data)[keys.at(-1)] = value;
 }
 function mutateJson(root, relativePath, mutate) {
   const file = path.join(root, relativePath);
@@ -949,3 +838,79 @@ function mutateJson(root, relativePath, mutate) {
   mutate(value);
   writeJson(file, value);
 }
+const SETTINGS_FIXTURE = require("./fixtures/editor-settings-cache.json");
+const SETTINGS_CONTRACT = require("../unity/editor-settings-cache-contract.json");
+function writeSettingsBundle() {
+  const root = temporaryDirectory();
+  for (const [file, value] of Object.entries(SETTINGS_FIXTURE.files)) {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    if (typeof value === "string") fs.writeFileSync(path.join(root, file), value);
+    else writeJson(path.join(root, file), value);
+  }
+  for (const [id, counts] of Object.entries(SETTINGS_CONTRACT.runs)) {
+    const nodes = SETTINGS_CONTRACT.controlFailures
+      .slice(0, counts.failCount)
+      .map((name) => ({ ...SETTINGS_FIXTURE.leaf, name, status: "Failed" }));
+    nodes.push(
+      ...Array.from({ length: counts.passCount }, (_, i) => ({
+        ...SETTINGS_FIXTURE.leaf,
+        name: `${id}.SyntheticCase${i}`
+      }))
+    );
+    writeJson(path.join(root, `${id}.result.json`), {
+      ...SETTINGS_FIXTURE.result,
+      ...counts,
+      nodes
+    });
+    const run = { runGuid: `synthetic-${id}`, resultPath: `relative/${id}.json` };
+    writeJson(path.join(root, `${id}.run.json`), run);
+    writeJson(path.join(root, `${id}.cleanup.json`), {
+      ...SETTINGS_FIXTURE.files["preflight.json"],
+      ...run,
+      ownedResultPath: run.resultPath,
+      observedUtc: "2026-10-07T17:02:00Z"
+    });
+    for (const suffix of ["status", "cleanup.status"])
+      fs.writeFileSync(
+        path.join(root, `${id}.${suffix}.txt`),
+        id === "control" && suffix === "cleanup.status"
+          ? "error: result has no passes or contains failed/inconclusive nodes"
+          : "done"
+      );
+  }
+  return root;
+}
+test("native settings evidence replays counters, signed memory changes and all test leaves", (t) => {
+  const root = writeSettingsBundle();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manifest = sealBundle(root, SETTINGS_FIXTURE.options);
+  const replayed = replayBundle(writeBundleManifest(root, manifest));
+  assert.deepEqual(replayed.normalized, manifest.normalized);
+  assert.equal(manifest.normalized.tests.full.passCount, 975);
+  assert.deepEqual(manifest.normalized.tests.control.failures, SETTINGS_CONTRACT.controlFailures);
+  assert.equal(manifest.normalized.followup.arms.A.searches, 64);
+  assert.equal(manifest.normalized.followup.arms.B.searches, 0);
+  assert.equal(manifest.normalized.followup.arms.B.workingDeltaBytes, -800);
+  assert.equal(manifest.normalized.stoppedBaseline.rows[0].calls, 64);
+  assert.equal(manifest.normalized.followup.rows.length, 16);
+});
+for (const [file, field, value] of SETTINGS_FIXTURE.mutations) {
+  test(`native settings evidence refuses ${file} ${field}`, (t) => {
+    const root = writeSettingsBundle();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    if (!field) fs.writeFileSync(path.join(root, file), value);
+    else mutateJson(root, file, (data) => setJsonField(data, field, value));
+    assert.throws(() => sealBundle(root, SETTINGS_FIXTURE.options), /editor settings/);
+  });
+}
+test("native settings evidence requires every retained input", (t) => {
+  const root = writeSettingsBundle();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const file of listBundleFiles(root)) {
+    const target = path.join(root, file),
+      bytes = fs.readFileSync(target);
+    fs.unlinkSync(target);
+    assert.throws(() => sealBundle(root, SETTINGS_FIXTURE.options), /required by this reducer/);
+    fs.writeFileSync(target, bytes);
+  }
+});

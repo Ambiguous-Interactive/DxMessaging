@@ -1,0 +1,18 @@
+{
+  "CELL_FIELDS": [
+    "managedStrippingLevel",
+    "topologyId",
+    "messageTypeCount",
+    "libraryState",
+    "buildDurationMs",
+    "editorBuildWallClockMs",
+    "playerTotalBytes",
+    "gameAssemblyBytes"
+  ],
+  "TIMING_FIELDS": [
+    "engineStartToRunMs",
+    "firstTypedDispatchUs",
+    "dispatchLoopNsPerOp",
+    "dispatchLoopShape"
+  ]
+}
