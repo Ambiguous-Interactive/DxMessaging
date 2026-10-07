@@ -11,7 +11,6 @@ namespace DxMessaging.Tests.Editor
     using Object = UnityEngine.Object;
 
     [TestFixture]
-    [NonParallelizable]
     public sealed class DxMessagingSettingsLookupTests
     {
         private const string DefaultPath = "Assets/Editor/DxMessagingSettings.asset";
