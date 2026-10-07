@@ -1874,7 +1874,7 @@ jobs:
         run: |
           npx prettier --check "${PERF_DOC}"
           npx prettier --check "${PERF_BASELINE_PROFILE}"
-          npx --no-install markdownlint-cli2 "${PERF_DOC}"
+          npx --no-install markdownlint --dot "${PERF_DOC}"
 
       - name: Commit and push refreshed perf doc
         if: steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'

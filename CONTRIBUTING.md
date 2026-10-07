@@ -41,7 +41,7 @@ The pre-commit `mixed-line-ending` hook keeps line endings honest at commit time
 
 What runs locally (via `pre-commit`, see `.pre-commit-config.yaml`):
 
-- Markdown style and formatting: markdownlint-cli2 + Prettier
+- Markdown style and formatting: markdownlint-cli + Prettier
 - JSON/.asmdef formatting: Prettier (2-space indent)
 - YAML formatting: Prettier (2-space indent) + yamllint
 - C# formatting and naming: CSharpier + the underscore-method auto-fixer
@@ -52,7 +52,7 @@ On pull requests, CI checks markdown links with lychee in two passes. An offline
 
 Handy commands:
 
-- Lint markdown: `npm run lint:markdown` (auto-fix: `npx markdownlint-cli2 --fix "**/*.md"`)
+- Lint markdown: `npm run lint:markdown` (auto-fix: `npx --no-install markdownlint --dot --fix "**/*.md"`)
 - Format markdown/JSON/.asmdef/YAML: `npm run format` (check-only: `npm run format:check`)
 - Run the yamllint hook directly: `pre-commit run yamllint --all-files`
 - Format C#: `dotnet tool restore && dotnet tool run csharpier format .` (the trailing `.` is required; without a path, `csharpier format` reads stdin and formats nothing)

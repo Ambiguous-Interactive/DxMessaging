@@ -150,7 +150,7 @@ jobs:
           set_output llms \
             "(^package\.json$|^\.llm/|^scripts/update-llms-txt\.js$|^scripts/llm/|^llms\.txt$|$ci_workflow)"
           set_output markdown \
-            "(\.md$|\.markdown$|^\.markdownlint\.json$|^\.markdownlint\.jsonc$|^\.markdownlint-cli2\.jsonc$|^\.markdownlintignore$|^package\.json$|$ci_workflow)"
+            "(\.md$|\.markdown$|^\.markdownlint\.json$|^\.markdownlint\.jsonc$|^\.markdownlintignore$|^package\.json$|$ci_workflow)"
 
           scripts_pattern='(^\.github/workflows/[^/]*\.ya?ml$'
           scripts_pattern="$scripts_pattern"'|^\.github/actions/.*\.ya?ml$'

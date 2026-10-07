@@ -110,9 +110,9 @@ test("active workflows keep the shared safety contract", () => {
     const document = readWorkflowDocument(file);
     assert.equal(document.errors.length, 0, `${file} must parse as YAML`);
     // prettier-ignore
-    assert.doesNotMatch(source, /npx(?! --no-install markdownlint-cli2(?: |$))[^\n]*markdownlint-cli2|markdownlint-cli2@/, file);
+    assert.doesNotMatch(source, /npx(?! --no-install markdownlint --dot(?: |$))[^\n]*markdownlint|markdownlint@/, file);
     // prettier-ignore
-    assert.equal(source.match(/npm audit --audit-level=high/g)?.length || 0, source.match(/npx --no-install markdownlint-cli2/g)?.length || 0, file);
+    assert.equal(source.match(/npm audit --audit-level=high/g)?.length || 0, source.match(/npx --no-install markdownlint --dot/g)?.length || 0, file);
 
     const keys = document.contents.items.map((item) => String(item.key.value));
     assert.deepEqual(
