@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DxMessaging native attribution capture admission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "measurementClass", "captureId", "source", "environment", "tools", "commands", "artifacts", "markers", "attribution", "pmu", "controls", "decision"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "measurementClass": { "const": "native-attribution-capture" },
+    "captureId": { "$ref": "#/definitions/id" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceCommit", "sourceTree", "unityVersion", "scriptingBackend", "platform", "architecture", "cleanBuild", "buildInvocationId"],
+      "properties": {
+        "sourceCommit": { "$ref": "#/definitions/gitIdentity" },
+        "sourceTree": { "$ref": "#/definitions/gitIdentity" },
+        "unityVersion": { "type": "string", "minLength": 1 },
+        "scriptingBackend": { "const": "IL2CPP" },
+        "platform": { "const": "WindowsPlayer" },
+        "architecture": { "const": "x86_64" },
+        "cleanBuild": { "const": true },
+        "buildInvocationId": { "$ref": "#/definitions/id" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpuProfileSha256", "hostHealthSha256", "playerProcessId", "mainThreadId"],
+      "properties": {
+        "cpuProfileSha256": { "$ref": "#/definitions/sha256" },
+        "hostHealthSha256": { "$ref": "#/definitions/sha256" },
+        "playerProcessId": { "type": "integer", "minimum": 1 },
+        "mainThreadId": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "sha256"],
+        "properties": {
+          "id": { "$ref": "#/definitions/id" },
+          "version": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capture", "analysis"],
+      "properties": {
+        "capture": { "type": "string", "minLength": 1 },
+        "analysis": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player", "pdb", "generatedCppManifest", "cpuProfile", "hostHealth", "wprProfile", "trace", "markerSchema", "markerEvents", "sampledStacks", "mappingTable", "disassembly", "pmuTable", "reducerOutput"],
+      "properties": {
+        "player": { "$ref": "#/definitions/artifact" },
+        "pdb": { "$ref": "#/definitions/artifact" },
+        "generatedCppManifest": { "$ref": "#/definitions/artifact" },
+        "cpuProfile": { "$ref": "#/definitions/artifact" },
+        "hostHealth": { "$ref": "#/definitions/artifact" },
+        "wprProfile": { "$ref": "#/definitions/artifact" },
+        "trace": { "$ref": "#/definitions/artifact" },
+        "markerSchema": { "$ref": "#/definitions/artifact" },
+        "markerEvents": { "$ref": "#/definitions/artifact" },
+        "sampledStacks": { "$ref": "#/definitions/artifact" },
+        "mappingTable": { "$ref": "#/definitions/artifact" },
+        "disassembly": { "$ref": "#/definitions/artifact" },
+        "pmuTable": { "$ref": "#/definitions/artifact" },
+        "reducerOutput": { "$ref": "#/definitions/artifact" }
+      }
+    },
+    "markers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "providerId", "schemaSha256", "qpcFrequency", "intervals"],
+      "properties": {
+        "mode": { "const": "outer-workload-only" },
+        "providerId": { "type": "string", "minLength": 1 },
+        "schemaSha256": { "$ref": "#/definitions/sha256" },
+        "qpcFrequency": { "type": "integer", "minimum": 1 },
+        "intervals": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/markerInterval" }
+        }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intervals"],
+      "properties": {
+        "intervals": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/attributionInterval" }
+        }
+      }
+    },
+    "pmu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources"],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "available", "countsByInterval"],
+            "properties": {
+              "id": { "$ref": "#/definitions/id" },
+              "available": { "type": "boolean" },
+              "countsByInterval": {
+                "type": "object",
+                "additionalProperties": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "allOf": [
+              {
+                "if": { "properties": { "available": { "const": false } } },
+                "then": { "properties": { "countsByInterval": { "maxProperties": 0 } } }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pdbMissingRejected", "pdbMismatchRejected", "dutyLevels", "branchControl", "memoryControl", "observerEffect"],
+      "properties": {
+        "pdbMissingRejected": { "const": true },
+        "pdbMismatchRejected": { "const": true },
+        "dutyLevels": { "type": "array", "minItems": 3, "items": { "type": "number", "minimum": 0 } },
+        "branchControl": { "$ref": "#/definitions/controlStatus" },
+        "memoryControl": { "$ref": "#/definitions/controlStatus" },
+        "observerEffect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wprOffBuildId", "wprOnBuildId", "independentBuilds", "effectMeasured"],
+          "properties": {
+            "wprOffBuildId": { "$ref": "#/definitions/id" },
+            "wprOnBuildId": { "$ref": "#/definitions/id" },
+            "independentBuilds": { "const": true },
+            "effectMeasured": { "const": true }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["materialShareThresholdExclusive", "maximumUnresolvedShareInclusive", "state"],
+      "properties": {
+        "materialShareThresholdExclusive": { "const": 0.03 },
+        "maximumUnresolvedShareInclusive": { "const": 0.01 },
+        "state": { "const": "protocol-only" }
+      }
+    }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "gitIdentity": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "markerInterval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intervalId", "workloadId", "processId", "threadId", "startQpc", "endQpc"],
+      "properties": {
+        "intervalId": { "$ref": "#/definitions/id" },
+        "workloadId": { "$ref": "#/definitions/id" },
+        "processId": { "type": "integer", "minimum": 1 },
+        "threadId": { "type": "integer", "minimum": 1 },
+        "startQpc": { "type": "integer", "minimum": 0 },
+        "endQpc": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "costCenter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sampleCount", "nativeSymbol", "nativeStartRva", "nativeEndRva", "generatedSourcePath", "generatedLine", "mappingStatus"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "sampleCount": { "type": "integer", "minimum": 1 },
+        "nativeSymbol": { "type": "string", "minLength": 1 },
+        "nativeStartRva": { "type": "integer", "minimum": 0 },
+        "nativeEndRva": { "type": "integer", "minimum": 1 },
+        "generatedSourcePath": { "type": "string", "minLength": 1 },
+        "generatedLine": { "type": "integer", "minimum": 1 },
+        "mappingStatus": { "const": "exact" }
+      }
+    },
+    "attributionInterval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intervalId", "totalSamples", "resolvedSamples", "unresolvedSamples", "unresolvedShare", "primaryCostCenterId", "primaryResolvedShare", "passesSingleTraceScreen", "costCenters"],
+      "properties": {
+        "intervalId": { "$ref": "#/definitions/id" },
+        "totalSamples": { "type": "integer", "minimum": 1 },
+        "resolvedSamples": { "type": "integer", "minimum": 0 },
+        "unresolvedSamples": { "type": "integer", "minimum": 0 },
+        "unresolvedShare": { "type": "number", "minimum": 0, "maximum": 1 },
+        "primaryCostCenterId": { "$ref": "#/definitions/id" },
+        "primaryResolvedShare": { "type": "number", "minimum": 0, "maximum": 1 },
+        "passesSingleTraceScreen": { "type": "boolean" },
+        "costCenters": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/costCenter" } }
+      }
+    },
+    "controlStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "counterSource"],
+      "properties": {
+        "state": { "enum": ["passed", "unavailable"] },
+        "counterSource": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

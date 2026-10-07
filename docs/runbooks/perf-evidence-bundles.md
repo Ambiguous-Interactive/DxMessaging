@@ -46,6 +46,32 @@ mapping, and ARM64 energy still need their complete raw-input contracts and redu
 The Editor open-loop class is a descriptive protocol screen; it does not establish an independent
 player session, interval precision, or a latency promotion verdict.
 
+### Native attribution capture admission (protocol only)
+
+`.github/perf/native-attribution-capture.v1.schema.json` and
+`scripts/unity/validate_native_attribution_capture.py` define the pre-capture admission boundary for
+one #511 Windows IL2CPP trace unit. The manifest binds the clean build, player, PDB, generated C++,
+WPR profile, ETL, marker events, sampled stacks, mapping, disassembly, PMU observations, reducer
+output, tool versions, and command provenance. Its outer workload intervals must use one declared
+player process and main thread. Resolved and unresolved samples must reconcile exactly, and an
+unavailable PMU source cannot report a zero count as if it had been measured.
+
+Validate a prepared manifest and all of its local artifacts with:
+
+```bash
+python3 scripts/unity/validate_native_attribution_capture.py \
+  .artifacts/native-capture/capture-manifest.json \
+  --artifact-root .artifacts/native-capture \
+  --source-commit "$MEASURED_SOURCE_COMMIT"
+```
+
+Acceptance reports only a protocol summary. The schema freezes the strictly-greater-than 3% primary
+share screen and at-most 1% unresolved-share boundary for one trace, but one trace is not an
+independent replicated decision. This contract is not registered with `perf-evidence-bundle.js`:
+opaque ETL, player, and PDB bytes still need format-aware privacy review, a deterministic reducer,
+and independent restore before #508 durable publication. A schema-valid manifest does not prove
+that WPR markers, PMU controls, observer effects, or native attribution passed at runtime.
+
 The open-loop class requires exactly eight text files: `capture-environment.json`,
 `capture-replay.json`, `open-loop-editor-plan.json`, one maintained-runner result JSON, and that
 result's `.run.json`, `.cleanup.json`, `.status`, and `.cleanup.status` sidecars. The `.status`
