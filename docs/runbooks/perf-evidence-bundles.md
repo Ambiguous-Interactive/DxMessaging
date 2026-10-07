@@ -431,6 +431,88 @@ Repository-wide immutable releases were enabled with maintainer approval on 2026
 authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
 an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
 
+### session242-paired-screen-replay, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the cached untargeted route experiment's original `uninterpretable` verdict. `Filtered`,
+`PostProcess`, and `FilteredPostProcess` sentinels exceeded the fixed 3% band. The candidate
+was reverted; its apparent target gains do not establish a causal performance improvement.
+
+| Identity                        | Value                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable cached-route negative screen](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session242-paired-screen-replay-r1-bf5b4770)                                           |
+| Release ID                      | `406078044`                                                                                                                                                                                                     |
+| Asset                           | [Session 242 paired-screen archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session242-paired-screen-replay-r1-bf5b4770/session242-paired-screen-replay-r1.tar.gz) |
+| Asset ID                        | `619557204`                                                                                                                                                                                                     |
+| Revision and reducer            | `1`, `paired-throughput-screen-v1`                                                                                                                                                                              |
+| First measured source commit    | `ef7e5b799ec5b43f823c9c22c6e31295d51ea443`                                                                                                                                                                      |
+| Center measured source commit   | `4fdd1df3bd82f97d97a209ad0cab3dd585eea7f6`                                                                                                                                                                      |
+| Last measured source commit     | `fc038a1ddb1f86dd2b7f834330f739494eb89944`                                                                                                                                                                      |
+| Manifest SHA-256                | `bf5b4770c5992028b8ce97cc8fdf98c8b1b322685b0037a26bb6ecf6b276e01f`                                                                                                                                              |
+| Archive SHA-256                 | `08321d7744c3dc01ea3e570819f1327635c6d4c71f12a53a403ad1abf36c9514`                                                                                                                                              |
+| Archive bytes and file count    | `7534` bytes; `6` declared files plus the manifest                                                                                                                                                              |
+| Bundle digest                   | `f85cadc3010ebfd515c555e235b4c971a3f94fb3d9a900cd45a770ca594d868d`                                                                                                                                              |
+| Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
+
+All three raw-cycle summaries match their retained ZIP members and original committed declaration.
+The original workflow artifact listings are now empty; the recorded local ZIP hashes cannot be
+checked against GitHub's historical artifact digests. The control's measurements and upload
+completed before its license-cleanup gate failed. Candidate two recovered the runner. Those
+provenance limits remain explicit; immutable publication does not repair missing original metadata.
+
+The complete draft inventory and download passed before publication. Published metadata reported
+`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published
+archive, manifest, every file, and all three source trees and candidate-source digests fetched
+from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly;
+the verifier stayed clean. The actual required asset returned HTTP 401 in an isolated
+invalid-credential context, with no archive or fallback; that context remained incomplete.
+
+This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps,
+codegen, and full logs. It establishes legacy-screen retention, with no calibrated confirmation,
+native-cost attribution, allocation, or production-acceptance claim. See [the original session 242 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5430405546).
+
+### session243-paired-screen-replay, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the borrowed post-route experiment's original `uninterpretable` verdict. `GlobalToOne`,
+`GlobalToMany`, and `StructNoBox` sentinels exceeded the fixed 3% band. The candidate was
+reverted; its apparent target gain does not establish a causal performance improvement.
+
+| Identity                        | Value                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable borrowed-post negative screen](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session243-paired-screen-replay-r1-6891c434)                                          |
+| Release ID                      | `406078051`                                                                                                                                                                                                     |
+| Asset                           | [Session 243 paired-screen archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session243-paired-screen-replay-r1-6891c434/session243-paired-screen-replay-r1.tar.gz) |
+| Asset ID                        | `619557318`                                                                                                                                                                                                     |
+| Revision and reducer            | `1`, `paired-throughput-screen-v1`                                                                                                                                                                              |
+| First measured source commit    | `3d44378feebf4e0b84f066ca94dc620cfafe90c2`                                                                                                                                                                      |
+| Center measured source commit   | `47f7ed6b537ccf82df273e7e599cdb5199366629`                                                                                                                                                                      |
+| Last measured source commit     | `26f314740c7ca82f4d9852f80b36a2cee3703c1a`                                                                                                                                                                      |
+| Manifest SHA-256                | `6891c4344882c00979a854f4934d21f5ed6959c091dc3df79dfef5869ccfdc33`                                                                                                                                              |
+| Archive SHA-256                 | `a81cacd01133bf8de1f7b6a3f211a86ff5ff6a9b702c9f3e86335d08151b1d58`                                                                                                                                              |
+| Archive bytes and file count    | `7540` bytes; `6` declared files plus the manifest                                                                                                                                                              |
+| Bundle digest                   | `bebb1b31ae0c96ee5e51651d7bcd954f581176cb4626381b3a5e0cac9da5afaa`                                                                                                                                              |
+| Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
+
+The original raw-cycle summaries match retained ZIP members; ZIP hashes match the original
+experiment record. All three comparison jobs passed cleanup. Separate intermediate Unity
+workflows were cancelled after the performance arms began, and the first candidate's oldest-Unity
+job passed its test modes before a cleanup failure. Later jobs recovered. These original outcomes
+remain explicit in the retention provenance.
+
+The complete draft inventory and download passed before publication. Published metadata reported
+`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published
+archive, manifest, every file, and all three source trees and candidate-source digests fetched
+from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly;
+the verifier stayed clean. The actual required asset returned HTTP 401 in an isolated
+invalid-credential context, with no archive or fallback; that context remained incomplete.
+
+This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps,
+codegen, and full logs. It establishes legacy-screen retention, with no calibrated confirmation,
+native-cost attribution, allocation, or production-acceptance claim. See [the original session 243 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5432013543).
+
 ### session244-paired-screen-replay, revision 1
 
 Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
