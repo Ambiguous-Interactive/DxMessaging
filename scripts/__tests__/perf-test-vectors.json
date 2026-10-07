@@ -618,5 +618,1226 @@
     "261b1867e052723517db8a77048c209a20108204",
     "da5439ac21e60d5e04e4f453e3766e03daff0486"
   ],
-  "positions": ["first", "center", "last"]
+  "positions": ["first", "center", "last"],
+  "invalidRawCycles": [
+    ["missing measurements", "cycleMeasurements", null, "exactly 4", true],
+    ["null measurements", "cycleMeasurements", null, "exactly 4"],
+    ["wrong type measurements", "cycleMeasurements", {}, "exactly 4"],
+    ["short measurements", "cycleMeasurements", [], "exactly 4"],
+    ["null raw cycle", "cycleMeasurements.0", null, "cycleMeasurements.*object"],
+    ["array raw cycle", "cycleMeasurements.3", [], "cycleMeasurements.*object"],
+    [
+      "missing firstOperations",
+      "cycleMeasurements.0.firstOperations",
+      null,
+      "positive safe integer",
+      true
+    ],
+    ["zero firstOperations", "cycleMeasurements.0.firstOperations", 0, "positive safe integer"],
+    [
+      "negative firstOperations",
+      "cycleMeasurements.0.firstOperations",
+      -40000,
+      "positive safe integer"
+    ],
+    [
+      "fractional firstOperations",
+      "cycleMeasurements.0.firstOperations",
+      40000.5,
+      "positive safe integer"
+    ],
+    [
+      "string firstOperations",
+      "cycleMeasurements.0.firstOperations",
+      "40000",
+      "positive safe integer"
+    ],
+    [
+      "unsafe firstOperations",
+      "cycleMeasurements.0.firstOperations",
+      9007199254760000,
+      "positive safe integer",
+      false,
+      "unsupported structured data"
+    ],
+    [
+      "unbalanced firstOperations",
+      "cycleMeasurements.0.firstOperations",
+      80000,
+      "balanced ABBA/BAAB"
+    ],
+    [
+      "missing secondOperations",
+      "cycleMeasurements.0.secondOperations",
+      null,
+      "positive safe integer",
+      true
+    ],
+    ["zero secondOperations", "cycleMeasurements.0.secondOperations", 0, "positive safe integer"],
+    [
+      "negative secondOperations",
+      "cycleMeasurements.0.secondOperations",
+      -40000,
+      "positive safe integer"
+    ],
+    [
+      "fractional secondOperations",
+      "cycleMeasurements.0.secondOperations",
+      40000.5,
+      "positive safe integer"
+    ],
+    [
+      "string secondOperations",
+      "cycleMeasurements.0.secondOperations",
+      "40000",
+      "positive safe integer"
+    ],
+    [
+      "unsafe secondOperations",
+      "cycleMeasurements.0.secondOperations",
+      9007199254760000,
+      "positive safe integer",
+      false,
+      "unsupported structured data"
+    ],
+    [
+      "unbalanced secondOperations",
+      "cycleMeasurements.0.secondOperations",
+      80000,
+      "balanced ABBA/BAAB"
+    ],
+    [
+      "missing firstActiveSeconds",
+      "cycleMeasurements.0.firstActiveSeconds",
+      null,
+      "finite number",
+      true
+    ],
+    ["null firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", null, "finite number"],
+    ["string firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", "1", "finite number"],
+    [
+      "negative firstActiveSeconds",
+      "cycleMeasurements.0.firstActiveSeconds",
+      -1,
+      "minimum active time"
+    ],
+    ["zero firstActiveSeconds", "cycleMeasurements.0.firstActiveSeconds", 0, "minimum active time"],
+    [
+      "below minimum firstActiveSeconds",
+      "cycleMeasurements.0.firstActiveSeconds",
+      0.6249999999999999,
+      "minimum active time"
+    ],
+    [
+      "wrong raw time firstActiveSeconds",
+      "cycleMeasurements.0.firstActiveSeconds",
+      2,
+      "work and active time"
+    ],
+    [
+      "missing secondActiveSeconds",
+      "cycleMeasurements.0.secondActiveSeconds",
+      null,
+      "finite number",
+      true
+    ],
+    ["null secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", null, "finite number"],
+    ["string secondActiveSeconds", "cycleMeasurements.0.secondActiveSeconds", "1", "finite number"],
+    [
+      "negative secondActiveSeconds",
+      "cycleMeasurements.0.secondActiveSeconds",
+      -1,
+      "minimum active time"
+    ],
+    [
+      "zero secondActiveSeconds",
+      "cycleMeasurements.0.secondActiveSeconds",
+      0,
+      "minimum active time"
+    ],
+    [
+      "below minimum secondActiveSeconds",
+      "cycleMeasurements.0.secondActiveSeconds",
+      0.6249999999999999,
+      "minimum active time"
+    ],
+    [
+      "wrong raw time secondActiveSeconds",
+      "cycleMeasurements.0.secondActiveSeconds",
+      2,
+      "work and active time"
+    ],
+    [
+      "missing cycleMeasurements.0.firstToSecondRatio",
+      "cycleMeasurements.0.firstToSecondRatio",
+      null,
+      "finite number",
+      true
+    ],
+    [
+      "zero cycleMeasurements.0.firstToSecondRatio",
+      "cycleMeasurements.0.firstToSecondRatio",
+      0,
+      "positive"
+    ],
+    [
+      "negative cycleMeasurements.0.firstToSecondRatio",
+      "cycleMeasurements.0.firstToSecondRatio",
+      -1,
+      "positive"
+    ],
+    [
+      "string cycleMeasurements.0.firstToSecondRatio",
+      "cycleMeasurements.0.firstToSecondRatio",
+      "1",
+      "finite number"
+    ],
+    [
+      "wrong cycleMeasurements.0.firstToSecondRatio",
+      "cycleMeasurements.0.firstToSecondRatio",
+      99,
+      "work and active time|aggregate ratio"
+    ],
+    ["missing aggregateRateRatio", "aggregateRateRatio", null, "finite number", true],
+    ["zero aggregateRateRatio", "aggregateRateRatio", 0, "positive"],
+    ["negative aggregateRateRatio", "aggregateRateRatio", -1, "positive"],
+    ["string aggregateRateRatio", "aggregateRateRatio", "1", "finite number"],
+    ["wrong aggregateRateRatio", "aggregateRateRatio", 99, "work and active time|aggregate ratio"],
+    ["long measurements", "cycleMeasurements", [null, null, null, null, null], "exactly 4"],
+    [
+      "incomplete balanced supercycle",
+      "cycleMeasurements.0",
+      {
+        "firstOperations": 60000,
+        "secondOperations": 60000,
+        "firstActiveSeconds": 1.004987562112089,
+        "secondActiveSeconds": 1,
+        "firstToSecondRatio": 0.9950371902099893
+      },
+      "balanced ABBA/BAAB"
+    ],
+    [
+      "NaN cycleMeasurements.3.firstOperations",
+      "cycleMeasurements.3.firstOperations",
+      {
+        "number": "NaN"
+      },
+      "positive safe integer"
+    ],
+    [
+      "Infinity cycleMeasurements.3.firstOperations",
+      "cycleMeasurements.3.firstOperations",
+      {
+        "number": "Infinity"
+      },
+      "positive safe integer"
+    ],
+    [
+      "-Infinity cycleMeasurements.3.firstOperations",
+      "cycleMeasurements.3.firstOperations",
+      {
+        "number": "-Infinity"
+      },
+      "positive safe integer"
+    ],
+    [
+      "NaN cycleMeasurements.3.secondOperations",
+      "cycleMeasurements.3.secondOperations",
+      {
+        "number": "NaN"
+      },
+      "positive safe integer"
+    ],
+    [
+      "Infinity cycleMeasurements.3.secondOperations",
+      "cycleMeasurements.3.secondOperations",
+      {
+        "number": "Infinity"
+      },
+      "positive safe integer"
+    ],
+    [
+      "-Infinity cycleMeasurements.3.secondOperations",
+      "cycleMeasurements.3.secondOperations",
+      {
+        "number": "-Infinity"
+      },
+      "positive safe integer"
+    ],
+    [
+      "NaN cycleMeasurements.3.firstActiveSeconds",
+      "cycleMeasurements.3.firstActiveSeconds",
+      {
+        "number": "NaN"
+      },
+      "finite number"
+    ],
+    [
+      "Infinity cycleMeasurements.3.firstActiveSeconds",
+      "cycleMeasurements.3.firstActiveSeconds",
+      {
+        "number": "Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "-Infinity cycleMeasurements.3.firstActiveSeconds",
+      "cycleMeasurements.3.firstActiveSeconds",
+      {
+        "number": "-Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "NaN cycleMeasurements.3.secondActiveSeconds",
+      "cycleMeasurements.3.secondActiveSeconds",
+      {
+        "number": "NaN"
+      },
+      "finite number"
+    ],
+    [
+      "Infinity cycleMeasurements.3.secondActiveSeconds",
+      "cycleMeasurements.3.secondActiveSeconds",
+      {
+        "number": "Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "-Infinity cycleMeasurements.3.secondActiveSeconds",
+      "cycleMeasurements.3.secondActiveSeconds",
+      {
+        "number": "-Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "NaN cycleMeasurements.3.firstToSecondRatio",
+      "cycleMeasurements.3.firstToSecondRatio",
+      {
+        "number": "NaN"
+      },
+      "finite number"
+    ],
+    [
+      "Infinity cycleMeasurements.3.firstToSecondRatio",
+      "cycleMeasurements.3.firstToSecondRatio",
+      {
+        "number": "Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "-Infinity cycleMeasurements.3.firstToSecondRatio",
+      "cycleMeasurements.3.firstToSecondRatio",
+      {
+        "number": "-Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "NaN aggregateRateRatio",
+      "aggregateRateRatio",
+      {
+        "number": "NaN"
+      },
+      "finite number"
+    ],
+    [
+      "Infinity aggregateRateRatio",
+      "aggregateRateRatio",
+      {
+        "number": "Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "-Infinity aggregateRateRatio",
+      "aggregateRateRatio",
+      {
+        "number": "-Infinity"
+      },
+      "finite number"
+    ],
+    [
+      "retained ratio agrees with work but differs from cycleRatios",
+      "cycleMeasurements",
+      [
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 1
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 1
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 1
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 1
+        }
+      ],
+      "work and active time"
+    ],
+    [
+      "raw cycle ratio beyond tolerance",
+      "cycleMeasurements.0.firstToSecondRatio",
+      0.9950371902119793,
+      "work and active time"
+    ],
+    ["aggregate beyond tolerance", "aggregateRateRatio", 1.000000000002, "aggregate ratio"],
+    [
+      "inexact operation sum",
+      "cycleMeasurements",
+      [
+        {
+          "firstOperations": 2400000000000000,
+          "secondOperations": 2400000000000000,
+          "firstActiveSeconds": 1.004987562112089,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 2400000000000000,
+          "secondOperations": 2400000000000000,
+          "firstActiveSeconds": 1.004987562112089,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 2400000000000000,
+          "secondOperations": 2400000000000000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1.004987562112089,
+          "firstToSecondRatio": 1.004987562112089
+        },
+        {
+          "firstOperations": 2400000000000000,
+          "secondOperations": 2400000000000000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1.004987562112089,
+          "firstToSecondRatio": 1.004987562112089
+        }
+      ],
+      "totals must remain finite and exact",
+      false
+    ],
+    [
+      "overflowed time sum",
+      "cycleMeasurements",
+      [
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1.0049875621120889e308,
+          "secondActiveSeconds": 1e308,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1.0049875621120889e308,
+          "secondActiveSeconds": 1e308,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1e308,
+          "secondActiveSeconds": 1.0049875621120889e308,
+          "firstToSecondRatio": 1.004987562112089
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1e308,
+          "secondActiveSeconds": 1.0049875621120889e308,
+          "firstToSecondRatio": 1.004987562112089
+        }
+      ],
+      "totals must remain finite and exact",
+      false,
+      "unsupported structured data"
+    ],
+    [
+      "unbalanced cycles with consistent ratios and totals",
+      "cycleMeasurements",
+      [
+        {
+          "firstOperations": 80000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 2.009975124224178,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1.004987562112089,
+          "secondActiveSeconds": 1,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 80000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 2.009975124224178,
+          "firstToSecondRatio": 1.004987562112089
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 1,
+          "secondActiveSeconds": 1.004987562112089,
+          "firstToSecondRatio": 1.004987562112089
+        }
+      ],
+      "balanced ABBA/BAAB"
+    ],
+    [
+      "short balanced cycles with consistent ratios and totals",
+      "cycleMeasurements",
+      [
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 0.6281172263200555,
+          "secondActiveSeconds": 0.6249999999999999,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 0.6281172263200555,
+          "secondActiveSeconds": 0.6249999999999999,
+          "firstToSecondRatio": 0.9950371902099893
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 0.6249999999999999,
+          "secondActiveSeconds": 0.6281172263200555,
+          "firstToSecondRatio": 1.004987562112089
+        },
+        {
+          "firstOperations": 40000,
+          "secondOperations": 40000,
+          "firstActiveSeconds": 0.6249999999999999,
+          "secondActiveSeconds": 0.6281172263200555,
+          "firstToSecondRatio": 1.004987562112089
+        }
+      ],
+      "minimum active time"
+    ]
+  ],
+  "pairedSealOptions": {
+    "experimentId": "paired-screen-test",
+    "artifactClass": "paired-throughput-screen",
+    "reducer": "paired-throughput-screen-v1"
+  },
+  "commonModeRegression": {
+    "factors": {
+      "Filtered": 1.08,
+      "FilteredPostProcess": 0.998,
+      "GlobalToOne": 1.029,
+      "GlobalToMany": 1.029,
+      "KeyedToOne": 1.029,
+      "PostProcess": 1.029,
+      "StructNoBox": 1.029
+    },
+    "spreads": {
+      "first": {},
+      "center": {},
+      "last": {}
+    }
+  },
+  "indexedRows": [
+    {
+      "scenario": "UntargetedFlood_OneHandler",
+      "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+      "commit": "abc1234",
+      "runIndex": "0",
+      "emitsPerSecond": "1000000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "10.000",
+      "gcAllocatedBytes": "0"
+    },
+    {
+      "scenario": "TargetedFlood_OneListener",
+      "platform": "Unity 2021.3.45f1 EditMode",
+      "commit": "abc1234",
+      "runIndex": "0",
+      "emitsPerSecond": "2000000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "10.000",
+      "gcAllocatedBytes": "0"
+    },
+    {
+      "scenario": "Comparison_MessagePipe_GlobalToOne",
+      "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+      "commit": "abc1234",
+      "runIndex": "0",
+      "emitsPerSecond": "1.000",
+      "gcAllocations": "0",
+      "wallClockMs": "10.000",
+      "gcAllocatedBytes": "0"
+    }
+  ],
+  "performanceSummaryRows": [
+    {
+      "scenario": "UntargetedFlood_OneHandler",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "37500000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "0"
+    },
+    {
+      "scenario": "Comparison_DxMessaging_GlobalToOne",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "30000000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    },
+    {
+      "scenario": "Comparison_DxMessaging_SubUnsub",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "2000000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    },
+    {
+      "scenario": "Comparison_MessagePipe_GlobalToOne",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "90000000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    }
+  ],
+  "twoScopeRows": [
+    {
+      "scenario": "UntargetedFlood_OneHandler",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "37500000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    },
+    {
+      "scenario": "BroadcastFlood_OneHandler",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "18000000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    },
+    {
+      "scenario": "UntargetedFlood_OneHandler",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "20000000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "4096"
+    },
+    {
+      "scenario": "BroadcastFlood_OneHandler",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "9000000.000",
+      "gcAllocations": "1234",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "98304"
+    }
+  ],
+  "comparisonScopeRows": [
+    {
+      "scenario": "Comparison_DxMessaging_GlobalToOne",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "28000000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    },
+    {
+      "scenario": "Comparison_MessagePipe_GlobalToOne",
+      "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "68000000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    },
+    {
+      "scenario": "Comparison_DxMessaging_GlobalToOne",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "20000000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "0"
+    },
+    {
+      "scenario": "Comparison_MessagePipe_GlobalToOne",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "40000000.000",
+      "gcAllocations": "110806",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "20000"
+    }
+  ],
+  "comparisonBytesCases": [
+    [
+      [
+        {
+          "scenario": "Comparison_DxMessaging_GlobalToOne",
+          "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "28000000.000",
+          "gcAllocations": "-1",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "4096"
+        },
+        {
+          "scenario": "Comparison_MessagePipe_GlobalToOne",
+          "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "68000000.000",
+          "gcAllocations": "-1",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "8192"
+        },
+        {
+          "scenario": "Comparison_DxMessaging_GlobalToOne",
+          "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "20000000.000",
+          "gcAllocations": "0",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "-1"
+        },
+        {
+          "scenario": "Comparison_MessagePipe_GlobalToOne",
+          "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "40000000.000",
+          "gcAllocations": "110806",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "-1"
+        }
+      ],
+      "GC allocations per 10k ops (PlayMode (Mono))",
+      "110,806",
+      "GC allocated bytes per 10k ops (Standalone (IL2CPP))"
+    ],
+    [
+      [
+        {
+          "scenario": "Comparison_DxMessaging_GlobalToOne",
+          "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "28000000.000",
+          "gcAllocations": "111",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "-1"
+        },
+        {
+          "scenario": "Comparison_MessagePipe_GlobalToOne",
+          "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "68000000.000",
+          "gcAllocations": "222",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "-1"
+        },
+        {
+          "scenario": "Comparison_DxMessaging_GlobalToOne",
+          "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "20000000.000",
+          "gcAllocations": "-1",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "4096"
+        },
+        {
+          "scenario": "Comparison_MessagePipe_GlobalToOne",
+          "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+          "commit": "abc1234",
+          "runIndex": "-1",
+          "emitsPerSecond": "40000000.000",
+          "gcAllocations": "-1",
+          "wallClockMs": "5000.000",
+          "gcAllocatedBytes": "8192"
+        }
+      ],
+      "GC allocations per 10k ops (Standalone (IL2CPP))",
+      "222",
+      "GC allocated bytes per 10k ops (PlayMode (Mono))"
+    ]
+  ],
+  "dispatchBytesRows": [
+    {
+      "scenario": "UntargetedFlood_OneHandler",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "20000000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "0"
+    },
+    {
+      "scenario": "BroadcastFlood_OneHandler",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "9000000.000",
+      "gcAllocations": "1234",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "98304"
+    }
+  ],
+  "partialDispatchBytesRows": [
+    {
+      "scenario": "UntargetedFlood_OneHandler",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "20000000.000",
+      "gcAllocations": "0",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "8192"
+    },
+    {
+      "scenario": "BroadcastFlood_OneHandler",
+      "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+      "commit": "abc1234",
+      "runIndex": "-1",
+      "emitsPerSecond": "9000000.000",
+      "gcAllocations": "42",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    }
+  ],
+  "regressionCases": [
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "500000.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      true
+    ],
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "900000.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      false
+    ],
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "128",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      true
+    ],
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "0.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "0.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      false
+    ],
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "0.000",
+        "gcAllocations": "1",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "0.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      true
+    ],
+    [
+      {
+        "scenario": "MessageBusConstruction_1000",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "0.000",
+        "gcAllocations": "-1",
+        "wallClockMs": "10.400",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "MessageBusConstruction_1000",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "0.000",
+        "gcAllocations": "-1",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      false
+    ],
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "-1",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "0",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      false
+    ],
+    [
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "5",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      {
+        "scenario": "x",
+        "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+        "commit": "abc1234",
+        "runIndex": "0",
+        "emitsPerSecond": "1000000.000",
+        "gcAllocations": "-1",
+        "wallClockMs": "10.000",
+        "gcAllocatedBytes": "0"
+      },
+      false
+    ]
+  ],
+  "validRawRows": [
+    [
+      "minimum time and different cycle workloads",
+      {
+        "scenario": "GlobalToOne",
+        "firstToSecondRatio": 1,
+        "aggregateRateRatio": 1,
+        "cycleRatioSpreadPercent": 0,
+        "withinMaterialityBand": true,
+        "cycleRatios": [1, 1, 1, 1],
+        "cycleMeasurements": [
+          {
+            "firstOperations": 40000,
+            "secondOperations": 40000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1
+          },
+          {
+            "firstOperations": 80000,
+            "secondOperations": 80000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1
+          },
+          {
+            "firstOperations": 120000,
+            "secondOperations": 120000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1
+          },
+          {
+            "firstOperations": 160000,
+            "secondOperations": 160000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1
+          }
+        ]
+      },
+      "accepted"
+    ],
+    [
+      "summed rates differ from geometric headline",
+      {
+        "scenario": "GlobalToOne",
+        "firstToSecondRatio": 1.4142135623730951,
+        "aggregateRateRatio": 1.5,
+        "cycleRatioSpreadPercent": 100,
+        "withinMaterialityBand": false,
+        "cycleRatios": [1, 1, 2, 2],
+        "cycleMeasurements": [
+          {
+            "firstOperations": 40000,
+            "secondOperations": 40000,
+            "firstActiveSeconds": 1,
+            "secondActiveSeconds": 1,
+            "firstToSecondRatio": 1
+          },
+          {
+            "firstOperations": 80000,
+            "secondOperations": 80000,
+            "firstActiveSeconds": 1,
+            "secondActiveSeconds": 1,
+            "firstToSecondRatio": 1
+          },
+          {
+            "firstOperations": 120000,
+            "secondOperations": 120000,
+            "firstActiveSeconds": 1,
+            "secondActiveSeconds": 2,
+            "firstToSecondRatio": 2
+          },
+          {
+            "firstOperations": 160000,
+            "secondOperations": 160000,
+            "firstActiveSeconds": 1,
+            "secondActiveSeconds": 2,
+            "firstToSecondRatio": 2
+          }
+        ]
+      },
+      "uninterpretable"
+    ],
+    [
+      "ratios within numeric tolerance",
+      {
+        "scenario": "GlobalToOne",
+        "firstToSecondRatio": 1,
+        "aggregateRateRatio": 1.0000000000005,
+        "cycleRatioSpreadPercent": 0,
+        "withinMaterialityBand": true,
+        "cycleRatios": [1, 1, 1, 1],
+        "cycleMeasurements": [
+          {
+            "firstOperations": 40000,
+            "secondOperations": 40000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1.0000000000005
+          },
+          {
+            "firstOperations": 80000,
+            "secondOperations": 80000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1.0000000000005
+          },
+          {
+            "firstOperations": 120000,
+            "secondOperations": 120000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1.0000000000005
+          },
+          {
+            "firstOperations": 160000,
+            "secondOperations": 160000,
+            "firstActiveSeconds": 0.625,
+            "secondActiveSeconds": 0.625,
+            "firstToSecondRatio": 1.0000000000005
+          }
+        ]
+      },
+      "accepted"
+    ]
+  ],
+  "pairedDecisionCases": [
+    ["accepted", {}],
+    [
+      "rejected",
+      {
+        "factors": {
+          "Filtered": 1
+        }
+      }
+    ],
+    [
+      "uninterpretable",
+      {
+        "spreads": {
+          "first": {
+            "Filtered": 5
+          }
+        }
+      }
+    ]
+  ],
+  "monoRowDefaults": {
+    "platform": "Unity 6000.3.16f1 Linux PlayMode Mono",
+    "commit": "abc1234",
+    "runIndex": "0"
+  },
+  "standaloneRowDefaults": {
+    "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)",
+    "commit": "abc1234",
+    "runIndex": "-1",
+    "wallClockMs": "5000.000"
+  },
+  "playModeRowDefaults": {
+    "platform": "Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)",
+    "commit": "abc1234",
+    "runIndex": "-1"
+  },
+  "summaryDefaults": {
+    "schemaVersion": 2,
+    "platform": "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.5.2f1)"
+  },
+  "defaultFactors": {
+    "GlobalToOne": 1,
+    "GlobalToMany": 1,
+    "KeyedToOne": 1,
+    "Filtered": 1.06,
+    "PostProcess": 1,
+    "FilteredPostProcess": 0.99,
+    "StructNoBox": 1
+  },
+  "scopeCases": [
+    ["Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)", "Standalone"],
+    ["Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)", "PlayMode"],
+    ["Unity 6000.3.16f1 EditMode Mono", "EditMode"],
+    ["Unity 6000.3.16f1 Linux", null],
+    ["Standalone PlayMode mix", "Standalone"]
+  ],
+  "invalidCandidatePaths": [
+    ["wrong case", "Runtime/Core/MessageBus/messageBus.cs"],
+    ["untracked", "Runtime/UntrackedCandidate.cs"]
+  ]
 }

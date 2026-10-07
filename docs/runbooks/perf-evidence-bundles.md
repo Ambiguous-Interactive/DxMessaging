@@ -184,6 +184,18 @@ node scripts/unity/perf-evidence-bundle.js replay \
   .artifacts/paired-screen/evidence-manifest.json
 ```
 
+Retain four `cycleMeasurements` per row. Each cycle must have positive safe integer operation
+counts, equal work for both arms, and a multiple of 40,000 operations per arm. Both elapsed times
+must be finite and at least 0.625 seconds. The retained cycle ratio and corresponding `cycleRatios`
+entry must match the rates derived from that work and time within relative error `1e-12`.
+`aggregateRateRatio` must match total work divided by total active time for each arm. Totals must
+remain finite, and operation sums must remain safe integers.
+
+Verifier revisions before [the raw cycle fix](https://github.com/Ambiguous-Interactive/DxMessaging/issues/618)
+checked cycle ratios without validating raw work, active time, or the aggregate ratio. Historical
+publication tags retain their original verifier. Check raw cycle consistency with a revision
+containing that fix, and record the analysis revision separately from the unchanged archive.
+
 The adapter calls `reduce-paired-bracket.js` directly. It validates all three positions, raw cycle
 consistency, source relationships, declaration identity, and the shared execution profile before
 reproducing effects and the `accepted`, `rejected`, or `uninterpretable` screen decision. Replaying
