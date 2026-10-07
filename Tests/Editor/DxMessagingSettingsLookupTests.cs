@@ -2,12 +2,15 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
+    using DxMessaging.Editor;
     using DxMessaging.Editor.Analyzers;
     using DxMessaging.Editor.Settings;
     using NUnit.Framework;
     using UnityEditor;
     using UnityEngine;
+    using UnityEngine.TestTools;
     using Object = UnityEngine.Object;
 
     [TestFixture]
@@ -108,11 +111,33 @@ namespace DxMessaging.Tests.Editor
             Assert.That(_loads, Is.EqualTo(2), "Only canonical and legacy paths should be loaded.");
         }
 
-        [Test]
-        public void HarvesterRescansReuseTheSharedPassiveSettingsCache()
+        /// <remarks>
+        /// 2026-10-07, issue #613: Unity 2021 CI can execute the fixture while the editor is
+        /// busy. RescanNow correctly declines that work. Poll the shared idle condition and
+        /// execute both calls in the admitted update; delayCall need not run during UnityTest.
+        /// </remarks>
+        [UnityTest]
+        [Category("Integration")]
+        public IEnumerator HarvesterRescansReuseTheSharedPassiveSettingsCache()
         {
+            const int frameBudget = 64;
             DxMessagingSettings settings = CreateSettings(DefaultPath);
             settings._baseCallCheckEnabled = false;
+            for (
+                int frame = 0;
+                !DxMessagingEditorIdle.CanMutateAssetDatabase() && frame < frameBudget;
+                frame++
+            )
+            {
+                yield return null;
+            }
+            Assert.That(
+                DxMessagingEditorIdle.CanMutateAssetDatabase(),
+                Is.True,
+                $"The editor must become idle within {frameBudget} editor updates. "
+                    + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
+            );
+            DxMessagingSettings.InvalidateSettingsCache();
             Read();
             int rescans = DxMessagingConsoleHarvester.RescanCount;
             int lookups = DxMessagingSettings.SettingsLookupCount;
