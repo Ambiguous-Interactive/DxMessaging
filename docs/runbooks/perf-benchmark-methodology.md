@@ -1122,7 +1122,10 @@ frozen health gates. Older records without brackets cannot establish this compar
 [Microsoft's Windows timing guidance](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)
 describes Stopwatch/QPC as independent of UTC. Retain the actual runtime frequency
 and high-resolution flag before interpreting a capture. A measured disagreement
-identifies a clock-domain discrepancy within the captured bounds; it does not prove
-the external cause of an earlier gap. No historical rejected block becomes admissible
+reports a numerical clock-domain discrepancy within the captured bounds. UTC timestamp
+digits do not establish resolution or accuracy. Keep those properties unmeasured until
+calibrated; small residuals can reflect granularity, rounding or relative clock drift.
+They do not prove an adjustment or the external cause of an earlier gap.
+No historical rejected block becomes admissible
 through these added fields. Keep the stopped pilot and its rates unopened until its
 separate collection and budget gates are satisfied.
