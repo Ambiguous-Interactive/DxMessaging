@@ -975,11 +975,20 @@ try {
     }
     $redaction = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object { $_.name -ceq 'Redact retained package log artifacts' })[0]
     $upload = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object { $_.name -ceq 'Upload retained package log artifacts' })[0]
+    $tooling = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object {
+        $_.PSObject.Properties['id'] -and $_.id -ceq 'log_tooling'
+    })[0]
+    Assert-That 'package logs install the locked redactor dependencies without lifecycle scripts' (
+        $tooling.run.Contains('Copy-Item package.json, package-lock.json') -and
+        $tooling.run.Contains('npm ci --prefix') -and $tooling.run.Contains('--ignore-scripts') -and
+        $tooling.run.Contains('NODE_PATH=') -and $tooling.'timeout-minutes' -eq 2
+    )
     Assert-That 'package log upload requires this run redaction and registration preflight' (
         $floorWorkflow.jobs.'package-log-capture'.needs[0] -ceq 'runner-preflight' -and
         $floorWorkflow.jobs.'package-log-capture'.'timeout-minutes' -eq 10 -and
         $redaction.uses -ceq './.github/actions/redact-unity-artifacts' -and
         $redaction.if.Contains("steps.log_node.outcome == 'success'") -and
+        $redaction.if.Contains("steps.log_tooling.outcome == 'success'") -and
         $upload.if.Contains("steps.redact_logs.outcome == 'success'") -and
         $floor.if.Contains("inputs['native-sdk-log-source'] == ''") -and
         $floorWorkflow.jobs.'pilot-contract-smoke'.if.Contains("inputs['native-sdk-log-source'] == ''")

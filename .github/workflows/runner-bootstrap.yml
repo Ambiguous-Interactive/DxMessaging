@@ -443,6 +443,58 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install artifact tooling dependencies
+        id: log_tooling
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Compute comparison assembly list
+        id: compute_standalone
+        timeout-minutes: 5
+        uses: ./.github/actions/compute-unity-assemblies
+        with:
+          include-comparisons: "true"
+          target: standalone
+
+      - name: Require comparison assemblies
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          if ('${{ steps.compute_standalone.outputs.is-empty }}' -ne 'false') {
+            throw 'Pilot contract smoke requires the comparison test assemblies.'
+          }
+
+      - name: Resolve pinned performance CPU profile
+        id: cpu_profile
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          New-Item -ItemType Directory -Force -Path $artifactsPath | Out-Null
+          $profilePath = Join-Path $artifactsPath 'performance-cpu-profile.json'
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profilePath
+          $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+          if (
+            $profile.schemaVersion -ne 1 -or
+            $profile.executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1' -or
+            $profile.cpuModel -notmatch 'i9-13900KF' -or
+            $profile.affinityMask -cne '0xFFFF' -or
+            $profile.priorityClass -cne 'Normal'
+          ) { throw 'Pilot contract smoke CPU profile does not match the pinned ELI selection.' }
+          "affinity-mask=$($profile.affinityMask)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+
+      - name: Require MSVC C++ toolchain
+        timeout-minutes: 3
+        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
+        run: ./scripts/unity/assert-msvc-toolchain.ps1
+
       - name: Capture retained Unity Package Manager diagnostics
         if: ${{ inputs['native-sdk-log-source'] != '' }}
         shell: pwsh
@@ -475,7 +527,7 @@ jobs:
             -OutputPath '.artifacts/runner-bootstrap/package-manager-diagnostics.json'
 
       - name: Redact retained package log artifacts
-        if: ${{ always() && inputs['native-sdk-log-source'] != '' && steps.log_node.outcome == 'success' }}
+        if: ${{ always() && steps.log_node.outcome == 'success' && steps.log_tooling.outcome == 'success' }}
         id: redact_logs
         uses: ./.github/actions/redact-unity-artifacts
         with:
