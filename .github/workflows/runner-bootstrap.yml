@@ -46,6 +46,11 @@ on:
         required: false
         type: boolean
         default: false
+      native-sdk-log-source:
+        description: "Collect retained UPM diagnostics only: floor run-id,attempt (no Unity launch)."
+        required: false
+        type: string
+        default: ""
       perf-event-window-utc:
         description: "Collect only System clock/sleep/wake events: UTC start,end (ISO 8601 with Z)."
         required: false
@@ -135,7 +140,7 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
-    if: ${{ !inputs['native-sdk-floor'] }}
+    if: ${{ !inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
@@ -332,7 +337,7 @@ jobs:
           }
 
       - name: Run runner audit (single-step transcript)
-        if: ${{ inputs['perf-event-window-utc'] == '' }}
+        if: ${{ inputs['perf-event-window-utc'] == '' && inputs['native-sdk-log-source'] == '' }}
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
         # the audit script, and Stop-Transcripts in a finally{} -- the
         # previous design split Start-Transcript and the bootstrap into
@@ -414,10 +419,81 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  package-log-capture:
+    name: Retained UPM diagnostics on ELI
+    if: ${{ inputs['native-sdk-log-source'] != '' }}
+    needs:
+      - runner-preflight
+    runs-on: [self-hosted, Windows, RAM-64GB, fast]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: "true"
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for package log redaction
+        if: ${{ inputs['native-sdk-log-source'] != '' }}
+        id: log_node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Capture retained Unity Package Manager diagnostics
+        if: ${{ inputs['native-sdk-log-source'] != '' }}
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          DXM_LOG_SOURCE: ${{ inputs['native-sdk-log-source'] }}
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_OTHER_LOG_MODES: >-
+            ${{ inputs['native-sdk-floor'] || inputs['perf-event-window-utc'] != '' ||
+            inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] ||
+            inputs['perf-license-recovery'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Package log collection is pinned to ELI-MACHINE.'
+          }
+          if ($env:DXM_OTHER_LOG_MODES -eq 'true') {
+            throw 'Package log collection requires all other modes disabled.'
+          }
+          if ($env:DXM_LOG_SOURCE -cnotmatch '^[1-9][0-9]{0,15},[1-9][0-9]{0,3}$') {
+            throw 'Package log source requires a positive run-id,attempt.'
+          }
+          $source = $env:DXM_LOG_SOURCE.Split(',')
+          $project = Join-Path $env:RUNNER_WORKSPACE ("dxm-u/n/nf{0}a{1}" -f $source[0], $source[1])
+          $cache = Join-Path $env:RUNNER_WORKSPACE 'dxm-c/native-sdk-floor-2021.3.45f1'
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -PackageLogsOnly -ProjectPath $project -CachePath $cache `
+            -OutputPath '.artifacts/runner-bootstrap/package-manager-diagnostics.json'
+
+      - name: Redact retained package log artifacts
+        if: ${{ always() && inputs['native-sdk-log-source'] != '' && steps.log_node.outcome == 'success' }}
+        id: redact_logs
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/runner-bootstrap
+
+      - name: Upload retained package log artifacts
+        if: ${{ always() && steps.redact_logs.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runner-bootstrap-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/runner-bootstrap/**
+          if-no-files-found: error
+          retention-days: 30
+
   pilot-contract-smoke:
     name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
     if: >-
-      ${{ !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+      ${{ inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
       inputs['perf-pilot-work-vector'] != '' ||
       inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
       inputs['perf-license-recovery']) }}
@@ -826,7 +902,7 @@ jobs:
 
   native-sdk-floor:
     name: Unity 2021.3 native SDK CPU/Burst floor on ELI
-    if: ${{ inputs['native-sdk-floor'] }}
+    if: ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' }}
     needs:
       - runner-preflight
     runs-on:

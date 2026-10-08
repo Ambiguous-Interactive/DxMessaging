@@ -841,7 +841,7 @@ $floorMetadata = & node -e 'const fs=require("fs"), yaml=require("yaml"); consol
 if ($LASTEXITCODE -ne 0) { throw 'Cannot load the real SDK floor workflow.' }
 $floorWorkflow = $floorMetadata | ConvertFrom-Json
 $floor = $floorWorkflow.jobs.'native-sdk-floor'
-Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] }}')
+Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] && inputs[''native-sdk-log-source''] == '''' }}')
 Assert-That 'floor requires registration preflight and a 600-minute budget' ($floor.needs[0] -ceq 'runner-preflight' -and $floor.'timeout-minutes' -eq 600)
 $floorWork = @($floor.steps | Where-Object { $_.PSObject.Properties['id'] -and $_.id -ceq 'run_sdk_floor' })[0]
 Assert-That 'floor keeps all CPU/Burst allocation cases in PlayMode' ($floorWork.run -match '-TestMode playmode' -and $floorWork.run -match '-TestCategory NativeSdkCpu' -and $floorWork.run -notmatch '-CanonicalProfilePath|-StandalonePlayerBatchOrders')
@@ -893,6 +893,100 @@ try {
     Set-Location -LiteralPath $floorLocation.Path
     foreach ($key in $floorEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $floorEnvironment[$key]) }
     if (Test-Path -LiteralPath $floorFixtureRoot) { Remove-Item -LiteralPath $floorFixtureRoot -Recurse -Force }
+}
+
+# Read real files through the package collector, including bounded and invalid input.
+$packageFunction = $collectorAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-UnityPackageLogEvidence'
+}, $true)
+Invoke-Expression $packageFunction.Extent.Text
+$packageFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('dxm-package-logs-' + [Guid]::NewGuid().ToString('N'))
+$packageEnvironment = @{}
+foreach ($key in @('LOCALAPPDATA', 'ALLUSERSPROFILE', 'DXM_LOG_SOURCE', 'DXM_REQUESTED_RUNNER', 'RUNNER_NAME', 'DXM_OTHER_LOG_MODES')) {
+    $packageEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
+}
+try {
+    $env:LOCALAPPDATA = Join-Path $packageFixtureRoot 'user'
+    $env:ALLUSERSPROFILE = Join-Path $packageFixtureRoot 'system'
+    $project = Join-Path $packageFixtureRoot 'project'
+    $cache = Join-Path $packageFixtureRoot 'cache'
+    foreach ($path in @((Join-Path $env:LOCALAPPDATA 'Unity/Editor'), (Join-Path $env:ALLUSERSPROFILE 'Unity/Editor'),
+        (Join-Path $project 'Packages'), (Join-Path $project 'Library/PackageCache'), $cache)) {
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+    }
+    $userLog = Join-Path $env:LOCALAPPDATA 'Unity/Editor/upm.log'
+    $systemLog = Join-Path $env:ALLUSERSPROFILE 'Unity/Editor/upm.log'
+    [IO.File]::WriteAllText($userLog, 'user package failure')
+    [IO.File]::WriteAllText($systemLog, 'system package failure')
+    [IO.File]::WriteAllText((Join-Path $project 'Packages/manifest.json'), '{"dependencies":{}}')
+    $before = (Get-FileHash -LiteralPath $userLog).Hash
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
+    Assert-That 'both documented account logs are retained without changing source' (
+        $evidence.errors.Count -eq 0 -and $evidence.files[0].content -ceq 'user package failure' -and
+        $evidence.files[2].content -ceq 'system package failure' -and
+        (Get-FileHash -LiteralPath $userLog).Hash -ceq $before
+    )
+    Assert-That 'missing logs, lock and cache children remain explicit' (
+        $evidence.files[1].status -ceq 'missing' -and $evidence.files[5].status -ceq 'missing' -and
+        $evidence.directories[3].status -ceq 'missing'
+    )
+    [IO.File]::WriteAllText($userLog, ('x' * (4 * 1024 * 1024 + 1)))
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
+    Assert-That 'oversized logs retain a bounded prefix and fail completeness' (
+        $evidence.files[0].status -ceq 'truncated' -and $evidence.files[0].content.Length -eq 4 * 1024 * 1024 -and
+        $evidence.errors.Count -eq 1
+    )
+    [IO.File]::WriteAllBytes($userLog, [byte[]]@(0xff, 0xff, 0xff))
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
+    Assert-That 'invalid text is an error rather than an empty success' (
+        $evidence.files[0].status -ceq 'error' -and $evidence.errors.Count -eq 1
+    )
+    Remove-Item -LiteralPath $userLog, $systemLog
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
+    Assert-That 'absent service logs fail completeness with retained missing statuses' (
+        $evidence.files[0].status -ceq 'missing' -and $evidence.errors.Count -eq 1
+    )
+    [IO.File]::WriteAllText($systemLog, 'system log')
+    for ($index = 0; $index -lt 201; $index++) {
+        [IO.File]::WriteAllText((Join-Path $cache "entry-$index"), 'metadata only')
+    }
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
+    Assert-That 'directory inventories are bounded and explicitly incomplete' (
+        $evidence.directories[2].status -ceq 'truncated' -and $evidence.directories[2].entries.Count -eq 200 -and
+        $evidence.errors.Count -eq 1
+    )
+    $capture = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object { $_.name -ceq 'Capture retained Unity Package Manager diagnostics' })[0]
+    $route = [scriptblock]::Create(($capture.run -split '\$source =', 2)[0])
+    foreach ($case in @(
+        @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; source = '37859571795,1'; accepted = $true },
+        @{ request = 'DAD-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; source = '37859571795,1'; accepted = $false },
+        @{ request = 'ELI-MACHINE'; runner = 'DAD-MACHINE'; other = 'false'; source = '37859571795,1'; accepted = $false },
+        @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'true'; source = '37859571795,1'; accepted = $false },
+        @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; source = '../outside,1'; accepted = $false },
+        @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; source = '123,0'; accepted = $false }
+    )) {
+        $env:DXM_REQUESTED_RUNNER = $case.request; $env:RUNNER_NAME = $case.runner
+        $env:DXM_OTHER_LOG_MODES = $case.other; $env:DXM_LOG_SOURCE = $case.source
+        $accepted = $true
+        try { & $route } catch { $accepted = $false }
+        Assert-That "package log admission source=$($case.source),runner=$($case.runner),other=$($case.other)" ($accepted -eq $case.accepted)
+    }
+    $redaction = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object { $_.name -ceq 'Redact retained package log artifacts' })[0]
+    $upload = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object { $_.name -ceq 'Upload retained package log artifacts' })[0]
+    Assert-That 'package log upload requires this run redaction and registration preflight' (
+        $floorWorkflow.jobs.'package-log-capture'.needs[0] -ceq 'runner-preflight' -and
+        $floorWorkflow.jobs.'package-log-capture'.'timeout-minutes' -eq 10 -and
+        $redaction.uses -ceq './.github/actions/redact-unity-artifacts' -and
+        $redaction.if.Contains("steps.log_node.outcome == 'success'") -and
+        $upload.if.Contains("steps.redact_logs.outcome == 'success'") -and
+        $floor.if.Contains("inputs['native-sdk-log-source'] == ''") -and
+        $floorWorkflow.jobs.'pilot-contract-smoke'.if.Contains("inputs['native-sdk-log-source'] == ''")
+    )
+} finally {
+    foreach ($key in $packageEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $packageEnvironment[$key]) }
+    if (Test-Path -LiteralPath $packageFixtureRoot) { Remove-Item -LiteralPath $packageFixtureRoot -Recurse -Force }
 }
 
 Write-Host 'same-player repeat evidence tests passed'

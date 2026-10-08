@@ -1153,3 +1153,38 @@ They do not prove an adjustment or the external cause of an earlier gap.
 No historical rejected block becomes admissible
 through these added fields. Keep the stopped pilot and its rates unopened until its
 separate collection and budget gates are satisfied.
+
+## Collect retained Unity Package Manager diagnostics
+
+Dispatch Runner Audit (Windows) with `runner-label=ELI-MACHINE` and
+`native-sdk-log-source=<floor-run-id>,<attempt>`. Leave every other optional mode
+at its default. The collector reads the retained floor project and cache, plus
+`upm.log` and `upm.log.prev` from the documented user and SYSTEM account locations.
+It does not start Unity or alter the project or cache. Central runner registration
+preflight remains required; licensed jobs keep their automatic organization lock
+lifecycle.
+
+The existing `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact includes
+`package-manager-diagnostics.json`. Log text and project manifest/lock contents
+are captured with source metadata. Directory inventories contain metadata only
+and do not recurse. The existing artifact redactor must succeed before upload.
+Source text hashes describe capture before redaction, not the uploaded text.
+
+Missing sources are explicit. No complete service log, a read error, changed log,
+more than four million characters in a file, or more than 200 directory entries
+makes capture incomplete and fails the step while retaining diagnostics.
+These records do not prove which retained service-log session belongs to the
+failed run; compare timestamps, project paths and process/session markers.
+
+Run the collector directly on Windows with the retained paths:
+
+```powershell
+./scripts/unity/collect-perf-host-characterization.ps1 `
+  -PackageLogsOnly -ProjectPath '<retained-floor-project>' -CachePath '<floor-cache>' `
+  -OutputPath '.artifacts/package-manager-diagnostics.json'
+```
+
+[Unity's log file documentation](https://docs.unity3d.com/2021.3/Documentation/Manual/LogFiles.html)
+lists `%LOCALAPPDATA%/Unity/Editor/upm.log` for a user account and
+`%ALLUSERSPROFILE%/Unity/Editor/upm.log` for SYSTEM. Keep missing or incomplete
+records; diagnose the first failed attempt before dispatching another floor run.

@@ -11,6 +11,9 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'EventLogs')]
     [ValidatePattern('^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$')]
     [string]$EventEndUtc,
+    [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][switch]$PackageLogsOnly,
+    [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$ProjectPath,
+    [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$CachePath,
     [Parameter(ParameterSetName = 'Sensors')][switch]$CpuLoad,
     [Parameter(ParameterSetName = 'Sensors')][ValidateRange(2, 3600)][int]$SampleCount = 120,
     [Parameter(ParameterSetName = 'Sensors')][string]$StopSignalPath,
@@ -77,6 +80,126 @@ function Get-HostEventEvidence {
         endUtc = $EndUtc.ToUniversalTime().ToString('O')
         queries = @($queries.ToArray()); events = @($events.ToArray()); errors = @($errors.ToArray())
     }
+}
+
+function Get-UnityPackageLogEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$Cache
+    )
+    $files = New-Object System.Collections.Generic.List[object]
+    $directories = New-Object System.Collections.Generic.List[object]
+    $errors = New-Object System.Collections.Generic.List[string]
+    $candidates = New-Object System.Collections.Generic.List[object]
+    foreach ($name in @('LOCALAPPDATA', 'ALLUSERSPROFILE')) {
+        $root = [Environment]::GetEnvironmentVariable($name)
+        if ([string]::IsNullOrWhiteSpace($root)) {
+            $files.Add([ordered]@{ kind = 'upm'; location = $name; status = 'environment-unset' })
+            continue
+        }
+        foreach ($leaf in @('upm.log', 'upm.log.prev')) {
+            $candidates.Add(@{ kind = 'upm'; path = Join-Path $root "Unity/Editor/$leaf" })
+        }
+    }
+    foreach ($leaf in @('manifest.json', 'packages-lock.json')) {
+        $candidates.Add(@{ kind = 'project'; path = Join-Path $Project "Packages/$leaf" })
+    }
+    foreach ($candidate in $candidates) {
+        $record = [ordered]@{ kind = $candidate.kind; path = $candidate.path; status = 'missing' }
+        $stream = $null
+        $reader = $null
+        try {
+            $item = Get-Item -LiteralPath $candidate.path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'Expected a regular file, without a reparse point.'
+            }
+            $record.lengthBytes = $item.Length
+            $record.lastWriteUtc = $item.LastWriteTimeUtc.ToString('O')
+            $record.attributes = [string]$item.Attributes
+            $stream = [IO.File]::Open($item.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+                [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+            $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false, $true), $true)
+            # Retain at most four million characters; detect overflow explicitly.
+            $buffer = [char[]]::new(4 * 1024 * 1024)
+            $count = $reader.ReadBlock($buffer, 0, $buffer.Length)
+            $record.content = [string]::new($buffer, 0, $count)
+            $record.status = if ($reader.Read() -eq -1) { 'ok' } else { 'truncated' }
+            $bytes = [Text.Encoding]::UTF8.GetBytes($record.content)
+            $hasher = [Security.Cryptography.SHA256]::Create()
+            try {
+                $record.capturedTextSha256BeforeRedaction = [BitConverter]::ToString(
+                    $hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+            } finally { $hasher.Dispose() }
+            $record.lastWriteUtcAfterRead = (Get-Item -LiteralPath $candidate.path -Force).LastWriteTimeUtc.ToString('O')
+            if ($record.lastWriteUtcAfterRead -cne $record.lastWriteUtc) {
+                $record.status = 'changed-during-read'
+            }
+            if ($record.status -ne 'ok') { $errors.Add("$($candidate.path): $($record.status)") }
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            $record.status = 'missing'
+        } catch {
+            $record.status = 'error'
+            $record.error = $_.Exception.Message
+            $errors.Add("$($candidate.path): $($_.Exception.Message)")
+        } finally {
+            if ($reader) { $reader.Dispose() }
+            elseif ($stream) { $stream.Dispose() }
+        }
+        $files.Add($record)
+    }
+    foreach ($path in @($Project, (Join-Path $Project 'Library/PackageCache'), $Cache,
+        (Join-Path $Cache 'upm'), (Join-Path $Cache 'npm'))) {
+        $record = [ordered]@{ path = $path; status = 'missing'; entries = @() }
+        try {
+            $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'Expected a directory, without a reparse point.'
+            }
+            $record.lastWriteUtc = $item.LastWriteTimeUtc.ToString('O')
+            # Bound enumeration without walking package or cache contents recursively.
+            $entries = @(Get-ChildItem -LiteralPath $path -Force -ErrorAction Stop | Select-Object -First 201)
+            $record.status = if ($entries.Count -gt 200) { 'truncated' } else { 'ok' }
+            $record.entries = @($entries | Select-Object -First 200 | ForEach-Object {
+                [ordered]@{
+                    name = $_.Name; directory = $_.PSIsContainer; attributes = [string]$_.Attributes
+                    lengthBytes = if ($_.PSIsContainer) { $null } else { $_.Length }
+                    lastWriteUtc = $_.LastWriteTimeUtc.ToString('O')
+                }
+            })
+            if ($record.status -ne 'ok') { $errors.Add("${path}: $($record.status)") }
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            $record.status = 'missing'
+        } catch {
+            $record.status = 'error'
+            $record.error = $_.Exception.Message
+            $errors.Add("${path}: $($_.Exception.Message)")
+        }
+        $directories.Add($record)
+    }
+    if (@($files | Where-Object { $_.kind -eq 'upm' -and $_.status -eq 'ok' }).Count -eq 0) {
+        $errors.Add('No complete UPM service log was captured from the documented account locations.')
+    }
+    return [ordered]@{
+        projectPath = $Project; cachePath = $Cache
+        files = @($files.ToArray()); directories = @($directories.ToArray()); errors = @($errors.ToArray())
+    }
+}
+
+if ($PackageLogsOnly) {
+    $evidence = Get-UnityPackageLogEvidence -Project $ProjectPath -Cache $CachePath
+    $record = [ordered]@{
+        schemaVersion = 1; purpose = 'unity-package-manager-diagnostics'
+        capturedUtc = [DateTime]::UtcNow.ToString('O'); hostName = [Environment]::MachineName
+        sourceSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        gitCommit = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
+        evidence = $evidence
+    }
+    $parent = Split-Path -Parent $OutputPath
+    if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding utf8
+    Write-Host "Package log evidence: $OutputPath"
+    if ($evidence.errors.Count -ne 0) { throw "Package log capture is incomplete; see $OutputPath." }
+    return
 }
 
 if ($EventLogsOnly) {
