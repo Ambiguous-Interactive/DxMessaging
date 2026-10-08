@@ -230,6 +230,11 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <remarks>
+        /// 2026-10-08: Resolve the inspector TextField font from its built-in skin.
+        /// EditorStyles depends on a prior IMGUI skin event and can be uninitialized
+        /// after a domain reload in headless Unity 2021, while UI Toolkit is ready.
+        /// </remarks>
         [Test]
         public void CompilerDiagnosticCapturesPairExactOutputWithTriggeringCode()
         {
@@ -1092,7 +1097,10 @@ namespace DxMessaging.Tests.Editor
 
             Label code = new(triggeringCode) { name = CompilerDiagnosticCodeLabelName };
             code.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            code.style.unityFont = EditorStyles.textArea.font;
+            code.style.unityFont = EditorGUIUtility
+                .GetBuiltinSkin(EditorSkin.Inspector)
+                .GetStyle("TextField")
+                .font;
             code.style.fontSize = 13;
             code.style.whiteSpace = WhiteSpace.Normal;
             code.style.paddingTop = 10;
