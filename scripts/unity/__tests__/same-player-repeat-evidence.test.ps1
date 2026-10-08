@@ -690,4 +690,94 @@ try {
     }
 }
 
+# Exercise the actual event collector with a Windows event API fixture.
+$collectorPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'collect-perf-host-characterization.ps1'
+$collectorTokens = $null
+$collectorErrors = $null
+$collectorAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $collectorPath, [ref]$collectorTokens, [ref]$collectorErrors
+)
+Assert-That 'event collector parses' (@($collectorErrors).Count -eq 0)
+$eventFunction = $collectorAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-HostEventEvidence'
+}, $true)
+Invoke-Expression $eventFunction.Extent.Text
+$script:eventFixtureCount = 0
+$script:eventFixtureMode = 'normal'
+$script:eventQueries = New-Object System.Collections.Generic.List[object]
+function Get-WinEvent {
+    [CmdletBinding()]
+    param([hashtable]$FilterHashtable, [int]$MaxEvents)
+    $script:eventQueries.Add(@{ query = $FilterHashtable; maxEvents = $MaxEvents })
+    if ($script:eventFixtureMode -eq 'denied') {
+        throw [UnauthorizedAccessException]::new('System log access denied')
+    }
+    if ($script:eventFixtureMode -eq 'missing') {
+        $PSCmdlet.ThrowTerminatingError([System.Management.Automation.ErrorRecord]::new(
+            [InvalidOperationException]::new('No matching events'), 'NoMatchingEventsFound',
+            [System.Management.Automation.ErrorCategory]::ObjectNotFound, $null
+        ))
+    }
+    if ($FilterHashtable.ProviderName -ne 'Microsoft-Windows-Kernel-General') { return }
+    for ($index = 0; $index -lt $script:eventFixtureCount; $index++) {
+        $event = [pscustomobject]@{
+            ProviderName = $FilterHashtable.ProviderName; Id = 1; RecordId = $index + 100
+            TimeCreated = [DateTimeOffset]::Parse('2026-10-08T03:05:00Z').UtcDateTime
+            RawXml = '<Event><Data Name="OldTime">2026-10-08T03:04:57Z</Data><Data Name="NewTime">2026-10-08T03:05:00Z</Data></Event>'
+        }
+        $event | Add-Member -MemberType ScriptMethod -Name ToXml -Value { $this.RawXml }
+        $event
+    }
+}
+try {
+    $start = [DateTimeOffset]::Parse('2026-10-08T03:04:00Z')
+    $end = [DateTimeOffset]::Parse('2026-10-08T03:06:00Z')
+    foreach ($count in @(0, 1, 2)) {
+        $script:eventFixtureCount = $count
+        $script:eventQueries.Clear()
+        $evidence = Get-HostEventEvidence -StartUtc $start -EndUtc $end
+        Assert-That "event cardinality $count is retained" ($evidence.events.Count -eq $count)
+        Assert-That 'all providers are queried and empty output is explicit' (
+            $evidence.queries.Count -eq 3 -and $evidence.queries[1].status -eq 'no-matches' -and $evidence.errors.Count -eq 0
+        )
+        foreach ($call in $script:eventQueries) {
+            Assert-That 'query reads System with exact UTC bounds and overflow detection' (
+                $call.query.LogName -eq 'System' -and $call.query.StartTime -eq $start.UtcDateTime -and
+                $call.query.EndTime -eq $end.UtcDateTime -and $call.query.StartTime.Kind -eq [DateTimeKind]::Utc -and
+                $call.maxEvents -eq 1001
+            )
+        }
+        if ($count -ne 0) {
+            Assert-That 'raw clock payload is retained' (
+                $evidence.events[0].xml.Contains('OldTime') -and $evidence.events[0].xml.Contains('NewTime')
+            )
+        }
+    }
+    $script:eventFixtureMode = 'missing'
+    $evidence = Get-HostEventEvidence -StartUtc $start -EndUtc $end
+    Assert-That 'native no-matches is successful empty evidence' (
+        $evidence.events.Count -eq 0 -and $evidence.errors.Count -eq 0 -and
+        @($evidence.queries | Where-Object status -eq 'no-matches').Count -eq 3
+    )
+    $script:eventFixtureMode = 'denied'
+    $evidence = Get-HostEventEvidence -StartUtc $start -EndUtc $end
+    Assert-That 'access failures are not successful empty evidence' (
+        $evidence.errors.Count -eq 3 -and @($evidence.queries | Where-Object status -eq 'error').Count -eq 3
+    )
+    $script:eventFixtureMode = 'normal'
+    $script:eventFixtureCount = 1001
+    $evidence = Get-HostEventEvidence -StartUtc $start -EndUtc $end
+    Assert-That 'overflow is bounded and explicitly incomplete' (
+        $evidence.events.Count -eq 1000 -and $evidence.queries[0].status -eq 'truncated' -and $evidence.errors.Count -eq 1
+    )
+    foreach ($invalidEnd in @($start, $start.AddSeconds(-1), $start.AddHours(25))) {
+        $rejected = $false
+        try { Get-HostEventEvidence -StartUtc $start -EndUtc $invalidEnd | Out-Null }
+        catch { $rejected = $_.Exception.Message.Contains('Event log window must be increasing') }
+        Assert-That 'invalid query windows are rejected' $rejected
+    }
+} finally { Remove-Item Function:Get-WinEvent }
+
 Write-Host 'same-player repeat evidence tests passed'

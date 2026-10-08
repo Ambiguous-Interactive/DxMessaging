@@ -41,6 +41,11 @@ on:
         options:
           - DAD-MACHINE
           - ELI-MACHINE
+      perf-event-window-utc:
+        description: 'Collect only System clock/sleep/wake events: UTC start,end (ISO 8601 with Z).'
+        required: false
+        type: string
+        default: ''
       perf-host-characterization:
         description: 'Capture the outcome-free #510 performance-host sensor probe on ELI-MACHINE.'
         required: false
@@ -194,6 +199,28 @@ jobs:
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
           }
 
+      - name: Capture performance host event logs
+        if: ${{ inputs['perf-event-window-utc'] != '' }}
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          DXM_EVENT_WINDOW_UTC: ${{ inputs['perf-event-window-utc'] }}
+          DXM_OTHER_PERF_MODES: >-
+            ${{ inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] ||
+            inputs['perf-license-recovery'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_OTHER_PERF_MODES -eq 'true') {
+            throw 'Event log collection must be selected without other performance modes.'
+          }
+          $window = @($env:DXM_EVENT_WINDOW_UTC.Split(','))
+          if ($window.Count -ne 2) { throw 'Event log window requires UTC start,end.' }
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -EventLogsOnly -EventStartUtc $window[0] -EventEndUtc $window[1] `
+            -OutputPath '.artifacts/runner-bootstrap/host-event-logs.json'
+
       - name: Capture outcome-free performance host conditions
         if: ${{ inputs['perf-host-characterization'] || inputs['perf-host-load'] }}
         shell: pwsh
@@ -299,6 +326,7 @@ jobs:
           }
 
       - name: Run runner audit (single-step transcript)
+        if: ${{ inputs['perf-event-window-utc'] == '' }}
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
         # the audit script, and Stop-Transcripts in a finally{} -- the
         # previous design split Start-Transcript and the bootstrap into

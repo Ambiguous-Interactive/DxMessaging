@@ -1070,3 +1070,36 @@ throughput drops materially versus the no-interceptor baseline), and reflexive
 (dynamic) messaging is slower than direct handler registration because of
 reflection overhead. Treat any pre-migration number as non-comparable to the
 current single-window results.
+
+## Collect Windows clock and sleep events
+
+Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner.
+Set `runner-label` to `ELI-MACHINE`, leave other performance modes disabled, and set
+`perf-event-window-utc` to `2026-10-08T03:04:00Z,2026-10-08T03:06:00Z` for the retained
+cadence failure. The `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact contains
+`host-event-logs.json`, including raw event XML and per-query status. This mode reads the
+System log and skips the editor/prerequisite audit; it does not launch a performance player.
+Licensed workflow jobs retain the central organization acquire/work/cleanup/release sequence.
+
+Run the same collector directly on Windows:
+
+```powershell
+./scripts/unity/collect-perf-host-characterization.ps1 `
+  -EventLogsOnly `
+  -EventStartUtc '2026-10-08T03:04:00Z' `
+  -EventEndUtc '2026-10-08T03:06:00Z' `
+  -OutputPath '.artifacts/host-event-logs.json'
+```
+
+The window must use UTC timestamps ending in `Z`, increase, and span at most 24 hours.
+The collector queries Kernel-General event 1, Kernel-Power event 42 and
+Power-Troubleshooter event 1. Raw XML retains clock-change details without depending on
+localized messages. An empty query is recorded as `no-matches`; it does not prove that
+no clock change occurred or that older records remain available. Access failures and
+truncation are recorded in the JSON and cause a nonzero exit. Queries retain at most
+1000 events per provider; narrow the window if that limit is exceeded.
+
+The [Microsoft event-query documentation](https://learn.microsoft.com/en-us/powershell/scripting/samples/creating-get-winevent-queries-with-filterhashtable)
+describes the time filters. [Microsoft's clock-reset guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/client-clock-reverts-to-previous-time)
+identifies Kernel-General event 1 as clock-change evidence. Treat logs as diagnostic
+inputs; they do not replace the frozen telemetry health gate or justify accepting a failed run.

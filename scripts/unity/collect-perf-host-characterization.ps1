@@ -1,13 +1,20 @@
 #Requires -Version 7.0
 # cspell:ignore powrprof
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Sensors')]
 param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
-    [Parameter(Mandatory = $true)][string]$CpuProfilePath,
-    [switch]$CpuLoad,
-    [ValidateRange(2, 3600)][int]$SampleCount = 120,
-    [string]$StopSignalPath,
-    [string]$ReadySignalPath
+    [Parameter(Mandatory = $true, ParameterSetName = 'Sensors')][string]$CpuProfilePath,
+    [Parameter(Mandatory = $true, ParameterSetName = 'EventLogs')][switch]$EventLogsOnly,
+    [Parameter(Mandatory = $true, ParameterSetName = 'EventLogs')]
+    [ValidatePattern('^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$')]
+    [string]$EventStartUtc,
+    [Parameter(Mandatory = $true, ParameterSetName = 'EventLogs')]
+    [ValidatePattern('^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$')]
+    [string]$EventEndUtc,
+    [Parameter(ParameterSetName = 'Sensors')][switch]$CpuLoad,
+    [Parameter(ParameterSetName = 'Sensors')][ValidateRange(2, 3600)][int]$SampleCount = 120,
+    [Parameter(ParameterSetName = 'Sensors')][string]$StopSignalPath,
+    [Parameter(ParameterSetName = 'Sensors')][string]$ReadySignalPath
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +23,83 @@ $PSNativeCommandUseErrorActionPreference = $false
 if (-not $IsWindows) {
     throw 'Performance host characterization requires Windows.'
 }
+function Get-HostEventEvidence {
+    param(
+        [Parameter(Mandatory = $true)][DateTimeOffset]$StartUtc,
+        [Parameter(Mandatory = $true)][DateTimeOffset]$EndUtc
+    )
+    if ($EndUtc -le $StartUtc -or ($EndUtc - $StartUtc).TotalHours -gt 24) {
+        throw 'Event log window must be increasing and no longer than 24 hours.'
+    }
+    $events = New-Object System.Collections.Generic.List[object]
+    $queries = New-Object System.Collections.Generic.List[object]
+    $errors = New-Object System.Collections.Generic.List[string]
+    foreach ($filter in @(
+        @{ ProviderName = 'Microsoft-Windows-Kernel-General'; Id = 1 },
+        @{ ProviderName = 'Microsoft-Windows-Kernel-Power'; Id = 42 },
+        @{ ProviderName = 'Microsoft-Windows-Power-Troubleshooter'; Id = 1 }
+    )) {
+        $status = 'ok'
+        $count = 0
+        try {
+            $query = @{
+                LogName = 'System'; ProviderName = $filter.ProviderName; Id = $filter.Id
+                StartTime = $StartUtc.UtcDateTime; EndTime = $EndUtc.UtcDateTime
+            }
+            $matches = @(Get-WinEvent -FilterHashtable $query -MaxEvents 1001 -ErrorAction Stop)
+            if ($matches.Count -gt 1000) {
+                $status = 'truncated'
+                $errors.Add("$($filter.ProviderName): more than 1000 events; narrow the window.")
+            }
+            foreach ($event in @($matches | Select-Object -First 1000)) {
+                $events.Add([ordered]@{
+                    provider = $event.ProviderName; id = $event.Id; recordId = $event.RecordId
+                    timeUtc = $event.TimeCreated.ToUniversalTime().ToString('O')
+                    xml = $event.ToXml()
+                })
+                $count++
+            }
+            if ($matches.Count -eq 0) { $status = 'no-matches' }
+        } catch {
+            if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
+                $status = 'no-matches'
+            } else {
+                $status = 'error'
+                $errors.Add("$($filter.ProviderName): $($_.FullyQualifiedErrorId): $($_.Exception.Message)")
+            }
+        }
+        $queries.Add([ordered]@{
+            provider = $filter.ProviderName; id = $filter.Id; status = $status; eventCount = $count
+        })
+    }
+    return [ordered]@{
+        startUtc = $StartUtc.ToUniversalTime().ToString('O')
+        endUtc = $EndUtc.ToUniversalTime().ToString('O')
+        queries = @($queries.ToArray()); events = @($events.ToArray()); errors = @($errors.ToArray())
+    }
+}
+
+if ($EventLogsOnly) {
+    $evidence = Get-HostEventEvidence `
+        -StartUtc ([DateTimeOffset]::Parse($EventStartUtc, [Globalization.CultureInfo]::InvariantCulture)) `
+        -EndUtc ([DateTimeOffset]::Parse($EventEndUtc, [Globalization.CultureInfo]::InvariantCulture))
+    $record = [ordered]@{
+        schemaVersion = 1; purpose = 'performance-host-event-logs'
+        capturedUtc = [DateTime]::UtcNow.ToString('O'); hostName = [Environment]::MachineName
+        sourceSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        gitCommit = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
+        evidence = $evidence
+    }
+    $parent = Split-Path -Parent $OutputPath
+    if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding utf8
+    Write-Host "Host event logs: $OutputPath ($($evidence.events.Count) events)"
+    if ($evidence.errors.Count -ne 0) {
+        throw "Event log capture is incomplete; see $OutputPath for query errors."
+    }
+    return
+}
+
 if ($ReadySignalPath -and -not $StopSignalPath) {
     throw '-ReadySignalPath requires -StopSignalPath.'
 }
