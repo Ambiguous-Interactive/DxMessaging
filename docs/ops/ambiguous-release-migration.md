@@ -104,6 +104,8 @@ organization lock.
     uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
     with:
       lock-name: wallstop-organization-builds
+      require-resource-lifecycle: "true"
+      minimum-release-cooldown-seconds: "0"
       runner-id: ${{ runner.name }}
       github-token: ${{ github.token }}
       pull-request-number: ${{ github.event.pull_request.number }}
@@ -120,10 +122,15 @@ organization lock.
   ignore the build-lock actions, so bump their pins manually in one commit
   across `.github/workflows` and this page.
 
-  The matching release step uses the same immutable lock commit with `if:
-always()`. Never use `wallstop-organization-builds` as a native GitHub
-  `concurrency.group`; the native primitive is repository-scoped and would
-  silently fail to serialize across repositories.
+  The lifecycle requirement rejects missing, invalid, or disabled central configuration.
+  The cooldown input accepts the centrally configured duration. Licensed work runs only
+  after acquisition succeeds. Every acquired job returns the Unity license, classifies
+  cleanup, releases the central lock, and requires confirmed cleanup on every exit path.
+
+  The matching release step uses the same immutable lock commit with `if: always()`.
+  Never use `wallstop-organization-builds` as a native GitHub `concurrency.group`;
+  the native primitive is repository-scoped and would silently fail to serialize
+  across repositories.
 
 - Each Unity-credential-using job runs
   `./.github/actions/validate-unity-license` before acquiring the central lock

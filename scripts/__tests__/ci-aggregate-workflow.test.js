@@ -436,7 +436,7 @@ test("copyable build-lock documentation follows the runner and App credential co
     ).exec(source);
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
     for (const binding of [
-      /runner-id: \$\{\{ runner\.name \}\}/,
+      /require-resource-lifecycle: "true"\n\s+minimum-release-cooldown-seconds: "0"\n\s+[\s\S]*runner-id: \$\{\{ runner\.name \}\}/,
       /github-token: \$\{\{ github\.token \}\}/,
       /pull-request-number: \$\{\{ github\.event\.pull_request\.number \}\}/,
       /expected-head-sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
@@ -594,6 +594,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [validationStep, new RegExp(`provisioning-profile: ${escapeRegExp(UNITY_EDITOR_PROFILES[file])}\\n`), `${label}: the gate must use the reviewed provisioning profile`],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
+      [acquireStep, /\n          require-resource-lifecycle: "true"\n          minimum-release-cooldown-seconds: "0"\n/, `${label}: require central lifecycle configuration and accept its cooldown`],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
       [workStep, new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`), label],
       [workStep, /-LicenseReturnOwner Central/, `${label}: the trusted central action must own the post-activation return`],
