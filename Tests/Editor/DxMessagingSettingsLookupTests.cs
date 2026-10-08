@@ -112,31 +112,27 @@ namespace DxMessaging.Tests.Editor
         }
 
         /// <remarks>
-        /// 2026-10-07, issue #613: Unity 2021 CI can execute the fixture while the editor is
-        /// busy. RescanNow correctly declines that work. Poll the shared idle condition and
-        /// execute both calls in the admitted update; delayCall need not run during UnityTest.
+        /// 2026-10-07, issue #613: CI can start compilation before EditMode tests lock
+        /// assembly reloads. Ordinary yields cannot finish that pending reload. Let the
+        /// framework complete compilation and restore the test before constructing settings.
+        /// RescanNow retains its busy guard, and both calls execute in the same idle update.
         /// </remarks>
         [UnityTest]
         [Category("Integration")]
         public IEnumerator HarvesterRescansReuseTheSharedPassiveSettingsCache()
         {
-            const int frameBudget = 64;
-            DxMessagingSettings settings = CreateSettings(DefaultPath);
-            settings._baseCallCheckEnabled = false;
-            for (
-                int frame = 0;
-                !DxMessagingEditorIdle.CanMutateAssetDatabase() && frame < frameBudget;
-                frame++
-            )
+            if (EditorApplication.isCompiling)
             {
-                yield return null;
+                yield return new WaitForDomainReload();
             }
             Assert.That(
                 DxMessagingEditorIdle.CanMutateAssetDatabase(),
                 Is.True,
-                $"The editor must become idle within {frameBudget} editor updates. "
+                "Compilation must finish before the guarded rescan calls. "
                     + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
             );
+            DxMessagingSettings settings = CreateSettings(DefaultPath);
+            settings._baseCallCheckEnabled = false;
             DxMessagingSettings.InvalidateSettingsCache();
             Read();
             int rescans = DxMessagingConsoleHarvester.RescanCount;
