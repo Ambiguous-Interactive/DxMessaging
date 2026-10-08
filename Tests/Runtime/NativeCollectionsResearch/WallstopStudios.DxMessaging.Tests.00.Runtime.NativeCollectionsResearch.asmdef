@@ -1,0 +1,49 @@
+{
+  "name": "WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch",
+  "rootNamespace": "DxMessaging.Tests.Runtime.NativeCollectionsResearch",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Tests.Runtime",
+    "Unity.Collections",
+    "Unity.Burst",
+    "Unity.Mathematics",
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS",
+    "DXM_505_COLLECTIONS_PRESENT",
+    "DXM_505_BURST_PRESENT",
+    "DXM_505_MATHEMATICS_PRESENT"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.mathematics",
+      "expression": "1.2.6",
+      "define": "DXM_505_MATHEMATICS_PRESENT"
+    },
+    {
+      "name": "com.unity.collections",
+      "expression": "1.2.3",
+      "define": "DXM_505_COLLECTIONS_PRESENT"
+    },
+    {
+      "name": "com.unity.burst",
+      "expression": "1.6.6",
+      "define": "DXM_505_BURST_PRESENT"
+    },
+    {
+      "name": "com.unity.collections",
+      "expression": "6.4.0",
+      "define": "DXM_505_COLLECTIONS_PARALLEL_SCHEDULE_PRESENT"
+    }
+  ],
+  "noEngineReferences": false
+}

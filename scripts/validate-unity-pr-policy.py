@@ -38,6 +38,7 @@ LICENSED_LOCK_WINDOWS = (
     (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
     (Path(".github/workflows/release.yml"), "unity-checks"),
     (Path(".github/workflows/runner-bootstrap.yml"), "pilot-contract-smoke"),
+    (Path(".github/workflows/runner-bootstrap.yml"), "native-sdk-floor"),
 )
 UNITY_LIFECYCLE_OVERHEAD_RESERVE_MINUTES = 60
 UNITY_CREDENTIAL_OR_ACTIVATION = re.compile(

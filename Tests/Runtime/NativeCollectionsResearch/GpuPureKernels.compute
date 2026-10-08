@@ -1,0 +1,65 @@
+#pragma kernel Process
+#pragma kernel Consume
+
+StructuredBuffer<uint4> Input;
+RWStructuredBuffer<uint2> Stage;
+RWStructuredBuffer<uint2> Final;
+int ItemCount;
+int Offset;
+int ChunkCount;
+int Rounds;
+
+uint MultiplyHigh(uint value, uint multiplier)
+{
+    uint low = value & 65535u;
+    uint high = value >> 16;
+    uint p0 = low * (multiplier & 65535u);
+    uint p1 = low * (multiplier >> 16);
+    uint p2 = high * (multiplier & 65535u);
+    uint p3 = high * (multiplier >> 16);
+    uint middle = (p0 >> 16) + (p1 & 65535u) + (p2 & 65535u);
+    return p3 + (p1 >> 16) + (p2 >> 16) + (middle >> 16);
+}
+
+uint2 Add(uint2 a, uint2 b)
+{
+    uint low = a.x + b.x;
+    return uint2(low, a.y + b.y + (low < a.x ? 1u : 0u));
+}
+
+uint2 Multiply(uint2 a, uint2 b)
+{
+    return uint2(a.x * b.x, a.y * b.x + a.x * b.y + MultiplyHigh(a.x, b.x));
+}
+
+uint2 SignedWord(uint value)
+{
+    return uint2(value, (value >> 31) != 0 ? 4294967295u : 0u);
+}
+
+[numthreads(64, 1, 1)]
+void Process(uint3 thread : SV_DispatchThreadID)
+{
+    if (thread.x >= (uint)ChunkCount) return;
+    uint index = (uint)Offset + thread.x;
+    if (index >= (uint)ItemCount) return;
+    uint4 payload = Input[index + 1];
+    uint2 value = Add(Add(payload.zw, Multiply(SignedWord(payload.x), uint2(97u, 0u))), SignedWord(payload.y));
+    for (int round = 0; round < Rounds; ++round)
+    {
+        uint2 shifted = uint2((value.x >> 17) | (value.y << 15), value.y >> 17);
+        value = Add(Multiply(value ^ shifted, uint2(1284865837u, 1481765933u)), uint2(4150755663u, 335903614u));
+    }
+    Stage[index + 1] = value;
+}
+
+[numthreads(64, 1, 1)]
+void Consume(uint3 thread : SV_DispatchThreadID)
+{
+    if (thread.x >= (uint)ChunkCount) return;
+    uint index = (uint)Offset + thread.x;
+    if (index >= (uint)ItemCount) return;
+    uint2 value = Stage[index + 1];
+    uint2 shifted = uint2(value.x << 7, (value.y << 7) | (value.x >> 25));
+    Final[index + 1] = Add(value ^ shifted, uint2((index + 1) * 97u, 0u));
+}

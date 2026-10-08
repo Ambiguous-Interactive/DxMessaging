@@ -1071,6 +1071,30 @@ throughput drops materially versus the no-interceptor baseline), and reflexive
 reflection overhead. Treat any pre-migration number as non-comparable to the
 current single-window results.
 
+## Verify the optional native SDK floor
+
+The `codex/505-sdk-floor` research branch adds an opt-in Runner Audit lane for
+Unity 2021.3.45f1, Burst 1.6.6, Collections 1.2.3 and Mathematics 1.2.6. Dispatch
+`runner-bootstrap.yml` on that branch with `runner-label: ELI-MACHINE` and
+`native-sdk-floor: true`. Keep all other experiment inputs at their defaults.
+Check the fresh serialized ELI budget before dispatch; the one eligible ELI job
+has a 600-minute ceiling. Bootstrap and pilot jobs do not run in this mode.
+
+The lane runs all 745 CPU/Burst PlayMode cases, including allocation assays and
+positive controls. A namespace setup fixture captures actual package versions,
+sources, compiler-source hashes, manifest and lock before candidates execute.
+It rejects substituted packages. The result gate requires the exact retained
+case identities, with no failed, skipped or inconclusive cases.
+
+The central v1.15 actions own admission and automatic cleanup. Acquisition
+requires resource lifecycle protection; return, classification, release and
+confirmed cleanup run before artifact redaction and upload. The runner must
+already have the exact healthy editor installed. The lane performs no repair.
+
+This lane verifies the CPU/Burst SDK floor. GPU, macOS plugin and IL2CPP floor
+checks require separate native evidence. PlayMode results do not establish
+calibrated player throughput or architectural acceptance.
+
 ## Collect Windows clock and sleep events
 
 Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner.

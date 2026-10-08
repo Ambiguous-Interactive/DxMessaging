@@ -41,59 +41,64 @@ on:
         options:
           - DAD-MACHINE
           - ELI-MACHINE
+      native-sdk-floor:
+        description: "Run all CPU/Burst native research contracts on Unity 2021.3 with pinned floor SDKs."
+        required: false
+        type: boolean
+        default: false
       perf-event-window-utc:
-        description: 'Collect only System clock/sleep/wake events: UTC start,end (ISO 8601 with Z).'
+        description: "Collect only System clock/sleep/wake events: UTC start,end (ISO 8601 with Z)."
         required: false
         type: string
-        default: ''
+        default: ""
       perf-host-characterization:
-        description: 'Capture the outcome-free #510 performance-host sensor probe on ELI-MACHINE.'
+        description: "Capture the outcome-free #510 performance-host sensor probe on ELI-MACHINE."
         required: false
         type: boolean
         default: false
       perf-host-load:
-        description: 'Apply synthetic load to the selected ELI-MACHINE processors during the sensor probe.'
+        description: "Apply synthetic load to the selected ELI-MACHINE processors during the sensor probe."
         required: false
         type: boolean
         default: false
       perf-host-monitor-smoke:
-        description: 'Exercise #510 player-time sampler ready/stop signals without a Unity player.'
+        description: "Exercise #510 player-time sampler ready/stop signals without a Unity player."
         required: false
         type: boolean
         default: false
       perf-pilot-contract-smoke:
-        description: 'Build one pilot-only IL2CPP comparison player and run contract tests on ELI without throughput rows.'
+        description: "Build one pilot-only IL2CPP comparison player and run contract tests on ELI without throughput rows."
         required: false
         type: boolean
         default: false
       perf-license-recovery:
-        description: 'Return the Unity license on ELI without activation or player work; classify cleanup and release the organization lock.'
+        description: "Return the Unity license on ELI without activation or player work; classify cleanup and release the organization lock."
         required: false
         type: boolean
         default: false
       perf-pilot-calibration-work:
-        description: 'Optional #510 control-only calibration; one clean player, five PairedPerf launches at the selected CPU-work level.'
+        description: "Optional #510 control-only calibration; one clean player, five PairedPerf launches at the selected CPU-work level."
         required: false
         type: choice
         default: none
         options:
           - none
-          - '0'
-          - '2048'
-          - '8192'
-          - '32768'
-          - '131072'
-          - '524288'
+          - "0"
+          - "2048"
+          - "8192"
+          - "32768"
+          - "131072"
+          - "524288"
       perf-pilot-work-vector:
-        description: 'Optional #510 physical control or pilot: five target CPU-work integers in fixed scenario order.'
+        description: "Optional #510 physical control or pilot: five target CPU-work integers in fixed scenario order."
         required: false
         type: string
-        default: ''
+        default: ""
       perf-pilot-batch-orders:
-        description: 'Five comma-separated paired batch orders; custom orders require vector mode.'
+        description: "Five comma-separated paired batch orders; custom orders require vector mode."
         required: false
         type: string
-        default: 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB'
+        default: "ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB"
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
@@ -123,13 +128,14 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Windows Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
+    if: ${{ !inputs['native-sdk-floor'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
@@ -411,10 +417,10 @@ jobs:
   pilot-contract-smoke:
     name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
     if: >-
-      ${{ inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+      ${{ !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
       inputs['perf-pilot-work-vector'] != '' ||
       inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
-      inputs['perf-license-recovery'] }}
+      inputs['perf-license-recovery']) }}
     needs:
       - runner-preflight
       - bootstrap
@@ -467,7 +473,7 @@ jobs:
       - name: Require manually installed Unity editor
         id: ensure_unity_editor
         timeout-minutes: 10
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
         with:
           unity-version: 6000.5.2f1
           install-root: ${{ runner.tool_cache }}\u6-v3
@@ -497,7 +503,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.18.0'
+          node-version: "22.18.0"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -516,7 +522,7 @@ jobs:
         timeout-minutes: 5
         uses: ./.github/actions/compute-unity-assemblies
         with:
-          include-comparisons: 'true'
+          include-comparisons: "true"
           target: standalone
 
       - name: Require comparison assemblies
@@ -562,13 +568,15 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: pilot-contract-${{ github.run_id }}-${{ github.run_attempt }}
           runner-id: ${{ runner.name }}
           github-token: ${{ github.token }}
           timeout-minutes: "300"
+          require-resource-lifecycle: true
+          minimum-release-cooldown-seconds: 0
         env:
           BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
           BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
@@ -762,7 +770,7 @@ jobs:
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@d79e1cc2acc892b619db2ca46f78291ca427016b
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@03518ac5ac2a4a223243c593cc9b453688c92b99
         with:
           unity-version: 6000.5.2f1
           tool-cache: ${{ runner.tool_cache }}
@@ -774,7 +782,7 @@ jobs:
         id: cleanup_classification
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@d79e1cc2acc892b619db2ca46f78291ca427016b
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@03518ac5ac2a4a223243c593cc9b453688c92b99
         with:
           return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
           return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
@@ -786,7 +794,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@d79e1cc2acc892b619db2ca46f78291ca427016b # v1.14.2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: pilot-contract-${{ github.run_id }}-${{ github.run_attempt }}
@@ -801,7 +809,7 @@ jobs:
       - name: Require confirmed Unity cleanup
         if: always()
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@d79e1cc2acc892b619db2ca46f78291ca427016b
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@03518ac5ac2a4a223243c593cc9b453688c92b99
         with:
           acquired: ${{ steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
@@ -815,3 +823,255 @@ jobs:
           release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
           reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+
+  native-sdk-floor:
+    name: Unity 2021.3 native SDK CPU/Burst floor on ELI
+    if: ${{ inputs['native-sdk-floor'] }}
+    needs:
+      - runner-preflight
+    runs-on:
+      - self-hosted
+      - Windows
+      - RAM-64GB
+      - fast
+    timeout-minutes: 600
+    steps:
+      - name: Require ELI request and isolated SDK floor mode
+        shell: pwsh
+        timeout-minutes: 1
+        env:
+          DXM_FLOOR_REQUEST: ${{ inputs.runner-label }}
+          DXM_FLOOR_OTHER_MODES: >-
+            ${{ inputs['perf-event-window-utc'] != '' || inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] || inputs['perf-license-recovery'] ||
+            inputs['perf-pilot-calibration-work'] != 'none' || inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_FLOOR_REQUEST -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Native SDK floor requires an ELI-MACHINE request and runner.'
+          }
+          if ($env:DXM_FLOOR_OTHER_MODES -ceq 'true') {
+            throw 'Native SDK floor cannot combine with other experiment modes.'
+          }
+
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
+        with:
+          unity-version: 2021.3.45f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
+      - name: Enable Git long paths
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        timeout-minutes: 30
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Setup Node.js
+        id: setup_node
+        timeout-minutes: 5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.18.0
+
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        timeout-minutes: 305
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          timeout-minutes: "300"
+          require-resource-lifecycle: true
+          minimum-release-cooldown-seconds: 0
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: exit 1
+
+      - name: Run Unity native SDK floor contracts
+        id: run_sdk_floor
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' && !inputs['perf-license-recovery'] }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DX_PERF_COMMIT: ${{ github.sha }}
+        run: |
+          $artifactsPath = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\n\nf${{ github.run_id }}a${{ github.run_attempt }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\native-sdk-floor-2021.3.45f1'
+          $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-admission.json"
+          try {
+            ./scripts/unity/run-ci-tests.ps1 `
+              -UnityVersion 2021.3.45f1 `
+              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+              -TestMode playmode `
+              -AssemblyNames 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch' `
+              -TestCategory NativeSdkCpu `
+              -ArtifactsPath $artifactsPath `
+              -ProjectPath $projectPath `
+              -CachePath $cachePath `
+              -IncludeComparisons `
+              -LicenseReturnOwner Central `
+              -ReleaseCodeOptimization
+          } finally {
+            New-Item -ItemType Directory -Path $artifactsPath -Force | Out-Null
+            foreach ($name in @('manifest.json', 'packages-lock.json')) {
+              $path = Join-Path $projectPath "Packages/$name"
+              if (Test-Path -LiteralPath $path -PathType Leaf) {
+                Copy-Item -LiteralPath $path -Destination (Join-Path $artifactsPath "post-$name")
+              }
+            }
+          }
+
+      - name: Require the complete CPU/Burst floor scope
+        if: ${{ steps.run_sdk_floor.outcome == 'success' }}
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $root = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $admission = Get-Content -LiteralPath (Join-Path $root 'sdk-admission.json') -Raw | ConvertFrom-Json
+          if ($admission.unityVersion -cne '2021.3.45f1' -or @($admission.packages).Count -ne 3) {
+            throw 'Actual SDK floor admission is missing or differs from the fixed lane.'
+          }
+          $xml = [xml](Get-Content -LiteralPath (Join-Path $root 'results.xml') -Raw)
+          $cases = @($xml.SelectNodes('//test-case'))
+          if ($cases.Count -ne 745 -or @($cases | Where-Object { $_.result -cne 'Passed' }).Count -ne 0) {
+            throw 'Native SDK floor requires all 745 CPU/Burst cases to pass without skips or inconclusive results.'
+          }
+          $counts = @{ NativeCollectionsBaselineTests = 46; ParallelPureHandlerTests = 108; PureBatchKernelTests = 88; VectorPureKernelTests = 503 }
+          foreach ($name in $counts.Keys) {
+            $prefix = "DxMessaging.Tests.Runtime.NativeCollectionsResearch.$name."
+            if (@($cases | Where-Object { $_.fullname.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -ne $counts[$name]) {
+              throw "Native SDK floor fixture identity count differs: $name."
+            }
+          }
+          $expected = Get-Content -LiteralPath '.github/perf/native-sdk-floor-identities.v1.json' -Raw | ConvertFrom-Json
+          $actualNames = @($cases | ForEach-Object { $_.fullname } | Sort-Object)
+          if (@($actualNames | Sort-Object -Unique).Count -ne 745 -or
+              @(Compare-Object -ReferenceObject @($expected.identities) -DifferenceObject $actualNames -CaseSensitive).Count -ne 0) {
+            throw 'Native SDK floor leaf identities differ from the retained complete CPU/Burst scope.'
+          }
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@03518ac5ac2a4a223243c593cc9b453688c92b99
+        with:
+          unity-version: 2021.3.45f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: native-sdk-floor
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@03518ac5ac2a4a223243c593cc9b453688c92b99
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@03518ac5ac2a4a223243c593cc9b453688c92b99
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+
+      - name: Redact native SDK floor artifacts
+        id: redact_sdk_floor
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload native SDK floor artifacts
+        if: ${{ always() && steps.redact_sdk_floor.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14

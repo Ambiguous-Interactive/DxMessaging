@@ -835,4 +835,64 @@ try {
     Remove-Variable StopSignalPath
 }
 
+# Exercise the actual opt-in SDK floor routing and complete-scope gates.
+$floorWorkflowPath = Join-Path $repoRoot '.github/workflows/runner-bootstrap.yml'
+$floorMetadata = & node -e 'const fs=require("fs"), yaml=require("yaml"); console.log(JSON.stringify(yaml.parse(fs.readFileSync(process.argv[1],"utf8"))));' $floorWorkflowPath
+if ($LASTEXITCODE -ne 0) { throw 'Cannot load the real SDK floor workflow.' }
+$floorWorkflow = $floorMetadata | ConvertFrom-Json
+$floor = $floorWorkflow.jobs.'native-sdk-floor'
+Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] }}')
+Assert-That 'floor requires registration preflight and a 600-minute budget' ($floor.needs[0] -ceq 'runner-preflight' -and $floor.'timeout-minutes' -eq 600)
+$floorWork = @($floor.steps | Where-Object { $_.PSObject.Properties['id'] -and $_.id -ceq 'run_sdk_floor' })[0]
+Assert-That 'floor keeps all CPU/Burst allocation cases in PlayMode' ($floorWork.run -match '-TestMode playmode' -and $floorWork.run -match '-TestCategory NativeSdkCpu' -and $floorWork.run -notmatch '-CanonicalProfilePath|-StandalonePlayerBatchOrders')
+$floorExpected = Get-Content -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Raw | ConvertFrom-Json
+Assert-That 'floor retains 745 distinct identities' ($floorExpected.caseCount -eq 745 -and @($floorExpected.identities | Sort-Object -Unique).Count -eq 745)
+$floorRoute = [scriptblock]::Create($floor.steps[0].run)
+$floorVerifyText = @($floor.steps | Where-Object { $_.name -ceq 'Require the complete CPU/Burst floor scope' })[0].run.Replace('${{ github.run_id }}', '1').Replace('${{ github.run_attempt }}', '1')
+$floorVerify = [scriptblock]::Create($floorVerifyText)
+$floorFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dxm-sdk-floor-' + [Guid]::NewGuid().ToString('N'))
+$floorLocation = Get-Location
+$floorEnvironment = @{}
+foreach ($key in @('DXM_FLOOR_REQUEST', 'RUNNER_NAME', 'DXM_FLOOR_OTHER_MODES')) { $floorEnvironment[$key] = [Environment]::GetEnvironmentVariable($key) }
+try {
+    foreach ($route in @(
+        @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; accepted = $true },
+        @{ request = 'DAD-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; accepted = $false },
+        @{ request = 'ELI-MACHINE'; runner = 'DAD-MACHINE'; other = 'false'; accepted = $false },
+        @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'true'; accepted = $false }
+    )) {
+        $env:DXM_FLOOR_REQUEST = $route.request; $env:RUNNER_NAME = $route.runner; $env:DXM_FLOOR_OTHER_MODES = $route.other
+        $accepted = $true
+        try { & $floorRoute } catch { $accepted = $false }
+        Assert-That "floor routing request=$($route.request),runner=$($route.runner),other=$($route.other)" ($accepted -eq $route.accepted)
+    }
+    $floorArtifacts = Join-Path $floorFixtureRoot '.artifacts/unity/native-sdk-floor/1-1'
+    New-Item -ItemType Directory -Path $floorArtifacts -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $floorFixtureRoot '.github/perf') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Destination (Join-Path $floorFixtureRoot '.github/perf/native-sdk-floor-identities.v1.json')
+    Set-Location -LiteralPath $floorFixtureRoot
+    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity')) {
+        $names = @($floorExpected.identities)
+        if ($variant -ceq 'missing') { $names = @($names[1..($names.Count - 1)]) }
+        if ($variant -ceq 'duplicate') { $names[0] = $names[1] }
+        $version = if ($variant -ceq 'wrong-unity') { '6000.4.6f1' } else { '2021.3.45f1' }
+        Write-TestJson -Path (Join-Path $floorArtifacts 'sdk-admission.json') -Value @{ unityVersion = $version; packages = @(@{}, @{}, @{}) }
+        $xml = [System.Text.StringBuilder]::new('<test-run>')
+        for ($index = 0; $index -lt $names.Count; $index++) {
+            $result = if ($variant -ceq 'skipped' -and $index -eq 0) { 'Skipped' } else { 'Passed' }
+            $escaped = [System.Security.SecurityElement]::Escape($names[$index])
+            [void]$xml.Append("<test-case fullname=`"$escaped`" result=`"$result`"/>")
+        }
+        [void]$xml.Append('</test-run>')
+        [System.IO.File]::WriteAllText((Join-Path $floorArtifacts 'results.xml'), $xml.ToString())
+        $accepted = $true
+        try { & $floorVerify } catch { $accepted = $false }
+        Assert-That "floor complete-scope gate variant=$variant" ($accepted -eq ($variant -ceq 'complete'))
+    }
+} finally {
+    Set-Location -LiteralPath $floorLocation.Path
+    foreach ($key in $floorEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $floorEnvironment[$key]) }
+    if (Test-Path -LiteralPath $floorFixtureRoot) { Remove-Item -LiteralPath $floorFixtureRoot -Recurse -Force }
+}
+
 Write-Host 'same-player repeat evidence tests passed'

@@ -3,7 +3,14 @@
   "registry": {
     "name": "package.openupm.com",
     "url": "https://package.openupm.com",
-    "scopes": ["com.cysharp", "com.gustavopsantos", "com.svermeulen", "com.neuecc", "com.unity-atoms", "jp.hadashikick"]
+    "scopes": [
+      "com.cysharp",
+      "com.gustavopsantos",
+      "com.svermeulen",
+      "com.neuecc",
+      "com.unity-atoms",
+      "jp.hadashikick"
+    ]
   },
   "packages": {
     "com.cysharp.messagepipe": "1.8.2",
@@ -11,7 +18,10 @@
     "com.svermeulen.extenject": "9.2.0-stcf3",
     "com.neuecc.unirx": "7.1.0",
     "com.unity-atoms.unity-atoms-core": "4.6.2",
-    "com.unity-atoms.unity-atoms-base-atoms": "4.6.2"
+    "com.unity-atoms.unity-atoms-base-atoms": "4.6.2",
+    "com.unity.burst": "1.6.6",
+    "com.unity.collections": "1.2.3",
+    "com.unity.mathematics": "1.2.6"
   },
   "integrationPackages": {
     "com.gustavopsantos.reflex": "14.3.1",

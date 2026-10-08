@@ -593,7 +593,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [validationStep, /ci-managed-only: true\n[\s\S]*require-healthy-existing: true\n/, `${label}: the gate must refuse fallback installs`],
       [validationStep, new RegExp(`provisioning-profile: ${escapeRegExp(UNITY_EDITOR_PROFILES[file])}\\n`), `${label}: the gate must use the reviewed provisioning profile`],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
-      [acquireStep, /\n        id: acquire_lock\n/],
+      [acquireStep, /\n        id: acquire_lock\n[\s\S]*require-resource-lifecycle: true\n[\s\S]*minimum-release-cooldown-seconds: 0\n/],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
       [workStep, new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`), label],
       [workStep, /-LicenseReturnOwner Central/, `${label}: the trusted central action must own the post-activation return`],
