@@ -28,6 +28,7 @@ if ($parseErrors -and $parseErrors.Count -gt 0) {
 foreach ($name in @(
     'Get-StandaloneHostConditionSnapshot',
     'Get-StandalonePlayerManifest',
+    'Test-StandalonePilotHostTelemetry',
     'Write-JsonArtifact',
     'ConvertTo-ProcessArgumentLine',
     'Invoke-ProcessWithTreeKillTimeout'
@@ -268,6 +269,113 @@ try {
         $cpuProfile.selectedCoreCount -eq 8 -and
         @($cpuProfile.efficiencyClasses).Count -eq 2
     )
+
+    # 2026-10-08: a cadence-loop exit diagnosed end coverage from an earlier
+    # sample. Keep every frozen rejection rule and check the actual tail.
+    $collectorPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'collect-perf-host-characterization.ps1'
+    $profileHash = (Get-FileHash -LiteralPath $cpuProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $collectorHash = (Get-FileHash -LiteralPath $collectorPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $baseUtc = [DateTimeOffset]::Parse('2026-10-08T00:00:00Z').UtcDateTime
+    $healthCases = @(
+        @{ Name = 'healthy'; Times = @(0, 1, 2, 3, 4); End = 4.2; Stop = 4.5; Reasons = @() },
+        @{ Name = 'cadence with covered tail'; Times = @(0, 1, 4.025548, 5.05, 6.075, 7.1); End = 7.316284; Stop = 7.5; Reasons = @('sample-cadence-outside-frozen-range') },
+        @{ Name = 'cadence with true end gap'; Times = @(0, 1, 4.025548); End = 6.025548; Stop = 6.5; Reasons = @('sample-cadence-outside-frozen-range', 'telemetry-gap-at-player-end') },
+        @{ Name = 'cadence then malformed tail'; Times = @(0, 1, 4.025548, 'invalid'); End = 5.2; Stop = 5.5; Reasons = @('sample-cadence-outside-frozen-range', 'invalid-telemetry-timestamps') },
+        @{ Name = 'cadence then after stop'; Times = @(0, 1, 4.025548, 8.5); End = 7; Stop = 8; Reasons = @('sample-cadence-outside-frozen-range', 'sample-after-player-stop') },
+        @{ Name = 'duplicate timestamp'; Times = @(0, 1, 1, 2); End = 2.2; Stop = 2.5; Reasons = @('sample-cadence-outside-frozen-range') },
+        @{ Name = 'backward timestamp'; Times = @(0, 1, 0.9, 2); End = 2.2; Stop = 2.5; Reasons = @('sample-cadence-outside-frozen-range') },
+        @{ Name = 'first interval exemption'; Times = @(0, 0.01, 1.01); End = 1.2; Stop = 1.5; Reasons = @() },
+        @{ Name = 'minimum interval inclusive'; Times = @(0, 1, 1.5, 2); End = 2.2; Stop = 2.5; Reasons = @() },
+        @{ Name = 'below minimum interval'; Times = @(0, 1, 1.4999999, 2.4999999); End = 2.7; Stop = 3; Reasons = @('sample-cadence-outside-frozen-range') },
+        @{ Name = 'maximum interval inclusive'; Times = @(0, 1.5, 3); End = 3.2; Stop = 3.5; Reasons = @() },
+        @{ Name = 'above maximum interval'; Times = @(0, 1.5000001, 2.5000001); End = 2.7; Stop = 3; Reasons = @('sample-cadence-outside-frozen-range') },
+        @{ Name = 'end gap inclusive'; Times = @(0, 1, 2); End = 3.5; Stop = 3.6; Reasons = @() },
+        @{ Name = 'end gap outside limit'; Times = @(0, 1, 2); End = 3.5000001; Stop = 3.6; Reasons = @('telemetry-gap-at-player-end') },
+        @{ Name = 'sample after stop'; Times = @(0, 1, 2.5); End = 2; Stop = 2.4; Reasons = @('sample-after-player-stop') },
+        @{ Name = 'malformed tail'; Times = @(0, 1, 'invalid'); End = 2.2; Stop = 2.5; Reasons = @('invalid-telemetry-timestamps') }
+    )
+    foreach ($drift in @(
+        @('collector', 'telemetry-collector-source-drift'),
+        @('profile', 'cpu-profile-drift'),
+        @('envelope', 'telemetry-envelope-or-affinity'),
+        @('schema', 'telemetry-schema-or-completeness'),
+        @('power', 'power-plan-drift'),
+        @('sensor', 'sensor-read-error')
+    )) {
+        $healthCases += @{ Name = $drift[0]; Times = @(0, 1, 2); End = 2.2; Stop = 2.5; Reasons = @($drift[1]) }
+    }
+    Assert-That 'the fixed health screen retains all 22 cases' ($healthCases.Count -eq 22)
+    $healthFailures = @()
+    foreach ($case in $healthCases) {
+        $samples = @(foreach ($offset in $case.Times) {
+            [ordered]@{
+                timestampUtc = if ($offset -is [string]) { $offset } else {
+                    $baseUtc.AddTicks([long][Math]::Round($offset * 10000000)).ToString('O')
+                }
+                errors = @()
+                processorCounters = @($cpuProfile.selectedLogicalProcessorIndices | ForEach-Object {
+                    [ordered]@{ name = "0,$_"; ProcessorFrequency = 4000; PercentProcessorPerformance = 100; PercentProcessorTime = 20; PercentPerformanceLimit = 100; PerformanceLimitFlags = 0 }
+                })
+                nativePower = [ordered]@{
+                    errors = @(); lastSleepInterruptTime100ns = 0; lastWakeInterruptTime100ns = 0
+                    processors = @($cpuProfile.selectedLogicalProcessorIndices | ForEach-Object {
+                        [ordered]@{ number = $_; maxMhz = 4000; mhzLimit = 4000 }
+                    })
+                }
+            }
+        })
+        $power = [ordered]@{
+            active = @{ exitCode = 0; text = '381b4222-f694-41f0-9685-ff5bb260df2e' }
+            processorQuery = @{ exitCode = 0 }
+            processorQuerySha256 = 'a12f432bf3f070fd84e28fa53073a3326b89fd1962713ea1c9b2fde0506d06ba'
+        }
+        $sleep = [ordered]@{
+            lastBootUpTimeUtc = $baseUtc.AddDays(-1).ToString('O'); errors = @()
+            queries = @(@{ status = 'ok' }, @{ status = 'no-matches' }); recentSleepWakeEvents = @()
+        }
+        $telemetry = [ordered]@{
+            schemaVersion = 1; purpose = 'player-time-host-telemetry'; loadMode = 'player-workload-v1'
+            stopReason = 'player-finished'; requestedSampleCount = 3600; requestedCadenceSeconds = 1
+            actualSampleCount = $samples.Count; samples = $samples; sourceSha256 = $collectorHash
+            cpuProfile = @{ sha256 = $profileHash; affinityMask = $cpuProfile.affinityMask; executionProfileId = $cpuProfile.executionProfileId }
+            processorCount = $cpuProfile.logicalProcessorCount; powerBefore = $power; powerAfter = $power
+            sleepBefore = $sleep; sleepAfter = $sleep; nativeAfter = @{ errors = @() }
+        }
+        switch ($case.Name) {
+            'collector' { $telemetry.sourceSha256 = 'invalid' }
+            'profile' { $telemetry.cpuProfile.sha256 = 'invalid' }
+            'schema' { $telemetry.actualSampleCount = 99 }
+            'power' { $power.active.exitCode = 1 }
+            'sensor' { $samples[0].errors = @('read failure') }
+        }
+        $telemetryPath = Join-Path $fixtureRoot 'health-telemetry.json'
+        $envelopePath = Join-Path $fixtureRoot 'health-envelope.json'
+        Write-TestJson -Path $telemetryPath -Value $telemetry
+        $envelope = [ordered]@{
+            schemaVersion = 1; telemetryProcessorAffinityMask = '0xFFFF0000'
+            telemetryReadyUtc = $baseUtc.AddSeconds(-0.2).ToString('O')
+            playerStartUtc = $baseUtc.AddSeconds(-0.1).ToString('O')
+            playerEndUtc = $baseUtc.AddTicks([long][Math]::Round($case.End * 10000000)).ToString('O')
+            telemetryStopUtc = $baseUtc.AddTicks([long][Math]::Round($case.Stop * 10000000)).ToString('O')
+            unredactedTelemetrySha256 = if ($case.Name -eq 'envelope') { 'invalid' } else {
+                (Get-FileHash -LiteralPath $telemetryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        }
+        Write-TestJson -Path $envelopePath -Value $envelope
+        $valid = Test-StandalonePilotHostTelemetry -TelemetryPath $telemetryPath -EnvelopePath $envelopePath -CpuProfilePath $cpuProfilePath -CollectorPath $collectorPath
+        $verdict = Get-Content -LiteralPath "$telemetryPath.health.json" -Raw | ConvertFrom-Json
+        $expected = @($case.Reasons | Sort-Object)
+        $observed = @($verdict.reasons | Sort-Object)
+        $actualHash = (Get-FileHash -LiteralPath $telemetryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $matches = $valid -eq ($expected.Count -eq 0) -and $verdict.valid -eq $valid -and
+            ($observed -join '|') -ceq ($expected -join '|') -and
+            $verdict.telemetrySha256 -ceq $actualHash -and $verdict.cpuProfileSha256 -ceq $profileHash -and
+            $verdict.thermalPackageTemperature -ceq 'unmeasured' -and
+            $verdict.effectiveProcessorFrequency -ceq 'unmeasured'
+        if (-not $matches) { $healthFailures += "$($case.Name): expected=$($expected -join ',');observed=$($observed -join ',');valid=$valid" }
+        Write-Host "Health case: $($case.Name);valid=$valid;reasons=$($observed -join ',')"
+    }
+    Assert-That "all frozen health classifications and final-sample diagnostics match: $($healthFailures -join '; ')" ($healthFailures.Count -eq 0)
     $invalidCpuSets = @($cpuSets | ForEach-Object {
         $copy = [ordered]@{}
         foreach ($property in $_.GetEnumerator()) {

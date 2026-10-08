@@ -5308,16 +5308,20 @@ function Test-StandalonePilotHostTelemetry {
         $previousSampleUtc = $null
         for ($sampleIndex = 0; $sampleIndex -lt @($telemetry.samples).Count; $sampleIndex++) {
             $sampleUtc = ([DateTime]$telemetry.samples[$sampleIndex].timestampUtc).ToUniversalTime()
-            if ($sampleUtc -gt $stopUtc) { $violations.Add('sample-after-player-stop'); break }
+            if ($sampleUtc -gt $stopUtc -and -not $violations.Contains('sample-after-player-stop')) {
+                $violations.Add('sample-after-player-stop')
+            }
             if ($null -ne $previousSampleUtc) {
                 $interval = ($sampleUtc - $previousSampleUtc).TotalSeconds
                 if ($interval -le 0 -or $interval -gt 1.5 -or ($sampleIndex -gt 1 -and $interval -lt 0.5)) {
-                    $violations.Add('sample-cadence-outside-frozen-range')
-                    break
+                    if (-not $violations.Contains('sample-cadence-outside-frozen-range')) {
+                        $violations.Add('sample-cadence-outside-frozen-range')
+                    }
                 }
             }
             $previousSampleUtc = $sampleUtc
         }
+        # Coverage is measured from the final record even when cadence failed.
         if ($null -ne $previousSampleUtc -and ($playerEndUtc - $previousSampleUtc).TotalSeconds -gt 1.5) {
             $violations.Add('telemetry-gap-at-player-end')
         }

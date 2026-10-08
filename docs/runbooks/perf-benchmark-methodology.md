@@ -590,6 +590,19 @@ before its `ProgressMarker` assertion reconciles the full measurement. This catc
 current-row deduplication and fan-out mismatches. Teardown contracts separately verify
 synchronous cleanup where the pinned API exposes observable Unity objects or assets.
 
+### Pilot host-health diagnostics
+
+When a pilot requests player-time host telemetry, its validator continues reading
+timestamps after a cadence failure. The final sample determines player-end coverage;
+an earlier sample cannot establish an end gap. Malformed tail timestamps and samples
+after the recorded stop still reject the run. Correcting a secondary diagnosis does
+not clear an earlier health failure or authorize a pilot retry.
+
+Keep the original health verdict and inputs with their source commitments. Artifact
+redaction can change telemetry bytes while its envelope retains the unredacted
+checksum. An offline replay of those bytes must retain that checksum rejection and
+write separate outputs; it cannot establish a valid measurement session.
+
 ### In-process paired stability evidence
 
 The published comparison job builds and launches one Standalone IL2CPP Release
