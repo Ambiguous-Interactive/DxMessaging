@@ -1103,3 +1103,26 @@ The [Microsoft event-query documentation](https://learn.microsoft.com/en-us/powe
 describes the time filters. [Microsoft's clock-reset guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/client-clock-reverts-to-previous-time)
 identifies Kernel-General event 1 as clock-change evidence. Treat logs as diagnostic
 inputs; they do not replace the frozen telemetry health gate or justify accepting a failed run.
+
+### Distinguish elapsed time from UTC in new sensor records
+
+Each new sensor sample retains `monotonicClock`: the actual Stopwatch frequency and
+`isHighResolution` value, `readStartTicks`, and `utcBeforeTicks` / `utcAfterTicks`
+bracketing its UTC capture. Frequency and ticks are decimal strings so JSON readers
+can preserve integer precision. Convert their differences using the recorded frequency;
+do not treat ticks as UTC or mix counters from separate processes or hosts.
+
+For consecutive brackets `[b1, a1]` and `[b2, a2]`, the elapsed-time interval lies
+between `(b2 - a1) / frequency` and `(a2 - b1) / frequency`. Compare the UTC delta
+against those bounds. A wide bracket remains ambiguous. Compare each read start with
+its UTC bracket to separate sensor-read elapsed time from time outside that read.
+These fields retain diagnostics; they do not change the sampler schedule or the
+frozen health gates. Older records without brackets cannot establish this comparison.
+
+[Microsoft's Windows timing guidance](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)
+describes Stopwatch/QPC as independent of UTC. Retain the actual runtime frequency
+and high-resolution flag before interpreting a capture. A measured disagreement
+identifies a clock-domain discrepancy within the captured bounds; it does not prove
+the external cause of an earlier gap. No historical rejected block becomes admissible
+through these added fields. Keep the stopped pilot and its rates unopened until its
+separate collection and budget gates are satisfied.

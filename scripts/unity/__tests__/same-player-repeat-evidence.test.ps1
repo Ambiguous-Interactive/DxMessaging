@@ -780,4 +780,59 @@ try {
     }
 } finally { Remove-Item Function:Get-WinEvent }
 
+# Exercise the actual sensor helper's elapsed-time brackets around the UTC capture.
+$sensorFunction = $collectorAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-SensorSample'
+}, $true)
+Invoke-Expression $sensorFunction.Extent.Text
+$StopSignalPath = 'sensor-clock-fixture'
+$script:sensorFixtureFailure = $false
+function Get-Counter {
+    [CmdletBinding()]
+    param([string[]]$Counter)
+    $script:counterReadTicks = [System.Diagnostics.Stopwatch]::GetTimestamp()
+    if ($script:sensorFixtureFailure) { throw 'fixture counter failure' }
+    return [pscustomobject]@{ CounterSamples = @([pscustomobject]@{
+        InstanceName = '0,0'; Path = '\Processor Information(0,0)\Processor Frequency'; CookedValue = 3000
+    }) }
+}
+function Get-NativePowerState {
+    $script:nativeReadTicks = [System.Diagnostics.Stopwatch]::GetTimestamp()
+    return [ordered]@{ status = 'fixture' }
+}
+try {
+    foreach ($failure in @($false, $true)) {
+        $script:sensorFixtureFailure = $failure
+        $sample = Get-SensorSample
+        Assert-That 'samples retain elapsed-time clock brackets' ($sample.Contains('monotonicClock'))
+        $capture = $sample.monotonicClock
+        Assert-That 'clock metadata describes the actual runtime counter' (
+            $capture.frequencyTicksPerSecond -ceq [string][System.Diagnostics.Stopwatch]::Frequency -and
+            $capture.isHighResolution -eq [System.Diagnostics.Stopwatch]::IsHighResolution
+        )
+        Assert-That 'sensor reads occur before the UTC bracket' (
+            [long]$capture.readStartTicks -le $script:counterReadTicks -and
+            $script:counterReadTicks -le $script:nativeReadTicks -and
+            $script:nativeReadTicks -le [long]$capture.utcBeforeTicks -and
+            [long]$capture.utcBeforeTicks -le [long]$capture.utcAfterTicks
+        )
+        $copy = $sample | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+        foreach ($field in @('frequencyTicksPerSecond', 'readStartTicks', 'utcBeforeTicks', 'utcAfterTicks')) {
+            Assert-That "clock $field retains decimal-string precision through JSON" (
+                $capture.$field -is [string] -and $capture.$field -cmatch '^\d+$' -and
+                $copy.monotonicClock.$field -is [string] -and $copy.monotonicClock.$field -ceq $capture.$field
+            )
+        }
+        Assert-That 'clock diagnostics do not hide sensor errors' (
+            $sample.errors.Count -eq [int]$failure -and
+            (-not $failure -or $sample.errors[0].Contains('fixture counter failure'))
+        )
+    }
+} finally {
+    Remove-Item Function:Get-Counter, Function:Get-NativePowerState
+    Remove-Variable StopSignalPath
+}
+
 Write-Host 'same-player repeat evidence tests passed'

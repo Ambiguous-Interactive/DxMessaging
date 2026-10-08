@@ -320,6 +320,7 @@ function Get-SleepEvidence {
 }
 
 function Get-SensorSample {
+    $readStartTicks = [System.Diagnostics.Stopwatch]::GetTimestamp()
     $errors = New-Object System.Collections.Generic.List[string]
     $processorCounters = @()
     $thermalZones = @()
@@ -360,8 +361,19 @@ function Get-SensorSample {
     }
     $beforeNativeMilliseconds = $clock.Elapsed.TotalMilliseconds
     $nativePower = Get-NativePowerState
+    # Bracket the UTC read so scheduling inside the capture remains observable.
+    $utcBeforeTicks = [System.Diagnostics.Stopwatch]::GetTimestamp()
+    $timestampUtc = [DateTime]::UtcNow.ToString('O')
+    $utcAfterTicks = [System.Diagnostics.Stopwatch]::GetTimestamp()
     return [ordered]@{
-        timestampUtc = [DateTime]::UtcNow.ToString('O')
+        timestampUtc = $timestampUtc
+        monotonicClock = [ordered]@{
+            frequencyTicksPerSecond = [System.Diagnostics.Stopwatch]::Frequency.ToString([Globalization.CultureInfo]::InvariantCulture)
+            isHighResolution = [System.Diagnostics.Stopwatch]::IsHighResolution
+            readStartTicks = $readStartTicks.ToString([Globalization.CultureInfo]::InvariantCulture)
+            utcBeforeTicks = $utcBeforeTicks.ToString([Globalization.CultureInfo]::InvariantCulture)
+            utcAfterTicks = $utcAfterTicks.ToString([Globalization.CultureInfo]::InvariantCulture)
+        }
         processorCounters = $processorCounters
         acpiThermalZones = $thermalZones
         acpiThermalZoneStatus = if ($StopSignalPath) { 'unmeasured-player-time' } else { 'probed' }
