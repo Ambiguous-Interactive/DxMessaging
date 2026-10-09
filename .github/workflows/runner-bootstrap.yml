@@ -46,6 +46,14 @@ on:
         required: false
         type: boolean
         default: false
+      native-sdk-scope:
+        description: "Select the complete Editor or IL2CPP Release native SDK contract scope."
+        required: false
+        type: choice
+        default: PlayMode
+        options:
+          - PlayMode
+          - StandaloneRelease
       native-sdk-registry-probe:
         description: "Verify one exact Burst archive download on ELI without Unity or cache changes."
         required: false
@@ -980,7 +988,7 @@ jobs:
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
 
   native-sdk-floor:
-    name: Unity 2021.3 native SDK CPU/Burst floor on ELI
+    name: Unity 2021.3 native SDK ${{ inputs['native-sdk-scope'] }} floor on ELI
     if: >-
       ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' &&
       !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
@@ -998,6 +1006,7 @@ jobs:
         timeout-minutes: 1
         env:
           DXM_FLOOR_REQUEST: ${{ inputs.runner-label }}
+          DXM_FLOOR_SCOPE: ${{ inputs['native-sdk-scope'] }}
           DXM_FLOOR_OTHER_MODES: >-
             ${{ inputs['perf-event-window-utc'] != '' || inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
             inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] || inputs['perf-license-recovery'] ||
@@ -1009,6 +1018,9 @@ jobs:
           }
           if ($env:DXM_FLOOR_OTHER_MODES -ceq 'true') {
             throw 'Native SDK floor cannot combine with other experiment modes.'
+          }
+          if (@('PlayMode', 'StandaloneRelease') -cnotcontains $env:DXM_FLOOR_SCOPE) {
+            throw 'Native SDK floor requires an explicit supported scope.'
           }
 
       - name: Require manually installed Unity editor
@@ -1094,7 +1106,8 @@ jobs:
         timeout-minutes: 120
         shell: pwsh
         env:
-          UNITY_BURST_DEBUG: "1"
+          UNITY_BURST_DEBUG: ${{ inputs['native-sdk-scope'] == 'PlayMode' && '1' || '' }}
+          DXM_FLOOR_SCOPE: ${{ inputs['native-sdk-scope'] }}
           UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -1106,24 +1119,36 @@ jobs:
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\n\nf${{ github.run_id }}a${{ github.run_attempt }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\native-sdk-floor-2021.3.45f1'
           $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-admission.json"
-          $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-direct-call"
-          if (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'Logs')) {
-            throw 'The diagnostic requires the inherited checkout Logs directory absent before work.'
+          $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = $null
+          $env:DXM_NATIVE_BURST_TRACE_EVIDENCE = $null
+          $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $null
+          $arguments = @{
+            UnityVersion = '2021.3.45f1'
+            UnityInstallRoot = (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3')
+            TestMode = 'playmode'
+            AssemblyNames = 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch'
+            TestCategory = 'NativeSdkCpu'
+            ArtifactsPath = $artifactsPath
+            ProjectPath = $projectPath
+            CachePath = $cachePath
+            IncludeComparisons = $true
+            ReleaseCodeOptimization = $true
           }
-          $env:DXM_NATIVE_BURST_TRACE_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-burst-trace.json"
+          if ($env:DXM_FLOOR_SCOPE -ceq 'StandaloneRelease') {
+            $arguments.TestMode = 'standalone'
+            $arguments.StandaloneScriptingBackend = 'IL2CPP'
+            $arguments.ReleasePlayerBuild = $true
+            $arguments.CanonicalProfilePath = '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+            $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-runtime.json"
+          } else {
+            $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-direct-call"
+            if (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'Logs')) {
+              throw 'The diagnostic requires the inherited checkout Logs directory absent before work.'
+            }
+            $env:DXM_NATIVE_BURST_TRACE_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-burst-trace.json"
+          }
           try {
-            ./scripts/unity/run-ci-tests.ps1 `
-              -UnityVersion 2021.3.45f1 `
-              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-              -TestMode playmode `
-              -AssemblyNames 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch' `
-              -TestCategory NativeSdkCpu `
-              -ArtifactsPath $artifactsPath `
-              -ProjectPath $projectPath `
-              -CachePath $cachePath `
-              -IncludeComparisons `
-              -LicenseReturnOwner Central `
-              -ReleaseCodeOptimization
+            ./scripts/unity/run-ci-tests.ps1 @arguments -LicenseReturnOwner Central
           } finally {
             New-Item -ItemType Directory -Path $artifactsPath -Force | Out-Null
             foreach ($name in @('manifest.json', 'packages-lock.json')) {
@@ -1134,10 +1159,87 @@ jobs:
             }
           }
 
-      - name: Require the complete CPU/Burst floor scope
-        if: ${{ steps.run_sdk_floor.outcome == 'success' }}
+      - name: Require IL2CPP floor player proof
+        if: >-
+          ${{ always() && inputs['native-sdk-scope'] == 'StandaloneRelease' &&
+          steps.acquire_lock.outputs.acquired == 'true' && steps.run_sdk_floor.outcome != 'skipped' }}
         shell: pwsh
         timeout-minutes: 2
+        run: |
+          $root = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $profile = '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+          $archived = Join-Path $root 'native-sdk-il2cpp-qualification-profile.v1.json'
+          $hash = (Get-FileHash -LiteralPath $profile -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-FileHash -LiteralPath $archived -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash -or
+              (Get-Content -LiteralPath (Join-Path $root 'configure-complete.marker') -Raw) -cne 'DxmCiTestConfigurator.Apply completed') {
+            throw 'Native SDK player requires its exact archived profile and completed configuration.'
+          }
+          foreach ($entry in @(
+            @{ file = 'configured-profile.json'; kind = 'configuration' },
+            @{ file = 'prebuild-profile.json'; kind = 'configuration' },
+            @{ file = 'postbuild-profile.json'; kind = 'configuration' },
+            @{ file = 'build-options-profile.json'; kind = 'buildOptions' },
+            @{ file = 'runtime-profile.json'; kind = 'runtime' }
+          )) {
+            ./scripts/unity/validate-il2cpp-profile.ps1 -ProfilePath $profile `
+              -EvidencePath (Join-Path $root $entry.file) -EvidenceKind $entry.kind `
+              -ExpectedUnityVersion 2021.3.45f1 -ExpectedSha256 $hash
+          }
+          $runtime = Get-Content -LiteralPath (Join-Path $root 'sdk-runtime.json') -Raw | ConvertFrom-Json
+          if (($runtime.schemaVersion -isnot [int] -and $runtime.schemaVersion -isnot [long]) -or
+              $runtime.schemaVersion -ne 1 -or $runtime.profileId -cne 'native-sdk-il2cpp-qualification-player-v1' -or
+              $runtime.profileSha256 -cne $hash -or $runtime.unityVersion -cne '2021.3.45f1' -or
+              $runtime.platform -cne 'WindowsPlayer' -or
+              ($runtime.pointerBytes -isnot [int] -and $runtime.pointerBytes -isnot [long]) -or $runtime.pointerBytes -ne 8 -or
+              $runtime.isEditor -isnot [bool] -or $runtime.isEditor -or
+              $runtime.debugBuild -isnot [bool] -or $runtime.debugBuild -or
+              $runtime.il2cpp -isnot [bool] -or -not $runtime.il2cpp -or
+              $runtime.burstEnabledObserved -isnot [bool] -or -not $runtime.burstEnabledObserved -or
+              $runtime.burstEnabled -isnot [bool] -or -not $runtime.burstEnabled -or
+              @($runtime.errors).Count -ne 0 -or @($runtime.assemblies).Count -ne 4) {
+            throw 'Actual player SDK/backend/platform/state evidence is incomplete or differs.'
+          }
+          $types = @{
+            'Unity.Burst' = 'Unity.Burst.BurstCompiler'
+            'Unity.Collections' = 'Unity.Collections.NativeArray`1'
+            'Unity.Mathematics' = 'Unity.Mathematics.math'
+            'Unity.Jobs' = 'Unity.Jobs.IJobParallelForBatch'
+          }
+          foreach ($name in $types.Keys) {
+            $records = @($runtime.assemblies | Where-Object { $_.name -ceq $name })
+            if ($records.Count -ne 1 -or $records[0].typeName -cne $types[$name] -or
+                $records[0].typeObserved -isnot [bool] -or -not $records[0].typeObserved -or
+                $records[0].assemblyVersion -isnot [string] -or [string]::IsNullOrEmpty($records[0].assemblyVersion)) {
+              throw "Actual player public SDK type/assembly differs: $name."
+            }
+          }
+          $before = Get-Content -LiteralPath (Join-Path $root 'sdk-player.before.json') -Raw | ConvertFrom-Json
+          $after = Get-Content -LiteralPath (Join-Path $root 'sdk-player.after.json') -Raw | ConvertFrom-Json
+          if (($before.schemaVersion -isnot [int] -and $before.schemaVersion -isnot [long]) -or
+              ($before.fileCount -isnot [int] -and $before.fileCount -isnot [long]) -or
+              $before.schemaVersion -ne 1 -or $before.fileCount -ne @($before.files).Count -or
+              $before.fileCount -le 0 -or @($before.files.path | Sort-Object -Unique).Count -ne $before.fileCount -or
+              ($before | ConvertTo-Json -Depth 10 -Compress) -cne ($after | ConvertTo-Json -Depth 10 -Compress) -or
+              @($before.files | Where-Object {
+                ($_.length -isnot [int] -and $_.length -isnot [long]) -or $_.length -lt 0 -or $_.sha256 -notmatch '^[a-f0-9]{64}$'
+              }).Count -ne 0) {
+            throw 'The complete built player file manifest is incomplete or changed during execution.'
+          }
+          foreach ($name in @('DxmTestPlayer.exe', 'GameAssembly.dll', 'lib_burst_generated.dll')) {
+            $records = @($before.files | Where-Object { ($_.path -split '/')[-1] -ceq $name })
+            if ($records.Count -ne 1 -or $records[0].length -le 0) {
+              throw "Missing actual IL2CPP/Burst native player file: $name."
+            }
+          }
+
+      - name: Require the complete CPU/Burst floor scope
+        if: >-
+          ${{ always() && steps.acquire_lock.outputs.acquired == 'true' &&
+          steps.run_sdk_floor.outcome != 'skipped' }}
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          DXM_FLOOR_SCOPE: ${{ inputs['native-sdk-scope'] }}
         run: |
           $root = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
           $admission = Get-Content -LiteralPath (Join-Path $root 'sdk-admission.json') -Raw | ConvertFrom-Json
@@ -1157,83 +1259,85 @@ jobs:
               throw "Actual SDK floor package/version/source admission differs: $name."
             }
           }
-          $wrapperNames = @(
-            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.PureBatchKernels.Direct',
-            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.ScalarDirect',
-            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.VectorDirect'
-          )
-          $beforeMethods = $null
-          foreach ($phase in @('before', 'after')) {
-            $diagnostic = Get-Content -LiteralPath (Join-Path $root "sdk-direct-call.$phase.json") -Raw | ConvertFrom-Json
-            if ($diagnostic.schemaVersion -ne 1 -or $diagnostic.phase -cne $phase -or
-                $diagnostic.stateCaptured -ne ($phase -ceq 'after') -or @($diagnostic.errors).Count -ne 0 -or
-                @($diagnostic.methods).Count -ne 3) {
-              throw "Direct-call diagnostic is incomplete or differs: $phase."
-            }
-            $names = @($diagnostic.methods | ForEach-Object { "$($_.declaringType).$($_.methodName)" })
-            if (@($names | Sort-Object -Unique).Count -ne 3 -or
-                @(Compare-Object -ReferenceObject $wrapperNames -DifferenceObject $names -CaseSensitive).Count -ne 0 -or
-                @($diagnostic.methods | Where-Object { $_.ilHex -cnotmatch '^(?:[a-f0-9]{2})+$' }).Count -ne 0) {
-              throw "Direct-call diagnostic wrapper/IL identity differs: $phase."
-            }
-            if ($phase -ceq 'before') {
-              $beforeMethods = $diagnostic.methods
-            } else {
-              foreach ($method in $diagnostic.methods) {
-                $before = @($beforeMethods | Where-Object { $_.declaringType -ceq $method.declaringType -and $_.methodName -ceq $method.methodName })[0]
-                if ($before.ilHex -cne $method.ilHex) { throw 'Direct-call wrapper IL changed during observation.' }
+          if ($env:DXM_FLOOR_SCOPE -ceq 'PlayMode') {
+            $wrapperNames = @(
+              'DxMessaging.Tests.Runtime.NativeCollectionsResearch.PureBatchKernels.Direct',
+              'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.ScalarDirect',
+              'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.VectorDirect'
+            )
+            $beforeMethods = $null
+            foreach ($phase in @('before', 'after')) {
+              $diagnostic = Get-Content -LiteralPath (Join-Path $root "sdk-direct-call.$phase.json") -Raw | ConvertFrom-Json
+              if ($diagnostic.schemaVersion -ne 1 -or $diagnostic.phase -cne $phase -or
+                  $diagnostic.stateCaptured -ne ($phase -ceq 'after') -or @($diagnostic.errors).Count -ne 0 -or
+                  @($diagnostic.methods).Count -ne 3) {
+                throw "Direct-call diagnostic is incomplete or differs: $phase."
+              }
+              $names = @($diagnostic.methods | ForEach-Object { "$($_.declaringType).$($_.methodName)" })
+              if (@($names | Sort-Object -Unique).Count -ne 3 -or
+                  @(Compare-Object -ReferenceObject $wrapperNames -DifferenceObject $names -CaseSensitive).Count -ne 0 -or
+                  @($diagnostic.methods | Where-Object { $_.ilHex -cnotmatch '^(?:[a-f0-9]{2})+$' }).Count -ne 0) {
+                throw "Direct-call diagnostic wrapper/IL identity differs: $phase."
+              }
+              if ($phase -ceq 'before') {
+                $beforeMethods = $diagnostic.methods
+              } else {
+                foreach ($method in $diagnostic.methods) {
+                  $before = @($beforeMethods | Where-Object { $_.declaringType -ceq $method.declaringType -and $_.methodName -ceq $method.methodName })[0]
+                  if ($before.ilHex -cne $method.ilHex) { throw 'Direct-call wrapper IL changed during observation.' }
+                }
               }
             }
-          }
-          $marker = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs-complete.marker') -Raw
-          if ($marker -cne 'DxmCiTestConfigurator.PrepareCompilerInputs completed') {
-            throw 'Native SDK floor compiler input preparation did not complete.'
-          }
-          $inputsBefore = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.before.json') -Raw | ConvertFrom-Json
-          $inputsAfter = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.after.json') -Raw | ConvertFrom-Json
-          if ($inputsBefore.schemaVersion -ne 1 -or $inputsAfter.schemaVersion -ne 1 -or
-              $inputsBefore.phase -cne 'before' -or $inputsAfter.phase -cne 'after' -or
-              @($inputsBefore.files).Count -ne 2 -or @($inputsAfter.files).Count -ne 2) {
-            throw 'Compiler input snapshots are missing or malformed.'
-          }
-          foreach ($path in @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt')) {
-            $before = @($inputsBefore.files | Where-Object { $_.path -ceq $path })
-            $after = @($inputsAfter.files | Where-Object { $_.path -ceq $path })
-            if ($before.Count -ne 1 -or $after.Count -ne 1 -or
-                $before[0].status -cne 'present' -or $after[0].status -cne 'present' -or
-                $before[0].sha256 -cnotmatch '^[a-f0-9]{64}$' -or $before[0].lengthBytes -lt 0 -or
-                [string]::IsNullOrEmpty($before[0].lastWriteUtc) -or
-                $before[0].sha256 -cne $after[0].sha256 -or
-                $before[0].lengthBytes -ne $after[0].lengthBytes -or
-                $before[0].lastWriteUtc -cne $after[0].lastWriteUtc) {
-              throw "Compiler input changed during the native SDK floor: $path."
+            $marker = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs-complete.marker') -Raw
+            if ($marker -cne 'DxmCiTestConfigurator.PrepareCompilerInputs completed') {
+              throw 'Native SDK floor compiler input preparation did not complete.'
             }
-          }
-          $trace = Get-Content -LiteralPath (Join-Path $root 'sdk-burst-trace.json') -Raw | ConvertFrom-Json
-          if ($trace.schemaVersion -ne 1 -or $trace.debugLevel -cne '1' -or @($trace.errors).Count -ne 0 -or
-              @($trace.runtimeFiles).Count -ne 2 -or @($trace.logs).Count -lt 2 -or @($trace.logs).Count -gt 64) {
-            throw 'Burst compiler trace is missing or incomplete.'
-          }
-          $runtimeHashes = @{
-            'Burst.Compiler.IL.dll' = 'c425260738fdc8afe30520acba118df0fb488bbaaff98a912b3f3e4e6e850b8b'
-            'Burst.Backend.dll' = '8c927c75b2bc3aca96169bbe1a9076b37889f1ed395b22f16f37061a5ce16298'
-          }
-          foreach ($name in $runtimeHashes.Keys) {
-            $files = @($trace.runtimeFiles | Where-Object { $_.name -ceq $name })
-            if ($files.Count -ne 1 -or $files[0].sha256 -cne $runtimeHashes[$name] -or
-                ($files[0].loadedAssemblyObserved -and $files[0].loadedAssemblySha256 -cne $runtimeHashes[$name])) {
-              throw "Burst runtime file identity differs: $name."
+            $inputsBefore = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.before.json') -Raw | ConvertFrom-Json
+            $inputsAfter = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.after.json') -Raw | ConvertFrom-Json
+            if ($inputsBefore.schemaVersion -ne 1 -or $inputsAfter.schemaVersion -ne 1 -or
+                $inputsBefore.phase -cne 'before' -or $inputsAfter.phase -cne 'after' -or
+                @($inputsBefore.files).Count -ne 2 -or @($inputsAfter.files).Count -ne 2) {
+              throw 'Compiler input snapshots are missing or malformed.'
             }
-          }
-          if (@($trace.logs | Where-Object { $_.name -ceq 'burst.log' }).Count -ne 1 -or
-              @($trace.logs.name | Sort-Object -Unique).Count -ne @($trace.logs).Count -or
-              @($trace.logs | Where-Object {
-                $_.name -cnotmatch '^burst(?:-thread-\d+)?\.log$' -or $_.status -cne 'ok' -or
-                $_.sourceLengthBytes -le 0 -or $_.sourceLengthBytes -gt 4 * 1024 * 1024 -or
-                $_.capturedBytes -ne $_.sourceLengthBytes -or $_.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
-                [string]::IsNullOrEmpty($_.content)
-              }).Count -ne 0 -or ($trace.logs | Measure-Object -Property capturedBytes -Sum).Sum -gt 64 * 1024 * 1024) {
-            throw 'Burst trace log records are missing, malformed, changed or truncated.'
+            foreach ($path in @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt')) {
+              $before = @($inputsBefore.files | Where-Object { $_.path -ceq $path })
+              $after = @($inputsAfter.files | Where-Object { $_.path -ceq $path })
+              if ($before.Count -ne 1 -or $after.Count -ne 1 -or
+                  $before[0].status -cne 'present' -or $after[0].status -cne 'present' -or
+                  $before[0].sha256 -cnotmatch '^[a-f0-9]{64}$' -or $before[0].lengthBytes -lt 0 -or
+                  [string]::IsNullOrEmpty($before[0].lastWriteUtc) -or
+                  $before[0].sha256 -cne $after[0].sha256 -or
+                  $before[0].lengthBytes -ne $after[0].lengthBytes -or
+                  $before[0].lastWriteUtc -cne $after[0].lastWriteUtc) {
+                throw "Compiler input changed during the native SDK floor: $path."
+              }
+            }
+            $trace = Get-Content -LiteralPath (Join-Path $root 'sdk-burst-trace.json') -Raw | ConvertFrom-Json
+            if ($trace.schemaVersion -ne 1 -or $trace.debugLevel -cne '1' -or @($trace.errors).Count -ne 0 -or
+                @($trace.runtimeFiles).Count -ne 2 -or @($trace.logs).Count -lt 2 -or @($trace.logs).Count -gt 64) {
+              throw 'Burst compiler trace is missing or incomplete.'
+            }
+            $runtimeHashes = @{
+              'Burst.Compiler.IL.dll' = 'c425260738fdc8afe30520acba118df0fb488bbaaff98a912b3f3e4e6e850b8b'
+              'Burst.Backend.dll' = '8c927c75b2bc3aca96169bbe1a9076b37889f1ed395b22f16f37061a5ce16298'
+            }
+            foreach ($name in $runtimeHashes.Keys) {
+              $files = @($trace.runtimeFiles | Where-Object { $_.name -ceq $name })
+              if ($files.Count -ne 1 -or $files[0].sha256 -cne $runtimeHashes[$name] -or
+                  ($files[0].loadedAssemblyObserved -and $files[0].loadedAssemblySha256 -cne $runtimeHashes[$name])) {
+                throw "Burst runtime file identity differs: $name."
+              }
+            }
+            if (@($trace.logs | Where-Object { $_.name -ceq 'burst.log' }).Count -ne 1 -or
+                @($trace.logs.name | Sort-Object -Unique).Count -ne @($trace.logs).Count -or
+                @($trace.logs | Where-Object {
+                  $_.name -cnotmatch '^burst(?:-thread-\d+)?\.log$' -or $_.status -cne 'ok' -or
+                  $_.sourceLengthBytes -le 0 -or $_.sourceLengthBytes -gt 4 * 1024 * 1024 -or
+                  $_.capturedBytes -ne $_.sourceLengthBytes -or $_.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+                  [string]::IsNullOrEmpty($_.content)
+                }).Count -ne 0 -or ($trace.logs | Measure-Object -Property capturedBytes -Sum).Sum -gt 64 * 1024 * 1024) {
+              throw 'Burst trace log records are missing, malformed, changed or truncated.'
+            }
           }
           $xml = [xml](Get-Content -LiteralPath (Join-Path $root 'results.xml') -Raw)
           $cases = @($xml.SelectNodes('//test-case'))

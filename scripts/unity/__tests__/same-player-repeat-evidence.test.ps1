@@ -863,7 +863,11 @@ $floor = $floorWorkflow.jobs.'native-sdk-floor'
 Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] && inputs[''native-sdk-log-source''] == '''' && !inputs[''native-sdk-registry-probe''] && !inputs[''native-sdk-upm-network-probe''] }}')
 Assert-That 'floor requires registration preflight and a 600-minute budget' ($floor.needs[0] -ceq 'runner-preflight' -and $floor.'timeout-minutes' -eq 600)
 $floorWork = @($floor.steps | Where-Object { $_.PSObject.Properties['id'] -and $_.id -ceq 'run_sdk_floor' })[0]
-Assert-That 'floor keeps all CPU/Burst allocation cases in PlayMode' ($floorWork.run -match '-TestMode playmode' -and $floorWork.run -match '-TestCategory NativeSdkCpu' -and $floorWork.run -notmatch '-CanonicalProfilePath|-StandalonePlayerBatchOrders')
+Assert-That 'floor keeps the complete NativeSdkCpu scope and no pilot orders in both modes' (
+    $floorWork.run -match "TestCategory = 'NativeSdkCpu'" -and $floorWork.run -notmatch 'StandalonePlayerBatchOrders' -and
+    $floorWork.run -match "TestMode = 'playmode'" -and $floorWork.run -match "TestMode = 'standalone'"
+)
+Assert-That 'floor defaults to the original PlayMode scope' ($floorWorkflow.on.workflow_dispatch.inputs.'native-sdk-scope'.default -ceq 'PlayMode')
 $floorExpected = Get-Content -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Raw | ConvertFrom-Json
 Assert-That 'floor retains 745 distinct identities' ($floorExpected.caseCount -eq 745 -and @($floorExpected.identities | Sort-Object -Unique).Count -eq 745)
 $floorRoute = [scriptblock]::Create($floor.steps[0].run)
@@ -872,8 +876,13 @@ $floorVerify = [scriptblock]::Create($floorVerifyText)
 $floorFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dxm-sdk-floor-' + [Guid]::NewGuid().ToString('N'))
 $floorLocation = Get-Location
 $floorEnvironment = @{}
-foreach ($key in @('DXM_FLOOR_REQUEST', 'RUNNER_NAME', 'DXM_FLOOR_OTHER_MODES')) { $floorEnvironment[$key] = [Environment]::GetEnvironmentVariable($key) }
+foreach ($key in @('DXM_FLOOR_REQUEST', 'RUNNER_NAME', 'DXM_FLOOR_OTHER_MODES', 'DXM_FLOOR_SCOPE',
+    'GITHUB_WORKSPACE', 'RUNNER_WORKSPACE', 'RUNNER_TOOL_CACHE', 'DXM_NATIVE_SDK_FLOOR_EVIDENCE',
+    'DXM_NATIVE_DIRECTCALL_EVIDENCE', 'DXM_NATIVE_BURST_TRACE_EVIDENCE', 'DXM_NATIVE_SDK_RUNTIME_EVIDENCE')) {
+    $floorEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
+}
 try {
+    $env:DXM_FLOOR_SCOPE = 'PlayMode'
     foreach ($route in @(
         @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; accepted = $true },
         @{ request = 'DAD-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; accepted = $false },
@@ -977,6 +986,121 @@ try {
         $accepted = $true
         try { & $floorVerify } catch { $accepted = $false; if ($variant -ceq 'complete') { throw } }
         Assert-That "floor complete-scope gate variant=$variant" ($accepted -eq ($variant -ceq 'complete'))
+    }
+    $env:DXM_FLOOR_REQUEST = 'ELI-MACHINE'; $env:RUNNER_NAME = 'ELI-MACHINE'; $env:DXM_FLOOR_OTHER_MODES = 'false'
+    foreach ($scope in @('PlayMode', 'StandaloneRelease', 'unknown')) {
+        $env:DXM_FLOOR_SCOPE = $scope
+        $accepted = $true
+        try { & $floorRoute } catch { $accepted = $false }
+        Assert-That "floor scope routing $scope" ($accepted -eq ($scope -cne 'unknown'))
+    }
+    $env:GITHUB_WORKSPACE = $floorFixtureRoot
+    $env:RUNNER_WORKSPACE = Join-Path $floorFixtureRoot 'runner'
+    $env:RUNNER_TOOL_CACHE = Join-Path $floorFixtureRoot 'tools'
+    $mockDirectory = Join-Path $floorFixtureRoot 'scripts/unity'
+    New-Item -ItemType Directory -Path $mockDirectory -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $mockDirectory 'run-ci-tests.ps1'), @'
+param($UnityVersion, $UnityInstallRoot, $TestMode, $AssemblyNames, $TestCategory,
+    $ArtifactsPath, $ProjectPath, $CachePath, [switch]$IncludeComparisons,
+    $LicenseReturnOwner, [switch]$ReleaseCodeOptimization, $StandaloneScriptingBackend,
+    [switch]$ReleasePlayerBuild, $CanonicalProfilePath)
+[IO.File]::WriteAllText((Join-Path $env:GITHUB_WORKSPACE 'captured-command.json'),
+    (@{ arguments = $PSBoundParameters; runtime = $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE;
+        direct = $env:DXM_NATIVE_DIRECTCALL_EVIDENCE; trace = $env:DXM_NATIVE_BURST_TRACE_EVIDENCE } | ConvertTo-Json -Depth 10))
+'@)
+    $floorWorkBlock = [scriptblock]::Create($floorWork.run.Replace('${{ github.run_id }}', '1').Replace('${{ github.run_attempt }}', '1'))
+    foreach ($scope in @('PlayMode', 'StandaloneRelease')) {
+        $env:DXM_FLOOR_SCOPE = $scope
+        & $floorWorkBlock
+        $captured = Get-Content -LiteralPath (Join-Path $floorFixtureRoot 'captured-command.json') -Raw | ConvertFrom-Json
+        Assert-That "actual work keeps full scope and central ownership in $scope" (
+            $captured.arguments.AssemblyNames -ceq $floorExpected.assembly -and
+            $captured.arguments.TestCategory -ceq 'NativeSdkCpu' -and
+            $captured.arguments.UnityVersion -ceq '2021.3.45f1' -and
+            $captured.arguments.LicenseReturnOwner -ceq 'Central' -and $captured.arguments.IncludeComparisons.IsPresent
+        )
+        if ($scope -ceq 'PlayMode') {
+            Assert-That 'default Editor work retains its diagnostics without a player profile' (
+                $captured.arguments.TestMode -ceq 'playmode' -and $captured.direct -and $captured.trace -and
+                -not $captured.runtime -and -not $captured.arguments.PSObject.Properties['CanonicalProfilePath']
+            )
+        } else {
+            Assert-That 'standalone work requests the strict qualification profile and AOT runtime evidence' (
+                $captured.arguments.TestMode -ceq 'standalone' -and $captured.arguments.StandaloneScriptingBackend -ceq 'IL2CPP' -and
+                $captured.arguments.ReleasePlayerBuild.IsPresent -and $captured.runtime -and -not $captured.direct -and -not $captured.trace -and
+                $captured.arguments.CanonicalProfilePath -ceq '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+            )
+        }
+    }
+    $nativeProfileSource = Join-Path $repoRoot '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+    $nativeProfile = Get-Content -LiteralPath $nativeProfileSource -Raw | ConvertFrom-Json
+    $nativeProfileHash = (Get-FileHash -LiteralPath $nativeProfileSource -Algorithm SHA256).Hash.ToLowerInvariant()
+    Copy-Item -LiteralPath $nativeProfileSource -Destination (Join-Path $floorFixtureRoot '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/unity/validate-il2cpp-profile.ps1') -Destination $mockDirectory
+    $proofStep = @($floor.steps | Where-Object { $_.name -ceq 'Require IL2CPP floor player proof' })[0]
+    Assert-That 'player proof survives work failure and keeps a bounded deadline' ($proofStep.if.Contains('always()') -and $proofStep.'timeout-minutes' -eq 2)
+    $proof = [scriptblock]::Create($proofStep.run.Replace('${{ github.run_id }}', '1').Replace('${{ github.run_attempt }}', '1'))
+    foreach ($variant in @('complete', 'marker', 'archive', 'profile-runtime', 'platform', 'editor', 'debug', 'backend', 'pointer',
+        'burst', 'error', 'assembly', 'type', 'observed-type', 'assembly-version', 'manifest-change', 'manifest-count',
+        'manifest-hash', 'missing-native', 'empty-native', 'manifest-duplicate', 'schema-type', 'pointer-type', 'length-type')) {
+        Copy-Item -LiteralPath $nativeProfileSource -Destination (Join-Path $floorArtifacts 'native-sdk-il2cpp-qualification-profile.v1.json') -Force
+        if ($variant -ceq 'archive') { [IO.File]::WriteAllText((Join-Path $floorArtifacts 'native-sdk-il2cpp-qualification-profile.v1.json'), '{}') }
+        [IO.File]::WriteAllText((Join-Path $floorArtifacts 'configure-complete.marker'), $(if ($variant -ceq 'marker') { 'incomplete' } else { 'DxmCiTestConfigurator.Apply completed' }))
+        foreach ($entry in @(
+            @{ file = 'configured-profile.json'; kind = 'configuration' }, @{ file = 'prebuild-profile.json'; kind = 'configuration' },
+            @{ file = 'postbuild-profile.json'; kind = 'configuration' }, @{ file = 'build-options-profile.json'; kind = 'buildOptions' },
+            @{ file = 'runtime-profile.json'; kind = 'runtime' }
+        )) {
+            $evidence = @{ schemaVersion = 1; profileId = $nativeProfile.profileId; profileSha256 = $nativeProfileHash;
+                evidenceKind = $entry.kind; unityVersion = '2021.3.45f1'; values = $nativeProfile.($entry.kind) }
+            if ($entry.kind -ceq 'buildOptions') {
+                $evidence.schemaVersion = 2
+                $evidence.buildProvenance = @{ playerBuildKind = 'clean'; libraryStateBeforeBuild = 'missing';
+                    beeStateBeforeBuild = 'missing'; il2cppCacheStateBeforeBuild = 'missing'; playerOutputStateBeforeBuild = 'missing' }
+            }
+            if ($variant -ceq 'profile-runtime' -and $entry.kind -ceq 'runtime') { $evidence.unityVersion = '6000.3.16f1' }
+            Write-TestJson -Path (Join-Path $floorArtifacts $entry.file) -Value $evidence
+        }
+        $records = @(
+            @{ name = 'Unity.Burst'; typeName = 'Unity.Burst.BurstCompiler'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
+            @{ name = 'Unity.Collections'; typeName = 'Unity.Collections.NativeArray`1'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
+            @{ name = 'Unity.Mathematics'; typeName = 'Unity.Mathematics.math'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
+            @{ name = 'Unity.Jobs'; typeName = 'Unity.Jobs.IJobParallelForBatch'; assemblyVersion = '1.0.0.0'; typeObserved = $true }
+        )
+        $runtime = @{ schemaVersion = 1; profileId = $nativeProfile.profileId; profileSha256 = $nativeProfileHash; unityVersion = '2021.3.45f1';
+            platform = 'WindowsPlayer'; pointerBytes = 8; isEditor = $false; debugBuild = $false; il2cpp = $true;
+            burstEnabledObserved = $true; burstEnabled = $true; assemblies = $records; errors = @() }
+        if ($variant -ceq 'platform') { $runtime.platform = 'OSXPlayer' }
+        if ($variant -ceq 'editor') { $runtime.isEditor = $true }
+        if ($variant -ceq 'debug') { $runtime.debugBuild = $true }
+        if ($variant -ceq 'backend') { $runtime.il2cpp = $false }
+        if ($variant -ceq 'pointer') { $runtime.pointerBytes = 4 }
+        if ($variant -ceq 'schema-type') { $runtime.schemaVersion = '1' }
+        if ($variant -ceq 'pointer-type') { $runtime.pointerBytes = '8' }
+        if ($variant -ceq 'burst') { $runtime.burstEnabled = $false }
+        if ($variant -ceq 'error') { $runtime.errors = @('fixture observation failure') }
+        if ($variant -ceq 'assembly') { $records[3].name = 'Unity.Collections' }
+        if ($variant -ceq 'type') { $records[3].typeName = 'wrong' }
+        if ($variant -ceq 'observed-type') { $records[3].typeObserved = $false }
+        if ($variant -ceq 'assembly-version') { $records[3].assemblyVersion = '' }
+        Write-TestJson -Path (Join-Path $floorArtifacts 'sdk-runtime.json') -Value $runtime
+        foreach ($phase in @('before', 'after')) {
+            $files = @('DxmTestPlayer.exe', 'GameAssembly.dll', 'Data/Plugins/x86_64/lib_burst_generated.dll' | ForEach-Object {
+                @{ path = $_; length = 16; sha256 = ('a' * 64) }
+            })
+            if ($variant -ceq 'manifest-change' -and $phase -ceq 'after') { $files[0].sha256 = 'b' * 64 }
+            if ($variant -ceq 'manifest-hash') { $files[0].sha256 = '' }
+            if ($variant -ceq 'missing-native') { $files[2].path = 'different.dll' }
+            if ($variant -ceq 'empty-native') { $files[2].length = 0 }
+            if ($variant -ceq 'length-type') { $files[2].length = '16' }
+            if ($variant -ceq 'manifest-duplicate') { $files += $files[2] }
+            Write-TestJson -Path (Join-Path $floorArtifacts "sdk-player.$phase.json") -Value @{
+                schemaVersion = 1; fileCount = $(if ($variant -ceq 'manifest-count') { 2 } else { $files.Count }); files = $files
+            }
+        }
+        $accepted = $true
+        try { & $proof } catch { $accepted = $false; if ($variant -ceq 'complete') { throw } }
+        Assert-That "actual player proof gate variant=$variant" ($accepted -eq ($variant -ceq 'complete'))
     }
 } finally {
     Set-Location -LiteralPath $floorLocation.Path

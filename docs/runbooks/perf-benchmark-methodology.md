@@ -1145,6 +1145,21 @@ This lane verifies the CPU/Burst SDK floor. GPU, macOS plugin and IL2CPP floor
 checks require separate native evidence. PlayMode results do not establish
 calibrated player throughput or architectural acceptance.
 
+For the separate player qualification, retain `native-sdk-floor: true` and select
+`native-sdk-scope: StandaloneRelease`. The default remains `PlayMode`. The same
+745 cases execute without allocation exclusions. The distinct
+`native-sdk-il2cpp-qualification-profile.v1.json` retains the reviewed Release
+test-player settings and is limited to the old-floor assembly/category and one
+process. Configuration, build and runtime profile evidence must match it.
+The lane retains full player file hashes before and after execution, including
+failed NUnit runs, and requires the actual executable, IL2CPP and Burst libraries.
+The callback records public SDK type/assembly metadata, platform, backend, pointer
+size and Burst enabled state after writing the test results. Metadata observations
+and file hashes do not establish private compiler identity. The player-proof gate
+runs after failed work; the complete-case gate still requires all 745 cases to pass.
+Retain recorder failures as unavailable measurement evidence when that is their
+actual cause; any additional native contract failure requires investigation.
+
 ## Collect Windows clock and sleep events
 
 Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner.

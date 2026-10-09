@@ -2191,6 +2191,101 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         public bool debugBuild;
     }
 
+    [Serializable]
+    private sealed class NativeSdkAssembly
+    {
+        public string name;
+        public string typeName;
+        public string assemblyVersion;
+        public bool typeObserved;
+    }
+
+    [Serializable]
+    private sealed class NativeSdkRuntimeEvidence
+    {
+        public int schemaVersion = 1;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string unityVersion = Application.unityVersion;
+        public string platform = Application.platform.ToString();
+        public bool isEditor = Application.isEditor;
+        public bool debugBuild = Debug.isDebugBuild;
+        public int pointerBytes = IntPtr.Size;
+#if ENABLE_IL2CPP
+        public bool il2cpp = true;
+#else
+        public bool il2cpp = false;
+#endif
+        public bool burstEnabledObserved;
+        public bool burstEnabled;
+        public NativeSdkAssembly[] assemblies;
+        public string[] errors;
+    }
+
+    private static void WriteNativeSdkRuntimeEvidence()
+    {
+        string path = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_RUNTIME_EVIDENCE");
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+        NativeSdkRuntimeEvidence evidence = new NativeSdkRuntimeEvidence();
+        System.Collections.Generic.List<string> errors = new System.Collections.Generic.List<string>();
+        string[] names = { "Unity.Burst", "Unity.Collections", "Unity.Mathematics", "Unity.Jobs" };
+        string[] types = { "Unity.Burst.BurstCompiler", "Unity.Collections.NativeArray``1", "Unity.Mathematics.math", "Unity.Jobs.IJobParallelForBatch" };
+        evidence.assemblies = new NativeSdkAssembly[names.Length];
+        for (int index = 0; index < names.Length; index++)
+        {
+            NativeSdkAssembly record = new NativeSdkAssembly { name = names[index], typeName = types[index] };
+            evidence.assemblies[index] = record;
+            try
+            {
+                System.Reflection.Assembly match = null;
+                foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (assembly.GetName().Name != record.name)
+                    {
+                        continue;
+                    }
+                    if (match != null)
+                    {
+                        throw new InvalidOperationException("Ambiguous SDK assembly: " + record.name);
+                    }
+                    match = assembly;
+                }
+                if (match == null)
+                {
+                    throw new InvalidOperationException("Missing SDK assembly: " + record.name);
+                }
+                record.assemblyVersion = match.GetName().Version.ToString();
+                Type type = match.GetType(record.typeName, false);
+                record.typeObserved = type != null;
+                if (type == null)
+                {
+                    throw new InvalidOperationException("Missing public SDK type: " + record.typeName);
+                }
+                if (record.name == "Unity.Burst")
+                {
+                    System.Reflection.PropertyInfo enabled = type.GetProperty("IsEnabled", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (enabled == null || enabled.PropertyType != typeof(bool))
+                    {
+                        throw new InvalidOperationException("Missing public Burst enabled state.");
+                    }
+                    evidence.burstEnabled = (bool)enabled.GetValue(null, null);
+                    evidence.burstEnabledObserved = true;
+                }
+            }
+            catch (Exception exception)
+            {
+                errors.Add(exception.GetType().Name + ": " + exception.Message);
+            }
+        }
+        evidence.errors = errors.ToArray();
+        string directory = Path.GetDirectoryName(Path.GetFullPath(path));
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
+    }
+
     public void RunStarted(ITest testsToRun)
     {
     }
@@ -2217,6 +2312,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         {
             WriteRuntimeEvidence();
             WriteNUnitXml(result, path);
+            WriteNativeSdkRuntimeEvidence();
             exitCode = result.FailCount > 0 ? 1 : 0;
             int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
             Debug.LogFormat(
@@ -7576,11 +7672,18 @@ if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
             throw 'The incremental shipping build factor requires the reviewed High base profile.'
         }
     } elseif (
-        $canonicalProfileId -cne 'canonical-il2cpp-verdict-player-v1' -or
+        @('canonical-il2cpp-verdict-player-v1', 'native-sdk-il2cpp-qualification-player-v1') -cnotcontains $canonicalProfileId -or
         $managedStrippingLevel -cne 'Disabled' -or
         -not $includeTestAssemblies
     ) {
         throw 'The standalone test player requires its reviewed profile with Disabled stripping and includeTestAssemblies=true.'
+    }
+    if ($canonicalProfileId -ceq 'native-sdk-il2cpp-qualification-player-v1' -and (
+        $UnityVersion -cne '2021.3.45f1' -or -not $IncludeComparisons -or
+        $AssemblyNames -cne 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch' -or
+        $TestCategory -cne 'NativeSdkCpu' -or $StandalonePlayerRunCount -ne 1 -or $pilotBatchOrders.Count -ne 0
+    )) {
+        throw 'Native SDK qualification requires the complete old-floor scope and one standalone process.'
     }
     $profileArtifactFileName = [System.IO.Path]::GetFileName($resolvedCanonicalProfilePath)
     $profileArtifactPath = Join-Path $ArtifactsPath $profileArtifactFileName
@@ -8489,6 +8592,10 @@ try {
         $captureSamePlayerEvidence = $StandalonePlayerRunCount -gt 1
         $samePlayerEvidenceRoot = Join-Path $ArtifactsPath 'same-player-repeats'
         $playerManifestBefore = $null
+        if ($canonicalProfileId -ceq 'native-sdk-il2cpp-qualification-player-v1') {
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'sdk-player.before.json') `
+                -Value (Get-StandalonePlayerManifest -ExecutablePath $standaloneExe)
+        }
         $playerRunRecords = New-Object System.Collections.Generic.List[object]
         if ($captureSamePlayerEvidence) {
             if (Test-Path -LiteralPath $samePlayerEvidenceRoot -PathType Container) {
@@ -8587,6 +8694,10 @@ try {
                 $env:DXM_PAIRED_BATCH_ORDER = $priorBatchOrder
                 $env:DXM_PILOT_CPU_WORK_PER_BATCH = $priorPilotWork
                 $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = $priorPilotWorkVector
+                if ($canonicalProfileId -ceq 'native-sdk-il2cpp-qualification-player-v1') {
+                    Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'sdk-player.after.json') `
+                        -Value (Get-StandalonePlayerManifest -ExecutablePath $standaloneExe)
+                }
             }
 
             # A watchdog timeout is fatal ONLY when the player wrote no results. If

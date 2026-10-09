@@ -457,6 +457,76 @@ exit 0
     Assert-That 'the player records Debug.isDebugBuild' (
         $generatedSources[1].Contains('Debug.isDebugBuild')
     )
+    $sdkRuntimeStart = $generatedSources[1].IndexOf('    [Serializable]' + "`n" + '    private sealed class NativeSdkAssembly')
+    $sdkRuntimeEnd = $generatedSources[1].IndexOf('    public void RunStarted(', $sdkRuntimeStart)
+    Assert-That 'the actual callback retains optional public SDK runtime observation' ($sdkRuntimeStart -ge 0 -and $sdkRuntimeEnd -gt $sdkRuntimeStart)
+    $sdkRuntimeSource = $generatedSources[1].Substring($sdkRuntimeStart, $sdkRuntimeEnd - $sdkRuntimeStart)
+    Assert-That 'the callback preserves the generic SDK type name through PowerShell generation' ($sdkRuntimeSource.Contains('Unity.Collections.NativeArray`1'))
+    Add-Type -CompilerOptions '/define:ENABLE_IL2CPP' -TypeDefinition @"
+using System;
+using System.IO;
+public static class DxmRuntimeSdkMetadataFixture {
+    private static class Application {
+        public static string unityVersion = "2021.3.45f1";
+        public static string platform = "WindowsPlayer";
+        public static bool isEditor = false;
+    }
+    private static class Debug { public static bool isDebugBuild = false; }
+    private static class JsonUtility {
+        public static string ToJson(object evidence, bool pretty) { Last = evidence; return "fixture SDK metadata"; }
+    }
+    public static object Last;
+    public static bool BurstEnabled = true;
+    $sdkRuntimeSource
+    public static void Capture() { WriteNativeSdkRuntimeEvidence(); }
+}
+"@
+    $priorRuntimeSdkPath = $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE
+    try {
+        $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $null
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        Assert-That 'no runtime request does not create an observation' ($null -eq [DxmRuntimeSdkMetadataFixture]::Last)
+        $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = Join-Path $fixtureRoot 'sdk/runtime.json'
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        Assert-That 'missing SDK assemblies remain explicit errors' (@([DxmRuntimeSdkMetadataFixture]::Last.errors).Count -eq 4)
+        foreach ($entry in @(
+            @{ assembly = 'Unity.Burst'; type = 'Unity.Burst.BurstCompiler' },
+            @{ assembly = 'Unity.Collections'; type = 'Unity.Collections.NativeArray`1' },
+            @{ assembly = 'Unity.Mathematics'; type = 'Unity.Mathematics.math' },
+            @{ assembly = 'Unity.Jobs'; type = 'Unity.Jobs.IJobParallelForBatch' }
+        )) {
+            $assembly = [System.Reflection.Emit.AssemblyBuilder]::DefineDynamicAssembly(
+                [System.Reflection.AssemblyName]::new($entry.assembly), [System.Reflection.Emit.AssemblyBuilderAccess]::Run)
+            $type = $assembly.DefineDynamicModule('fixture').DefineType($entry.type, [System.Reflection.TypeAttributes]::Public)
+            if ($entry.assembly -ceq 'Unity.Collections') { $null = $type.DefineGenericParameters(@('T')) }
+            if ($entry.assembly -ceq 'Unity.Burst') {
+                $getter = $type.DefineMethod('get_IsEnabled',
+                    [System.Reflection.MethodAttributes]::Public -bor [System.Reflection.MethodAttributes]::Static -bor
+                    [System.Reflection.MethodAttributes]::SpecialName, [bool], [Type[]]@())
+                $il = $getter.GetILGenerator()
+                $il.Emit([System.Reflection.Emit.OpCodes]::Ldsfld, [DxmRuntimeSdkMetadataFixture].GetField('BurstEnabled'))
+                $il.Emit([System.Reflection.Emit.OpCodes]::Ret)
+                $property = $type.DefineProperty('IsEnabled', [System.Reflection.PropertyAttributes]::None, [bool], [Type[]]@())
+                $property.SetGetMethod($getter)
+            }
+            $null = $type.CreateType()
+        }
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        $observed = [DxmRuntimeSdkMetadataFixture]::Last
+        Assert-That 'the actual managed observer captures exact public SDK metadata without compiler internals' (
+            @($observed.errors).Count -eq 0 -and @($observed.assemblies).Count -eq 4 -and
+            @($observed.assemblies | Where-Object { -not $_.typeObserved -or -not $_.assemblyVersion }).Count -eq 0 -and
+            $observed.burstEnabledObserved -and $observed.burstEnabled -and $observed.il2cpp -and
+            -not $observed.isEditor -and -not $observed.debugBuild -and $observed.pointerBytes -eq [IntPtr]::Size
+        )
+        [DxmRuntimeSdkMetadataFixture]::BurstEnabled = $false
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        Assert-That 'disabled Burst is an observed state rather than fabricated enabled evidence' (
+            [DxmRuntimeSdkMetadataFixture]::Last.burstEnabledObserved -and -not [DxmRuntimeSdkMetadataFixture]::Last.burstEnabled
+        )
+    } finally {
+        $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $priorRuntimeSdkPath
+    }
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
     $workflowText = Get-Content -LiteralPath $workflowPath -Raw
@@ -499,6 +569,43 @@ exit 0
     )
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly -ExpectedSha256 $profileSha256
+
+    $nativeProfilePath = Join-Path $repoRoot '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+    $nativeProfile = Copy-JsonValue -Value $profile
+    $nativeProfile.profileId = 'native-sdk-il2cpp-qualification-player-v1'
+    $nativeFixtureProfilePath = Join-Path $fixtureRoot 'native-profile.json'
+    Write-TestJson -Path $nativeFixtureProfilePath -Value $nativeProfile
+    & $validatorPath -ProfilePath $nativeFixtureProfilePath -ProfileOnly
+    $committedNativeProfile = Get-Content -LiteralPath $nativeProfilePath -Raw | ConvertFrom-Json
+    Assert-That 'the qualification profile retains every reviewed Release value' (
+        ($committedNativeProfile | ConvertTo-Json -Depth 10 -Compress) -ceq ($nativeProfile | ConvertTo-Json -Depth 10 -Compress)
+    )
+    foreach ($variant in @('complete', 'assembly', 'category', 'version', 'repeat', 'packages')) {
+        $nativeArgs = @{
+            UnityVersion = '2021.3.45f1'; TestMode = 'standalone';
+            AssemblyNames = 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch';
+            TestCategory = 'NativeSdkCpu'; CanonicalProfilePath = $nativeProfilePath;
+            ArtifactsPath = (Join-Path $fixtureRoot "native-$variant-artifacts");
+            ProjectPath = (Join-Path $fixtureRoot "native-$variant-project");
+            CachePath = (Join-Path $fixtureRoot "native-$variant-cache");
+            IncludeComparisons = $true; StandalonePlayerRunCount = 1; GenerateOnly = $true
+        }
+        if ($variant -ceq 'assembly') { $nativeArgs.AssemblyNames = 'WallstopStudios.DxMessaging.Tests.Runtime' }
+        if ($variant -ceq 'category') { $nativeArgs.TestCategory = '!Allocation' }
+        if ($variant -ceq 'version') { $nativeArgs.UnityVersion = '6000.3.16f1' }
+        if ($variant -ceq 'repeat') { $nativeArgs.StandalonePlayerRunCount = 2 }
+        if ($variant -ceq 'packages') { $nativeArgs.IncludeComparisons = $false }
+        $generationOutput = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $runnerPath @nativeArgs 2>&1
+        if ($variant -ceq 'complete') {
+            Assert-That 'the actual complete native qualification project generates without Unity execution' ($LASTEXITCODE -eq 0)
+            $callback = Get-Content -LiteralPath (Join-Path $nativeArgs.ProjectPath 'Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.cs') -Raw
+            Assert-That 'the actual native callback embeds its distinct qualification identity' ($callback.Contains($nativeProfile.profileId))
+        } else {
+            Assert-That "the actual runner rejects qualification scope drift $variant" (
+                $LASTEXITCODE -ne 0 -and ($generationOutput | Out-String).Contains('complete old-floor scope')
+            )
+        }
+    }
 
     $badProfilePath = Join-Path $fixtureRoot 'bad-profile.json'
     foreach ($semanticMutation in @(
@@ -804,6 +911,7 @@ exit 0
     Write-TestJson -Path $badProfilePath -Value $badProfile
     Assert-Fails 'unsupported profile ID lists every accepted profile' -ExpectedMessage (
         "Supported profileIds: 'canonical-il2cpp-verdict-player-v1', " +
+        "'native-sdk-il2cpp-qualification-player-v1', " +
         "'shipping-fidelity-il2cpp-minimal-player-v1', " +
         "'shipping-fidelity-il2cpp-low-player-v1', " +
         "'shipping-fidelity-il2cpp-medium-player-v1', " +

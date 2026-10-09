@@ -192,6 +192,10 @@ $profileVariants = [ordered]@{
         managedStrippingLevel = 'Disabled'
         includeTestAssemblies = $true
     }
+    'native-sdk-il2cpp-qualification-player-v1' = [ordered]@{
+        managedStrippingLevel = 'Disabled'
+        includeTestAssemblies = $true
+    }
     'shipping-fidelity-il2cpp-minimal-player-v1' = [ordered]@{
         managedStrippingLevel = 'Minimal'
         includeTestAssemblies = $false
