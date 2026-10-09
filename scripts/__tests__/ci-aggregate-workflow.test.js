@@ -533,7 +533,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   // run step became this typed output binding).
   const editorPathBinding = "${{ steps.ensure_unity_editor.outputs.editor-path }}";
 
-  for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
+  for (const [file, jobId, licensedWorkName, emptyAware, jobTimeout] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
@@ -557,9 +557,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
         `${label}: failed installs cannot authorize redaction or uploads`
       );
     }
-    const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : 900;
     // prettier-ignore
-    assert.match(job, new RegExp(`\\n    timeout-minutes: ${expectedJobTimeout}\\n`), `${label}: lifecycle budget`);
+    assert.match(job, new RegExp(`\\n    timeout-minutes: ${jobTimeout ?? (file === "unity-tests.yml" ? 1050 : 900)}\\n`), `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
       assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
     }

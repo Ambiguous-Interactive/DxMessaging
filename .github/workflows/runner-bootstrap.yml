@@ -26,6 +26,10 @@ name: Runner Audit (Windows)
 on:
   workflow_dispatch:
     inputs:
+      shipping-editor-verification:
+        description: "Run the complete shipping Editor and sample scope on Unity 2021.3."
+        type: boolean
+        default: false
       runner-label:
         description: >-
           (HARD-FAIL on wrong target) Name of the runner you want to audit
@@ -44,9 +48,9 @@ on:
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
 # concurrency: any in-flight audit anywhere blocks another audit from starting.
-# Distinct from `wallstop-organization-builds` (the Unity build lock) -- this
-# workflow does not enter the Unity license seat path, so it must not block
-# Unity jobs and Unity jobs must not block it.
+# Distinct from `wallstop-organization-builds` (the Unity build lock). Default
+# audits are license-free; the optional shipping Editor job acquires the central
+# lock and completes its automatic license-return and cleanup sequence.
 concurrency:
   group: runner-audit-windows
   cancel-in-progress: false
@@ -76,6 +80,7 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
+    if: ${{ !inputs['shipping-editor-verification'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
@@ -231,3 +236,256 @@ jobs:
           path: .artifacts/runner-bootstrap/**
           if-no-files-found: error
           retention-days: 30
+
+  shipping-editor-runner-preflight:
+    name: Shipping Editor ELI registration preflight
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require the registered ELI runner labels
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        with:
+          reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
+          reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
+          required-label-sets: '[["self-hosted","Windows","RAM-64GB","fast"]]'
+
+  shipping-editor-verification:
+    name: Unity 2021.3 shipping Editor and samples on ELI
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    needs:
+      - runner-preflight
+      - shipping-editor-runner-preflight
+    runs-on: [self-hosted, Windows, RAM-64GB, fast]
+    timeout-minutes: 600
+    steps:
+      - name: Require ELI request and runner
+        timeout-minutes: 1
+        shell: pwsh
+        env:
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+              throw 'Shipping Editor verification requires the ELI-MACHINE request and runner.'
+          }
+
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        with:
+          unity-version: 2021.3.45f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
+      - name: Enable Git long paths
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        timeout-minutes: 30
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Setup Node.js
+        id: setup_node
+        timeout-minutes: 5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.18.0"
+
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item .github/artifact-tooling/package.json, .github/artifact-tooling/package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Compute EditMode test assembly list
+        id: compute
+        timeout-minutes: 5
+        uses: ./.github/actions/compute-unity-assemblies
+        with:
+          target: editmode
+          include-integrations: "true"
+
+      - name: Require a shipping Editor test scope
+        timeout-minutes: 1
+        shell: pwsh
+        env:
+          DXM_SELECTED_ASSEMBLIES: ${{ steps.compute.outputs.assemblies }}
+          DXM_EMPTY_SCOPE: ${{ steps.compute.outputs.is-empty }}
+        run: |
+          if ($env:DXM_EMPTY_SCOPE -cne 'false' -or [string]::IsNullOrWhiteSpace($env:DXM_SELECTED_ASSEMBLIES)) {
+              throw 'Shipping Editor verification requires a nonempty complete shipping selection.'
+          }
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        timeout-minutes: 305
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: shipping-editor-${{ github.run_id }}-${{ github.run_attempt }}
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
+          runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: exit 1
+
+      - name: Run shipping Editor and sample tests
+        id: run_editor
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DXM_TEST_ASSEMBLIES: ${{ steps.compute.outputs.assemblies }}
+          DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!UnityRuntime;!PerfBench;!PerfGate;!PerfBaseline"
+          DX_PERF_COMMIT: ${{ github.sha }}
+        run: |
+          $artifactsPath = '.artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\se${{ github.run_id }}a${{ github.run_attempt }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\shipping-editor-2021.3.45f1'
+          if (Test-Path -LiteralPath $projectPath) { throw 'Shipping Editor verification requires a fresh owned project.' }
+          New-Item -ItemType Directory -Force -Path $artifactsPath | Out-Null
+          @{
+              sourceCommit = $env:DX_PERF_COMMIT
+              sourceTree = [string](& git rev-parse 'HEAD^{tree}')
+              unityVersion = '2021.3.45f1'
+              assemblies = $env:DXM_TEST_ASSEMBLIES
+              categories = $env:DXM_UNITY_TEST_CATEGORY
+              projectWasAbsentBefore = $true
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactsPath 'scope-inputs.json') -Encoding UTF8
+          if ($LASTEXITCODE -ne 0) { throw 'Shipping Editor source tree lookup failed.' }
+          $arguments = @{
+              UnityVersion = '2021.3.45f1'
+              TestMode = 'editmode'
+              AssemblyNames = $env:DXM_TEST_ASSEMBLIES
+              ArtifactsPath = $artifactsPath
+              ProjectPath = $projectPath
+              CachePath = $cachePath
+          }
+          ./scripts/unity/run-ci-tests.ps1 -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') -LicenseReturnOwner Central @arguments
+
+      - name: Verify shipping Editor tests actually ran
+        if: ${{ !cancelled() && steps.compute.outcome == 'success' && steps.run_editor.outcome != 'skipped' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/verify-unity-results
+        with:
+          results-dir: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
+          results-file: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}/results.xml
+          label: Shipping Editor and samples
+          expected-empty: "false"
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@03518ac5ac2a4a223243c593cc9b453688c92b99
+        with:
+          unity-version: 2021.3.45f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: shipping-editor
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@03518ac5ac2a4a223243c593cc9b453688c92b99
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: shipping-editor-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@03518ac5ac2a4a223243c593cc9b453688c92b99
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+
+      - name: Redact shipping Editor artifacts
+        id: redact_editor
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload shipping Editor artifacts
+        if: ${{ always() && steps.redact_editor.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shipping-editor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14

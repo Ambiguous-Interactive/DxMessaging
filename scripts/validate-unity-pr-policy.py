@@ -24,6 +24,7 @@ WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
+    ".github/workflows/runner-bootstrap.yml",
     ".github/actions/validate-unity-license/action.yml",
     ".github/workflows/perf-numbers.yml",
     ".github/workflows/release.yml",
@@ -32,6 +33,7 @@ REGISTERED_UNITY_AUTOMATION = {
 }
 # SYNC: Keep scripts/__tests__/ci-aggregate-workflow.test.js UNITY_LOCK_WINDOWS aligned.
 LICENSED_LOCK_WINDOWS = (
+    (Path(".github/workflows/runner-bootstrap.yml"), "shipping-editor-verification"),
     (Path(".github/workflows/unity-tests.yml"), "unity-tests"),
     (Path(".github/workflows/unity-benchmarks.yml"), "benchmarks"),
     (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
