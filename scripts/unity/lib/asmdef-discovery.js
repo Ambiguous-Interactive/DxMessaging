@@ -4,7 +4,6 @@
 
 const fs = require("fs");
 const path = require("path");
-
 const { walkFiles } = require("../../lib/repo-files");
 
 const PERF_NAME_REGEX = /(?:Benchmarks|Allocations)/;
@@ -35,26 +34,14 @@ function readAsmdefName(asmdefPath) {
 }
 
 function classifyAsmdef(name) {
-  if (typeof name !== "string" || name.length === 0) {
-    return "core";
+  for (const [pattern, classification] of [
+    [PERF_NAME_REGEX, "perf"],
+    [COMPARISON_NAME_REGEX, "comparison"],
+    [INTEGRATION_NAME_REGEX, "integration"],
+    [TRANSPORT_NAME_REGEX, "transport"]
+  ]) {
+    if (typeof name === "string" && pattern.test(name)) return classification;
   }
-
-  if (PERF_NAME_REGEX.test(name)) {
-    return "perf";
-  }
-
-  if (COMPARISON_NAME_REGEX.test(name)) {
-    return "comparison";
-  }
-
-  if (INTEGRATION_NAME_REGEX.test(name)) {
-    return "integration";
-  }
-
-  if (TRANSPORT_NAME_REGEX.test(name)) {
-    return "transport";
-  }
-
   return "core";
 }
 
@@ -129,8 +116,6 @@ function enumerateTestAsmdefs(repoRoot) {
       isTransport: classification === "transport",
       includePlatforms: platforms.includePlatforms,
       excludePlatforms: platforms.excludePlatforms,
-      isEditorOnly:
-        platforms.includePlatforms.length === 1 && platforms.includePlatforms[0] === "Editor",
       isForeign: !isDxMessagingOwnedAssembly(name)
     };
   });
@@ -139,13 +124,7 @@ function enumerateTestAsmdefs(repoRoot) {
   return entries;
 }
 
-/**
- * Resolve selected assemblies and explicitly excluded Editor transport controls.
- * Dependency and host admission: docs/runbooks/pipeline-host-repair.md.
- * Transport selection also requires transportPackagePath and the observed unityVersion.
- * target defaults to editmode; runtimeOnly retains its standalone alias.
- * @returns {{assemblies: string[], excludedTransportControls: string[]}}
- */
+// Scope and observed-host admission: docs/runbooks/pipeline-host-repair.md.
 function resolveTestAssemblySelection(repoRoot, options) {
   const opts = options || {};
   const includePerf = opts.includePerf === true;

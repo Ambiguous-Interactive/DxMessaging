@@ -10,9 +10,19 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const TEST_HOST_PATH = "Tests/Editor/EditorWindowTestUtility.cs";
 
 function hasRawWindowClose(content) {
-  return [...content.matchAll(/\b\w*Window\??\s+(\w+)\b/g)].some((match) =>
-    new RegExp(`\\b${match[1]}\\??\\.Close\\(\\);`).test(content)
+  const transports = new Set(
+    [...content.matchAll(/\b(?:TcpClient|HttpListener)\??\s+(\w+)\b/g)].map((match) => match[1])
   );
+  const contexts = new Set(
+    [...content.matchAll(/\bHttpListenerContext\??\s+(\w+)\b/g)].map((match) => match[1])
+  );
+  return [...content.matchAll(/(\w+(?:\??\.\w+)*)?\??\.Close\(\);/g)].some((match) => {
+    const receiver = (match[1] || "").split(/\??\./);
+    return (
+      !transports.has(receiver.at(-1)) &&
+      !(receiver.at(-1) === "Response" && contexts.has(receiver.at(-2)))
+    );
+  });
 }
 
 function extractMethodBody(content, methodName) {
@@ -72,13 +82,24 @@ test("editor tests use the stable test host for shown windows", () => {
   );
 });
 
-test("closing guard distinguishes windows from network transports", () => {
-  assert.equal(hasRawWindowClose("EditorWindow window; window.Close();"), true);
-  assert.equal(hasRawWindowClose("DxMessagingMonitorWindow? monitor; monitor?.Close();"), true);
-  assert.equal(
-    hasRawWindowClose("TcpClient Client; Client.Close(); HttpListener Listener; Listener.Close();"),
-    false
-  );
+test("closing guard distinguishes windows from typed network transports", () => {
+  for (const content of [
+    "EditorWindow window; window.Close();",
+    "DxMessagingMonitorWindow? monitor; monitor?.Close();",
+    "var window = CreateWindow(); window.Close();",
+    "windows[0].Close();",
+    "GetWindow().Close();",
+    "owner.Window.Close();",
+    "Response.Close();",
+    "owner.Context.Response.Close();",
+    "TcpClient Client; Client.Close(); var window = CreateWindow(); window.Close();"
+  ])
+    assert.equal(hasRawWindowClose(content), true, content);
+  for (const content of [
+    "TcpClient Client; owner.Client.Close(); HttpListener Listener; Listener.Close();",
+    "HttpListenerContext Context; owner.Context.Response.Close();"
+  ])
+    assert.equal(hasRawWindowClose(content), false, content);
 });
 
 test("tracked editor-window cleanup avoids the global Resources leak sweep", () => {
