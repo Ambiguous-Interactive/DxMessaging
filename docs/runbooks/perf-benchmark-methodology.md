@@ -1188,3 +1188,27 @@ Run the collector directly on Windows with the retained paths:
 lists `%LOCALAPPDATA%/Unity/Editor/upm.log` for a user account and
 `%ALLUSERSPROFILE%/Unity/Editor/upm.log` for SYSTEM. Keep missing or incomplete
 records; diagnose the first failed attempt before dispatching another floor run.
+
+## Diagnose the exact Burst registry archive download
+
+Set Runner Audit's `native-sdk-registry-probe=true` with `runner-label=ELI-MACHINE`.
+Leave every other optional mode at its default, including the retained-log source.
+The existing package diagnostic job makes one HTTPS request for the fixed official
+Burst 1.6.6 archive and compares its complete body with the SHA1 from Unity's
+registry metadata. It records SHA256, byte count, declared length, timestamps,
+HTTP status and errors in `registry-download.json` in the redacted bootstrap artifact.
+
+The probe uses the platform's normal HTTPS client, a 120-second cancellation
+bound covering headers and body, and a 512 MiB body cap. It performs no retries,
+redirects, archive execution or package-cache writes. It does not start Unity.
+The unlicensed job retains central registration preflight and a ten-minute cap;
+licensed jobs retain their existing central automatic lifecycle and pilot gates.
+
+A complete matching download verifies current reachability and archive bytes
+under this client. It does not explain an earlier UPM abort or establish SDK
+installation, compatibility, runtime correctness or calibrated throughput.
+HTTP errors, partial reads, cap violations and integrity failures remain failed
+observations with retained evidence. Do not rerun the SDK floor solely to get green.
+
+[Microsoft's completion-option documentation](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption)
+explains why the cancellation bound also covers streamed content reads.

@@ -841,7 +841,7 @@ $floorMetadata = & node -e 'const fs=require("fs"), yaml=require("yaml"); consol
 if ($LASTEXITCODE -ne 0) { throw 'Cannot load the real SDK floor workflow.' }
 $floorWorkflow = $floorMetadata | ConvertFrom-Json
 $floor = $floorWorkflow.jobs.'native-sdk-floor'
-Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] && inputs[''native-sdk-log-source''] == '''' }}')
+Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] && inputs[''native-sdk-log-source''] == '''' && !inputs[''native-sdk-registry-probe''] }}')
 Assert-That 'floor requires registration preflight and a 600-minute budget' ($floor.needs[0] -ceq 'runner-preflight' -and $floor.'timeout-minutes' -eq 600)
 $floorWork = @($floor.steps | Where-Object { $_.PSObject.Properties['id'] -and $_.id -ceq 'run_sdk_floor' })[0]
 Assert-That 'floor keeps all CPU/Burst allocation cases in PlayMode' ($floorWork.run -match '-TestMode playmode' -and $floorWork.run -match '-TestCategory NativeSdkCpu' -and $floorWork.run -notmatch '-CanonicalProfilePath|-StandalonePlayerBatchOrders')
@@ -980,7 +980,7 @@ try {
     })[0]
     Assert-That 'package logs install the locked redactor dependencies without lifecycle scripts' (
         $tooling.run.Contains('Copy-Item package.json, package-lock.json') -and
-        $tooling.run.Contains('npm ci --prefix') -and $tooling.run.Contains('--ignore-scripts') -and
+        ($tooling.run -match '\bnpm\s+ci\s+--prefix') -and $tooling.run.Contains('--ignore-scripts') -and
         $tooling.run.Contains('NODE_PATH=') -and $tooling.'timeout-minutes' -eq 2
     )
     Assert-That 'package log upload requires this run redaction and registration preflight' (
@@ -997,5 +997,143 @@ try {
     foreach ($key in $packageEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $packageEnvironment[$key]) }
     if (Test-Path -LiteralPath $packageFixtureRoot) { Remove-Item -LiteralPath $packageFixtureRoot -Recurse -Force }
 }
+
+# Exercise the real bounded HTTP helper with synthetic responses, never real package claims.
+$downloadFunction = $collectorAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-RegistryArchiveEvidence'
+}, $true)
+Invoke-Expression $downloadFunction.Extent.Text
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+public sealed class RegistryFixtureHandler : HttpMessageHandler
+{
+    public string Mode;
+    public int Requests;
+    public string Uri;
+    public bool HadAuthorization;
+    public bool Cancellable;
+    public static readonly byte[] Body = Encoding.UTF8.GetBytes("synthetic archive fixture");
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+    {
+        Requests++;
+        Uri = request.RequestUri.ToString();
+        HadAuthorization = request.Headers.Authorization != null;
+        Cancellable = token.CanBeCanceled;
+        HttpResponseMessage response = new HttpResponseMessage(
+            Mode == "http" ? HttpStatusCode.ServiceUnavailable :
+            Mode == "redirect" ? HttpStatusCode.Found : HttpStatusCode.OK);
+        response.Content = Mode == "read-error" ?
+            (HttpContent)new StreamContent(new RegistryFailingStream()) :
+            new ByteArrayContent(Mode == "empty" ? new byte[0] : Body);
+        if (Mode == "oversized") response.Content.Headers.ContentLength = 536870913L;
+        if (Mode == "wrong-length") response.Content.Headers.ContentLength = Body.Length + 1;
+        return Task.FromResult(response);
+    }
+}
+public sealed class RegistryFailingStream : Stream
+{
+    private bool sent;
+    public override bool CanRead { get { return true; } }
+    public override bool CanSeek { get { return false; } }
+    public override bool CanWrite { get { return false; } }
+    public override long Length { get { throw new NotSupportedException(); } }
+    public override long Position { get { throw new NotSupportedException(); } set { throw new NotSupportedException(); } }
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        if (sent) throw new IOException("fixture aborted after partial body");
+        sent = true;
+        buffer[offset] = 1;
+        return 1;
+    }
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken token)
+    {
+        try { return Task.FromResult(Read(buffer, offset, count)); }
+        catch (Exception error) { return Task.FromException<int>(error); }
+    }
+    public override void Flush() { throw new NotSupportedException(); }
+    public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
+    public override void SetLength(long value) { throw new NotSupportedException(); }
+    public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
+}
+'@
+$fixtureHasher = [Security.Cryptography.SHA1]::Create()
+try {
+    $fixtureDigest = [BitConverter]::ToString($fixtureHasher.ComputeHash([RegistryFixtureHandler]::Body)).Replace('-', '').ToLowerInvariant()
+} finally { $fixtureHasher.Dispose() }
+foreach ($mode in @('ok', 'http', 'redirect', 'oversized', 'read-error', 'wrong-length', 'empty', 'digest')) {
+    $handler = [RegistryFixtureHandler]::new(); $handler.Mode = $mode
+    $client = [Net.Http.HttpClient]::new($handler)
+    try {
+        $expected = if ($mode -eq 'digest') { '0' * 40 } else { $fixtureDigest }
+        $result = Get-RegistryArchiveEvidence -ExpectedSha1 $expected -Client $client
+        Assert-That "HTTP fixture $mode uses one fixed cancellable request without credentials" (
+            $handler.Requests -eq 1 -and $handler.Cancellable -and -not $handler.HadAuthorization -and
+            $handler.Uri -ceq 'https://download.packages.unity.com/com.unity.burst/-/com.unity.burst-1.6.6.tgz'
+        )
+        Assert-That "HTTP fixture $mode preserves outcome and declared limits" (
+            ($result.status -ceq 'success') -eq ($mode -eq 'ok') -and
+            $result.maximumBytes -eq 536870912L -and $result.deadlineSeconds -eq 120
+        )
+        if ($mode -eq 'ok') {
+            Assert-That 'complete download retains both digests and byte count' (
+                $result.bodyComplete -and $result.digestMatches -and $result.sha1 -ceq $fixtureDigest -and
+                $result.sha256.Length -eq 64 -and $result.bytesReceived -eq [RegistryFixtureHandler]::Body.Length
+            )
+        } elseif ($mode -eq 'read-error') {
+            Assert-That 'partial body errors preserve prefix evidence without completeness' (
+                -not $result.bodyComplete -and $result.bytesReceived -eq 1 -and $result.sha256.Length -eq 64 -and
+                $result.error.Contains('fixture aborted after partial body')
+            )
+        } elseif ($mode -eq 'wrong-length' -or $mode -eq 'empty') {
+            Assert-That 'EOF does not admit an empty or length-mismatched body' ($result.eofReached -and -not $result.bodyComplete)
+        }
+    } finally { $client.Dispose() }
+}
+$diagnosticJob = $floorWorkflow.jobs.'package-log-capture'
+$expectedSteps = @('Checkout', 'Require isolated package diagnostic mode', 'Setup Node.js for package log redaction',
+    'Install artifact tooling dependencies', 'Capture retained Unity Package Manager diagnostics',
+    'Verify exact Burst registry archive download', 'Redact retained package log artifacts', 'Upload retained package log artifacts')
+Assert-That 'unlicensed package job contains only its declared diagnostic and artifact work' (
+    ($diagnosticJob.steps.name -join '|') -ceq ($expectedSteps -join '|') -and
+    $diagnosticJob.'timeout-minutes' -eq 10 -and $diagnosticJob.needs[0] -ceq 'runner-preflight'
+)
+$diagnosticRoute = [scriptblock]::Create($diagnosticJob.steps[1].run)
+$diagnosticEnvironment = @{}
+foreach ($key in @('DXM_REQUESTED_RUNNER', 'RUNNER_NAME', 'DXM_LOG_SOURCE', 'DXM_REGISTRY_PROBE', 'DXM_OTHER_PACKAGE_MODES')) {
+    $diagnosticEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
+}
+try {
+    foreach ($case in @(
+        @{ source = ''; probe = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
+        @{ source = '37859571795,1'; probe = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
+        @{ source = '37859571795,1'; probe = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'true'; other = 'true'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = '../x,1'; probe = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'true'; other = 'false'; runner = 'DAD-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'DAD-MACHINE'; accept = $false }
+    )) {
+        $env:DXM_REQUESTED_RUNNER = $case.request; $env:RUNNER_NAME = $case.runner
+        $env:DXM_LOG_SOURCE = $case.source; $env:DXM_REGISTRY_PROBE = $case.probe; $env:DXM_OTHER_PACKAGE_MODES = $case.other
+        $accepted = $true
+        try { & $diagnosticRoute } catch { $accepted = $false }
+        Assert-That "diagnostic mode logs=$($case.source),probe=$($case.probe),other=$($case.other),runner=$($case.runner)" ($accepted -eq $case.accept)
+    }
+} finally {
+    foreach ($key in $diagnosticEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $diagnosticEnvironment[$key]) }
+}
+Assert-That 'registry diagnostic cannot start a bootstrap, pilot or SDK floor' (
+    $floorWorkflow.jobs.bootstrap.if.Contains("!inputs['native-sdk-registry-probe']") -and
+    $floorWorkflow.jobs.'pilot-contract-smoke'.if.Contains("!inputs['native-sdk-registry-probe']") -and
+    $floor.if.Contains("!inputs['native-sdk-registry-probe']")
+)
 
 Write-Host 'same-player repeat evidence tests passed'

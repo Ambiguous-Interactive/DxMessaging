@@ -14,6 +14,9 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][switch]$PackageLogsOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$ProjectPath,
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$CachePath,
+    [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')][switch]$RegistryDownloadOnly,
+    [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')]
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedArchiveSha1,
     [Parameter(ParameterSetName = 'Sensors')][switch]$CpuLoad,
     [Parameter(ParameterSetName = 'Sensors')][ValidateRange(2, 3600)][int]$SampleCount = 120,
     [Parameter(ParameterSetName = 'Sensors')][string]$StopSignalPath,
@@ -80,6 +83,108 @@ function Get-HostEventEvidence {
         endUtc = $EndUtc.ToUniversalTime().ToString('O')
         queries = @($queries.ToArray()); events = @($events.ToArray()); errors = @($errors.ToArray())
     }
+}
+
+function Get-RegistryArchiveEvidence {
+    param(
+        [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedSha1,
+        [System.Net.Http.HttpClient]$Client
+    )
+    $record = [ordered]@{
+        url = 'https://download.packages.unity.com/com.unity.burst/-/com.unity.burst-1.6.6.tgz'
+        expectedSha1 = $ExpectedSha1; maximumBytes = 512L * 1024 * 1024; deadlineSeconds = 120
+        startedUtc = [DateTime]::UtcNow.ToString('O'); status = 'failed'
+        httpStatus = $null; declaredLengthBytes = $null; bytesReceived = 0L
+        eofReached = $false; bodyComplete = $false; sha1 = $null; sha256 = $null; digestMatches = $false
+        errorType = $null; error = $null
+    }
+    $ownedClient = $null -eq $Client
+    if ($ownedClient) {
+        $handler = [Net.Http.HttpClientHandler]::new()
+        $handler.AllowAutoRedirect = $false
+        $Client = [Net.Http.HttpClient]::new($handler)
+        $Client.Timeout = [Threading.Timeout]::InfiniteTimeSpan
+    }
+    $deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(120))
+    $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $record.url)
+    $response = $null; $stream = $null; $sha1 = $null; $sha256 = $null
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $response = $Client.SendAsync($request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+            $deadline.Token).GetAwaiter().GetResult()
+        $record.httpStatus = [int]$response.StatusCode
+        $record.declaredLengthBytes = $response.Content.Headers.ContentLength
+        if ($record.httpStatus -ne 200) { throw "HTTP status $($record.httpStatus) did not supply the archive." }
+        if ($null -ne $record.declaredLengthBytes -and $record.declaredLengthBytes -gt $record.maximumBytes) {
+            throw 'Declared archive length exceeds the fixed byte cap.'
+        }
+        $sha1 = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA1)
+        $sha256 = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
+        $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $buffer = [byte[]]::new(64 * 1024)
+        while ($true) {
+            # The same deadline covers body reads; HttpClient headers completion alone does not.
+            $count = $stream.ReadAsync($buffer, 0, $buffer.Length, $deadline.Token).GetAwaiter().GetResult()
+            if ($count -eq 0) { break }
+            if ($record.bytesReceived + $count -gt $record.maximumBytes) {
+                throw 'Archive body exceeds the fixed byte cap.'
+            }
+            $sha1.AppendData($buffer, 0, $count); $sha256.AppendData($buffer, 0, $count)
+            $record.bytesReceived += $count
+        }
+        $record.eofReached = $true
+        if ($record.bytesReceived -eq 0 -or
+            ($null -ne $record.declaredLengthBytes -and $record.bytesReceived -ne $record.declaredLengthBytes)) {
+            throw 'Archive body is empty or does not match its declared length.'
+        }
+        $record.bodyComplete = $true
+    } catch {
+        $record.errorType = $_.Exception.GetType().FullName
+        $record.error = $_.Exception.ToString()
+    } finally {
+        $timer.Stop(); $record.elapsedSeconds = $timer.Elapsed.TotalSeconds
+        $record.completedUtc = [DateTime]::UtcNow.ToString('O')
+        if ($sha1) {
+            $record.sha1 = [BitConverter]::ToString($sha1.GetHashAndReset()).Replace('-', '').ToLowerInvariant()
+            $sha1.Dispose()
+        }
+        if ($sha256) {
+            $record.sha256 = [BitConverter]::ToString($sha256.GetHashAndReset()).Replace('-', '').ToLowerInvariant()
+            $sha256.Dispose()
+        }
+        if ($stream) { $stream.Dispose() }
+        if ($response) { $response.Dispose() }
+        $request.Dispose(); $deadline.Dispose()
+        if ($ownedClient) { $Client.Dispose() }
+    }
+    $record.digestMatches = $record.bodyComplete -and $record.sha1 -ceq $ExpectedSha1
+    if ($record.bodyComplete -and $record.digestMatches -and $null -eq $record.error) {
+        $record.status = 'success'
+    } elseif ($null -eq $record.error) {
+        $record.errorType = 'DigestMismatch'
+        $record.error = 'Complete archive digest does not match the registered SHA1.'
+    }
+    return $record
+}
+
+if ($RegistryDownloadOnly) {
+    $evidence = Get-RegistryArchiveEvidence -ExpectedSha1 $ExpectedArchiveSha1
+    $record = [ordered]@{
+        schemaVersion = 1; purpose = 'fixed-unity-registry-download-diagnostic'
+        capturedUtc = [DateTime]::UtcNow.ToString('O'); hostName = [Environment]::MachineName
+        sourceSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        gitCommit = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
+        client = 'System.Net.Http.HttpClient'; powershellVersion = $PSVersionTable.PSVersion.ToString()
+        dotnetRuntime = [Environment]::Version.ToString()
+        architecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+        evidence = $evidence
+    }
+    $parent = Split-Path -Parent $OutputPath
+    if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding utf8
+    Write-Host "Registry download evidence: $OutputPath"
+    if ($evidence.status -cne 'success') { throw "Fixed registry download failed; see $OutputPath." }
+    return
 }
 
 function Get-UnityPackageLogEvidence {
