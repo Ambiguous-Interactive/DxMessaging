@@ -841,7 +841,7 @@ $floorMetadata = & node -e 'const fs=require("fs"), yaml=require("yaml"); consol
 if ($LASTEXITCODE -ne 0) { throw 'Cannot load the real SDK floor workflow.' }
 $floorWorkflow = $floorMetadata | ConvertFrom-Json
 $floor = $floorWorkflow.jobs.'native-sdk-floor'
-Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] && inputs[''native-sdk-log-source''] == '''' && !inputs[''native-sdk-registry-probe''] }}')
+Assert-That 'floor skips the unlicensed bootstrap job' ($floorWorkflow.jobs.bootstrap.if -ceq '${{ !inputs[''native-sdk-floor''] && inputs[''native-sdk-log-source''] == '''' && !inputs[''native-sdk-registry-probe''] && !inputs[''native-sdk-upm-network-probe''] }}')
 Assert-That 'floor requires registration preflight and a 600-minute budget' ($floor.needs[0] -ceq 'runner-preflight' -and $floor.'timeout-minutes' -eq 600)
 $floorWork = @($floor.steps | Where-Object { $_.PSObject.Properties['id'] -and $_.id -ceq 'run_sdk_floor' })[0]
 Assert-That 'floor keeps all CPU/Burst allocation cases in PlayMode' ($floorWork.run -match '-TestMode playmode' -and $floorWork.run -match '-TestCategory NativeSdkCpu' -and $floorWork.run -notmatch '-CanonicalProfilePath|-StandalonePlayerBatchOrders')
@@ -1165,10 +1165,85 @@ try {
         $result.status -ceq 'success' -and $result.url.StartsWith('https://cdn.packages.unity.com/')
     )
 } finally { $client.Dispose() }
+# Exercise actual invocation/report admission with a synthetic native boundary.
+$networkFunction = $collectorAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Invoke-InstalledUpmDiagnostic'
+}, $true)
+Assert-That 'collector defines the actual installed UPM diagnostic invocation' ($null -ne $networkFunction)
+Invoke-Expression $networkFunction.Extent.Text
+$networkFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('dxm-upm-network-' + [Guid]::NewGuid().ToString('N'))
+try {
+    $diagnosticDirectory = Join-Path $networkFixtureRoot 'package manager with spaces/Diagnostics'
+    $nativeBinary = Join-Path $diagnosticDirectory 'bin/UnityPackageManagerDiagnostics.exe'
+    $nativeServer = Join-Path $networkFixtureRoot 'package manager with spaces/Server/UnityPackageManager.exe'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $nativeBinary), (Split-Path -Parent $nativeServer) -Force | Out-Null
+    foreach ($networkFixtureMode in @('ok', 'nonzero', 'missing-exit', 'string-exit', 'launch-error',
+        'missing-report', 'empty-report', 'oversized-report', 'missing-binary', 'missing-server', 'stale-output')) {
+        [IO.File]::WriteAllText($nativeBinary, 'synthetic native binary boundary')
+        [IO.File]::WriteAllText($nativeServer, 'synthetic package manager boundary')
+        $nativeHash = (Get-FileHash -LiteralPath $nativeBinary).Hash
+        $caseOutput = Join-Path $networkFixtureRoot "output with spaces/$networkFixtureMode/evidence.json"
+        $caseReport = Join-Path (Split-Path -Parent $caseOutput) 'upm-network-report'
+        if ($networkFixtureMode -ceq 'missing-binary') { Remove-Item -LiteralPath $nativeBinary }
+        if ($networkFixtureMode -ceq 'missing-server') { Remove-Item -LiteralPath $nativeServer }
+        if ($networkFixtureMode -ceq 'stale-output') {
+            New-Item -ItemType Directory -Path $caseReport -Force | Out-Null
+            [IO.File]::WriteAllText((Join-Path $caseReport 'upm-diagnostic-report.txt'), 'stale report must not admit a new run')
+        }
+        $nativeCalls = [Collections.Generic.List[string]]::new()
+        $execute = {
+            param($nativeFile, $nativeArguments, $consolePath)
+            $nativeCalls.Add($nativeFile)
+            Assert-That 'native diagnostic arguments preserve four fixed tokens and paths with spaces' (
+                $nativeFile -ceq $nativeBinary -and $nativeArguments.Count -eq 4 -and
+                $nativeArguments[0] -ceq '-o' -and $nativeArguments[1] -ceq $caseReport -and
+                $nativeArguments[2] -ceq '-p' -and $nativeArguments[3] -ceq $nativeServer
+            )
+            if ($networkFixtureMode -ceq 'launch-error') { throw [IO.IOException]::new('synthetic launch refused') }
+            [IO.File]::WriteAllText($consolePath, 'synthetic native console')
+            [IO.File]::WriteAllText((Join-Path $nativeArguments[1] 'upm-diag.log'), 'synthetic native log')
+            if ($networkFixtureMode -cne 'missing-report') {
+                $body = if ($networkFixtureMode -ceq 'empty-report') { '' }
+                    elseif ($networkFixtureMode -ceq 'oversized-report') { 'x' * (4 * 1024 * 1024 + 1) }
+                    else { 'synthetic native report' }
+                [IO.File]::WriteAllText((Join-Path $nativeArguments[1] 'upm-diagnostic-report.txt'), $body)
+            }
+            if ($networkFixtureMode -ceq 'missing-exit') { return }
+            if ($networkFixtureMode -ceq 'string-exit') { return '0' }
+            if ($networkFixtureMode -ceq 'nonzero') { return 7 }
+            return 0
+        }.GetNewClosure()
+        $result = Invoke-InstalledUpmDiagnostic -DiagnosticsDirectory $diagnosticDirectory -EvidencePath $caseOutput -CollectorSourcePath $collectorPath -Execute $execute
+        $expectedCalls = if ($networkFixtureMode -in @('missing-binary', 'missing-server', 'stale-output')) { 0 } else { 1 }
+        Assert-That "native diagnostic $networkFixtureMode retains its actual invocation/completeness outcome" (
+            ($result.status -ceq 'completed') -eq ($networkFixtureMode -ceq 'ok') -and
+            $nativeCalls.Count -eq $expectedCalls -and (Test-Path -LiteralPath $caseOutput)
+        )
+        if ($networkFixtureMode -ceq 'ok') {
+            Assert-That 'completed native invocation retains binary and report provenance' (
+                $result.sourceSha256 -ceq (Get-FileHash -LiteralPath $collectorPath -Algorithm SHA256).Hash.ToLowerInvariant() -and
+                $result.exitCode -eq 0 -and $result.executionCompleted -and $result.binaryFiles.Count -eq 2 -and
+                $result.reports.Count -eq 3 -and @($result.reports | Where-Object { $_.status -cne 'ok' }).Count -eq 0
+            )
+        } elseif ($networkFixtureMode -ceq 'nonzero') {
+            Assert-That 'nonzero native exit retains complete reports as failed execution' (
+                $result.exitCode -eq 7 -and $result.executionCompleted -and $result.reports.Count -eq 3
+            )
+        }
+        if (Test-Path -LiteralPath $nativeBinary) {
+            Assert-That 'native diagnostic does not mutate the installed executable' ((Get-FileHash -LiteralPath $nativeBinary).Hash -ceq $nativeHash)
+        }
+    }
+} finally {
+    if (Test-Path -LiteralPath $networkFixtureRoot) { Remove-Item -LiteralPath $networkFixtureRoot -Recurse -Force }
+}
+
 $diagnosticJob = $floorWorkflow.jobs.'package-log-capture'
 $expectedSteps = @('Checkout', 'Require isolated package diagnostic mode', 'Setup Node.js for package log redaction',
     'Install artifact tooling dependencies', 'Capture retained Unity Package Manager diagnostics',
-    'Verify exact Burst registry archive download', 'Redact retained package log artifacts', 'Upload retained package log artifacts')
+    'Verify exact Burst registry archive download', 'Run installed UPM network diagnostics', 'Redact retained package log artifacts', 'Upload retained package log artifacts')
 Assert-That 'unlicensed package job contains only its declared diagnostic and artifact work' (
     ($diagnosticJob.steps.name -join '|') -ceq ($expectedSteps -join '|') -and
     $diagnosticJob.'timeout-minutes' -eq 10 -and $diagnosticJob.needs[0] -ceq 'runner-preflight'
@@ -1180,25 +1255,30 @@ Assert-That 'workflow registers the distinct canonical CDN case with the unchang
 )
 $diagnosticRoute = [scriptblock]::Create($diagnosticJob.steps[1].run)
 $diagnosticEnvironment = @{}
-foreach ($key in @('DXM_REQUESTED_RUNNER', 'RUNNER_NAME', 'DXM_LOG_SOURCE', 'DXM_REGISTRY_PROBE', 'DXM_OTHER_PACKAGE_MODES')) {
+foreach ($key in @('DXM_REQUESTED_RUNNER', 'RUNNER_NAME', 'DXM_LOG_SOURCE', 'DXM_REGISTRY_PROBE', 'DXM_NETWORK_PROBE', 'DXM_OTHER_PACKAGE_MODES')) {
     $diagnosticEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
 }
 try {
     foreach ($case in @(
-        @{ source = ''; probe = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
-        @{ source = '37859571795,1'; probe = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
-        @{ source = '37859571795,1'; probe = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
-        @{ source = ''; probe = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
-        @{ source = ''; probe = 'true'; other = 'true'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
-        @{ source = '../x,1'; probe = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
-        @{ source = ''; probe = 'true'; other = 'false'; runner = 'DAD-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
-        @{ source = ''; probe = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'DAD-MACHINE'; accept = $false }
+        @{ source = ''; probe = 'true'; network = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
+        @{ source = '37859571795,1'; probe = 'false'; network = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
+        @{ source = '37859571795,1'; probe = 'true'; network = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'false'; network = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'true'; network = 'false'; other = 'true'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = '../x,1'; probe = 'false'; network = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'true'; network = 'false'; other = 'false'; runner = 'DAD-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'true'; network = 'false'; other = 'false'; runner = 'ELI-MACHINE'; request = 'DAD-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'false'; network = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $true },
+        @{ source = ''; probe = 'true'; network = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = '37859571795,1'; probe = 'false'; network = 'true'; other = 'false'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'false'; network = 'true'; other = 'true'; runner = 'ELI-MACHINE'; request = 'ELI-MACHINE'; accept = $false },
+        @{ source = ''; probe = 'false'; network = 'true'; other = 'false'; runner = 'DAD-MACHINE'; request = 'ELI-MACHINE'; accept = $false }
     )) {
         $env:DXM_REQUESTED_RUNNER = $case.request; $env:RUNNER_NAME = $case.runner
-        $env:DXM_LOG_SOURCE = $case.source; $env:DXM_REGISTRY_PROBE = $case.probe; $env:DXM_OTHER_PACKAGE_MODES = $case.other
+        $env:DXM_LOG_SOURCE = $case.source; $env:DXM_REGISTRY_PROBE = $case.probe; $env:DXM_NETWORK_PROBE = $case.network; $env:DXM_OTHER_PACKAGE_MODES = $case.other
         $accepted = $true
         try { & $diagnosticRoute } catch { $accepted = $false }
-        Assert-That "diagnostic mode logs=$($case.source),probe=$($case.probe),other=$($case.other),runner=$($case.runner)" ($accepted -eq $case.accept)
+        Assert-That "diagnostic mode logs=$($case.source),probe=$($case.probe),network=$($case.network),other=$($case.other),runner=$($case.runner)" ($accepted -eq $case.accept)
     }
 } finally {
     foreach ($key in $diagnosticEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $diagnosticEnvironment[$key]) }
@@ -1207,6 +1287,19 @@ Assert-That 'registry diagnostic cannot start a bootstrap, pilot or SDK floor' (
     $floorWorkflow.jobs.bootstrap.if.Contains("!inputs['native-sdk-registry-probe']") -and
     $floorWorkflow.jobs.'pilot-contract-smoke'.if.Contains("!inputs['native-sdk-registry-probe']") -and
     $floor.if.Contains("!inputs['native-sdk-registry-probe']")
+)
+
+$networkStep = @($diagnosticJob.steps | Where-Object { $_.name -ceq 'Run installed UPM network diagnostics' })[0]
+Assert-That 'installed UPM network diagnostic keeps the fixed source, mode and work bound' (
+    $networkStep.'timeout-minutes' -eq 5 -and $networkStep.shell -ceq 'pwsh' -and
+    $networkStep.run.Contains('u6-v3/2021.3.45f1/Editor/Data/Resources/PackageManager/Diagnostics') -and
+    $networkStep.run.Contains('-UpmNetworkOnly -InstalledDiagnosticsPath $diagnostics') -and
+    $networkStep.run.Contains("-OutputPath '.artifacts/runner-bootstrap/upm-network-diagnostics.json'")
+)
+Assert-That 'network diagnostic excludes all bootstrap, pilot and SDK floor work' (
+    $floorWorkflow.jobs.bootstrap.if.Contains("!inputs['native-sdk-upm-network-probe']") -and
+    $floorWorkflow.jobs.'pilot-contract-smoke'.if.Contains("!inputs['native-sdk-upm-network-probe']") -and
+    $floor.if.Contains("!inputs['native-sdk-upm-network-probe']")
 )
 
 Write-Host 'same-player repeat evidence tests passed'

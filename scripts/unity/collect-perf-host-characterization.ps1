@@ -14,7 +14,9 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][switch]$PackageLogsOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$ProjectPath,
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$CachePath,
-    [Parameter(ParameterSetName = 'PackageLogs')][string]$InstalledDiagnosticsPath,
+    [Parameter(ParameterSetName = 'PackageLogs')]
+    [Parameter(Mandatory = $true, ParameterSetName = 'UpmNetwork')][string]$InstalledDiagnosticsPath,
+    [Parameter(Mandatory = $true, ParameterSetName = 'UpmNetwork')][switch]$UpmNetworkOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')][switch]$RegistryDownloadOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')]
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedArchiveSha1,
@@ -309,6 +311,112 @@ function Get-UnityPackageLogEvidence {
     }
     if (-not [string]::IsNullOrWhiteSpace($InstalledDiagnostics)) { $result.installedDiagnosticsPath = $InstalledDiagnostics }
     return $result
+}
+
+function Invoke-InstalledUpmDiagnostic {
+    param(
+        [Parameter(Mandatory = $true)][string]$DiagnosticsDirectory,
+        [Parameter(Mandatory = $true)][string]$EvidencePath,
+        [Parameter(Mandatory = $true)][string]$CollectorSourcePath,
+        [scriptblock]$Execute
+    )
+    $fullEvidence = [IO.Path]::GetFullPath($EvidencePath)
+    $outputParent = [IO.Path]::GetDirectoryName($fullEvidence)
+    $reportDirectory = Join-Path $outputParent 'upm-network-report'
+    $diagnostics = [IO.Path]::GetFullPath($DiagnosticsDirectory)
+    $binary = Join-Path $diagnostics 'bin/UnityPackageManagerDiagnostics.exe'
+    $server = [IO.Path]::GetFullPath((Join-Path $diagnostics '../Server/UnityPackageManager.exe'))
+    $console = Join-Path $outputParent 'upm-network-console.log'
+    $nativeArguments = @('-o', $reportDirectory, '-p', $server)
+    $errors = [Collections.Generic.List[string]]::new()
+    $record = [ordered]@{
+        schemaVersion = 1; purpose = 'installed-upm-network-diagnostic'
+        capturedUtc = [DateTime]::UtcNow.ToString('O'); hostName = [Environment]::MachineName
+        sourceSha256 = (Get-FileHash -LiteralPath $CollectorSourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        gitCommit = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
+        status = 'prepared'; executable = $binary; arguments = $nativeArguments
+        reportDirectory = $reportDirectory; consoleLog = $console
+        binaryFiles = @(); reports = @(); exitCode = $null; executionCompleted = $false
+        errors = @(); maximumReportBytes = 4 * 1024 * 1024; workflowWorkLimitMinutes = 5
+    }
+    New-Item -ItemType Directory -Path $outputParent -Force | Out-Null
+    $save = { $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $fullEvidence -Encoding utf8 }
+    & $save
+    $timer = [Diagnostics.Stopwatch]::new()
+    try {
+        if (Test-Path -LiteralPath $reportDirectory) { throw 'Refuse an existing UPM diagnostic report directory.' }
+        foreach ($directory in @($diagnostics, (Split-Path -Parent $binary), (Split-Path -Parent $server))) {
+            $item = Get-Item -LiteralPath $directory -Force -ErrorAction Stop
+            if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'Expected a direct installed diagnostic directory.'
+            }
+        }
+        foreach ($path in @($binary, $server)) {
+            $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or $item.Length -eq 0 -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'Expected a nonempty regular installed diagnostic executable.'
+            }
+            $record.binaryFiles += [ordered]@{
+                path = $item.FullName; lengthBytes = $item.Length; lastWriteUtc = $item.LastWriteTimeUtc.ToString('O')
+                sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        }
+        New-Item -ItemType Directory -Path $reportDirectory | Out-Null
+        $record.status = 'invoking'; $record.startedUtc = [DateTime]::UtcNow.ToString('O')
+        & $save
+        $timer.Start()
+        if ($Execute) {
+            $nativeExit = & $Execute $binary $nativeArguments $console
+        } else {
+            # Native invocation preserves each argument token, including paths with spaces.
+            & $binary '-o' $reportDirectory '-p' $server *> $console
+            $nativeExit = $LASTEXITCODE
+        }
+        if ($null -eq $nativeExit -or $nativeExit -isnot [int]) { throw 'No integer native diagnostic exit code was retained.' }
+        $record.exitCode = $nativeExit; $record.executionCompleted = $true
+        if ($nativeExit -ne 0) { $errors.Add("UPM diagnostic exited $nativeExit.") }
+    } catch {
+        $record.errorType = $_.Exception.GetType().FullName
+        $record.error = $_.Exception.ToString()
+        $errors.Add($_.Exception.Message)
+    } finally {
+        $timer.Stop(); $record.elapsedSeconds = $timer.Elapsed.TotalSeconds
+        $record.completedUtc = [DateTime]::UtcNow.ToString('O')
+        foreach ($path in @((Join-Path $reportDirectory 'upm-diagnostic-report.txt'),
+            (Join-Path $reportDirectory 'upm-diag.log'), $console)) {
+            $report = [ordered]@{ path = $path; status = 'missing' }
+            try {
+                $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw 'Expected a regular diagnostic output file.'
+                }
+                $report.lengthBytes = $item.Length
+                $report.lastWriteUtc = $item.LastWriteTimeUtc.ToString('O')
+                if ($item.Length -gt $record.maximumReportBytes -or ($path -cne $console -and $item.Length -eq 0)) {
+                    throw 'Diagnostic report is empty or exceeds the fixed byte cap.'
+                }
+                $report.sha256BeforeRedaction = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+                $report.lastWriteUtcAfterRead = (Get-Item -LiteralPath $path -Force).LastWriteTimeUtc.ToString('O')
+                if ($report.lastWriteUtcAfterRead -cne $report.lastWriteUtc) { throw 'Diagnostic output changed during capture.' }
+                $report.status = 'ok'
+            } catch {
+                $report.error = $_.Exception.Message
+                $errors.Add("${path}: $($_.Exception.Message)")
+            }
+            $record.reports += $report
+        }
+        $record.errors = @($errors.ToArray())
+        $record.status = if ($record.executionCompleted -and $record.exitCode -eq 0 -and $errors.Count -eq 0) { 'completed' } else { 'failed' }
+        & $save
+    }
+    return $record
+}
+
+if ($UpmNetworkOnly) {
+    $record = Invoke-InstalledUpmDiagnostic -DiagnosticsDirectory $InstalledDiagnosticsPath -EvidencePath $OutputPath -CollectorSourcePath $PSCommandPath
+    Write-Host "Installed UPM diagnostic evidence: $OutputPath"
+    if ($record.status -cne 'completed') { throw "Installed UPM diagnostic is incomplete or failed; see $OutputPath." }
+    return
 }
 
 if ($PackageLogsOnly) {

@@ -51,6 +51,11 @@ on:
         required: false
         type: boolean
         default: false
+      native-sdk-upm-network-probe:
+        description: "Run installed UPM network diagnostics on ELI and retain reports without Unity."
+        required: false
+        type: boolean
+        default: false
       native-sdk-log-source:
         description: "Collect retained UPM diagnostics only: floor run-id,attempt (no Unity launch)."
         required: false
@@ -145,7 +150,9 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
-    if: ${{ !inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-registry-probe'] }}
+    if: >-
+      ${{ !inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' &&
+      !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
@@ -426,7 +433,9 @@ jobs:
 
   package-log-capture:
     name: Package diagnostics on ELI
-    if: ${{ inputs['native-sdk-log-source'] != '' || inputs['native-sdk-registry-probe'] }}
+    if: >-
+      ${{ inputs['native-sdk-log-source'] != '' || inputs['native-sdk-registry-probe'] ||
+      inputs['native-sdk-upm-network-probe'] }}
     needs:
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
@@ -448,6 +457,7 @@ jobs:
           DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
           DXM_LOG_SOURCE: ${{ inputs['native-sdk-log-source'] }}
           DXM_REGISTRY_PROBE: ${{ inputs['native-sdk-registry-probe'] }}
+          DXM_NETWORK_PROBE: ${{ inputs['native-sdk-upm-network-probe'] }}
           DXM_OTHER_PACKAGE_MODES: >-
             ${{ inputs['native-sdk-floor'] || inputs['perf-event-window-utc'] != '' ||
             inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
@@ -461,7 +471,9 @@ jobs:
           }
           $logs = -not [string]::IsNullOrWhiteSpace($env:DXM_LOG_SOURCE)
           $download = $env:DXM_REGISTRY_PROBE -ceq 'true'
-          if ($logs -eq $download -or $env:DXM_OTHER_PACKAGE_MODES -eq 'true') {
+          $network = $env:DXM_NETWORK_PROBE -ceq 'true'
+          $selectedModes = [int]$logs + [int]$download + [int]$network
+          if ($selectedModes -ne 1 -or $env:DXM_OTHER_PACKAGE_MODES -eq 'true') {
             throw 'Select exactly one package diagnostic and disable all other modes.'
           }
           if ($logs -and $env:DXM_LOG_SOURCE -cnotmatch '^[1-9][0-9]{0,15},[1-9][0-9]{0,3}$') {
@@ -530,6 +542,16 @@ jobs:
             -RegistryDownloadOnly -RegistryArchiveRoute Cdn -ExpectedArchiveSha1 $env:DXM_EXPECTED_BURST_SHA1 `
             -OutputPath '.artifacts/runner-bootstrap/registry-download.json'
 
+      - name: Run installed UPM network diagnostics
+        if: ${{ inputs['native-sdk-upm-network-probe'] }}
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $diagnostics = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/2021.3.45f1/Editor/Data/Resources/PackageManager/Diagnostics'
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -UpmNetworkOnly -InstalledDiagnosticsPath $diagnostics `
+            -OutputPath '.artifacts/runner-bootstrap/upm-network-diagnostics.json'
+
       - name: Redact retained package log artifacts
         if: ${{ always() && steps.log_node.outcome == 'success' && steps.log_tooling.outcome == 'success' }}
         id: redact_logs
@@ -549,7 +571,7 @@ jobs:
   pilot-contract-smoke:
     name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
     if: >-
-      ${{ !inputs['native-sdk-registry-probe'] && inputs['native-sdk-log-source'] == '' &&
+      ${{ !inputs['native-sdk-upm-network-probe'] && !inputs['native-sdk-registry-probe'] && inputs['native-sdk-log-source'] == '' &&
       !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
       inputs['perf-pilot-work-vector'] != '' ||
       inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
@@ -959,7 +981,9 @@ jobs:
 
   native-sdk-floor:
     name: Unity 2021.3 native SDK CPU/Burst floor on ELI
-    if: ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-registry-probe'] }}
+    if: >-
+      ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' &&
+      !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
     needs:
       - runner-preflight
     runs-on:

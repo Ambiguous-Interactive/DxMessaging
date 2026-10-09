@@ -1198,6 +1198,28 @@ lists `%LOCALAPPDATA%/Unity/Editor/upm.log` for a user account and
 `%ALLUSERSPROFILE%/Unity/Editor/upm.log` for SYSTEM. Keep missing or incomplete
 records; diagnose the first failed attempt before dispatching another floor run.
 
+## Run the installed UPM network diagnostic
+
+Set Runner Audit's `native-sdk-upm-network-probe=true` with `runner-label=ELI-MACHINE`.
+Leave all other optional modes at their defaults. The collector verifies regular installed
+diagnostic and UPM server files under the managed Unity 2021.3.45f1 directory, retains
+their hashes, and invokes the diagnostic executable once with the actual launcher's
+`-o` and `-p` arguments. It does not run the batch wrapper's interactive keyboard pause.
+The work step has a fixed five-minute limit within the existing ten-minute job.
+
+The collector records invocation evidence before launch and refuses an existing report
+directory. The redacted artifact includes `upm-network-diagnostics.json`, console output,
+`upm-network-report/upm-diagnostic-report.txt` and `upm-network-report/upm-diag.log`.
+Required reports must be nonempty and no larger than 4 MiB each. Nonzero exits, missing
+reports and partial executions remain failed records with their available output.
+The existing artifact redactor must succeed before upload.
+
+A completed invocation does not assert that every network test passed. Inspect the report
+outcomes separately. This supported diagnostic starts no Unity Editor or licensed build;
+it does not change SDK project/cache policy or security settings. Its current result does
+not explain an earlier UPM abort or admit installed SDK versions, runtime correctness,
+player compatibility or calibrated performance.
+
 ## Diagnose the exact Burst registry archive download
 
 Set Runner Audit's `native-sdk-registry-probe=true` with `runner-label=ELI-MACHINE`.
