@@ -6326,7 +6326,8 @@ function Write-StandaloneBuildOutputDiagnostics {
 function Test-StandalonePlayerBuildOutput {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedExe,
-        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc
+        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc,
+        [ValidateSet('Mono', 'IL2CPP')][string]$ScriptingBackend = 'IL2CPP'
     )
 
     if (-not (Test-Path -LiteralPath $ExpectedExe -PathType Leaf)) {
@@ -6334,6 +6335,9 @@ function Test-StandalonePlayerBuildOutput {
     }
 
     $exe = Get-Item -LiteralPath $ExpectedExe
+    if ($exe.Length -eq 0) {
+        return "empty exe"
+    }
     if ($exe.LastWriteTimeUtc -lt $BuildStartedUtc.AddSeconds(-5)) {
         return "stale exe; LastWriteTimeUtc=$($exe.LastWriteTimeUtc.ToString('o'))"
     }
@@ -6341,6 +6345,23 @@ function Test-StandalonePlayerBuildOutput {
     $dataDir = Join-Path (Split-Path -Parent $ExpectedExe) ("{0}_Data" -f [System.IO.Path]::GetFileNameWithoutExtension($ExpectedExe))
     if (-not (Test-Path -LiteralPath $dataDir -PathType Container)) {
         return "missing player data directory: $dataDir"
+    }
+
+    # Unity copies the executable/Data directory before native compilation can
+    # fail. Require native code and metadata before narrating a benign exit.
+    # Cached build files can retain timestamps; their presence is not identity proof.
+    if ($ScriptingBackend -eq 'IL2CPP') {
+        foreach ($path in @(
+            (Join-Path (Split-Path -Parent $ExpectedExe) 'GameAssembly.dll'),
+            (Join-Path $dataDir 'il2cpp_data/Metadata/global-metadata.dat')
+        )) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                return "missing IL2CPP file: $path"
+            }
+            if ((Get-Item -LiteralPath $path).Length -eq 0) {
+                return "empty IL2CPP file: $path"
+            }
+        }
     }
 
     return ''
@@ -8114,7 +8135,8 @@ try {
         }
         $shippingBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
-            -BuildStartedUtc $shippingBuildStartedUtc
+            -BuildStartedUtc $shippingBuildStartedUtc `
+            -ScriptingBackend $StandaloneScriptingBackend
         if (
             -not [string]::IsNullOrWhiteSpace($shippingMarkerProblem) -or
             -not [string]::IsNullOrWhiteSpace($shippingBuildProblem)
@@ -8481,7 +8503,8 @@ try {
 
         # POST-BUILD ASSERT (the BUILT PLAYER EXE is the source of truth): the exe
         # MUST exist at DXM_PLAYER_BUILD_PATH, be fresh for this build, and include
-        # its companion _Data directory. A non-zero build exit code OR a watchdog
+        # its companion _Data directory and nonempty IL2CPP code/metadata. A non-zero
+        # build exit code OR a watchdog
         # tree-kill is fatal ONLY when the exe is missing/stale/incomplete: Unity can
         # crash in a background thread during shutdown AFTER the player is fully
         # built, or defer Application.Quit in -batchmode IL2CPP (the watchdog then
@@ -8491,7 +8514,8 @@ try {
         # fresh, complete exe) still fails loudly with full diagnostics.
         $standaloneBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
-            -BuildStartedUtc $standaloneBuildStartedUtc
+            -BuildStartedUtc $standaloneBuildStartedUtc `
+            -ScriptingBackend $StandaloneScriptingBackend
         if (-not [string]::IsNullOrWhiteSpace($standaloneBuildProblem)) {
             Write-UnityRunFailureDiagnostics `
                 -Project $ProjectPath `
@@ -8508,7 +8532,7 @@ try {
             }
             throw "Editor build produced invalid DxMessaging test player output at $standaloneExe ($standaloneBuildProblem; build exit code $($buildResult.ExitCode) / $(Get-NativeExitCodeDescription -ExitCode $buildResult.ExitCode)). The build modifier may not have run, Unity may have cleaned a Temp output, or a stale player was detected. See the build log at $logPath."
         }
-        # The exe is valid. If the build process nonetheless exited non-zero or was
+        # Required player files are present. If the build process exited non-zero or was
         # tree-killed, narrate the benign post-build shutdown crash and keep going.
         if ($buildResult.TimedOut -or $buildResult.ExitCode -ne 0) {
             Write-UnityBenignExitWarning -Label "Build standalone IL2CPP test player (Unity $UnityVersion)" -ExitCode $buildResult.ExitCode -TimedOut:$buildResult.TimedOut -LogPath $logPath

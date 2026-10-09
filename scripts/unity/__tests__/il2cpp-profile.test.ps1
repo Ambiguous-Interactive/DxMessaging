@@ -78,6 +78,7 @@ try {
     foreach ($name in @(
         'Get-ComparisonSourceEvidence',
         'Get-StandalonePlayerManifest',
+        'Test-StandalonePlayerBuildOutput',
         'Write-JsonArtifact',
         'Write-NativeBuildInputEvidence',
         'New-ConfiguratorSource',
@@ -98,6 +99,45 @@ try {
         }
         Invoke-Expression $definition.Extent.Text
     }
+
+    # Model session 413's partial exe/Data output with the production guard.
+    # These synthetic files are never executed and are not actual player proof.
+    $outputGuardRoot = Join-Path $fixtureRoot 'partial-player'
+    $outputGuardExe = Join-Path $outputGuardRoot 'DxmTestPlayer.exe'
+    $outputGuardData = Join-Path $outputGuardRoot 'DxmTestPlayer_Data'
+    $outputGuardAssembly = Join-Path $outputGuardRoot 'GameAssembly.dll'
+    $outputGuardMetadata = Join-Path $outputGuardData 'il2cpp_data/Metadata/global-metadata.dat'
+    $outputGuardStarted = [datetime]::UtcNow
+    $outputGuardBytes = [Text.Encoding]::UTF8.GetBytes('output guard fixture')
+    New-Item -ItemType Directory -Force -Path $outputGuardData | Out-Null
+    [IO.File]::WriteAllBytes($outputGuardExe, $outputGuardBytes)
+    $partialOutputProblem = Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted
+    Assert-That 'fresh exe/Data without native code is rejected' ($partialOutputProblem.Contains('missing IL2CPP file'))
+    Assert-That 'Mono output does not require IL2CPP files' ([string]::IsNullOrEmpty((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted -ScriptingBackend Mono)))
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $outputGuardMetadata) | Out-Null
+    [IO.File]::WriteAllBytes($outputGuardAssembly, $outputGuardBytes)
+    [IO.File]::WriteAllBytes($outputGuardMetadata, $outputGuardBytes)
+    Assert-That 'complete IL2CPP output passes the file guard' ([string]::IsNullOrEmpty((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted -ScriptingBackend IL2CPP)))
+    foreach ($path in @($outputGuardAssembly, $outputGuardMetadata)) {
+        Remove-Item -LiteralPath $path
+        Assert-That "missing native file is rejected: $path" ((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted).Contains('missing IL2CPP file'))
+        [IO.File]::WriteAllBytes($path, [byte[]]@())
+        Assert-That "empty native file is rejected: $path" ((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted).Contains('empty IL2CPP file'))
+        [IO.File]::WriteAllBytes($path, $outputGuardBytes)
+    }
+    [IO.File]::WriteAllBytes($outputGuardExe, [byte[]]@())
+    Assert-That 'empty executable is rejected' ((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted).Contains('empty exe'))
+    [IO.File]::WriteAllBytes($outputGuardExe, $outputGuardBytes)
+    [IO.File]::SetLastWriteTimeUtc($outputGuardExe, $outputGuardStarted.AddMinutes(-1))
+    Assert-That 'stale executable is rejected' ((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted).Contains('stale exe'))
+    [IO.File]::SetLastWriteTimeUtc($outputGuardExe, $outputGuardStarted)
+    Remove-Item -LiteralPath $outputGuardData -Recurse
+    Assert-That 'missing Data directory is rejected' ((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted).Contains('missing player data directory'))
+    Remove-Item -LiteralPath $outputGuardExe
+    Assert-That 'missing executable is rejected' ((Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted).Contains('missing exe'))
+    Assert-Fails -Description 'unknown backend is rejected' -Action {
+        Test-StandalonePlayerBuildOutput -ExpectedExe $outputGuardExe -BuildStartedUtc $outputGuardStarted -ScriptingBackend unknown
+    } -ExpectedMessage 'ValidateSet'
 
     $repositoryCatalogPath = Join-Path $repoRoot 'scripts/unity/comparison-evidence-catalog-v1.json'
     $repositoryCatalog = Get-Content -LiteralPath $repositoryCatalogPath -Raw | ConvertFrom-Json

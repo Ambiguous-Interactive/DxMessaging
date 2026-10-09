@@ -6,7 +6,11 @@
 #define DXM_PLUGIN_ABI 38801
 #endif
 
+#ifdef _MSC_VER
+#define DXM_EXPORT __declspec(dllexport)
+#else
 #define DXM_EXPORT __attribute__((visibility("default")))
+#endif
 
 typedef struct {
     int32_t producer;
@@ -14,10 +18,12 @@ typedef struct {
     int64_t value;
 } dxm_payload;
 
-_Static_assert(sizeof(dxm_payload) == 16, "payload stride");
-_Static_assert(offsetof(dxm_payload, producer) == 0, "producer offset");
-_Static_assert(offsetof(dxm_payload, sequence) == 4, "sequence offset");
-_Static_assert(offsetof(dxm_payload, value) == 8, "value offset");
+/* Default MSVC C mode lacks C11 assertions. Negative array bounds still fail
+ * compilation and preserve the same four ABI/layout requirements. */
+typedef char dxm_assert_payload_stride[sizeof(dxm_payload) == 16 ? 1 : -1];
+typedef char dxm_assert_producer_offset[offsetof(dxm_payload, producer) == 0 ? 1 : -1];
+typedef char dxm_assert_sequence_offset[offsetof(dxm_payload, sequence) == 4 ? 1 : -1];
+typedef char dxm_assert_value_offset[offsetof(dxm_payload, value) == 8 ? 1 : -1];
 
 DXM_EXPORT int32_t dxm_plugin_abi(void) { return DXM_PLUGIN_ABI; }
 

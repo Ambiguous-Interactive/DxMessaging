@@ -1160,6 +1160,14 @@ runs after failed work; the complete-case gate still requires all 745 cases to p
 Retain recorder failures as unavailable measurement evidence when that is their
 actual cause; any additional native contract failure requires investigation.
 
+Unity includes the raw research C plugin source in a Windows IL2CPP build even
+when its managed fixture is limited to the macOS Editor. Keep its four ABI/layout
+requirements as named compile-time assertions and use compiler-specific exports.
+The existing player-output guard requires nonempty IL2CPP code and metadata
+before accepting the executable/Data directory or narrating a benign shutdown.
+These file checks precede the separate profile, runtime and complete-case gates.
+Mono output is checked with its explicit backend and does not require IL2CPP files.
+
 ## Collect Windows clock and sleep events
 
 Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner.
