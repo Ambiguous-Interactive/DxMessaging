@@ -1094,6 +1094,7 @@ jobs:
         timeout-minutes: 120
         shell: pwsh
         env:
+          UNITY_BURST_DEBUG: "1"
           UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -1106,6 +1107,10 @@ jobs:
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\native-sdk-floor-2021.3.45f1'
           $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-admission.json"
           $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-direct-call"
+          if (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'Logs')) {
+            throw 'The diagnostic requires the inherited checkout Logs directory absent before work.'
+          }
+          $env:DXM_NATIVE_BURST_TRACE_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-burst-trace.json"
           try {
             ./scripts/unity/run-ci-tests.ps1 `
               -UnityVersion 2021.3.45f1 `
@@ -1179,6 +1184,32 @@ jobs:
                 if ($before.ilHex -cne $method.ilHex) { throw 'Direct-call wrapper IL changed during observation.' }
               }
             }
+          }
+          $trace = Get-Content -LiteralPath (Join-Path $root 'sdk-burst-trace.json') -Raw | ConvertFrom-Json
+          if ($trace.schemaVersion -ne 1 -or $trace.debugLevel -cne '1' -or @($trace.errors).Count -ne 0 -or
+              @($trace.runtimeFiles).Count -ne 2 -or @($trace.logs).Count -lt 2 -or @($trace.logs).Count -gt 64) {
+            throw 'Burst compiler trace is missing or incomplete.'
+          }
+          $runtimeHashes = @{
+            'Burst.Compiler.IL.dll' = 'c425260738fdc8afe30520acba118df0fb488bbaaff98a912b3f3e4e6e850b8b'
+            'Burst.Backend.dll' = '8c927c75b2bc3aca96169bbe1a9076b37889f1ed395b22f16f37061a5ce16298'
+          }
+          foreach ($name in $runtimeHashes.Keys) {
+            $files = @($trace.runtimeFiles | Where-Object { $_.name -ceq $name })
+            if ($files.Count -ne 1 -or $files[0].sha256 -cne $runtimeHashes[$name] -or
+                ($files[0].loadedAssemblyObserved -and $files[0].loadedAssemblySha256 -cne $runtimeHashes[$name])) {
+              throw "Burst runtime file identity differs: $name."
+            }
+          }
+          if (@($trace.logs | Where-Object { $_.name -ceq 'burst.log' }).Count -ne 1 -or
+              @($trace.logs.name | Sort-Object -Unique).Count -ne @($trace.logs).Count -or
+              @($trace.logs | Where-Object {
+                $_.name -cnotmatch '^burst(?:-thread-\d+)?\.log$' -or $_.status -cne 'ok' -or
+                $_.sourceLengthBytes -le 0 -or $_.sourceLengthBytes -gt 4 * 1024 * 1024 -or
+                $_.capturedBytes -ne $_.sourceLengthBytes -or $_.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+                [string]::IsNullOrEmpty($_.content)
+              }).Count -ne 0 -or ($trace.logs | Measure-Object -Property capturedBytes -Sum).Sum -gt 64 * 1024 * 1024) {
+            throw 'Burst trace log records are missing, malformed, changed or truncated.'
           }
           $xml = [xml](Get-Content -LiteralPath (Join-Path $root 'results.xml') -Raw)
           $cases = @($xml.SelectNodes('//test-case'))

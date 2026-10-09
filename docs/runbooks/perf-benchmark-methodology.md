@@ -1101,6 +1101,16 @@ It records addresses only as zero/nonzero and retains observation errors. A matc
 wrapper tail-call signature identifies its target; unmatched IL stays in the record.
 These diagnostics do not replace the native execution markers or permit fallback.
 
+The fixed floor diagnostic also uses standard Burst debug level 1. After all cases,
+the namespace fixture snapshots only main/thread compiler logs from the actual
+process current directory, before framework teardown can overwrite them. Capture
+is bounded to 64 files, 4 MiB per file and 64 MiB total. Missing, changing, invalid
+or truncated data stays incomplete. Raw hashes describe captured source bytes
+before the existing artifact redaction. Runtime directory file hashes and any
+observable loaded assembly location are separate observations; an unobserved
+assembly is not proof that it was unloaded. Diagnostic logging supplies no timing
+claim and does not change synchronous/eager options or execution assertions.
+
 The central v1.15 actions own admission and automatic cleanup. Acquisition
 requires resource lifecycle protection; return, classification, release and
 confirmed cleanup run before artifact redaction and upload. The runner must

@@ -193,6 +193,251 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         public void RetainDirectCallStateAfterCandidates()
         {
             CaptureDirectCallEvidence("after", true);
+            CaptureCompilerTrace();
+        }
+
+        [Serializable]
+        private sealed class CompilerLog
+        {
+            public string name;
+            public string path;
+            public string status;
+            public long sourceLengthBytes;
+            public int capturedBytes;
+            public string sourceLastWriteUtc;
+            public string sha256;
+            public string content;
+            public string error;
+        }
+
+        [Serializable]
+        private sealed class RuntimeFile
+        {
+            public string name;
+            public string path;
+            public string sha256;
+            public bool loadedAssemblyObserved;
+            public string loadedAssemblyLocation;
+            public string loadedAssemblySha256;
+        }
+
+        [Serializable]
+        private sealed class CompilerTrace
+        {
+            public int schemaVersion = 1;
+            public string capturedUtc;
+            public string currentDirectory;
+            public string runtimePath;
+            public bool runtimeOverridePresent;
+            public string debugLevel;
+            public CompilerLog[] logs;
+            public RuntimeFile[] runtimeFiles;
+            public string[] errors;
+        }
+
+        private static CompilerLog ReadCompilerLog(string path, int maximumBytes)
+        {
+            CompilerLog record = new()
+            {
+                name = System.IO.Path.GetFileName(path),
+                path = path,
+                status = "missing",
+            };
+            try
+            {
+                if (!System.IO.File.Exists(path))
+                {
+                    return record;
+                }
+                if (
+                    (System.IO.File.GetAttributes(path) & System.IO.FileAttributes.ReparsePoint)
+                    != 0
+                )
+                {
+                    throw new System.IO.IOException("Refusing a linked compiler log.");
+                }
+                DateTime before = System.IO.File.GetLastWriteTimeUtc(path);
+                using System.IO.FileStream input = new(
+                    path,
+                    System.IO.FileMode.Open,
+                    System.IO.FileAccess.Read,
+                    System.IO.FileShare.ReadWrite,
+                    4096,
+                    System.IO.FileOptions.SequentialScan
+                );
+                record.sourceLengthBytes = input.Length;
+                record.sourceLastWriteUtc = before.ToString("O");
+                byte[] bytes = new byte[(int)Math.Min(record.sourceLengthBytes, maximumBytes)];
+                while (record.capturedBytes < bytes.Length)
+                {
+                    int count = input.Read(
+                        bytes,
+                        record.capturedBytes,
+                        bytes.Length - record.capturedBytes
+                    );
+                    if (count == 0)
+                    {
+                        throw new System.IO.EndOfStreamException(
+                            "Compiler log shortened during capture."
+                        );
+                    }
+                    record.capturedBytes += count;
+                }
+                using System.Security.Cryptography.SHA256 hash =
+                    System.Security.Cryptography.SHA256.Create();
+                record.sha256 = BitConverter
+                    .ToString(hash.ComputeHash(bytes))
+                    .Replace("-", "")
+                    .ToLowerInvariant();
+                record.content = new System.Text.UTF8Encoding(false, true).GetString(bytes);
+                record.status = record.sourceLengthBytes <= maximumBytes ? "ok" : "truncated";
+                if (
+                    input.Length != record.sourceLengthBytes
+                    || System.IO.File.GetLastWriteTimeUtc(path) != before
+                )
+                {
+                    record.status = "changed";
+                }
+            }
+            catch (Exception error)
+            {
+                record.status = "error";
+                record.error = error.ToString();
+            }
+            return record;
+        }
+
+        private static string HashRuntimeFile(string path)
+        {
+            using System.Security.Cryptography.SHA256 hash =
+                System.Security.Cryptography.SHA256.Create();
+            using System.IO.FileStream input = System.IO.File.OpenRead(path);
+            return BitConverter
+                .ToString(hash.ComputeHash(input))
+                .Replace("-", "")
+                .ToLowerInvariant();
+        }
+
+        private static void CaptureCompilerTrace()
+        {
+            string output = Environment.GetEnvironmentVariable("DXM_NATIVE_BURST_TRACE_EVIDENCE");
+            if (string.IsNullOrEmpty(output))
+            {
+                return;
+            }
+            output = System.IO.Path.GetFullPath(output);
+            if (System.IO.File.Exists(output))
+            {
+                throw new System.IO.IOException("Refusing existing compiler trace: " + output);
+            }
+            List<string> errors = new();
+            List<CompilerLog> logs = new();
+            List<RuntimeFile> runtime = new();
+            CompilerTrace trace = new()
+            {
+                capturedUtc = DateTime.UtcNow.ToString("O"),
+                currentDirectory = Environment.CurrentDirectory,
+                runtimeOverridePresent = !string.IsNullOrEmpty(
+                    Environment.GetEnvironmentVariable("UNITY_BURST_RUNTIME_PATH")
+                ),
+                debugLevel = Environment.GetEnvironmentVariable("UNITY_BURST_DEBUG"),
+            };
+            try
+            {
+                Type loader = typeof(BurstCompiler).Assembly.GetType(
+                    "Unity.Burst.Editor.BurstLoader",
+                    true
+                );
+                trace.runtimePath = (string)loader.GetProperty("RuntimePath").GetValue(null);
+                foreach (string name in new[] { "Burst.Compiler.IL.dll", "Burst.Backend.dll" })
+                {
+                    RuntimeFile file = new()
+                    {
+                        name = name,
+                        path = System.IO.Path.Combine(trace.runtimePath, name),
+                    };
+                    runtime.Add(file);
+                    file.sha256 = HashRuntimeFile(file.path);
+                    System.Reflection.Assembly loaded = AppDomain
+                        .CurrentDomain.GetAssemblies()
+                        .SingleOrDefault(assembly =>
+                            assembly.GetName().Name
+                            == System.IO.Path.GetFileNameWithoutExtension(name)
+                        );
+                    if (loaded != null)
+                    {
+                        file.loadedAssemblyObserved = true;
+                        file.loadedAssemblyLocation = loaded.Location;
+                        file.loadedAssemblySha256 = HashRuntimeFile(loaded.Location);
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                errors.Add("Runtime identity: " + error);
+            }
+            try
+            {
+                string directory = System.IO.Path.Combine(trace.currentDirectory, "Logs");
+                if (
+                    (
+                        System.IO.File.GetAttributes(directory)
+                        & System.IO.FileAttributes.ReparsePoint
+                    ) != 0
+                )
+                {
+                    throw new System.IO.IOException("Refusing a linked compiler log directory.");
+                }
+                string[] paths = System
+                    .IO.Directory.GetFiles(directory, "burst*.log")
+                    .Where(path =>
+                        System.Text.RegularExpressions.Regex.IsMatch(
+                            System.IO.Path.GetFileName(path),
+                            @"^burst(?:-thread-\d+)?\.log$"
+                        )
+                    )
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .ToArray();
+                if (64 < paths.Length)
+                {
+                    errors.Add("Compiler trace has more than 64 fixed log files.");
+                }
+                long total = 0;
+                foreach (string path in paths.Take(64))
+                {
+                    int remaining = (int)Math.Min(4 * 1024 * 1024, 64 * 1024 * 1024 - total);
+                    if (remaining == 0)
+                    {
+                        errors.Add("Compiler trace exceeds the 64 MiB capture budget.");
+                        break;
+                    }
+                    CompilerLog log = ReadCompilerLog(path, remaining);
+                    logs.Add(log);
+                    total += log.capturedBytes;
+                    if (log.status != "ok" || log.capturedBytes == 0)
+                    {
+                        errors.Add(log.name + ": " + log.status);
+                    }
+                }
+                if (
+                    !logs.Any(log => log.name == "burst.log")
+                    || !logs.Any(log =>
+                        log.name.StartsWith("burst-thread-", StringComparison.Ordinal)
+                    )
+                )
+                {
+                    errors.Add("Compiler trace requires main and thread log observations.");
+                }
+            }
+            catch (Exception error)
+            {
+                errors.Add("Compiler logs: " + error);
+            }
+            trace.logs = logs.ToArray();
+            trace.runtimeFiles = runtime.ToArray();
+            trace.errors = errors.ToArray();
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(output));
+            System.IO.File.WriteAllText(output, UnityEngine.JsonUtility.ToJson(trace, true));
         }
 
         private static DirectCallMethod ReadDirectCallMethod(System.Reflection.MethodInfo method)

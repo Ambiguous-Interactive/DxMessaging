@@ -890,7 +890,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $floorFixtureRoot '.github/perf') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Destination (Join-Path $floorFixtureRoot '.github/perf/native-sdk-floor-identities.v1.json')
     Set-Location -LiteralPath $floorFixtureRoot
-    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash', 'missing-diagnostic', 'diagnostic-error', 'wrong-phase', 'wrong-wrapper', 'before-state-read')) {
+    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash', 'missing-diagnostic', 'diagnostic-error', 'wrong-phase', 'wrong-wrapper', 'before-state-read', 'missing-trace', 'trace-error', 'trace-debug', 'trace-runtime', 'trace-main', 'trace-truncated', 'trace-changed', 'trace-empty', 'trace-size', 'trace-name', 'trace-hash')) {
         $names = @($floorExpected.identities)
         if ($variant -ceq 'missing') { $names = @($names[1..($names.Count - 1)]) }
         if ($variant -ceq 'duplicate') { $names[0] = $names[1] }
@@ -922,6 +922,29 @@ try {
             $stateCaptured = $phase -ceq 'after' -or $variant -ceq 'before-state-read'
             Write-TestJson -Path $diagnosticPath -Value @{ schemaVersion = 1; phase = $recordPhase; stateCaptured = $stateCaptured; methods = $records; errors = $errors }
         }
+        $tracePath = Join-Path $floorArtifacts 'sdk-burst-trace.json'
+        if ($variant -ceq 'missing-trace') {
+            if (Test-Path -LiteralPath $tracePath) { Remove-Item -LiteralPath $tracePath }
+        } else {
+            $logs = @('burst.log', 'burst-thread-0.log' | ForEach-Object {
+                @{ name = $_; status = 'ok'; sourceLengthBytes = 7; capturedBytes = 7; sha256 = ('a' * 64); content = 'fixture' }
+            })
+            if ($variant -ceq 'trace-main') { $logs[0].name = 'burst-thread-1.log' }
+            if ($variant -ceq 'trace-truncated') { $logs[0].status = 'truncated' }
+            if ($variant -ceq 'trace-changed') { $logs[0].status = 'changed' }
+            if ($variant -ceq 'trace-empty') { $logs[0].content = '' }
+            if ($variant -ceq 'trace-size') { $logs[0].sourceLengthBytes = 4 * 1024 * 1024 + 1 }
+            if ($variant -ceq 'trace-name') { $logs[0].name = '../foreign.log' }
+            if ($variant -ceq 'trace-hash') { $logs[0].sha256 = '' }
+            $runtimeFiles = @(
+                @{ name = 'Burst.Compiler.IL.dll'; loadedAssemblyObserved = $false; sha256 = 'c425260738fdc8afe30520acba118df0fb488bbaaff98a912b3f3e4e6e850b8b' },
+                @{ name = 'Burst.Backend.dll'; loadedAssemblyObserved = $false; sha256 = '8c927c75b2bc3aca96169bbe1a9076b37889f1ed395b22f16f37061a5ce16298' }
+            )
+            if ($variant -ceq 'trace-runtime') { $runtimeFiles[0].sha256 = 'b' * 64 }
+            $traceErrors = @(if ($variant -ceq 'trace-error') { 'fixture trace error' })
+            $debug = if ($variant -ceq 'trace-debug') { '3' } else { '1' }
+            Write-TestJson -Path $tracePath -Value @{ schemaVersion = 1; debugLevel = $debug; logs = $logs; runtimeFiles = $runtimeFiles; errors = $traceErrors }
+        }
         $xml = [System.Text.StringBuilder]::new('<test-run>')
         for ($index = 0; $index -lt $names.Count; $index++) {
             $result = if ($variant -ceq 'skipped' -and $index -eq 0) { 'Skipped' } else { 'Passed' }
@@ -931,7 +954,7 @@ try {
         [void]$xml.Append('</test-run>')
         [System.IO.File]::WriteAllText((Join-Path $floorArtifacts 'results.xml'), $xml.ToString())
         $accepted = $true
-        try { & $floorVerify } catch { $accepted = $false }
+        try { & $floorVerify } catch { $accepted = $false; if ($variant -ceq 'complete') { throw } }
         Assert-That "floor complete-scope gate variant=$variant" ($accepted -eq ($variant -ceq 'complete'))
     }
 } finally {
