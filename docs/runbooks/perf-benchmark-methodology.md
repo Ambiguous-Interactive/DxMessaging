@@ -1159,6 +1159,13 @@ size and Burst enabled state after writing the test results. Use package-owned
 belongs to the engine core module and cannot admit that package. Runtime SDK schema
 2 retains all four assembly version components as integers through normal artifact
 redaction. The gate rejects missing, invalid or inconsistent version components.
+After the NUnit result is written, the same opt-in callback records public legacy
+`GC.Alloc` presence/validity and separate forced-allocation/empty-operation counts.
+Invalid or missing recorders retain `-1` counts. It also records `ProfilerRecorder`
+validity for three Memory metrics: `GC.Alloc`, `GC Allocation In Frame Count`, and
+`GC Allocated In Frame`. Recorders are released even when observation throws.
+These observations diagnose availability; validity alone does not prove allocation
+counting, and a zero forced-allocation count cannot qualify an instrument.
 Metadata observations and file hashes do not establish private compiler identity. The player-proof gate
 runs after failed work; the complete-case gate still requires all 745 cases to pass.
 Retain recorder failures as unavailable measurement evidence when that is their

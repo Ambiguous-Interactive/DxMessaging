@@ -517,6 +517,54 @@ public static class DxmRuntimeSdkMetadataFixture {
     }
     public static object Last;
     public static bool BurstEnabled = true;
+    public static bool LegacyMissing;
+    public static bool LegacyValid;
+    public static bool LegacyEnabled;
+    public static int LegacyReads;
+    public static int LegacyGets;
+    public static int ForcedCalls = 1;
+    public static string RecorderFault = "";
+    public static int ProfilerStarts;
+    public static int ProfilerDisposals;
+    public static bool ProfilerValid;
+    private static class UnityEngine {
+        public static class Profiling {
+            public sealed class Recorder {
+                public static Recorder Get(string name) {
+                    LegacyGets++;
+                    if (RecorderFault == "get") { throw new InvalidOperationException("fixture get"); }
+                    return LegacyMissing ? null : new Recorder();
+                }
+                public bool isValid { get { return LegacyValid; } }
+                public bool enabled { get { return LegacyEnabled; } set { LegacyEnabled = value; } }
+                public int sampleBlockCount {
+                    get {
+                        if (RecorderFault == "count") { throw new InvalidOperationException("fixture count"); }
+                        return LegacyReads++ == 0 ? ForcedCalls : 0;
+                    }
+                }
+            }
+        }
+    }
+    private static class Unity {
+        public static class Profiling {
+            public readonly struct ProfilerCategory { public static ProfilerCategory Memory { get { return default; } } }
+            public readonly struct ProfilerRecorder : IDisposable {
+                public static ProfilerRecorder StartNew(ProfilerCategory category, string name) {
+                    ProfilerStarts++;
+                    if (RecorderFault == "start") { throw new InvalidOperationException("fixture start"); }
+                    return default;
+                }
+                public bool Valid {
+                    get {
+                        if (RecorderFault == "valid") { throw new InvalidOperationException("fixture valid"); }
+                        return ProfilerValid;
+                    }
+                }
+                public void Dispose() { ProfilerDisposals++; }
+            }
+        }
+    }
     $sdkRuntimeSource
     public static void Capture() { WriteNativeSdkRuntimeEvidence(); }
 }
@@ -526,6 +574,9 @@ public static class DxmRuntimeSdkMetadataFixture {
         $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $null
         [DxmRuntimeSdkMetadataFixture]::Capture()
         Assert-That 'no runtime request does not create an observation' ($null -eq [DxmRuntimeSdkMetadataFixture]::Last)
+        Assert-That 'no runtime request performs no recorder work' (
+            [DxmRuntimeSdkMetadataFixture]::ProfilerStarts -eq 0 -and [DxmRuntimeSdkMetadataFixture]::LegacyGets -eq 0
+        )
         $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = Join-Path $fixtureRoot 'sdk/runtime.json'
         [DxmRuntimeSdkMetadataFixture]::Capture()
         Assert-That 'missing SDK assemblies remain explicit errors' (@([DxmRuntimeSdkMetadataFixture]::Last.errors).Count -eq 4)
@@ -558,6 +609,9 @@ public static class DxmRuntimeSdkMetadataFixture {
         }
         [DxmRuntimeSdkMetadataFixture]::Capture()
         $observed = [DxmRuntimeSdkMetadataFixture]::Last
+        Assert-That 'the actual generated callback captures public allocation recorder evidence' (
+            $null -ne $observed.GetType().GetField('allocationRecorders')
+        )
         Assert-That 'the actual managed observer captures exact public SDK metadata without compiler internals' (
             $observed.schemaVersion -eq 2 -and @($observed.errors).Count -eq 0 -and @($observed.assemblies).Count -eq 4 -and
             @($observed.assemblies | Where-Object { -not $_.typeObserved -or -not $_.assemblyVersion }).Count -eq 0 -and
@@ -593,6 +647,45 @@ public static class DxmRuntimeSdkMetadataFixture {
         Assert-That 'disabled Burst is an observed state rather than fabricated enabled evidence' (
             [DxmRuntimeSdkMetadataFixture]::Last.burstEnabledObserved -and -not [DxmRuntimeSdkMetadataFixture]::Last.burstEnabled
         )
+        foreach ($variant in @('missing', 'invalid', 'valid', 'zero', 'get', 'count', 'start', 'valid-read')) {
+            [DxmRuntimeSdkMetadataFixture]::LegacyMissing = $variant -ceq 'missing'
+            [DxmRuntimeSdkMetadataFixture]::LegacyValid = $variant -cne 'invalid'
+            [DxmRuntimeSdkMetadataFixture]::LegacyReads = 0
+            [DxmRuntimeSdkMetadataFixture]::LegacyEnabled = $false
+            [DxmRuntimeSdkMetadataFixture]::ForcedCalls = $(if ($variant -ceq 'zero') { 0 } else { 1 })
+            [DxmRuntimeSdkMetadataFixture]::ProfilerValid = $variant -ceq 'valid'
+            [DxmRuntimeSdkMetadataFixture]::ProfilerStarts = 0
+            [DxmRuntimeSdkMetadataFixture]::ProfilerDisposals = 0
+            [DxmRuntimeSdkMetadataFixture]::RecorderFault = $(if ($variant -ceq 'valid-read') { 'valid' } elseif ($variant -cin @('get', 'count', 'start')) { $variant } else { '' })
+            [DxmRuntimeSdkMetadataFixture]::Capture()
+            $diagnostic = [DxmRuntimeSdkMetadataFixture]::Last.allocationRecorders
+            Assert-That "recorder diagnostic variant=$variant always disables legacy recording" (-not [DxmRuntimeSdkMetadataFixture]::LegacyEnabled)
+            Assert-That "recorder diagnostic variant=$variant observes all three metric names" (
+                @($diagnostic.profilerMetrics).Count -eq 3 -and [DxmRuntimeSdkMetadataFixture]::ProfilerStarts -eq 3
+            )
+            Assert-That "recorder diagnostic variant=$variant preserves observed metric validity" (
+                @($diagnostic.profilerMetrics | Where-Object { $_.valid }).Count -eq $(if ($variant -ceq 'valid') { 3 } else { 0 }) -and
+                @($diagnostic.profilerMetrics | Where-Object { $_.observed }).Count -eq $(if ($variant -cin @('start', 'valid-read')) { 0 } else { 3 })
+            )
+            Assert-That "recorder diagnostic variant=$variant disposes every constructed metric recorder" (
+                [DxmRuntimeSdkMetadataFixture]::ProfilerDisposals -eq $(if ($variant -ceq 'start') { 0 } else { 3 })
+            )
+            if ($variant -cin @('missing', 'invalid', 'get', 'count')) {
+                Assert-That "recorder diagnostic variant=$variant retains unmeasured sentinels" (
+                    $diagnostic.forcedAllocationCalls -eq -1 -and $diagnostic.emptyOperationCalls -eq -1
+                )
+            }
+            if ($variant -cin @('valid', 'zero')) {
+                Assert-That "recorder diagnostic variant=$variant retains actual forced and empty counts" (
+                    $diagnostic.legacyObserved -and $diagnostic.legacyPresent -and $diagnostic.legacyValid -and
+                    $diagnostic.forcedAllocationCalls -eq $(if ($variant -ceq 'zero') { 0 } else { 1 }) -and
+                    $diagnostic.emptyOperationCalls -eq 0
+                )
+            }
+            Assert-That "recorder diagnostic variant=$variant preserves public API exceptions" (
+                @($diagnostic.errors).Count -eq $(if ($variant -cin @('start', 'valid-read')) { 3 } elseif ($variant -cin @('get', 'count')) { 1 } else { 0 })
+            )
+        }
     } finally {
         $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $priorRuntimeSdkPath
     }

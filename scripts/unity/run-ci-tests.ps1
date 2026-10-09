@@ -2202,6 +2202,93 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
     }
 
     [Serializable]
+    private sealed class NativeRecorderMetric
+    {
+        public string name;
+        public bool observed;
+        public bool valid;
+    }
+
+    [Serializable]
+    private sealed class NativeAllocationRecorders
+    {
+        public bool legacyObserved;
+        public bool legacyPresent;
+        public bool legacyValid;
+        public int forcedAllocationCalls = -1;
+        public int emptyOperationCalls = -1;
+        public NativeRecorderMetric[] profilerMetrics;
+        public string[] errors;
+    }
+
+    private static object allocationRecorderSink;
+
+    private static NativeAllocationRecorders ObserveAllocationRecorders()
+    {
+        NativeAllocationRecorders evidence = new NativeAllocationRecorders();
+        System.Collections.Generic.List<string> errors = new System.Collections.Generic.List<string>();
+        UnityEngine.Profiling.Recorder legacy = null;
+        try
+        {
+            legacy = UnityEngine.Profiling.Recorder.Get("GC.Alloc");
+            evidence.legacyObserved = true;
+            evidence.legacyPresent = legacy != null;
+            evidence.legacyValid = legacy != null && legacy.isValid;
+            if (evidence.legacyValid)
+            {
+                legacy.enabled = false;
+                legacy.enabled = true;
+                allocationRecorderSink = new byte[64];
+                legacy.enabled = false;
+                evidence.forcedAllocationCalls = legacy.sampleBlockCount;
+                GC.KeepAlive(allocationRecorderSink);
+                legacy.enabled = true;
+                legacy.enabled = false;
+                evidence.emptyOperationCalls = legacy.sampleBlockCount;
+            }
+        }
+        catch (Exception exception)
+        {
+            errors.Add("Legacy GC.Alloc: " + exception.GetType().Name + ": " + exception.Message);
+        }
+        finally
+        {
+            if (legacy != null)
+            {
+                try
+                {
+                    legacy.enabled = false;
+                }
+                catch (Exception exception)
+                {
+                    errors.Add("Legacy cleanup: " + exception.GetType().Name + ": " + exception.Message);
+                }
+            }
+        }
+        string[] names = { "GC.Alloc", "GC Allocation In Frame Count", "GC Allocated In Frame" };
+        evidence.profilerMetrics = new NativeRecorderMetric[names.Length];
+        for (int index = 0; index < names.Length; index++)
+        {
+            NativeRecorderMetric metric = new NativeRecorderMetric { name = names[index] };
+            evidence.profilerMetrics[index] = metric;
+            try
+            {
+                using (Unity.Profiling.ProfilerRecorder recorder = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Memory, metric.name))
+                {
+                    metric.valid = recorder.Valid;
+                    metric.observed = true;
+                }
+            }
+            catch (Exception exception)
+            {
+                errors.Add(metric.name + ": " + exception.GetType().Name + ": " + exception.Message);
+            }
+        }
+        evidence.errors = errors.ToArray();
+        return evidence;
+    }
+
+    [Serializable]
     private sealed class NativeSdkRuntimeEvidence
     {
         public int schemaVersion = 2;
@@ -2221,6 +2308,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         public bool burstEnabled;
         public NativeSdkAssembly[] assemblies;
         public string[] errors;
+        public NativeAllocationRecorders allocationRecorders;
     }
 
     private static void WriteNativeSdkRuntimeEvidence()
@@ -2284,6 +2372,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
             }
         }
         evidence.errors = errors.ToArray();
+        evidence.allocationRecorders = ObserveAllocationRecorders();
         string directory = Path.GetDirectoryName(Path.GetFullPath(path));
         Directory.CreateDirectory(directory);
         File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
