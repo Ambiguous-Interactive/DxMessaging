@@ -501,7 +501,7 @@ exit 0
     $sdkRuntimeEnd = $generatedSources[1].IndexOf('    public void RunStarted(', $sdkRuntimeStart)
     Assert-That 'the actual callback retains optional public SDK runtime observation' ($sdkRuntimeStart -ge 0 -and $sdkRuntimeEnd -gt $sdkRuntimeStart)
     $sdkRuntimeSource = $generatedSources[1].Substring($sdkRuntimeStart, $sdkRuntimeEnd - $sdkRuntimeStart)
-    Assert-That 'the callback preserves the generic SDK type name through PowerShell generation' ($sdkRuntimeSource.Contains('Unity.Collections.NativeArray`1'))
+    Assert-That 'the callback preserves the package-owned generic SDK type through PowerShell generation' ($sdkRuntimeSource.Contains('Unity.Collections.NativeList`1'))
     Add-Type -CompilerOptions '/define:ENABLE_IL2CPP' -TypeDefinition @"
 using System;
 using System.IO;
@@ -531,14 +531,19 @@ public static class DxmRuntimeSdkMetadataFixture {
         Assert-That 'missing SDK assemblies remain explicit errors' (@([DxmRuntimeSdkMetadataFixture]::Last.errors).Count -eq 4)
         foreach ($entry in @(
             @{ assembly = 'Unity.Burst'; type = 'Unity.Burst.BurstCompiler' },
-            @{ assembly = 'Unity.Collections'; type = 'Unity.Collections.NativeArray`1' },
+            @{ assembly = 'Unity.Collections'; type = 'Unity.Collections.NativeList`1' },
+            @{ assembly = 'UnityEngine.CoreModule'; type = 'Unity.Collections.NativeArray`1' },
             @{ assembly = 'Unity.Mathematics'; type = 'Unity.Mathematics.math' },
             @{ assembly = 'Unity.Jobs'; type = 'Unity.Jobs.IJobParallelForBatch' }
         )) {
+            $assemblyName = [System.Reflection.AssemblyName]::new($entry.assembly)
+            $assemblyName.Version = [Version]::new(1, 2, 3, 4)
             $assembly = [System.Reflection.Emit.AssemblyBuilder]::DefineDynamicAssembly(
-                [System.Reflection.AssemblyName]::new($entry.assembly), [System.Reflection.Emit.AssemblyBuilderAccess]::Run)
+                $assemblyName, [System.Reflection.Emit.AssemblyBuilderAccess]::Run)
             $type = $assembly.DefineDynamicModule('fixture').DefineType($entry.type, [System.Reflection.TypeAttributes]::Public)
-            if ($entry.assembly -ceq 'Unity.Collections') { $null = $type.DefineGenericParameters(@('T')) }
+            if ($entry.assembly -ceq 'Unity.Collections' -or $entry.assembly -ceq 'UnityEngine.CoreModule') {
+                $null = $type.DefineGenericParameters(@('T'))
+            }
             if ($entry.assembly -ceq 'Unity.Burst') {
                 $getter = $type.DefineMethod('get_IsEnabled',
                     [System.Reflection.MethodAttributes]::Public -bor [System.Reflection.MethodAttributes]::Static -bor
@@ -554,11 +559,35 @@ public static class DxmRuntimeSdkMetadataFixture {
         [DxmRuntimeSdkMetadataFixture]::Capture()
         $observed = [DxmRuntimeSdkMetadataFixture]::Last
         Assert-That 'the actual managed observer captures exact public SDK metadata without compiler internals' (
-            @($observed.errors).Count -eq 0 -and @($observed.assemblies).Count -eq 4 -and
+            $observed.schemaVersion -eq 2 -and @($observed.errors).Count -eq 0 -and @($observed.assemblies).Count -eq 4 -and
             @($observed.assemblies | Where-Object { -not $_.typeObserved -or -not $_.assemblyVersion }).Count -eq 0 -and
             $observed.burstEnabledObserved -and $observed.burstEnabled -and $observed.il2cpp -and
             -not $observed.isEditor -and -not $observed.debugBuild -and $observed.pointerBytes -eq [IntPtr]::Size
         )
+        $collectionsAssembly = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -ceq 'Unity.Collections' })[0]
+        Assert-That 'NativeArray belongs to the engine module and cannot admit the Collections package' (
+            $null -eq $collectionsAssembly.GetType('Unity.Collections.NativeArray`1', $false) -and
+            @($observed.assemblies | Where-Object { $_.name -ceq 'Unity.Collections' })[0].typeName -ceq 'Unity.Collections.NativeList`1'
+        )
+        foreach ($record in $observed.assemblies) {
+            Assert-That 'public assembly version components retain the exact observed version' (
+                @($record.assemblyVersionComponents).Count -eq 4 -and
+                ($record.assemblyVersionComponents -join '.') -ceq $record.assemblyVersion
+            )
+        }
+        $metadataRoot = Join-Path $fixtureRoot 'sdk-metadata-redaction'
+        $null = New-Item -ItemType Directory -Path $metadataRoot
+        $metadataPath = Join-Path $metadataRoot 'sdk-runtime.json'
+        Write-TestJson -Path $metadataPath -Value $observed
+        & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $metadataRoot
+        Assert-That 'public metadata remains safe under unchanged production redaction' ($LASTEXITCODE -eq 0)
+        $redactedMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+        foreach ($record in $redactedMetadata.assemblies) {
+            Assert-That 'typed public version components survive redaction without an exemption' (
+                $record.assemblyVersion -ceq '[redacted:ipv4-address]' -and
+                ($record.assemblyVersionComponents -join '.') -ceq '1.2.3.4'
+            )
+        }
         [DxmRuntimeSdkMetadataFixture]::BurstEnabled = $false
         [DxmRuntimeSdkMetadataFixture]::Capture()
         Assert-That 'disabled Burst is an observed state rather than fabricated enabled evidence' (

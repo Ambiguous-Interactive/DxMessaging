@@ -1187,7 +1187,7 @@ jobs:
           }
           $runtime = Get-Content -LiteralPath (Join-Path $root 'sdk-runtime.json') -Raw | ConvertFrom-Json
           if (($runtime.schemaVersion -isnot [int] -and $runtime.schemaVersion -isnot [long]) -or
-              $runtime.schemaVersion -ne 1 -or $runtime.profileId -cne 'native-sdk-il2cpp-qualification-player-v1' -or
+              $runtime.schemaVersion -ne 2 -or $runtime.profileId -cne 'native-sdk-il2cpp-qualification-player-v1' -or
               $runtime.profileSha256 -cne $hash -or $runtime.unityVersion -cne '2021.3.45f1' -or
               $runtime.platform -cne 'WindowsPlayer' -or
               ($runtime.pointerBytes -isnot [int] -and $runtime.pointerBytes -isnot [long]) -or $runtime.pointerBytes -ne 8 -or
@@ -1201,7 +1201,7 @@ jobs:
           }
           $types = @{
             'Unity.Burst' = 'Unity.Burst.BurstCompiler'
-            'Unity.Collections' = 'Unity.Collections.NativeArray`1'
+            'Unity.Collections' = 'Unity.Collections.NativeList`1'
             'Unity.Mathematics' = 'Unity.Mathematics.math'
             'Unity.Jobs' = 'Unity.Jobs.IJobParallelForBatch'
           }
@@ -1209,7 +1209,13 @@ jobs:
             $records = @($runtime.assemblies | Where-Object { $_.name -ceq $name })
             if ($records.Count -ne 1 -or $records[0].typeName -cne $types[$name] -or
                 $records[0].typeObserved -isnot [bool] -or -not $records[0].typeObserved -or
-                $records[0].assemblyVersion -isnot [string] -or [string]::IsNullOrEmpty($records[0].assemblyVersion)) {
+                $records[0].assemblyVersion -isnot [string] -or [string]::IsNullOrEmpty($records[0].assemblyVersion) -or
+                @($records[0].assemblyVersionComponents).Count -ne 4 -or
+                @($records[0].assemblyVersionComponents | Where-Object {
+                  ($_ -isnot [int] -and $_ -isnot [long]) -or $_ -lt 0
+                }).Count -ne 0 -or
+                ($records[0].assemblyVersion -cne ($records[0].assemblyVersionComponents -join '.') -and
+                 $records[0].assemblyVersion -cne '[redacted:ipv4-address]')) {
               throw "Actual player public SDK type/assembly differs: $name."
             }
           }

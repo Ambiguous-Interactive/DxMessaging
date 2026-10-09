@@ -1042,7 +1042,9 @@ param($UnityVersion, $UnityInstallRoot, $TestMode, $AssemblyNames, $TestCategory
     $proof = [scriptblock]::Create($proofStep.run.Replace('${{ github.run_id }}', '1').Replace('${{ github.run_attempt }}', '1'))
     foreach ($variant in @('complete', 'marker', 'archive', 'profile-runtime', 'platform', 'editor', 'debug', 'backend', 'pointer',
         'burst', 'error', 'assembly', 'type', 'observed-type', 'assembly-version', 'manifest-change', 'manifest-count',
-        'manifest-hash', 'missing-native', 'empty-native', 'manifest-duplicate', 'schema-type', 'pointer-type', 'length-type')) {
+        'manifest-hash', 'missing-native', 'empty-native', 'manifest-duplicate', 'schema-type', 'pointer-type', 'length-type',
+        'old-collections-type', 'version-components-missing', 'version-components-short', 'version-components-string',
+        'version-components-negative', 'version-components-fraction', 'version-mismatch', 'redacted-version')) {
         Copy-Item -LiteralPath $nativeProfileSource -Destination (Join-Path $floorArtifacts 'native-sdk-il2cpp-qualification-profile.v1.json') -Force
         if ($variant -ceq 'archive') { [IO.File]::WriteAllText((Join-Path $floorArtifacts 'native-sdk-il2cpp-qualification-profile.v1.json'), '{}') }
         [IO.File]::WriteAllText((Join-Path $floorArtifacts 'configure-complete.marker'), $(if ($variant -ceq 'marker') { 'incomplete' } else { 'DxmCiTestConfigurator.Apply completed' }))
@@ -1063,11 +1065,12 @@ param($UnityVersion, $UnityInstallRoot, $TestMode, $AssemblyNames, $TestCategory
         }
         $records = @(
             @{ name = 'Unity.Burst'; typeName = 'Unity.Burst.BurstCompiler'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
-            @{ name = 'Unity.Collections'; typeName = 'Unity.Collections.NativeArray`1'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
+            @{ name = 'Unity.Collections'; typeName = 'Unity.Collections.NativeList`1'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
             @{ name = 'Unity.Mathematics'; typeName = 'Unity.Mathematics.math'; assemblyVersion = '1.0.0.0'; typeObserved = $true },
             @{ name = 'Unity.Jobs'; typeName = 'Unity.Jobs.IJobParallelForBatch'; assemblyVersion = '1.0.0.0'; typeObserved = $true }
         )
-        $runtime = @{ schemaVersion = 1; profileId = $nativeProfile.profileId; profileSha256 = $nativeProfileHash; unityVersion = '2021.3.45f1';
+        foreach ($record in $records) { $record.assemblyVersionComponents = @(1, 0, 0, 0) }
+        $runtime = @{ schemaVersion = 2; profileId = $nativeProfile.profileId; profileSha256 = $nativeProfileHash; unityVersion = '2021.3.45f1';
             platform = 'WindowsPlayer'; pointerBytes = 8; isEditor = $false; debugBuild = $false; il2cpp = $true;
             burstEnabledObserved = $true; burstEnabled = $true; assemblies = $records; errors = @() }
         if ($variant -ceq 'platform') { $runtime.platform = 'OSXPlayer' }
@@ -1083,7 +1086,18 @@ param($UnityVersion, $UnityInstallRoot, $TestMode, $AssemblyNames, $TestCategory
         if ($variant -ceq 'type') { $records[3].typeName = 'wrong' }
         if ($variant -ceq 'observed-type') { $records[3].typeObserved = $false }
         if ($variant -ceq 'assembly-version') { $records[3].assemblyVersion = '' }
+        if ($variant -ceq 'old-collections-type') { $records[1].typeName = 'Unity.Collections.NativeArray`1' }
+        if ($variant -ceq 'version-components-missing') { $records[1].Remove('assemblyVersionComponents') }
+        if ($variant -ceq 'version-components-short') { $records[1].assemblyVersionComponents = @(1, 0, 0) }
+        if ($variant -ceq 'version-components-string') { $records[1].assemblyVersionComponents = @('1', '0', '0', '0') }
+        if ($variant -ceq 'version-components-negative') { $records[1].assemblyVersionComponents = @(1, 0, 0, -1) }
+        if ($variant -ceq 'version-components-fraction') { $records[1].assemblyVersionComponents = @(1, 0, 0, 0.5) }
+        if ($variant -ceq 'version-mismatch') { $records[1].assemblyVersion = '2.0.0.0' }
         Write-TestJson -Path (Join-Path $floorArtifacts 'sdk-runtime.json') -Value $runtime
+        if ($variant -ceq 'redacted-version') {
+            & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $floorArtifacts
+            Assert-That 'the player gate replay uses unchanged production redaction' ($LASTEXITCODE -eq 0)
+        }
         foreach ($phase in @('before', 'after')) {
             $files = @('DxmTestPlayer.exe', 'GameAssembly.dll', 'Data/Plugins/x86_64/lib_burst_generated.dll' | ForEach-Object {
                 @{ path = $_; length = 16; sha256 = ('a' * 64) }
@@ -1099,8 +1113,9 @@ param($UnityVersion, $UnityInstallRoot, $TestMode, $AssemblyNames, $TestCategory
             }
         }
         $accepted = $true
-        try { & $proof } catch { $accepted = $false; if ($variant -ceq 'complete') { throw } }
-        Assert-That "actual player proof gate variant=$variant" ($accepted -eq ($variant -ceq 'complete'))
+        $expected = $variant -ceq 'complete' -or $variant -ceq 'redacted-version'
+        try { & $proof } catch { $accepted = $false; if ($expected) { throw } }
+        Assert-That "actual player proof gate variant=$variant" ($accepted -eq $expected)
     }
 } finally {
     Set-Location -LiteralPath $floorLocation.Path

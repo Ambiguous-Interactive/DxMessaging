@@ -2197,13 +2197,14 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         public string name;
         public string typeName;
         public string assemblyVersion;
+        public int[] assemblyVersionComponents;
         public bool typeObserved;
     }
 
     [Serializable]
     private sealed class NativeSdkRuntimeEvidence
     {
-        public int schemaVersion = 1;
+        public int schemaVersion = 2;
         public string profileId = "$CanonicalProfileId";
         public string profileSha256 = "$CanonicalProfileSha256";
         public string unityVersion = Application.unityVersion;
@@ -2232,7 +2233,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         NativeSdkRuntimeEvidence evidence = new NativeSdkRuntimeEvidence();
         System.Collections.Generic.List<string> errors = new System.Collections.Generic.List<string>();
         string[] names = { "Unity.Burst", "Unity.Collections", "Unity.Mathematics", "Unity.Jobs" };
-        string[] types = { "Unity.Burst.BurstCompiler", "Unity.Collections.NativeArray``1", "Unity.Mathematics.math", "Unity.Jobs.IJobParallelForBatch" };
+        string[] types = { "Unity.Burst.BurstCompiler", "Unity.Collections.NativeList``1", "Unity.Mathematics.math", "Unity.Jobs.IJobParallelForBatch" };
         evidence.assemblies = new NativeSdkAssembly[names.Length];
         for (int index = 0; index < names.Length; index++)
         {
@@ -2257,7 +2258,9 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
                 {
                     throw new InvalidOperationException("Missing SDK assembly: " + record.name);
                 }
-                record.assemblyVersion = match.GetName().Version.ToString();
+                Version version = match.GetName().Version;
+                record.assemblyVersion = version.ToString();
+                record.assemblyVersionComponents = new[] { version.Major, version.Minor, version.Build, version.Revision };
                 Type type = match.GetType(record.typeName, false);
                 record.typeObserved = type != null;
                 if (type == null)

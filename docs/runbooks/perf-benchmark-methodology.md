@@ -1154,8 +1154,12 @@ process. Configuration, build and runtime profile evidence must match it.
 The lane retains full player file hashes before and after execution, including
 failed NUnit runs, and requires the actual executable, IL2CPP and Burst libraries.
 The callback records public SDK type/assembly metadata, platform, backend, pointer
-size and Burst enabled state after writing the test results. Metadata observations
-and file hashes do not establish private compiler identity. The player-proof gate
+size and Burst enabled state after writing the test results. Use package-owned
+`NativeList<T>` for the Collections assembly; `NativeArray<T>`
+belongs to the engine core module and cannot admit that package. Runtime SDK schema
+2 retains all four assembly version components as integers through normal artifact
+redaction. The gate rejects missing, invalid or inconsistent version components.
+Metadata observations and file hashes do not establish private compiler identity. The player-proof gate
 runs after failed work; the complete-case gate still requires all 745 cases to pass.
 Retain recorder failures as unavailable measurement evidence when that is their
 actual cause; any additional native contract failure requires investigation.
