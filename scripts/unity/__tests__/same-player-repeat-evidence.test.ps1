@@ -26,6 +26,9 @@ if ($parseErrors -and $parseErrors.Count -gt 0) {
 }
 
 foreach ($name in @(
+    'ConvertTo-UnityFileUriPath',
+    'Get-ComparisonPackages',
+    'New-ManifestJson',
     'Get-StandaloneHostConditionSnapshot',
     'Get-StandalonePlayerManifest',
     'Test-StandalonePilotHostTelemetry',
@@ -835,6 +838,22 @@ try {
     Remove-Variable StopSignalPath
 }
 
+# The comparison host must supply the real dependencies of pinned source.
+$PackageName = 'com.wallstop-studios.dxmessaging'
+$TestFrameworkVersion = '1.4.5'
+$PerformanceFrameworkVersion = '3.4.2'
+$comparisonManifest = New-ManifestJson -Root $repoRoot -RepoRoot $repoRoot -IncludeComparisons | ConvertFrom-Json
+foreach ($name in @('com.unity.modules.physics', 'com.unity.modules.physics2d')) {
+    $module = $comparisonManifest.dependencies.PSObject.Properties[$name]
+    Assert-That "comparison manifest includes required $name" ($module -and $module.Value -ceq '1.0.0')
+}
+$jobsDependency = $comparisonManifest.dependencies.PSObject.Properties['com.unity.jobs']
+Assert-That 'comparison manifest pins the actual old batch provider' ($jobsDependency -and $jobsDependency.Value -ceq '0.50.0-preview.9')
+foreach ($mode in @('ordinary', 'shipping')) {
+    $plain = New-ManifestJson -Root $repoRoot -RepoRoot $repoRoot -ShippingFidelity:($mode -ceq 'shipping') | ConvertFrom-Json
+    Assert-That "$mode manifest has no optional Jobs dependency" (-not $plain.dependencies.PSObject.Properties['com.unity.jobs'])
+}
+
 # Exercise the actual opt-in SDK floor routing and complete-scope gates.
 $floorWorkflowPath = Join-Path $repoRoot '.github/workflows/runner-bootstrap.yml'
 $floorMetadata = & node -e 'const fs=require("fs"), yaml=require("yaml"); console.log(JSON.stringify(yaml.parse(fs.readFileSync(process.argv[1],"utf8"))));' $floorWorkflowPath
@@ -871,12 +890,21 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $floorFixtureRoot '.github/perf') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Destination (Join-Path $floorFixtureRoot '.github/perf/native-sdk-floor-identities.v1.json')
     Set-Location -LiteralPath $floorFixtureRoot
-    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity')) {
+    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash')) {
         $names = @($floorExpected.identities)
         if ($variant -ceq 'missing') { $names = @($names[1..($names.Count - 1)]) }
         if ($variant -ceq 'duplicate') { $names[0] = $names[1] }
         $version = if ($variant -ceq 'wrong-unity') { '6000.4.6f1' } else { '2021.3.45f1' }
-        Write-TestJson -Path (Join-Path $floorArtifacts 'sdk-admission.json') -Value @{ unityVersion = $version; packages = @(@{}, @{}, @{}) }
+        $pins = [ordered]@{ 'com.unity.burst' = '1.6.6'; 'com.unity.collections' = '1.2.3'; 'com.unity.mathematics' = '1.2.6'; 'com.unity.jobs' = '0.50.0-preview.9' }
+        $packages = @($pins.Keys | ForEach-Object { @{ name = $_; actualVersion = $pins[$_]; expectedVersion = $pins[$_]; source = 'Registry'; compilerSources = @(@{ path = 'package.json'; sha256 = ('a' * 64) }) } })
+        if ($variant -ceq 'missing-jobs') { $packages = @($packages[0..2]) }
+        if ($variant -ceq 'wrong-jobs') { $packages[3].actualVersion = '0.70.0-preview.7' }
+        if ($variant -ceq 'foreign-source') { $packages[3].source = 'Local' }
+        if ($variant -ceq 'missing-source-hash') { $packages[3].compilerSources[0].sha256 = '' }
+        $provider = if ($variant -ceq 'wrong-provider') { 'Unity.Collections' } else { 'Unity.Jobs' }
+        $providerPackage = if ($variant -ceq 'wrong-provider-package') { 'com.unity.collections' } else { 'com.unity.jobs' }
+        $providerVersion = if ($variant -ceq 'wrong-provider-version') { '0.70.0-preview.7' } else { '0.50.0-preview.9' }
+        Write-TestJson -Path (Join-Path $floorArtifacts 'sdk-admission.json') -Value @{ schemaVersion = 2; unityVersion = $version; packages = $packages; batchAssembly = $provider; batchPackage = $providerPackage; batchVersion = $providerVersion }
         $xml = [System.Text.StringBuilder]::new('<test-run>')
         for ($index = 0; $index -lt $names.Count; $index++) {
             $result = if ($variant -ceq 'skipped' -and $index -eq 0) { 'Skipped' } else { 'Passed' }

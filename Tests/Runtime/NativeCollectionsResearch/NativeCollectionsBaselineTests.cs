@@ -38,7 +38,10 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         [Serializable]
         private sealed class AdmissionEvidence
         {
-            public int schemaVersion = 1;
+            public int schemaVersion = 2;
+            public string batchAssembly;
+            public string batchPackage;
+            public string batchVersion;
             public string unityVersion = UnityEngine.Application.unityVersion;
             public PackageEvidence[] packages;
         }
@@ -73,8 +76,19 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
                 new("com.unity.burst", "1.6.6"),
                 new("com.unity.collections", "1.2.3"),
                 new("com.unity.mathematics", "1.2.6"),
+                new("com.unity.jobs", "0.50.0-preview.9"),
             };
-            AdmissionEvidence evidence = new() { packages = new PackageEvidence[expected.Length] };
+            UnityEditor.PackageManager.PackageInfo batchPackage =
+                UnityEditor.PackageManager.PackageInfo.FindForAssembly(
+                    typeof(IJobParallelForBatch).Assembly
+                );
+            AdmissionEvidence evidence = new()
+            {
+                packages = new PackageEvidence[expected.Length],
+                batchAssembly = typeof(IJobParallelForBatch).Assembly.GetName().Name,
+                batchPackage = batchPackage?.name ?? "missing",
+                batchVersion = batchPackage?.version ?? "missing",
+            };
             for (int index = 0; index < expected.Length; index++)
             {
                 KeyValuePair<string, string> pin = expected[index];
@@ -134,6 +148,9 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         private static void AssertActualFloor(AdmissionEvidence evidence)
         {
             Assert.That(evidence.unityVersion, Is.EqualTo("2021.3.45f1"));
+            Assert.That(evidence.batchAssembly, Is.EqualTo("Unity.Jobs"));
+            Assert.That(evidence.batchPackage, Is.EqualTo("com.unity.jobs"));
+            Assert.That(evidence.batchVersion, Is.EqualTo("0.50.0-preview.9"));
             foreach (PackageEvidence package in evidence.packages)
             {
                 Assert.That(

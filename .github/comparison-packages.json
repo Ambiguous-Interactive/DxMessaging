@@ -21,7 +21,8 @@
     "com.unity-atoms.unity-atoms-base-atoms": "4.6.2",
     "com.unity.burst": "1.6.6",
     "com.unity.collections": "1.2.3",
-    "com.unity.mathematics": "1.2.6"
+    "com.unity.mathematics": "1.2.6",
+    "com.unity.jobs": "0.50.0-preview.9"
   },
   "integrationPackages": {
     "com.gustavopsantos.reflex": "14.3.1",
@@ -36,7 +37,9 @@
     "com.unity.ugui": "1.0.0",
     "com.unity.modules.unitywebrequest": "1.0.0",
     "com.unity.modules.unitywebrequestwww": "1.0.0",
-    "com.unity.modules.assetbundle": "1.0.0"
+    "com.unity.modules.assetbundle": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.physics2d": "1.0.0"
   },
   "defines": {
     "com.cysharp.messagepipe": "MESSAGEPIPE_PRESENT",

@@ -1135,8 +1135,21 @@ jobs:
         run: |
           $root = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
           $admission = Get-Content -LiteralPath (Join-Path $root 'sdk-admission.json') -Raw | ConvertFrom-Json
-          if ($admission.unityVersion -cne '2021.3.45f1' -or @($admission.packages).Count -ne 3) {
+          if ($admission.schemaVersion -ne 2 -or $admission.unityVersion -cne '2021.3.45f1' -or
+              @($admission.packages).Count -ne 4 -or $admission.batchAssembly -cne 'Unity.Jobs' -or
+              $admission.batchPackage -cne 'com.unity.jobs' -or $admission.batchVersion -cne '0.50.0-preview.9') {
             throw 'Actual SDK floor admission is missing or differs from the fixed lane.'
+          }
+          $pins = @{ 'com.unity.burst' = '1.6.6'; 'com.unity.collections' = '1.2.3'; 'com.unity.mathematics' = '1.2.6'; 'com.unity.jobs' = '0.50.0-preview.9' }
+          foreach ($name in $pins.Keys) {
+            $packages = @($admission.packages | Where-Object { $_.name -ceq $name })
+            if ($packages.Count -ne 1 -or $packages[0].actualVersion -cne $pins[$name] -or
+                $packages[0].expectedVersion -cne $pins[$name] -or $packages[0].source -cne 'Registry' -or
+                @($packages[0].compilerSources).Count -eq 0 -or
+                @($packages[0].compilerSources | Where-Object { $_.path -ceq 'package.json' }).Count -ne 1 -or
+                @($packages[0].compilerSources | Where-Object { $_.sha256 -cnotmatch '^[a-f0-9]{64}$' }).Count -ne 0) {
+              throw "Actual SDK floor package/version/source admission differs: $name."
+            }
           }
           $xml = [xml](Get-Content -LiteralPath (Join-Path $root 'results.xml') -Raw)
           $cases = @($xml.SelectNodes('//test-case'))

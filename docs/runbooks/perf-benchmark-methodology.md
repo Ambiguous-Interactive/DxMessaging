@@ -1074,7 +1074,8 @@ current single-window results.
 ## Verify the optional native SDK floor
 
 The `codex/505-sdk-floor` research branch adds an opt-in Runner Audit lane for
-Unity 2021.3.45f1, Burst 1.6.6, Collections 1.2.3 and Mathematics 1.2.6. Dispatch
+Unity 2021.3.45f1, Burst 1.6.6, Collections 1.2.3, Mathematics 1.2.6 and
+Jobs 0.50.0-preview.9. Dispatch
 `runner-bootstrap.yml` on that branch with `runner-label: ELI-MACHINE` and
 `native-sdk-floor: true`. Keep all other experiment inputs at their defaults.
 Check the fresh serialized ELI budget before dispatch; the one eligible ELI job
@@ -1083,7 +1084,13 @@ has a 600-minute ceiling. Bootstrap and pilot jobs do not run in this mode.
 The lane runs all 745 CPU/Burst PlayMode cases, including allocation assays and
 positive controls. A namespace setup fixture captures actual package versions,
 sources, compiler-source hashes, manifest and lock before candidates execute.
-It rejects substituted packages. The result gate requires the exact retained
+It rejects substituted packages and requires the batch interface to come from
+that actual Jobs package and its Unity.Jobs assembly. Collections 1.2.3 predates
+the Jobs merge into Collections 1.4.0, so this generated host pins the older Jobs
+provider. Current hosts using the merged Collections provider do not install it.
+The comparison manifest also supplies Physics and Physics2D modules required by
+the pinned UniRx source; the committed local-parity manifest retains these modules.
+The result gate requires the exact retained
 case identities, with no failed, skipped or inconclusive cases.
 
 The central v1.15 actions own admission and automatic cleanup. Acquisition

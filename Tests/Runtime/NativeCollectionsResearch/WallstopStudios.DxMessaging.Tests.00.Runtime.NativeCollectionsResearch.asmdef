@@ -7,6 +7,7 @@
     "WallstopStudios.DxMessaging",
     "WallstopStudios.DxMessaging.Tests.Runtime",
     "Unity.Collections",
+    "Unity.Jobs",
     "Unity.Burst",
     "Unity.Mathematics",
     "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks"
