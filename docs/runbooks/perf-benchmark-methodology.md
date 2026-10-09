@@ -1204,15 +1204,26 @@ Set Runner Audit's `native-sdk-upm-network-probe=true` with `runner-label=ELI-MA
 Leave all other optional modes at their defaults. The collector verifies regular installed
 diagnostic and UPM server files under the managed Unity 2021.3.45f1 directory, retains
 their hashes, and invokes the diagnostic executable once with the actual launcher's
-`-o` and `-p` arguments. It does not run the batch wrapper's interactive keyboard pause.
+`-o` report-file and `-p` server arguments. The `-o` operand names the new
+`upm-network-report/upm-diagnostic-report.txt` file.
+It does not run the batch wrapper's interactive keyboard pause.
 The work step has a fixed five-minute limit within the existing ten-minute job.
 
 The collector records invocation evidence before launch and refuses an existing report
-directory. The redacted artifact includes `upm-network-diagnostics.json`, console output,
+directory. It reads the executing account's fixed `%LOCALAPPDATA%/Unity/Editor/upm-diag.log`
+before and after the call through the existing bounded strict text reader. The prior
+log is retained as `upm-diag-before.log`; the current log is copied to the scoped report
+directory. It does not write to or relocate the source log. An unchanged prior log cannot
+supply current execution evidence. Missing, invalid or oversized current logs fail completeness.
+The redacted artifact includes `upm-network-diagnostics.json`, console output,
 `upm-network-report/upm-diagnostic-report.txt` and `upm-network-report/upm-diag.log`.
 Required reports must be nonempty and no larger than 4 MiB each. Nonzero exits, missing
 reports and partial executions remain failed records with their available output.
 The existing artifact redactor must succeed before upload.
+
+The [Unity staff diagnostic guidance](https://discussions.unity.com/t/cant-run-rununitypackagemanagerdiagnostics-error-eisdir/825952/2)
+describes direct invocation. Preserve a report-creation failure and verify the installed
+version's output contract before inferring any network failure.
 
 A completed invocation does not assert that every network test passed. Inspect the report
 outcomes separately. This supported diagnostic starts no Unity Editor or licensed build;

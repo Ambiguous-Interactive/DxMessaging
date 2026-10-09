@@ -198,6 +198,53 @@ if ($RegistryDownloadOnly) {
     return
 }
 
+function Get-UnityPackageFileEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Kind
+    )
+    $record = [ordered]@{ kind = $Kind; path = $Path; status = 'missing' }
+    $stream = $null
+    $reader = $null
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'Expected a regular file, without a reparse point.'
+        }
+        $record.lengthBytes = $item.Length
+        $record.lastWriteUtc = $item.LastWriteTimeUtc.ToString('O')
+        $record.attributes = [string]$item.Attributes
+        $stream = [IO.File]::Open($item.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+            [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+        $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false, $true), $true)
+        # Retain at most four million characters; detect overflow explicitly.
+        $buffer = [char[]]::new(4 * 1024 * 1024)
+        $count = $reader.ReadBlock($buffer, 0, $buffer.Length)
+        $record.content = [string]::new($buffer, 0, $count)
+        $record.status = if ($reader.Read() -eq -1) { 'ok' } else { 'truncated' }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($record.content)
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $record.capturedTextSha256BeforeRedaction = [BitConverter]::ToString(
+                $hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+        } finally { $hasher.Dispose() }
+        $record.lastWriteUtcAfterRead = (Get-Item -LiteralPath $Path -Force).LastWriteTimeUtc.ToString('O')
+        if ($record.lastWriteUtcAfterRead -cne $record.lastWriteUtc) {
+            $record.status = 'changed-during-read'
+        }
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        $record.status = 'missing'
+    } catch {
+        $record.status = 'error'
+        $record.error = $_.Exception.Message
+    } finally {
+        if ($reader) { $reader.Dispose() }
+        elseif ($stream) { $stream.Dispose() }
+    }
+
+    return $record
+}
+
 function Get-UnityPackageLogEvidence {
     param(
         [Parameter(Mandatory = $true)][string]$Project,
@@ -225,46 +272,8 @@ function Get-UnityPackageLogEvidence {
         $candidates.Add(@{ kind = 'diagnostic-launcher'; path = Join-Path $InstalledDiagnostics 'RunUnityPackageManagerDiagnostics.bat' })
     }
     foreach ($candidate in $candidates) {
-        $record = [ordered]@{ kind = $candidate.kind; path = $candidate.path; status = 'missing' }
-        $stream = $null
-        $reader = $null
-        try {
-            $item = Get-Item -LiteralPath $candidate.path -Force -ErrorAction Stop
-            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-                throw 'Expected a regular file, without a reparse point.'
-            }
-            $record.lengthBytes = $item.Length
-            $record.lastWriteUtc = $item.LastWriteTimeUtc.ToString('O')
-            $record.attributes = [string]$item.Attributes
-            $stream = [IO.File]::Open($item.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read,
-                [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
-            $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false, $true), $true)
-            # Retain at most four million characters; detect overflow explicitly.
-            $buffer = [char[]]::new(4 * 1024 * 1024)
-            $count = $reader.ReadBlock($buffer, 0, $buffer.Length)
-            $record.content = [string]::new($buffer, 0, $count)
-            $record.status = if ($reader.Read() -eq -1) { 'ok' } else { 'truncated' }
-            $bytes = [Text.Encoding]::UTF8.GetBytes($record.content)
-            $hasher = [Security.Cryptography.SHA256]::Create()
-            try {
-                $record.capturedTextSha256BeforeRedaction = [BitConverter]::ToString(
-                    $hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
-            } finally { $hasher.Dispose() }
-            $record.lastWriteUtcAfterRead = (Get-Item -LiteralPath $candidate.path -Force).LastWriteTimeUtc.ToString('O')
-            if ($record.lastWriteUtcAfterRead -cne $record.lastWriteUtc) {
-                $record.status = 'changed-during-read'
-            }
-            if ($record.status -ne 'ok') { $errors.Add("$($candidate.path): $($record.status)") }
-        } catch [System.Management.Automation.ItemNotFoundException] {
-            $record.status = 'missing'
-        } catch {
-            $record.status = 'error'
-            $record.error = $_.Exception.Message
-            $errors.Add("$($candidate.path): $($_.Exception.Message)")
-        } finally {
-            if ($reader) { $reader.Dispose() }
-            elseif ($stream) { $stream.Dispose() }
-        }
+        $record = Get-UnityPackageFileEvidence -Path $candidate.path -Kind $candidate.kind
+        if ($record.status -notin @('ok', 'missing')) { $errors.Add("$($candidate.path): $($record.status)") }
         $files.Add($record)
     }
     $directoryPaths = @($Project, (Join-Path $Project 'Library/PackageCache'), $Cache,
@@ -323,11 +332,12 @@ function Invoke-InstalledUpmDiagnostic {
     $fullEvidence = [IO.Path]::GetFullPath($EvidencePath)
     $outputParent = [IO.Path]::GetDirectoryName($fullEvidence)
     $reportDirectory = Join-Path $outputParent 'upm-network-report'
+    $reportFile = Join-Path $reportDirectory 'upm-diagnostic-report.txt'
     $diagnostics = [IO.Path]::GetFullPath($DiagnosticsDirectory)
     $binary = Join-Path $diagnostics 'bin/UnityPackageManagerDiagnostics.exe'
     $server = [IO.Path]::GetFullPath((Join-Path $diagnostics '../Server/UnityPackageManager.exe'))
     $console = Join-Path $outputParent 'upm-network-console.log'
-    $nativeArguments = @('-o', $reportDirectory, '-p', $server)
+    $nativeArguments = @('-o', $reportFile, '-p', $server)
     $errors = [Collections.Generic.List[string]]::new()
     $record = [ordered]@{
         schemaVersion = 1; purpose = 'installed-upm-network-diagnostic'
@@ -335,7 +345,8 @@ function Invoke-InstalledUpmDiagnostic {
         sourceSha256 = (Get-FileHash -LiteralPath $CollectorSourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
         gitCommit = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
         status = 'prepared'; executable = $binary; arguments = $nativeArguments
-        reportDirectory = $reportDirectory; consoleLog = $console
+        reportDirectory = $reportDirectory; reportFile = $reportFile; consoleLog = $console
+        defaultLogBefore = $null; defaultLogAfter = $null; defaultLogCurrent = $false
         binaryFiles = @(); reports = @(); exitCode = $null; executionCompleted = $false
         errors = @(); maximumReportBytes = 4 * 1024 * 1024; workflowWorkLimitMinutes = 5
     }
@@ -361,6 +372,14 @@ function Invoke-InstalledUpmDiagnostic {
                 sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             }
         }
+        if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw 'LOCALAPPDATA is required for the native diagnostic log.' }
+        $profileLog = Join-Path $env:LOCALAPPDATA 'Unity/Editor/upm-diag.log'
+        $record.defaultLogBefore = Get-UnityPackageFileEvidence -Path $profileLog -Kind 'native-diagnostic-log'
+        if ($record.defaultLogBefore.status -notin @('ok', 'missing')) { throw 'Prior native diagnostic log capture is incomplete.' }
+        if ($record.defaultLogBefore.status -ceq 'ok') {
+            if ($record.defaultLogBefore.lengthBytes -gt $record.maximumReportBytes) { throw 'Prior native diagnostic log exceeds the fixed byte cap.' }
+            [IO.File]::WriteAllText((Join-Path $outputParent 'upm-diag-before.log'), $record.defaultLogBefore.content)
+        }
         New-Item -ItemType Directory -Path $reportDirectory | Out-Null
         $record.status = 'invoking'; $record.startedUtc = [DateTime]::UtcNow.ToString('O')
         & $save
@@ -369,7 +388,7 @@ function Invoke-InstalledUpmDiagnostic {
             $nativeExit = & $Execute $binary $nativeArguments $console
         } else {
             # Native invocation preserves each argument token, including paths with spaces.
-            & $binary '-o' $reportDirectory '-p' $server *> $console
+            & $binary '-o' $reportFile '-p' $server *> $console
             $nativeExit = $LASTEXITCODE
         }
         if ($null -eq $nativeExit -or $nativeExit -isnot [int]) { throw 'No integer native diagnostic exit code was retained.' }
@@ -382,7 +401,17 @@ function Invoke-InstalledUpmDiagnostic {
     } finally {
         $timer.Stop(); $record.elapsedSeconds = $timer.Elapsed.TotalSeconds
         $record.completedUtc = [DateTime]::UtcNow.ToString('O')
-        foreach ($path in @((Join-Path $reportDirectory 'upm-diagnostic-report.txt'),
+        if ($record.Contains('startedUtc')) {
+            $record.defaultLogAfter = Get-UnityPackageFileEvidence -Path $profileLog -Kind 'native-diagnostic-log'
+            if ($record.defaultLogAfter.status -ceq 'ok' -and $record.defaultLogAfter.lengthBytes -gt 0 -and
+                $record.defaultLogAfter.lengthBytes -le $record.maximumReportBytes) {
+                [IO.File]::WriteAllText((Join-Path $reportDirectory 'upm-diag.log'), $record.defaultLogAfter.content)
+                $record.defaultLogCurrent = $record.defaultLogBefore.status -cne 'ok' -or
+                    $record.defaultLogAfter.capturedTextSha256BeforeRedaction -cne $record.defaultLogBefore.capturedTextSha256BeforeRedaction
+                if (-not $record.defaultLogCurrent) { $errors.Add('Native diagnostic log is unchanged from before execution.') }
+            } else { $errors.Add('Current native diagnostic log is missing, empty or incomplete.') }
+        }
+        foreach ($path in @($reportFile,
             (Join-Path $reportDirectory 'upm-diag.log'), $console)) {
             $report = [ordered]@{ path = $path; status = 'missing' }
             try {

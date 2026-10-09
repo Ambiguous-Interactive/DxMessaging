@@ -896,6 +896,13 @@ try {
 }
 
 # Read real files through the package collector, including bounded and invalid input.
+$packageFileFunction = $collectorAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-UnityPackageFileEvidence'
+}, $true)
+Assert-That 'package and native diagnostics share the actual bounded file reader' ($null -ne $packageFileFunction)
+Invoke-Expression $packageFileFunction.Extent.Text
 $packageFunction = $collectorAst.Find({
     param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
@@ -1174,18 +1181,31 @@ $networkFunction = $collectorAst.Find({
 Assert-That 'collector defines the actual installed UPM diagnostic invocation' ($null -ne $networkFunction)
 Invoke-Expression $networkFunction.Extent.Text
 $networkFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('dxm-upm-network-' + [Guid]::NewGuid().ToString('N'))
+$networkLocalAppData = $env:LOCALAPPDATA
 try {
+    $env:LOCALAPPDATA = Join-Path $networkFixtureRoot 'service profile with spaces'
+    $profileLog = Join-Path $env:LOCALAPPDATA 'Unity/Editor/upm-diag.log'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $profileLog) -Force | Out-Null
     $diagnosticDirectory = Join-Path $networkFixtureRoot 'package manager with spaces/Diagnostics'
     $nativeBinary = Join-Path $diagnosticDirectory 'bin/UnityPackageManagerDiagnostics.exe'
     $nativeServer = Join-Path $networkFixtureRoot 'package manager with spaces/Server/UnityPackageManager.exe'
     New-Item -ItemType Directory -Path (Split-Path -Parent $nativeBinary), (Split-Path -Parent $nativeServer) -Force | Out-Null
     foreach ($networkFixtureMode in @('ok', 'nonzero', 'missing-exit', 'string-exit', 'launch-error',
-        'missing-report', 'empty-report', 'oversized-report', 'missing-binary', 'missing-server', 'stale-output')) {
+        'missing-report', 'empty-report', 'oversized-report', 'missing-binary', 'missing-server', 'stale-output',
+        'missing-log', 'empty-log', 'stale-log', 'invalid-log', 'oversized-log',
+        'invalid-prior-log', 'oversized-prior-log', 'unset-log-environment')) {
         [IO.File]::WriteAllText($nativeBinary, 'synthetic native binary boundary')
         [IO.File]::WriteAllText($nativeServer, 'synthetic package manager boundary')
+        $env:LOCALAPPDATA = Join-Path $networkFixtureRoot 'service profile with spaces'
+        [IO.File]::WriteAllText($profileLog, 'prior report-creation error retained before invocation')
+        $priorLogHash = (Get-FileHash -LiteralPath $profileLog).Hash
         $nativeHash = (Get-FileHash -LiteralPath $nativeBinary).Hash
         $caseOutput = Join-Path $networkFixtureRoot "output with spaces/$networkFixtureMode/evidence.json"
         $caseReport = Join-Path (Split-Path -Parent $caseOutput) 'upm-network-report'
+        $caseReportFile = Join-Path $caseReport 'upm-diagnostic-report.txt'
+        if ($networkFixtureMode -ceq 'invalid-prior-log') { [IO.File]::WriteAllBytes($profileLog, [byte[]]@(0xff, 0xff, 0xff)) }
+        if ($networkFixtureMode -ceq 'oversized-prior-log') { [IO.File]::WriteAllText($profileLog, ('x' * (4 * 1024 * 1024 + 1))) }
+        if ($networkFixtureMode -ceq 'unset-log-environment') { $env:LOCALAPPDATA = '' }
         if ($networkFixtureMode -ceq 'missing-binary') { Remove-Item -LiteralPath $nativeBinary }
         if ($networkFixtureMode -ceq 'missing-server') { Remove-Item -LiteralPath $nativeServer }
         if ($networkFixtureMode -ceq 'stale-output') {
@@ -1198,17 +1218,22 @@ try {
             $nativeCalls.Add($nativeFile)
             Assert-That 'native diagnostic arguments preserve four fixed tokens and paths with spaces' (
                 $nativeFile -ceq $nativeBinary -and $nativeArguments.Count -eq 4 -and
-                $nativeArguments[0] -ceq '-o' -and $nativeArguments[1] -ceq $caseReport -and
+                $nativeArguments[0] -ceq '-o' -and $nativeArguments[1] -ceq $caseReportFile -and
                 $nativeArguments[2] -ceq '-p' -and $nativeArguments[3] -ceq $nativeServer
             )
+            Assert-That 'prelaunch capture does not alter the native profile log' ((Get-FileHash -LiteralPath $profileLog).Hash -ceq $priorLogHash)
             if ($networkFixtureMode -ceq 'launch-error') { throw [IO.IOException]::new('synthetic launch refused') }
             [IO.File]::WriteAllText($consolePath, 'synthetic native console')
-            [IO.File]::WriteAllText((Join-Path $nativeArguments[1] 'upm-diag.log'), 'synthetic native log')
+            if ($networkFixtureMode -ceq 'missing-log') { Remove-Item -LiteralPath $profileLog }
+            elseif ($networkFixtureMode -ceq 'empty-log') { [IO.File]::WriteAllText($profileLog, '') }
+            elseif ($networkFixtureMode -ceq 'invalid-log') { [IO.File]::WriteAllBytes($profileLog, [byte[]]@(0xff, 0xff, 0xff)) }
+            elseif ($networkFixtureMode -ceq 'oversized-log') { [IO.File]::WriteAllText($profileLog, ('x' * (4 * 1024 * 1024 + 1))) }
+            elseif ($networkFixtureMode -cne 'stale-log') { [IO.File]::WriteAllText($profileLog, 'current native diagnostic log') }
             if ($networkFixtureMode -cne 'missing-report') {
                 $body = if ($networkFixtureMode -ceq 'empty-report') { '' }
                     elseif ($networkFixtureMode -ceq 'oversized-report') { 'x' * (4 * 1024 * 1024 + 1) }
                     else { 'synthetic native report' }
-                [IO.File]::WriteAllText((Join-Path $nativeArguments[1] 'upm-diagnostic-report.txt'), $body)
+                [IO.File]::WriteAllText($nativeArguments[1], $body)
             }
             if ($networkFixtureMode -ceq 'missing-exit') { return }
             if ($networkFixtureMode -ceq 'string-exit') { return '0' }
@@ -1216,14 +1241,24 @@ try {
             return 0
         }.GetNewClosure()
         $result = Invoke-InstalledUpmDiagnostic -DiagnosticsDirectory $diagnosticDirectory -EvidencePath $caseOutput -CollectorSourcePath $collectorPath -Execute $execute
-        $expectedCalls = if ($networkFixtureMode -in @('missing-binary', 'missing-server', 'stale-output')) { 0 } else { 1 }
+        $expectedCalls = if ($networkFixtureMode -in @('missing-binary', 'missing-server', 'stale-output',
+            'invalid-prior-log', 'oversized-prior-log', 'unset-log-environment')) { 0 } else { 1 }
         Assert-That "native diagnostic $networkFixtureMode retains its actual invocation/completeness outcome" (
             ($result.status -ceq 'completed') -eq ($networkFixtureMode -ceq 'ok') -and
             $nativeCalls.Count -eq $expectedCalls -and (Test-Path -LiteralPath $caseOutput)
         )
+        if ($expectedCalls -eq 1) {
+            Assert-That 'prior diagnostic failure is retained without rewriting its source before execution' (
+                $result.defaultLogBefore.status -ceq 'ok' -and
+                $result.defaultLogBefore.content -ceq 'prior report-creation error retained before invocation' -and
+                $result.defaultLogBefore.capturedTextSha256BeforeRedaction -ceq $priorLogHash.ToLowerInvariant() -and
+                (Get-Content -LiteralPath (Join-Path (Split-Path -Parent $caseOutput) 'upm-diag-before.log') -Raw) -ceq $result.defaultLogBefore.content
+            )
+        }
         if ($networkFixtureMode -ceq 'ok') {
             Assert-That 'completed native invocation retains binary and report provenance' (
                 $result.sourceSha256 -ceq (Get-FileHash -LiteralPath $collectorPath -Algorithm SHA256).Hash.ToLowerInvariant() -and
+                $result.defaultLogCurrent -and $result.defaultLogAfter.content -ceq 'current native diagnostic log' -and
                 $result.exitCode -eq 0 -and $result.executionCompleted -and $result.binaryFiles.Count -eq 2 -and
                 $result.reports.Count -eq 3 -and @($result.reports | Where-Object { $_.status -cne 'ok' }).Count -eq 0
             )
@@ -1237,6 +1272,7 @@ try {
         }
     }
 } finally {
+    $env:LOCALAPPDATA = $networkLocalAppData
     if (Test-Path -LiteralPath $networkFixtureRoot) { Remove-Item -LiteralPath $networkFixtureRoot -Recurse -Force }
 }
 
