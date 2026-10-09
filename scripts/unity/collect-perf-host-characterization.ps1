@@ -17,6 +17,8 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')][switch]$RegistryDownloadOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')]
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedArchiveSha1,
+    [Parameter(ParameterSetName = 'RegistryDownload')]
+    [ValidateSet('Gateway', 'Cdn')][string]$RegistryArchiveRoute = 'Gateway',
     [Parameter(ParameterSetName = 'Sensors')][switch]$CpuLoad,
     [Parameter(ParameterSetName = 'Sensors')][ValidateRange(2, 3600)][int]$SampleCount = 120,
     [Parameter(ParameterSetName = 'Sensors')][string]$StopSignalPath,
@@ -88,10 +90,16 @@ function Get-HostEventEvidence {
 function Get-RegistryArchiveEvidence {
     param(
         [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedSha1,
+        [ValidateSet('Gateway', 'Cdn')][string]$ArchiveRoute = 'Gateway',
         [System.Net.Http.HttpClient]$Client
     )
+    $archiveUrl = if ($ArchiveRoute -eq 'Cdn') {
+        'https://cdn.packages.unity.com/tarballs/com.unity.burst/com.unity.burst-1.6.6/da63315718cf3bf3d11ff958633b4b67dc8d2426.tgz'
+    } else {
+        'https://download.packages.unity.com/com.unity.burst/-/com.unity.burst-1.6.6.tgz'
+    }
     $record = [ordered]@{
-        url = 'https://download.packages.unity.com/com.unity.burst/-/com.unity.burst-1.6.6.tgz'
+        archiveRoute = $ArchiveRoute; url = $archiveUrl
         expectedSha1 = $ExpectedSha1; maximumBytes = 512L * 1024 * 1024; deadlineSeconds = 120
         startedUtc = [DateTime]::UtcNow.ToString('O'); status = 'failed'
         httpStatus = $null; declaredLengthBytes = $null; bytesReceived = 0L
@@ -168,7 +176,7 @@ function Get-RegistryArchiveEvidence {
 }
 
 if ($RegistryDownloadOnly) {
-    $evidence = Get-RegistryArchiveEvidence -ExpectedSha1 $ExpectedArchiveSha1
+    $evidence = Get-RegistryArchiveEvidence -ExpectedSha1 $ExpectedArchiveSha1 -ArchiveRoute $RegistryArchiveRoute
     $record = [ordered]@{
         schemaVersion = 1; purpose = 'fixed-unity-registry-download-diagnostic'
         capturedUtc = [DateTime]::UtcNow.ToString('O'); hostName = [Environment]::MachineName

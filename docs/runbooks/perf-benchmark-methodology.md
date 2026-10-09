@@ -1193,10 +1193,16 @@ records; diagnose the first failed attempt before dispatching another floor run.
 
 Set Runner Audit's `native-sdk-registry-probe=true` with `runner-label=ELI-MACHINE`.
 Leave every other optional mode at its default, including the retained-log source.
-The existing package diagnostic job makes one HTTPS request for the fixed official
-Burst 1.6.6 archive and compares its complete body with the SHA1 from Unity's
+The existing package diagnostic job makes one HTTPS request for the fixed canonical
+CDN Burst 1.6.6 archive and compares its complete body with the SHA1 from Unity's
 registry metadata. It records SHA256, byte count, declared length, timestamps,
-HTTP status and errors in `registry-download.json` in the redacted bootstrap artifact.
+route, HTTP status and errors in `registry-download.json` in the redacted bootstrap artifact.
+
+The two fixed collector routes are `Gateway` and `Cdn`; arbitrary URLs are not accepted.
+The workflow explicitly selects `Cdn` at `cdn.packages.unity.com`. The direct collector
+defaults to `Gateway` at `download.packages.unity.com`, preserving the original
+no-redirect case. Select the canonical object directly with `-RegistryArchiveRoute Cdn`.
+Record each route as a distinct diagnostic case; retain a gateway redirect failure.
 
 The probe uses the platform's normal HTTPS client, a 120-second cancellation
 bound covering headers and body, and a 512 MiB body cap. It performs no retries,

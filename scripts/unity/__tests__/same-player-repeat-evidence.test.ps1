@@ -1068,35 +1068,61 @@ $fixtureHasher = [Security.Cryptography.SHA1]::Create()
 try {
     $fixtureDigest = [BitConverter]::ToString($fixtureHasher.ComputeHash([RegistryFixtureHandler]::Body)).Replace('-', '').ToLowerInvariant()
 } finally { $fixtureHasher.Dispose() }
-foreach ($mode in @('ok', 'http', 'redirect', 'oversized', 'read-error', 'wrong-length', 'empty', 'digest')) {
-    $handler = [RegistryFixtureHandler]::new(); $handler.Mode = $mode
-    $client = [Net.Http.HttpClient]::new($handler)
-    try {
-        $expected = if ($mode -eq 'digest') { '0' * 40 } else { $fixtureDigest }
-        $result = Get-RegistryArchiveEvidence -ExpectedSha1 $expected -Client $client
-        Assert-That "HTTP fixture $mode uses one fixed cancellable request without credentials" (
-            $handler.Requests -eq 1 -and $handler.Cancellable -and -not $handler.HadAuthorization -and
-            $handler.Uri -ceq 'https://download.packages.unity.com/com.unity.burst/-/com.unity.burst-1.6.6.tgz'
-        )
-        Assert-That "HTTP fixture $mode preserves outcome and declared limits" (
-            ($result.status -ceq 'success') -eq ($mode -eq 'ok') -and
-            $result.maximumBytes -eq 536870912L -and $result.deadlineSeconds -eq 120
-        )
-        if ($mode -eq 'ok') {
-            Assert-That 'complete download retains both digests and byte count' (
-                $result.bodyComplete -and $result.digestMatches -and $result.sha1 -ceq $fixtureDigest -and
-                $result.sha256.Length -eq 64 -and $result.bytesReceived -eq [RegistryFixtureHandler]::Body.Length
+foreach ($archiveRoute in @('Gateway', 'Cdn')) {
+    $expectedUrl = if ($archiveRoute -ceq 'Cdn') {
+        'https://cdn.packages.unity.com/tarballs/com.unity.burst/com.unity.burst-1.6.6/da63315718cf3bf3d11ff958633b4b67dc8d2426.tgz'
+    } else {
+        'https://download.packages.unity.com/com.unity.burst/-/com.unity.burst-1.6.6.tgz'
+    }
+    foreach ($mode in @('ok', 'http', 'redirect', 'oversized', 'read-error', 'wrong-length', 'empty', 'digest')) {
+        $handler = [RegistryFixtureHandler]::new(); $handler.Mode = $mode
+        $client = [Net.Http.HttpClient]::new($handler)
+        try {
+            $expected = if ($mode -eq 'digest') { '0' * 40 } else { $fixtureDigest }
+            $result = if ($archiveRoute -ceq 'Gateway') {
+                # Omit the route to exercise the retained original default case.
+                Get-RegistryArchiveEvidence -ExpectedSha1 $expected -Client $client
+            } else {
+                Get-RegistryArchiveEvidence -ExpectedSha1 $expected -ArchiveRoute $archiveRoute -Client $client
+            }
+            Assert-That "HTTP fixture $archiveRoute/$mode uses one fixed cancellable request without credentials" (
+                $handler.Requests -eq 1 -and $handler.Cancellable -and -not $handler.HadAuthorization -and
+                $handler.Uri -ceq $expectedUrl -and $result.archiveRoute -ceq $archiveRoute
             )
-        } elseif ($mode -eq 'read-error') {
-            Assert-That 'partial body errors preserve prefix evidence without completeness' (
-                -not $result.bodyComplete -and $result.bytesReceived -eq 1 -and $result.sha256.Length -eq 64 -and
-                $result.error.Contains('fixture aborted after partial body')
+            Assert-That "HTTP fixture $archiveRoute/$mode preserves outcome and declared limits" (
+                ($result.status -ceq 'success') -eq ($mode -eq 'ok') -and
+                $result.maximumBytes -eq 536870912L -and $result.deadlineSeconds -eq 120
             )
-        } elseif ($mode -eq 'wrong-length' -or $mode -eq 'empty') {
-            Assert-That 'EOF does not admit an empty or length-mismatched body' ($result.eofReached -and -not $result.bodyComplete)
-        }
-    } finally { $client.Dispose() }
+            if ($mode -eq 'ok') {
+                Assert-That 'complete download retains both digests and byte count' (
+                    $result.bodyComplete -and $result.digestMatches -and $result.sha1 -ceq $fixtureDigest -and
+                    $result.sha256.Length -eq 64 -and $result.bytesReceived -eq [RegistryFixtureHandler]::Body.Length
+                )
+            } elseif ($mode -eq 'read-error') {
+                Assert-That 'partial body errors preserve prefix evidence without completeness' (
+                    -not $result.bodyComplete -and $result.bytesReceived -eq 1 -and $result.sha256.Length -eq 64 -and
+                    $result.error.Contains('fixture aborted after partial body')
+                )
+            } elseif ($mode -eq 'wrong-length' -or $mode -eq 'empty') {
+                Assert-That 'EOF does not admit an empty or length-mismatched body' ($result.eofReached -and -not $result.bodyComplete)
+            }
+        } finally { $client.Dispose() }
+    }
 }
+
+$handler = [RegistryFixtureHandler]::new(); $handler.Mode = 'ok'
+$client = [Net.Http.HttpClient]::new($handler)
+try {
+    $rejected = $false
+    try {
+        Get-RegistryArchiveEvidence -ExpectedSha1 $fixtureDigest -ArchiveRoute 'https://example.com/archive.tgz' -Client $client | Out-Null
+    } catch { $rejected = $true }
+    Assert-That 'arbitrary archive URL is rejected before any request' ($rejected -and $handler.Requests -eq 0)
+    $result = Get-RegistryArchiveEvidence -ExpectedSha1 $fixtureDigest -ArchiveRoute 'cdn' -Client $client
+    Assert-That 'case-insensitive Cdn parameter still selects the canonical fixed object' (
+        $result.status -ceq 'success' -and $result.url.StartsWith('https://cdn.packages.unity.com/')
+    )
+} finally { $client.Dispose() }
 $diagnosticJob = $floorWorkflow.jobs.'package-log-capture'
 $expectedSteps = @('Checkout', 'Require isolated package diagnostic mode', 'Setup Node.js for package log redaction',
     'Install artifact tooling dependencies', 'Capture retained Unity Package Manager diagnostics',
@@ -1104,6 +1130,11 @@ $expectedSteps = @('Checkout', 'Require isolated package diagnostic mode', 'Setu
 Assert-That 'unlicensed package job contains only its declared diagnostic and artifact work' (
     ($diagnosticJob.steps.name -join '|') -ceq ($expectedSteps -join '|') -and
     $diagnosticJob.'timeout-minutes' -eq 10 -and $diagnosticJob.needs[0] -ceq 'runner-preflight'
+)
+$archiveStep = @($diagnosticJob.steps | Where-Object { $_.name -ceq 'Verify exact Burst registry archive download' })[0]
+Assert-That 'workflow registers the distinct canonical CDN case with the unchanged digest' (
+    $archiveStep.run.Contains('-RegistryArchiveRoute Cdn') -and
+    $archiveStep.env.DXM_EXPECTED_BURST_SHA1 -ceq 'da63315718cf3bf3d11ff958633b4b67dc8d2426'
 )
 $diagnosticRoute = [scriptblock]::Create($diagnosticJob.steps[1].run)
 $diagnosticEnvironment = @{}

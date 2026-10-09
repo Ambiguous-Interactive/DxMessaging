@@ -525,7 +525,7 @@ jobs:
           DXM_EXPECTED_BURST_SHA1: da63315718cf3bf3d11ff958633b4b67dc8d2426
         run: |
           ./scripts/unity/collect-perf-host-characterization.ps1 `
-            -RegistryDownloadOnly -ExpectedArchiveSha1 $env:DXM_EXPECTED_BURST_SHA1 `
+            -RegistryDownloadOnly -RegistryArchiveRoute Cdn -ExpectedArchiveSha1 $env:DXM_EXPECTED_BURST_SHA1 `
             -OutputPath '.artifacts/runner-bootstrap/registry-download.json'
 
       - name: Redact retained package log artifacts
