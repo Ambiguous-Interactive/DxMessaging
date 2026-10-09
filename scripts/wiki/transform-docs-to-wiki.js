@@ -239,7 +239,20 @@ function transformLine(line, currentFilePath) {
     const queryIndex = href.indexOf("?");
     if (queryIndex !== -1) href = href.substring(0, queryIndex);
 
-    const wikiPage = docsPathToWikiPage(resolveDocsLink(href, currentFilePath));
+    const target = resolveDocsLink(href, currentFilePath);
+    if (path.posix.extname(target) && !/\.md$/i.test(target)) {
+      const repoPath = path.posix.normalize(path.posix.join("docs", target));
+      const suffix = link.href.match(/[?#].*$/)?.[0] || "";
+      const url =
+        new URL(repoPath, "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/")
+          .href + suffix;
+      result =
+        result.substring(0, link.index) +
+        `[${link.text}](${url})` +
+        result.substring(link.index + link.match.length);
+      continue;
+    }
+    const wikiPage = docsPathToWikiPage(target);
     let wikiLink;
 
     if (anchor) {

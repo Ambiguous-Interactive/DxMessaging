@@ -9,6 +9,12 @@ const path = require("node:path");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const TEST_HOST_PATH = "Tests/Editor/EditorWindowTestUtility.cs";
 
+function hasRawWindowClose(content) {
+  return [...content.matchAll(/\b\w*Window\??\s+(\w+)\b/g)].some((match) =>
+    new RegExp(`\\b${match[1]}\\??\\.Close\\(\\);`).test(content)
+  );
+}
+
 function extractMethodBody(content, methodName) {
   const signatureIndex = content.indexOf(` ${methodName}(`);
   assert.notEqual(signatureIndex, -1, `${methodName} must exist`);
@@ -54,7 +60,7 @@ test("editor tests use the stable test host for shown windows", () => {
     if (/\.Show\(\);/.test(content)) {
       violations.push(`${relativePath}: use EditorWindowTestUtility.ShowWindow(window)`);
     }
-    if (/\.Close\(\);/.test(content)) {
+    if (hasRawWindowClose(content)) {
       violations.push(`${relativePath}: use EditorWindowTestUtility.CloseWindow(window)`);
     }
   }
@@ -63,6 +69,15 @@ test("editor tests use the stable test host for shown windows", () => {
     violations,
     [],
     "Shown editor tests must use DxMessagingTestHostWindow with HideAndDontSave so Unity layouts do not persist generic EditorWindow entries as Failed to Load tabs."
+  );
+});
+
+test("closing guard distinguishes windows from network transports", () => {
+  assert.equal(hasRawWindowClose("EditorWindow window; window.Close();"), true);
+  assert.equal(hasRawWindowClose("DxMessagingMonitorWindow? monitor; monitor?.Close();"), true);
+  assert.equal(
+    hasRawWindowClose("TcpClient Client; Client.Close(); HttpListener Listener; Listener.Close();"),
+    false
   );
 });
 
