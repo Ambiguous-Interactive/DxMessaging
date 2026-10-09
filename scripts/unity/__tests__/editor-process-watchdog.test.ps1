@@ -67,7 +67,9 @@ Wait-Event -Timeout 30 | Out-Null
             -Arguments @('-NoLogo', '-NoProfile', '-File', $childScript, '-PidPath', $treePidPath) `
             -Label 'shutdown process tree' -LogPath $treeLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1
         $treeText = Get-Content -LiteralPath $treeLog -Raw
-        if ($treeExit -ne 124 -or $treeText -notmatch 'child-pid=(\d+)') { throw 'Child-tree fixture did not run.' }
+        if ($treeExit -ne 124 -or $treeText -notmatch 'child-pid=(\d+)') {
+            throw "Child-tree fixture did not run: exit=$treeExit; pidFileExists=$(Test-Path -LiteralPath $treePidPath); log=$treeText"
+        }
         $childProcess = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         if ($childProcess) {
             try {
