@@ -513,8 +513,10 @@ jobs:
           $source = $env:DXM_LOG_SOURCE.Split(',')
           $project = Join-Path $env:RUNNER_WORKSPACE ("dxm-u/n/nf{0}a{1}" -f $source[0], $source[1])
           $cache = Join-Path $env:RUNNER_WORKSPACE 'dxm-c/native-sdk-floor-2021.3.45f1'
+          $diagnostics = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/2021.3.45f1/Editor/Data/Resources/PackageManager/Diagnostics'
           ./scripts/unity/collect-perf-host-characterization.ps1 `
             -PackageLogsOnly -ProjectPath $project -CachePath $cache `
+            -InstalledDiagnosticsPath $diagnostics `
             -OutputPath '.artifacts/runner-bootstrap/package-manager-diagnostics.json'
 
       - name: Verify exact Burst registry archive download

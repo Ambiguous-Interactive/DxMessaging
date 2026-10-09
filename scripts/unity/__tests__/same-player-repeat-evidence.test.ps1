@@ -932,6 +932,43 @@ try {
         $evidence.files[1].status -ceq 'missing' -and $evidence.files[5].status -ceq 'missing' -and
         $evidence.directories[3].status -ceq 'missing'
     )
+    $diagnostics = Join-Path $packageFixtureRoot 'installed-diagnostics'
+    New-Item -ItemType Directory -Path (Join-Path $diagnostics 'nested') -Force | Out-Null
+    $launcher = Join-Path $diagnostics 'RunUnityPackageManagerDiagnostics.bat'
+    $launcherText = [string]::Join("`r`n", @('@echo off', 'echo unexpected > "%~dp0executed.txt"', ''))
+    [IO.File]::WriteAllText($launcher, $launcherText)
+    [IO.File]::WriteAllText((Join-Path $diagnostics 'nested/should-not-read.txt'), 'private child fixture')
+    $launcherHash = (Get-FileHash -LiteralPath $launcher).Hash
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache -InstalledDiagnostics $diagnostics
+    $launcherRecord = @($evidence.files | Where-Object { $_.kind -ceq 'diagnostic-launcher' })[0]
+    Assert-That 'installed launcher capture reads exact text and shallow metadata without execution or mutation' (
+        $evidence.errors.Count -eq 0 -and $launcherRecord.status -ceq 'ok' -and
+        $launcherRecord.content -ceq $launcherText -and
+        (Get-FileHash -LiteralPath $launcher).Hash -ceq $launcherHash -and
+        -not (Test-Path -LiteralPath (Join-Path $diagnostics 'executed.txt')) -and
+        @($evidence.directories[-1].entries | Where-Object { $_.name -ceq 'nested' -and $_.directory }).Count -eq 1 -and
+        @($evidence.files | Where-Object { $_.path.EndsWith('should-not-read.txt') }).Count -eq 0
+    )
+    Remove-Item -LiteralPath $launcher
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache -InstalledDiagnostics $diagnostics
+    Assert-That 'missing requested launcher is explicit and fails completeness' (
+        $evidence.files[-1].status -ceq 'missing' -and $evidence.errors.Count -gt 0
+    )
+    [IO.File]::WriteAllBytes($launcher, [byte[]]@(0xff, 0xff, 0xff))
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache -InstalledDiagnostics $diagnostics
+    Assert-That 'invalid installed launcher text is a read error' (
+        $evidence.files[-1].status -ceq 'error' -and $evidence.errors.Count -gt 0
+    )
+    [IO.File]::WriteAllText($launcher, ('x' * (4 * 1024 * 1024 + 1)))
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache -InstalledDiagnostics $diagnostics
+    Assert-That 'oversized launcher retains a bounded prefix and cannot become complete' (
+        $evidence.files[-1].status -ceq 'truncated' -and
+        $evidence.files[-1].content.Length -eq 4 * 1024 * 1024 -and $evidence.errors.Count -gt 0
+    )
+    $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
+    Assert-That 'default log collection does not inspect an unrequested diagnostic installation' (
+        $evidence.errors.Count -eq 0 -and $evidence.files.Count -eq 6 -and $evidence.directories.Count -eq 5
+    )
     [IO.File]::WriteAllText($userLog, ('x' * (4 * 1024 * 1024 + 1)))
     $evidence = Get-UnityPackageLogEvidence -Project $project -Cache $cache
     Assert-That 'oversized logs retain a bounded prefix and fail completeness' (
@@ -958,6 +995,11 @@ try {
         $evidence.errors.Count -eq 1
     )
     $capture = @($floorWorkflow.jobs.'package-log-capture'.steps | Where-Object { $_.name -ceq 'Capture retained Unity Package Manager diagnostics' })[0]
+    Assert-That 'workflow reads the fixed managed diagnostic launcher without invoking it' (
+        $capture.run.Contains('u6-v3/2021.3.45f1/Editor/Data/Resources/PackageManager/Diagnostics') -and
+        $capture.run.Contains('-InstalledDiagnosticsPath $diagnostics') -and
+        -not $capture.run.Contains('RunUnityPackageManagerDiagnostics.bat')
+    )
     $route = [scriptblock]::Create(($capture.run -split '\$source =', 2)[0])
     foreach ($case in @(
         @{ request = 'ELI-MACHINE'; runner = 'ELI-MACHINE'; other = 'false'; source = '37859571795,1'; accepted = $true },

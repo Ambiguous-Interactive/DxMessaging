@@ -14,6 +14,7 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][switch]$PackageLogsOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$ProjectPath,
     [Parameter(Mandatory = $true, ParameterSetName = 'PackageLogs')][string]$CachePath,
+    [Parameter(ParameterSetName = 'PackageLogs')][string]$InstalledDiagnosticsPath,
     [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')][switch]$RegistryDownloadOnly,
     [Parameter(Mandatory = $true, ParameterSetName = 'RegistryDownload')]
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedArchiveSha1,
@@ -198,7 +199,8 @@ if ($RegistryDownloadOnly) {
 function Get-UnityPackageLogEvidence {
     param(
         [Parameter(Mandatory = $true)][string]$Project,
-        [Parameter(Mandatory = $true)][string]$Cache
+        [Parameter(Mandatory = $true)][string]$Cache,
+        [string]$InstalledDiagnostics
     )
     $files = New-Object System.Collections.Generic.List[object]
     $directories = New-Object System.Collections.Generic.List[object]
@@ -216,6 +218,9 @@ function Get-UnityPackageLogEvidence {
     }
     foreach ($leaf in @('manifest.json', 'packages-lock.json')) {
         $candidates.Add(@{ kind = 'project'; path = Join-Path $Project "Packages/$leaf" })
+    }
+    if (-not [string]::IsNullOrWhiteSpace($InstalledDiagnostics)) {
+        $candidates.Add(@{ kind = 'diagnostic-launcher'; path = Join-Path $InstalledDiagnostics 'RunUnityPackageManagerDiagnostics.bat' })
     }
     foreach ($candidate in $candidates) {
         $record = [ordered]@{ kind = $candidate.kind; path = $candidate.path; status = 'missing' }
@@ -260,8 +265,10 @@ function Get-UnityPackageLogEvidence {
         }
         $files.Add($record)
     }
-    foreach ($path in @($Project, (Join-Path $Project 'Library/PackageCache'), $Cache,
-        (Join-Path $Cache 'upm'), (Join-Path $Cache 'npm'))) {
+    $directoryPaths = @($Project, (Join-Path $Project 'Library/PackageCache'), $Cache,
+        (Join-Path $Cache 'upm'), (Join-Path $Cache 'npm'))
+    if (-not [string]::IsNullOrWhiteSpace($InstalledDiagnostics)) { $directoryPaths += $InstalledDiagnostics }
+    foreach ($path in $directoryPaths) {
         $record = [ordered]@{ path = $path; status = 'missing'; entries = @() }
         try {
             $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
@@ -292,14 +299,20 @@ function Get-UnityPackageLogEvidence {
     if (@($files | Where-Object { $_.kind -eq 'upm' -and $_.status -eq 'ok' }).Count -eq 0) {
         $errors.Add('No complete UPM service log was captured from the documented account locations.')
     }
-    return [ordered]@{
+    if (-not [string]::IsNullOrWhiteSpace($InstalledDiagnostics) -and
+        @($files | Where-Object { $_.kind -eq 'diagnostic-launcher' -and $_.status -eq 'ok' }).Count -eq 0) {
+        $errors.Add('No complete requested installed UPM diagnostic launcher was captured.')
+    }
+    $result = [ordered]@{
         projectPath = $Project; cachePath = $Cache
         files = @($files.ToArray()); directories = @($directories.ToArray()); errors = @($errors.ToArray())
     }
+    if (-not [string]::IsNullOrWhiteSpace($InstalledDiagnostics)) { $result.installedDiagnosticsPath = $InstalledDiagnostics }
+    return $result
 }
 
 if ($PackageLogsOnly) {
-    $evidence = Get-UnityPackageLogEvidence -Project $ProjectPath -Cache $CachePath
+    $evidence = Get-UnityPackageLogEvidence -Project $ProjectPath -Cache $CachePath -InstalledDiagnostics $InstalledDiagnosticsPath
     $record = [ordered]@{
         schemaVersion = 1; purpose = 'unity-package-manager-diagnostics'
         capturedUtc = [DateTime]::UtcNow.ToString('O'); hostName = [Environment]::MachineName

@@ -1164,6 +1164,15 @@ It does not start Unity or alter the project or cache. Central runner registrati
 preflight remains required; licensed jobs keep their automatic organization lock
 lifecycle.
 
+The workflow also reads the installed `RunUnityPackageManagerDiagnostics.bat`
+launcher and immediate directory metadata from the managed Unity 2021.3.45f1
+`Editor/Data/Resources/PackageManager/Diagnostics` directory. It captures the
+launcher as text; it does not execute it. A missing, invalid or incomplete requested
+launcher fails capture while retaining its record. Direct collection includes this
+inspection only when `-InstalledDiagnosticsPath '<diagnostics-directory>'` is supplied.
+Inspect the retained launcher and tool scope before selecting a separate diagnostic
+invocation from [Unity's documented procedure](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-network.html).
+
 The existing `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact includes
 `package-manager-diagnostics.json`. Log text and project manifest/lock contents
 are captured with source metadata. Directory inventories contain metadata only
