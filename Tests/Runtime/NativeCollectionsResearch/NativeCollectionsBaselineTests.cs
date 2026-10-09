@@ -49,6 +49,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
         [OneTimeSetUp]
         public void RequireActualFloorPackagesBeforeCandidates()
         {
+            CaptureDirectCallEvidence("before", false);
             string output = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_FLOOR_EVIDENCE");
             if (string.IsNullOrEmpty(output))
             {
@@ -143,6 +144,176 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             }
             System.IO.File.WriteAllText(output, UnityEngine.JsonUtility.ToJson(evidence, true));
             AssertActualFloor(evidence);
+        }
+
+        [Serializable]
+        private sealed class DirectCallField
+        {
+            public string name;
+            public string fieldType;
+            public bool stateObserved;
+            public bool nonZero;
+        }
+
+        [Serializable]
+        private sealed class DirectCallMethod
+        {
+            public string declaringType;
+            public string methodName;
+            public string metadataToken;
+            public string ilHex;
+            public bool compileSynchronously;
+            public bool tailCallMatched;
+            public string tailCallTarget;
+            public DirectCallType[] generatedTypes;
+        }
+
+        [Serializable]
+        private sealed class DirectCallType
+        {
+            public string name;
+            public DirectCallMethod[] methods;
+            public DirectCallField[] fields;
+        }
+
+        [Serializable]
+        private sealed class DirectCallEvidence
+        {
+            public int schemaVersion = 1;
+            public string phase;
+            public bool stateCaptured;
+            public bool compilerEnabled;
+            public bool optionEnabled;
+            public bool optionSynchronous;
+            public DirectCallMethod[] methods;
+            public string[] errors;
+        }
+
+        [OneTimeTearDown]
+        public void RetainDirectCallStateAfterCandidates()
+        {
+            CaptureDirectCallEvidence("after", true);
+        }
+
+        private static DirectCallMethod ReadDirectCallMethod(System.Reflection.MethodInfo method)
+        {
+            byte[] il = method.GetMethodBody()?.GetILAsByteArray() ?? Array.Empty<byte>();
+            int callOffset = il.Length - 6;
+            bool tailCall = 0 <= callOffset && il[callOffset] == 0x28 && il[il.Length - 1] == 0x2a;
+            System.Reflection.MethodBase target = tailCall
+                ? method.Module.ResolveMethod(BitConverter.ToInt32(il, callOffset + 1))
+                : null;
+            BurstCompileAttribute attribute = method
+                .GetCustomAttributes(typeof(BurstCompileAttribute), false)
+                .Cast<BurstCompileAttribute>()
+                .SingleOrDefault();
+            return new DirectCallMethod
+            {
+                declaringType = method.DeclaringType.FullName,
+                methodName = method.Name,
+                metadataToken = method.MetadataToken.ToString("x8"),
+                ilHex = BitConverter.ToString(il).Replace("-", "").ToLowerInvariant(),
+                compileSynchronously = attribute?.CompileSynchronously ?? false,
+                tailCallMatched = tailCall,
+                tailCallTarget =
+                    target == null ? "" : target.DeclaringType.FullName + "." + target.Name,
+                generatedTypes = Array.Empty<DirectCallType>(),
+            };
+        }
+
+        private static void CaptureDirectCallEvidence(string phase, bool captureState)
+        {
+            string prefix = Environment.GetEnvironmentVariable("DXM_NATIVE_DIRECTCALL_EVIDENCE");
+            if (string.IsNullOrEmpty(prefix))
+            {
+                return;
+            }
+            string path = System.IO.Path.GetFullPath(prefix + "." + phase + ".json");
+            if (System.IO.File.Exists(path))
+            {
+                throw new System.IO.IOException("Refusing existing direct-call evidence: " + path);
+            }
+            List<string> errors = new();
+            List<DirectCallMethod> methods = new();
+            const System.Reflection.BindingFlags flags =
+                System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Static
+                | System.Reflection.BindingFlags.DeclaredOnly;
+            foreach (
+                KeyValuePair<Type, string> wrapper in new[]
+                {
+                    new KeyValuePair<Type, string>(typeof(PureBatchKernels), "Direct"),
+                    new KeyValuePair<Type, string>(typeof(VectorPureKernels), "ScalarDirect"),
+                    new KeyValuePair<Type, string>(typeof(VectorPureKernels), "VectorDirect"),
+                }
+            )
+            {
+                try
+                {
+                    DirectCallMethod record = ReadDirectCallMethod(
+                        wrapper.Key.GetMethod(wrapper.Value, flags)
+                    );
+                    List<DirectCallType> generated = new();
+                    foreach (
+                        Type type in wrapper
+                            .Key.GetNestedTypes(
+                                System.Reflection.BindingFlags.Public
+                                    | System.Reflection.BindingFlags.NonPublic
+                            )
+                            .Where(type =>
+                                type.Name.StartsWith(wrapper.Value, StringComparison.Ordinal)
+                                && type.Name.EndsWith("$BurstDirectCall", StringComparison.Ordinal)
+                            )
+                    )
+                    {
+                        List<DirectCallField> fields = new();
+                        foreach (System.Reflection.FieldInfo field in type.GetFields(flags))
+                        {
+                            bool observe = captureState && field.FieldType == typeof(IntPtr);
+                            fields.Add(
+                                new DirectCallField
+                                {
+                                    name = field.Name,
+                                    fieldType = field.FieldType.FullName,
+                                    stateObserved = observe,
+                                    nonZero =
+                                        observe && (IntPtr)field.GetValue(null) != IntPtr.Zero,
+                                }
+                            );
+                        }
+                        generated.Add(
+                            new DirectCallType
+                            {
+                                name = type.FullName,
+                                methods = type.GetMethods(flags)
+                                    .Select(ReadDirectCallMethod)
+                                    .ToArray(),
+                                fields = fields.ToArray(),
+                            }
+                        );
+                    }
+                    record.generatedTypes = generated.ToArray();
+                    methods.Add(record);
+                }
+                catch (Exception error)
+                {
+                    errors.Add(wrapper.Key.FullName + "." + wrapper.Value + ": " + error);
+                }
+            }
+            DirectCallEvidence evidence = new()
+            {
+                phase = phase,
+                stateCaptured = captureState,
+                compilerEnabled = captureState && BurstCompiler.IsEnabled,
+                optionEnabled = captureState && BurstCompiler.Options.EnableBurstCompilation,
+                optionSynchronous =
+                    captureState && BurstCompiler.Options.EnableBurstCompileSynchronously,
+                methods = methods.ToArray(),
+                errors = errors.ToArray(),
+            };
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+            System.IO.File.WriteAllText(path, UnityEngine.JsonUtility.ToJson(evidence, true));
         }
 
         private static void AssertActualFloor(AdmissionEvidence evidence)

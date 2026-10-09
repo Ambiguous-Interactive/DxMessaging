@@ -1093,6 +1093,14 @@ the pinned UniRx source; the committed local-parity manifest retains these modul
 The result gate requires the exact retained
 case identities, with no failed, skipped or inconclusive cases.
 
+The lane retains fixed direct-call metadata before and after the complete scope.
+Before capture reads method IL and generated member metadata without static field
+values or kernel invocation. After capture observes compiler flags and zero/nonzero
+pointer state on the three generated dispatch types already exercised by the cases.
+It records addresses only as zero/nonzero and retains observation errors. A matched
+wrapper tail-call signature identifies its target; unmatched IL stays in the record.
+These diagnostics do not replace the native execution markers or permit fallback.
+
 The central v1.15 actions own admission and automatic cleanup. Acquisition
 requires resource lifecycle protection; return, classification, release and
 confirmed cleanup run before artifact redaction and upload. The runner must

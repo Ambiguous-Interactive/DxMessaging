@@ -1105,6 +1105,7 @@ jobs:
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\n\nf${{ github.run_id }}a${{ github.run_attempt }}'
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\native-sdk-floor-2021.3.45f1'
           $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-admission.json"
+          $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-direct-call"
           try {
             ./scripts/unity/run-ci-tests.ps1 `
               -UnityVersion 2021.3.45f1 `
@@ -1149,6 +1150,34 @@ jobs:
                 @($packages[0].compilerSources | Where-Object { $_.path -ceq 'package.json' }).Count -ne 1 -or
                 @($packages[0].compilerSources | Where-Object { $_.sha256 -cnotmatch '^[a-f0-9]{64}$' }).Count -ne 0) {
               throw "Actual SDK floor package/version/source admission differs: $name."
+            }
+          }
+          $wrapperNames = @(
+            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.PureBatchKernels.Direct',
+            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.ScalarDirect',
+            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.VectorDirect'
+          )
+          $beforeMethods = $null
+          foreach ($phase in @('before', 'after')) {
+            $diagnostic = Get-Content -LiteralPath (Join-Path $root "sdk-direct-call.$phase.json") -Raw | ConvertFrom-Json
+            if ($diagnostic.schemaVersion -ne 1 -or $diagnostic.phase -cne $phase -or
+                $diagnostic.stateCaptured -ne ($phase -ceq 'after') -or @($diagnostic.errors).Count -ne 0 -or
+                @($diagnostic.methods).Count -ne 3) {
+              throw "Direct-call diagnostic is incomplete or differs: $phase."
+            }
+            $names = @($diagnostic.methods | ForEach-Object { "$($_.declaringType).$($_.methodName)" })
+            if (@($names | Sort-Object -Unique).Count -ne 3 -or
+                @(Compare-Object -ReferenceObject $wrapperNames -DifferenceObject $names -CaseSensitive).Count -ne 0 -or
+                @($diagnostic.methods | Where-Object { $_.ilHex -cnotmatch '^(?:[a-f0-9]{2})+$' }).Count -ne 0) {
+              throw "Direct-call diagnostic wrapper/IL identity differs: $phase."
+            }
+            if ($phase -ceq 'before') {
+              $beforeMethods = $diagnostic.methods
+            } else {
+              foreach ($method in $diagnostic.methods) {
+                $before = @($beforeMethods | Where-Object { $_.declaringType -ceq $method.declaringType -and $_.methodName -ceq $method.methodName })[0]
+                if ($before.ilHex -cne $method.ilHex) { throw 'Direct-call wrapper IL changed during observation.' }
+              }
             }
           }
           $xml = [xml](Get-Content -LiteralPath (Join-Path $root 'results.xml') -Raw)

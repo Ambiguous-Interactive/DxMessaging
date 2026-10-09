@@ -890,7 +890,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $floorFixtureRoot '.github/perf') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Destination (Join-Path $floorFixtureRoot '.github/perf/native-sdk-floor-identities.v1.json')
     Set-Location -LiteralPath $floorFixtureRoot
-    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash')) {
+    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash', 'missing-diagnostic', 'diagnostic-error', 'wrong-phase', 'wrong-wrapper', 'before-state-read')) {
         $names = @($floorExpected.identities)
         if ($variant -ceq 'missing') { $names = @($names[1..($names.Count - 1)]) }
         if ($variant -ceq 'duplicate') { $names[0] = $names[1] }
@@ -905,6 +905,23 @@ try {
         $providerPackage = if ($variant -ceq 'wrong-provider-package') { 'com.unity.collections' } else { 'com.unity.jobs' }
         $providerVersion = if ($variant -ceq 'wrong-provider-version') { '0.70.0-preview.7' } else { '0.50.0-preview.9' }
         Write-TestJson -Path (Join-Path $floorArtifacts 'sdk-admission.json') -Value @{ schemaVersion = 2; unityVersion = $version; packages = $packages; batchAssembly = $provider; batchPackage = $providerPackage; batchVersion = $providerVersion }
+        foreach ($phase in @('before', 'after')) {
+            $diagnosticPath = Join-Path $floorArtifacts "sdk-direct-call.$phase.json"
+            if ($variant -ceq 'missing-diagnostic' -and $phase -ceq 'after') {
+                if (Test-Path -LiteralPath $diagnosticPath) { Remove-Item -LiteralPath $diagnosticPath }
+                continue
+            }
+            $records = @(
+                @{ declaringType = 'DxMessaging.Tests.Runtime.NativeCollectionsResearch.PureBatchKernels'; methodName = 'Direct'; ilHex = '00282a'; generatedTypes = @() },
+                @{ declaringType = 'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels'; methodName = 'ScalarDirect'; ilHex = '00282a'; generatedTypes = @() },
+                @{ declaringType = 'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels'; methodName = 'VectorDirect'; ilHex = '00282a'; generatedTypes = @() }
+            )
+            if ($variant -ceq 'wrong-wrapper') { $records[0].methodName = 'Pointer' }
+            $errors = @(if ($variant -ceq 'diagnostic-error') { 'fixture observation error' })
+            $recordPhase = if ($variant -ceq 'wrong-phase') { 'unknown' } else { $phase }
+            $stateCaptured = $phase -ceq 'after' -or $variant -ceq 'before-state-read'
+            Write-TestJson -Path $diagnosticPath -Value @{ schemaVersion = 1; phase = $recordPhase; stateCaptured = $stateCaptured; methods = $records; errors = $errors }
+        }
         $xml = [System.Text.StringBuilder]::new('<test-run>')
         for ($index = 0; $index -lt $names.Count; $index++) {
             $result = if ($variant -ceq 'skipped' -and $index -eq 0) { 'Skipped' } else { 'Passed' }
