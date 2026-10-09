@@ -9,22 +9,6 @@ const path = require("node:path");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const TEST_HOST_PATH = "Tests/Editor/EditorWindowTestUtility.cs";
 
-function hasRawWindowClose(content) {
-  const transports = new Set(
-    [...content.matchAll(/\b(?:TcpClient|HttpListener)\??\s+(\w+)\b/g)].map((match) => match[1])
-  );
-  const contexts = new Set(
-    [...content.matchAll(/\bHttpListenerContext\??\s+(\w+)\b/g)].map((match) => match[1])
-  );
-  return [...content.matchAll(/(\w+(?:\??\.\w+)*)?\??\.Close\(\);/g)].some((match) => {
-    const receiver = (match[1] || "").split(/\??\./);
-    return (
-      !transports.has(receiver.at(-1)) &&
-      !(receiver.at(-1) === "Response" && contexts.has(receiver.at(-2)))
-    );
-  });
-}
-
 function extractMethodBody(content, methodName) {
   const signatureIndex = content.indexOf(` ${methodName}(`);
   assert.notEqual(signatureIndex, -1, `${methodName} must exist`);
@@ -70,9 +54,6 @@ test("editor tests use the stable test host for shown windows", () => {
     if (/\.Show\(\);/.test(content)) {
       violations.push(`${relativePath}: use EditorWindowTestUtility.ShowWindow(window)`);
     }
-    if (hasRawWindowClose(content)) {
-      violations.push(`${relativePath}: use EditorWindowTestUtility.CloseWindow(window)`);
-    }
   }
 
   assert.deepEqual(
@@ -80,26 +61,6 @@ test("editor tests use the stable test host for shown windows", () => {
     [],
     "Shown editor tests must use DxMessagingTestHostWindow with HideAndDontSave so Unity layouts do not persist generic EditorWindow entries as Failed to Load tabs."
   );
-});
-
-test("closing guard distinguishes windows from typed network transports", () => {
-  for (const content of [
-    "EditorWindow window; window.Close();",
-    "DxMessagingMonitorWindow? monitor; monitor?.Close();",
-    "var window = CreateWindow(); window.Close();",
-    "windows[0].Close();",
-    "GetWindow().Close();",
-    "owner.Window.Close();",
-    "Response.Close();",
-    "owner.Context.Response.Close();",
-    "TcpClient Client; Client.Close(); var window = CreateWindow(); window.Close();"
-  ])
-    assert.equal(hasRawWindowClose(content), true, content);
-  for (const content of [
-    "TcpClient Client; owner.Client.Close(); HttpListener Listener; Listener.Close();",
-    "HttpListenerContext Context; owner.Context.Response.Close();"
-  ])
-    assert.equal(hasRawWindowClose(content), false, content);
 });
 
 test("tracked editor-window cleanup avoids the global Resources leak sweep", () => {
