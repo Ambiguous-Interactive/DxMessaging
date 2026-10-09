@@ -295,6 +295,46 @@ $observerSource
         $compilerPreparation -gt $applyStart -and $compilerPreparation -lt $compilationChange -and
         $compilationChange -lt $completionMarker
     )
+    $preparationStart = $generatedSources[0].IndexOf('public static void PrepareCompilerInputs()')
+    Assert-That 'the generated configurator has a compiler-input-only entry point' ($preparationStart -ge 0 -and $preparationStart -lt $applyStart)
+    $preparationMethod = $generatedSources[0].Substring($preparationStart, $applyStart - $preparationStart)
+    Assert-That 'Editor preparation does not apply player or global compiler settings' (
+        -not $preparationMethod.Contains('PlayerSettings') -and -not $preparationMethod.Contains('CompilationPipeline')
+    )
+    Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+namespace DxMessaging.Editor {
+    public static class SetupCscRsp {
+        public static int Calls;
+        public static bool Fail;
+        public static void PrepareCompilerInputs() {
+            Calls++;
+            if (Fail) throw new InvalidOperationException("fixture preparation failure");
+        }
+    }
+}
+public static class DxmCompilerInputsFixture {
+    $preparationMethod
+}
+"@
+    $priorPreparationMarker = $env:DXM_CONFIGURE_MARKER_PATH
+    $env:DXM_CONFIGURE_MARKER_PATH = Join-Path $fixtureRoot 'compiler-marker/nested/complete.marker'
+    try {
+        [DxMessaging.Editor.SetupCscRsp]::Fail = $true
+        Assert-Fails 'preparation errors propagate before writing completion' -ExpectedMessage 'fixture preparation failure' {
+            [DxmCompilerInputsFixture]::PrepareCompilerInputs()
+        }
+        Assert-That 'failed preparation cannot create a success marker' (-not (Test-Path -LiteralPath $env:DXM_CONFIGURE_MARKER_PATH))
+        [DxMessaging.Editor.SetupCscRsp]::Fail = $false
+        [DxmCompilerInputsFixture]::PrepareCompilerInputs()
+        Assert-That 'the actual generated method completes preparation before writing its marker' (
+            [DxMessaging.Editor.SetupCscRsp]::Calls -eq 2 -and
+            [IO.File]::ReadAllText($env:DXM_CONFIGURE_MARKER_PATH) -ceq 'DxmCiTestConfigurator.PrepareCompilerInputs completed'
+        )
+    } finally {
+        $env:DXM_CONFIGURE_MARKER_PATH = $priorPreparationMarker
+    }
     Assert-That 'the configurator pins OptimizeSpeed' (
         $generatedSources[0].Contains('Il2CppCodeGeneration.OptimizeSpeed')
     )

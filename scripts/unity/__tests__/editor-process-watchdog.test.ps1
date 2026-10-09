@@ -181,7 +181,85 @@ exit 0
         }
         if ($rejected -ne ($case -ne 'passed')) { throw "$case had the wrong artifact verdict." }
     }
-    Write-Host 'Editor watchdog and result-validation cases passed.'
+    $editorRoute = @($ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.IfStatementAst] -and
+            $node.ElseClause -ne $null -and
+            $node.ElseClause.Extent.Text.Contains('Invoke-UnityEditorTestsWithPackageManagerRetry')
+    }, $true))
+    if ($editorRoute.Count -ne 1) { throw 'Expected one actual Editor test route.' }
+    $editorWork = [scriptblock]::Create(($editorRoute[0].ElseClause.Statements.Extent.Text -join "`n"))
+    foreach ($mode in @('editmode', 'playmode')) {
+        foreach ($fault in @('none', 'missing-marker', 'stale-marker', 'prepare-throws', 'completed-native-exit', 'nunit-fails')) {
+            & {
+                $TestMode = $mode
+                $UnityVersion = '2021.3.45f1'
+                $UnityEditorPath = 'fixture-editor'
+                $ProjectPath = Join-Path $fixture "$mode-$fault/project"
+                $ArtifactsPath = Join-Path $fixture "$mode-$fault/artifacts"
+                New-Item -ItemType Directory -Force -Path (Join-Path $ProjectPath 'Assets/Editor'), $ArtifactsPath | Out-Null
+                [IO.File]::WriteAllText((Join-Path $ProjectPath 'Assets/csc.rsp'), '-warnaserror')
+                [IO.File]::WriteAllText((Join-Path $ProjectPath 'Assets/Editor/DxMessaging.BaseCallIgnore.txt'), 'fixture')
+                $testPlatform = $mode
+                $AssemblyNames = 'fixture-assembly'
+                $categoryArgs = @('-testCategory', 'NativeSdkCpu')
+                $acceleratorArgs = @()
+                $resultsPath = Join-Path $ArtifactsPath 'results.xml'
+                $logPath = Join-Path $ArtifactsPath 'unity.log'
+                $calls = [Collections.Generic.List[string]]::new()
+                function Invoke-UnityEditor {
+                    param($EditorPath, $Arguments, $Label, $LogPath, $TimeoutSeconds = 600)
+                    $calls.Add('prepare')
+                    if ($Arguments -contains '-runTests' -or $Arguments -notcontains '-quit' -or
+                        $Arguments -notcontains '-releaseCodeOptimization' -or
+                        $Arguments -notcontains 'DxMessaging.Ci.DxmCiTestConfigurator.PrepareCompilerInputs' -or
+                        $TimeoutSeconds -ne 600) { throw 'Wrong preparation process contract.' }
+                    if ($fault -ceq 'prepare-throws') { throw 'fixture preparation failure' }
+                    if ($fault -cne 'missing-marker') {
+                        [IO.File]::WriteAllText($env:DXM_CONFIGURE_MARKER_PATH, 'DxmCiTestConfigurator.PrepareCompilerInputs completed')
+                        if ($fault -ceq 'stale-marker') { [IO.File]::SetLastWriteTimeUtc($env:DXM_CONFIGURE_MARKER_PATH, [DateTime]::UtcNow.AddMinutes(-1)) }
+                    }
+                    if ($fault -ceq 'completed-native-exit') { return 7 }
+                    return 0
+                }
+                function Invoke-UnityEditorTestsWithPackageManagerRetry {
+                    param($EditorPath, $Arguments, $Label, $LogPath, $ResultsPath, $Project)
+                    $calls.Add('tests')
+                    if ($Arguments -notcontains '-runTests' -or $Arguments -contains '-quit' -or
+                        -not [string]::IsNullOrEmpty($env:DXM_CONFIGURE_MARKER_PATH)) { throw 'Wrong test process contract.' }
+                    return 0
+                }
+                function Write-AnalyzerSetupDiagnostics { param($Project, $LogPath, $Label) }
+                function Write-UnityRunFailureDiagnostics { param($Project, $LogPath, $CscLabel, $DiagnosticsLabel) $calls.Add('diagnostics') }
+                function Write-UnityBenignExitWarning { param($Label, $ExitCode, $LogPath) $calls.Add('benign') }
+                function Test-NUnitResults {
+                    param($Path, $Label, $LogPath, $Project, $UnityExitCode)
+                    $calls.Add('validate')
+                    if ($fault -ceq 'nunit-fails') { throw 'fixture NUnit failure' }
+                }
+                $failure = ''
+                try { & $editorWork } catch { $failure = $_.Exception.Message }
+                if (-not $calls.Contains('prepare')) { throw 'Editor tests ran without preparing compiler inputs.' }
+                $shouldRun = $fault -in @('none', 'completed-native-exit', 'nunit-fails')
+                if ($calls.Contains('tests') -ne $shouldRun) { throw "$mode/$fault had the wrong test admission." }
+                if ($shouldRun) {
+                    if ($calls.IndexOf('prepare') -ge $calls.IndexOf('tests') -or -not $calls.Contains('validate')) { throw 'Preparation and NUnit validation did not bracket the tests.' }
+                    foreach ($phase in @('before', 'after')) {
+                        $snapshot = Get-Content -LiteralPath (Join-Path $ArtifactsPath "compiler-inputs.$phase.json") -Raw | ConvertFrom-Json
+                        if ($snapshot.schemaVersion -ne 1 -or $snapshot.phase -cne $phase -or
+                            @($snapshot.files).Count -ne 2 -or @($snapshot.files | Where-Object { $_.status -cne 'present' -or $_.sha256 -cnotmatch '^[a-f0-9]{64}$' }).Count) {
+                            throw 'Compiler input snapshot was not retained, including on NUnit failure.'
+                        }
+                    }
+                }
+                if (($failure -ne '') -ne ($fault -in @('missing-marker', 'stale-marker', 'prepare-throws', 'nunit-fails'))) { throw "$mode/$fault lost its actual failure." }
+                if ($fault -ceq 'stale-marker' -and $failure -notlike '*stale configure marker*') { throw 'Stale preparation was not rejected by the real marker gate.' }
+                if ($fault -ceq 'nunit-fails' -and $failure -cne 'fixture NUnit failure') { throw 'NUnit failure was replaced.' }
+                if (-not [string]::IsNullOrEmpty($env:DXM_CONFIGURE_MARKER_PATH)) { throw 'Preparation environment was not released.' }
+            }
+        }
+    }
+    Write-Host 'Editor watchdog, compiler preparation, and result-validation cases passed.'
 } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }

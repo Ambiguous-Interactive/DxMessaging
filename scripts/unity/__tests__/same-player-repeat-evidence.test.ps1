@@ -890,7 +890,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $floorFixtureRoot '.github/perf') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot '.github/perf/native-sdk-floor-identities.v1.json') -Destination (Join-Path $floorFixtureRoot '.github/perf/native-sdk-floor-identities.v1.json')
     Set-Location -LiteralPath $floorFixtureRoot
-    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash', 'missing-diagnostic', 'diagnostic-error', 'wrong-phase', 'wrong-wrapper', 'before-state-read', 'missing-trace', 'trace-error', 'trace-debug', 'trace-runtime', 'trace-main', 'trace-truncated', 'trace-changed', 'trace-empty', 'trace-size', 'trace-name', 'trace-hash')) {
+    foreach ($variant in @('complete', 'missing', 'duplicate', 'skipped', 'wrong-unity', 'missing-jobs', 'wrong-jobs', 'wrong-provider', 'wrong-provider-package', 'wrong-provider-version', 'foreign-source', 'missing-source-hash', 'missing-diagnostic', 'diagnostic-error', 'wrong-phase', 'wrong-wrapper', 'before-state-read', 'missing-trace', 'trace-error', 'trace-debug', 'trace-runtime', 'trace-main', 'trace-truncated', 'trace-changed', 'trace-empty', 'trace-size', 'trace-name', 'trace-hash', 'input-marker', 'missing-inputs', 'input-phase', 'input-path', 'input-status', 'input-hash', 'input-time', 'input-length', 'input-duplicate')) {
         $names = @($floorExpected.identities)
         if ($variant -ceq 'missing') { $names = @($names[1..($names.Count - 1)]) }
         if ($variant -ceq 'duplicate') { $names[0] = $names[1] }
@@ -944,6 +944,27 @@ try {
             $traceErrors = @(if ($variant -ceq 'trace-error') { 'fixture trace error' })
             $debug = if ($variant -ceq 'trace-debug') { '3' } else { '1' }
             Write-TestJson -Path $tracePath -Value @{ schemaVersion = 1; debugLevel = $debug; logs = $logs; runtimeFiles = $runtimeFiles; errors = $traceErrors }
+        }
+        [IO.File]::WriteAllText((Join-Path $floorArtifacts 'compiler-inputs-complete.marker'), $(if ($variant -ceq 'input-marker') { 'incomplete' } else { 'DxmCiTestConfigurator.PrepareCompilerInputs completed' }))
+        foreach ($phase in @('before', 'after')) {
+            $inputPath = Join-Path $floorArtifacts "compiler-inputs.$phase.json"
+            $inputFiles = @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt' | ForEach-Object {
+                @{ path = $_; status = 'present'; lengthBytes = 0; sha256 = 'a' * 64; lastWriteUtc = '2026-10-09T00:00:00Z' }
+            })
+            if ($phase -ceq 'after') {
+                if ($variant -ceq 'input-path') { $inputFiles[0].path = 'Assets/foreign.rsp' }
+                if ($variant -ceq 'input-status') { $inputFiles[0].status = 'missing' }
+                if ($variant -ceq 'input-hash') { $inputFiles[0].sha256 = 'b' * 64 }
+                if ($variant -ceq 'input-time') { $inputFiles[0].lastWriteUtc = '2026-10-09T00:01:00Z' }
+                if ($variant -ceq 'input-length') { $inputFiles[0].lengthBytes = 1 }
+                if ($variant -ceq 'input-duplicate') { $inputFiles[1].path = $inputFiles[0].path }
+            }
+            if ($variant -ceq 'missing-inputs' -and $phase -ceq 'before') {
+                Remove-Item -LiteralPath $inputPath -ErrorAction SilentlyContinue
+            } else {
+                $inputPhase = if ($variant -ceq 'input-phase' -and $phase -ceq 'before') { 'after' } else { $phase }
+                Write-TestJson -Path $inputPath -Value @{ schemaVersion = 1; phase = $inputPhase; files = $inputFiles }
+            }
         }
         $xml = [System.Text.StringBuilder]::new('<test-run>')
         for ($index = 0; $index -lt $names.Count; $index++) {

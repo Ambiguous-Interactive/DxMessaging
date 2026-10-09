@@ -1810,6 +1810,17 @@ public static class DxmCiTestConfigurator
         WriteJson(path, evidence);
     }
 
+    public static void PrepareCompilerInputs()
+    {
+        DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();
+        string markerPath = Environment.GetEnvironmentVariable("DXM_CONFIGURE_MARKER_PATH");
+        if (!string.IsNullOrEmpty(markerPath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(markerPath)));
+            File.WriteAllText(markerPath, "DxmCiTestConfigurator.PrepareCompilerInputs completed");
+        }
+    }
+
     public static void Apply()
     {
         // Finish package compiler inputs before this process exits. Deferring the
@@ -5812,11 +5823,10 @@ function Write-UnityBenignExitWarning {
 }
 
 function Test-UnityConfigureMarker {
-    # Validate the standalone-configure SUCCESS MARKER as the source of truth for
-    # the configure pass (DxmCiTestConfigurator.Apply writes it as its final
-    # action). Returns '' when the marker exists and is FRESH for this run, else a
+    # Validate the configuration SUCCESS MARKER as the source of truth for
+    # the completed entry point. Returns '' when the marker exists and is FRESH for this run, else a
     # short reason string (mirrors Test-StandalonePlayerBuildOutput's contract).
-    # A fresh marker proves Apply() ran to completion even if Unity then crashed in
+    # A fresh marker proves the entry point completed even if Unity then crashed in
     # a background thread during shutdown and returned a crash exit code.
     param(
         [Parameter(Mandatory = $true)][string]$MarkerPath,
@@ -5824,7 +5834,7 @@ function Test-UnityConfigureMarker {
     )
 
     if (-not (Test-Path -LiteralPath $MarkerPath -PathType Leaf)) {
-        return 'configure marker was not written (DxmCiTestConfigurator.Apply did not run to completion)'
+        return 'configure marker was not written (configuration entry point did not run to completion)'
     }
     $marker = Get-Item -LiteralPath $MarkerPath
     if ($marker.LastWriteTimeUtc -lt $StartedUtc.AddSeconds(-5)) {
@@ -8626,6 +8636,54 @@ try {
             Write-CiNotice "Standalone same-player evidence captured $StandalonePlayerRunCount validated launches with an unchanged player directory manifest."
         }
     } else {
+        # Finish package-owned compiler inputs in a separate process. A delayed
+        # csc.rsp import during tests can invalidate deferred Burst requests.
+        $compilerInputMarkerPath = Join-Path $ArtifactsPath 'compiler-inputs-complete.marker'
+        if (Test-Path -LiteralPath $compilerInputMarkerPath -PathType Leaf) {
+            Remove-Item -LiteralPath $compilerInputMarkerPath -Force
+        }
+        $compilerInputLogPath = Join-Path $ArtifactsPath 'compiler-inputs.log'
+        $compilerInputStartedUtc = [DateTime]::UtcNow
+        $env:DXM_CONFIGURE_MARKER_PATH = $compilerInputMarkerPath
+        try {
+            $compilerInputExit = Invoke-UnityEditor `
+                -EditorPath $UnityEditorPath `
+                -Arguments (@(
+                    '-quit', '-batchmode', '-nographics', '-projectPath', $ProjectPath,
+                    '-releaseCodeOptimization',
+                    '-executeMethod', 'DxMessaging.Ci.DxmCiTestConfigurator.PrepareCompilerInputs',
+                    '-logFile', '-'
+                ) + $acceleratorArgs) `
+                -Label "Prepare $TestMode compiler inputs" `
+                -LogPath $compilerInputLogPath
+        } finally {
+            Remove-Item -LiteralPath Env:\DXM_CONFIGURE_MARKER_PATH -ErrorAction SilentlyContinue
+        }
+        $compilerInputProblem = Test-UnityConfigureMarker -MarkerPath $compilerInputMarkerPath -StartedUtc $compilerInputStartedUtc
+        if (-not [string]::IsNullOrWhiteSpace($compilerInputProblem)) {
+            Write-UnityRunFailureDiagnostics -Project $ProjectPath -LogPath $compilerInputLogPath `
+                -CscLabel "$TestMode compiler inputs" -DiagnosticsLabel 'Compiler input preparation'
+            throw "Compiler input preparation failed ($compilerInputProblem; Unity exit code $compilerInputExit)."
+        }
+        if ($compilerInputExit -ne 0) {
+            Write-UnityBenignExitWarning -Label 'Compiler input preparation' -ExitCode $compilerInputExit -LogPath $compilerInputLogPath
+        }
+        Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $compilerInputLogPath -Label "$TestMode compiler inputs"
+        $compilerInputsBefore = @(foreach ($relative in @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt')) {
+            $inputPath = Join-Path $ProjectPath $relative
+            $record = [ordered]@{ path = $relative; status = 'missing'; lengthBytes = 0; sha256 = ''; lastWriteUtc = '' }
+            if (Test-Path -LiteralPath $inputPath -PathType Leaf) {
+                $file = Get-Item -LiteralPath $inputPath
+                $record.status = 'present'
+                $record.lengthBytes = [long]$file.Length
+                $record.sha256 = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                $record.lastWriteUtc = $file.LastWriteTimeUtc.ToString('O')
+            }
+            $record
+        })
+        Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'compiler-inputs.before.json') `
+            -Value ([ordered]@{ schemaVersion = 1; phase = 'before'; files = $compilerInputsBefore })
+
         # MUST NOT include '-quit' alongside '-runTests': per the Unity Editor manual
         # (https://docs.unity3d.com/Manual/EditorCommandLineArguments.html), if the
         # Editor is running tests with -runTests, -quit causes it to QUIT IMMEDIATELY
@@ -8656,13 +8714,30 @@ try {
         # missing/invalid/failing file AND folds the exit code into its diagnostics,
         # but PASSES a valid run that exited non-zero only because Unity crashed in a
         # background thread during shutdown AFTER RunFinished wrote the file.
-        $runExit = Invoke-UnityEditorTestsWithPackageManagerRetry `
-            -EditorPath $UnityEditorPath `
-            -Arguments $testArgs `
-            -Label "Run Unity $UnityVersion $TestMode tests" `
-            -LogPath $logPath `
-            -ResultsPath $resultsPath `
-            -Project $ProjectPath
+        try {
+            $runExit = Invoke-UnityEditorTestsWithPackageManagerRetry `
+                -EditorPath $UnityEditorPath `
+                -Arguments $testArgs `
+                -Label "Run Unity $UnityVersion $TestMode tests" `
+                -LogPath $logPath `
+                -ResultsPath $resultsPath `
+                -Project $ProjectPath
+        } finally {
+            $compilerInputsAfter = @(foreach ($before in $compilerInputsBefore) {
+                $inputPath = Join-Path $ProjectPath $before.path
+                $record = [ordered]@{ path = $before.path; status = 'missing'; lengthBytes = 0; sha256 = ''; lastWriteUtc = '' }
+                if (Test-Path -LiteralPath $inputPath -PathType Leaf) {
+                    $file = Get-Item -LiteralPath $inputPath
+                    $record.status = 'present'
+                    $record.lengthBytes = [long]$file.Length
+                    $record.sha256 = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    $record.lastWriteUtc = $file.LastWriteTimeUtc.ToString('O')
+                }
+                $record
+            })
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'compiler-inputs.after.json') `
+                -Value ([ordered]@{ schemaVersion = 1; phase = 'after'; files = $compilerInputsAfter })
+        }
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion $TestMode test compile"
         Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit
     }

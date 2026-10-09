@@ -1185,6 +1185,30 @@ jobs:
               }
             }
           }
+          $marker = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs-complete.marker') -Raw
+          if ($marker -cne 'DxmCiTestConfigurator.PrepareCompilerInputs completed') {
+            throw 'Native SDK floor compiler input preparation did not complete.'
+          }
+          $inputsBefore = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.before.json') -Raw | ConvertFrom-Json
+          $inputsAfter = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.after.json') -Raw | ConvertFrom-Json
+          if ($inputsBefore.schemaVersion -ne 1 -or $inputsAfter.schemaVersion -ne 1 -or
+              $inputsBefore.phase -cne 'before' -or $inputsAfter.phase -cne 'after' -or
+              @($inputsBefore.files).Count -ne 2 -or @($inputsAfter.files).Count -ne 2) {
+            throw 'Compiler input snapshots are missing or malformed.'
+          }
+          foreach ($path in @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt')) {
+            $before = @($inputsBefore.files | Where-Object { $_.path -ceq $path })
+            $after = @($inputsAfter.files | Where-Object { $_.path -ceq $path })
+            if ($before.Count -ne 1 -or $after.Count -ne 1 -or
+                $before[0].status -cne 'present' -or $after[0].status -cne 'present' -or
+                $before[0].sha256 -cnotmatch '^[a-f0-9]{64}$' -or $before[0].lengthBytes -lt 0 -or
+                [string]::IsNullOrEmpty($before[0].lastWriteUtc) -or
+                $before[0].sha256 -cne $after[0].sha256 -or
+                $before[0].lengthBytes -ne $after[0].lengthBytes -or
+                $before[0].lastWriteUtc -cne $after[0].lastWriteUtc) {
+              throw "Compiler input changed during the native SDK floor: $path."
+            }
+          }
           $trace = Get-Content -LiteralPath (Join-Path $root 'sdk-burst-trace.json') -Raw | ConvertFrom-Json
           if ($trace.schemaVersion -ne 1 -or $trace.debugLevel -cne '1' -or @($trace.errors).Count -ne 0 -or
               @($trace.runtimeFiles).Count -ne 2 -or @($trace.logs).Count -lt 2 -or @($trace.logs).Count -gt 64) {

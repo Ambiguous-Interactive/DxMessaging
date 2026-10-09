@@ -1101,6 +1101,15 @@ It records addresses only as zero/nonzero and retains observation errors. A matc
 wrapper tail-call signature identifies its target; unmatched IL stays in the record.
 These diagnostics do not replace the native execution markers or permit fallback.
 
+Editor test invocations first prepare package compiler inputs in a separate batch
+process through `DxmCiTestConfigurator.PrepareCompilerInputs`. A fresh completion
+marker admits the test process; preparation failures stop before tests. The phase
+uses the public package preparation API and does not apply player settings.
+The artifacts retain response-file and ignore-sidecar hashes, lengths and write
+timestamps before and after tests, including failing NUnit runs. Floor admission
+requires both inputs to remain unchanged. This avoids leaving deferred response-file
+imports for the test process; it does not override Burst compilation settings.
+
 The fixed floor diagnostic also uses standard Burst debug level 1. After all cases,
 the namespace fixture snapshots only main/thread compiler logs from the actual
 process current directory, before framework teardown can overwrite them. Capture
