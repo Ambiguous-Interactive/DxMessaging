@@ -335,6 +335,107 @@ public static class DxmCompilerInputsFixture {
     } finally {
         $env:DXM_CONFIGURE_MARKER_PATH = $priorPreparationMarker
     }
+    $sdkAdmissionStart = $generatedSources[0].IndexOf('public static void PrepareNativeSdkAdmission()')
+    Assert-That 'standalone configuration has an opt-in prebuild SDK admission boundary' ($sdkAdmissionStart -ge 0 -and $sdkAdmissionStart -lt $preparationStart)
+    $sdkAdmissionCall = $generatedSources[0].IndexOf('PrepareNativeSdkAdmission();', $applyStart)
+    Assert-That 'requested SDK admission completes after compiler preparation and before configuration success' (
+        $compilerPreparation -lt $sdkAdmissionCall -and $sdkAdmissionCall -lt $completionMarker
+    )
+    $sdkAdmissionMethod = $generatedSources[0].Substring($sdkAdmissionStart, $preparationStart - $sdkAdmissionStart)
+    Add-Type -TypeDefinition @"
+using System;
+public static class DxmNativeSdkAdmissionFixture {
+    $sdkAdmissionMethod
+}
+"@
+    $priorSdkAdmissionPath = $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE
+    $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = $null
+    try {
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $fixtureRoot 'sdk-admission.json'
+        Assert-Fails 'requested admission rejects a missing optional fixture' -ExpectedMessage 'exactly one optional SDK admission fixture' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        Assert-That 'missing fixture cannot create admission evidence' (-not (Test-Path -LiteralPath $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE))
+        Add-Type -TypeDefinition @'
+using System;
+namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch {
+    public sealed class NativeSdkFloorAdmission {
+        public static bool Fail;
+        public static bool OmitEvidence;
+        public static int Calls;
+        public void RequireActualFloorPackagesBeforeCandidates() {
+            Calls++;
+            if (Fail) throw new InvalidOperationException("fixture SDK admission failure");
+            if (OmitEvidence) return;
+            System.IO.File.WriteAllText(Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_FLOOR_EVIDENCE"), "fixture SDK admitted");
+        }
+    }
+}
+'@
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Fail = $true
+        Assert-Fails 'the public admission failure propagates' -ExpectedMessage 'fixture SDK admission failure' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        Assert-That 'failed admission cannot produce success evidence' (-not (Test-Path -LiteralPath $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE))
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Fail = $false
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        Assert-That 'the actual generated boundary invokes the public instance admission method' (
+            [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Calls -eq 2 -and
+            [IO.File]::ReadAllText($env:DXM_NATIVE_SDK_FLOOR_EVIDENCE) -ceq 'fixture SDK admitted'
+        )
+        Assert-Fails 'stale evidence cannot satisfy a new configuration' -ExpectedMessage 'must be absent before configuration' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        [IO.File]::Delete($env:DXM_NATIVE_SDK_FLOOR_EVIDENCE)
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::OmitEvidence = $true
+        Assert-Fails 'returning without admission evidence fails before success' -ExpectedMessage 'did not produce evidence' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::OmitEvidence = $false
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        $duplicateAssembly = [System.Reflection.Emit.AssemblyBuilder]::DefineDynamicAssembly(
+            [System.Reflection.AssemblyName]::new('DxmDuplicateSdkAdmissionFixture'),
+            [System.Reflection.Emit.AssemblyBuilderAccess]::Run
+        )
+        $duplicateType = $duplicateAssembly.DefineDynamicModule('fixture').DefineType(
+            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission',
+            [System.Reflection.TypeAttributes]::Public
+        )
+        $null = $duplicateType.CreateType()
+        Assert-Fails 'ambiguous optional fixture types fail before invoking admission' -ExpectedMessage 'exactly one optional SDK admission fixture' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        Assert-That 'ambiguity cannot invoke the previously admitted fixture' (
+            [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Calls -eq 4
+        )
+        $missingMethodSource = @"
+using System;
+public static class DxmMissingAdmissionMethodFixture { $sdkAdmissionMethod }
+namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch { public sealed class NativeSdkFloorAdmission {} }
+"@
+        $missingMethodCommand = @'
+$ErrorActionPreference = 'Stop'
+$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{SOURCE}'))
+Add-Type -TypeDefinition $source
+try {
+    [DxmMissingAdmissionMethodFixture]::PrepareNativeSdkAdmission()
+    throw 'Missing public admission method was accepted.'
+} catch {
+    if (-not $_.Exception.Message.Contains('public SDK admission method')) { throw }
+}
+exit 0
+'@.Replace('{SOURCE}', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($missingMethodSource)))
+        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $missingMethodCommand
+        Assert-That 'the isolated actual boundary rejects a missing public method' ($LASTEXITCODE -eq 0)
+        $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = $null
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        Assert-That 'ordinary configuration does not invoke or inspect optional admission fixtures' (
+            [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Calls -eq 4
+        )
+    } finally {
+        $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = $priorSdkAdmissionPath
+    }
     Assert-That 'the configurator pins OptimizeSpeed' (
         $generatedSources[0].Contains('Il2CppCodeGeneration.OptimizeSpeed')
     )

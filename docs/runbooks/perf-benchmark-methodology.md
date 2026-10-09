@@ -1110,6 +1110,22 @@ timestamps before and after tests, including failing NUnit runs. Floor admission
 requires both inputs to remain unchanged. This avoids leaving deferred response-file
 imports for the test process; it does not override Burst compilation settings.
 
+Standalone configuration can also retain actual floor SDK admission before a
+player build. When `DXM_NATIVE_SDK_FLOOR_EVIDENCE` requests a fresh output,
+`DxmCiTestConfigurator.Apply` calls the optional fixture's public admission method
+after preparing compiler inputs and applying settings, before its completion
+marker. Missing or ambiguous fixtures, an incompatible method, stale evidence,
+admission failures and missing output stop configuration. Ordinary configuration
+does not inspect optional fixtures when no floor evidence was requested.
+This boundary supplies Editor package provenance; it does not prove player SDK
+identity, native execution or player allocation measurements. The 122 allocation
+cases require a functional `GC.Alloc` count recorder. Unity 2021.3 documents
+[Recorder samplers](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Profiling.Recorder.html)
+for Editor and Development players. An unavailable recorder cannot pass these
+assertions. The separate
+[ProfilerRecorder API](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Unity.Profiling.ProfilerRecorder.html)
+supports Release metrics; that does not establish that the count probe works.
+
 The fixed floor diagnostic also uses standard Burst debug level 1. After all cases,
 the namespace fixture snapshots only main/thread compiler logs from the actual
 process current directory, before framework teardown can overwrite them. Capture

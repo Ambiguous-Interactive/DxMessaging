@@ -1810,6 +1810,50 @@ public static class DxmCiTestConfigurator
         WriteJson(path, evidence);
     }
 
+    public static void PrepareNativeSdkAdmission()
+    {
+        string output = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_FLOOR_EVIDENCE");
+        if (string.IsNullOrEmpty(output))
+        {
+            return;
+        }
+        Type admissionType = null;
+        foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            Type candidate = assembly.GetType("DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission", false);
+            if (candidate == null)
+            {
+                continue;
+            }
+            if (admissionType != null)
+            {
+                throw new InvalidOperationException("Expected exactly one optional SDK admission fixture.");
+            }
+            admissionType = candidate;
+        }
+        if (admissionType == null || !admissionType.IsPublic)
+        {
+            throw new InvalidOperationException("Expected exactly one optional SDK admission fixture.");
+        }
+        System.Reflection.MethodInfo admission = admissionType.GetMethod(
+            "RequireActualFloorPackagesBeforeCandidates",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly,
+            null, Type.EmptyTypes, null);
+        if (admission == null || admission.ReturnType != typeof(void))
+        {
+            throw new InvalidOperationException("The public SDK admission method is missing or has a different contract.");
+        }
+        if (System.IO.File.Exists(output))
+        {
+            throw new InvalidOperationException("SDK admission evidence must be absent before configuration.");
+        }
+        admission.Invoke(Activator.CreateInstance(admissionType), null);
+        if (!System.IO.File.Exists(output) || new System.IO.FileInfo(output).Length == 0)
+        {
+            throw new InvalidOperationException("The public SDK admission method did not produce evidence.");
+        }
+    }
+
     public static void PrepareCompilerInputs()
     {
         DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();
@@ -1880,6 +1924,7 @@ public static class DxmCiTestConfigurator
         string profilePath = Environment.GetEnvironmentVariable("DXM_CONFIGURED_PROFILE_PATH");
         WriteConfigurationEvidence(profilePath);
         WriteComparisonPackageResolution();
+        PrepareNativeSdkAdmission();
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
