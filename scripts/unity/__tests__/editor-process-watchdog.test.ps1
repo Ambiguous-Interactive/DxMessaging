@@ -62,13 +62,18 @@ Write-Output 'Test run completed. Exiting with code 0 (Ok). Run completed.'
 Wait-Event -Timeout 30 | Out-Null
 '@)
     $treeLog = Join-Path $fixture 'child-tree.log'
+    $treeStartedUtc = [DateTime]::UtcNow.ToString('O')
+    $treeClock = [Diagnostics.Stopwatch]::StartNew()
     try {
         $treeExit = Invoke-UnityEditor -EditorPath $pwsh `
             -Arguments @('-NoLogo', '-NoProfile', '-File', $childScript, '-PidPath', $treePidPath) `
             -Label 'shutdown process tree' -LogPath $treeLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1
+        $treeClock.Stop()
+        $treeEndedUtc = [DateTime]::UtcNow.ToString('O')
         $treeText = Get-Content -LiteralPath $treeLog -Raw
         if ($treeExit -ne 124 -or $treeText -notmatch 'child-pid=(\d+)') {
-            throw "Child-tree fixture did not run: exit=$treeExit; pidFileExists=$(Test-Path -LiteralPath $treePidPath); log=$treeText"
+            $elapsed = $treeClock.Elapsed.TotalSeconds.ToString('R', [Globalization.CultureInfo]::InvariantCulture)
+            throw "Child-tree fixture did not run: exit=$treeExit; pidFileExists=$(Test-Path -LiteralPath $treePidPath); startedUtc=$treeStartedUtc; endedUtc=$treeEndedUtc; elapsedSeconds=$elapsed; log=$treeText"
         }
         $childProcess = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         if ($childProcess) {
@@ -77,6 +82,7 @@ Wait-Event -Timeout 30 | Out-Null
             } finally { $childProcess.Dispose() }
         }
     } finally {
+        $treeClock.Stop()
         if (Test-Path -LiteralPath $treePidPath) {
             $childProcess = Get-Process -Id ([int][IO.File]::ReadAllText($treePidPath)) -ErrorAction SilentlyContinue
             if ($childProcess) {
