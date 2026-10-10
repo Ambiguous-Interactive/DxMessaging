@@ -22,6 +22,10 @@ The writer uses `EditorSurfaceCapture` and follows this sequence:
    prototype UXML or screenshot-only copies of package tooling.
 1. Show the tracked `HideAndDontSave` capture host as a popup. Popup mode supplies an
    attached panel without drawing the host's dock tab into the render target.
+1. For serialized Project Settings fields, keep the attached surface hidden while
+   Unity initializes its bindings across Editor updates. Continue when all five
+   controls exist and show the settings values, then restore the display style.
+   Render the same panel. Disposal closes the host if capture stops during binding.
 1. Settle UI Toolkit layout, then repaint and render the panel three times into a
    temporary linear `RenderTexture` with `GL.sRGBWrite` disabled. The later passes
    paint scroll content and dynamic-font glyphs realized by the earlier passes.
