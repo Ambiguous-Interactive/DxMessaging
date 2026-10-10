@@ -1005,6 +1005,11 @@ function Add-NativeLayoutInventory {
     $inventory.Add('gameAssemblyPdbPath:')
     $inventory.Add("matchedGameAssemblyPdb=$matchedPdbFullName")
     $inventory.Add("matchedGameAssemblyPdbBytes=$($matchedPdb.Length)")
+    # Exact input digests distinguish native evidence when paths and sizes are unchanged.
+    $gameAssemblySha256 = (Get-FileHash -LiteralPath $gameAssemblies[0].FullName -Algorithm SHA256).Hash
+    $matchedPdbSha256 = (Get-FileHash -LiteralPath $matchedPdbFullName -Algorithm SHA256).Hash
+    $inventory.Add("gameAssemblySha256=$gameAssemblySha256")
+    $inventory.Add("matchedGameAssemblyPdbSha256=$matchedPdbSha256")
     foreach ($line in $pdbPathOutput) {
         $inventory.Add("$line")
     }
@@ -1210,6 +1215,8 @@ function Add-NativeLayoutInventory {
     $nativeEvidence = [System.Collections.Generic.List[string]]::new()
     $nativeEvidence.Add("gameAssembly=$($gameAssemblies[0].FullName)")
     $nativeEvidence.Add("matchedGameAssemblyPdb=$matchedPdbFullName")
+    $nativeEvidence.Add("gameAssemblySha256=$gameAssemblySha256")
+    $nativeEvidence.Add("matchedGameAssemblyPdbSha256=$matchedPdbSha256")
     $nativeEvidence.Add("selectedDumpbin=$($selectedDumpbin.FullName)")
     $nativeEvidence.Add("disassemblyLineCount=$disassemblyLineCount")
     $nativeEvidence.Add("rangeInvocationCount=$($addressTargetsByHex.Count)")
@@ -1647,14 +1654,17 @@ if ($SelfTestOnly) {
         $playerDir = Join-Path $integrationTestRoot 'Build\DxmTestPlayer'
         $backupDir = Join-Path $playerDir 'DxmTestPlayer_BackUpThisFolder_ButDontShipItWithYourGame'
         New-Item -ItemType Directory -Path $backupDir | Out-Null
-        'fake native image' | Set-Content -LiteralPath (Join-Path $playerDir 'GameAssembly.dll')
+        [System.IO.File]::WriteAllBytes(
+            (Join-Path $playerDir 'GameAssembly.dll'),
+            [byte[]]@(1, 2, 3, 4)
+        )
         $primarySymbolMapPath = Join-Path $backupDir 'SymbolMap'
         @(
             '0000000000001000 16 OtherSymbol',
             '0000000000002000 32 InventoryProbeSymbol'
         ) | Set-Content -LiteralPath $primarySymbolMapPath
         $gameAssemblyPdbPath = Join-Path $backupDir 'GameAssembly.pdb'
-        'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
+        [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@(5, 6, 7, 8))
         'fake object' | Set-Content -LiteralPath (Join-Path $integrationCppRoot 'gEnErAtEd.cpp.obj')
         $nativeProbeMethod = [pscustomobject]@{
             Label               = 'Native source-line probe'
@@ -1877,6 +1887,8 @@ if ($SelfTestOnly) {
             -Raw
         foreach (
             $expectedInventoryEvidence in @(
+                'gameAssemblySha256=9F64A747E1B97F131FABB6B447296C9B6F0201E79FB3C5356E6C77E89B6A806A',
+                'matchedGameAssemblyPdbSha256=55E5509F8052998294266EE5B50CB592938191FB5D67F73CAC2E60B0276B1BDD',
                 'symbolMapCount=1',
                 'symbolMapMatchCount=1',
                 'InventoryProbeSymbol',
@@ -1905,6 +1917,8 @@ if ($SelfTestOnly) {
             -Raw
         foreach (
             $expectedDisassemblyEvidence in @(
+                'gameAssemblySha256=9F64A747E1B97F131FABB6B447296C9B6F0201E79FB3C5356E6C77E89B6A806A',
+                'matchedGameAssemblyPdbSha256=55E5509F8052998294266EE5B50CB592938191FB5D67F73CAC2E60B0276B1BDD',
                 'nativeAddressLineMatchCount=3',
                 'rangeInvocationCount=3',
                 'maximumRangeBytesAfterAddress=1024',
@@ -2055,6 +2069,12 @@ if ($SelfTestOnly) {
                 }
         }
 
+        # Same paths and lengths must identify different replacement bytes.
+        [System.IO.File]::WriteAllBytes(
+            (Join-Path $playerDir 'GameAssembly.dll'),
+            [byte[]]@(4, 3, 2, 1)
+        )
+        [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@(8, 7, 6, 5))
         Remove-Item -LiteralPath $primarySymbolMapPath
         Add-NativeLayoutInventory `
             -ProjectRoot $integrationTestRoot `
@@ -2068,6 +2088,10 @@ if ($SelfTestOnly) {
             -Raw
         foreach (
             $expectedNoSymbolMapEvidence in @(
+                'gameAssemblyBytes=4',
+                'matchedGameAssemblyPdbBytes=4',
+                'gameAssemblySha256=EE10DA4AEFE61A37DF1DEE937CA3221AFA3B2351F9EA34EDBBB769573C6785F7',
+                'matchedGameAssemblyPdbSha256=952B50FD4FE30AEE9420F479FF3F4C6268F2865EE65A82E1F8E157ABC1455272',
                 'symbolMapCount=0',
                 'symbolMap=absent',
                 'symbolMapMatchCount=0',
@@ -2081,6 +2105,18 @@ if ($SelfTestOnly) {
                     'Native layout inventory without SymbolMap omitted ' +
                     "'$expectedNoSymbolMapEvidence'."
                 )
+            }
+        }
+
+        $replacementDisassembly = Get-Content `
+            -LiteralPath (Join-Path $integrationArtifacts 'native-disassembly.txt') `
+            -Raw
+        foreach ($replacementDigest in @(
+            'gameAssemblySha256=EE10DA4AEFE61A37DF1DEE937CA3221AFA3B2351F9EA34EDBBB769573C6785F7',
+            'matchedGameAssemblyPdbSha256=952B50FD4FE30AEE9420F479FF3F4C6268F2865EE65A82E1F8E157ABC1455272'
+        )) {
+            if (!$replacementDisassembly.Contains($replacementDigest)) {
+                throw "Replacement native disassembly omitted '$replacementDigest'."
             }
         }
 
@@ -2289,7 +2325,7 @@ if ($SelfTestOnly) {
                     -DumpbinPaths @($fakeDumpbin) `
                     -NativeLineReader $fakeNativeLineReader
             }
-        'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
+        [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@(5, 6, 7, 8))
 
         Remove-Item -LiteralPath $gameAssemblyPdbPath
         Assert-NativeInventoryFailure `
@@ -2303,7 +2339,7 @@ if ($SelfTestOnly) {
                     -DumpbinPaths @($fakeDumpbin) `
                     -NativeLineReader $fakeNativeLineReader
             }
-        'fake pdb' | Set-Content -LiteralPath $gameAssemblyPdbPath
+        [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@(5, 6, 7, 8))
 
         $alternateEvidenceDir = Join-Path $playerDir 'AlternateEvidence'
         New-Item -ItemType Directory -Path $alternateEvidenceDir | Out-Null
