@@ -13,10 +13,7 @@ charset-normalizer==3.5.1
 click==8.4.2
     # via mkdocs
 colorama==0.4.6
-    # via
-    #   click
-    #   mkdocs
-    #   mkdocs-material
+    # via mkdocs-material
 csscompressor==0.9.5
     # via mkdocs-minify-plugin
 ghp-import==2.1.0
@@ -109,9 +106,7 @@ six==1.17.0
     # via python-dateutil
 smmap==5.0.3
     # via gitdb
-tzdata==2026.3 ; sys_platform == 'win32'
-    # via mkdocs-git-revision-date-localized-plugin
-urllib3==2.7.0
+urllib3==2.8.0
     # via requests
 verspec==0.1.0
     # via mike
