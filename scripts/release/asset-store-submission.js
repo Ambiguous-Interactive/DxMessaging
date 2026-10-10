@@ -10,8 +10,8 @@ const REQUIRED_ARGS =
   "outDir packageFile packageChecksum unitypackageFile unitypackageChecksum".split(" ");
 const STORE_MEDIA = [
   "dxmessaging-store-icon-160.png|160|160|dxmessaging-icon-tile.svg|7519ef9ee3a299f377a53ef308e09db00a0e3f47a1692c5ed3666caf79a75843|b704fcd9e1bdbbd16b0ea8937192794ffee8124f8df62f66b35e636d061af2b5||",
-  "dxmessaging-store-card-420x280.png|420|280|dxmessaging-store-card-420x280.svg|eebe18742357a122c49bb55457037870404f4b1ac0b985f945284a5db4c63a92|e19ee873e9fd95b04ffedee05b4fb085885e9fea40c9c50238f6f23561144926|inspector-overlay/flow-graph.png|9d5a2b2649730c31f9e99342ca926397973346a971c330ba965c78e6936f631f",
-  "dxmessaging-store-cover-1950x1300.png|1950|1300|dxmessaging-store-cover-1950x1300.svg|c4edf98b793cc96ac23797515886c3e23ff7c2c1a33c0a0af546db055cbf96e1|a87697ca78419245b70ee92062d714a51e4e5e00e052ddf24cc8df3f153748bb|inspector-overlay/flow-graph.png|9d5a2b2649730c31f9e99342ca926397973346a971c330ba965c78e6936f631f"
+  "dxmessaging-store-card-420x280.png|420|280|dxmessaging-store-card-420x280.svg|eebe18742357a122c49bb55457037870404f4b1ac0b985f945284a5db4c63a92|e19ee873e9fd95b04ffedee05b4fb085885e9fea40c9c50238f6f23561144926|inspector-overlay/flow-graph.png|f97cbdda60a9fe701fc2dd23336d28fe132457e9d05875c4d76d17ddd89a8a13",
+  "dxmessaging-store-cover-1950x1300.png|1950|1300|dxmessaging-store-cover-1950x1300.svg|c4edf98b793cc96ac23797515886c3e23ff7c2c1a33c0a0af546db055cbf96e1|672a3a09f0290729169173873b92e6e87a8834763d0905921923a9d4aef5ed61|inspector-overlay/flow-graph.png|f97cbdda60a9fe701fc2dd23336d28fe132457e9d05875c4d76d17ddd89a8a13"
 ].map((entry) => entry.split("|"));
 // prettier-ignore
 const hasExactKeys = (value, expected) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...expected].sort().join("\0"), isHttpsUrl = (value) => { try { const parsed = new URL(value); return parsed.protocol === "https:" && Boolean(parsed.hostname) && !parsed.username && !parsed.password; } catch { return false; } };

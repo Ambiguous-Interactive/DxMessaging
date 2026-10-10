@@ -1,8 +1,10 @@
 namespace DxMessaging.Editor.Settings
 {
 #if UNITY_EDITOR
+    using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Threading;
     using Core.MessageBus;
     using UnityEditor;
     using UnityEngine;
@@ -18,6 +20,89 @@ namespace DxMessaging.Editor.Settings
     public sealed class DxMessagingSettings : ScriptableObject
     {
         private const string SettingsPath = "Assets/Editor/DxMessagingSettings.asset";
+
+        private static readonly Func<string, DxMessagingSettings> PassiveLoadAtPath =
+            AssetDatabase.LoadAssetAtPath<DxMessagingSettings>;
+        private static readonly Func<string[]> PassiveFindGuids = FindSettingsGuids;
+        private static readonly Func<string, string> PassiveGuidToPath =
+            AssetDatabase.GUIDToAssetPath;
+
+        private static int _settingsRevision;
+        private static int _cachedSettingsRevision = -1;
+        private static DxMessagingSettings _cachedSettings;
+        private static string _cachedSettingsPath;
+
+        internal static int SettingsRevision => Volatile.Read(ref _settingsRevision);
+        internal static int SettingsLookupCount { get; private set; }
+        internal static int SettingsSearchCount { get; private set; }
+
+        internal static void InvalidateSettingsCache()
+        {
+            // OnValidate can signal from a loading thread; perform no Unity work here.
+            Interlocked.Increment(ref _settingsRevision);
+        }
+
+        internal static void NotifyAssetsChanged(
+            string[] importedAssets,
+            string[] deletedAssets,
+            string[] movedAssets,
+            string[] movedFromAssetPaths
+        )
+        {
+            if (
+                !ContainsSettingsChange(importedAssets)
+                && !ContainsSettingsChange(deletedAssets)
+                && !ContainsSettingsChange(movedAssets)
+                && !ContainsSettingsChange(movedFromAssetPaths)
+            )
+            {
+                return;
+            }
+
+            InvalidateSettingsCache();
+            Analyzers.DxMessagingConsoleHarvester.ScheduleRescanWhenIdle();
+        }
+
+        private static bool ContainsSettingsChange(string[] paths)
+        {
+            if (paths == null)
+            {
+                return false;
+            }
+            foreach (string path in paths)
+            {
+                if (string.IsNullOrEmpty(path))
+                {
+                    continue;
+                }
+                /*
+                    Any .asset can introduce a settings asset after a cached miss. Also retain
+                    moves/deletes of the selected asset or its folder, including legacy paths.
+                    Do not query AssetDatabase from an import callback to classify a new asset.
+                */
+                if (
+                    path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)
+                    || IsAssetOrParentPath(path, SettingsPath)
+                    || IsAssetOrParentPath(path, _cachedSettingsPath)
+                )
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool IsAssetOrParentPath(string changedPath, string settingsPath)
+        {
+            return !string.IsNullOrEmpty(settingsPath)
+                && (
+                    string.Equals(changedPath, settingsPath, StringComparison.OrdinalIgnoreCase)
+                    || settingsPath.StartsWith(
+                        changedPath.TrimEnd('/') + "/",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
+        }
 
         [SerializeField]
         internal DiagnosticsTarget _diagnosticsTargets = DiagnosticsTarget.Off;
@@ -94,9 +179,9 @@ namespace DxMessaging.Editor.Settings
         /// compile-time analyzer warnings remain unless explicitly suppressed via <c>.editorconfig</c>.
         /// </summary>
         /// <remarks>
-        /// S3: toggling from <c>false</c> back to <c>true</c> pokes
+        /// Changing this toggle pokes
         /// <see cref="DxMessaging.Editor.Analyzers.DxMessagingConsoleHarvester"/> on the next editor
-        /// tick so the snapshot repopulates without waiting for the user to clear/re-emit warnings
+        /// tick so the snapshot clears or repopulates without waiting for the user to clear/re-emit warnings
         /// or to manually invoke <c>Tools/Wallstop Studios/DxMessaging/Rescan Base-Call Warnings</c>. The round-trip
         /// is intentionally indirect (delayCall > RescanNow) to keep this property setter cheap and
         /// safe to invoke from any editor context -- including OnValidate, where AssetDatabase may
@@ -109,12 +194,12 @@ namespace DxMessaging.Editor.Settings
             {
                 bool previous = _baseCallCheckEnabled;
                 _baseCallCheckEnabled = value;
-                if (!previous && value)
+                if (previous != value)
                 {
                     /*
                         A master-toggle flip doesn't need a synchronous reflective harvest right now;
-                        the polled tick (~250ms) will pick up the sentinel cheaply on the editor's
-                        own update thread, avoiding a heavy reflection sweep on the main thread when
+                        the idle callback coalesces the request on the editor's update thread,
+                        avoiding a heavy reflection sweep on the main thread when
                         the user has just clicked a checkbox. Indirected through delayCall so the
                         setter is safe to invoke from any editor context (OnValidate, button click,
                         etc.) without risking AssetDatabase reentrancy.
@@ -195,7 +280,8 @@ namespace DxMessaging.Editor.Settings
 
         /// <summary>
         /// Loads the settings asset without creating, saving, or migrating it. Returns
-        /// <c>null</c> when no asset exists.
+        /// <c>null</c> when no asset exists. Caches both a loaded asset and its absence until
+        /// settings validation or a potential settings asset import, move, or deletion.
         /// </summary>
         /// <remarks>
         /// Unlike <see cref="GetOrCreateSettings"/>, this performs NO <c>AssetDatabase</c> mutation
@@ -210,19 +296,63 @@ namespace DxMessaging.Editor.Settings
         /// </remarks>
         internal static DxMessagingSettings LoadSettingsPassive()
         {
-            DxMessagingSettings settings = AssetDatabase.LoadAssetAtPath<DxMessagingSettings>(
-                SettingsPath
-            );
+            return LoadSettingsPassive(PassiveLoadAtPath, PassiveFindGuids, PassiveGuidToPath);
+        }
 
-            if (settings == null)
+        private static string[] FindSettingsGuids()
+        {
+            return AssetDatabase.FindAssets($"t:{nameof(DxMessagingSettings)}");
+        }
+
+        internal static DxMessagingSettings LoadSettingsPassive(
+            Func<string, DxMessagingSettings> loadAtPath,
+            Func<string[]> findGuids,
+            Func<string, string> guidToPath
+        )
+        {
+            SettingsLookupCount++;
+            int revision = SettingsRevision;
+            if (
+                _cachedSettingsRevision == revision
+                && (ReferenceEquals(_cachedSettings, null) || _cachedSettings != null)
+            )
             {
-                settings = AssetDatabase
-                    .FindAssets($"t:{nameof(DxMessagingSettings)}")
-                    .Select(AssetDatabase.GUIDToAssetPath)
-                    .Select(AssetDatabase.LoadAssetAtPath<DxMessagingSettings>)
-                    .FirstOrDefault(asset => asset != null);
+                return _cachedSettings;
             }
 
+            DxMessagingSettings settings = loadAtPath(SettingsPath);
+            string settingsPath = SettingsPath;
+            if (settings == null)
+            {
+                SettingsSearchCount++;
+                string[] guids = findGuids();
+                if (guids != null)
+                {
+                    foreach (string guid in guids)
+                    {
+                        string path = guidToPath(guid);
+                        if (string.IsNullOrEmpty(path))
+                        {
+                            continue;
+                        }
+                        settings = loadAtPath(path);
+                        if (settings != null)
+                        {
+                            settingsPath = path;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            _cachedSettings = settings;
+            _cachedSettingsPath = settings != null ? settingsPath : null;
+            /*
+                Publish only after a complete successful lookup. If OnValidate or another
+                invalidation occurs during loading, this older revision causes the next read
+                to retry. A destroyed Unity object also retries rather than becoming a miss.
+            */
+            _cachedSettingsRevision = revision;
             return settings;
         }
 
@@ -253,6 +383,9 @@ namespace DxMessaging.Editor.Settings
                 }
                 AssetDatabase.CreateAsset(settings, SettingsPath);
                 AssetDatabase.SaveAssets();
+                _cachedSettings = settings;
+                _cachedSettingsPath = SettingsPath;
+                _cachedSettingsRevision = SettingsRevision;
             }
 
             if (settings.ApplyLegacyDiagnosticsMigration())
@@ -301,6 +434,7 @@ namespace DxMessaging.Editor.Settings
 
         private void OnValidate()
         {
+            InvalidateSettingsCache();
             EnsureIgnoreListInitialized();
             /*
                 Issue #210: OnValidate fires during asset deserialization, including the domain-load

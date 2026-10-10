@@ -81,7 +81,7 @@ and every `///` XML doc comment in `Runtime/`, `Editor/`, and `SourceGenerators/
   `[Obsolete]` plus migration notes. A perf change updates `docs/architecture/performance.md`
   and `CHANGELOG.md`.
 - Before commit, run `npx prettier --write <changed-docs.md ...>` then
-  `npx markdownlint-cli2 <changed-docs.md ...>`.
+  `npx --no-install markdownlint --dot <changed-docs.md ...>`.
 - Ordered lists use MD029 `one` style (every item prefixed `1.`). Internal fragment links must
   resolve (MD051).
 

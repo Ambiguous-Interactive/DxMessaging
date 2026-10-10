@@ -54,7 +54,7 @@
     "test": "node --test scripts/ && python3 scripts/__tests__/test_create_unitypackage.py",
     "format": "prettier --write \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
-    "lint:markdown": "markdownlint-cli2 \"**/*.md\" \"**/*.markdown\"",
+    "lint:markdown": "markdownlint --dot \"**/*.md\" \"**/*.markdown\"",
     "check:spelling": "cspell --no-progress --no-summary .",
     "sync:banner": "node scripts/sync-banner-version.js",
     "check:banner": "node scripts/sync-banner-version.js --check",
@@ -82,20 +82,22 @@
     "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run llm:check && npm run check:issue-template-versions && npm run check:upm-changelog"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@xmldom/xmldom": "0.9.12",
     "ajv": "8.20.0",
     "cspell": "10.2.2",
     "jsonc-parser": "3.3.1",
-    "markdownlint-cli2": "0.23.2",
+    "markdownlint-cli": "0.49.1",
     "prettier": "3.9.6",
-    "smol-toml": "1.8.0",
+    "smol-toml": "1.9.0",
     "yaml": "^2.9.0"
   },
   "overrides": {
-    "markdownlint-cli2": {
-      "smol-toml": "$smol-toml"
-    }
+    "markdownlint-cli": {
+      "smol-toml": "$smol-toml",
+      "js-yaml": "5.4.1"
+    },
+    "katex": "0.18.2"
   },
   "samples": [
     {

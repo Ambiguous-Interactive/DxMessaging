@@ -75,7 +75,7 @@ jobs:
 
       - name: Markdownlint (auto-fix)
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
-        run: npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
+        run: npx --no-install markdownlint --dot "**/*.md" "**/*.markdown" --fix
 
       - name: Renormalize line endings
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}

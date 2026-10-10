@@ -1,74 +1,16 @@
 "use strict";
 
-/**
- * @file asmdef-discovery.js
- *
- * Shared, deterministic discovery + classification of Unity test asmdef files.
- *
- * Used by:
- *   - .github/actions/compute-unity-assemblies (primary CI consumer)
- *   - .github/workflows-disabled/unity-tests.yml (customParameters template)
- *
- * No filesystem mutation. Pure functions only.
- *
- * Exports:
- *   - defaultIncludeAssemblies(repoRoot, options?)
- *
- * The enumeration/classification helpers are module-internal; run this file
- * directly (`node scripts/unity/lib/asmdef-discovery.js`) for a self-test
- * that prints every discovered asmdef with its classification.
- *
- * Default include/exclude rules:
- *   - "core"        => INCLUDED by default.
- *   - "perf"        => EXCLUDED by default. Opt in with { includePerf: true }.
- *   - "comparison"  => EXCLUDED by default. Opt in with
- *                      { includeComparisons: true } after installing external
- *                      comparison packages.
- *   - "integration" => EXCLUDED by default (their packages are not in the test
- *                      project's manifest.json and would fail to compile).
- *                      Opt in with { includeIntegrations: true }.
- */
+// Deterministic test selection. See the Unity test execution skill for scope and dependency rules.
 
 const fs = require("fs");
 const path = require("path");
-
 const { walkFiles } = require("../../lib/repo-files");
 
-/**
- * Names matching this pattern are perf/benchmark/allocation assemblies and must
- * be excluded from default Unity Test Runner runs.
- *
- * Source of truth lives in .llm/context.md line 114 (perf isolation rule).
- *
- * @type {RegExp}
- */
 const PERF_NAME_REGEX = /(?:Benchmarks|Allocations)/;
 const COMPARISON_NAME_REGEX = /(?:Comparisons)/;
-
-/**
- * Names matching this pattern are DI-container integration suites
- * (VContainer / Zenject / Reflex). EXCLUDED from the default suite because
- * their backing packages (com.gustavopsantos.reflex, com.svermeulen.extenject,
- * jp.hadashikick.vcontainer) are not declared in the test project's
- * manifest.json — including them would cause compile errors. Opt in via the
- * `includeIntegrations` option on `defaultIncludeAssemblies`.
- *
- * @type {RegExp}
- */
+const TRANSPORT_NAME_REGEX = /\.PipelineTransportResearch$/;
 const INTEGRATION_NAME_REGEX = /(?:VContainer|Zenject|Reflex)/;
 
-/**
- * Assembly-name prefix that marks an asmdef as owned by DxMessaging. The Unity
- * Test Runner is invoked with an explicit `-assemblyNames` list, so a foreign
- * test asmdef that happens to live under `Tests/` (for example one pulled in by
- * an external comparison package, or a stray sample) must never be added to the
- * list -- it would not compile against the harness manifest and would fail the
- * run for a reason unrelated to DxMessaging. Every real DxMessaging test
- * assembly is named `WallstopStudios.DxMessaging.Tests*`, so this owner prefix
- * is a safe, future-proof gate that is a no-op for the current asmdef set.
- *
- * @type {string}
- */
 const DXMESSAGING_ASSEMBLY_PREFIX = "WallstopStudios.DxMessaging.";
 const STANDALONE_PLATFORM_NAMES = new Set([
   "Standalone",
@@ -78,96 +20,31 @@ const STANDALONE_PLATFORM_NAMES = new Set([
   "OSXStandalone"
 ]);
 
-/**
- * True when `name` is a DxMessaging-owned assembly (see
- * {@link DXMESSAGING_ASSEMBLY_PREFIX}). Non-string / empty input is treated as
- * NOT owned so a malformed asmdef can never slip through the include gate.
- *
- * @param {string} name - Asmdef assembly name (no extension)
- * @returns {boolean} True iff the name carries the DxMessaging owner prefix
- */
 function isDxMessagingOwnedAssembly(name) {
   return typeof name === "string" && name.startsWith(DXMESSAGING_ASSEMBLY_PREFIX);
 }
 
-/**
- * Strip the `.asmdef` extension and return the asmdef's declared name. The
- * file's `name` field is the canonical assembly name and must match the
- * filename per Unity convention; we read the JSON to be safe.
- *
- * @param {string} asmdefPath - Absolute path to an .asmdef file
- * @returns {string} Asmdef name (without extension)
- */
 function readAsmdefName(asmdefPath) {
   const raw = fs.readFileSync(asmdefPath, "utf8");
   const parsed = JSON.parse(raw);
   if (typeof parsed.name !== "string" || parsed.name.length === 0) {
-    // Fall back to the filename to keep this function pure-ish.
     return path.basename(asmdefPath, ".asmdef");
   }
   return parsed.name;
 }
 
-/**
- * Classify an asmdef name into a single category.
- *
- * Categories:
- *   - "perf"        — Benchmarks/Allocations (excluded from PR
- *                     gates per .llm/context.md line 114).
- *   - "comparison"  — external comparison benchmarks.
- *   - "integration" — VContainer/Zenject/Reflex DI integration suites.
- *   - "core"        — Everything else (Editor, Runtime, etc.).
- *
- * Note: comparison suites benchmark DxMessaging against alternative messaging
- * libraries, so they require an additional opt-in after the external packages
- * are installed in the harness manifest.
- *
- * @param {string} name - Asmdef assembly name (no extension)
- * @returns {"perf" | "comparison" | "integration" | "core"} Classification
- */
 function classifyAsmdef(name) {
-  if (typeof name !== "string" || name.length === 0) {
-    return "core";
+  for (const [pattern, classification] of [
+    [PERF_NAME_REGEX, "perf"],
+    [COMPARISON_NAME_REGEX, "comparison"],
+    [INTEGRATION_NAME_REGEX, "integration"],
+    [TRANSPORT_NAME_REGEX, "transport"]
+  ]) {
+    if (typeof name === "string" && pattern.test(name)) return classification;
   }
-
-  if (PERF_NAME_REGEX.test(name)) {
-    return "perf";
-  }
-
-  if (COMPARISON_NAME_REGEX.test(name)) {
-    return "comparison";
-  }
-
-  if (INTEGRATION_NAME_REGEX.test(name)) {
-    return "integration";
-  }
-
   return "core";
 }
 
-/**
- * @typedef {object} AsmdefEntry
- * @property {string} name - Asmdef assembly name
- * @property {string} path - Absolute path to the asmdef file
- * @property {boolean} isPerf - True when classification is "perf"
- * @property {boolean} isComparison - True when classification is "comparison"
- * @property {boolean} isInteg - True when classification is "integration"
- * @property {boolean} isEditorOnly - True iff includePlatforms is exactly ["Editor"]
- * @property {boolean} isForeign - True when the assembly is NOT DxMessaging-owned
- *                     (name lacks the `WallstopStudios.DxMessaging.` prefix). Such
- *                     assemblies are never added to the Unity `-assemblyNames` list.
- */
-
-/**
- * Read an asmdef's `includePlatforms` array and decide whether the assembly is
- * editor-only. An assembly is editor-only iff `includePlatforms` is exactly
- * `["Editor"]`. Editor-only test assemblies (EditMode suites + Editor
- * benchmarks/integrations) cannot run inside a built player, so the standalone
- * runtime-only flow must exclude them.
- *
- * @param {string} asmdefPath - Absolute path to an .asmdef file
- * @returns {boolean} True when includePlatforms === ["Editor"]
- */
 function readAsmdefPlatforms(asmdefPath) {
   const raw = fs.readFileSync(asmdefPath, "utf8");
   const parsed = JSON.parse(raw);
@@ -177,12 +54,6 @@ function readAsmdefPlatforms(asmdefPath) {
   };
 }
 
-/**
- * @param {string[]} includePlatforms
- * @param {string[]} excludePlatforms
- * @param {"editmode" | "playmode" | "standalone"} target
- * @returns {boolean}
- */
 function isAsmdefCompatibleWithTarget(includePlatforms, excludePlatforms, target) {
   const includes = new Set(includePlatforms);
   const excludes = new Set(excludePlatforms);
@@ -222,13 +93,6 @@ function isAsmdefCompatibleWithTarget(includePlatforms, excludePlatforms, target
   return includes.size === 0 || includes.has("Editor");
 }
 
-/**
- * Enumerate every asmdef under `<repoRoot>/Tests/`. Sorted by `name` for
- * stable downstream output (CI summaries, contract tests).
- *
- * @param {string} repoRoot - Absolute path to the repository root
- * @returns {AsmdefEntry[]} Discovered test asmdefs
- */
 function enumerateTestAsmdefs(repoRoot) {
   if (typeof repoRoot !== "string" || repoRoot.length === 0) {
     throw new TypeError("enumerateTestAsmdefs: repoRoot must be a non-empty string");
@@ -239,7 +103,6 @@ function enumerateTestAsmdefs(repoRoot) {
     match: (full, dirent) => dirent.name.endsWith(".asmdef")
   });
 
-  /** @type {AsmdefEntry[]} */
   const entries = asmdefPaths.map((asmdefPath) => {
     const name = readAsmdefName(asmdefPath);
     const classification = classifyAsmdef(name);
@@ -250,10 +113,9 @@ function enumerateTestAsmdefs(repoRoot) {
       isPerf: classification === "perf",
       isComparison: classification === "comparison",
       isInteg: classification === "integration",
+      isTransport: classification === "transport",
       includePlatforms: platforms.includePlatforms,
       excludePlatforms: platforms.excludePlatforms,
-      isEditorOnly:
-        platforms.includePlatforms.length === 1 && platforms.includePlatforms[0] === "Editor",
       isForeign: !isDxMessagingOwnedAssembly(name)
     };
   });
@@ -262,53 +124,48 @@ function enumerateTestAsmdefs(repoRoot) {
   return entries;
 }
 
-/**
- * @typedef {object} IncludeOptions
- * @property {boolean} [includePerf=false]         Include "perf" asmdefs.
- * @property {boolean} [includeComparisons=false]  Include comparison benchmark asmdefs.
- * @property {boolean} [includeIntegrations=false] Include "integration" asmdefs.
- * @property {"editmode" | "playmode" | "standalone"} [target=editmode]
- *                     Select assemblies compatible with the Unity test target.
- *                     PlayMode and standalone omit editor-only asmdefs.
- * @property {boolean} [runtimeOnly=false]         Back-compat alias for
- *                     target: "standalone". Applied before the perf/comparison/
- *                     integration gating so it composes.
- */
-
-/**
- * Names of test asmdefs included in the default Unity Test Runner suite.
- *
- * By default ONLY "core" asmdefs are returned. Perf and integration suites
- * are opt-in:
- *   - includePerf:         add Benchmarks/Allocations.
- *   - includeComparisons:  add external comparison benchmarks.
- *   - includeIntegrations: add VContainer/Zenject/Reflex (caller must ensure
- *                          the corresponding DI packages are in manifest.json).
- *
- * @param {string} repoRoot - Absolute path to the repository root
- * @param {IncludeOptions} [options] - Opt-in flags (default: all false)
- * @returns {string[]} Sorted asmdef names (no extension)
- */
-function defaultIncludeAssemblies(repoRoot, options) {
+// Scope and observed-host admission: docs/runbooks/pipeline-host-repair.md.
+function resolveTestAssemblySelection(repoRoot, options) {
   const opts = options || {};
   const includePerf = opts.includePerf === true;
   const includeComparisons = opts.includeComparisons === true;
   const includeIntegrations = opts.includeIntegrations === true;
+  const includeTransportControls = opts.includeTransportControls === true;
   const target = opts.target || (opts.runtimeOnly === true ? "standalone" : "editmode");
-
-  return enumerateTestAsmdefs(repoRoot)
+  if (includeTransportControls && target !== "editmode") {
+    throw new Error("Transport controls require the EditMode target.");
+  }
+  if (includeTransportControls) {
+    if (typeof opts.transportPackagePath !== "string" || !opts.transportPackagePath) {
+      throw new Error("Transport controls require the resolved Pipeline package path.");
+    }
+    const dependency = JSON.parse(
+      fs.readFileSync(path.join(opts.transportPackagePath, "package.json"), "utf8")
+    );
+    if (
+      opts.unityVersion !== "6000.4.6f1" ||
+      dependency.name !== "com.unity.pipeline" ||
+      dependency.version !== "0.8.0-exp.1" ||
+      dependency.repository?.revision !== "dde7080264d32a1091171d4b358351279fa10ddb"
+    ) {
+      throw new Error(
+        "Transport controls require the admitted Unity 6000.4.6f1 / Pipeline 0.8.0-exp.1 host."
+      );
+    }
+  }
+  const entries = enumerateTestAsmdefs(repoRoot).filter(
+    (entry) =>
+      !entry.isForeign &&
+      isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)
+  );
+  const transport = entries.filter((entry) => entry.isTransport).map((entry) => entry.name);
+  if (includeTransportControls && transport.length === 0) {
+    throw new Error(
+      "Transport controls were requested but no compatible owned transport assembly exists."
+    );
+  }
+  const assemblies = entries
     .filter((entry) => {
-      // Foreign (non-DxMessaging-owned) asmdefs are never added to the Unity
-      // -assemblyNames list: they would not compile against the harness
-      // manifest and would fail the run for a reason unrelated to DxMessaging.
-      // Gated first, ahead of every other decision. A no-op for the current
-      // asmdef set (all entries are DxMessaging-owned).
-      if (entry.isForeign) {
-        return false;
-      }
-      if (!isAsmdefCompatibleWithTarget(entry.includePlatforms, entry.excludePlatforms, target)) {
-        return false;
-      }
       if (entry.isPerf) {
         return includePerf;
       }
@@ -318,51 +175,32 @@ function defaultIncludeAssemblies(repoRoot, options) {
       if (entry.isInteg) {
         return includeIntegrations;
       }
+      if (entry.isTransport) {
+        return includeTransportControls;
+      }
       return true;
     })
     .map((entry) => entry.name);
+  return { assemblies, excludedTransportControls: includeTransportControls ? [] : transport };
 }
 
-// Only defaultIncludeAssemblies has external consumers
-// (compute-unity-assemblies/action.yml). The other helpers are internal; the
-// self-test block below uses them directly.
+// Preserve the array API for existing callers; CI also records excluded transport controls.
+function defaultIncludeAssemblies(repoRoot, options) {
+  return resolveTestAssemblySelection(repoRoot, options).assemblies;
+}
+
 module.exports = {
-  defaultIncludeAssemblies
+  defaultIncludeAssemblies,
+  resolveTestAssemblySelection
 };
 
 if (require.main === module) {
-  // Self-test mode: print classified asmdefs for the current repo.
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
-  const all = enumerateTestAsmdefs(repoRoot);
-  const include = defaultIncludeAssemblies(repoRoot);
-
-  process.stdout.write(`repoRoot: ${repoRoot}\n`);
-  process.stdout.write(`discovered ${all.length} asmdef(s):\n`);
-  for (const entry of all) {
-    const cls = entry.isPerf
-      ? "perf"
-      : entry.isComparison
-        ? "comparison"
-        : entry.isInteg
-          ? "integration"
-          : "core";
-    process.stdout.write(`  [${cls}] ${entry.name}\n`);
-  }
-  process.stdout.write(
-    `\ndefault include (${include.length}, core only — pass ` +
-      `{ includePerf, includeComparisons, includeIntegrations } to opt in):\n`
-  );
-  for (const name of include) {
-    process.stdout.write(`  + ${name}\n`);
-  }
-
-  // Diagnostic: runtime-only include list (used by the standalone player flow,
-  // where EditMode/editor-only asmdefs cannot run).
-  const runtimeInclude = defaultIncludeAssemblies(repoRoot, { target: "standalone" });
-  process.stdout.write(
-    `\nruntime-only include (${runtimeInclude.length}, drops editor-only asmdefs):\n`
-  );
-  for (const name of runtimeInclude) {
-    process.stdout.write(`  * ${name}\n`);
-  }
+  const report = {
+    repoRoot,
+    discovered: enumerateTestAsmdefs(repoRoot),
+    shipping: resolveTestAssemblySelection(repoRoot),
+    standalone: resolveTestAssemblySelection(repoRoot, { target: "standalone" })
+  };
+  process.stdout.write(JSON.stringify(report, null, 2) + "\n");
 }

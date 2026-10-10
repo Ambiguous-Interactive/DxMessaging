@@ -8,6 +8,185 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    public void MigrationEventBridgeOwnsItsEnabledLifetime(int publisherChange)
+    {
+        string migrationPath = Path.Combine(ResolveDocsRoot(), "guides", "migration-guide.md");
+        string[] samples = System
+            .Text.RegularExpressions.Regex.Matches(
+                File.ReadAllText(migrationPath),
+                @"```csharp\s*\r?\n(?<code>[\s\S]*?)```"
+            )
+            .Select(match => match.Groups["code"].Value)
+            .Where(code => code.Contains("public class LegacyBridge :", StringComparison.Ordinal))
+            .ToArray();
+        Assert.That(
+            samples,
+            Has.Length.EqualTo(1),
+            "Expected exactly one documented LegacyBridge sample."
+        );
+
+        // Execute the documented bridge unchanged. Only its external publisher, message emission,
+        // and Unity types are fixtures; this tests C# event ownership, not native Unity callbacks.
+        string fixtures = """
+            namespace UnityEngine
+            {
+                public class MonoBehaviour { }
+                public sealed class SerializeField : System.Attribute { }
+            }
+            public sealed class LegacySystem
+            {
+                public event System.Action<int> OnSomethingHappened;
+                public int SubscriptionCount => OnSomethingHappened?.GetInvocationList().Length ?? 0;
+                public void Raise(int value) => OnSomethingHappened?.Invoke(value);
+            }
+            public struct SomethingHappened
+            {
+                public int Value;
+                public SomethingHappened(int value) { Value = value; }
+            }
+            public static class EmissionFixture
+            {
+                public static readonly System.Collections.Generic.List<int> Values = new();
+                public static void Emit(this ref SomethingHappened message) => Values.Add(message.Value);
+            }
+            """;
+        string[] platformAssemblies = (
+            (string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!
+        ).Split(Path.PathSeparator);
+        Microsoft.CodeAnalysis.CSharp.CSharpCompilation compilation =
+            Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
+                "MigrationBridgeLifecycle",
+                new[]
+                {
+                    Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(
+                        "using UnityEngine;\n" + samples[0] + "\n" + fixtures
+                    ),
+                },
+                platformAssemblies.Select(path =>
+                    Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(path)
+                ),
+                new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
+                    Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary
+                )
+            );
+        using MemoryStream assemblyBytes = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(assemblyBytes);
+        Assert.That(
+            result.Success,
+            Is.True,
+            "The actual bridge sample must compile without ignored errors: "
+                + string.Join("\n", result.Diagnostics)
+        );
+        assemblyBytes.Position = 0;
+        System.Runtime.Loader.AssemblyLoadContext loadContext = new(
+            "MigrationBridgeLifecycle",
+            isCollectible: true
+        );
+        try
+        {
+            System.Reflection.Assembly assembly = loadContext.LoadFromStream(assemblyBytes);
+            Type bridgeType = assembly.GetType("LegacyBridge", throwOnError: true)!;
+            Type publisherType = assembly.GetType("LegacySystem", throwOnError: true)!;
+            object bridge = Activator.CreateInstance(bridgeType)!;
+            object originalPublisher = Activator.CreateInstance(publisherType)!;
+            object replacementPublisher = Activator.CreateInstance(publisherType)!;
+            const System.Reflection.BindingFlags instanceMembers =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo publisherField = bridgeType.GetField(
+                "legacySystem",
+                instanceMembers
+            )!;
+            System.Reflection.MethodInfo raise = publisherType.GetMethod("Raise")!;
+            System.Reflection.PropertyInfo subscriptions = publisherType.GetProperty(
+                "SubscriptionCount"
+            )!;
+            IList<int> values =
+                (IList<int>)
+                    assembly.GetType("EmissionFixture")!.GetField("Values")!.GetValue(null)!;
+            int[] firstExpected = { 11 };
+            publisherField.SetValue(bridge, originalPublisher);
+            bridgeType.GetMethod("Awake", instanceMembers)?.Invoke(bridge, null);
+            bridgeType.GetMethod("OnEnable", instanceMembers)?.Invoke(bridge, null);
+            Assert.That(
+                subscriptions.GetValue(originalPublisher),
+                Is.EqualTo(1),
+                "An enabled bridge needs exactly one subscription."
+            );
+            raise.Invoke(originalPublisher, new object[] { 11 });
+            Assert.That(
+                values,
+                Is.EqualTo(firstExpected),
+                "An enabled bridge must forward the original event payload exactly once."
+            );
+
+            object? nextPublisher = publisherChange switch
+            {
+                1 => replacementPublisher,
+                2 => null,
+                _ => originalPublisher,
+            };
+            publisherField.SetValue(bridge, nextPublisher);
+            bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
+            raise.Invoke(originalPublisher, new object[] { 22 });
+            raise.Invoke(replacementPublisher, new object[] { 33 });
+            Assert.Multiple(() =>
+            {
+                Assert.That(
+                    subscriptions.GetValue(originalPublisher),
+                    Is.EqualTo(0),
+                    "Disable must remove the original subscription even after publisher reassignment."
+                );
+                Assert.That(
+                    values,
+                    Is.EqualTo(firstExpected),
+                    "Disabled bridges must not forward either publisher's events."
+                );
+            });
+
+            bridgeType.GetMethod("OnEnable", instanceMembers)?.Invoke(bridge, null);
+            raise.Invoke(originalPublisher, new object[] { 44 });
+            raise.Invoke(replacementPublisher, new object[] { 55 });
+            int[] expected = publisherChange switch
+            {
+                1 => new[] { 11, 55 },
+                2 => new[] { 11 },
+                _ => new[] { 11, 44 },
+            };
+            Assert.That(
+                values,
+                Is.EqualTo(expected),
+                "Re-enable must subscribe only to the currently configured publisher; null configuration forwards nothing."
+            );
+            bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
+            Assert.That(
+                subscriptions.GetValue(originalPublisher),
+                Is.EqualTo(0),
+                "Final disable must leave no original-publisher subscription."
+            );
+            Assert.That(
+                subscriptions.GetValue(replacementPublisher),
+                Is.EqualTo(0),
+                "Final disable must leave no replacement-publisher subscription."
+            );
+            raise.Invoke(originalPublisher, new object[] { 66 });
+            raise.Invoke(replacementPublisher, new object[] { 77 });
+            Assert.That(
+                values,
+                Is.EqualTo(expected),
+                "Neither publisher may retain the bridge after final disable."
+            );
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
+    }
+
     [Test]
     public void DocsTestSdkAcceptsAvailableNet9FeatureBands()
     {

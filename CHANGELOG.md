@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add replayable native Editor settings cache evidence, retaining stopped measurements,
+  descriptive counters, native test results, and cleanup/source provenance
+  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
   applies the batch transactionally, preserves inherited string-handler behavior, upgrades matching
@@ -46,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop repeated console-harvester settings searches and scans when the console bridge is disabled
+  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Fix provider fallback selection in registration builders, components, dependency-injection
   adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
   resolution, scoped container fallbacks, and live serialized-handle fallbacks

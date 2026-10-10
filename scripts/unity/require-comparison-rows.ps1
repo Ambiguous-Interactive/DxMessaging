@@ -512,6 +512,7 @@ try {
             throw "Paired comparison '$scenario' contains a non-positive or non-finite cycle ratio."
         }
 
+        # SYNC: reduce-paired-bracket.js requireCycleEvidence raw cycle validation.
         $cycleMeasurements = @($record.cycleMeasurements)
         if ($cycleMeasurements.Count -ne $pairedCycles) {
             throw "Paired comparison '$scenario' must retain exactly $pairedCycles cycle measurements."

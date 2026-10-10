@@ -334,16 +334,36 @@ defaults, and the full diagnostic API, see the
 
 ### Pattern 1: Event-to-Message Bridge
 
+Subscribe while the bridge is enabled and unsubscribe when it is disabled. Remember the
+publisher used for the subscription so cleanup still removes the callback if the Inspector
+reference changes. The new reference takes effect on the next enable. An unassigned reference
+leaves the bridge inactive.
+
+This example assumes a legacy publisher exposing `event Action<int> OnSomethingHappened` and
+an untargeted `SomethingHappened(int value)` message. DxMessaging tokens manage message
+subscriptions; they do not remove subscriptions to another object's C# events.
+
 ```csharp
 public class LegacyBridge : MonoBehaviour {
     [SerializeField] private LegacySystem legacySystem;
+    private LegacySystem _subscribedSystem;
 
-    void Awake() {
-        // Old system fires event, we convert to message
-        legacySystem.OnSomethingHappened += (args) => {
-            var msg = new SomethingHappened(args);
-            msg.Emit();
-        };
+    void OnEnable() {
+        if (legacySystem == null) return;
+        _subscribedSystem = legacySystem;
+        _subscribedSystem.OnSomethingHappened += OnSomethingHappened;
+    }
+
+    void OnDisable() {
+        if (_subscribedSystem != null) {
+            _subscribedSystem.OnSomethingHappened -= OnSomethingHappened;
+        }
+        _subscribedSystem = null;
+    }
+
+    void OnSomethingHappened(int value) {
+        var msg = new SomethingHappened(value);
+        msg.Emit();
     }
 }
 ```

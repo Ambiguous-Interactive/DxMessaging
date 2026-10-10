@@ -34,6 +34,7 @@ Each reducer accepts only its registered artifact class:
 | `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 | `differential-replay-failure`      | `differential-replay-failure-v1`      |
+| `editor-settings-cache`            | `editor-settings-cache-v1`            |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -183,6 +184,18 @@ node scripts/unity/perf-evidence-bundle.js replay \
   .artifacts/paired-screen/evidence-manifest.json
 ```
 
+Retain four `cycleMeasurements` per row. Each cycle must have positive safe integer operation
+counts, equal work for both arms, and a multiple of 40,000 operations per arm. Both elapsed times
+must be finite and at least 0.625 seconds. The retained cycle ratio and corresponding `cycleRatios`
+entry must match the rates derived from that work and time within relative error `1e-12`.
+`aggregateRateRatio` must match total work divided by total active time for each arm. Totals must
+remain finite, and operation sums must remain safe integers.
+
+Verifier revisions before [the raw cycle fix](https://github.com/Ambiguous-Interactive/DxMessaging/issues/618)
+checked cycle ratios without validating raw work, active time, or the aggregate ratio. Historical
+publication tags retain their original verifier. Check raw cycle consistency with a revision
+containing that fix, and record the analysis revision separately from the unchanged archive.
+
 The adapter calls `reduce-paired-bracket.js` directly. It validates all three positions, raw cycle
 consistency, source relationships, declaration identity, and the shared execution profile before
 reproducing effects and the `accepted`, `rejected`, or `uninterpretable` screen decision. Replaying
@@ -261,6 +274,85 @@ categories as the C# oracle. It requires the original operation-kind sequence, a
 `DestroyHost` deletion-minimal subsequence, matching `state` failures for all three message
 kinds, exact profile/source agreement, and non-empty candidate and replay inputs. A future
 generator profile needs a new reducer version; do not weaken this contract to admit it.
+
+## Retaining native Editor settings cache evidence
+
+The `editor-settings-cache-v1` reducer retains the specific #613 native Editor characterization
+profile in `scripts/unity/editor-settings-cache-contract.json`. It requires the stopped 64-call
+legacy phase and the separately preregistered 8-call followup: four complete ABBA/BAAB blocks,
+one warmup call per arm, the two-second stopping rule, and the 128 MiB growth limit. It checks
+every call, found-object and search counter, schedule position, numeric value, and stopping reason.
+Its block timing check sums the recorded phase times; the original probe did not retain the
+whole-block stopwatch values. The producer's complete block timing cannot be reconstructed.
+
+Retain these inputs at the bundle root:
+
+- `editor-settings-profile.json`: the contract's exact `profile` object.
+- `stopped-baseline.json` and `followup.json`: the original MCP `result` objects, including all
+  memory readings and the stopped row. Keep the original requests alongside them.
+- For each of `focused`, `import`, `control`, `affected`, and `full`: `<id>.result.json`,
+  `<id>.run.json`, `<id>.cleanup.json`, `<id>.status.txt`, and `<id>.cleanup.status.txt`.
+- `source-proof.json` and `candidate/<source-path>.txt`: measured commit/tree, complete overlay
+  inventory, original and retained source hashes, redaction counts, and package restoration proof.
+- `freshness.json`, `samples.json`, `preflight.json`, and `restoration.json`: assembly timestamps,
+  imported sample/source equality, saved original scene, and final fixture cleanup observations.
+- `original-samples.json` and `restored-samples.json`: all original file hashes and root metadata.
+
+The reducer derives leaf counts from native result nodes and checks the declared summaries:
+22 focused passes, four import passes, the expected three control failures and one control pass,
+117 affected passes, and 975 full Editor passes. It requires matching run ownership, terminal
+status, an inactive framework, and restoration of the clean original scene. The control's cleanup
+status remains its original expected test-failure error; it is not changed to `done`.
+The full run also requires fresh package and sample assemblies before its preflight. Earlier
+focused runs used selected Editor/test overlays; only the full run used the complete candidate
+Unity tree. A different workload or coverage profile requires a new reducer version.
+
+The normalized result retains the stopped baseline and every followup row, with signed live-memory
+changes and search counts. These are descriptive observations. They establish no speedup ratio,
+confidence interval, managed allocation count, leak, OOM cause, or player performance result.
+The existing settings asset was preserved, so absence transitions have native test coverage but
+no native absence timing. Background processes and same-object equivalence of the two present
+settings lookups were not measured.
+
+Privacy preparation can redact ordinary token assignments in a source excerpt. Keep its original
+`candidateSha256`, the scrubbed `retainedSha256`, and explicit `redactionCounts`; replay verifies
+the retained bytes and the declared redaction relationship. During independent restoration,
+compare every original candidate source hash with the measured commit's checkout. A retained
+redacted excerpt is not the original compiled source. Keep the original hash and sanitized hash
+provenance for diagnostic outputs too; never include license-bearing historical crash logs.
+
+```bash
+node scripts/unity/perf-evidence-bundle.js seal .artifacts/editor-settings-cache \
+  --experiment-id editor-settings-cache-613-6000.4.6f1 \
+  --artifact-class editor-settings-cache \
+  --reducer editor-settings-cache-v1 \
+  --source-commit "$MEASURED_SOURCE_COMMIT"
+node scripts/unity/perf-evidence-bundle.js replay \
+  .artifacts/editor-settings-cache/evidence-manifest.json
+```
+
+## Retaining native exporter inputs
+
+<!-- cspell:ignore pdbpath -->
+
+`scripts/unity/capture-dispatch-codegen.ps1` retains the exact `GameAssembly.dll` and the
+`GameAssembly.pdb` selected by `dumpbin /pdbpath:verbose` in a new `native-inputs-{GUID}`
+directory beneath its artifacts directory. The native inventory and disassembly identify that
+directory, both retained paths, byte lengths, and SHA-256 hashes. Repeated captures create new
+directories and preserve earlier binary copies.
+
+The exporter holds read-only source handles through the native tool calls and verifies source
+and retained-file hashes after copying, after source-line mapping, and after disassembly. A
+persistent change fails the capture; partial files from a failed capture remain diagnostic
+material. Windows read sharing prevents ordinary writes and deletes while a handle is held.
+On hosts where sharing is advisory, hash checks do not exclude a change that is reverted between
+checks. This is input retention and observed-change refusal, not a universal race guarantee.
+
+Copy and hashing overhead is unmeasured and gives no campaign budget credit. Raw DLL/PDB files
+are opaque binary material under the current redaction policy. The ordinary perf artifact upload
+retains them for 14 days; inspect them before durable publication. They do not enter the existing
+reviewed-text sealer or supply native trace replay, WPR/PMU controls, attribution, or performance
+confirmation. Those contracts remain under #508 and #511.
 
 ## Adding a reducer
 
@@ -373,6 +465,167 @@ GitHub retention, immutable publication, independent remote retrieval, or denied
 Repository-wide immutable releases were enabled with maintainer approval on 2026-09-10. The
 authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
 an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
+
+### session242-paired-screen-replay, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the cached untargeted route experiment's original `uninterpretable` verdict. `Filtered`,
+`PostProcess`, and `FilteredPostProcess` sentinels exceeded the fixed 3% band. The candidate
+was reverted; its apparent target gains do not establish a causal performance improvement.
+
+| Identity                        | Value                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable cached-route negative screen](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session242-paired-screen-replay-r1-bf5b4770)                                           |
+| Release ID                      | `406078044`                                                                                                                                                                                                     |
+| Asset                           | [Session 242 paired-screen archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session242-paired-screen-replay-r1-bf5b4770/session242-paired-screen-replay-r1.tar.gz) |
+| Asset ID                        | `619557204`                                                                                                                                                                                                     |
+| Revision and reducer            | `1`, `paired-throughput-screen-v1`                                                                                                                                                                              |
+| First measured source commit    | `ef7e5b799ec5b43f823c9c22c6e31295d51ea443`                                                                                                                                                                      |
+| Center measured source commit   | `4fdd1df3bd82f97d97a209ad0cab3dd585eea7f6`                                                                                                                                                                      |
+| Last measured source commit     | `fc038a1ddb1f86dd2b7f834330f739494eb89944`                                                                                                                                                                      |
+| Manifest SHA-256                | `bf5b4770c5992028b8ce97cc8fdf98c8b1b322685b0037a26bb6ecf6b276e01f`                                                                                                                                              |
+| Archive SHA-256                 | `08321d7744c3dc01ea3e570819f1327635c6d4c71f12a53a403ad1abf36c9514`                                                                                                                                              |
+| Archive bytes and file count    | `7534` bytes; `6` declared files plus the manifest                                                                                                                                                              |
+| Bundle digest                   | `f85cadc3010ebfd515c555e235b4c971a3f94fb3d9a900cd45a770ca594d868d`                                                                                                                                              |
+| Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
+
+All three raw-cycle summaries match their retained ZIP members and original committed declaration.
+The original workflow artifact listings are now empty; the recorded local ZIP hashes cannot be
+checked against GitHub's historical artifact digests. The control's measurements and upload
+completed before its license-cleanup gate failed. Candidate two recovered the runner. Those
+provenance limits remain explicit; immutable publication does not repair missing original metadata.
+
+The complete draft inventory and download passed before publication. Published metadata reported
+`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published
+archive, manifest, every file, and all three source trees and candidate-source digests fetched
+from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly;
+the verifier stayed clean. The actual required asset returned HTTP 401 in an isolated
+invalid-credential context, with no archive or fallback; that context remained incomplete.
+
+This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps,
+codegen, and full logs. It establishes legacy-screen retention, with no calibrated confirmation,
+native-cost attribution, allocation, or production-acceptance claim. See [the original session 242 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5430405546).
+
+### session243-paired-screen-replay, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the borrowed post-route experiment's original `uninterpretable` verdict. `GlobalToOne`,
+`GlobalToMany`, and `StructNoBox` sentinels exceeded the fixed 3% band. The candidate was
+reverted; its apparent target gain does not establish a causal performance improvement.
+
+| Identity                        | Value                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable borrowed-post negative screen](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session243-paired-screen-replay-r1-6891c434)                                          |
+| Release ID                      | `406078051`                                                                                                                                                                                                     |
+| Asset                           | [Session 243 paired-screen archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session243-paired-screen-replay-r1-6891c434/session243-paired-screen-replay-r1.tar.gz) |
+| Asset ID                        | `619557318`                                                                                                                                                                                                     |
+| Revision and reducer            | `1`, `paired-throughput-screen-v1`                                                                                                                                                                              |
+| First measured source commit    | `3d44378feebf4e0b84f066ca94dc620cfafe90c2`                                                                                                                                                                      |
+| Center measured source commit   | `47f7ed6b537ccf82df273e7e599cdb5199366629`                                                                                                                                                                      |
+| Last measured source commit     | `26f314740c7ca82f4d9852f80b36a2cee3703c1a`                                                                                                                                                                      |
+| Manifest SHA-256                | `6891c4344882c00979a854f4934d21f5ed6959c091dc3df79dfef5869ccfdc33`                                                                                                                                              |
+| Archive SHA-256                 | `a81cacd01133bf8de1f7b6a3f211a86ff5ff6a9b702c9f3e86335d08151b1d58`                                                                                                                                              |
+| Archive bytes and file count    | `7540` bytes; `6` declared files plus the manifest                                                                                                                                                              |
+| Bundle digest                   | `bebb1b31ae0c96ee5e51651d7bcd954f581176cb4626381b3a5e0cac9da5afaa`                                                                                                                                              |
+| Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
+
+The original raw-cycle summaries match retained ZIP members; ZIP hashes match the original
+experiment record. All three comparison jobs passed cleanup. Separate intermediate Unity
+workflows were cancelled after the performance arms began, and the first candidate's oldest-Unity
+job passed its test modes before a cleanup failure. Later jobs recovered. These original outcomes
+remain explicit in the retention provenance.
+
+The complete draft inventory and download passed before publication. Published metadata reported
+`draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+A new remote clone with `npm ci --ignore-scripts` checked the separately downloaded published
+archive, manifest, every file, and all three source trees and candidate-source digests fetched
+from GitHub. Both `verify` and `replay` exited zero and reproduced the original verdict exactly;
+the verifier stayed clean. The actual required asset returned HTTP 401 in an isolated
+invalid-credential context, with no archive or fallback; that context remained incomplete.
+
+This reviewed text bundle excludes the locally retained original ZIPs, native binaries, maps,
+codegen, and full logs. It establishes legacy-screen retention, with no calibrated confirmation,
+native-cost attribution, allocation, or production-acceptance claim. See [the original session 243 decision](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5432013543).
+
+### session244-paired-screen-replay, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the historical borrowed untargeted-interceptor screen's original `uninterpretable` verdict.
+The candidate was reverted. Four sentinels exceeded the fixed 3% band; the target's apparent
+gain does not establish a causal performance improvement.
+
+| Identity                        | Value                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable borrowed-interceptor negative screen](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-session244-paired-screen-replay-r1-89f5f341)                                   |
+| Release ID                      | `406067060`                                                                                                                                                                                                     |
+| Asset                           | [Session 244 paired-screen archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-session244-paired-screen-replay-r1-89f5f341/session244-paired-screen-replay-r1.tar.gz) |
+| Asset ID                        | `619526436`                                                                                                                                                                                                     |
+| Revision and reducer            | `1`, `paired-throughput-screen-v1`                                                                                                                                                                              |
+| First measured source commit    | `e09622c9262fd924e2e2b597486ab992f141dd20`                                                                                                                                                                      |
+| Center measured source commit   | `12324ec4dd0a9c80f4fa36da5b0117fa4f60e3cb`                                                                                                                                                                      |
+| Last measured source commit     | `be7df7820553360244567747b53259a551e12a46`                                                                                                                                                                      |
+| Manifest SHA-256                | `89f5f3411a31d0f8fc91f24a0ce54e5cebf5f54dca8cbcfb4166637f2de7bd75`                                                                                                                                              |
+| Archive SHA-256                 | `3577e21df4de66b4dae2b00ab93f2d67f97aca939cabc6a6dea9b8040e2659bb`                                                                                                                                              |
+| Archive bytes and file count    | `7226` bytes; `6` declared files plus the manifest                                                                                                                                                              |
+| Bundle digest                   | `c061da941ae6e9a18769f988dcd7a9f7c7add74add021a93138f0638228d184d`                                                                                                                                              |
+| Verifier and release tag commit | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                      |
+
+The declaration and all three raw-cycle summaries match the original committed declaration and
+retained artifact ZIPs. The reducer reproduces the original verdict exactly, including the
+`GlobalToOne`, `GlobalToMany`, `PostProcess`, and `StructNoBox` sentinel failures. Candidate one
+uploaded its measurements before a failed post-upload license-cleanup gate; the later retained
+arms passed cleanup. That failed outcome remains explicit in the retention provenance.
+
+The complete draft inventory was downloaded and verified before publication. Published metadata
+reported `draft: false`, `prerelease: true`, and `immutable: true`; the tag resolves to the verifier
+commit. A fresh remote clone with `npm ci --ignore-scripts` verified the separately downloaded
+published archive, exact file inventory and hashes, and all three source trees and candidate-source
+digests fetched from GitHub. Both `verify` and `replay` exited zero; the verifier stayed clean.
+The actual required asset returned HTTP 401 in an isolated invalid-credential context, with no
+archive or fallback; that context's experiment remained incomplete.
+
+This is legacy-screen retention. The reviewed text bundle excludes the locally retained original
+ZIPs, native binaries, symbol maps, codegen, and full job logs. It does not establish calibrated
+independent-build confirmation, native-cost attribution, allocation behavior, or production
+acceptance. The original decision is recorded in [the session 244 result](https://github.com/Ambiguous-Interactive/DxMessaging/issues/414#issuecomment-5434491863).
+
+### editor-settings-cache-613-6000.4.6f1, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-10-07. This retains
+the #613 native Unity 6000.4.6f1 Editor characterization, its stopped baseline, adaptive descriptive
+followup, native test/control results, and source/fixture restoration observations. It is not
+supported-version matrix, player performance, allocation-recorder, leak, or OOM-cause evidence.
+
+| Identity                | Value                                                                                                                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                 | [Immutable Editor settings cache prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-editor-settings-cache-613-6000.4.6f1-r1-ab70b721)                                        |
+| Release ID              | `406044866`                                                                                                                                                                                                           |
+| Asset                   | [Editor settings cache archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-editor-settings-cache-613-6000.4.6f1-r1-ab70b721/editor-settings-cache-613-6000.4.6f1-r1.tar.gz) |
+| Exact asset name        | `editor-settings-cache-613-6000.4.6f1-r1.tar.gz`                                                                                                                                                                      |
+| Asset ID and size       | `619463560`, 110,982 bytes                                                                                                                                                                                            |
+| Archive SHA-256         | `9ceee5073dc0b093f3ebf793b58b1a1df32e8bceb91b62f73b6d7bd9a2c919d9`                                                                                                                                                    |
+| Manifest SHA-256        | `ab70b72136a2d26845b19dfd6a260087b05ca4e3780a7e1545b9df9ba58c3c88`                                                                                                                                                    |
+| Bundle digest           | `cf39d348d6b4be154fbf4ad8d55877b77d479490c251f7f417589d405b45db1f`                                                                                                                                                    |
+| Measured source         | `ae79805245bc2fbcbf3479354260bb1908b08899`                                                                                                                                                                            |
+| Measured source tree    | `d011bc50e868c33ac9f4d9b59775a274ec7a6ef5`                                                                                                                                                                            |
+| Verifier commit         | `f90dca2f2e1b388ce2946a92248f6643433a9955`                                                                                                                                                                            |
+| Inventory               | 70 declared files plus the manifest; archive members are relative regular files                                                                                                                                       |
+| Reviewer commands       | Fresh remote clone; clean checkout; `npm ci --ignore-scripts`; Node.js `v24.21.0`; `verify` exit 0; `replay` exit 0                                                                                                   |
+| Publication checks      | Authenticated setting `enabled: true`; complete draft download verified before publication; published `draft: false`, `prerelease: true`, `immutable: true`; tag resolves to verifier commit                          |
+| Independent restore     | New published-asset download; full archive/manifest digests, inventory and identity match; normalized replay identical; verifier checkout remains clean                                                               |
+| Original source restore | All 12 original overlay source hashes match a separate checkout of the measured commit, including the one scrubbed source excerpt                                                                                     |
+| Denied access           | Actual required asset `619463560` returned HTTP 401 and retrieval exit 1 with isolated invalid authentication; no fallback; experiment remained incomplete in that context                                            |
+| Verifier CI             | [All 17 static jobs succeeded at the verifier commit](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/37666819976)                                                                                  |
+
+The full ordinary Editor suite passed 975 leaves, including all 13 imported sample quality cases.
+The postprocessor negative control retains three expected failures; candidate import tests passed.
+The original 64-call legacy phase stopped at 3,931.2884 ms before any paired B phase. The separately
+preregistered 8-call followup retains all four ABBA/BAAB blocks: 64 legacy searches, 64 cached calls
+and zero cached searches. Signed working-set and live-memory changes remain in the normalized
+result. No speedup ratio or confirmatory interval is reported. Original samples, package sources
+and the clean saved scene were restored. Supported shipping Editor/player gates and maintainer
+review remain pending; this publication does not close #613.
 
 ### native-lifecycle-replay-failure, revision 1
 

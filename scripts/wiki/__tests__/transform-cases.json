@@ -36,6 +36,18 @@
     ["..\\concepts\\message-types.md", "getting-started\\a.md", "Concepts-Message-Types"]
   ],
   "lineTransforms": [
+    [
+      "[Patch](../scripts/mcp/repair.patch)",
+      "[Patch](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/mcp/repair.patch)"
+    ],
+    [
+      "[Data](reference/data.json?raw=1#row)",
+      "[Data](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/data.json?raw=1#row)"
+    ],
+    [
+      "[File](../scripts/My%20File.txt)",
+      "[File](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/My%20File.txt)"
+    ],
     ["[Self]()", "[Self]()"],
     ["[Section](#section)", "[Section](#section)"],
     ["[GitHub](https://github.com)", "[GitHub](https://github.com)"],

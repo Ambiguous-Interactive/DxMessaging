@@ -189,6 +189,9 @@ namespace DxMessaging.Editor.Analyzers
 
         private static double _lastTickTime;
         private static int _lastSeenCount;
+        private static int _lastSettingsRevision = -1;
+
+        internal static int RescanCount { get; private set; }
 
         /*
             Latch flipped on by `OnAssemblyCompilationFinished` to coalesce the burst of one-event-
@@ -372,10 +375,7 @@ namespace DxMessaging.Editor.Analyzers
                 ScheduleRescanWhenIdle();
                 AssemblyReloadEvents.afterAssemblyReload += ScheduleRescanWhenIdle;
                 CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompilationFinished;
-                if (!_logEntriesDisabled)
-                {
-                    EditorApplication.update += Tick;
-                }
+                EditorApplication.update += Tick;
             }
             catch (Exception ex)
             {
@@ -408,9 +408,8 @@ namespace DxMessaging.Editor.Analyzers
                 Critical: NEVER touch LogEntries reflection or AssetDatabase while Unity is mid-
                 compile or mid-asset-update. Reading LogEntries during compilation contends with the
                 compiler's own log-buffer lock and can deadlock the editor. Touching AssetDatabase
-                (via TryLoadSettings → GetOrCreateSettings → CreateAsset) during compilation
-                schedules an import that re-triggers compilation; an infinite-loop trap that
-                permanently freezes script-compilation startup. Defer to the post-compile state
+                during compilation risks importer reentrancy. Settings reads stay passive and
+                never create an asset. Defer to the post-compile state
                 and let the polled tick (or the explicit afterAssemblyReload hook) pick it up.
             */
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
@@ -418,7 +417,10 @@ namespace DxMessaging.Editor.Analyzers
                 return;
             }
 
+            int settingsRevision = DxMessagingSettings.SettingsRevision;
+            RescanCount++;
             DxMessagingSettings settings = TryLoadSettings();
+            _lastSettingsRevision = settingsRevision;
             if (settings != null && !settings._baseCallCheckEnabled)
             {
                 bool wasNonEmpty = 0 < SnapshotInternal.Count;
@@ -831,30 +833,14 @@ namespace DxMessaging.Editor.Analyzers
         /// </summary>
         public static void RequestRescan()
         {
-            if (!IsAvailable)
-            {
-                return;
-            }
-            /*
-                Setting _lastSeenCount to a sentinel forces the next Tick to see a count delta and
-                call RescanNow on the editor's update thread (when LogEntries is wired). When
-                LogEntries is unavailable, Tick is not registered, so we fall back to delayCall.
-            */
-            if (_logEntriesDisabled)
-            {
-                ScheduleRescanWhenIdle();
-                return;
-            }
-            _lastSeenCount = -1;
+            ScheduleRescanWhenIdle();
         }
 
         private static void Tick()
         {
             /*
-                Tick is only registered when the LogEntries reflection layer is available, so we
-                do NOT need to re-check _logEntriesDisabled here; but the IsAvailable guard
-                protects against a future failure mode where IsAvailable is flipped to false at
-                runtime.
+                Settings invalidation is observed even when the optional LogEntries bridge is
+                unavailable. Asset loading and rescans remain on the idle editor main thread.
             */
             if (!IsAvailable)
             {
@@ -880,6 +866,25 @@ namespace DxMessaging.Editor.Analyzers
                     return;
                 }
                 _lastTickTime = now;
+
+                if (_lastSettingsRevision != DxMessagingSettings.SettingsRevision)
+                {
+                    RescanNow();
+                    return;
+                }
+                if (_logEntriesDisabled)
+                {
+                    return;
+                }
+                DxMessagingSettings settings = TryLoadSettings();
+                if (
+                    settings == null
+                    || !settings._baseCallCheckEnabled
+                    || !settings._useConsoleBridge
+                )
+                {
+                    return;
+                }
 
                 int currentCount;
                 try
@@ -1031,17 +1036,7 @@ namespace DxMessaging.Editor.Analyzers
             */
             try
             {
-                string[] guids = AssetDatabase.FindAssets($"t:{nameof(DxMessagingSettings)}");
-                if (guids == null || guids.Length == 0)
-                {
-                    return null;
-                }
-                string assetPath = AssetDatabase.GUIDToAssetPath(guids[0]);
-                if (string.IsNullOrEmpty(assetPath))
-                {
-                    return null;
-                }
-                return AssetDatabase.LoadAssetAtPath<DxMessagingSettings>(assetPath);
+                return DxMessagingSettings.LoadSettingsPassive();
             }
             catch (Exception ex)
             {

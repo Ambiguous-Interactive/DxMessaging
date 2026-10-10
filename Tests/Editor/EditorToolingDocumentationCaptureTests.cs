@@ -2,9 +2,11 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Analyzers;
     using DxMessaging.Editor.CustomEditors;
@@ -13,7 +15,9 @@ namespace DxMessaging.Tests.Editor
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEditor;
+    using UnityEditor.UIElements;
     using UnityEngine;
+    using UnityEngine.TestTools;
     using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
 
@@ -230,6 +234,11 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <remarks>
+        /// 2026-10-08: Resolve the inspector TextField font from its built-in skin.
+        /// EditorStyles depends on a prior IMGUI skin event and can be uninitialized
+        /// after a domain reload in headless Unity 2021, while UI Toolkit is ready.
+        /// </remarks>
         [Test]
         public void CompilerDiagnosticCapturesPairExactOutputWithTriggeringCode()
         {
@@ -396,6 +405,11 @@ namespace DxMessaging.Tests.Editor
             );
         }
 
+        /// <remarks>
+        /// 2026-10-09: shortened example frames omitted Unity's source-location syntax,
+        /// so the formatter displayed the file suffix instead of the emitting method.
+        /// Preserve standard captured frames and assert both visible source identities.
+        /// </remarks>
         [Test]
         public void FlowGraphCaptureSurfacesContainSourceDestinationAndRouteDetails()
         {
@@ -432,11 +446,32 @@ namespace DxMessaging.Tests.Editor
                     "Every selected Flow Graph capture must expand its evidence disclosure."
                 );
             }
+            foreach (VisualElement surface in new[] { source, route })
+            {
+                Foldout evidence = surface.Q<Foldout>(
+                    DxMessagingFlowGraphWindow.DetailsEvidenceFoldoutName
+                );
+                string[] labels = evidence
+                    .Query<Label>()
+                    .ToList()
+                    .Select(label => label.text)
+                    .ToArray();
+                Assert.That(
+                    labels,
+                    Does.Contain("DamageSystem.EmitPlayerDamaged()"),
+                    "The documentation example must show the emitting method, not the file suffix."
+                );
+                Assert.That(
+                    labels,
+                    Does.Contain("DamageSystem.cs:84"),
+                    "The documentation example must show the captured source file and line."
+                );
+            }
         }
 
-        [Test]
+        [UnityTest]
         [Explicit("Writes the reviewed documentation PNG set from the current host editor.")]
-        public void CaptureAllPublishedEditorTooling()
+        public IEnumerator CaptureAllPublishedEditorTooling()
         {
             if (!EditorSurfaceCapture.IsSupported)
             {
@@ -445,9 +480,8 @@ namespace DxMessaging.Tests.Editor
                 );
             }
 
-            IReadOnlyList<EditorSurfaceCaptureResult> results = CaptureAll(
-                DocumentationOutputDirectory
-            );
+            IReadOnlyList<EditorSurfaceCaptureResult> results = null;
+            yield return CaptureAll(DocumentationOutputDirectory, captured => results = captured);
             foreach (EditorSurfaceCaptureResult result in results)
             {
                 AssetDatabase.ImportAsset(
@@ -484,7 +518,51 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
-        internal static IReadOnlyList<EditorSurfaceCaptureResult> CaptureAll(string outputDirectory)
+        /// <summary>
+        /// Exercises the complete real catalog without replacing reviewed documentation artwork.
+        /// </summary>
+        [UnityTest]
+        [Category("EditorSurfaceCapture")]
+        public IEnumerator CaptureAllEditorToolingToArtifactCatalog()
+        {
+            if (!EditorSurfaceCapture.IsSupported)
+            {
+                Assert.Ignore(
+                    "Offscreen capture needs a graphics device; this editor runs with -nographics."
+                );
+            }
+            string outputDirectory = Path.Combine(
+                "Packages",
+                "com.wallstop-studios.dxmessaging",
+                ".artifacts",
+                "unity-mcp",
+                "editor-tooling-catalog-" + Guid.NewGuid().ToString("N")
+            );
+            IReadOnlyList<EditorSurfaceCaptureResult> results = null;
+            yield return CaptureAll(outputDirectory, captured => results = captured);
+            Assert.That(results.Count, Is.EqualTo(CapturedFileNames.Count));
+            for (int index = 0; index < results.Count; index++)
+            {
+                EditorSurfaceCaptureResult result = results[index];
+                Assert.That(
+                    Path.GetFileName(result.OutputPath),
+                    Is.EqualTo(CapturedFileNames[index])
+                );
+                Assert.That(
+                    result.PngColorType,
+                    Is.EqualTo(EditorSurfaceCapture.PngTruecolorWithoutAlpha)
+                );
+                Assert.That(result.DistinctColorCount, Is.GreaterThan(1));
+                Assert.That(result.ByteCount, Is.EqualTo(new FileInfo(result.OutputPath).Length));
+                TestContext.WriteLine(result.ToString());
+            }
+            TestContext.WriteLine($"Complete editor tooling catalog: {outputDirectory}");
+        }
+
+        internal static IEnumerator CaptureAll(
+            string outputDirectory,
+            Action<IReadOnlyList<EditorSurfaceCaptureResult>> completed
+        )
         {
             if (string.IsNullOrWhiteSpace(outputDirectory))
             {
@@ -623,10 +701,10 @@ namespace DxMessaging.Tests.Editor
                         DocumentationMessageMonitorState.SelectedStack
                     )
                 );
-                stagedResults.Add(CaptureProjectSettings(settings, stagingDirectory));
+                yield return CaptureProjectSettings(settings, stagingDirectory, stagedResults.Add);
 
                 ValidateCapturedResults(stagedResults);
-                return PublishCapturedResults(stagedResults, stagingDirectory, outputDirectory);
+                completed(PublishCapturedResults(stagedResults, stagingDirectory, outputDirectory));
             }
             finally
             {
@@ -1092,7 +1170,10 @@ namespace DxMessaging.Tests.Editor
 
             Label code = new(triggeringCode) { name = CompilerDiagnosticCodeLabelName };
             code.AddToClassList(DxMessagingEditorTheme.CardClassName);
-            code.style.unityFont = EditorStyles.textArea.font;
+            code.style.unityFont = EditorGUIUtility
+                .GetBuiltinSkin(EditorSkin.Inspector)
+                .GetStyle("TextField")
+                .font;
             code.style.fontSize = 13;
             code.style.whiteSpace = WhiteSpace.Normal;
             code.style.paddingTop = 10;
@@ -1158,16 +1239,70 @@ namespace DxMessaging.Tests.Editor
                 + "}";
         }
 
-        private static EditorSurfaceCaptureResult CaptureProjectSettings(
+        internal static bool AreProjectSettingsControlsReady(
+            VisualElement surface,
+            DxMessagingSettings settings
+        )
+        {
+            string[] names =
+            {
+                "_diagnosticsTargets",
+                "_diagnosticsStackTraces",
+                "_messageBufferSize",
+                "_suppressDomainReloadWarning",
+                "_baseCallIgnoredTypes",
+            };
+            foreach (string name in names)
+            {
+                PropertyField field = surface.Q<PropertyField>(name);
+                if (field == null || field.childCount == 0)
+                {
+                    return false;
+                }
+            }
+            EnumFlagsField targets = surface
+                .Q<PropertyField>("_diagnosticsTargets")
+                .Q<EnumFlagsField>();
+            Toggle stacks = surface.Q<PropertyField>("_diagnosticsStackTraces").Q<Toggle>();
+            IntegerField buffer = surface.Q<PropertyField>("_messageBufferSize").Q<IntegerField>();
+            Toggle warning = surface.Q<PropertyField>("_suppressDomainReloadWarning").Q<Toggle>();
+            PropertyField ignored = surface.Q<PropertyField>("_baseCallIgnoredTypes");
+            ListView list = ignored.Q<ListView>();
+            IntegerField size = ignored.Q<IntegerField>();
+            bool listReady =
+                list != null
+                    ? list.itemsSource != null
+                        && list.itemsSource.Count == settings._baseCallIgnoredTypes.Count
+                    : size != null && size.value == settings._baseCallIgnoredTypes.Count;
+            return targets != null
+                && Equals(targets.value, settings._diagnosticsTargets)
+                && stacks != null
+                && stacks.value == settings._diagnosticsStackTraces
+                && buffer != null
+                && buffer.value == settings._messageBufferSize
+                && warning != null
+                && warning.value == settings._suppressDomainReloadWarning
+                && listReady;
+        }
+
+        private static IEnumerator CaptureProjectSettings(
             DxMessagingSettings settings,
-            string stagingDirectory
+            string stagingDirectory,
+            Action<EditorSurfaceCaptureResult> completed
         )
         {
             VisualElement surface = new();
             DxMessagingSettingsProvider.BuildSettingsUi(surface, new SerializedObject(settings));
             surface.style.width = 720;
             surface.style.height = 600;
-            return Capture(surface, 800, 680, ProjectSettingsFileName, stagingDirectory);
+            yield return EditorSurfaceCapture.CaptureWhenReady(
+                surface,
+                800,
+                680,
+                Path.Combine(stagingDirectory, ProjectSettingsFileName),
+                () => AreProjectSettingsControlsReady(surface, settings),
+                completed
+            );
         }
 
         private static EditorSurfaceCaptureResult CaptureMessageMonitor(
@@ -1530,7 +1665,7 @@ namespace DxMessaging.Tests.Editor
                     messageKindName: "TARGETED",
                     recentEmissionSites: new[]
                     {
-                        "Gameplay.Combat.DamageSystem.EmitPlayerDamaged (DamageSystem.cs:84)",
+                        "Gameplay.Combat.DamageSystem.EmitPlayerDamaged () (at Assets/Scripts/Combat/DamageSystem.cs:84)",
                     },
                     recentContexts: new[] { "Arena/Player" },
                     recentContextComponentIds: new Dictionary<string, string>
@@ -1547,7 +1682,7 @@ namespace DxMessaging.Tests.Editor
                     messageKindName: "UNTARGETED",
                     recentEmissionSites: new[]
                     {
-                        "Gameplay.Scoring.ScoreSystem.EmitScoreChanged (ScoreSystem.cs:51)",
+                        "Gameplay.Scoring.ScoreSystem.EmitScoreChanged () (at Assets/Scripts/Scoring/ScoreSystem.cs:51)",
                     }
                 ),
             };

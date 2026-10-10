@@ -70,7 +70,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
       - name: Restore .NET tools
         run: dotnet tool restore
       - name: Install dependencies
@@ -90,7 +90,7 @@ jobs:
           npx prettier --write "**/*.{yml,yaml}"
       - name: Apply markdownlint fixes
         run: |
-          npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
+          npx --no-install markdownlint --dot "**/*.md" "**/*.markdown" --fix
       - name: Apply CSharpier formatting
         # The trailing "." is required: without a path, "csharpier format"
         # reads stdin (empty in a run step) and formats nothing.
@@ -194,7 +194,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
       - name: Restore .NET tools
         run: dotnet tool restore
       - name: Install dependencies
@@ -214,7 +214,7 @@ jobs:
           npx prettier --write "**/*.{yml,yaml}"
       - name: Apply markdownlint fixes
         run: |
-          npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
+          npx --no-install markdownlint --dot "**/*.md" "**/*.markdown" --fix
       - name: Apply CSharpier formatting
         # The trailing "." is required: without a path, "csharpier format"
         # reads stdin (empty in a run step) and formats nothing.

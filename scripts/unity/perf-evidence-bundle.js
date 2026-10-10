@@ -13,6 +13,7 @@ const {
 } = require("./credential-patterns.js");
 const {
   reduceDifferentialReplayFailure,
+  reduceEditorSettingsCache,
   reduceShippingFidelityMatrix,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations
@@ -25,6 +26,10 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
 const REDUCERS = Object.freeze({
+  "editor-settings-cache-v1": {
+    artifactClass: "editor-settings-cache",
+    reduce: reduceEditorSettingsCache
+  },
   "differential-replay-failure-v1": {
     artifactClass: "differential-replay-failure",
     reduce: reduceDifferentialReplayFailure
