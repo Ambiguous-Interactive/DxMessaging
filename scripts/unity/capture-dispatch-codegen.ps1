@@ -1187,7 +1187,7 @@ function Add-NativeLayoutInventory {
             '^[ \t]*(?i:{0}):' -f [regex]::Escape($addressHex)
         $addressMatches = @(
             $rangeOutput |
-                Select-String -Pattern $addressPattern -CaseSensitive -Context 2, 80
+                Select-String -Pattern $addressPattern -CaseSensitive
         )
         if ($addressMatches.Count -ne 1) {
             throw (
@@ -1201,6 +1201,7 @@ function Add-NativeLayoutInventory {
                 Match = $addressMatches[0]
                 Label = $addressTargetsByHex[$addressHex] -join ','
                 Range = $rangeArgument
+                Lines = $rangeOutput
             }
         )
     }
@@ -1261,12 +1262,11 @@ function Add-NativeLayoutInventory {
             "matchKind=address matchLabel=$($capturedMatch.Label) " +
             "range=$($capturedMatch.Range) line=$($match.LineNumber) path=$($match.Path)"
         )
-        foreach ($contextLine in @($match.Context.PreContext)) {
-            $nativeEvidence.Add("  $contextLine")
-        }
-        $nativeEvidence.Add("> $($match.Line)")
-        foreach ($contextLine in @($match.Context.PostContext)) {
-            $nativeEvidence.Add("  $contextLine")
+        # 2026-10-10: a second line-count cap discarded instructions inside the
+        # mapped source extent. Keep every line of the already byte-bounded range.
+        for ($rangeLineIndex = 0; $rangeLineIndex -lt $capturedMatch.Lines.Count; $rangeLineIndex++) {
+            $prefix = if (($rangeLineIndex + 1) -eq $match.LineNumber) { '> ' } else { '  ' }
+            $nativeEvidence.Add("$prefix$($capturedMatch.Lines[$rangeLineIndex])")
         }
     }
     $nativeDisassemblyPath = Join-Path $ArtifactsRoot 'native-disassembly.txt'
@@ -1848,6 +1848,10 @@ if ($SelfTestOnly) {
             '    if ($behavior -eq "ambiguous-inline-proof-dumpbin") {',
             '        Write-SyntheticAddress ([uint64]0x180001040) "call InterceptorCache_1_RebuildFlat_mD007_gshared"',
             '    }',
+            '    for ($address = [uint64]0x180001050; $address -lt [uint64]0x1800010F0; $address++) {',
+            '        Write-SyntheticAddress $address "nop"',
+            '    }',
+            '    Write-SyntheticAddress ([uint64]0x180001100) "mov eax, 99"',
             '    exit 0',
             '}',
             'exit 0'
@@ -1922,7 +1926,8 @@ if ($SelfTestOnly) {
                 '> 0000000180001010:',
                 '> 0000000180001020:',
                 'range=/range:0x0000000180001000,0x0000000180001400',
-                'mov eax, 3'
+                'mov eax, 3',
+                '0000000180001100: mov eax, 99'
             )
         ) {
             if (!$nativeDisassembly.Contains($expectedDisassemblyEvidence)) {
