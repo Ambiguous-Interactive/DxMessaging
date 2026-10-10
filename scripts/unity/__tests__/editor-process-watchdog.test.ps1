@@ -32,12 +32,20 @@ try {
         }
         [System.IO.File]::WriteAllText($scriptPath, $body)
         $timer = [System.Diagnostics.Stopwatch]::StartNew()
+        $processDetails = $null
         $exitCode = Invoke-UnityEditor -EditorPath $pwsh `
             -Arguments @('-NoLogo', '-NoProfile', '-File', $scriptPath) `
-            -Label $case -LogPath $logPath -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1
+            -Label $case -LogPath $logPath -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1 `
+            -ProcessResultRef ([ref]$processDetails)
         $timer.Stop()
         $expected = switch ($case) { 'normal' { 0 } 'shutdown' { 124 } 'stderr-shutdown' { 124 } default { 7 } }
         if ($exitCode -ne $expected) { throw "$case returned $exitCode instead of $expected" }
+        if ($processDetails.ExitCode -ne $exitCode -or
+            $processDetails.TimedOut -ne ($expected -eq 124) -or
+            $processDetails.CompletionObserved -ne ($case -ne 'lookalike') -or
+            -not $processDetails.ProcessSettingsVerified -or $processDetails.ProcessId -le 0) {
+            throw "$case lost process-owner evidence: $($processDetails | ConvertTo-Json -Compress)"
+        }
         if ($case -in @('shutdown', 'stderr-shutdown') -and $timer.Elapsed.TotalSeconds -ge 10) {
             throw 'Completed work waited for the total timeout instead of the shutdown deadline.'
         }
@@ -64,16 +72,19 @@ Wait-Event -Timeout 30 | Out-Null
     $treeLog = Join-Path $fixture 'child-tree.log'
     $treeStartedUtc = [DateTime]::UtcNow.ToString('O')
     $treeClock = [Diagnostics.Stopwatch]::StartNew()
+    $treeProcessDetails = $null
     try {
         $treeExit = Invoke-UnityEditor -EditorPath $pwsh `
             -Arguments @('-NoLogo', '-NoProfile', '-File', $childScript, '-PidPath', $treePidPath) `
-            -Label 'shutdown process tree' -LogPath $treeLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1
+            -Label 'shutdown process tree' -LogPath $treeLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1 `
+            -ProcessResultRef ([ref]$treeProcessDetails)
         $treeClock.Stop()
         $treeEndedUtc = [DateTime]::UtcNow.ToString('O')
         $treeText = Get-Content -LiteralPath $treeLog -Raw
         if ($treeExit -ne 124 -or $treeText -notmatch 'child-pid=(\d+)') {
             $elapsed = $treeClock.Elapsed.TotalSeconds.ToString('R', [Globalization.CultureInfo]::InvariantCulture)
-            throw "Child-tree fixture did not run: exit=$treeExit; pidFileExists=$(Test-Path -LiteralPath $treePidPath); startedUtc=$treeStartedUtc; endedUtc=$treeEndedUtc; elapsedSeconds=$elapsed; log=$treeText"
+            $details = $treeProcessDetails | ConvertTo-Json -Compress
+            throw "Child-tree fixture did not run: exit=$treeExit; pidFileExists=$(Test-Path -LiteralPath $treePidPath); startedUtc=$treeStartedUtc; endedUtc=$treeEndedUtc; elapsedSeconds=$elapsed; processResult=$details; log=$treeText"
         }
         $childProcess = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         if ($childProcess) {
