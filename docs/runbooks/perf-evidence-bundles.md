@@ -331,6 +331,29 @@ node scripts/unity/perf-evidence-bundle.js replay \
   .artifacts/editor-settings-cache/evidence-manifest.json
 ```
 
+## Retaining native exporter inputs
+
+<!-- cspell:ignore pdbpath -->
+
+`scripts/unity/capture-dispatch-codegen.ps1` retains the exact `GameAssembly.dll` and the
+`GameAssembly.pdb` selected by `dumpbin /pdbpath:verbose` in a new `native-inputs-{GUID}`
+directory beneath its artifacts directory. The native inventory and disassembly identify that
+directory, both retained paths, byte lengths, and SHA-256 hashes. Repeated captures create new
+directories and preserve earlier binary copies.
+
+The exporter holds read-only source handles through the native tool calls and verifies source
+and retained-file hashes after copying, after source-line mapping, and after disassembly. A
+persistent change fails the capture; partial files from a failed capture remain diagnostic
+material. Windows read sharing prevents ordinary writes and deletes while a handle is held.
+On hosts where sharing is advisory, hash checks do not exclude a change that is reverted between
+checks. This is input retention and observed-change refusal, not a universal race guarantee.
+
+Copy and hashing overhead is unmeasured and gives no campaign budget credit. Raw DLL/PDB files
+are opaque binary material under the current redaction policy. The ordinary perf artifact upload
+retains them for 14 days; inspect them before durable publication. They do not enter the existing
+reviewed-text sealer or supply native trace replay, WPR/PMU controls, attribution, or performance
+confirmation. Those contracts remain under #508 and #511.
+
 ## Adding a reducer
 
 A reducer must be a pure function of the bundle's bytes. Read only from the supplied content map,
