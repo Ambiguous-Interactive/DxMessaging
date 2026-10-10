@@ -42,7 +42,7 @@ the Editor skin. The source guard in
 
 ## Published capture set
 
-All images were generated and visually reviewed on 2026-08-28 on the configured macOS
+All images were generated on 2026-10-10 on the configured macOS
 host with Unity 6000.4.6f1 in Pro/dark skin. Host OS, skin, and Unity version are
 capture metadata, not acceptance gates. Every file is RGB24 PNG color type 2.
 
