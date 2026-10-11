@@ -1182,6 +1182,88 @@ namespace DxMessaging.Core.MessageBus
 
         public int RegisteredGlobalAcceptAll => _globalSlots.sharedHandlers.Count;
 
+        /// <summary>
+        /// Counts live registration references without changing registrations.
+        /// </summary>
+        /// <remarks>
+        /// Cold test diagnostic. Unlike the public route-container counters, this
+        /// includes registrations sharing a handler, priority, or context and
+        /// duplicate registrations held by reference count. Never read on dispatch.
+        /// </remarks>
+        internal int LiveRegistrationCountForTesting
+        {
+            get
+            {
+                int count = 0;
+                foreach (MessageCache<HandlerCache<int, HandlerCache>> sink in _scalarSinks)
+                {
+                    if (sink == null)
+                    {
+                        continue;
+                    }
+                    foreach (HandlerCache<int, HandlerCache> handlers in sink)
+                    {
+                        count += CountLiveRegistrations(handlers);
+                    }
+                }
+                foreach (MessageCache<ContextHandlerMap> sink in _contextSinks)
+                {
+                    foreach (ContextHandlerMap contexts in sink)
+                    {
+                        if (contexts == null)
+                        {
+                            continue;
+                        }
+                        foreach (HandlerCache<int, HandlerCache> handlers in contexts)
+                        {
+                            count += CountLiveRegistrations(handlers);
+                        }
+                    }
+                }
+                foreach (
+                    KeyValuePair<MessageHandler, int> registration in _globalSlots.sharedHandlers
+                )
+                {
+                    count += registration.Value;
+                }
+                foreach (
+                    KeyValuePair<
+                        object,
+                        Dictionary<int, int>
+                    > interceptor in _uniqueInterceptorsAndPriorities
+                )
+                {
+                    foreach (KeyValuePair<int, int> registration in interceptor.Value)
+                    {
+                        count += registration.Value;
+                    }
+                }
+                return count;
+            }
+        }
+
+        private static int CountLiveRegistrations(HandlerCache<int, HandlerCache> priorities)
+        {
+            if (priorities == null)
+            {
+                return 0;
+            }
+            int count = 0;
+            foreach (KeyValuePair<int, HandlerCache> priority in priorities.handlers)
+            {
+                HandlerCache handlers = priority.Value;
+                if (handlers == null)
+                {
+                    continue;
+                }
+                foreach (KeyValuePair<MessageHandler, int> registration in handlers.handlers)
+                {
+                    count += registration.Value;
+                }
+            }
+            return count;
+        }
+
         private static int SumInterceptorCache(MessageCache<InterceptorCache<object>> cache)
         {
             int count = 0;
