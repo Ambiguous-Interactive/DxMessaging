@@ -53,8 +53,93 @@ namespace DxMessaging.Tests.Runtime.Core
         public readonly int tag;
     }
 
+    internal partial class @event<@for>
+    {
+        [DxUntargetedMessage]
+        [DxAutoConstructor]
+        public readonly partial struct @class<@while>
+        {
+            public readonly @while @switch;
+        }
+    }
+
+    [DxTargetedMessage]
+    [DxAutoConstructor]
+    internal readonly partial struct @namespace
+    {
+        public readonly int @event;
+    }
+
     public sealed class SourceGeneratorNestedTests
     {
+        [Test]
+        public void EscapedNestedGenericIdentifiersGenerateConstructorAndMessageType()
+        {
+            @event<int>.@class<bool> message = new(true);
+            Assert.That(
+                message.@switch,
+                Is.True,
+                "The generated constructor must assign the escaped generic field."
+            );
+            Assert.That(
+                message.MessageType,
+                Is.EqualTo(typeof(@event<int>.@class<bool>)),
+                "The generated message type must retain its closed nested generic identity."
+            );
+            Assert.That(
+                message,
+                Is.InstanceOf<IUntargetedMessage>(),
+                "The generated nested type must implement its declared message interface."
+            );
+        }
+
+        [Test]
+        public void EscapedTypeAndFieldIdentifiersGenerateConstructorAndMessageType()
+        {
+            @namespace message = new(42);
+            Assert.That(
+                message.@event,
+                Is.EqualTo(42),
+                "The generated constructor must assign the escaped field."
+            );
+            Assert.That(
+                message.MessageType,
+                Is.EqualTo(typeof(@namespace)),
+                "The generated message type must retain its escaped type identity."
+            );
+            Assert.That(
+                message,
+                Is.InstanceOf<ITargetedMessage>(),
+                "The generated type must implement its declared message interface."
+            );
+        }
+
+        [Test]
+        public void EscapedNamespaceAndOptionalFieldGenerateConstructorAndMessageType()
+        {
+            global::DxMessaging.Tests.Runtime.@namespace.KeywordMessage message = new(42);
+            Assert.That(
+                message.@return,
+                Is.EqualTo(42),
+                "The generated constructor must assign the required escaped field."
+            );
+            Assert.That(
+                message.@event,
+                Is.EqualTo(7),
+                "The generated constructor must retain its escaped optional field default."
+            );
+            Assert.That(
+                message.MessageType,
+                Is.EqualTo(typeof(global::DxMessaging.Tests.Runtime.@namespace.KeywordMessage)),
+                "The generated message type must retain its escaped namespace identity."
+            );
+            Assert.That(
+                message,
+                Is.InstanceOf<IBroadcastMessage>(),
+                "The generated type must implement its declared message interface."
+            );
+        }
+
         [Test]
         public void NestedAutoConstructorWorks()
         {
@@ -112,5 +197,20 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual("hello", d.c, "c should default to a string literal");
             Assert.IsNull(d.d, "d should default to null via Expression");
         }
+    }
+}
+
+namespace DxMessaging.Tests.Runtime.@namespace
+{
+    using DxMessaging.Core.Attributes;
+
+    [DxBroadcastMessage]
+    [DxAutoConstructor]
+    internal readonly partial struct KeywordMessage
+    {
+        public readonly int @return;
+
+        [DxOptionalParameter(7)]
+        public readonly int @event;
     }
 }

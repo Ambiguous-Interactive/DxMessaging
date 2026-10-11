@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix generated message declarations and constructors failing for escaped C# identifiers
+  ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
 - Stop repeated console-harvester settings searches and scans when the console bridge is disabled
   ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Fix provider fallback selection in registration builders, components, dependency-injection
