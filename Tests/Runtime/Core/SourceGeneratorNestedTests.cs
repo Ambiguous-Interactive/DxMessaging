@@ -80,10 +80,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
     [DxUntargetedMessage]
     [DxAutoConstructor]
+#pragma warning disable S101 // The underscore name reproduces the generic file-hint collision.
     internal readonly partial struct HintCollisionMessage_T_
     {
         public readonly int value;
     }
+#pragma warning restore S101
 
     internal partial class HintCollisionContainer<T>
     {
@@ -95,6 +97,7 @@ namespace DxMessaging.Tests.Runtime.Core
         }
     }
 
+#pragma warning disable S101 // The underscore name reproduces the nested generic file-hint collision.
     internal partial class HintCollisionContainer_T_
     {
         [DxUntargetedMessage]
@@ -104,6 +107,7 @@ namespace DxMessaging.Tests.Runtime.Core
             public readonly int value;
         }
     }
+#pragma warning restore S101
 
     public sealed class SourceGeneratorNestedTests
     {
