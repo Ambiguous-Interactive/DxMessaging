@@ -354,6 +354,12 @@ retains them for 14 days; inspect them before durable publication. They do not e
 reviewed-text sealer or supply native trace replay, WPR/PMU controls, attribution, or performance
 confirmation. Those contracts remain under #508 and #511.
 
+Artifact preparation keeps its whole-file read cap for text. Oversized files with unreviewed
+extensions use bounded-memory strict decoding: decoding failure identifies opaque bytes, which
+remain unchanged and are reported as unscanned. Oversized decodable files and reviewed text
+extensions still refuse preparation. This classification does not inspect binary strings or
+certify their privacy; inspect raw native inputs before durable publication.
+
 ## Adding a reducer
 
 A reducer must be a pure function of the bundle's bytes. Read only from the supplied content map,
