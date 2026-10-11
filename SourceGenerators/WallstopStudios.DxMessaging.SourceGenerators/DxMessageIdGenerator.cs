@@ -526,9 +526,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{messageInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.IMessage.g.cs"
                         .Replace("global::", "")
                         .Replace("@", "")
-                        .Replace("<", "_")
-                        .Replace(">", "_")
-                        .Replace(",", "_"); // Clean hint name
+                        .Replace("<", "-")
+                        .Replace(">", "-")
+                        .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
 
                 context.AddSource(implHintName, SourceText.From(implSource, Encoding.UTF8));
                 generatedAttributedTypes.Add(messageInfo.TypeSymbol);

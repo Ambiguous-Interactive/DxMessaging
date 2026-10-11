@@ -580,6 +580,75 @@ public readonly partial struct {{typeName}}{{typeParameters}}
         );
     }
 
+    /// <summary>
+    /// Distinct legal type declarations must retain both generated member sets.
+    /// </summary>
+    /// <remarks>
+    /// 2026-10-11: Generic delimiters previously normalized to identifier underscores,
+    /// so a generic type and a matching nongeneric name could share one file hint.
+    /// </remarks>
+    [TestCase("T", "Packet_T_", false, false)]
+    [TestCase("T", "Packet_T_", false, true)]
+    [TestCase("T_U", "Packet_T_U_", false, false)]
+    [TestCase("@event", "Packet_event_", false, false)]
+    [TestCase("T", "Outer_T_", true, false)]
+    [TestCase("T", "Outer_T_", true, true)]
+    [TestCase("T", "DifferentPacket", false, false)]
+    [TestCase("T", "DifferentOuter", true, true)]
+    public void DistinctTypeNamesKeepGeneratedFilesSeparate(
+        string typeParameter,
+        string nongenericName,
+        bool nested,
+        bool reversed
+    )
+    {
+        string parameters = nested ? "" : $"<{typeParameter}>";
+        string first = $$"""
+[DxAutoConstructor]
+public readonly partial struct Packet{{parameters}}
+{
+    public readonly int value;
+    public static int ReadGeneratedMember() => new Packet{{parameters}}(42).value;
+}
+""";
+        string secondType = nested ? "Packet" : nongenericName;
+        string second = $$"""
+[DxAutoConstructor]
+public readonly partial struct {{secondType}}
+{
+    public readonly int value;
+    public static int ReadGeneratedMember() => new {{secondType}}(42).value;
+}
+""";
+        if (nested)
+        {
+            first = $"public partial class Outer<{typeParameter}> {{ {first} }}";
+            second = $"public partial class {nongenericName} {{ {second} }}";
+        }
+        string declarations = reversed ? second + first : first + second;
+        string source = $"using DxMessaging.Core.Attributes; namespace Sample {{ {declarations} }}";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxAutoConstructor(source);
+        Assert.That(
+            result.Results.Select(static run => run.Exception),
+            Has.All.Null,
+            "Distinct attributed types must not abort generation. Diagnostics:\n"
+                + string.Join(
+                    "\n",
+                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
+                )
+        );
+        Diagnostic[] errors = GeneratorTestUtilities
+            .CompileGeneratedOutput(source, result)
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(
+            errors,
+            Is.Empty,
+            $"Both generated member sets must compile for {typeParameter}/{nongenericName}/{nested}/{reversed}:\n"
+                + string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString()))
+        );
+    }
+
     /*
         ------------------------------------------------------------------------------------------
         Helpers.

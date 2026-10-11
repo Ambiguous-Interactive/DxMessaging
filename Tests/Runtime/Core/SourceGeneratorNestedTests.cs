@@ -2,6 +2,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using DxMessaging.Core;
     using DxMessaging.Core.Attributes;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
 
@@ -70,8 +71,142 @@ namespace DxMessaging.Tests.Runtime.Core
         public readonly int @event;
     }
 
+    [DxUntargetedMessage]
+    [DxAutoConstructor]
+    internal readonly partial struct HintCollisionMessage<T>
+    {
+        public readonly int value;
+    }
+
+    [DxUntargetedMessage]
+    [DxAutoConstructor]
+    internal readonly partial struct HintCollisionMessage_T_
+    {
+        public readonly int value;
+    }
+
+    internal partial class HintCollisionContainer<T>
+    {
+        [DxUntargetedMessage]
+        [DxAutoConstructor]
+        public readonly partial struct Message
+        {
+            public readonly int value;
+        }
+    }
+
+    internal partial class HintCollisionContainer_T_
+    {
+        [DxUntargetedMessage]
+        [DxAutoConstructor]
+        public readonly partial struct Message
+        {
+            public readonly int value;
+        }
+    }
+
     public sealed class SourceGeneratorNestedTests
     {
+        /// <summary>
+        /// Generated constructors and message identities survive distinct type names.
+        /// </summary>
+        /// <remarks>
+        /// 2026-10-11: Generic delimiters formerly collided with identifier underscores
+        /// in source hints, discarding the generator's complete output.
+        /// </remarks>
+        [Test]
+        public void GenericAndNongenericMessagesKeepConstructorsAndDispatchSeparate()
+        {
+            HintCollisionMessage<int> generic = new(42);
+            HintCollisionMessage_T_ nongeneric = new(17);
+            Assert.That(generic.value, Is.EqualTo(42));
+            Assert.That(nongeneric.value, Is.EqualTo(17));
+            Assert.That(generic.MessageType, Is.EqualTo(typeof(HintCollisionMessage<int>)));
+            Assert.That(nongeneric.MessageType, Is.EqualTo(typeof(HintCollisionMessage_T_)));
+
+            MessageBus bus = new() { DiagnosticsMode = false };
+            using LeakWatcher watcher = new(
+                bus,
+                label: nameof(GenericAndNongenericMessagesKeepConstructorsAndDispatchSeparate)
+            );
+            MessageHandler handler = new(new InstanceId(48901), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            int genericValue = 0;
+            int nongenericValue = 0;
+            int genericCalls = 0;
+            int nongenericCalls = 0;
+            _ = token.RegisterUntargeted<HintCollisionMessage<int>>(message =>
+            {
+                genericValue = message.value;
+                ++genericCalls;
+            });
+            _ = token.RegisterUntargeted<HintCollisionMessage_T_>(message =>
+            {
+                nongenericValue = message.value;
+                ++nongenericCalls;
+            });
+            token.Enable();
+            bus.UntargetedBroadcast(ref generic);
+            bus.UntargetedBroadcast(ref nongeneric);
+            Assert.That(genericValue, Is.EqualTo(42));
+            Assert.That(nongenericValue, Is.EqualTo(17));
+            Assert.That(genericCalls, Is.EqualTo(1));
+            Assert.That(nongenericCalls, Is.EqualTo(1));
+        }
+
+        /// <summary>
+        /// Generated constructors and message identities survive distinct type names.
+        /// </summary>
+        /// <remarks>
+        /// 2026-10-11: Generic delimiters formerly collided with identifier underscores
+        /// in source hints, discarding the generator's complete output.
+        /// </remarks>
+        [Test]
+        public void GenericAndNongenericContainersKeepNestedMessagesSeparate()
+        {
+            HintCollisionContainer<int>.Message generic = new(42);
+            HintCollisionContainer_T_.Message nongeneric = new(17);
+            Assert.That(generic.value, Is.EqualTo(42));
+            Assert.That(nongeneric.value, Is.EqualTo(17));
+            Assert.That(
+                generic.MessageType,
+                Is.EqualTo(typeof(HintCollisionContainer<int>.Message))
+            );
+            Assert.That(
+                nongeneric.MessageType,
+                Is.EqualTo(typeof(HintCollisionContainer_T_.Message))
+            );
+
+            MessageBus bus = new() { DiagnosticsMode = false };
+            using LeakWatcher watcher = new(
+                bus,
+                label: nameof(GenericAndNongenericContainersKeepNestedMessagesSeparate)
+            );
+            MessageHandler handler = new(new InstanceId(48902), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            int genericValue = 0;
+            int nongenericValue = 0;
+            int genericCalls = 0;
+            int nongenericCalls = 0;
+            _ = token.RegisterUntargeted<HintCollisionContainer<int>.Message>(message =>
+            {
+                genericValue = message.value;
+                ++genericCalls;
+            });
+            _ = token.RegisterUntargeted<HintCollisionContainer_T_.Message>(message =>
+            {
+                nongenericValue = message.value;
+                ++nongenericCalls;
+            });
+            token.Enable();
+            bus.UntargetedBroadcast(ref generic);
+            bus.UntargetedBroadcast(ref nongeneric);
+            Assert.That(genericValue, Is.EqualTo(42));
+            Assert.That(nongenericValue, Is.EqualTo(17));
+            Assert.That(genericCalls, Is.EqualTo(1));
+            Assert.That(nongenericCalls, Is.EqualTo(1));
+        }
+
         [Test]
         public void EscapedNestedGenericIdentifiersGenerateConstructorAndMessageType()
         {

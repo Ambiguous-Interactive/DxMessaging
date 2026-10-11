@@ -279,9 +279,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
                         .Replace("global::", "")
                         .Replace("@", "")
-                        .Replace("<", "_")
-                        .Replace(">", "_")
-                        .Replace(",", "_"); // Clean hint name for file system
+                        .Replace("<", "-")
+                        .Replace(">", "-")
+                        .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
 
                 context.AddSource(hintName, SourceText.From(generatedSource, Encoding.UTF8));
             }
