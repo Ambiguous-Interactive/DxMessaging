@@ -278,6 +278,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 _label = label;
             }
 
+            // 2026-10-11: Fast callback APIs require readonly references to mutable test messages.
+#pragma warning disable RCS1242
             public void Untargeted(in SimpleUntargetedMessage message) => _trace.Add(_label);
 
             public void Targeted(in SimpleTargetedMessage message) => _trace.Add(_label);
@@ -291,6 +293,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 in InstanceId context,
                 in SimpleBroadcastMessage message
             ) => _trace.Add(_label);
+#pragma warning restore RCS1242
 
             public void GlobalUntargeted(in IUntargetedMessage message) => _trace.Add(_label);
 

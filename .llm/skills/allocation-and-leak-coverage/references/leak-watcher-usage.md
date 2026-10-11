@@ -221,6 +221,18 @@ When the bus grows a new public registration counter:
 A skipped watcher extension can under-count silently. The new registration
 regression must prove detection; the public type-set snapshot cannot prove it.
 
+## Test Host Integration
+
+On 2026-10-11, the cold accounting change exposed two integration requirements.
+The plain .NET test project links `LeakWatcher` through an explicit `Compile` list.
+Keep its forwarding helper in that list and free of Unity-only compile guards.
+Run `.net-tests/DxMessaging.Net.Tests.csproj` in Release when changing these helpers.
+
+Changing `MessageBus.cs` also changes its comparison evidence source hash.
+Refresh only the matching entry in `scripts/unity/comparison-evidence-catalog-v1.json`
+from source bytes normalized to LF. Run the existing PowerShell profile contract
+and full script suite; preserve their hash checks and comparison contracts.
+
 ## When NOT to Use
 
 - Inside a tight loop. Use one watcher around the loop body, not one per
