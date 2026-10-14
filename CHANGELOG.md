@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove obsolete object-search warnings from Message Monitor, Flow Graph, and the diagnostics
+  sample on Unity 6000.4 ([#628](https://github.com/Ambiguous-Interactive/DxMessaging/issues/628)).
 - Fix direct registration handles so passing one to a different bus preserves both buses, and global
   registrations on different buses keep distinct identities ([#637](https://github.com/Ambiguous-Interactive/DxMessaging/issues/637)).
 - Fix source generation when generic and nongeneric types have colliding generated file names
