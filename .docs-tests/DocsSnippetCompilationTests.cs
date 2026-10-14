@@ -11,6 +11,7 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase(0)]
     [TestCase(1)]
     [TestCase(2)]
+    [TestCase(3)]
     public void MigrationEventBridgeOwnsItsEnabledLifetime(int publisherChange)
     {
         string migrationPath = Path.Combine(ResolveDocsRoot(), "guides", "migration-guide.md");
@@ -28,15 +29,32 @@ internal sealed class DocsSnippetCompilationTests
             "Expected exactly one documented LegacyBridge sample."
         );
 
-        // Execute the documented bridge unchanged. Only its external publisher, message emission,
-        // and Unity types are fixtures; this tests C# event ownership, not native Unity callbacks.
+        /*
+            Execute the documented bridge unchanged. The fixtures supply its publisher,
+            message emission, and Unity types. Null comparisons model a destroyed Unity
+            publisher; native PlayMode evidence verifies the real lifecycle separately.
+        */
         string fixtures = """
             namespace UnityEngine
             {
-                public class MonoBehaviour { }
+                public class MonoBehaviour
+                {
+                    public bool IsDestroyed;
+                    public static bool IsNullForComparison(MonoBehaviour value) =>
+                        ReferenceEquals(value, null) || value.IsDestroyed;
+                    public static bool operator ==(MonoBehaviour left, MonoBehaviour right)
+                    {
+                        if (ReferenceEquals(left, null)) return IsNullForComparison(right);
+                        if (ReferenceEquals(right, null)) return IsNullForComparison(left);
+                        return ReferenceEquals(left, right);
+                    }
+                    public static bool operator !=(MonoBehaviour left, MonoBehaviour right) => !(left == right);
+                    public override bool Equals(object other) => ReferenceEquals(this, other);
+                    public override int GetHashCode() => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this);
+                }
                 public sealed class SerializeField : System.Attribute { }
             }
-            public sealed class LegacySystem
+            public sealed class LegacySystem : UnityEngine.MonoBehaviour
             {
                 public event System.Action<int> OnSomethingHappened;
                 public int SubscriptionCount => OnSomethingHappened?.GetInvocationList().Length ?? 0;
@@ -131,6 +149,18 @@ internal sealed class DocsSnippetCompilationTests
                 _ => originalPublisher,
             };
             publisherField.SetValue(bridge, nextPublisher);
+            if (publisherChange == 3)
+            {
+                publisherType.GetField("IsDestroyed")!.SetValue(originalPublisher, true);
+                Assert.That(ReferenceEquals(originalPublisher, null), Is.False);
+                Assert.That(
+                    publisherType
+                        .BaseType!.GetMethod("IsNullForComparison")!
+                        .Invoke(null, new[] { originalPublisher }),
+                    Is.True,
+                    "The destroyed publisher keeps its C# event while comparing equal to Unity null."
+                );
+            }
             bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
             raise.Invoke(originalPublisher, new object[] { 22 });
             raise.Invoke(replacementPublisher, new object[] { 33 });
@@ -139,7 +169,7 @@ internal sealed class DocsSnippetCompilationTests
                 Assert.That(
                     subscriptions.GetValue(originalPublisher),
                     Is.EqualTo(0),
-                    "Disable must remove the original subscription even after publisher reassignment."
+                    "Disable must remove the original subscription after reassignment or publisher destruction."
                 );
                 Assert.That(
                     values,
@@ -154,13 +184,13 @@ internal sealed class DocsSnippetCompilationTests
             int[] expected = publisherChange switch
             {
                 1 => new[] { 11, 55 },
-                2 => new[] { 11 },
+                2 or 3 => new[] { 11 },
                 _ => new[] { 11, 44 },
             };
             Assert.That(
                 values,
                 Is.EqualTo(expected),
-                "Re-enable must subscribe only to the currently configured publisher; null configuration forwards nothing."
+                "Re-enable must subscribe only to the configured live publisher; null or destroyed publishers forward nothing."
             );
             bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
             Assert.That(

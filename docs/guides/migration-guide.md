@@ -343,6 +343,11 @@ This example assumes a legacy publisher exposing `event Action<int> OnSomethingH
 an untargeted `SomethingHappened(int value)` message. DxMessaging tokens manage message
 subscriptions; they do not remove subscriptions to another object's C# events.
 
+Use `ReferenceEquals` when removing the C# event. A destroyed Unity publisher can still
+have a managed wrapper, even though Unity compares it equal to null. Cleanup must remove
+the callback from that wrapper. The enable check keeps using Unity's null comparison
+to avoid subscribing to a destroyed publisher.
+
 ```csharp
 public class LegacyBridge : MonoBehaviour {
     [SerializeField] private LegacySystem legacySystem;
@@ -355,7 +360,7 @@ public class LegacyBridge : MonoBehaviour {
     }
 
     void OnDisable() {
-        if (_subscribedSystem != null) {
+        if (!ReferenceEquals(_subscribedSystem, null)) {
             _subscribedSystem.OnSomethingHappened -= OnSomethingHappened;
         }
         _subscribedSystem = null;
