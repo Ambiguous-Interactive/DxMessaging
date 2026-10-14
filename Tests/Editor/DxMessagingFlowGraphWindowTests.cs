@@ -11102,8 +11102,9 @@ namespace DxMessaging.Tests.Editor
             Assert.That(snapshot.Warnings, Is.Empty);
         }
 
-        [Test]
-        public void CaptureSnapshotFindsSceneComponentsAndSkipsPersistentAssets()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void CaptureSnapshotFindsSceneComponentsAndSkipsPersistentAssets(bool active)
         {
             string suffix = Guid.NewGuid().ToString("N");
             string sceneName = "FlowGraphSceneComponentHost-" + suffix;
@@ -11120,6 +11121,7 @@ namespace DxMessaging.Tests.Editor
                 testScene.Activate();
                 GameObject sceneHost = testScene.CreateGameObject(sceneName);
                 MessagingComponent sceneComponent = sceneHost.AddComponent<MessagingComponent>();
+                sceneHost.SetActive(active);
                 prefabHost = testScene.CreateGameObject(prefabName);
                 prefabHost.AddComponent<MessagingComponent>();
                 GameObject prefabAsset = null;
