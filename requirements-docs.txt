@@ -84,7 +84,7 @@ pygments==2.21.0
     # via
     #   -r requirements-docs.in
     #   mkdocs-material
-pymdown-extensions==12.1
+pymdown-extensions==12.2
     # via
     #   -r requirements-docs.in
     #   mkdocs-material
