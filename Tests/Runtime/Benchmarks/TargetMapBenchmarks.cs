@@ -717,6 +717,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     internal static class TargetMapBenchmarkKeys
     {
+        // A stride of 4096 yields 2^20 distinct values in the 32-bit keyspace.
+        // Four disjoint streams can therefore hold at most 2^18 keys each.
+        private const int MaximumStrideKeysPerStream = 1 << 18;
         private const uint HashMultiplierOne = 0x7FEB352Du;
         private const uint HashMultiplierTwo = 0x846CA68Bu;
         private static readonly uint HashMultiplierOneInverse = MultiplicativeInverse(
@@ -735,6 +738,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             if (!Enum.IsDefined(typeof(TargetMapKeyFamily), family))
             {
                 throw new ArgumentOutOfRangeException(nameof(family), family, null);
+            }
+            if (
+                family == TargetMapKeyFamily.PowerOfTwoStride
+                && keyCount > MaximumStrideKeysPerStream
+            )
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(keyCount),
+                    keyCount,
+                    $"Stride key counts must be at most {MaximumStrideKeysPerStream} to keep all four streams disjoint."
+                );
             }
 
             int capacity = CapacityForKeyCount(keyCount);
@@ -787,7 +801,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         key = (index & 1) == 0 ? int.MinValue + offset : int.MaxValue - offset;
                         break;
                     case TargetMapKeyFamily.PowerOfTwoStride:
-                        key = 0x0100_0000 + stream * 0x0100_0000 + index * 4096;
+                        int strideWidth = Math.Max(4096, keyCount);
+                        key = unchecked(0x0100_0000 + (stream * strideWidth + index) * 4096);
                         break;
                     case TargetMapKeyFamily.UniformSeededRandom:
                         do
@@ -1492,15 +1507,112 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(TargetMapKeyFamily.DesignedMixerCollision)]
         public void KeyFamiliesAreDeterministicUniqueAndDisjoint(TargetMapKeyFamily family)
         {
-            const int keyCount = 256;
+            AssertKeyFamiliesAreDeterministicUniqueAndDisjoint(family, 256);
+        }
+
+        [TestCase(4095)]
+        [TestCase(4096)]
+        [TestCase(4097)]
+        [TestCase(6144)]
+        [TestCase(6145)]
+        [TestCase(262144)]
+        public void StrideKeyStreamsRemainDisjointAcrossRangeBoundaries(int keyCount)
+        {
+            AssertKeyFamiliesAreDeterministicUniqueAndDisjoint(
+                TargetMapKeyFamily.PowerOfTwoStride,
+                keyCount
+            );
+            TargetMapKeySet keys = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.PowerOfTwoStride,
+                keyCount
+            );
+            Assert.AreEqual(
+                0x0100_0000,
+                keys.RegisteredKeys[0],
+                $"[PowerOfTwoStride/{keyCount}] Registered stream must keep its original origin."
+            );
+            foreach (
+                int[] stream in new[]
+                {
+                    keys.RegisteredKeys,
+                    keys.ReplacementKeys,
+                    keys.InsideClusterMisses,
+                    keys.OutsideClusterMisses,
+                }
+            )
+            {
+                for (int index = 0; index < stream.Length; ++index)
+                {
+                    Assert.AreEqual(
+                        0,
+                        stream[index] & 0xFFF,
+                        $"[PowerOfTwoStride/{keyCount}] Key at {index} must retain aligned low bits."
+                    );
+                    if (index > 0)
+                    {
+                        Assert.AreEqual(
+                            4096,
+                            unchecked(stream[index] - stream[index - 1]),
+                            $"[PowerOfTwoStride/{keyCount}] Adjacent keys at {index} must retain stride4096, including signed wrap."
+                        );
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void StrideKeyCountBeyondDistinctKeySpaceIsRejected()
+        {
+            const int keyCount = 262145;
+            ArgumentOutOfRangeException error = Assert.Throws<ArgumentOutOfRangeException>(
+                () => TargetMapBenchmarkKeys.Create(TargetMapKeyFamily.PowerOfTwoStride, keyCount),
+                $"[PowerOfTwoStride/{keyCount}] Four streams exceed the finite aligned32-bit keyspace."
+            );
+            Assert.AreEqual(
+                nameof(keyCount),
+                error.ParamName,
+                $"[PowerOfTwoStride/{keyCount}] Invalid count parameter must be identified."
+            );
+            Assert.AreEqual(
+                keyCount,
+                error.ActualValue,
+                $"[PowerOfTwoStride/{keyCount}] Invalid count value must be retained."
+            );
+        }
+
+        private static void AssertKeyFamiliesAreDeterministicUniqueAndDisjoint(
+            TargetMapKeyFamily family,
+            int keyCount
+        )
+        {
             TargetMapKeySet first = TargetMapBenchmarkKeys.Create(family, keyCount);
             TargetMapKeySet second = TargetMapBenchmarkKeys.Create(family, keyCount);
 
-            CollectionAssert.AreEqual(first.RegisteredKeys, second.RegisteredKeys);
-            CollectionAssert.AreEqual(first.ReplacementKeys, second.ReplacementKeys);
-            CollectionAssert.AreEqual(first.InsideClusterMisses, second.InsideClusterMisses);
-            CollectionAssert.AreEqual(first.OutsideClusterMisses, second.OutsideClusterMisses);
-            Assert.AreEqual(first.ExpectedCapacity, second.ExpectedCapacity);
+            CollectionAssert.AreEqual(
+                first.RegisteredKeys,
+                second.RegisteredKeys,
+                $"[{family}/{keyCount}] Registered keys must be deterministic."
+            );
+            CollectionAssert.AreEqual(
+                first.ReplacementKeys,
+                second.ReplacementKeys,
+                $"[{family}/{keyCount}] Replacement keys must be deterministic."
+            );
+            CollectionAssert.AreEqual(
+                first.InsideClusterMisses,
+                second.InsideClusterMisses,
+                $"[{family}/{keyCount}] Inside misses must be deterministic."
+            );
+            CollectionAssert.AreEqual(
+                first.OutsideClusterMisses,
+                second.OutsideClusterMisses,
+                $"[{family}/{keyCount}] Outside misses must be deterministic."
+            );
+            Assert.AreEqual(
+                first.ExpectedCapacity,
+                second.ExpectedCapacity,
+                $"[{family}/{keyCount}] Expected capacity must be deterministic."
+            );
 
             HashSet<int> unique = new();
             foreach (
@@ -1513,14 +1625,26 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             )
             {
-                Assert.AreEqual(keyCount, stream.Length);
+                Assert.AreEqual(
+                    keyCount,
+                    stream.Length,
+                    $"[{family}/{keyCount}] Every stream must contain the requested count."
+                );
                 foreach (int key in stream)
                 {
-                    Assert.That(unique.Add(key), Is.True, $"Duplicate key {key} in {family}.");
+                    Assert.That(
+                        unique.Add(key),
+                        Is.True,
+                        $"[{family}/{keyCount}] Duplicate key {key}."
+                    );
                 }
             }
 
-            Assert.AreEqual(keyCount * 4, unique.Count);
+            Assert.AreEqual(
+                keyCount * 4,
+                unique.Count,
+                $"[{family}/{keyCount}] All four streams must be mutually disjoint."
+            );
         }
 
         [Test]
