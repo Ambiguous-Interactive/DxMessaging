@@ -717,8 +717,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     internal static class TargetMapBenchmarkKeys
     {
-        // A stride of 4096 yields 2^20 distinct values in the 32-bit keyspace.
-        // Four disjoint streams can therefore hold at most 2^18 keys each.
+        /*
+            A stride of 4096 yields 2^20 distinct values in the 32-bit keyspace.
+            Four disjoint streams can therefore hold at most 2^18 keys each.
+        */
         private const int MaximumStrideKeysPerStream = 1 << 18;
         private const uint HashMultiplierOne = 0x7FEB352Du;
         private const uint HashMultiplierTwo = 0x846CA68Bu;
@@ -741,7 +743,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
             if (
                 family == TargetMapKeyFamily.PowerOfTwoStride
-                && keyCount > MaximumStrideKeysPerStream
+                && MaximumStrideKeysPerStream < keyCount
             )
             {
                 throw new ArgumentOutOfRangeException(
@@ -1548,7 +1550,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         stream[index] & 0xFFF,
                         $"[PowerOfTwoStride/{keyCount}] Key at {index} must retain aligned low bits."
                     );
-                    if (index > 0)
+                    if (0 < index)
                     {
                         Assert.AreEqual(
                             4096,
