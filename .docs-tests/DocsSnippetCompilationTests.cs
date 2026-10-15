@@ -1312,6 +1312,126 @@ internal sealed class DocsSnippetCompilationTests
         }
     }
 
+    [TestCase("checkout-parent")]
+    [TestCase(".artifacts")]
+    [TestCase("obj")]
+    [TestCase("bin")]
+    public void DocumentationScansPreserveSourcesUnderGeneratedDirectoryAncestors(
+        string parentDirectory
+    )
+    {
+        string temporaryRoot = Path.Combine(
+            Path.GetTempPath(),
+            "dxm-docs-scan-" + Guid.NewGuid().ToString("N")
+        );
+        string repoRoot = Path.Combine(temporaryRoot, parentDirectory, "checkout");
+        string[] allowedDirectories = { "", "object", "binary", ".artifacts-extra" };
+        string[] generatedDirectories = { ".artifacts", "obj", "bin" };
+        List<string> xmlPaths = new();
+        List<string> allPaths = new();
+        List<string> markdownPaths = new();
+        const string xmlSource =
+            "/// <summary><code>int value = 1;</code></summary>\nclass Sample {}";
+        try
+        {
+            foreach (string root in CSharpScanRoots.Append("Samples~"))
+            {
+                foreach (string directory in allowedDirectories)
+                {
+                    string path = Path.Combine(root, directory, "Real.cs");
+                    WriteFixtureFile(path, xmlSource);
+                    allPaths.Add(path);
+                    if (root != "Samples~")
+                    {
+                        xmlPaths.Add(path);
+                    }
+                }
+                foreach (string directory in generatedDirectories)
+                {
+                    WriteFixtureFile(Path.Combine(root, directory, "Generated.cs"), xmlSource);
+                }
+            }
+            foreach (string path in new[] { "docs/real.md", "Samples~/real.md", "README.md" })
+            {
+                WriteFixtureFile(path, "A real documentation input.");
+                allPaths.Add(path);
+                markdownPaths.Add(path);
+            }
+            foreach (string path in new[] { "docs/real.csharp", "docs/overrides/real.html" })
+            {
+                WriteFixtureFile(path, "int value = 1;");
+                allPaths.Add(path);
+            }
+            foreach (string directory in generatedDirectories)
+            {
+                WriteFixtureFile(
+                    Path.Combine("Samples~", directory, "generated.md"),
+                    "Generated input."
+                );
+            }
+
+            Assert.Multiple(() =>
+            {
+                AssertPaths(
+                    GetXmlDocCodeBlocksFrom(repoRoot).Select(data => (string)data.Arguments[0]!),
+                    xmlPaths,
+                    "XML code blocks"
+                );
+                AssertPaths(
+                    GetTemporaryEmitDocumentationSourcesFrom(repoRoot)
+                        .Select(source => source.Path),
+                    allPaths,
+                    "temporary emit documentation"
+                );
+                AssertPaths(
+                    GetBroadcastExampleSourcesFrom(repoRoot).Select(source => source.Path),
+                    allPaths,
+                    "broadcast examples"
+                );
+                AssertPaths(
+                    EnumeratePublishedMarkdownFilesFrom(repoRoot),
+                    markdownPaths,
+                    "published Markdown"
+                );
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryRoot))
+            {
+                Directory.Delete(temporaryRoot, recursive: true);
+            }
+        }
+
+        void WriteFixtureFile(string relativePath, string text)
+        {
+            string path = Path.Combine(repoRoot, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text);
+        }
+
+        void AssertPaths(
+            IEnumerable<string> actualPaths,
+            IEnumerable<string> expectedPaths,
+            string scan
+        )
+        {
+            string[] actual = actualPaths
+                .Select(path => Path.GetRelativePath(repoRoot, path).Replace('\\', '/'))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            string[] expected = expectedPaths
+                .Select(path => path.Replace('\\', '/'))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            Assert.That(
+                actual,
+                Is.EqualTo(expected),
+                $"[{parentDirectory}] {scan} must retain real sources and exclude generated files inside the checkout."
+            );
+        }
+    }
+
     private static readonly string[] CSharpScanRoots = new[]
     {
         "Runtime",
@@ -1321,7 +1441,11 @@ internal sealed class DocsSnippetCompilationTests
 
     private static IEnumerable<TestCaseData> GetXmlDocCodeBlocks()
     {
-        string repoRoot = ResolveRepoRoot();
+        return GetXmlDocCodeBlocksFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<TestCaseData> GetXmlDocCodeBlocksFrom(string repoRoot)
+    {
         int testIndex = 0;
         foreach (string root in CSharpScanRoots)
         {
@@ -1337,7 +1461,7 @@ internal sealed class DocsSnippetCompilationTests
             )
             {
                 // Skip generated/cache directories.
-                string normalized = sourcePath.Replace('\\', '/');
+                string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
                 if (
                     normalized.Contains("/obj/", StringComparison.Ordinal)
                     || normalized.Contains("/bin/", StringComparison.Ordinal)
@@ -1757,8 +1881,14 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSources()
     {
-        string docsRoot = ResolveDocsRoot();
-        string repoRoot = ResolveRepoRoot();
+        return GetTemporaryEmitDocumentationSourcesFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSourcesFrom(
+        string repoRoot
+    )
+    {
+        string docsRoot = Path.Combine(repoRoot, "docs");
         foreach (
             string markdownPath in Directory.GetFiles(docsRoot, "*.md", SearchOption.AllDirectories)
         )
@@ -1828,7 +1958,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 )
             )
             {
-                string normalized = sourcePath.Replace('\\', '/');
+                string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
                 if (
                     normalized.Contains("/obj/", StringComparison.Ordinal)
                     || normalized.Contains("/bin/", StringComparison.Ordinal)
@@ -1849,8 +1979,14 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSources()
     {
-        string repoRoot = ResolveRepoRoot();
-        string docsRoot = ResolveDocsRoot();
+        return GetBroadcastExampleSourcesFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSourcesFrom(
+        string repoRoot
+    )
+    {
+        string docsRoot = Path.Combine(repoRoot, "docs");
 
         foreach (string path in EnumerateTextFiles(docsRoot, "*.md"))
         {
@@ -1912,7 +2048,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             .GetFiles(root, pattern, SearchOption.AllDirectories)
             .Where(path =>
             {
-                string normalized = path.Replace('\\', '/');
+                string normalized = "/" + Path.GetRelativePath(root, path).Replace('\\', '/');
                 return !normalized.Contains("/obj/", StringComparison.Ordinal)
                     && !normalized.Contains("/bin/", StringComparison.Ordinal)
                     && !normalized.Contains("/.artifacts/", StringComparison.Ordinal);
@@ -1922,8 +2058,12 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<string> EnumeratePublishedMarkdownFiles()
     {
-        string repoRoot = ResolveRepoRoot();
-        string docsRoot = ResolveDocsRoot();
+        return EnumeratePublishedMarkdownFilesFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<string> EnumeratePublishedMarkdownFilesFrom(string repoRoot)
+    {
+        string docsRoot = Path.Combine(repoRoot, "docs");
         string samplesRoot = Path.Combine(repoRoot, "Samples~");
         string readmePath = Path.Combine(repoRoot, "README.md");
 
