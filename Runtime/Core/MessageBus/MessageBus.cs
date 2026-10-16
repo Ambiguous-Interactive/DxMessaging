@@ -1391,6 +1391,12 @@ namespace DxMessaging.Core.MessageBus
         private readonly BusGlobalSlot _globalSlots = new();
 
         /*
+            A retained handle keeps this identity marker alive without retaining its bus.
+            Reset preserves the marker; reset generations reject pre-reset registrations.
+        */
+        private readonly object _registrationOwner = new object();
+
+        /*
             P1 emit-preamble plans: one per (bus, type, kind), validated by a
             single bus-wide version stamp (see DispatchPlan /
             InvalidateDispatchPlans). Registered in SweepableTypeCacheRegistry
@@ -3905,6 +3911,7 @@ namespace DxMessaging.Core.MessageBus
             long capturedGeneration = _resetGeneration;
             long capturedSweepGeneration = _globalSlotSweepGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.GlobalAcceptAll,
                 RegistrationMethod.GlobalAcceptAll,
                 0,
@@ -4059,6 +4066,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.UntargetedInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -4131,6 +4139,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.TargetedInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -4203,6 +4212,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.BroadcastInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -6212,6 +6222,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.Handler,
                 registrationMethod,
                 priority,
@@ -6441,6 +6452,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.Handler,
                 registrationMethod,
                 priority,
@@ -6578,6 +6590,11 @@ namespace DxMessaging.Core.MessageBus
         public void Deregister<T>(in MessageBusRegistration registration)
             where T : IMessage
         {
+            if (!ReferenceEquals(registration.owner, _registrationOwner))
+            {
+                return;
+            }
+
             switch (registration.kind)
             {
                 case MessageBusRegistration.Kind.Handler:

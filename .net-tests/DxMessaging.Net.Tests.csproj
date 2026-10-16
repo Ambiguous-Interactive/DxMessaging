@@ -27,5 +27,9 @@
       Include="../Tests/Runtime/TestUtilities/DelegatingMessageBus.cs"
       Link="DelegatingMessageBus.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/ForeignBusRegistrationTests.cs"
+      Link="ForeignBusRegistrationTests.cs"
+    />
   </ItemGroup>
 </Project>
