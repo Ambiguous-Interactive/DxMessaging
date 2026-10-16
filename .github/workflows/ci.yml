@@ -223,7 +223,7 @@ jobs:
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Validate Unity version single-source
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
@@ -257,7 +257,7 @@ jobs:
         if: ${{ needs.changes.outputs.markdown != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -355,7 +355,7 @@ jobs:
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Install reportgenerator tool
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
@@ -496,7 +496,7 @@ jobs:
         if: ${{ needs.changes.outputs.json != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -580,7 +580,7 @@ jobs:
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -616,7 +616,7 @@ jobs:
         if: ${{ needs.changes.outputs.banner != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Validate banner metadata
         if: ${{ needs.changes.outputs.banner != 'false' }}
@@ -651,7 +651,7 @@ jobs:
         if: ${{ needs.changes.outputs.llms != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -696,7 +696,7 @@ jobs:
         if: ${{ needs.changes.outputs.yaml != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -763,7 +763,7 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 

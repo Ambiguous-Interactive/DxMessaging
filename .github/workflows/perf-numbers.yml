@@ -328,7 +328,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -1368,7 +1368,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Install reporting dependencies
         if: needs.perf-benchmarks.result == 'success'
@@ -1766,7 +1766,7 @@ jobs:
         if: steps.default-branch.outputs.fresh == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: npm
           cache-dependency-path: package.json
 
