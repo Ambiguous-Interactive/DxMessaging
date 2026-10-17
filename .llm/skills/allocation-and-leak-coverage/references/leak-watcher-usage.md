@@ -1,15 +1,16 @@
 # LeakWatcher: Detecting Registration Leaks in Tests
 
 > **One-line summary**: Any test that creates and tears down message
-> registrations should bracket the work in a `LeakWatcher` to assert no
-> registrations survive the watched region.
+> registrations should bracket the work in a `LeakWatcher` to check that
+> registration counts return to baseline. Pin ownership with behavior assertions.
 
 ## Overview
 
 `LeakWatcher` (`Tests/Runtime/TestUtilities/LeakWatcher.cs`) is an
 `IDisposable` that snapshots every public registration counter on
-`IMessageBus` at construction and asserts on `Dispose` that the counters
-returned to their starting values. It is the canonical leak-detection
+`IMessageBus` and, for built-in buses, a cold live-registration count. `Dispose`
+requires each public counter and the registration total to return to baseline.
+It is the canonical leak-detection
 mechanism for the test suite; do not re-implement the counter math
 inline.
 
@@ -24,17 +25,36 @@ used by diagnostics.
 
 ## Public-Counter Contract
 
-Default registration accounting is read-only and uses the six public bus
-counters above. Bus slot checks use the public occupancy counters. Neither
-reflects hidden bus fields. Optional handler-storage accounting uses the cold
-internal query described below; it does not change the public counter contract.
+The public counter checks retain their existing semantics and use all six pairs
+above. Normal-handler and postprocessor counters count route/priority containers,
+so several callbacks at one priority can leave those counters unchanged. An equal
+and opposite change in two categories must still fail disposal even when the
+aggregate total is zero.
 
-If a future bus revision introduces a seventh registration kind, BOTH
-`LeakWatcher.Snapshot` and `LeakWatcher.LeakedRegistrations` must be
-extended in lock-step so total leak deltas remain correct. The drift is
-caught by
-`Tests/Runtime/Core/PublicSurfaceContractTests.cs::PublicTypeSetInDxMessagingCoreNamespaceMatchesSnapshot`,
-which fails when the public type set drifts from the committed snapshot.
+For built-in `MessageBus` instances, `Snapshot` also uses the cold internal
+`LiveRegistrationCountForTesting` query. It sums registration reference counts
+from existing handler, interceptor and global stores, including shared-priority
+callbacks and duplicate registrations. The query adds no bus fields and never runs on dispatch.
+`DelegatingMessageBus.RegistrationCountSource` exposes
+the forwarded source for test doubles; a double with independent storage can
+return null to keep public-counter accounting.
+
+Arbitrary custom buses supply only their public counters. Their granularity may
+miss additions within existing containers. Equal-count replacements within one
+category also escape any count-only check. Assert exact callback traces and
+registration ownership alongside the watcher. The watcher does not prove that
+captured objects or dispatch snapshots have been reclaimed.
+
+Bus slot checks use the public occupancy counters. Optional handler-storage
+accounting uses the cold internal query described below. These remain separate
+from live-registration accounting.
+
+If a future bus revision introduces another registration kind, extend the public
+counter snapshots, individual-pair invariant, diagnostic message, `Snapshot`
+custom-bus fallback and built-in live-registration query together. Add a regression
+that leaves the new kind live above a nonempty baseline. The public type-set
+snapshot detects type changes; it does not check counter properties or whether
+leak accounting includes them.
 
 ## Usage Patterns
 
@@ -146,10 +166,12 @@ watchers neither traverse nor enforce handler storage.
 
 ## Cost: Capture at Region Boundaries
 
-Both `Snapshot` and `LeakedRegistrations` walk every per-message-type
-cache backing `IMessageBus.RegisteredInterceptors` and
-`IMessageBus.RegisteredPostProcessors`. Each access is O(types). Snapshot
-at region boundaries; do NOT read `Snapshot` inside a tight loop. The
+For a built-in bus, `Snapshot` and live `LeakedRegistrations` reads traverse stored
+handler and interceptor registration entries across occupied routes and types.
+Reference counts are summed; duplicate registrations need no extra traversal.
+Custom-bus fallback reads all six public counters, including their per-type walks.
+Disposal and diagnostics also capture the public counter pairs. Snapshot at region
+boundaries; do NOT poll the watcher inside a tight loop. The
 suite's wall-clock budget is 60 s soft / 180 s hard
 (`Tests/Runtime/Core/SuiteWallClockBudgetTest.cs`).
 
@@ -178,6 +200,11 @@ handler check detects retained storage, and that trim restores the baseline.
 kinds, shared priorities, multiple message types, simultaneous handler and
 postprocessor slots, an unused bus, and isolation between two buses.
 
+`RegistrationLeakAccountingTests` also covers nonempty baselines on every normal
+and postprocessor route, shared and distinct handlers, priorities, forwarding
+buses, duplicate callback/interceptor/global reference counts, balanced cross-kind
+changes, frozen disposal diagnostics and the opaque custom-bus accounting limit.
+
 ## Adding a New Counter
 
 When the bus grows a new public registration counter:
@@ -185,16 +212,26 @@ When the bus grows a new public registration counter:
 1. Extend `IMessageBus` with the new property; add it to
    `Tests/Runtime/Core/Snapshots/public-surface.txt` (the committed
    snapshot consumed by `PublicSurfaceContractTests`).
-1. Add the counter to `LeakWatcher` in three places: `_initialXxx` /
-   `_finalXxx` fields, the `Snapshot` sum, and the `TotalDelta` parameter
-   list. Extend the failure-message format string so leak diagnostics
-   include the new pair.
+1. Add the counter to `LeakWatcher` snapshots, `Snapshot` custom-bus fallback,
+   individual-pair invariant and diagnostic message. Extend the built-in
+   live-registration query when the new kind uses a new registration store.
 1. Add a test row in `LeakWatcherSelfTests` exercising the new counter.
 1. Update this skill's "Public-Counter Contract" section.
 
-A skipped watcher extension under-counts silently; the public-surface
-snapshot test catches the drift first, and a self-test that registers
-exclusively against the new counter fails loudly otherwise.
+A skipped watcher extension can under-count silently. The new registration
+regression must prove detection; the public type-set snapshot cannot prove it.
+
+## Test Host Integration
+
+On 2026-10-11, the cold accounting change exposed two integration requirements.
+The plain .NET test project links `LeakWatcher` through an explicit `Compile` list.
+Keep its forwarding helper in that list and free of Unity-only compile guards.
+Run `.net-tests/DxMessaging.Net.Tests.csproj` in Release when changing these helpers.
+
+Changing `MessageBus.cs` also changes its comparison evidence source hash.
+Refresh only the matching entry in `scripts/unity/comparison-evidence-catalog-v1.json`
+from source bytes normalized to LF. Run the existing PowerShell profile contract
+and full script suite; preserve their hash checks and comparison contracts.
 
 ## When NOT to Use
 
@@ -203,7 +240,7 @@ exclusively against the new counter fails loudly otherwise.
 - For unrelated resources. The watcher covers bus accounting and optional
   typed-handler storage; GameObject and NativeArray leaks are out of scope.
 - For benchmark hot paths. Allocation / Performance fixtures avoid the
-  watcher because the per-call O(types) cost shows up in measurements.
+  watcher because registration-store traversal changes the measurement.
 
 ## See Also
 

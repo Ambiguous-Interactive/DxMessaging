@@ -38,12 +38,12 @@
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "f7a850d15ea2f493b3b5b1296e0c9062745ea7ea152137260563e9c623b8b332"
+      "sha256": "86408cc744fcbf13991376de48af300ad788acbad87fe9373ad6eb721ec078a1"
     },
     "dxInterface": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/IMessageBus.cs",
-      "sha256": "4cff1b369b86d8b75a76f95f9f58cb54603de38477783496c29c119d11baf6a4"
+      "sha256": "81f65224b5460bfa283919ac58df33d967ed03f2f1fdf1f226a369c16c498a94"
     },
     "dxHandler": {
       "origin": "repository",
@@ -53,7 +53,7 @@
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "46df800af7f7ba6faadd1243a07ac420fd4f08080ec7d9c0a65a0c84466c2ff5"
+      "sha256": "597fccd97b85d412e346a810b40d91434e956133c240f3d41205b4fea464c1a2"
     },
     "dxFlat": {
       "origin": "repository",

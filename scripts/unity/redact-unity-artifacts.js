@@ -65,17 +65,43 @@ function listFiles(root) {
   if (inventoryError) throw inventoryError;
   return found.sort();
 }
-function decodeStrictText(bytes) {
+function strictTextDecoder(bytes) {
   const encoding =
     bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe
       ? "utf-16le"
       : bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff
         ? "utf-16be"
         : "utf-8";
+  return new TextDecoder(encoding, { fatal: true });
+}
+function decodeStrictText(bytes) {
   try {
-    return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+    return strictTextDecoder(bytes).decode(bytes);
   } catch {
     return undefined;
+  }
+}
+function isOversizedOpaqueFile(absolute) {
+  const fd = fs.openSync(absolute, "r");
+  try {
+    const buffer = Buffer.alloc(1024 * 1024);
+    let decoder;
+    for (;;) {
+      let count = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (!decoder && count === 1)
+        count += fs.readSync(fd, buffer, 1, buffer.length - 1, null);
+      decoder ??= strictTextDecoder(buffer.subarray(0, count));
+      // Streaming preserves partial Unicode sequences at chunk boundaries.
+      // Decode failure proves opacity under the existing unreviewed-file policy.
+      try {
+        decoder.decode(buffer.subarray(0, count), { stream: count !== 0 });
+      } catch {
+        return true;
+      }
+      if (count === 0) return false;
+    }
+  } finally {
+    fs.closeSync(fd);
   }
 }
 function retainNativeFile(nativeFiles, absolute, bytes) {
@@ -112,15 +138,19 @@ function redactDirectory(root) {
       continue;
     }
     const size = stats.size;
-    if (size > MAXIMUM_FILE_BYTES) {
-      skipped.push({
-        path: relative,
-        reason: `is ${size} bytes, over the ${MAXIMUM_FILE_BYTES} cap`
-      });
-      continue;
-    }
+    const extension = path.extname(relative).toLowerCase();
     let bytes;
     try {
+      if (size > MAXIMUM_FILE_BYTES) {
+        if (!REVIEWED_TEXT_EXTENSIONS.includes(extension) && isOversizedOpaqueFile(absolute))
+          binaryCount += 1;
+        else
+          skipped.push({
+            path: relative,
+            reason: `is ${size} bytes, over the ${MAXIMUM_FILE_BYTES} cap`
+          });
+        continue;
+      }
       bytes = fs.readFileSync(absolute);
     } catch (error) {
       skipped.push({
@@ -129,7 +159,6 @@ function redactDirectory(root) {
       });
       continue;
     }
-    const extension = path.extname(relative).toLowerCase();
     if (!REVIEWED_TEXT_EXTENSIONS.includes(extension)) {
       const strictText = decodeStrictText(bytes)?.replaceAll("\0", "");
       if (strictText !== undefined && findSensitiveData(strictText).length > 0) {

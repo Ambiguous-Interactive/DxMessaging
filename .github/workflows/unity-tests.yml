@@ -234,7 +234,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -325,6 +325,8 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
         with:
           lock-name: wallstop-organization-builds
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
           # Every matrix axis is part of the holder identity, so each expanded
           # leg owns a distinct lock holder.
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}-all-modes

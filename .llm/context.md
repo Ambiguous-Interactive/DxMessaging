@@ -35,10 +35,10 @@ index to select and read the canonical instructions.
 
 ## Tooling Philosophy (read this before adding any script)
 
-- JS tooling is intentionally minimal (a hard line budget is enforced by `scripts/validate-js-loc-budget.js` / `npm run validate:js-loc-budget`, which is the single source for the current ceiling and its changelog -- do not restate that number here or elsewhere); prefer off-the-shelf tools (prettier, cspell, markdownlint-cli2, csharpier, actionlint, lychee, yamllint, pre-commit built-ins); do not add bespoke validators, wrappers, preflight/doctor machinery, or custom git-hook plumbing.
+- JS tooling is intentionally minimal (a hard line budget is enforced by `scripts/validate-js-loc-budget.js` / `npm run validate:js-loc-budget`, which is the single source for the current ceiling and its changelog -- do not restate that number here or elsewhere); prefer off-the-shelf tools (prettier, cspell, markdownlint-cli, csharpier, actionlint, lychee, yamllint, pre-commit built-ins); do not add bespoke validators, wrappers, preflight/doctor machinery, or custom git-hook plumbing.
 - Git hooks are managed solely by the standard pre-commit framework: `pipx install pre-commit` (or pip), then `pre-commit install`. Do not set `core.hooksPath`, write hooks into `.git/hooks` by hand, or wrap pre-commit in Node scripts.
 - Script tests use the built-in `node --test` runner (`npm test`); there is no jest. Pre-push runs only the fast script-test subset and excludes real subprocess/archive integration tests, so agents must run full `npm test` when changing `scripts/**/*.js` or GitHub composite action scripts.
-- Run tools directly (`npx prettier`, `npx cspell`, `npx markdownlint-cli2`); never reintroduce "managed" runner wrappers.
+- Run tools directly (`npx prettier`, `npx cspell`, `npx --no-install markdownlint --dot`); never reintroduce "managed" runner wrappers.
 - A script with both a fixer/generator mode and a `--check` mode must converge: running the fixer either makes `--check` pass or exits non-zero naming the file a human must fix. Share one validator between the modes, and either refuse to write an unfixable state or re-verify the post-write state; never report success while leaving a `--check`-failing state (the trap is a fixer that silently no-ops on input its own `--check` rejects). See `collectValidationErrors` (post-write re-verify) in `scripts/update-llms-txt.js` and the refuse-when-unfixable drift report in `scripts/llm/harness.js`.
 - When workflows, docs, scripts, or issue templates reference package-script aliases, update `package.json` in the same change; `scripts/__tests__/package-script-contract.test.js` guards the common reference surfaces and the `validate:all` issue-template-version gate.
 
@@ -247,7 +247,7 @@ fallback. A failed `gh auth status` is not a blocker while either earlier path w
   README text, brand artwork, CI, and repository tooling never earn entries, even when the files
   ship in the package. See the changelog-management skill.
 - For `## [Unreleased]` entries, mutate existing bullets as behavior evolves; do not stack separate `Added` then `Fixed` bullets for the same unreleased change.
-- For edited Markdown files, run `npx prettier --write` and `npx markdownlint-cli2` before finishing.
+- For edited Markdown files, run `npx prettier --write` and `npx --no-install markdownlint --dot` before finishing.
 - Ordered lists must follow MD029 `one` style (`1.` for each item).
 - Internal fragment links must match GitHub/markdownlint heading slugs exactly (MD051).
 - Documentation and `///` XML doc comments must be pure ASCII; see [ASCII-Only Documentation Policy](./skills/documentation-style/references/ascii-only-docs.md).

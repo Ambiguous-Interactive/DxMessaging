@@ -14,7 +14,9 @@ namespace DxMessaging.Core.MessageBus
     /// copy it freely, but do NOT inspect or persist its internals. Handles are
     /// process-local, single-thread, and NOT serializable; a handle is meaningless after a
     /// domain reload (its captured generation no longer matches, so deregistration becomes a
-    /// silent no-op) and is not portable across <see cref="IMessageBus"/> implementations.
+    /// silent no-op). A built-in handle belongs to its originating bus instance; passing it to
+    /// another bus is a silent no-op. Custom handles are not portable across
+    /// <see cref="IMessageBus"/> implementations.
     /// </para>
     /// <para>
     /// The <c>default</c> value is the <see cref="None"/> sentinel; deregistering it is a
@@ -46,6 +48,9 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary><see cref="Kind.None"/> =&gt; an invalid/empty handle; deregistration no-ops.</summary>
         internal readonly Kind kind;
+
+        /// <summary>The originating bus identity marker; null for None and External handles.</summary>
+        internal readonly object owner;
 
         /// <summary>
         /// Sink/scalar-vs-keyed discriminator AND the <see cref="RegistrationLog"/> row key for
@@ -102,6 +107,7 @@ namespace DxMessaging.Core.MessageBus
         internal readonly InstanceId context;
 
         internal MessageBusRegistration(
+            object owner,
             Kind kind,
             RegistrationMethod method,
             int priority,
@@ -114,6 +120,7 @@ namespace DxMessaging.Core.MessageBus
             InstanceId context
         )
         {
+            this.owner = owner;
             this.kind = kind;
             this.method = method;
             this.priority = priority;
@@ -136,6 +143,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         public MessageBusRegistration(long externalId, object externalState)
             : this(
+                null,
                 Kind.External,
                 default,
                 0,
@@ -162,7 +170,8 @@ namespace DxMessaging.Core.MessageBus
 
         /// <inheritdoc />
         public bool Equals(MessageBusRegistration other) =>
-            kind == other.kind
+            ReferenceEquals(owner, other.owner)
+            && kind == other.kind
             && method == other.method
             && priority == other.priority
             && generation == other.generation
@@ -188,6 +197,7 @@ namespace DxMessaging.Core.MessageBus
                 unnecessary collisions those overrides would introduce. (null -> 0.)
             */
             int hash = (int)kind;
+            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(owner);
             hash = (hash * 397) ^ (int)method;
             hash = (hash * 397) ^ priority;
             hash = (hash * 397) ^ generation.GetHashCode();

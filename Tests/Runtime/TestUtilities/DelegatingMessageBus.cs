@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime
 {
     using System;
@@ -30,6 +29,12 @@ namespace DxMessaging.Tests.Runtime
         /// member they did not override.
         /// </summary>
         protected IMessageBus Inner => _inner ?? throw new NotImplementedException();
+
+        /// <summary>
+        /// Cold leak accounting can inspect the forwarded built-in bus. A partial
+        /// stub has no source; doubles with independent storage can override this.
+        /// </summary>
+        internal virtual IMessageBus RegistrationCountSource => _inner;
 
         public virtual bool DiagnosticsMode => Inner.DiagnosticsMode;
 
@@ -188,4 +193,3 @@ namespace DxMessaging.Tests.Runtime
             Inner.SourcedBroadcast(ref source, ref typedMessage);
     }
 }
-#endif

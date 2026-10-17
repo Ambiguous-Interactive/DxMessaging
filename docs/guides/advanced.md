@@ -23,6 +23,13 @@ Lifecycles and tokens
 - Enable/Disable
   - Call `token.Enable()` in `OnEnable` and `token.Disable()` in `OnDisable`.
   - Idempotent; safe to call multiple times.
+  - Removing a staged handle from a custom-bus registration callback keeps that entry inactive
+    during the current replay. A replacement staged while the token is disabled activates on
+    the next Disable/Enable cycle.
+  - If a custom bus rejects a registration on an enabled token before changing its registrations,
+    that call leaves no staged entry to replay later.
+  - A failed `Enable()` retains handles returned while the token was disabled. Retry `Enable()`
+    after the bus recovers, or remove those handles.
 - Clearing
   - A successful `token.UnregisterAll()` disables and clears staged registrations plus token-local diagnostics.
   - `token.RemoveRegistration(handle)` removes a single registration.

@@ -53,7 +53,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -75,7 +75,7 @@ jobs:
 
       - name: Markdownlint (auto-fix)
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
-        run: npx --no-install markdownlint-cli2 "**/*.md" "**/*.markdown" --fix
+        run: npx --no-install markdownlint --dot "**/*.md" "**/*.markdown" --fix
 
       - name: Renormalize line endings
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}

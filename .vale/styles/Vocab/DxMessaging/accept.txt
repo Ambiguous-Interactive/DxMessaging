@@ -25,7 +25,7 @@ csharpier
 markdownlint
 yamllint
 cspell
-markdownlint-cli2
+markdownlint-cli
 preflight
 OpenUPM
 VContainer
@@ -50,7 +50,7 @@ ScriptableObject
 ScriptableObjects
 GFM
 yaml
-markdownlint-cli2
+markdownlint-cli
 runtime
 dxmessaging
 wallstop

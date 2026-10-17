@@ -1182,6 +1182,88 @@ namespace DxMessaging.Core.MessageBus
 
         public int RegisteredGlobalAcceptAll => _globalSlots.sharedHandlers.Count;
 
+        /// <summary>
+        /// Counts live registration references without changing registrations.
+        /// </summary>
+        /// <remarks>
+        /// Cold test diagnostic. Unlike the public route-container counters, this
+        /// includes registrations sharing a handler, priority, or context and
+        /// duplicate registrations held by reference count. Never read on dispatch.
+        /// </remarks>
+        internal int LiveRegistrationCountForTesting
+        {
+            get
+            {
+                int count = 0;
+                foreach (MessageCache<HandlerCache<int, HandlerCache>> sink in _scalarSinks)
+                {
+                    if (sink == null)
+                    {
+                        continue;
+                    }
+                    foreach (HandlerCache<int, HandlerCache> handlers in sink)
+                    {
+                        count += CountLiveRegistrations(handlers);
+                    }
+                }
+                foreach (MessageCache<ContextHandlerMap> sink in _contextSinks)
+                {
+                    foreach (ContextHandlerMap contexts in sink)
+                    {
+                        if (contexts == null)
+                        {
+                            continue;
+                        }
+                        foreach (HandlerCache<int, HandlerCache> handlers in contexts)
+                        {
+                            count += CountLiveRegistrations(handlers);
+                        }
+                    }
+                }
+                foreach (
+                    KeyValuePair<MessageHandler, int> registration in _globalSlots.sharedHandlers
+                )
+                {
+                    count += registration.Value;
+                }
+                foreach (
+                    KeyValuePair<
+                        object,
+                        Dictionary<int, int>
+                    > interceptor in _uniqueInterceptorsAndPriorities
+                )
+                {
+                    foreach (KeyValuePair<int, int> registration in interceptor.Value)
+                    {
+                        count += registration.Value;
+                    }
+                }
+                return count;
+            }
+        }
+
+        private static int CountLiveRegistrations(HandlerCache<int, HandlerCache> priorities)
+        {
+            if (priorities == null)
+            {
+                return 0;
+            }
+            int count = 0;
+            foreach (KeyValuePair<int, HandlerCache> priority in priorities.handlers)
+            {
+                HandlerCache handlers = priority.Value;
+                if (handlers == null)
+                {
+                    continue;
+                }
+                foreach (KeyValuePair<MessageHandler, int> registration in handlers.handlers)
+                {
+                    count += registration.Value;
+                }
+            }
+            return count;
+        }
+
         private static int SumInterceptorCache(MessageCache<InterceptorCache<object>> cache)
         {
             int count = 0;
@@ -1307,6 +1389,12 @@ namespace DxMessaging.Core.MessageBus
             };
 
         private readonly BusGlobalSlot _globalSlots = new();
+
+        /*
+            A retained handle keeps this identity marker alive without retaining its bus.
+            Reset preserves the marker; reset generations reject pre-reset registrations.
+        */
+        private readonly object _registrationOwner = new object();
 
         /*
             P1 emit-preamble plans: one per (bus, type, kind), validated by a
@@ -3823,6 +3911,7 @@ namespace DxMessaging.Core.MessageBus
             long capturedGeneration = _resetGeneration;
             long capturedSweepGeneration = _globalSlotSweepGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.GlobalAcceptAll,
                 RegistrationMethod.GlobalAcceptAll,
                 0,
@@ -3977,6 +4066,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.UntargetedInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -4049,6 +4139,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.TargetedInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -4121,6 +4212,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.BroadcastInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -6130,6 +6222,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.Handler,
                 registrationMethod,
                 priority,
@@ -6359,6 +6452,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.Handler,
                 registrationMethod,
                 priority,
@@ -6496,6 +6590,11 @@ namespace DxMessaging.Core.MessageBus
         public void Deregister<T>(in MessageBusRegistration registration)
             where T : IMessage
         {
+            if (!ReferenceEquals(registration.owner, _registrationOwner))
+            {
+                return;
+            }
+
             switch (registration.kind)
             {
                 case MessageBusRegistration.Kind.Handler:

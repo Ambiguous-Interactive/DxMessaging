@@ -15,6 +15,8 @@ namespace DxMessaging.Core
     /// Staged registrations are created via the various <c>Register*</c> methods and are activated when
     /// <see cref="Enable"/> is called; they are torn down on <see cref="Disable"/>.
     /// This pattern works especially well with Unity lifecycles.
+    /// A bus rejection during an enabled token's Register call removes that call's staged entry.
+    /// A failed Enable retains previously staged handles so their registrations can be retried.
     /// </remarks>
     /// <example>
     /// <code>
@@ -76,8 +78,8 @@ namespace DxMessaging.Core
             the Registration with its handle and performs the AddDeregistration. The
             re-entrancy snapshot semantics are unchanged: the replay queue captures the
             Registration reference (exactly as it previously captured the staging Func),
-            so a registration removed mid-replay is still replayed if it was already
-            snapshotted.
+            so an accepted registration removed during its own bus callback retains
+            its teardown, while an entry removed before its replay turn stays inactive.
             Token-owned arena. A handle identifies a slot and the globally unique id that
             occupied it. Both are validated, so stale handles remain harmless after slot reuse.
             The doubly-linked live list preserves registration order while the singly-linked
@@ -1353,8 +1355,20 @@ namespace DxMessaging.Core
             */
             if (_enabled)
             {
-                MessageHandler.HandlerDeregistration actualDeregistration =
-                    registration.RegisterValidated();
+                MessageHandler.HandlerDeregistration actualDeregistration;
+                try
+                {
+                    actualDeregistration = registration.RegisterValidated();
+                }
+                catch
+                {
+                    /*
+                        No handle reached the caller. A reentrant bus may already have removed or
+                        reused this slot, so retire only the failed registration's original identity.
+                    */
+                    RemoveRegistrationState(slotIndex, handle.Id);
+                    throw;
+                }
                 AddDeregistration(slotIndex, handle.Id, actualDeregistration);
             }
 
@@ -1792,6 +1806,8 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Replays registrations still staged when their turn begins.</summary>
+        /// <remarks>2026-10-17: Skip a later entry removed or replaced by an earlier registration callback.</remarks>
         private void InvokeRegistrationReplayQueue()
         {
             try
@@ -1799,7 +1815,7 @@ namespace DxMessaging.Core
                 foreach (StagedRegistration staged in GetRegistrationReplayQueue())
                 {
                     Registration registration = staged.Registration;
-                    if (registration == null)
+                    if (registration == null || !TryGetSlot(staged.Slot, staged.Id, out _))
                     {
                         continue;
                     }
@@ -2207,7 +2223,10 @@ namespace DxMessaging.Core
             _registrationTail = -1;
             _registrationCount = 0;
             _deregistrationCount = 0;
-            _registrationReplayQueue?.Clear();
+            /*
+                Replay owns its snapshot until its finally block. Clearing that list here
+                would invalidate an active enumerator when a bus callback clears the token.
+            */
             _teardownQueue?.Clear();
             _rollbackCounts?.Clear();
             _activeRetargetHandles?.Clear();

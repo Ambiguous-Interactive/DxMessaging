@@ -1,0 +1,25 @@
+{
+  "name": "WallstopStudios.DxMessaging.Tests.Editor.PipelineTransportResearch",
+  "rootNamespace": "DxMessaging.Tests.Editor.PipelineTransportResearch",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "WallstopStudios.DxMessaging.Tests.Runtime",
+    "Unity.Pipeline"
+  ],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": true,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS", "DXM_621_PIPELINE_PRESENT"],
+  "versionDefines": [
+    {
+      "name": "com.unity.pipeline",
+      "expression": "0.8.0-exp.1",
+      "define": "DXM_621_PIPELINE_PRESENT"
+    }
+  ],
+  "noEngineReferences": false
+}

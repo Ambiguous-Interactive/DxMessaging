@@ -113,7 +113,7 @@ Bad: `See [README.md](../README.md)` <- Inline code, should be skipped
 
 ### Do Not Write New Bespoke Documentation Linters
 
-The repository deliberately uses off-the-shelf linters (markdownlint-cli2, prettier, cspell, lychee) instead of bespoke documentation-linter scripts. See the Tooling Philosophy section of `.llm/context.md` before adding any new linting script; the code-block-skipping guidance above exists only for the rare case where an existing kept script must be modified.
+The repository deliberately uses off-the-shelf linters (markdownlint-cli, prettier, cspell, lychee) instead of bespoke documentation-linter scripts. See the Tooling Philosophy section of `.llm/context.md` before adding any new linting script; the code-block-skipping guidance above exists only for the rare case where an existing kept script must be modified.
 
 ## Validation Checklist
 

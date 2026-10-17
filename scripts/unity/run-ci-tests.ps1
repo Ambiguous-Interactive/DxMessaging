@@ -5331,7 +5331,8 @@ function Invoke-UnityEditor {
         # The shortest caller has a 30-minute step and at most two UPM attempts.
         # Ten minutes per attempt leaves ten minutes for setup and license cleanup.
         [ValidateRange(0, [int]::MaxValue)][int]$TimeoutSeconds = 600,
-        [ValidateRange(1, 300)][int]$ShutdownTimeoutSeconds = 30
+        [ValidateRange(1, 300)][int]$ShutdownTimeoutSeconds = 30,
+        [ref]$ProcessResultRef
     )
 
     # A native pipeline can remain blocked in shutdown (or on a descendant's
@@ -5340,6 +5341,9 @@ function Invoke-UnityEditor {
     # Exact, case-sensitive whole-line terminal messages start a 30-second shutdown
     # deadline. Results written earlier do not start it: framework cleanup still runs.
     # The existing caller validates the fresh result/marker even after a forced exit.
+    if ($null -ne $ProcessResultRef) {
+        $ProcessResultRef.Value = $null
+    }
     $completionPattern = '^(?:Test run completed\. Exiting with code [0-9]+ \([^\r\n]+\)\. Run completed\.|Batchmode quit successfully invoked - shutting down!)$'
     $processResult = Invoke-ProcessWithTreeKillTimeout `
         -FilePath $EditorPath `
@@ -5349,6 +5353,10 @@ function Invoke-UnityEditor {
         -CompletionPattern $completionPattern `
         -LogPath $LogPath `
         -Label $Label
+    # Preserve branch evidence for callers that need it without changing the scalar exit code.
+    if ($null -ne $ProcessResultRef) {
+        $ProcessResultRef.Value = $processResult
+    }
     $exitCode = $processResult.ExitCode
     Clear-NonFatalNativeExitCode -Context $Label
     if ($exitCode -ne 0) {

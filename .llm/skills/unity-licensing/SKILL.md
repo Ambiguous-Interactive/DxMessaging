@@ -40,7 +40,9 @@ Local Unity verification needs NO license. The devcontainer ships no Unity build
 
 ### Per-job flow
 
-Validate the secrets with `./.github/actions/validate-unity-license` BEFORE acquiring the lock, so a misconfiguration fails with a clear diagnostic before Unity starts or blocks the shared seat. Then acquire the org build lock (`wallstop-organization-builds`, `max-parallel: 1`), return-at-start, activate, run Unity (editmode / playmode / standalone IL2CPP) against the generated project, return in the `finally`, and run the `if: always()` return step before releasing the lock.
+Validate the secrets with `./.github/actions/validate-unity-license` BEFORE acquiring the lock, so a misconfiguration fails with a clear diagnostic before Unity starts or blocks the shared seat. Then acquire `wallstop-organization-builds` through the pinned central action with the physical `runner-id`, return-at-start, activate, run Unity (editmode / playmode / standalone IL2CPP) against the generated project, and return in the `finally`. Finish with the acquired-scoped central return, classification, release, and confirmed-cleanup gate.
+
+The central configuration owns admission across repositories: at most two holders, one holder per physical runner, resource lifecycle checks, and account health checks. Consumers dispatch the workflow and let this chain acquire, work, and release automatically. Keep normal admission separate from recovery of an actual active incident; do not maintain a second lock or require portal evidence for normal CI.
 
 ### Contract invariants to check on every change
 

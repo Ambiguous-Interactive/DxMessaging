@@ -328,7 +328,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -439,6 +439,8 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
         with:
           lock-name: wallstop-organization-builds
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
           holder-id-suffix: perf-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-suite }}
           runner-id: ${{ runner.name }}
           github-token: ${{ github.token }}
@@ -1366,7 +1368,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
 
       - name: Install reporting dependencies
         if: needs.perf-benchmarks.result == 'success'
@@ -1764,7 +1766,7 @@ jobs:
         if: steps.default-branch.outputs.fresh == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.22.2"
           cache: npm
           cache-dependency-path: package.json
 
@@ -1874,7 +1876,7 @@ jobs:
         run: |
           npx prettier --check "${PERF_DOC}"
           npx prettier --check "${PERF_BASELINE_PROFILE}"
-          npx --no-install markdownlint-cli2 "${PERF_DOC}"
+          npx --no-install markdownlint --dot "${PERF_DOC}"
 
       - name: Commit and push refreshed perf doc
         if: steps.default-branch.outputs.fresh == 'true' && steps.render.outputs.changed == 'true'

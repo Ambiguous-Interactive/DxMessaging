@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.IO;
     using System.Reflection;
     using UnityEditor;
@@ -70,6 +71,65 @@ namespace DxMessaging.Tests.Editor
             string outputPath
         )
         {
+            return CaptureOnHost(content, canvasWidth, canvasHeight, outputPath, null);
+        }
+
+        /// <summary>
+        /// Lets serialized binding create controls while attached, then captures the same panel.
+        /// </summary>
+        /// <remarks>
+        /// Hidden preparation prevents an empty initial layout from becoming the captured frame.
+        /// Only actual readiness advances rendering; yields let the editor perform binding work.
+        /// No shared render state is held across yields, and disposal closes the owned host.
+        /// </remarks>
+        internal static IEnumerator CaptureWhenReady(
+            VisualElement content,
+            int canvasWidth,
+            int canvasHeight,
+            string outputPath,
+            Func<bool> isReady,
+            Action<EditorSurfaceCaptureResult> completed
+        )
+        {
+            ValidateCaptureArguments(content, canvasWidth, canvasHeight, outputPath);
+            if (isReady == null)
+            {
+                throw new ArgumentNullException(nameof(isReady));
+            }
+            if (completed == null)
+            {
+                throw new ArgumentNullException(nameof(completed));
+            }
+            StyleEnum<DisplayStyle> originalDisplay = content.style.display;
+            EditorWindow host = null;
+            try
+            {
+                content.style.display = DisplayStyle.None;
+                host = CreateCaptureHost(content, canvasWidth, canvasHeight);
+                while (!isReady())
+                {
+                    yield return null;
+                }
+                content.style.display = originalDisplay;
+                completed(CaptureOnHost(content, canvasWidth, canvasHeight, outputPath, host));
+            }
+            finally
+            {
+                content.style.display = originalDisplay;
+                if (host != null)
+                {
+                    EditorWindowTestUtility.CloseWindow(host);
+                }
+            }
+        }
+
+        private static void ValidateCaptureArguments(
+            VisualElement content,
+            int canvasWidth,
+            int canvasHeight,
+            string outputPath
+        )
+        {
             if (content == null)
             {
                 throw new ArgumentNullException(nameof(content));
@@ -94,15 +154,17 @@ namespace DxMessaging.Tests.Editor
                     "EditorSurfaceCapture needs a graphics device; this editor is running with -nographics."
                 );
             }
+        }
 
-            RenderTexture previousTarget = RenderTexture.active;
-            bool previousSrgbWrite = GL.sRGBWrite;
-            EditorWindow host = null;
-            RenderTexture target = null;
-            Texture2D readback = null;
+        private static EditorWindow CreateCaptureHost(
+            VisualElement content,
+            int canvasWidth,
+            int canvasHeight
+        )
+        {
+            EditorWindow host = EditorWindowTestUtility.CreateWindow();
             try
             {
-                host = EditorWindowTestUtility.CreateWindow();
                 host.minSize = new Vector2(canvasWidth, canvasHeight);
                 host.position = new Rect(0f, 0f, canvasWidth, canvasHeight);
                 /*
@@ -126,6 +188,38 @@ namespace DxMessaging.Tests.Editor
                         "The capture host window produced no panel to render."
                     );
                 }
+
+                return host;
+            }
+            catch
+            {
+                EditorWindowTestUtility.CloseWindow(host);
+                throw;
+            }
+        }
+
+        private static EditorSurfaceCaptureResult CaptureOnHost(
+            VisualElement content,
+            int canvasWidth,
+            int canvasHeight,
+            string outputPath,
+            EditorWindow preparedHost
+        )
+        {
+            ValidateCaptureArguments(content, canvasWidth, canvasHeight, outputPath);
+
+            RenderTexture previousTarget = RenderTexture.active;
+            bool previousSrgbWrite = GL.sRGBWrite;
+            EditorWindow host = preparedHost;
+            RenderTexture target = null;
+            Texture2D readback = null;
+            try
+            {
+                if (host == null)
+                {
+                    host = CreateCaptureHost(content, canvasWidth, canvasHeight);
+                }
+                IPanel panel = host.rootVisualElement.panel;
 
                 target = new RenderTexture(
                     canvasWidth,
@@ -225,7 +319,7 @@ namespace DxMessaging.Tests.Editor
                     Object.DestroyImmediate(target);
                 }
 
-                if (host != null)
+                if (host != null && preparedHost == null)
                 {
                     EditorWindowTestUtility.CloseWindow(host);
                 }

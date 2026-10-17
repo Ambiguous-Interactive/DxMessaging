@@ -110,9 +110,9 @@ test("active workflows keep the shared safety contract", () => {
     const document = readWorkflowDocument(file);
     assert.equal(document.errors.length, 0, `${file} must parse as YAML`);
     // prettier-ignore
-    assert.doesNotMatch(source, /npx(?! --no-install markdownlint-cli2(?: |$))[^\n]*markdownlint-cli2|markdownlint-cli2@/, file);
+    assert.doesNotMatch(source, /npx(?! --no-install markdownlint --dot(?: |$))[^\n]*markdownlint|markdownlint@/, file);
     // prettier-ignore
-    assert.equal(source.match(/npm audit --audit-level=high/g)?.length || 0, source.match(/npx --no-install markdownlint-cli2/g)?.length || 0, file);
+    assert.equal(source.match(/npm audit --audit-level=high/g)?.length || 0, source.match(/npx --no-install markdownlint --dot/g)?.length || 0, file);
 
     const keys = document.contents.items.map((item) => String(item.key.value));
     assert.deepEqual(
@@ -436,7 +436,7 @@ test("copyable build-lock documentation follows the runner and App credential co
     ).exec(source);
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
     for (const binding of [
-      /runner-id: \$\{\{ runner\.name \}\}/,
+      /require-resource-lifecycle: "true"\n\s+minimum-release-cooldown-seconds: "0"\n\s+[\s\S]*runner-id: \$\{\{ runner\.name \}\}/,
       /github-token: \$\{\{ github\.token \}\}/,
       /pull-request-number: \$\{\{ github\.event\.pull_request\.number \}\}/,
       /expected-head-sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
@@ -533,7 +533,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
   // run step became this typed output binding).
   const editorPathBinding = "${{ steps.ensure_unity_editor.outputs.editor-path }}";
 
-  for (const [file, jobId, licensedWorkName, emptyAware] of UNITY_LOCK_WINDOWS) {
+  for (const [file, jobId, licensedWorkName, emptyAware, jobTimeout] of UNITY_LOCK_WINDOWS) {
     const label = `${file}:${jobId}`;
     const licensedCondition = `${file === "perf-numbers.yml" ? "success\\(\\) && " : ""}${file === "unity-tests.yml" ? "!cancelled\\(\\) && " : ""}${emptyAware ? "steps\\.compute\\.outputs\\.is-empty != 'true' && " : ""}steps\\.acquire_lock\\.outputs\\.acquired == 'true'`;
     const job = getJobBlock(readWorkflow(file), jobId, file);
@@ -557,9 +557,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
         `${label}: failed installs cannot authorize redaction or uploads`
       );
     }
-    const expectedJobTimeout = file === "unity-tests.yml" ? 1050 : 900;
     // prettier-ignore
-    assert.match(job, new RegExp(`\\n    timeout-minutes: ${expectedJobTimeout}\\n`), `${label}: lifecycle budget`);
+    assert.match(job, new RegExp(`\\n    timeout-minutes: ${jobTimeout ?? (file === "unity-tests.yml" ? 1050 : 900)}\\n`), `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
       assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
     }
@@ -594,6 +593,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       [validationStep, new RegExp(`provisioning-profile: ${escapeRegExp(UNITY_EDITOR_PROFILES[file])}\\n`), `${label}: the gate must use the reviewed provisioning profile`],
       [credentialStep, /uses: \.\/\.github\/actions\/validate-unity-license/],
       [acquireStep, /\n        id: acquire_lock\n/],
+      [acquireStep, /\n          require-resource-lifecycle: "true"\n          minimum-release-cooldown-seconds: "0"\n/, `${label}: require central lifecycle configuration and accept its cooldown`],
       [requireStep, /\n        if: \$\{\{ steps\.acquire_lock\.outputs\.acquired != 'true' \}\}\n[\s\S]*\n        run: exit 1\n/],
       [workStep, new RegExp(`\\n        if: \\$\\{\\{ ${licensedCondition} \\}\\}\\n`), label],
       [workStep, /-LicenseReturnOwner Central/, `${label}: the trusted central action must own the post-activation return`],
