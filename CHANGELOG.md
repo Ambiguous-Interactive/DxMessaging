@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
+  ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
+
 - Keep registrations removed by an earlier custom-bus callback from activating later in the
   same token replay ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
 - Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable

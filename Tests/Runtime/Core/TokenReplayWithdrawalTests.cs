@@ -51,7 +51,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     foreach (int count in new[] { 2, 8 })
                     {
-                        foreach (int mutation in new[] { 0, 1, 2 })
+                        foreach (int mutation in new[] { 0, 1, 2, 3, 4 })
                         {
                             yield return new TestCaseData(
                                 shape.Scenario,
@@ -130,6 +130,16 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     return;
                 }
+                if (mutation == 3)
+                {
+                    state.Token.UnregisterAll();
+                    return;
+                }
+                if (mutation == 4)
+                {
+                    state.Token.Dispose();
+                    return;
+                }
                 state.Token.RemoveRegistration(victim);
                 if (mutation == 2)
                 {
@@ -155,7 +165,11 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             state.Emit(scenario);
             List<string> firstExpected = new List<string>(all);
-            if (mutation != 0)
+            if (3 <= mutation)
+            {
+                firstExpected.RemoveRange(1, firstExpected.Count - 1);
+            }
+            else if (mutation != 0)
             {
                 firstExpected.RemoveAt(firstExpected.Count - 1);
             }
@@ -173,7 +187,11 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.That(
                 state.Token._metadata.Count,
-                Is.EqualTo(mutation == 1 ? count - 1 : count),
+                Is.EqualTo(
+                    3 <= mutation ? 0
+                    : mutation == 1 ? count - 1
+                    : count
+                ),
                 label
             );
 
@@ -181,7 +199,8 @@ namespace DxMessaging.Tests.Runtime.Core
             state.Token.Enable();
             state.Calls.Clear();
             state.Emit(scenario);
-            List<string> replayExpected = new List<string>(firstExpected);
+            List<string> replayExpected =
+                3 <= mutation ? new List<string>() : new List<string>(firstExpected);
             if (mutation == 2)
             {
                 replayExpected.Add("replacement");
