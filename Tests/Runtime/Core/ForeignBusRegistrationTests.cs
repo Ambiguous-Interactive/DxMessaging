@@ -11,6 +11,8 @@ namespace DxMessaging.Tests.Runtime.Core
     /// <remarks>
     /// 2026-10-16: a foreign handle could remove an origin handler route or a receiver global
     /// registration because fresh buses shared reset generations. Copies retain the same owner.
+    /// 2026-10-17: block-bodied callback counters preserve captured updates under the CI Sonar
+    /// analyzer, which reports expression-bodied postfix increments as S2123.
     /// </remarks>
     [TestFixture]
 #if !UNITY_2021_3_OR_NEWER
@@ -278,8 +280,14 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             int originCalls = 0;
             int receiverCalls = 0;
-            void ReceiveOrigin(in ProbeMessage message) => originCalls++;
-            void ReceiveReceiver(in ProbeMessage message) => receiverCalls++;
+            void ReceiveOrigin(in ProbeMessage message)
+            {
+                originCalls++;
+            }
+            void ReceiveReceiver(in ProbeMessage message)
+            {
+                receiverCalls++;
+            }
             RegisterCallback(token, scenario, ReceiveOrigin);
             token.Enable();
             if (receiverHasRegistration)
