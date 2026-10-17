@@ -1806,6 +1806,8 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Replays registrations still staged when their turn begins.</summary>
+        /// <remarks>2026-10-17: Skip a later entry removed or replaced by an earlier registration callback.</remarks>
         private void InvokeRegistrationReplayQueue()
         {
             try
@@ -1813,7 +1815,7 @@ namespace DxMessaging.Core
                 foreach (StagedRegistration staged in GetRegistrationReplayQueue())
                 {
                     Registration registration = staged.Registration;
-                    if (registration == null)
+                    if (registration == null || !TryGetSlot(staged.Slot, staged.Id, out _))
                     {
                         continue;
                     }

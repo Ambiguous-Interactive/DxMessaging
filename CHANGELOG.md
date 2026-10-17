@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep registrations removed by an earlier custom-bus callback from activating later in the
+  same token replay ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
 - Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable
   ([#638](https://github.com/Ambiguous-Interactive/DxMessaging/issues/638)).
 - Remove obsolete object-search warnings from Message Monitor, Flow Graph, and the diagnostics
