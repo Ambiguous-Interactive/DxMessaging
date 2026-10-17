@@ -15,6 +15,8 @@ namespace DxMessaging.Core
     /// Staged registrations are created via the various <c>Register*</c> methods and are activated when
     /// <see cref="Enable"/> is called; they are torn down on <see cref="Disable"/>.
     /// This pattern works especially well with Unity lifecycles.
+    /// A bus rejection during an enabled token's Register call removes that call's staged entry.
+    /// A failed Enable retains previously staged handles so their registrations can be retried.
     /// </remarks>
     /// <example>
     /// <code>
@@ -1353,8 +1355,20 @@ namespace DxMessaging.Core
             */
             if (_enabled)
             {
-                MessageHandler.HandlerDeregistration actualDeregistration =
-                    registration.RegisterValidated();
+                MessageHandler.HandlerDeregistration actualDeregistration;
+                try
+                {
+                    actualDeregistration = registration.RegisterValidated();
+                }
+                catch
+                {
+                    /*
+                        No handle reached the caller. A reentrant bus may already have removed or
+                        reused this slot, so retire only the failed registration's original identity.
+                    */
+                    RemoveRegistrationState(slotIndex, handle.Id);
+                    throw;
+                }
                 AddDeregistration(slotIndex, handle.Id, actualDeregistration);
             }
 

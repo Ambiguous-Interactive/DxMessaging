@@ -31,5 +31,9 @@
       Include="../Tests/Runtime/Core/ForeignBusRegistrationTests.cs"
       Link="ForeignBusRegistrationTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenRegistrationFailureTests.cs"
+      Link="TokenRegistrationFailureTests.cs"
+    />
   </ItemGroup>
 </Project>
