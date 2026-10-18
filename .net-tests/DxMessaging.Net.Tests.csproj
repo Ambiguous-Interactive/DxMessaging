@@ -39,5 +39,9 @@
       Include="../Tests/Runtime/Core/TokenReplayWithdrawalTests.cs"
       Link="TokenReplayWithdrawalTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenTeardownReentrancyTests.cs"
+      Link="TokenTeardownReentrancyTests.cs"
+    />
   </ItemGroup>
 </Project>
