@@ -19,6 +19,47 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             string[] reservedNames = { "ForTesting", "ForTests", "ForBenchmark", "TestSeams" };
             List<string> found = new();
+            Dictionary<string, string[]> retiredSlotReadouts = new()
+            {
+                ["DxMessaging.Core.MessageHandler+HandlerActionCache`1+OrderedEntries"] = new[]
+                {
+                    "KeyAt",
+                },
+                ["DxMessaging.Core.Internal.IHandlerActionCache"] = new[]
+                {
+                    "Version",
+                    "LastSeenVersion",
+                    "LastSeenEmissionId",
+                },
+                ["DxMessaging.Core.MessageHandler+HandlerActionCache`1"] = new[]
+                {
+                    "Version",
+                    "LastSeenVersion",
+                    "LastSeenEmissionId",
+                },
+                ["DxMessaging.Core.MessageBus.Internal.IEvictableSlot"] = new[] { "Version" },
+                ["DxMessaging.Core.Internal.TypedSlot`1"] = new[]
+                {
+                    "Clear",
+                    "Version",
+                    "lastSeenVersion",
+                    "lastSeenEmissionId",
+                },
+                ["DxMessaging.Core.Internal.TypedGlobalSlot"] = new[]
+                {
+                    "Clear",
+                    "Version",
+                    "lastSeenVersion",
+                    "lastSeenEmissionId",
+                },
+                ["DxMessaging.Core.MessageBus.Internal.BusGlobalSlot"] = new[]
+                {
+                    "Version",
+                    "lastSeenVersion",
+                    "lastSeenEmissionId",
+                    "sharedCache",
+                },
+            };
             foreach (Type type in assembly.GetTypes())
             {
                 if ((type.Namespace ?? string.Empty).Split('.').Contains("Testing"))
@@ -58,6 +99,13 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     if (
                         reservedNames.Any(name => member.Name.Contains(name))
+                        || (
+                            retiredSlotReadouts.TryGetValue(type.FullName, out string[] retired)
+                            && retired.Any(name =>
+                                member.Name == name
+                                || member.Name.EndsWith("." + name, StringComparison.Ordinal)
+                            )
+                        )
                         || (
                             type.FullName
                                 == "DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider"

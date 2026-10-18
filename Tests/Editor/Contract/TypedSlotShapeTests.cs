@@ -373,17 +373,16 @@ namespace DxMessaging.Tests.Editor.Contract
                 Exercise every interface member; failure indicates a misapplied
                 explicit-interface implementation or accidental shadowing.
             */
-            long _ = view.Version;
-            view.LastSeenVersion = 7;
-            Assert.AreEqual(7, view.LastSeenVersion);
+            cache.lastSeenVersion = 7;
+            Assert.AreEqual(7, cache.lastSeenVersion);
             Assert.AreEqual(
                 -1,
-                view.LastSeenEmissionId,
+                cache.lastSeenEmissionId,
                 "Fresh HandlerActionCache<T> instances must start with an invalid "
                     + "emission sentinel so emission id 0 materializes the first snapshot."
             );
-            view.LastSeenEmissionId = 13;
-            Assert.AreEqual(13, view.LastSeenEmissionId);
+            cache.lastSeenEmissionId = 13;
+            Assert.AreEqual(13, cache.lastSeenEmissionId);
             Assert.IsTrue(
                 view.IsEmpty,
                 "Freshly-constructed HandlerActionCache<T> must report IsEmpty == true."
@@ -406,13 +405,17 @@ namespace DxMessaging.Tests.Editor.Contract
                 "After populating entries the cache must report IsEmpty == false."
             );
 
-            long beforeReset = view.Version;
+            long beforeReset = cache.version;
             view.Reset();
-            Assert.Greater(view.Version, beforeReset, "Reset() must bump version monotonically.");
-            Assert.AreEqual(-1, view.LastSeenVersion, "Reset() must restore lastSeenVersion = -1.");
+            Assert.Greater(cache.version, beforeReset, "Reset() must bump version monotonically.");
             Assert.AreEqual(
                 -1,
-                view.LastSeenEmissionId,
+                cache.lastSeenVersion,
+                "Reset() must restore lastSeenVersion = -1."
+            );
+            Assert.AreEqual(
+                -1,
+                cache.lastSeenEmissionId,
                 "Reset() must restore lastSeenEmissionId to an invalid sentinel so "
                     + "emission id 0 still materializes a fresh snapshot."
             );
@@ -663,7 +666,7 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 Assert.AreEqual(
                     expected[index],
-                    cache.entries.KeyAt(index),
+                    EntryStorageInspection.KeyAt(cache.entries, index),
                     "Ordered cache key at index {0} drifted.",
                     index
                 );
@@ -979,35 +982,6 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void TypedSlotClearResetsVersionToZero()
-        {
-            TypedSlot<ProbeMessage> slot = new TypedSlot<ProbeMessage>(requiresContext: false);
-            /*
-                Drive version above zero via repeated Reset() so the test does
-                not depend on internal field write access for setup.
-            */
-            slot.Reset();
-            slot.Reset();
-            slot.Reset();
-            Assert.Greater(slot.version, 0);
-
-            slot.Clear();
-
-            Assert.AreEqual(
-                0,
-                slot.version,
-                "Clear() is the legacy 'full reset' semantic and must reset "
-                    + "version to 0; eviction-driven monotonicity belongs to Reset()."
-            );
-            Assert.AreEqual(-1, slot.lastSeenVersion);
-            Assert.AreEqual(-1, slot.lastSeenEmissionId);
-            Assert.AreEqual(0, slot.liveCount);
-            Assert.AreEqual(0, slot.byPriority.Count);
-            Assert.AreEqual(0, slot.orderedPriorities.Count);
-            Assert.IsNull(slot.byContext);
-        }
-
-        [Test]
         public void TypedGlobalSlotResetBumpsVersionMonotonically()
         {
             TypedGlobalSlot slot = new TypedGlobalSlot();
@@ -1060,23 +1034,6 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void TypedGlobalSlotClearResetsVersionToZero()
-        {
-            TypedGlobalSlot slot = new TypedGlobalSlot();
-            slot.Reset();
-            slot.Reset();
-            Assert.Greater(slot.version, 0);
-
-            slot.Clear();
-
-            Assert.AreEqual(0, slot.version);
-            Assert.AreEqual(-1, slot.lastSeenVersion);
-            Assert.AreEqual(-1, slot.lastSeenEmissionId);
-            Assert.AreEqual(0, slot.liveCount);
-            Assert.IsNull(slot.cache);
-        }
-
-        [Test]
         public void TypedSlotImplementsIEvictableSlot()
         {
             Assert.IsTrue(
@@ -1097,9 +1054,7 @@ namespace DxMessaging.Tests.Editor.Contract
         /// <summary>
         /// Reflection-based shape pin for <see cref="IHandlerActionCache"/>.
         /// Asserts the interface declares exactly the members the staged
-        /// dispatch + eviction layers require: <see cref="IHandlerActionCache.Version"/>,
-        /// <see cref="IHandlerActionCache.LastSeenVersion"/>,
-        /// <see cref="IHandlerActionCache.LastSeenEmissionId"/>,
+        /// dispatch + eviction layers require:
         /// <see cref="IHandlerActionCache.IsEmpty"/>,
         /// <see cref="IHandlerActionCache.Reset"/>, plus the non-generic
         /// per-handle teardown ops the unified deregistration object uses:
@@ -1115,9 +1070,6 @@ namespace DxMessaging.Tests.Editor.Contract
         {
             string[] expected =
             {
-                "Version",
-                "LastSeenVersion",
-                "LastSeenEmissionId",
                 "IsEmpty",
                 "Reset",
                 "ContainsEntry",

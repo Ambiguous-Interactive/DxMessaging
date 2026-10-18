@@ -36,33 +36,6 @@ namespace DxMessaging.Core.Internal
     internal interface IHandlerActionCache
     {
         /// <summary>
-        /// Strictly monotonic version counter for the cache's structural
-        /// state. Mirrors <c>HandlerActionCache&lt;TDelegate&gt;.version</c>.
-        /// Read-only on this surface; bumped internally by the cache's own
-        /// register / deregister sites and by <see cref="Reset"/>.
-        /// </summary>
-        long Version { get; }
-
-        /// <summary>
-        /// The <see cref="Version"/> value observed by the most recent
-        /// dispatcher snapshot. Mirrors
-        /// <c>HandlerActionCache&lt;TDelegate&gt;.lastSeenVersion</c> and is
-        /// mutated by the staged dispatch path to detect when the flat cache
-        /// list needs to be re-materialised.
-        /// </summary>
-        long LastSeenVersion { get; set; }
-
-        /// <summary>
-        /// The bus emission id of the most recent dispatch that consumed
-        /// this cache. Mirrors
-        /// <c>HandlerActionCache&lt;TDelegate&gt;.lastSeenEmissionId</c>.
-        /// Used by the staged dispatch staleness check. Implementations use
-        /// an invalid sentinel before the first dispatch so emission id 0
-        /// still materializes an initial snapshot.
-        /// </summary>
-        long LastSeenEmissionId { get; set; }
-
-        /// <summary>
         /// True iff the cache currently retains zero entries. Cheap (single
         /// integer compare against <c>entries.Count</c>); used by the
         /// eviction sweep so empty caches can be reclaimed without walking
@@ -72,9 +45,8 @@ namespace DxMessaging.Core.Internal
 
         /// <summary>
         /// Eviction-driven full clear. Empties the entries dictionary and
-        /// the flat cache list, resets <see cref="LastSeenVersion"/> /
-        /// <see cref="LastSeenEmissionId"/>,
-        /// and bumps <see cref="Version"/> as the LAST step so any captured
+        /// the flat cache list, resets the snapshot version and emission stamps,
+        /// and bumps the cache version as the LAST step so any captured
         /// dispatch closure that observed the prior version detects
         /// invalidation. Idempotent.
         /// </summary>
@@ -97,7 +69,7 @@ namespace DxMessaging.Core.Internal
         bool ContainsEntry(object originalHandler);
 
         /// <summary>
-        /// Bumps <see cref="Version"/> by one. Mirrors the explicit
+        /// Bumps the cache version by one. Mirrors the explicit
         /// <c>version++</c> the legacy deregistration closure performed at the
         /// top of its body (before the bus deregister call) so any in-flight
         /// dispatch snapshot detects invalidation at the same point.
@@ -109,7 +81,7 @@ namespace DxMessaging.Core.Internal
         /// Mirrors the EXACT refcount logic the legacy deregistration closure
         /// used: if the entry's refcount is at or below one, removes it from
         /// both the entries map and the insertion-order list and bumps
-        /// <see cref="Version"/> a second time (reporting
+        /// the cache version a second time (reporting
         /// <paramref name="wasLastForEntry"/> = true so the caller can
         /// decrement the owning slot's live count); otherwise decrements the
         /// refcount in place, preserving the first registration's handler /
@@ -231,22 +203,9 @@ namespace DxMessaging.Core.Internal
         public long version;
 
         /// <summary>
-        /// The <see cref="version"/> value observed by the most recent
-        /// dispatcher snapshot. Used to decide whether the cache list needs
-        /// to be re-materialised before the next dispatch.
-        /// </summary>
-        public long lastSeenVersion = -1;
-
-        /// <summary>
-        /// The bus emission id of the most recent dispatch that consumed
-        /// this slot. Used by the staged dispatch staleness check.
-        /// </summary>
-        public long lastSeenEmissionId = -1;
-
-        /// <summary>
         /// Bus tick counter value at the most recent register / deregister /
         /// emit that touched this slot. Maintained by the sweep touch hook;
-        /// preserved across <see cref="Clear"/> and <see cref="Reset"/>
+        /// preserved across <see cref="Reset"/>
         /// so the sweep can distinguish freshly-reset slots from
         /// never-touched slots.
         /// </summary>
@@ -285,7 +244,7 @@ namespace DxMessaging.Core.Internal
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Lifetime semantic: <see cref="Clear"/> and <see cref="Reset"/>
+        /// Lifetime semantic: <see cref="Reset"/>
         /// return the outer context dictionary and every inner priority
         /// dictionary to <see cref="DxPools"/> before nulling the field.
         /// </para>
@@ -425,51 +384,6 @@ namespace DxMessaging.Core.Internal
             get => liveCount == 0;
         }
 
-        /// <inheritdoc />
-        public long Version
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => version;
-        }
-
-        /// <summary>
-        /// Full-reset semantic. Empties <see cref="byPriority"/> and
-        /// <see cref="orderedPriorities"/>, nulls out
-        /// <see cref="byContext"/>, and resets the staged-dispatch
-        /// counters. Resets <see cref="version"/> to <c>0</c>; this is NOT
-        /// monotonic and is intended only for the typed-handler analog of
-        /// <c>MessageBus.ResetState()</c> if and when that code path is
-        /// wired up. Use <see cref="Reset"/> for sweep-driven slot
-        /// reclamation.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// Returns <see cref="byContext"/> and its inner priority
-        /// dictionaries to <see cref="DxPools"/>.
-        /// </para>
-        /// <para>
-        /// Drops cache references without draining them. <see cref="Clear"/>
-        /// is intended for the typed-handler analog of
-        /// <c>MessageBus.ResetState()</c> where the entire
-        /// <see cref="MessageHandler"/> graph is being torn down, so per-cache
-        /// drain would be redundant work. <see cref="Reset"/> (eviction-driven)
-        /// DOES drain inner caches via <see cref="IHandlerActionCache.Reset"/>
-        /// because outer-version invalidation alone is insufficient when the
-        /// slot is being re-used after sweep.
-        /// </para>
-        /// </remarks>
-        public void Clear()
-        {
-            byPriority.Clear();
-            orderedPriorities.Clear();
-            ReturnContextDictionaries();
-            byContext = null;
-            version = 0;
-            lastSeenVersion = -1;
-            lastSeenEmissionId = -1;
-            liveCount = 0;
-        }
-
         /// <summary>
         /// Eviction-driven reset. Drains every inner
         /// <see cref="IHandlerActionCache"/> held by <see cref="byPriority"/>
@@ -494,15 +408,9 @@ namespace DxMessaging.Core.Internal
         public void Reset()
         {
             /*
-                Inline the structural-clear body of Clear(); do NOT call
-                Clear() because that resets version=0 and would break the
-                monotonic invariant the eviction layer depends on: stale
-                deregister closures captured before reset must observe a
-                strictly larger version after reset and skip their work.
-                Per-cache drain BEFORE the structural clear: every
-                IHandlerActionCache.Reset() bumps its own version internally,
-                so closures captured against the inner cache also detect
-                invalidation -- not just closures captured against the slot.
+                Drain inner caches before releasing their containers. Captured
+                callbacks observe the inner version change before the owning
+                slot advances its version at the end of this reset.
             */
             foreach (KeyValuePair<int, IHandlerActionCache> kv in byPriority)
             {
@@ -528,8 +436,6 @@ namespace DxMessaging.Core.Internal
             orderedPriorities.Clear();
             ReturnContextDictionaries();
             byContext = null;
-            lastSeenVersion = -1;
-            lastSeenEmissionId = -1;
             liveCount = 0;
             unchecked
             {
@@ -608,7 +514,7 @@ namespace DxMessaging.Core.Internal
         /// Type-erased handler cache for this slot's
         /// (<see cref="DispatchKind"/>, <see cref="DispatchVariant"/>)
         /// coordinate. Lazy alloc on first registration; nulled by
-        /// <see cref="Clear"/> and <see cref="Reset"/>.
+        /// <see cref="Reset"/>.
         /// </summary>
         public IHandlerActionCache cache;
 
@@ -616,22 +522,9 @@ namespace DxMessaging.Core.Internal
         public long version;
 
         /// <summary>
-        /// The <see cref="version"/> value observed by the most recent
-        /// dispatcher snapshot.
-        /// </summary>
-        public long lastSeenVersion = -1;
-
-        /// <summary>
-        /// The bus emission id of the most recent dispatch that consumed
-        /// this slot.
-        /// </summary>
-        public long lastSeenEmissionId = -1;
-
-        /// <summary>
         /// Bus tick counter value at the most recent register / deregister /
         /// emit that touched this slot. Maintained by the sweep touch hook;
-        /// preserved across <see cref="Clear"/> and
-        /// <see cref="Reset"/>.
+        /// preserved across <see cref="Reset"/>.
         /// </summary>
         public long lastTouchTicks;
 
@@ -661,30 +554,6 @@ namespace DxMessaging.Core.Internal
             get => liveCount == 0;
         }
 
-        /// <inheritdoc />
-        public long Version
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => version;
-        }
-
-        /// <summary>
-        /// Full-reset semantic. Nulls out <see cref="cache"/> and resets
-        /// the staged-dispatch counters. Resets <see cref="version"/> to
-        /// <c>0</c>; this is NOT monotonic and is intended only for the
-        /// typed-handler analog of <c>MessageBus.ResetState()</c> if and
-        /// when that code path is wired up. Use <see cref="Reset"/> for
-        /// sweep-driven slot reclamation.
-        /// </summary>
-        public void Clear()
-        {
-            cache = null;
-            version = 0;
-            lastSeenVersion = -1;
-            lastSeenEmissionId = -1;
-            liveCount = 0;
-        }
-
         /// <summary>
         /// Eviction-driven reset. Drains <see cref="cache"/> through
         /// <see cref="IHandlerActionCache.Reset"/> first, then nulls the
@@ -704,14 +573,12 @@ namespace DxMessaging.Core.Internal
         public void Reset()
         {
             /*
-                Inline the structural-clear body of Clear(); do NOT call
-                Clear() because that resets version=0 and would break the
-                monotonic invariant the eviction layer depends on.
+                Drain inner caches before releasing their containers. Captured
+                callbacks observe the inner version change before the owning
+                slot advances its version at the end of this reset.
             */
             cache?.Reset();
             cache = null;
-            lastSeenVersion = -1;
-            lastSeenEmissionId = -1;
             liveCount = 0;
             unchecked
             {

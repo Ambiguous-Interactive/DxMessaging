@@ -2805,20 +2805,6 @@ namespace DxMessaging.Core
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                public T KeyAt(int index)
-                {
-                    if (_spillOrder != null)
-                    {
-                        return _spillOrder[_spillOrderStart + index];
-                    }
-                    if ((uint)_inlineCount <= (uint)index)
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(index));
-                    }
-                    return GetInlineKey(index);
-                }
-
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 public Entry ValueAt(int index)
                 {
                     if (_spillOrder != null)
@@ -2998,31 +2984,6 @@ namespace DxMessaging.Core
             public long lastSeenEmissionId = -1;
             public long flatInvokerLastSeenVersion = -1;
             public long flatInvokerLastSeenEmissionId = -1;
-
-            /// <summary>Monotonic version field, read-only on the interface surface.</summary>
-            long DxMessaging.Core.Internal.IHandlerActionCache.Version
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => version;
-            }
-
-            /// <summary>Most recent dispatcher-observed version; mutable through the staged dispatch path.</summary>
-            long DxMessaging.Core.Internal.IHandlerActionCache.LastSeenVersion
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => lastSeenVersion;
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                set => lastSeenVersion = value;
-            }
-
-            /// <summary>Most recent dispatcher-observed bus emission id.</summary>
-            long DxMessaging.Core.Internal.IHandlerActionCache.LastSeenEmissionId
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => lastSeenEmissionId;
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                set => lastSeenEmissionId = value;
-            }
 
             /// <summary>True iff the ordered entry storage holds zero handlers.</summary>
             bool DxMessaging.Core.Internal.IHandlerActionCache.IsEmpty

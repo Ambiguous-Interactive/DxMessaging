@@ -10,6 +10,22 @@ namespace DxMessaging.Tests
 
     internal static class EntryStorageInspection
     {
+        internal static object KeyAt(object entries, int index)
+        {
+            IList order = (IList)MessageBusInspection.ReadField(entries, "_spillOrder");
+            if (order != null)
+            {
+                int prefix = (int)MessageBusInspection.ReadField(entries, "_spillOrderStart");
+                return order[prefix + index];
+            }
+            int count = (int)MessageBusInspection.ReadField(entries, "_inlineCount");
+            if (index < 0 || count <= index)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+            return MessageBusInspection.ReadField(entries, "_key" + index);
+        }
+
         internal static int InlineCapacity(object entries) =>
             (int)MessageBusInspection.ReadField(entries.GetType(), "PhysicalInlineCapacity");
 

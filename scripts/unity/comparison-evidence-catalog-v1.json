@@ -48,7 +48,7 @@
     "dxHandler": {
       "origin": "repository",
       "path": "Runtime/Core/MessageHandler.cs",
-      "sha256": "2b9bc1737b5da6133241eff9edac74b544ee39793c3ad7871816ad5bc2252f59"
+      "sha256": "b9b25ab217c31019209d64bef8f520845a572393f8e8c6ca6f3ab7a396af5778"
     },
     "dxToken": {
       "origin": "repository",
