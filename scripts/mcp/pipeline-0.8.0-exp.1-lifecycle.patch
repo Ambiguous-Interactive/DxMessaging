@@ -1,0 +1,122 @@
+--- a/Runtime/Common/BasePipelineServer.cs
++++ b/Runtime/Common/BasePipelineServer.cs
+@@ -528,7 +528,26 @@
+         {
+             try
+             {
+-                var remoteAddress = context.Request.RemoteEndPoint?.Address;
++                var request = context.Request
++                    ?? throw new InvalidOperationException("Accepted context has no request object.");
++                IPEndPoint remoteEndPoint;
++                try
++                {
++                    remoteEndPoint = request.RemoteEndPoint;
++                }
++                catch (Exception endpointError) when (
++                    endpointError is ObjectDisposedException
++                    || endpointError is NullReferenceException
++                    || (endpointError is System.Net.Sockets.SocketException socketError
++                        && socketError.SocketErrorCode == System.Net.Sockets.SocketError.InvalidArgument))
++                {
++                    // Only the endpoint getter is guarded: no handler has been admitted.
++                    // Mono's retained context can outlive its socket or its native connection.
++                    Debug.Log($"Pipeline: rejected request before peer admission because transport ended: {endpointError}");
++                    context.Response.Abort();
++                    return;
++                }
++                var remoteAddress = remoteEndPoint?.Address;
+                 if (remoteAddress == null || !IPAddress.IsLoopback(remoteAddress))
+                 {
+                     await SendStatusResponse(
+@@ -1107,19 +1126,9 @@
+             }
+             catch (Exception ex)
+             {
+-                Debug.LogError($"Failed to handle /api/commands request: {ex.Message}");
+-
+-                // Return error response
+-                response.StatusCode = 500;
+-                response.ContentType = "application/json";
+-
+-                var errorResponse = new { error = "Internal server error", message = ex.Message };
+-                var errorJson = JsonConvert.SerializeObject(errorResponse);
+-                var errorBuffer = Encoding.UTF8.GetBytes(errorJson);
+-                response.ContentLength64 = errorBuffer.Length;
+-
+-                await response.OutputStream.WriteAsync(errorBuffer, 0, errorBuffer.Length);
+-                response.OutputStream.Close();
++                Debug.LogError($"Failed to handle /api/commands request: {ex}");
++                await SendJsonPayload(response,
++                    new { error = "Internal server error", message = ex.Message }, 500);
+             }
+         }
+
+@@ -1137,20 +1146,57 @@
+         }
+
+         /// <summary>
+-        /// Serialize a 200 response body and write it out.
+-        /// </summary>
+-        private static async Task SendJsonPayload(HttpListenerResponse response, object payload)
++        /// Prepare a JSON body, then own exactly one response at the selected HTTP status.
++        /// </summary>
++        private static async Task SendJsonPayload(HttpListenerResponse response, object payload, int statusCode = 200)
+         {
+             var json = JsonConvert.SerializeObject(payload, Formatting.Indented);
+-
+-            response.StatusCode = 200;
+-            response.ContentType = "application/json";
+-
+             var buffer = Encoding.UTF8.GetBytes(json);
+-            response.ContentLength64 = buffer.Length;
+-
+-            await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+-            response.OutputStream.Close();
++
++            /*
++             * Preparation faults still reach the handler's first error response. Once configuration
++             * begins, this writer owns completion: another response cannot repair committed headers.
++             * Closed response properties and actual stream failures below identify ended transport;
++             * other configuration faults remain full Errors. Only those response operations
++             * are guarded, so handler faults still reach the existing Error path. Abort failures propagate.
++             */
++            try
++            {
++                response.StatusCode = statusCode;
++                response.ContentType = "application/json";
++                response.ContentLength64 = buffer.Length;
++            }
++            catch (ObjectDisposedException configurationError)
++            {
++                Debug.Log($"Pipeline: response transport ended during JSON configuration: {configurationError}");
++                response.Abort();
++                return;
++            }
++            catch (Exception configurationError)
++            {
++                Debug.LogError($"Pipeline: JSON response configuration failed: {configurationError}");
++                response.Abort();
++                return;
++            }
++
++            try
++            {
++                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
++                response.OutputStream.Close();
++            }
++            catch (Exception writeError) when (
++                writeError is System.IO.IOException
++                || writeError is ObjectDisposedException
++                || writeError is HttpListenerException)
++            {
++                Debug.Log($"Pipeline: response transport ended during JSON delivery: {writeError}");
++                response.Abort();
++            }
++            catch (Exception writeError)
++            {
++                Debug.LogError($"Pipeline: JSON response delivery failed: {writeError}");
++                response.Abort();
++            }
+         }
+
+         /// <summary>

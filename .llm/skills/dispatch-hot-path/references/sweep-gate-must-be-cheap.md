@@ -69,9 +69,7 @@ non-Unity consumer:
 ## Test injection
 
 Tests inject a probe clock via `MessageBus.CreateForInternalUse(probeClock,
-...)`. **Do NOT** use `DxMessagingRuntimeSettingsProvider.Override` to inject
-the clock -- the settings asset does not carry a clock; the clock is
-constructor-injected.
+...)`. The clock is constructor-injected; the settings asset does not carry it.
 
 ## Per-emit clock-read budget
 

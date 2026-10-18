@@ -119,15 +119,14 @@ namespace DxMessaging.Core.Configuration
         internal bool IsFallbackInstance => _isFallbackInstance;
 
         /// <summary>
-        /// Raised when this asset is mutated in the editor or via test-only override.
+        /// Raised when this asset is validated in the editor.
         /// Subscribers should be small and re-entrancy-safe; the event is invoked
         /// synchronously from <c>OnValidate</c>.
         /// </summary>
         public static event Action<DxMessagingRuntimeSettings> SettingsChanged;
 
         /// <summary>
-        /// Used by <see cref="DxMessagingRuntimeSettingsProvider.Override"/> to push
-        /// a test-supplied override and notify subscribers.
+        /// Notifies live buses after settings validation.
         /// </summary>
         internal static void RaiseSettingsChanged(DxMessagingRuntimeSettings settings)
         {

@@ -1,0 +1,627 @@
+{
+  "profile": {
+    "schemaVersion": 1,
+    "measurementClass": "characterization",
+    "testMode": "EditMode",
+    "orders": ["ABBA", "BAAB", "ABBA", "BAAB"],
+    "baselineCalls": 64,
+    "followupCalls": 8,
+    "phaseAndBlockLimitMs": 2000,
+    "blockGrowthLimitBytes": 134217728,
+    "warmupCallsPerArm": 1,
+    "scope": "native Editor; selected overlays before full candidate tree",
+    "claim": "descriptive counters and live-memory changes; no speedup ratio, interval, retention or OOM cause"
+  },
+  "runs": {
+    "focused": {
+      "passCount": 22,
+      "failCount": 0
+    },
+    "import": {
+      "passCount": 4,
+      "failCount": 0
+    },
+    "control": {
+      "passCount": 1,
+      "failCount": 3
+    },
+    "affected": {
+      "passCount": 117,
+      "failCount": 0
+    },
+    "full": {
+      "passCount": 975,
+      "failCount": 0
+    }
+  },
+  "controlFailures": [
+    "DxMessaging.Tests.Editor.DxMessagingSettingsAssetImportTests.ImportedSettingsReplaceACachedMissWithoutDomainReload",
+    "DxMessaging.Tests.Editor.DxMessagingSettingsAssetImportTests.NativeAssetChangesInvalidateTheSelectedSettingsPath(\"delete\")",
+    "DxMessaging.Tests.Editor.DxMessagingSettingsAssetImportTests.NativeAssetChangesInvalidateTheSelectedSettingsPath(\"folder-move\")"
+  ],
+  "overlayPaths": [
+    "Editor/Analyzers/DxMessagingConsoleHarvester.cs",
+    "Editor/Settings/DxMessagingSettings.cs",
+    "Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs",
+    "Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs.meta",
+    "Tests/Editor/DxMessagingSettingsAssetImportTests.cs",
+    "Tests/Editor/DxMessagingSettingsAssetImportTests.cs.meta",
+    "Tests/Editor/DxMessagingSettingsLookupTests.cs",
+    "Tests/Editor/DxMessagingSettingsLookupTests.cs.meta",
+    "Tests/Runtime/Benchmarks/BenchmarkProtocol.cs",
+    "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
+    "Tests/Runtime/Comparisons/PairedBenchmarkProtocolContractTests.cs",
+    "Tests/Runtime/Comparisons/PairedComparisonHarness.cs"
+  ],
+  "sampleAssemblies": [
+    "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample",
+    "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample.Editor",
+    "WallstopStudios.DxMessaging.MiniCombat.Sample",
+    "WallstopStudios.DxMessaging.UIButtons.Sample"
+  ],
+  "measurementIntegerFields": [
+    "block",
+    "calls",
+    "found",
+    "legacySearches",
+    "passiveSearches",
+    "passiveLookups",
+    "workingBefore",
+    "workingAfter",
+    "nativeBefore",
+    "nativeAfter",
+    "managedBefore",
+    "managedAfter"
+  ],
+  "schemas": {
+    "idle": {
+      "type": "object",
+      "required": [
+        "observedUtc",
+        "frameworkActive",
+        "playing",
+        "compiling",
+        "updating",
+        "mainStage",
+        "observationError",
+        "frameworkErrors",
+        "activeScene",
+        "scenes"
+      ],
+      "properties": {
+        "observedUtc": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Z$"
+        },
+        "frameworkActive": {
+          "const": false
+        },
+        "playing": {
+          "const": false
+        },
+        "compiling": {
+          "const": false
+        },
+        "updating": {
+          "const": false
+        },
+        "mainStage": {
+          "const": true
+        },
+        "observationError": {
+          "const": ""
+        },
+        "frameworkErrors": {
+          "const": ""
+        },
+        "activeScene": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^Assets/.+\\.unity$"
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "dirty", "loaded"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dirty": {
+                "const": false
+              },
+              "loaded": {
+                "const": true
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 1,
+          "maxItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": ["runGuid", "resultPath"],
+      "properties": {
+        "runGuid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resultPath": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "passCount",
+        "failCount",
+        "skipCount",
+        "inconclusiveCount",
+        "durationSeconds",
+        "nodes"
+      ],
+      "properties": {
+        "passCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "failCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "skipCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inconclusiveCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["isSuite", "name", "status", "startTime", "endTime"],
+            "properties": {
+              "isSuite": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": ["Passed", "Failed", "Skipped", "Inconclusive"]
+              },
+              "startTime": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "Z$"
+              },
+              "endTime": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "Z$"
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "sourceCommit",
+        "sourceTree",
+        "allOtherTrackedUnityAssetsIdentical",
+        "overlay",
+        "packageRestored"
+      ],
+      "properties": {
+        "sourceCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "sourceTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "allOtherTrackedUnityAssetsIdentical": {
+          "const": true
+        },
+        "overlay": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "candidateSha256", "retainedSha256", "redactionCounts"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "candidateSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "retainedSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "redactionCounts": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 12,
+          "maxItems": 12
+        },
+        "packageRestored": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "matchesOriginal"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "matchesOriginal": {
+                "const": true
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 12,
+          "maxItems": 12
+        }
+      },
+      "additionalProperties": true
+    },
+    "freshness": {
+      "type": "object",
+      "required": ["fresh", "sourceUtc", "assemblyUtc"],
+      "properties": {
+        "fresh": {
+          "const": true
+        },
+        "sourceUtc": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Z$"
+        },
+        "assemblyUtc": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Z$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "samples": {
+      "type": "object",
+      "required": ["rows", "assemblies"],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "same", "sameMeta"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "same": {
+                "const": true
+              },
+              "sameMeta": {
+                "const": true
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 19,
+          "maxItems": 19
+        },
+        "assemblies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "assemblyUtc"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assemblyUtc": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "Z$"
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      },
+      "additionalProperties": true
+    },
+    "inventory": {
+      "type": "object",
+      "required": ["rootMetaExists", "rootMetaSha256", "files"],
+      "properties": {
+        "rootMetaExists": {
+          "const": true
+        },
+        "rootMetaSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "bytes", "sha256"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 43,
+          "maxItems": 43
+        }
+      },
+      "additionalProperties": true
+    },
+    "restoration": {
+      "type": "object",
+      "required": [
+        "newFixtureLoaded",
+        "scratchFolders",
+        "sampleFixtureCreated",
+        "restoredSourceUtc",
+        "assemblyUtc"
+      ],
+      "properties": {
+        "newFixtureLoaded": {
+          "const": false
+        },
+        "scratchFolders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "maxItems": 0
+        },
+        "sampleFixtureCreated": {
+          "const": false
+        },
+        "restoredSourceUtc": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Z$"
+        },
+        "assemblyUtc": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Z$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "measurement": {
+      "type": "object",
+      "required": [
+        "observedUtc",
+        "unityVersion",
+        "operatingSystem",
+        "assetPathCount",
+        "settingsPresent",
+        "legacySettingsPresent",
+        "canonicalPresent",
+        "warmupCachedCalls",
+        "warmupLegacyCalls",
+        "armA",
+        "armB",
+        "absentEnvironment",
+        "stopped",
+        "rows"
+      ],
+      "properties": {
+        "observedUtc": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Z$"
+        },
+        "unityVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operatingSystem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assetPathCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "settingsPresent": {
+          "const": true
+        },
+        "legacySettingsPresent": {
+          "const": true
+        },
+        "canonicalPresent": {
+          "const": true
+        },
+        "warmupCachedCalls": {
+          "const": 1
+        },
+        "warmupLegacyCalls": {
+          "const": 1
+        },
+        "armA": {
+          "const": "legacy harvester FindAssets plus first GUID load"
+        },
+        "armB": {
+          "const": "shared passive cached settings lookup"
+        },
+        "absentEnvironment": {
+          "const": "not available; existing settings preserved"
+        },
+        "stopped": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "block",
+              "calls",
+              "found",
+              "legacySearches",
+              "passiveSearches",
+              "passiveLookups",
+              "workingBefore",
+              "workingAfter",
+              "nativeBefore",
+              "nativeAfter",
+              "managedBefore",
+              "managedAfter",
+              "order",
+              "arm",
+              "elapsedMilliseconds"
+            ],
+            "properties": {
+              "block": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "found": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "legacySearches": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "passiveSearches": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "passiveLookups": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "workingBefore": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "workingAfter": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "nativeBefore": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "nativeAfter": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "managedBefore": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "managedAfter": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "order": {
+                "enum": ["ABBA", "BAAB"]
+              },
+              "arm": {
+                "enum": ["A", "B"]
+              },
+              "elapsedMilliseconds": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "workloadNote": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "testStatusFields": {
+    "Passed": "passCount",
+    "Failed": "failCount",
+    "Skipped": "skipCount",
+    "Inconclusive": "inconclusiveCount"
+  }
+}

@@ -156,7 +156,6 @@ namespace DxMessaging.Editor.Windows
             string,
             MessageSourceAssemblyIndex
         > MessageSourceAssemblyIndexes = new(StringComparer.Ordinal);
-        private static Func<string, string[]> _messageSourceFileReader = File.ReadAllLines;
         internal static event Action MessageSourceIndexChanged;
         private static readonly Regex SourceNamespaceDeclarationPattern = new(
             @"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*([;{]?)",
@@ -461,8 +460,7 @@ namespace DxMessaging.Editor.Windows
                     && !string.IsNullOrWhiteSpace(sourceFile.AssetPath)
                 )
                 .ToArray();
-            Func<string, string[]> fileReader = _messageSourceFileReader;
-            return Task.Run(() => BuildMessageSourceAssemblyIndex(sourceFiles, fileReader));
+            return Task.Run(() => BuildMessageSourceAssemblyIndex(sourceFiles));
         }
 
         private static void RegisterMessageSourceIndexDrain()
@@ -491,12 +489,11 @@ namespace DxMessaging.Editor.Windows
         }
 
         private static MessageSourceIndexBuildResult BuildMessageSourceAssemblyIndex(
-            IReadOnlyList<MessageSourceFile> sourceFiles,
-            Func<string, string[]> readAllLines
+            IReadOnlyList<MessageSourceFile> sourceFiles
         )
         {
             Dictionary<string, SourceLocation> locations = new(StringComparer.Ordinal);
-            if (sourceFiles == null || readAllLines == null)
+            if (sourceFiles == null)
             {
                 return new MessageSourceIndexBuildResult(locations, isComplete: false);
             }
@@ -507,7 +504,7 @@ namespace DxMessaging.Editor.Windows
                 string[] lines;
                 try
                 {
-                    lines = readAllLines(sourceFile.FullPath);
+                    lines = File.ReadAllLines(sourceFile.FullPath);
                 }
                 catch (IOException)
                 {
@@ -609,52 +606,6 @@ namespace DxMessaging.Editor.Windows
             {
                 index.RetryAfterUtc = DateTime.MinValue;
             }
-        }
-
-        internal static int PendingMessageSourceIndexCount =>
-            MessageSourceAssemblyIndexes.Values.Count(index => index.BuildTask != null);
-
-        internal static int CompletedMessageSourceIndexCount =>
-            MessageSourceAssemblyIndexes.Values.Count(index =>
-                index.BuildTask != null && index.BuildTask.IsCompleted
-            );
-
-        internal static Func<string, string[]> MessageSourceFileReader
-        {
-            get => _messageSourceFileReader;
-            set => _messageSourceFileReader = value ?? File.ReadAllLines;
-        }
-
-        internal static void ResetMessageSourceIndexesForTests()
-        {
-            EditorApplication.update -= DrainMessageSourceAssemblyIndexes;
-            MessageSourceAssemblyIndexes.Clear();
-            MessageSourceLocationCache.Clear();
-            _messageSourceFileReader = File.ReadAllLines;
-        }
-
-        internal static void CompleteMessageSourceIndexesForTests()
-        {
-            Task[] buildTasks = MessageSourceAssemblyIndexes
-                .Values.Where(index => index.BuildTask != null)
-                .Select(index => (Task)index.BuildTask)
-                .ToArray();
-            Task.WaitAll(buildTasks);
-            DrainMessageSourceAssemblyIndexes();
-        }
-
-        /// <summary>
-        /// Raises the completion signal without needing a real index build, so a test can prove a
-        /// window re-renders when the background index lands.
-        /// </summary>
-        internal static void RaiseMessageSourceIndexChangedForTests()
-        {
-            MessageSourceIndexChanged?.Invoke();
-        }
-
-        internal static void DrainMessageSourceIndexesForTests()
-        {
-            DrainMessageSourceAssemblyIndexes();
         }
 
         internal static int FindTypeDeclarationLine(

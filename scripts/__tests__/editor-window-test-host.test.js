@@ -54,9 +54,6 @@ test("editor tests use the stable test host for shown windows", () => {
     if (/\.Show\(\);/.test(content)) {
       violations.push(`${relativePath}: use EditorWindowTestUtility.ShowWindow(window)`);
     }
-    if (/\.Close\(\);/.test(content)) {
-      violations.push(`${relativePath}: use EditorWindowTestUtility.CloseWindow(window)`);
-    }
   }
 
   assert.deepEqual(

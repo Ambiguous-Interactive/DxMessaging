@@ -1,7 +1,13 @@
 "use strict";
 const crypto = require("crypto");
 const { isDeepStrictEqual } = require("node:util");
+const { CELL_FIELDS, TIMING_FIELDS } = require("./shipping-evidence-fields.json");
 const DIFFERENTIAL_CONTRACT = require("./differential-replay-contract.json");
+const SETTINGS_CONTRACT = require("./editor-settings-cache-contract.json");
+const ajv = new (require("ajv"))({ strict: true });
+const SETTINGS_SCHEMAS = Object.fromEntries(
+  Object.entries(SETTINGS_CONTRACT.schemas).map(([name, schema]) => [name, ajv.compile(schema)])
+);
 const { extractRows, buildCsv, deriveScope } = require("./extract-perf-baseline.js");
 const { reducePairedBracket } = require("./reduce-paired-bracket.js");
 // Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
@@ -11,23 +17,6 @@ const NORMALIZED_SCHEMA_VERSION = 1;
 const DIFFERENTIAL_ENVIRONMENT_NAME = "differential-replay-environment.json";
 const DIFFERENTIAL_PROFILE_NAME = "differential-replay-profile.json";
 const DIFFERENTIAL_KINDS = DIFFERENTIAL_CONTRACT.profile.messageKinds;
-/** Copied verbatim from each cell. These are the columns the matrix characterization publishes. */
-const CELL_FIELDS = Object.freeze([
-  "managedStrippingLevel",
-  "topologyId",
-  "messageTypeCount",
-  "libraryState",
-  "buildDurationMs",
-  "editorBuildWallClockMs",
-  "playerTotalBytes",
-  "gameAssemblyBytes"
-]);
-const TIMING_FIELDS = Object.freeze([
-  "engineStartToRunMs",
-  "firstTypedDispatchUs",
-  "dispatchLoopNsPerOp",
-  "dispatchLoopShape"
-]);
 function requireBytes(contents, relativePath) {
   const bytes = contents.get(relativePath);
   if (bytes === undefined) {
@@ -398,12 +387,211 @@ function reduceShippingFidelityMatrix(contents) {
     cells
   };
 }
+function reduceEditorSettingsCache(contents, { sourceCommit } = {}) {
+  const check = (condition, label) => {
+    if (!condition) throw new Error(`editor settings: invalid ${label}.`);
+  };
+  const same = (actual, expected, label) => check(isDeepStrictEqual(actual, expected), label);
+  const read = (file, schema) => {
+    const value = parseJsonObject(contents, file, false);
+    if (schema) check(SETTINGS_SCHEMAS[schema](value), `${file} schema`);
+    return value;
+  };
+  const timestamp = (value) => {
+    check(
+      typeof value === "string" && value.endsWith("Z") && Number.isFinite(Date.parse(value)),
+      "timestamp"
+    );
+    return Date.parse(value);
+  };
+  const profile = read("editor-settings-profile.json");
+  same(profile, SETTINGS_CONTRACT.profile, "frozen profile");
+  const source = read("source-proof.json", "source"),
+    freshness = read("freshness.json", "freshness");
+  same(source.sourceCommit, sourceCommit, "source identity");
+  const paths = (rows) => rows.map((row) => row.path);
+  same(paths(source.overlay), SETTINGS_CONTRACT.overlayPaths, "overlay paths");
+  for (const row of source.overlay) {
+    same(
+      contentSha256(contents, `candidate/${row.path}.txt`),
+      row.retainedSha256,
+      "retained source bytes"
+    );
+    same(
+      row.candidateSha256 === row.retainedSha256,
+      Object.keys(row.redactionCounts).length === 0,
+      "source redaction provenance"
+    );
+  }
+  same(paths(source.packageRestored), SETTINGS_CONTRACT.overlayPaths, "restored paths");
+  check(timestamp(freshness.sourceUtc) < timestamp(freshness.assemblyUtc), "fresh assembly");
+  const samples = read("samples.json", "samples"),
+    original = read("original-samples.json", "inventory"),
+    restored = read("restored-samples.json", "inventory");
+  same(original.files, restored.files, "original sample restoration");
+  same(original.rootMetaSha256, restored.rootMetaSha256, "root metadata restoration");
+  check(new Set(original.files.map((row) => row.path)).size === 43, "original inventory");
+  check(new Set(samples.rows.map((row) => row.source)).size === 19, "sample source equality");
+  same(
+    samples.assemblies.map((row) => row.name).sort(),
+    SETTINGS_CONTRACT.sampleAssemblies,
+    "sample assemblies"
+  );
+  const restoration = read("restoration.json", "restoration");
+  check(
+    timestamp(restoration.restoredSourceUtc) < timestamp(restoration.assemblyUtc),
+    "restored assembly freshness"
+  );
+  const preflight = read("preflight.json", "idle"),
+    tests = {};
+  same(preflight.scenes[0].path, preflight.activeScene, "preflight scene");
+  for (const [id, expected] of Object.entries(SETTINGS_CONTRACT.runs)) {
+    const result = read(`${id}.result.json`, "result"),
+      run = read(`${id}.run.json`, "run"),
+      cleanup = read(`${id}.cleanup.json`, "idle");
+    same(cleanup.activeScene, preflight.activeScene, "restored active scene");
+    same(cleanup.scenes, preflight.scenes, "restored scenes");
+    check(
+      run.runGuid === cleanup.runGuid &&
+        run.resultPath === cleanup.resultPath &&
+        run.resultPath === cleanup.ownedResultPath,
+      "run ownership"
+    );
+    same(
+      requireBytes(contents, `${id}.status.txt`).toString().trim(),
+      "done",
+      "terminal result status"
+    );
+    same(
+      requireBytes(contents, `${id}.cleanup.status.txt`).toString().trim(),
+      id === "control"
+        ? "error: result has no passes or contains failed/inconclusive nodes"
+        : "done",
+      "terminal cleanup status"
+    );
+    const leaves = result.nodes.filter((node) => !node.isSuite),
+      counts = { passCount: 0, failCount: 0, skipCount: 0, inconclusiveCount: 0 };
+    check(new Set(leaves.map((node) => node.name)).size === leaves.length, "unique test leaves");
+    for (const leaf of leaves) counts[SETTINGS_CONTRACT.testStatusFields[leaf.status]]++;
+    same(counts, { ...expected, skipCount: 0, inconclusiveCount: 0 }, "expected leaf counts");
+    for (const [field, count] of Object.entries(counts))
+      same(result[field], count, "reported leaf counts");
+    const failures = leaves
+      .filter((node) => node.status === "Failed")
+      .map((node) => node.name)
+      .sort();
+    same(
+      failures,
+      id === "control" ? SETTINGS_CONTRACT.controlFailures : [],
+      "control failure set"
+    );
+    check(
+      timestamp(result.nodes[0].endTime) <= timestamp(cleanup.observedUtc),
+      "cleanup chronology"
+    );
+    if (id === "full") {
+      check(
+        timestamp(preflight.observedUtc) <= timestamp(result.nodes[0].startTime) &&
+          timestamp(freshness.assemblyUtc) < timestamp(preflight.observedUtc),
+        "full suite freshness"
+      );
+      for (const assembly of samples.assemblies)
+        check(
+          timestamp(freshness.sourceUtc) < timestamp(assembly.assemblyUtc) &&
+            timestamp(assembly.assemblyUtc) < timestamp(preflight.observedUtc),
+          "sample assembly freshness"
+        );
+    }
+    tests[id] = {
+      ...counts,
+      failures,
+      durationSeconds: result.durationSeconds,
+      runGuid: run.runGuid
+    };
+  }
+  const stoppedBaseline = read("stopped-baseline.json", "measurement"),
+    followup = read("followup.json", "measurement");
+  check(
+    timestamp(stoppedBaseline.observedUtc) < timestamp(followup.observedUtc),
+    "measurement chronology"
+  );
+  for (const data of [stoppedBaseline, followup]) {
+    check(
+      Array.isArray(data.rows) && data.rows.length === (data === stoppedBaseline ? 1 : 16),
+      "measurement row count"
+    );
+    data.rows.forEach((row, index) => {
+      const block = Math.floor(index / 4),
+        order = profile.orders[block],
+        calls = data === stoppedBaseline ? 64 : 8;
+      same(
+        [row.block, row.order, row.arm, row.calls, row.found],
+        [block, order, order[index % 4], calls, calls],
+        "measurement schedule"
+      );
+      same(
+        [row.legacySearches, row.passiveSearches, row.passiveLookups],
+        [row.arm === "A" ? calls : 0, 0, row.arm === "B" ? calls : 0],
+        "search counters"
+      );
+    });
+  }
+  same(
+    [stoppedBaseline.unityVersion, stoppedBaseline.operatingSystem, stoppedBaseline.assetPathCount],
+    [followup.unityVersion, followup.operatingSystem, followup.assetPathCount],
+    "measurement environment agreement"
+  );
+  same(stoppedBaseline.stopped, "lookup-block-exceeded-two-seconds", "retained stopping reason");
+  check(
+    stoppedBaseline.rows[0].elapsedMilliseconds > profile.phaseAndBlockLimitMs,
+    "stopped baseline timing"
+  );
+  same(followup.stopped, "", "completed followup");
+  for (let block = 0; block < 4; block++) {
+    const rows = followup.rows.slice(block * 4, block * 4 + 4);
+    check(
+      rows.reduce((sum, row) => sum + row.elapsedMilliseconds, 0) <= profile.phaseAndBlockLimitMs,
+      "block timed phases"
+    );
+    for (const row of rows)
+      for (const prefix of ["working", "native"])
+        check(
+          row[`${prefix}After`] - rows[0][`${prefix}Before`] <= profile.blockGrowthLimitBytes,
+          "block memory growth"
+        );
+  }
+  const arms = {};
+  for (const arm of ["A", "B"]) {
+    const rows = followup.rows.filter((row) => row.arm === arm),
+      sum = (value) => rows.reduce((total, row) => total + value(row), 0);
+    arms[arm] = {
+      calls: sum((row) => row.calls),
+      searches: sum((row) => row.legacySearches + row.passiveSearches),
+      elapsedMilliseconds: sum((row) => row.elapsedMilliseconds),
+      workingDeltaBytes: sum((row) => row.workingAfter - row.workingBefore),
+      unityAllocatedDeltaBytes: sum((row) => row.nativeAfter - row.nativeBefore),
+      managedLiveDeltaBytes: sum((row) => row.managedAfter - row.managedBefore)
+    };
+  }
+  return {
+    schemaVersion: 1,
+    reducer: "editor-settings-cache-v1",
+    measurementClass: "characterization",
+    sourceCommit,
+    sourceTree: source.sourceTree,
+    profile,
+    tests,
+    stoppedBaseline,
+    followup: { ...followup, arms }
+  };
+}
 module.exports = {
   CELL_EVIDENCE_SUFFIX,
   DIFFERENTIAL_ENVIRONMENT_NAME,
   DIFFERENTIAL_PROFILE_NAME,
   MATRIX_EVIDENCE_NAME,
   reduceDifferentialReplayFailure,
+  reduceEditorSettingsCache,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations,
   reduceShippingFidelityMatrix,

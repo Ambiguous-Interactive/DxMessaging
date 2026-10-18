@@ -39,7 +39,7 @@ proof but wrote unusable evidence is listed under `unreadableEvidenceCells`, not
 `failedCells`, so a malformed diagnostic file never reads as a stripping
 regression. Workflow cancellation or the 150-minute step timeout still aborts
 the group. The direct runner generates a package host project under
-`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, imports the repo package with a
+`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, imports the repo package with a
 `file:` dependency, and configures IL2CPP before either player build. Test hosts
 set `testables`; the shipping host omits test packages and `testables`. Dispatch
 runs use the same complete static matrix.

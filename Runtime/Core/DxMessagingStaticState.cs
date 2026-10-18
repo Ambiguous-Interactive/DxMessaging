@@ -49,7 +49,7 @@ namespace DxMessaging.Core
                 IMessageBus.GlobalMessageBufferSize = Baseline.GlobalMessageBufferSize;
                 IMessageBus.GlobalSequentialIndex = Baseline.GlobalSequentialIndex;
 #if UNITY_2021_3_OR_NEWER
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                DxMessagingRuntimeSettingsProvider.ResetCachedSettings();
 #endif
 
                 MessageRegistrationBuilder.SetSyntheticOwnerCounter(Baseline.SyntheticOwnerCounter);

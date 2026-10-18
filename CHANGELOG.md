@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add replayable native Editor settings cache evidence, retaining stopped measurements,
+  descriptive counters, native test results, and cleanup/source provenance
+  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
   applies the batch transactionally, preserves inherited string-handler behavior, upgrades matching
@@ -17,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
+  the runtime settings resource asset for application behavior and keep fixture configuration in
+  test assemblies; see the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
 - Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
   dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
@@ -46,6 +52,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve token cleanup and retryable failures when a custom-bus deregistration callback clears,
+  disables, or registers with the token ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642)).
+
+- Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
+  ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
+
+- Keep registrations removed by an earlier custom-bus callback from activating later in the
+  same token replay ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
+- Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable
+  ([#638](https://github.com/Ambiguous-Interactive/DxMessaging/issues/638)).
+- Remove obsolete object-search warnings from Message Monitor, Flow Graph, and the diagnostics
+  sample on Unity 6000.4 ([#628](https://github.com/Ambiguous-Interactive/DxMessaging/issues/628)).
+- Fix direct registration handles so passing one to a different bus preserves both buses, and global
+  registrations on different buses keep distinct identities ([#637](https://github.com/Ambiguous-Interactive/DxMessaging/issues/637)).
+- Fix source generation when generic and nongeneric types have colliding generated file names
+  ([#624](https://github.com/Ambiguous-Interactive/DxMessaging/issues/624)).
+- Fix generated message declarations and constructors failing for escaped C# identifiers
+  ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
+- Stop repeated console-harvester settings searches and scans when the console bridge is disabled
+  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Fix provider fallback selection in registration builders, components, dependency-injection
   adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
   resolution, scoped container fallbacks, and live serialized-handle fallbacks

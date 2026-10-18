@@ -160,8 +160,9 @@ _ = token.RegisterUntargetedPostProcessor<SceneLoaded>(
 ```
 
 Direct bus registrations are not token-owned. Retain each `MessageBusRegistration` on the
-owner and call `Deregister<T>(in registration)` with the same message type during teardown.
-Use `IMessage` as `T` for `RegisterGlobalAcceptAll`.
+owner and call `Deregister<T>(in registration)` on the same bus instance with the same message type
+during teardown. Use `IMessage` as `T` for `RegisterGlobalAcceptAll`. Since 4.0, passing a built-in
+handle to another bus is a no-op; it leaves both buses unchanged.
 
 ## Lifecycle
 

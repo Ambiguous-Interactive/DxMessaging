@@ -10,6 +10,10 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.MessageBus.Internal;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+    using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+#endif
 
     /// <summary>
     /// Contract guardrails for <see cref="MessageBus"/> cache storage fields that
@@ -23,6 +27,8 @@ namespace DxMessaging.Tests.Editor.Contract
         private static readonly InstanceId HandlerOwnerB = new InstanceId(0x4D42_4902);
         private static readonly InstanceId Target = new InstanceId(0x4D42_4903);
 
+        private const int ExpectedMessageCacheFieldCount = 8;
+
         private const BindingFlags DeclaredInstanceFields =
             BindingFlags.Instance
             | BindingFlags.Public
@@ -35,10 +41,10 @@ namespace DxMessaging.Tests.Editor.Contract
             FieldInfo[] fields = GetMessageCacheStorageFields();
 
             Assert.AreEqual(
-                MessageBus.ExpectedMessageCacheFieldCount,
+                ExpectedMessageCacheFieldCount,
                 fields.Length,
                 "MessageBus MessageCache storage field count changed. If the new cache owns "
-                    + "per-message-type state, register it in MessageBus.SweepableTypeCaches and "
+                    + "per-message-type state, register it in MessageBus.SweepableTypeCacheRegistry and "
                     + "then update ExpectedMessageCacheFieldCount."
             );
         }
@@ -199,8 +205,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 .Select(field => field.Name)
                 .OrderBy(name => name, StringComparer.Ordinal)
                 .ToArray();
-            string[] registeredNames = MessageBus
-                .SweepableTypeCaches.Select(sweepable => sweepable.StorageFieldName)
+            string[] registeredNames = SweepRegistryInspection
+                .Rows.Select(sweepable => sweepable.StorageFieldName)
                 .OrderBy(name => name, StringComparer.Ordinal)
                 .ToArray();
 
@@ -219,7 +225,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 StringComparer.Ordinal
             );
 
-            foreach (ISweepable sweepable in MessageBus.SweepableTypeCaches)
+            foreach (ObservedSweep sweepable in SweepRegistryInspection.Rows)
             {
                 Assert.IsTrue(
                     fieldNames.Contains(sweepable.StorageFieldName),
@@ -251,11 +257,8 @@ namespace DxMessaging.Tests.Editor.Contract
         [Test]
         public void SweepableRegistryFieldNamesAreUnique()
         {
-            string[] duplicateNames = MessageBus
-                .SweepableTypeCaches.GroupBy(
-                    sweepable => sweepable.StorageFieldName,
-                    StringComparer.Ordinal
-                )
+            string[] duplicateNames = SweepRegistryInspection
+                .Rows.GroupBy(sweepable => sweepable.StorageFieldName, StringComparer.Ordinal)
                 .Where(group => 1 < group.Count())
                 .Select(group => group.Key)
                 .ToArray();
@@ -266,23 +269,20 @@ namespace DxMessaging.Tests.Editor.Contract
             );
         }
 
-        [Test]
-        public void SweepableRegistryFieldTypesMatchDeclaredFields()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void SweepRegistryCallbacksLeaveEmptyBusEmpty(bool force)
         {
-            Dictionary<string, FieldInfo> fieldsByName = GetMessageCacheStorageFields()
-                .ToDictionary(field => field.Name, StringComparer.Ordinal);
-
-            foreach (ISweepable sweepable in MessageBus.SweepableTypeCaches)
+            MessageBus bus = new();
+            foreach (ObservedSweep sweepable in SweepRegistryInspection.Rows)
             {
-                Assert.IsTrue(
-                    fieldsByName.TryGetValue(sweepable.StorageFieldName, out FieldInfo field),
-                    $"Sweep registry row '{sweepable.StorageFieldName}' does not match a MessageBus MessageCache field."
-                );
                 Assert.AreEqual(
-                    field.FieldType,
-                    sweepable.StorageFieldType,
-                    $"Sweep registry row '{sweepable.StorageFieldName}' has a stale field type."
+                    0,
+                    sweepable.Sweep(bus, force),
+                    $"An empty {sweepable.StorageFieldName} must reclaim no slots."
                 );
+                Assert.AreEqual(0, bus.OccupiedTypeSlots);
+                Assert.AreEqual(0, bus.OccupiedTargetSlots);
             }
         }
 
@@ -335,7 +335,7 @@ namespace DxMessaging.Tests.Editor.Contract
             bus.Deregister<InterceptorProbeMessage>(in deregister);
             Assert.AreEqual(0, bus.RegisteredInterceptors);
 
-            ISweepable sweepable = MessageBus.SweepableTypeCaches.Single(row =>
+            ObservedSweep sweepable = SweepRegistryInspection.Rows.Single(row =>
                 row.StorageFieldName == "_untargetedInterceptsByType"
             );
             int evicted = sweepable.Sweep(bus, force: true);
@@ -355,7 +355,7 @@ namespace DxMessaging.Tests.Editor.Contract
             int secondCalls = 0;
             try
             {
-                firstDeregister =
+                firstDeregister = (
                     first.RegisterUntargetedMessageHandler<UntargetedDispatchProbeMessage>(
                         input =>
                         {
@@ -371,14 +371,16 @@ namespace DxMessaging.Tests.Editor.Contract
                         },
                         priority: 0,
                         messageBus: bus
-                    );
-                secondDeregister =
+                    )
+                ).AsAction();
+                secondDeregister = (
                     second.RegisterUntargetedMessageHandler<UntargetedDispatchProbeMessage>(
                         _ => secondCalls++,
                         _ => secondCalls++,
                         priority: 0,
                         messageBus: bus
-                    );
+                    )
+                ).AsAction();
 
                 UntargetedDispatchProbeMessage message = new UntargetedDispatchProbeMessage();
                 bus.UntargetedBroadcast(ref message);
@@ -541,18 +543,22 @@ namespace DxMessaging.Tests.Editor.Contract
                     calls.Add("second");
                 };
 
-                firstDeregister = firstHandler.RegisterUntargetedMessageHandler(
-                    first,
-                    first,
-                    priority: 0,
-                    messageBus: bus
-                );
-                secondDeregister = secondHandler.RegisterUntargetedMessageHandler(
-                    second,
-                    second,
-                    priority: 1,
-                    messageBus: bus
-                );
+                firstDeregister = (
+                    firstHandler.RegisterUntargetedMessageHandler(
+                        first,
+                        first,
+                        priority: 0,
+                        messageBus: bus
+                    )
+                ).AsAction();
+                secondDeregister = (
+                    secondHandler.RegisterUntargetedMessageHandler(
+                        second,
+                        second,
+                        priority: 1,
+                        messageBus: bus
+                    )
+                ).AsAction();
 
                 DispatchTrimProbeMessage message = new DispatchTrimProbeMessage();
                 bus.UntargetedBroadcast(ref message);

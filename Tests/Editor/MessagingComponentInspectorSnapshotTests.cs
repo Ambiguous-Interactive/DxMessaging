@@ -5,7 +5,7 @@ namespace DxMessaging.Tests.Editor
     using Core;
     using Core.MessageBus;
     using Core.Messages;
-    using DxMessaging.Editor.Testing;
+    using DxMessaging.Editor.CustomEditors;
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEditor;
@@ -13,7 +13,7 @@ namespace DxMessaging.Tests.Editor
     using Object = UnityEngine.Object;
 
     [TestFixture]
-    public sealed class MessagingComponentEditorHarnessTests
+    public sealed class MessagingComponentInspectorSnapshotTests
     {
         private readonly List<Object> _createdObjects = new();
 
@@ -62,9 +62,8 @@ namespace DxMessaging.Tests.Editor
                 TestHarnessMessage message = default;
                 MessageHandler.MessageBus.UntargetedBroadcast(ref message);
 
-                MessagingComponentInspectorState state = MessagingComponentEditorHarness.Capture(
-                    messagingComponent
-                );
+                MessagingComponentInspectorState state =
+                    MessagingComponentInspectorSnapshot.Capture(messagingComponent);
 
                 Assert.That(state.GlobalDiagnosticsEnabled, Is.True);
                 Assert.That(
@@ -103,7 +102,7 @@ namespace DxMessaging.Tests.Editor
             autoConfigureProperty.boolValue = true;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            MessagingComponentInspectorState state = MessagingComponentEditorHarness.Capture(
+            MessagingComponentInspectorState state = MessagingComponentInspectorSnapshot.Capture(
                 messagingComponent
             );
 
@@ -138,7 +137,7 @@ namespace DxMessaging.Tests.Editor
             autoConfigureProperty.boolValue = true;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            MessagingComponentInspectorState state = MessagingComponentEditorHarness.Capture(
+            MessagingComponentInspectorState state = MessagingComponentInspectorSnapshot.Capture(
                 messagingComponent
             );
 
@@ -176,7 +175,7 @@ namespace DxMessaging.Tests.Editor
             autoConfigureProperty.boolValue = true;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            MessagingComponentInspectorState state = MessagingComponentEditorHarness.Capture(
+            MessagingComponentInspectorState state = MessagingComponentInspectorSnapshot.Capture(
                 messagingComponent
             );
 

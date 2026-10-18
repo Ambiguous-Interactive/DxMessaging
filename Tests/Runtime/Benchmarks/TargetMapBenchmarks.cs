@@ -15,7 +15,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     {
         Hit,
         Miss,
-        Churn,
+        ChurnWithTrim,
     }
 
     public enum TargetMapKeyFamily
@@ -110,24 +110,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(16)]
         [TestCase(256)]
         [TestCase(4096)]
-        public void TargetMapFreshConstructionBenchmark(int keyCount)
+        public void IntKeyMapFreshConstructionBenchmark(int keyCount)
         {
-            TargetMapConstructionResult result = RunFreshConstruction(keyCount);
+            IntKeyMapConstructionResult result = RunFreshConstruction(keyCount);
             Debug.Log(result.ToStructuredLog());
-            TestContext.Out.WriteLine(TargetMapConstructionResult.CsvHeader);
+            TestContext.Out.WriteLine(IntKeyMapConstructionResult.CsvHeader);
             TestContext.Out.WriteLine(result.ToCsvRow());
         }
 
-        internal static TargetMapConstructionResult RunFreshConstruction(int keyCount)
+        internal static IntKeyMapConstructionResult RunFreshConstruction(int keyCount)
         {
             InstanceId[] keys = new InstanceId[keyCount];
             for (int index = 0; index < keys.Length; ++index)
             {
                 keys[index] = new InstanceId(0x5A00_0000 + index);
             }
-            object seed = MessageBus.CreateContextMapSeedForBenchmark();
-            object prewarmed = MessageBus.CreatePopulatedContextMapForBenchmark(keys, seed);
-            MessageBus.ObserveContextMapForBenchmark(
+            object seed = MessageBusInspection.CreateContextMapSeedForBenchmark();
+            object prewarmed = MessageBusInspection.CreatePopulatedContextMapForBenchmark(
+                keys,
+                seed
+            );
+            MessageBusInspection.ObserveContextMapForBenchmark(
                 prewarmed,
                 out int prewarmedCount,
                 out int capacity
@@ -144,12 +147,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 long start = System.Diagnostics.Stopwatch.GetTimestamp();
                 for (int index = 0; index < sinks.Length; ++index)
                 {
-                    sinks[index] = MessageBus.CreatePopulatedContextMapForBenchmark(keys, seed);
+                    sinks[index] = MessageBusInspection.CreatePopulatedContextMapForBenchmark(
+                        keys,
+                        seed
+                    );
                 }
                 long end = System.Diagnostics.Stopwatch.GetTimestamp();
                 for (int index = 0; index < sinks.Length; ++index)
                 {
-                    MessageBus.ObserveContextMapForBenchmark(
+                    MessageBusInspection.ObserveContextMapForBenchmark(
                         sinks[index],
                         out int count,
                         out int attemptCapacity
@@ -176,11 +182,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     AllocationProbe.AllocationSample sample;
                     using (AllocationProbe.Window window = AllocationProbe.BeginWindow())
                     {
-                        candidate = MessageBus.CreatePopulatedContextMapForBenchmark(keys, seed);
+                        candidate = MessageBusInspection.CreatePopulatedContextMapForBenchmark(
+                            keys,
+                            seed
+                        );
                         sample = window.SampleBoth();
                     }
                     s_freshConstructionSink = candidate;
-                    MessageBus.ObserveContextMapForBenchmark(
+                    MessageBusInspection.ObserveContextMapForBenchmark(
                         candidate,
                         out int count,
                         out int attemptCapacity
@@ -214,7 +223,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             double wallClockMs = BenchmarkProtocol.Median(samples);
-            return new TargetMapConstructionResult(
+            return new IntKeyMapConstructionResult(
                 keyCount,
                 wallClockMs,
                 1000d / Math.Max(wallClockMs, double.Epsilon),
@@ -279,7 +288,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             TargetMapBenchmarkCase benchmarkCase = new(
                 keyCount,
-                TargetMapBenchmarkOperation.Churn,
+                TargetMapBenchmarkOperation.ChurnWithTrim,
                 keyFamily
             );
             using TargetMapState state = new(benchmarkCase);
@@ -327,7 +336,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 removalMoves += before.DeletionMoves;
                 maxRemovalMoves = Math.Max(maxRemovalMoves, before.DeletionMoves);
 
-                state.RunMany(TargetMapBenchmarkOperation.Churn, 1);
+                state.RunMany(TargetMapBenchmarkOperation.ChurnWithTrim, 1);
                 IntKeyMapTopologyObservation replacement = state.ObserveTopology(
                     state.TargetAt(index)
                 );
@@ -409,8 +418,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
             internal TargetMapState(TargetMapBenchmarkCase benchmarkCase)
             {
-                _contextMapPoolScope = MessageBus.IsolateContextMapPoolForBenchmark();
-                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _contextMapPoolScope = MessageBusInspection.IsolateContextMapPoolForBenchmark();
+                _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 try
                 {
                     MessageBus = new MessageBus { DiagnosticsMode = false };
@@ -532,7 +541,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                             Miss();
                         }
                         return;
-                    case TargetMapBenchmarkOperation.Churn:
+                    case TargetMapBenchmarkOperation.ChurnWithTrim:
                         for (int iteration = 0; iteration < count; iteration++)
                         {
                             Churn();
@@ -607,9 +616,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 int index = NextIndex();
                 InstanceId oldTarget = _targets[index];
                 _token.RemoveRegistration(_handles[index]);
-                int evicted = MessageBus.SweepDirtyTargetSlotForBenchmark<TargetMapMessage>(
-                    oldTarget
-                );
+                int slotsBeforeTrim = MessageBus.OccupiedTargetSlots;
+                MessageBus.Trim(force: true);
+                int evicted = slotsBeforeTrim - MessageBus.OccupiedTargetSlots;
                 if (evicted != 1)
                 {
                     throw new InvalidOperationException(
@@ -634,18 +643,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         private readonly struct TargetMapMessage : ITargetedMessage<TargetMapMessage> { }
     }
 
-    internal readonly struct TargetMapConstructionResult
+    internal readonly struct IntKeyMapConstructionResult
     {
         internal const string CsvHeader =
-            "keyCount,wallClockMs,operationsPerSecond,gcAllocations,gcAllocatedBytes,targetMapCapacity";
+            "keyCount,wallClockMs,operationsPerSecond,gcAllocations,gcAllocatedBytes,mapCapacity";
 
-        internal TargetMapConstructionResult(
+        internal IntKeyMapConstructionResult(
             int keyCount,
             double wallClockMs,
             double operationsPerSecond,
             long gcAllocations,
             long gcAllocatedBytes,
-            int targetMapCapacity
+            int mapCapacity
         )
         {
             KeyCount = keyCount;
@@ -653,7 +662,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             OperationsPerSecond = operationsPerSecond;
             GcAllocations = gcAllocations;
             GcAllocatedBytes = gcAllocatedBytes;
-            TargetMapCapacity = targetMapCapacity;
+            MapCapacity = mapCapacity;
         }
 
         internal int KeyCount { get; }
@@ -661,18 +670,18 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal double OperationsPerSecond { get; }
         internal long GcAllocations { get; }
         internal long GcAllocatedBytes { get; }
-        internal int TargetMapCapacity { get; }
+        internal int MapCapacity { get; }
 
         internal string ToStructuredLog() =>
             string.Format(
                 CultureInfo.InvariantCulture,
-                "DXM_TARGET_MAP_CONSTRUCTION keyCount={0} wallClockMs={1:F6} operationsPerSecond={2:F3} gcAllocations={3} gcAllocatedBytes={4} targetMapCapacity={5}",
+                "DXM_INT_KEY_MAP_CONSTRUCTION keyCount={0} wallClockMs={1:F6} operationsPerSecond={2:F3} gcAllocations={3} gcAllocatedBytes={4} mapCapacity={5}",
                 KeyCount,
                 WallClockMs,
                 OperationsPerSecond,
                 GcAllocations,
                 GcAllocatedBytes,
-                TargetMapCapacity
+                MapCapacity
             );
 
         internal string ToCsvRow() =>
@@ -683,7 +692,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 OperationsPerSecond.ToString("F3", CultureInfo.InvariantCulture),
                 GcAllocations.ToString(CultureInfo.InvariantCulture),
                 GcAllocatedBytes.ToString(CultureInfo.InvariantCulture),
-                TargetMapCapacity.ToString(CultureInfo.InvariantCulture)
+                MapCapacity.ToString(CultureInfo.InvariantCulture)
             );
     }
 
@@ -717,6 +726,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
     internal static class TargetMapBenchmarkKeys
     {
+        /*
+            A stride of 4096 yields 2^20 distinct values in the 32-bit keyspace.
+            Four disjoint streams can therefore hold at most 2^18 keys each.
+        */
+        private const int MaximumStrideKeysPerStream = 1 << 18;
         private const uint HashMultiplierOne = 0x7FEB352Du;
         private const uint HashMultiplierTwo = 0x846CA68Bu;
         private static readonly uint HashMultiplierOneInverse = MultiplicativeInverse(
@@ -735,6 +749,17 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             if (!Enum.IsDefined(typeof(TargetMapKeyFamily), family))
             {
                 throw new ArgumentOutOfRangeException(nameof(family), family, null);
+            }
+            if (
+                family == TargetMapKeyFamily.PowerOfTwoStride
+                && MaximumStrideKeysPerStream < keyCount
+            )
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(keyCount),
+                    keyCount,
+                    $"Stride key counts must be at most {MaximumStrideKeysPerStream} to keep all four streams disjoint."
+                );
             }
 
             int capacity = CapacityForKeyCount(keyCount);
@@ -787,7 +812,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         key = (index & 1) == 0 ? int.MinValue + offset : int.MaxValue - offset;
                         break;
                     case TargetMapKeyFamily.PowerOfTwoStride:
-                        key = 0x0100_0000 + stream * 0x0100_0000 + index * 4096;
+                        int strideWidth = Math.Max(4096, keyCount);
+                        key = unchecked(0x0100_0000 + (stream * strideWidth + index) * 4096);
                         break;
                     case TargetMapKeyFamily.UniformSeededRandom:
                         do
@@ -890,7 +916,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             TargetMapBenchmarkOperation.Hit,
             TargetMapBenchmarkOperation.Miss,
-            TargetMapBenchmarkOperation.Churn,
+            TargetMapBenchmarkOperation.ChurnWithTrim,
         };
 
         private static readonly TargetMapKeyFamily[] ScreeningKeyFamilies =
@@ -1248,7 +1274,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 TargetMapBenchmarkOperation.Hit,
                 TargetMapBenchmarkOperation.Miss,
-                TargetMapBenchmarkOperation.Churn,
+                TargetMapBenchmarkOperation.ChurnWithTrim,
             };
             HashSet<string> observedKeys = new();
 
@@ -1287,7 +1313,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 TargetMapBenchmarkOperation.Hit,
                 TargetMapBenchmarkOperation.Miss,
-                TargetMapBenchmarkOperation.Churn,
+                TargetMapBenchmarkOperation.ChurnWithTrim,
             };
             HashSet<string> keys = new();
             HashSet<string> familyCardinalityPairs = new();
@@ -1492,15 +1518,112 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(TargetMapKeyFamily.DesignedMixerCollision)]
         public void KeyFamiliesAreDeterministicUniqueAndDisjoint(TargetMapKeyFamily family)
         {
-            const int keyCount = 256;
+            AssertKeyFamiliesAreDeterministicUniqueAndDisjoint(family, 256);
+        }
+
+        [TestCase(4095)]
+        [TestCase(4096)]
+        [TestCase(4097)]
+        [TestCase(6144)]
+        [TestCase(6145)]
+        [TestCase(262144)]
+        public void StrideKeyStreamsRemainDisjointAcrossRangeBoundaries(int keyCount)
+        {
+            AssertKeyFamiliesAreDeterministicUniqueAndDisjoint(
+                TargetMapKeyFamily.PowerOfTwoStride,
+                keyCount
+            );
+            TargetMapKeySet keys = TargetMapBenchmarkKeys.Create(
+                TargetMapKeyFamily.PowerOfTwoStride,
+                keyCount
+            );
+            Assert.AreEqual(
+                0x0100_0000,
+                keys.RegisteredKeys[0],
+                $"[PowerOfTwoStride/{keyCount}] Registered stream must keep its original origin."
+            );
+            foreach (
+                int[] stream in new[]
+                {
+                    keys.RegisteredKeys,
+                    keys.ReplacementKeys,
+                    keys.InsideClusterMisses,
+                    keys.OutsideClusterMisses,
+                }
+            )
+            {
+                for (int index = 0; index < stream.Length; ++index)
+                {
+                    Assert.AreEqual(
+                        0,
+                        stream[index] & 0xFFF,
+                        $"[PowerOfTwoStride/{keyCount}] Key at {index} must retain aligned low bits."
+                    );
+                    if (0 < index)
+                    {
+                        Assert.AreEqual(
+                            4096,
+                            unchecked(stream[index] - stream[index - 1]),
+                            $"[PowerOfTwoStride/{keyCount}] Adjacent keys at {index} must retain stride4096, including signed wrap."
+                        );
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void StrideKeyCountBeyondDistinctKeySpaceIsRejected()
+        {
+            const int keyCount = 262145;
+            ArgumentOutOfRangeException error = Assert.Throws<ArgumentOutOfRangeException>(
+                () => TargetMapBenchmarkKeys.Create(TargetMapKeyFamily.PowerOfTwoStride, keyCount),
+                $"[PowerOfTwoStride/{keyCount}] Four streams exceed the finite aligned32-bit keyspace."
+            );
+            Assert.AreEqual(
+                nameof(keyCount),
+                error.ParamName,
+                $"[PowerOfTwoStride/{keyCount}] Invalid count parameter must be identified."
+            );
+            Assert.AreEqual(
+                keyCount,
+                error.ActualValue,
+                $"[PowerOfTwoStride/{keyCount}] Invalid count value must be retained."
+            );
+        }
+
+        private static void AssertKeyFamiliesAreDeterministicUniqueAndDisjoint(
+            TargetMapKeyFamily family,
+            int keyCount
+        )
+        {
             TargetMapKeySet first = TargetMapBenchmarkKeys.Create(family, keyCount);
             TargetMapKeySet second = TargetMapBenchmarkKeys.Create(family, keyCount);
 
-            CollectionAssert.AreEqual(first.RegisteredKeys, second.RegisteredKeys);
-            CollectionAssert.AreEqual(first.ReplacementKeys, second.ReplacementKeys);
-            CollectionAssert.AreEqual(first.InsideClusterMisses, second.InsideClusterMisses);
-            CollectionAssert.AreEqual(first.OutsideClusterMisses, second.OutsideClusterMisses);
-            Assert.AreEqual(first.ExpectedCapacity, second.ExpectedCapacity);
+            CollectionAssert.AreEqual(
+                first.RegisteredKeys,
+                second.RegisteredKeys,
+                $"[{family}/{keyCount}] Registered keys must be deterministic."
+            );
+            CollectionAssert.AreEqual(
+                first.ReplacementKeys,
+                second.ReplacementKeys,
+                $"[{family}/{keyCount}] Replacement keys must be deterministic."
+            );
+            CollectionAssert.AreEqual(
+                first.InsideClusterMisses,
+                second.InsideClusterMisses,
+                $"[{family}/{keyCount}] Inside misses must be deterministic."
+            );
+            CollectionAssert.AreEqual(
+                first.OutsideClusterMisses,
+                second.OutsideClusterMisses,
+                $"[{family}/{keyCount}] Outside misses must be deterministic."
+            );
+            Assert.AreEqual(
+                first.ExpectedCapacity,
+                second.ExpectedCapacity,
+                $"[{family}/{keyCount}] Expected capacity must be deterministic."
+            );
 
             HashSet<int> unique = new();
             foreach (
@@ -1513,14 +1636,26 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             )
             {
-                Assert.AreEqual(keyCount, stream.Length);
+                Assert.AreEqual(
+                    keyCount,
+                    stream.Length,
+                    $"[{family}/{keyCount}] Every stream must contain the requested count."
+                );
                 foreach (int key in stream)
                 {
-                    Assert.That(unique.Add(key), Is.True, $"Duplicate key {key} in {family}.");
+                    Assert.That(
+                        unique.Add(key),
+                        Is.True,
+                        $"[{family}/{keyCount}] Duplicate key {key}."
+                    );
                 }
             }
 
-            Assert.AreEqual(keyCount * 4, unique.Count);
+            Assert.AreEqual(
+                keyCount * 4,
+                unique.Count,
+                $"[{family}/{keyCount}] All four streams must be mutually disjoint."
+            );
         }
 
         [Test]
@@ -1625,7 +1760,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 new TargetMapBenchmarkCase(keyCount, TargetMapBenchmarkOperation.Miss, family)
             );
             TargetMapContractObservation churn = TargetMapBenchmarks.RunOnceForContract(
-                new TargetMapBenchmarkCase(keyCount, TargetMapBenchmarkOperation.Churn, family)
+                new TargetMapBenchmarkCase(
+                    keyCount,
+                    TargetMapBenchmarkOperation.ChurnWithTrim,
+                    family
+                )
             );
 
             Assert.AreEqual(1, hit.OperationInvocations);
@@ -1672,7 +1811,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         [TestCase(TargetMapBenchmarkOperation.Hit, 1, 1, 1)]
         [TestCase(TargetMapBenchmarkOperation.Miss, 0, 1, 1)]
-        [TestCase(TargetMapBenchmarkOperation.Churn, 1, 0, 1)]
+        [TestCase(TargetMapBenchmarkOperation.ChurnWithTrim, 1, 0, 1)]
         public void OperationContractPreservesCardinalityAndRoutesExactly(
             TargetMapBenchmarkOperation operation,
             long expectedOperationInvocations,
@@ -1730,47 +1869,53 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         [Test]
-        public void ContextMapPoolScopeRestoresAbsentOverride()
+        public void ContextMapPoolScopeReleasesOwnership()
         {
-            Assert.IsFalse(MessageBus.ContextMapPoolOverrideActiveForBenchmark);
+            Assert.IsFalse(MessageBusInspection.ContextMapPoolScopeActive);
 
-            using (MessageBus.IsolateContextMapPoolForBenchmark())
+            using (MessageBusInspection.IsolateContextMapPoolForBenchmark())
             {
-                Assert.IsTrue(MessageBus.ContextMapPoolOverrideActiveForBenchmark);
+                Assert.IsTrue(MessageBusInspection.ContextMapPoolScopeActive);
             }
 
-            Assert.IsFalse(MessageBus.ContextMapPoolOverrideActiveForBenchmark);
+            Assert.IsFalse(MessageBusInspection.ContextMapPoolScopeActive);
         }
 
         [Test]
-        public void ContextMapPoolScopesRestoreNestedIdentityAndCapacity()
+        public void ContextMapPoolScopesRestoreNestedStorageAndCapacity()
         {
-            MessageBus.ContextMapPoolBenchmarkObservation baseline =
-                MessageBus.ObserveContextMapPoolForBenchmark();
-            using (MessageBus.IsolateContextMapPoolForBenchmark())
+            ContextMapPoolBenchmarkObservation baseline =
+                MessageBusInspection.ObserveContextMapPoolForBenchmark();
+            using (MessageBusInspection.IsolateContextMapPoolForBenchmark())
             {
-                MessageBus.ContextMapPoolBenchmarkObservation outer =
-                    MessageBus.ObserveContextMapPoolForBenchmark();
-                Assert.AreNotSame(baseline.Identity, outer.Identity);
+                ContextMapPoolBenchmarkObservation outer =
+                    MessageBusInspection.ObserveContextMapPoolForBenchmark();
+                Assert.AreSame(
+                    baseline.PoolIdentity,
+                    outer.PoolIdentity,
+                    "The real production singleton must remain in use."
+                );
+                Assert.AreNotSame(baseline.StorageIdentity, outer.StorageIdentity);
                 Assert.AreEqual(baseline.MaxRetained, outer.MaxRetained);
 
-                using (MessageBus.IsolateContextMapPoolForBenchmark())
+                using (MessageBusInspection.IsolateContextMapPoolForBenchmark())
                 {
-                    MessageBus.ContextMapPoolBenchmarkObservation inner =
-                        MessageBus.ObserveContextMapPoolForBenchmark();
-                    Assert.AreNotSame(outer.Identity, inner.Identity);
+                    ContextMapPoolBenchmarkObservation inner =
+                        MessageBusInspection.ObserveContextMapPoolForBenchmark();
+                    Assert.AreSame(outer.PoolIdentity, inner.PoolIdentity);
+                    Assert.AreNotSame(outer.StorageIdentity, inner.StorageIdentity);
                     Assert.AreEqual(outer.MaxRetained, inner.MaxRetained);
                 }
 
                 Assert.AreSame(
-                    outer.Identity,
-                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                    outer.StorageIdentity,
+                    MessageBusInspection.ObserveContextMapPoolForBenchmark().StorageIdentity
                 );
             }
 
-            MessageBus.ContextMapPoolBenchmarkObservation restored =
-                MessageBus.ObserveContextMapPoolForBenchmark();
-            Assert.AreSame(baseline.Identity, restored.Identity);
+            ContextMapPoolBenchmarkObservation restored =
+                MessageBusInspection.ObserveContextMapPoolForBenchmark();
+            Assert.AreSame(baseline.StorageIdentity, restored.StorageIdentity);
             Assert.AreEqual(baseline.MaxRetained, restored.MaxRetained);
             Assert.AreEqual(baseline.UseLru, restored.UseLru);
         }
@@ -1778,44 +1923,52 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test]
         public void ContextMapPoolScopeDisposalIsIdempotent()
         {
-            object baselineIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
-            IDisposable scope = MessageBus.IsolateContextMapPoolForBenchmark();
+            object baselineIdentity = MessageBusInspection
+                .ObserveContextMapPoolForBenchmark()
+                .StorageIdentity;
+            IDisposable scope = MessageBusInspection.IsolateContextMapPoolForBenchmark();
 
             scope.Dispose();
             scope.Dispose();
 
             Assert.AreSame(
                 baselineIdentity,
-                MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                MessageBusInspection.ObserveContextMapPoolForBenchmark().StorageIdentity
             );
         }
 
         [Test]
         public void ContextMapPoolScopeRejectsOutOfOrderDisposalWithoutPoisoningRetry()
         {
-            object baselineIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
-            IDisposable outer = MessageBus.IsolateContextMapPoolForBenchmark();
-            object outerIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
-            IDisposable inner = MessageBus.IsolateContextMapPoolForBenchmark();
-            object innerIdentity = MessageBus.ObserveContextMapPoolForBenchmark().Identity;
+            object baselineIdentity = MessageBusInspection
+                .ObserveContextMapPoolForBenchmark()
+                .StorageIdentity;
+            IDisposable outer = MessageBusInspection.IsolateContextMapPoolForBenchmark();
+            object outerIdentity = MessageBusInspection
+                .ObserveContextMapPoolForBenchmark()
+                .StorageIdentity;
+            IDisposable inner = MessageBusInspection.IsolateContextMapPoolForBenchmark();
+            object innerIdentity = MessageBusInspection
+                .ObserveContextMapPoolForBenchmark()
+                .StorageIdentity;
 
             try
             {
                 Assert.Throws<InvalidOperationException>(() => outer.Dispose());
                 Assert.AreSame(
                     innerIdentity,
-                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                    MessageBusInspection.ObserveContextMapPoolForBenchmark().StorageIdentity
                 );
 
                 inner.Dispose();
                 Assert.AreSame(
                     outerIdentity,
-                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                    MessageBusInspection.ObserveContextMapPoolForBenchmark().StorageIdentity
                 );
                 outer.Dispose();
                 Assert.AreSame(
                     baselineIdentity,
-                    MessageBus.ObserveContextMapPoolForBenchmark().Identity
+                    MessageBusInspection.ObserveContextMapPoolForBenchmark().StorageIdentity
                 );
             }
             finally
@@ -1828,32 +1981,32 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test]
         public void ContextMapPoolConfigurationPropagatesThroughNestedScopes()
         {
-            MessageBus.ContextMapPoolBenchmarkObservation baseline =
-                MessageBus.ObserveContextMapPoolForBenchmark();
-            using (MessageBus.IsolateContextMapPoolForBenchmark())
+            ContextMapPoolBenchmarkObservation baseline =
+                MessageBusInspection.ObserveContextMapPoolForBenchmark();
+            using (MessageBusInspection.IsolateContextMapPoolForBenchmark())
             {
-                using (MessageBus.IsolateContextMapPoolForBenchmark())
+                using (MessageBusInspection.IsolateContextMapPoolForBenchmark())
                 {
-                    MessageBus.ConfigureContextMapPoolForBenchmark(
+                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(
                         !baseline.UseLru,
                         baseline.MaxRetained + 1
                     );
                 }
 
-                MessageBus.ContextMapPoolBenchmarkObservation propagated =
-                    MessageBus.ObserveContextMapPoolForBenchmark();
+                ContextMapPoolBenchmarkObservation propagated =
+                    MessageBusInspection.ObserveContextMapPoolForBenchmark();
                 Assert.AreEqual(!baseline.UseLru, propagated.UseLru);
                 Assert.AreEqual(baseline.MaxRetained + 1, propagated.MaxRetained);
 
-                MessageBus.ConfigureContextMapPoolForBenchmark(
+                MessageBusInspection.ConfigureContextMapPoolForBenchmark(
                     baseline.UseLru,
                     baseline.MaxRetained
                 );
             }
 
-            MessageBus.ContextMapPoolBenchmarkObservation restored =
-                MessageBus.ObserveContextMapPoolForBenchmark();
-            Assert.AreSame(baseline.Identity, restored.Identity);
+            ContextMapPoolBenchmarkObservation restored =
+                MessageBusInspection.ObserveContextMapPoolForBenchmark();
+            Assert.AreSame(baseline.StorageIdentity, restored.StorageIdentity);
             Assert.AreEqual(baseline.UseLru, restored.UseLru);
             Assert.AreEqual(baseline.MaxRetained, restored.MaxRetained);
         }
@@ -1891,11 +2044,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(4096)]
         public void FreshConstructionReportsDirectTopologyAndSchema(int keyCount)
         {
-            TargetMapConstructionResult result = TargetMapBenchmarks.RunFreshConstruction(keyCount);
+            IntKeyMapConstructionResult result = TargetMapBenchmarks.RunFreshConstruction(keyCount);
             Assert.AreEqual(keyCount, result.KeyCount);
-            Assert.GreaterOrEqual(result.TargetMapCapacity, keyCount);
+            Assert.GreaterOrEqual(result.MapCapacity, keyCount);
             Assert.AreEqual(
-                TargetMapConstructionResult.CsvHeader.Split(',').Length,
+                IntKeyMapConstructionResult.CsvHeader.Split(',').Length,
                 result.ToCsvRow().Split(',').Length
             );
             StringAssert.Contains("keyCount=" + keyCount, result.ToStructuredLog());

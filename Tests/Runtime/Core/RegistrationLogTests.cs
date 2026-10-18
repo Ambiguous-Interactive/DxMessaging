@@ -199,10 +199,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessageBus existing = new MessageBus();
                 existing.Log.Enabled = true;
                 settings._registrationLogCapacity = 2;
-                settingsOverride =
-                    DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider.Override(
-                        settings
-                    );
+                settingsOverride = RuntimeSettingsFixture.Override(settings);
                 MessageBus later = new MessageBus();
                 later.Log.Enabled = true;
                 foreach (MessageBus bus in new[] { existing, later })

@@ -524,7 +524,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             // Pay first-touch constructor/JIT costs outside both measurement passes.
             MessageBus warmupBus;
-            using (IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark())
+            using (
+                IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark()
+            )
             {
                 warmupBus = new MessageBus();
             }
@@ -532,7 +534,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long startTimestamp;
             long endTimestamp;
             AllocationProbe.SettleHeapForMeasurement();
-            using (IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark())
+            using (
+                IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark()
+            )
             {
                 startTimestamp = Stopwatch.GetTimestamp();
                 for (int index = 0; index < timedBuses.Length; index++)
@@ -555,7 +559,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             MessageBus[] allocationBuses = new MessageBus[ConstructionBatchSize];
             AllocationProbe.SettleHeapForMeasurement();
             AllocationProbe.AllocationSample sample;
-            using (IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark())
+            using (
+                IDisposable registry = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark()
+            )
             {
                 sample = AllocationProbe.MeasureWithBytes(() =>
                 {
@@ -579,7 +585,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static DispatchBenchmarkResult MeasureMessageRegistrationTokenConstruction()
         {
-            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry =
+                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
 
             /*
                 Token creation requires both a handler and a bus. Build those dependencies before
@@ -879,7 +886,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             where T : DxMessaging.Core.IMessage
         {
             int total = RegistrationMarginalWarmup + RegistrationMarginalCount;
-            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry =
+                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
 
             /*
                 Pre-build distinct handler delegates OUTSIDE the measured window. Each captures

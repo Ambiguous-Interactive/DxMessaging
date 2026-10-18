@@ -91,8 +91,7 @@ These apply to `DispatchFlatSnapshot`, `DispatchContextFlatSnapshot`,
 - Headless hosts, dedicated servers, and non-Unity consumers have no PlayerLoop
   hook (`#if UNITY_2021_3_OR_NEWER`) and must call `bus.Trim()` themselves.
 - Tests inject a probe clock through `MessageBus.CreateForInternalUse(probeClock, ...)`.
-  `DxMessagingRuntimeSettingsProvider.Override` cannot inject it; the clock is
-  constructor-injected.
+  The clock is constructor-injected.
 
 ### AggressiveInlining
 

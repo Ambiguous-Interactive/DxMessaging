@@ -1154,28 +1154,38 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void IdleSweepBenchmarkScopesRestoreAfterArbitraryDisposalOrder()
         {
-            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
-            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
-            IDisposable outer = MessageBus.IsolateIdleSweepRegistryForBenchmark();
-            object outerIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            int originalCount = MessageBusInspection.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBusInspection.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable outer = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            object outerIdentity = MessageBusInspection.IdleSweepRegistryIdentityForBenchmark;
             IDisposable inner = null;
             try
             {
                 _ = new MessageBus();
-                Assert.AreEqual(1, MessageBus.IdleSweepRegistryCountForBenchmark);
+                Assert.AreEqual(1, MessageBusInspection.IdleSweepRegistryCountForBenchmark);
 
-                inner = MessageBus.IsolateIdleSweepRegistryForBenchmark();
-                object innerIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
-                Assert.AreEqual(0, MessageBus.IdleSweepRegistryCountForBenchmark);
-                Assert.AreNotSame(outerIdentity, innerIdentity);
+                inner = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+                object innerIdentity = MessageBusInspection.IdleSweepRegistryIdentityForBenchmark;
+                Assert.AreEqual(0, MessageBusInspection.IdleSweepRegistryCountForBenchmark);
+                Assert.AreSame(originalIdentity, outerIdentity);
+                Assert.AreSame(outerIdentity, innerIdentity);
 
                 outer.Dispose();
-                Assert.AreSame(innerIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
+                Assert.AreSame(
+                    innerIdentity,
+                    MessageBusInspection.IdleSweepRegistryIdentityForBenchmark
+                );
 
                 inner.Dispose();
                 inner = null;
-                Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
-                Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+                Assert.AreSame(
+                    originalIdentity,
+                    MessageBusInspection.IdleSweepRegistryIdentityForBenchmark
+                );
+                Assert.AreEqual(
+                    originalCount,
+                    MessageBusInspection.IdleSweepRegistryCountForBenchmark
+                );
                 outer.Dispose();
             }
             finally
@@ -1194,9 +1204,9 @@ namespace DxMessaging.Tests.Editor.Allocations
         [Test]
         public void IdleSweepBenchmarkScopeRejectsWrongThreadDisposeWithoutLosingOwnership()
         {
-            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
-            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
-            IDisposable scope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            int originalCount = MessageBusInspection.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBusInspection.IdleSweepRegistryIdentityForBenchmark;
+            IDisposable scope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
             Exception workerException = null;
             try
             {
@@ -1215,34 +1225,39 @@ namespace DxMessaging.Tests.Editor.Allocations
                 worker.Join();
 
                 Assert.IsInstanceOf<InvalidOperationException>(workerException);
-                Assert.AreNotSame(
+                Assert.AreSame(
                     originalIdentity,
-                    MessageBus.IdleSweepRegistryIdentityForBenchmark
+                    MessageBusInspection.IdleSweepRegistryIdentityForBenchmark
                 );
+                Assert.AreEqual(0, MessageBusInspection.IdleSweepRegistryCountForBenchmark);
             }
             finally
             {
                 scope.Dispose();
             }
 
-            Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
-            Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+            Assert.AreSame(
+                originalIdentity,
+                MessageBusInspection.IdleSweepRegistryIdentityForBenchmark
+            );
+            Assert.AreEqual(originalCount, MessageBusInspection.IdleSweepRegistryCountForBenchmark);
         }
 
         [Test]
         public void IdleSweepBenchmarkScopeRejectsNestedCreationFromAnotherThread()
         {
-            int originalCount = MessageBus.IdleSweepRegistryCountForBenchmark;
-            object originalIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
-            using IDisposable scope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
-            object isolatedIdentity = MessageBus.IdleSweepRegistryIdentityForBenchmark;
+            int originalCount = MessageBusInspection.IdleSweepRegistryCountForBenchmark;
+            object originalIdentity = MessageBusInspection.IdleSweepRegistryIdentityForBenchmark;
+            using IDisposable scope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            object isolatedIdentity = MessageBusInspection.IdleSweepRegistryIdentityForBenchmark;
             Exception workerException = null;
 
             System.Threading.Thread worker = new(() =>
             {
                 try
                 {
-                    using IDisposable nested = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                    using IDisposable nested =
+                        MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 }
                 catch (Exception exception)
                 {
@@ -1253,12 +1268,18 @@ namespace DxMessaging.Tests.Editor.Allocations
             worker.Join();
 
             Assert.IsInstanceOf<InvalidOperationException>(workerException);
-            Assert.AreSame(isolatedIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
-            Assert.AreEqual(0, MessageBus.IdleSweepRegistryCountForBenchmark);
+            Assert.AreSame(
+                isolatedIdentity,
+                MessageBusInspection.IdleSweepRegistryIdentityForBenchmark
+            );
+            Assert.AreEqual(0, MessageBusInspection.IdleSweepRegistryCountForBenchmark);
 
             scope.Dispose();
-            Assert.AreSame(originalIdentity, MessageBus.IdleSweepRegistryIdentityForBenchmark);
-            Assert.AreEqual(originalCount, MessageBus.IdleSweepRegistryCountForBenchmark);
+            Assert.AreSame(
+                originalIdentity,
+                MessageBusInspection.IdleSweepRegistryIdentityForBenchmark
+            );
+            Assert.AreEqual(originalCount, MessageBusInspection.IdleSweepRegistryCountForBenchmark);
         }
 
         /*
@@ -1274,7 +1295,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             DispatchBenchmarkScenario scenario
         )
         {
-            int idleRegistryCount = MessageBus.IdleSweepRegistryCountForBenchmark;
+            int idleRegistryCount = MessageBusInspection.IdleSweepRegistryCountForBenchmark;
             DispatchBenchmarkResult result = DispatchThroughputBenchmarks.RunScenario(
                 scenario,
                 logResult: false
@@ -1288,7 +1309,7 @@ namespace DxMessaging.Tests.Editor.Allocations
             {
                 Assert.AreEqual(
                     idleRegistryCount,
-                    MessageBus.IdleSweepRegistryCountForBenchmark,
+                    MessageBusInspection.IdleSweepRegistryCountForBenchmark,
                     $"Marginal scenario '{scenario}' must restore the process idle-sweep registry."
                 );
             }

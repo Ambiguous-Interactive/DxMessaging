@@ -3,9 +3,7 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// <summary>
     /// Marker interface for bus-level slot containers that the eviction layer
     /// can sweep. Each slot tracks its last-touch tick so the sweep can decide
-    /// whether to reclaim it, and exposes a monotonic
-    /// <see cref="Version"/> so that staged dispatch closures captured before
-    /// eviction can detect they have been invalidated.
+    /// whether to reclaim it. Reset invalidates retained dispatch state.
     /// </summary>
     /// <remarks>
     /// <see cref="Reset"/> returns inner pooled collections to
@@ -30,15 +28,8 @@ namespace DxMessaging.Core.MessageBus.Internal
         bool IsEmpty { get; }
 
         /// <summary>
-        /// Strictly monotonic version counter. Bumped by <see cref="Reset"/>
-        /// (and by registration-time mutations on the slot). Allows captured
-        /// dispatch closures to detect post-eviction invalidation.
-        /// </summary>
-        long Version { get; }
-
-        /// <summary>
         /// Reclaim this slot: clear inner state, return any pooled inner
-        /// collections to <c>DxPools</c>, and bump <see cref="Version"/>.
+        /// collections to <c>DxPools</c>, and invalidate captured dispatch state.
         /// Idempotent. <see cref="LastTouchTicks"/> is intentionally preserved
         /// across <see cref="Reset"/> so the sweep can distinguish freshly-reset
         /// slots from never-touched ones.

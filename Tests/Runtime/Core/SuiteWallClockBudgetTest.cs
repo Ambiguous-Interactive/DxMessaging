@@ -1,5 +1,8 @@
 #if UNITY_2021_3_OR_NEWER
 [assembly: DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute]
+[assembly: UnityEngine.TestRunner.TestRunCallback(
+    typeof(DxMessaging.Tests.Runtime.NoteGatedCategoryAttribute)
+)]
 
 namespace DxMessaging.Tests.Runtime
 {
@@ -8,6 +11,7 @@ namespace DxMessaging.Tests.Runtime
     using System.Globalization;
     using NUnit.Framework;
     using NUnit.Framework.Interfaces;
+    using UnityEngine.TestRunner;
 
     /// <summary>
     /// Suite-level wall-clock budget covering every test under the
@@ -43,8 +47,8 @@ namespace DxMessaging.Tests.Runtime
     /// runner.
     /// </para>
     /// <para>
-    /// Gated-category detection: an assembly-scoped <see cref="NoteGatedCategoryAttribute"/>
-    /// runs <see cref="ITestAction.BeforeTest"/> for every test in the run.
+    /// Gated-category detection: <see cref="NoteGatedCategoryAttribute"/> observes executed
+    /// leaves through Unity's test-run callback and NUnit's assembly action.
     /// The action reads the test's NUnit categories (from
     /// <see cref="ITest.Properties"/> with the <c>"Category"</c> key, as
     /// defined by NUnit's internal <c>PropertyNames</c> table) and forwards
@@ -235,48 +239,67 @@ namespace DxMessaging.Tests.Runtime
     }
 
     /// <summary>
-    /// Assembly-scoped <see cref="ITestAction"/> that fires before every
-    /// test runs, scans the test's NUnit categories, and forwards each one
+    /// Assembly-scoped observer that scans each executed leaf's selected ancestry
+    /// for NUnit categories and forwards each one
     /// to <see cref="SuiteWallClockBudgetTest.NoteGatedCategoryObserved"/>.
-    /// Combined with the assembly-level attribute application (see the
-    /// <c>[assembly: NoteGatedCategory]</c> declaration at the top
-    /// of this file) this covers every test in every fixture in the
-    /// assembly without requiring a base class.
+    /// Unity's action command does not load assembly attributes, so its public
+    /// test-run callback supplies the leaf notification. NUnit runners retain
+    /// the assembly action. Suite notifications do not exempt a run because they
+    /// can include unselected gated descendants and precede namespace setup.
     /// </summary>
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
-    public sealed class NoteGatedCategoryAttribute : Attribute, ITestAction
+    [UnityEngine.Scripting.Preserve]
+    public sealed class NoteGatedCategoryAttribute : Attribute, ITestAction, ITestRunCallback
     {
+        internal static string LastStartedTestIdForTesting { get; private set; }
+
         public ActionTargets Targets => ActionTargets.Test;
 
         public void BeforeTest(ITest test)
         {
-            if (test == null)
-            {
-                return;
-            }
-
             /*
                 ITest.Properties is a flat IPropertyBag; categories live under
                 the well-known "Category" key (NUnit 3.x's PropertyNames.Category
-                resolves to the same literal). Each test may have multiple
-                categories, and NUnit applies fixture-level [Category]
-                attributes to each child test automatically, so a class-level
-                [Category("Allocation")] also shows up here.
+                resolves to the same literal). Inherited fixture and parameterized-method
+                categories stay on their parent nodes. Follow only the selected ancestry;
+                categories on unselected siblings must not exempt the default suite.
             */
             const string CategoryPropertyName = "Category";
-            System.Collections.IList categories = test.Properties[CategoryPropertyName];
-            if (categories == null)
+            for (ITest current = test; current != null; current = current.Parent)
             {
-                return;
-            }
+                System.Collections.IList categories = current.Properties[CategoryPropertyName];
+                if (categories == null)
+                {
+                    continue;
+                }
 
-            for (int i = 0; i < categories.Count; ++i)
-            {
-                SuiteWallClockBudgetTest.NoteGatedCategoryObserved(categories[i] as string);
+                for (int i = 0; i < categories.Count; ++i)
+                {
+                    SuiteWallClockBudgetTest.NoteGatedCategoryObserved(categories[i] as string);
+                }
             }
         }
 
         public void AfterTest(ITest test) { }
+
+        public void RunStarted(ITest testsToRun) { }
+
+        public void RunFinished(ITestResult testResults) { }
+
+        public void TestStarted(ITest test)
+        {
+            if (
+                test != null
+                && !test.IsSuite
+                && test.TypeInfo?.Type?.Assembly == typeof(SuiteWallClockBudgetTest).Assembly
+            )
+            {
+                LastStartedTestIdForTesting = test.Id;
+                BeforeTest(test);
+            }
+        }
+
+        public void TestFinished(ITestResult result) { }
     }
 }
 #endif

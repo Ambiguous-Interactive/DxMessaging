@@ -2,7 +2,9 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
+    using System.Linq;
     using System.Reflection;
     using DxMessaging.Editor;
     using DxMessaging.Editor.Analyzers;
@@ -13,6 +15,7 @@ namespace DxMessaging.Tests.Editor
     using UnityEditor;
     using UnityEditor.UIElements;
     using UnityEngine;
+    using UnityEngine.TestTools;
     using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
 
@@ -31,10 +34,25 @@ namespace DxMessaging.Tests.Editor
         private readonly List<EditorWindow> _createdWindows = new();
         private bool _previousBaseCallCheckEnabled;
         private bool _baseCallCheckOverridden;
+        private readonly List<Action> _eventCleanup = new();
+        private EditorCompilerInputScope _compilerInputs;
+        private EditorDelayCallScope _sidecarCallbacks;
+        private EditorDelayCallScope _responseCallbacks;
+        private int[] _renderedBeforeTest = Array.Empty<int>();
+        private static HashSet<int> RenderedTargets =>
+            (HashSet<int>)
+                MessageBusInspection.ReadField(
+                    typeof(MessageAwareComponentInspectorOverlay),
+                    "_renderedThisRepaint"
+                );
 
-        [SetUp]
-        public void SetUp()
+        [UnitySetUp]
+        public IEnumerator SetUp()
         {
+            if (EditorApplication.isCompiling)
+            {
+                yield return new RecompileScripts();
+            }
             /*
                 Disable diagnostic noise so the overlay's BuildAndRenderOverlay returns early via
                 the gating phase (no EditorGUILayout calls). Stale entries from a previous session
@@ -47,54 +65,82 @@ namespace DxMessaging.Tests.Editor
                 captured-vs-overridden state.
             */
             _baseCallCheckOverridden = false;
+            _sidecarCallbacks = new(
+                typeof(DxMessaging.Editor.Settings.DxMessagingBaseCallIgnoreSync)
+            );
+            _responseCallbacks = new(typeof(DxMessaging.Editor.SetupCscRsp));
+            _compilerInputs = new();
             DxMessagingSettings settings = DxMessagingSettings.GetOrCreateSettings();
             _previousBaseCallCheckEnabled = settings._baseCallCheckEnabled;
             _baseCallCheckOverridden = true;
             settings._baseCallCheckEnabled = false;
-            /*
-                State-transition tests must not inherit asset refresh activity from the editor.
-                Tests for transient blocking replace this seam explicitly and own their retry queue.
-            */
-            MessageAwareComponentInspectorOverlay.InspectorResolutionTransientBlocker = () => false;
+            _renderedBeforeTest = RenderedTargets.ToArray();
+            RenderedTargets.Clear();
         }
 
-        [TearDown]
-        public void TearDown()
+        [UnityTearDown]
+        public IEnumerator TearDown()
         {
-            /*
-                Destroying inspector editors/objects below repaints the inspector, which in
-                -nographics CI logs benign "No graphic device is available" errors. Unity
-                resets LogAssert tolerance per phase, so re-assert it for the teardown phase
-                (headless only; graphics runs keep full strictness).
-            */
-            EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
-            MessageAwareComponentInspectorOverlay.ResetTestSeams();
-
-            foreach (UnityEditor.Editor editor in _createdEditors)
+            try
             {
-                if (editor != null)
+                /*
+                    Destroying inspector editors/objects below repaints the inspector, which in
+                    -nographics CI logs benign "No graphic device is available" errors. Unity
+                    resets LogAssert tolerance per phase, so re-assert it for the teardown phase
+                    (headless only; graphics runs keep full strictness).
+                */
+                EditorWindowTestUtility.SuppressHeadlessWindowRenderErrors();
+                foreach (Action cleanup in _eventCleanup)
                 {
-                    Object.DestroyImmediate(editor);
+                    cleanup();
                 }
-            }
-            _createdEditors.Clear();
+                _eventCleanup.Clear();
 
-            EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
-
-            foreach (Object instance in _createdObjects)
-            {
-                if (instance != null)
+                foreach (UnityEditor.Editor editor in _createdEditors)
                 {
-                    Object.DestroyImmediate(instance);
+                    if (editor != null)
+                    {
+                        Object.DestroyImmediate(editor);
+                    }
                 }
-            }
-            _createdObjects.Clear();
+                _createdEditors.Clear();
 
-            if (_baseCallCheckOverridden)
+                EditorWindowTestUtility.CloseTrackedWindows(_createdWindows);
+
+                foreach (Object instance in _createdObjects)
+                {
+                    if (instance != null)
+                    {
+                        Object.DestroyImmediate(instance);
+                    }
+                }
+                _createdObjects.Clear();
+            }
+            finally
             {
-                DxMessagingSettings settings = DxMessagingSettings.GetOrCreateSettings();
-                settings._baseCallCheckEnabled = _previousBaseCallCheckEnabled;
-                _baseCallCheckOverridden = false;
+                EditorTestCleanup.Run(
+                    () =>
+                    {
+                        if (_baseCallCheckOverridden)
+                        {
+                            DxMessagingSettings.GetOrCreateSettings()._baseCallCheckEnabled =
+                                _previousBaseCallCheckEnabled;
+                            _baseCallCheckOverridden = false;
+                        }
+                    },
+                    () => _sidecarCallbacks?.Dispose(),
+                    () => _responseCallbacks?.Dispose(),
+                    () => _compilerInputs?.Dispose(),
+                    () =>
+                    {
+                        RenderedTargets.Clear();
+                        RenderedTargets.UnionWith(_renderedBeforeTest);
+                    }
+                );
+            }
+            if (EditorApplication.isCompiling)
+            {
+                yield return new RecompileScripts();
             }
         }
 
@@ -740,20 +786,17 @@ namespace DxMessaging.Tests.Editor
 
         /// <remarks>
         /// 2026-09-06: Unity 2021 CI exposed an initially visible empty warning host when
-        /// resolution was blocked. Exercise both initial states without ambient editor activity.
+        /// resolution was blocked. Exercise an empty host both before and after queuing a real retry.
         /// </remarks>
         [TestCase(false)]
         [TestCase(true)]
         public void FallbackEditorCreateInspectorGUIOmitsNoneWarningViewAndHostsDefaultInspectorBody(
-            bool transientlyBlocked
+            bool retryPending
         )
         {
-            bool blocked = transientlyBlocked;
-            List<Action> scheduledRetries = new();
-            MessageAwareComponentInspectorOverlay.InspectorResolutionTransientBlocker = () =>
-                blocked;
-            MessageAwareComponentInspectorOverlay.TransientRefreshScheduler = work =>
-                scheduledRetries.Add(work);
+            using EditorDelayCallScope scheduledRetries = new(
+                typeof(MessageAwareComponentFallbackEditor)
+            );
             MessageAwareComponent component = CreateTrackedMessageAwareComponent(
                 "FallbackEditorCreateInspectorGuiHost",
                 typeof(SerializedFieldMessageAwareComponentForFallbackTest)
@@ -761,6 +804,15 @@ namespace DxMessaging.Tests.Editor
             MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(component);
 
             VisualElement root = editor.CreateInspectorGUI();
+            if (retryPending)
+            {
+                root.userData.GetType()
+                    .GetMethod(
+                        "ScheduleRefreshRetry",
+                        BindingFlags.Instance | BindingFlags.NonPublic
+                    )
+                    .Invoke(root.userData, null);
+            }
 
             Assert.That(root, Is.Not.Null);
             Assert.That(root.name, Is.EqualTo(MessageAwareComponentFallbackEditor.RootName));
@@ -785,26 +837,25 @@ namespace DxMessaging.Tests.Editor
             Assert.That(
                 warningHost.style.display.value,
                 Is.EqualTo(DisplayStyle.None),
-                $"transientlyBlocked={transientlyBlocked}: an initial empty warning host must stay hidden even before a deferred refresh."
+                $"retryPending={retryPending}: an empty warning host must stay hidden while a real retry is queued."
             );
             Assert.That(
                 scheduledRetries.Count,
-                Is.EqualTo(transientlyBlocked ? 1 : 0),
-                $"transientlyBlocked={transientlyBlocked}: only blocked resolution should schedule a retry."
+                Is.EqualTo(retryPending ? 1 : 0),
+                $"retryPending={retryPending}: only the explicitly queued retry should be pending."
             );
-            if (transientlyBlocked)
+            if (retryPending)
             {
-                blocked = false;
                 scheduledRetries[0].Invoke();
                 Assert.That(
                     warningHost.style.display.value,
                     Is.EqualTo(DisplayStyle.None),
-                    "transientlyBlocked=true: resolving a genuine None state after the block clears must leave the host hidden."
+                    "retryPending=true: resolving a genuine None state on the queued retry must leave the host hidden."
                 );
                 Assert.That(
                     scheduledRetries.Count,
                     Is.EqualTo(1),
-                    "transientlyBlocked=true: an idle retry must not schedule another refresh."
+                    "retryPending=true: an idle retry must not schedule another refresh."
                 );
             }
 
@@ -1040,7 +1091,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void FallbackEditorTransientNoneOnAttachRetriesAndRestoresWarningState()
+        public void FallbackEditorRetryUsesRealEditorQueueAndRestoresWarningState()
         {
             DxMessagingSettings settings = CreateTransientSettings(baseCallCheckEnabled: true);
             MessageAwareComponent component = CreateTrackedMessageAwareComponent(
@@ -1048,48 +1099,64 @@ namespace DxMessaging.Tests.Editor
                 typeof(EmptyMessageAwareComponentForFallbackTest)
             );
             MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(component);
-            string fullName = GetOverlayTypeName(component);
-            MessageAwareComponentInspectorState warningState =
-                MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
-                    component,
-                    settings,
-                    fullName,
-                    CreateReportEntry("Awake"),
-                    isFreshThisSession: true
-                );
-            bool transientlyBlocked = false;
-            List<Action> scheduledRetries = new();
-            MessageAwareComponentInspectorOverlay.TransientRefreshScheduler = work =>
-                scheduledRetries.Add(work);
-            MessageAwareComponentInspectorOverlay.InspectorResolutionTransientBlocker = () =>
-                transientlyBlocked;
+            MessageAwareComponentInspectorState current = MessageAwareComponentInspectorState.None;
             VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
                 editor,
-                () => transientlyBlocked ? MessageAwareComponentInspectorState.None : warningState
+                () => current
             );
-
             AttachToShownWindow(root);
-
-            Button initialIgnoreType = root.Q<Button>(
-                MessageAwareComponentInspectorView.IgnoreTypeButtonName
+            object binding = root.userData;
+            MethodInfo retry = binding
+                .GetType()
+                .GetMethod("ScheduleRefreshRetry", BindingFlags.Instance | BindingFlags.NonPublic);
+            using EditorDelayCallScope scheduledRetries = new(
+                typeof(MessageAwareComponentFallbackEditor)
             );
-            Assert.That(initialIgnoreType, Is.Not.Null);
-
-            transientlyBlocked = true;
-            MessageAwareComponentFallbackEditor.RefreshInspectorWarning(root);
-
+            retry.Invoke(binding, null);
+            retry.Invoke(binding, null);
+            Assert.That(
+                scheduledRetries.Count,
+                Is.EqualTo(1),
+                "A pending retry must debounce on the real editor queue."
+            );
             Assert.That(
                 root.Q<Button>(MessageAwareComponentInspectorView.IgnoreTypeButtonName),
-                Is.SameAs(initialIgnoreType)
+                Is.Null
             );
-            Assert.That(scheduledRetries.Count, Is.EqualTo(1));
-
-            transientlyBlocked = false;
+            current = MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
+                component,
+                settings,
+                GetOverlayTypeName(component),
+                CreateReportEntry("Awake"),
+                isFreshThisSession: true
+            );
             scheduledRetries[0].Invoke();
-
             Assert.That(
                 root.Q<Button>(MessageAwareComponentInspectorView.IgnoreTypeButtonName),
                 Is.Not.Null
+            );
+            retry.Invoke(binding, null);
+            Assert.That(
+                scheduledRetries.Count,
+                Is.EqualTo(2),
+                "A completed retry must release its debounce latch."
+            );
+            scheduledRetries[1].Invoke();
+            Assert.That(
+                root.Query<VisualElement>(MessageAwareComponentInspectorView.RootName)
+                    .ToList()
+                    .Count,
+                Is.EqualTo(1)
+            );
+            MethodInfo refresh = binding
+                .GetType()
+                .GetMethod("Refresh", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(
+                EditorProductionCalls
+                    .From(refresh)
+                    .Any(call => call.Name == "IsInspectorResolutionTransientlyBlocked"),
+                Is.True,
+                "The real refresh path must consult Unity's real compile/import guard before retrying."
             );
         }
 
@@ -1104,9 +1171,9 @@ namespace DxMessaging.Tests.Editor
             MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(component);
             string fullName = GetOverlayTypeName(component);
             BaseCallReportEntry entry = CreateReportEntry("Awake");
-            List<Action> scheduledMutations = new();
-            MessageAwareComponentInspectorOverlay.AssetDatabaseMutationScheduler = work =>
-                scheduledMutations.Add(work);
+            using EditorDelayCallScope scheduledMutations = new(
+                typeof(MessageAwareComponentInspectorOverlay)
+            );
             VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
                 editor,
                 () =>
@@ -1166,9 +1233,9 @@ namespace DxMessaging.Tests.Editor
             string fullName = GetOverlayTypeName(component);
             settings._baseCallIgnoredTypes.Add(fullName);
             BaseCallReportEntry entry = CreateReportEntry("Awake");
-            List<Action> scheduledMutations = new();
-            MessageAwareComponentInspectorOverlay.AssetDatabaseMutationScheduler = work =>
-                scheduledMutations.Add(work);
+            using EditorDelayCallScope scheduledMutations = new(
+                typeof(MessageAwareComponentInspectorOverlay)
+            );
             VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
                 editor,
                 () =>
@@ -1225,9 +1292,9 @@ namespace DxMessaging.Tests.Editor
                 typeof(EmptyMessageAwareComponentForFallbackTest)
             );
             string fullName = GetOverlayTypeName(component);
-            List<Action> scheduledMutations = new();
-            MessageAwareComponentInspectorOverlay.AssetDatabaseMutationScheduler = work =>
-                scheduledMutations.Add(work);
+            using EditorDelayCallScope scheduledMutations = new(
+                typeof(MessageAwareComponentInspectorOverlay)
+            );
             MessageAwareComponentInspectorState state =
                 MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
                     component,
@@ -1265,11 +1332,15 @@ namespace DxMessaging.Tests.Editor
                 typeof(EmptyMessageAwareComponentForFallbackTest)
             );
             string fullName = GetOverlayTypeName(component);
-            List<Action> scheduledMutations = new();
             int repaintRequests = 0;
-            MessageAwareComponentInspectorOverlay.AssetDatabaseMutationScheduler = work =>
-                scheduledMutations.Add(work);
-            MessageAwareComponentInspectorOverlay.InspectorRepaintAction = () => repaintRequests++;
+            using EditorDelayCallScope scheduledMutations = new(
+                typeof(MessageAwareComponentInspectorOverlay)
+            );
+            System.Action onInvalidated = () => repaintRequests++;
+            MessageAwareComponentInspectorOverlay.InspectorStateInvalidated += onInvalidated;
+            _eventCleanup.Add(() =>
+                MessageAwareComponentInspectorOverlay.InspectorStateInvalidated -= onInvalidated
+            );
             MessageAwareComponentInspectorState state =
                 MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
                     component,
@@ -1288,7 +1359,21 @@ namespace DxMessaging.Tests.Editor
             SendClick(ignoreType);
             EditorWindowTestUtility.IgnoreUnityInvalidGcHandleAsserts(scheduledMutations[0].Invoke);
 
+            MessageAwareComponentInspectorOverlay.InspectorStateInvalidated -= onInvalidated;
             Assert.That(repaintRequests, Is.EqualTo(1));
+            MethodInfo notifier = typeof(MessageAwareComponentInspectorOverlay).GetMethod(
+                "NotifyInspectorStateInvalidated",
+                BindingFlags.Static | BindingFlags.NonPublic
+            );
+            Assert.That(
+                EditorProductionCalls
+                    .From(notifier)
+                    .Any(call =>
+                        call.Name == "RepaintAllInspectors"
+                        && call.DeclaringType == typeof(MessageAwareComponentInspectorOverlay)
+                    ),
+                Is.True
+            );
         }
 
         [Test]
@@ -1301,9 +1386,9 @@ namespace DxMessaging.Tests.Editor
             );
             string fullName = GetOverlayTypeName(component);
             settings._baseCallIgnoredTypes.Add(fullName);
-            List<Action> scheduledMutations = new();
-            MessageAwareComponentInspectorOverlay.AssetDatabaseMutationScheduler = work =>
-                scheduledMutations.Add(work);
+            using EditorDelayCallScope scheduledMutations = new(
+                typeof(MessageAwareComponentInspectorOverlay)
+            );
             MessageAwareComponentInspectorState state =
                 MessageAwareComponentInspectorState.ForIgnoredType(
                     component,
@@ -1337,19 +1422,13 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettings settings = CreateTransientSettings(baseCallCheckEnabled: true);
             MessageAwareComponent component = CreateTrackedMessageAwareComponent(
                 "InspectorViewOpenScriptActionHost",
-                typeof(EmptyMessageAwareComponentForFallbackTest)
+                typeof(OverlayScriptNavigationProbe)
             );
             BaseCallReportEntry entry = CreateReportEntry("Awake");
             entry.line = 42;
-            int openCalls = 0;
-            MessageAwareComponent observedComponent = null;
-            BaseCallReportEntry observedEntry = null;
-            MessageAwareComponentInspectorOverlay.OpenScriptAction = (nextComponent, nextEntry) =>
-            {
-                openCalls++;
-                observedComponent = nextComponent;
-                observedEntry = nextEntry;
-            };
+            MonoScript script = MonoScript.FromMonoBehaviour(component);
+            Assert.That(script, Is.Not.Null);
+            using EditorAssetOpenScope opened = new(script);
             MessageAwareComponentInspectorState state =
                 MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
                     component,
@@ -1367,9 +1446,12 @@ namespace DxMessaging.Tests.Editor
 
             SendClick(openScript);
 
-            Assert.That(openCalls, Is.EqualTo(1));
-            Assert.That(observedComponent, Is.SameAs(component));
-            Assert.That(observedEntry, Is.SameAs(entry));
+            Assert.That(
+                opened.Calls,
+                Is.EqualTo(1),
+                "The button must open this component's real script asset."
+            );
+            Assert.That(opened.Line, Is.EqualTo(entry.line));
         }
 
         [Test]
@@ -1411,20 +1493,16 @@ namespace DxMessaging.Tests.Editor
                 typeof(EmptyMessageAwareComponentForFallbackTest)
             );
             MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(component);
-            int renderCalls = 0;
-            MessageAwareComponentInspectorOverlay.ImGuiRenderAction = _ =>
-            {
-                renderCalls++;
-                return true;
-            };
-
             bool rendered = MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
                 editor,
                 EventType.Repaint
             );
 
             Assert.That(rendered, Is.False);
-            Assert.That(renderCalls, Is.EqualTo(0));
+            Assert.That(
+                RenderedTargets.Contains(DxMessaging.Core.InstanceId.StableId(component)),
+                Is.False
+            );
         }
 
         [Test]
@@ -1447,7 +1525,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void HeaderHookRenderInvokesOverlayForSpecificUserCustomEditorAndLayoutClearsLatch()
+        public void HeaderHookTracksSpecificCustomEditorRepaintAndLayoutBoundaries()
         {
             GameObject host = CreateTrackedObject("HeaderHookSpecificCustomEditorRenderHost");
             CustomEditorMessageAwareComponentForFallbackTest component =
@@ -1458,39 +1536,47 @@ namespace DxMessaging.Tests.Editor
                 editor,
                 Is.InstanceOf<SpecificMessageAwareComponentCustomEditorForFallbackTest>()
             );
-            int renderCalls = 0;
-            MessageAwareComponent observedComponent = null;
-            MessageAwareComponentInspectorOverlay.ImGuiRenderAction = nextComponent =>
-            {
-                renderCalls++;
-                observedComponent = nextComponent;
-                return true;
-            };
-
-            bool firstRepaintRendered = MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
-                editor,
-                EventType.Repaint
-            );
-            bool duplicateRepaintRendered =
+            int id = DxMessaging.Core.InstanceId.StableId(component);
+            Assert.That(
                 MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
                     editor,
                     EventType.Repaint
-                );
-            bool layoutRendered = MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
-                editor,
-                EventType.Layout
+                ),
+                Is.False,
+                "The fixture disables warning rendering, so the real renderer must produce no GUI controls."
             );
-            bool secondRepaintRendered = MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
-                editor,
-                EventType.Repaint
+            Assert.That(
+                RenderedTargets.Contains(id),
+                Is.True,
+                "A specific user editor must reach the real header path."
             );
-
-            Assert.That(firstRepaintRendered, Is.True);
-            Assert.That(duplicateRepaintRendered, Is.False);
-            Assert.That(layoutRendered, Is.False);
-            Assert.That(secondRepaintRendered, Is.True);
-            Assert.That(renderCalls, Is.EqualTo(2));
-            Assert.That(observedComponent, Is.SameAs(component));
+            Assert.That(RenderedTargets.Count, Is.EqualTo(1));
+            Assert.That(
+                MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
+                    editor,
+                    EventType.Repaint
+                ),
+                Is.False
+            );
+            Assert.That(
+                RenderedTargets.Count,
+                Is.EqualTo(1),
+                "A duplicate repaint must not add another target."
+            );
+            Assert.That(
+                MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(editor, EventType.Layout),
+                Is.False
+            );
+            Assert.That(RenderedTargets, Is.Empty, "Layout must start the next GUI cycle.");
+            Assert.That(
+                MessageAwareComponentInspectorOverlay.TryRenderHeaderHook(
+                    editor,
+                    EventType.Repaint
+                ),
+                Is.False
+            );
+            Assert.That(RenderedTargets.Contains(id), Is.True);
+            Assert.That(RenderedTargets.Count, Is.EqualTo(1));
         }
 
         [Test]

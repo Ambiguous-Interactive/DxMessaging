@@ -1,0 +1,192 @@
+{
+  "sealOptions": {
+    "experimentId": "shipping-fidelity-matrix-6000.5.2f1",
+    "artifactClass": "shipping-fidelity-matrix",
+    "reducer": "shipping-fidelity-matrix-v1",
+    "sourceCommit": "98b47536a0eb1445fcd2a9700899aab0be24897f"
+  },
+  "matrix": {
+    "schemaVersion": 1,
+    "measurementClass": "characterization",
+    "unityVersion": "6000.5.2f1",
+    "cellCount": 4,
+    "completedCellCount": 4,
+    "failedCells": [],
+    "unreadableEvidenceCells": [],
+    "cells": [
+      {
+        "cellId": "high-semantic-18",
+        "schemaVersion": 1,
+        "measurementClass": "characterization",
+        "profileId": "shipping-fidelity-il2cpp-high-player-v1",
+        "managedStrippingLevel": "High",
+        "topologyId": "semantic-18-v1",
+        "messageTypeCount": 18,
+        "unityVersion": "6000.5.2f1",
+        "libraryState": "cold",
+        "diagnostics": ["first", "second"],
+        "buildDurationMs": 120000,
+        "editorBuildWallClockMs": 130000,
+        "playerTotalBytes": 40000000,
+        "gameAssemblyBytes": 9000000,
+        "timings": {
+          "engineStartToRunMs": 300,
+          "firstTypedDispatchUs": 40,
+          "dispatchLoopNsPerOp": 21,
+          "dispatchLoopShape": "class"
+        }
+      },
+      {
+        "cellId": "high-cardinality-16",
+        "schemaVersion": 1,
+        "measurementClass": "characterization",
+        "profileId": "shipping-fidelity-il2cpp-high-player-v1",
+        "managedStrippingLevel": "High",
+        "topologyId": "cardinality-16-v1",
+        "messageTypeCount": 16,
+        "unityVersion": "6000.5.2f1",
+        "libraryState": "cold",
+        "diagnostics": ["first", "second"],
+        "buildDurationMs": 120001,
+        "editorBuildWallClockMs": 130001,
+        "playerTotalBytes": 40001000,
+        "gameAssemblyBytes": 9000100,
+        "timings": {
+          "engineStartToRunMs": 301,
+          "firstTypedDispatchUs": 41,
+          "dispatchLoopNsPerOp": 22,
+          "dispatchLoopShape": "class"
+        }
+      },
+      {
+        "cellId": "minimal-semantic-18",
+        "schemaVersion": 1,
+        "measurementClass": "characterization",
+        "profileId": "shipping-fidelity-il2cpp-minimal-player-v1",
+        "managedStrippingLevel": "Minimal",
+        "topologyId": "semantic-18-v1",
+        "messageTypeCount": 18,
+        "unityVersion": "6000.5.2f1",
+        "libraryState": "cold",
+        "diagnostics": ["first", "second"],
+        "buildDurationMs": 120002,
+        "editorBuildWallClockMs": 130002,
+        "playerTotalBytes": 40002000,
+        "gameAssemblyBytes": 9000200,
+        "timings": {
+          "engineStartToRunMs": 302,
+          "firstTypedDispatchUs": 42,
+          "dispatchLoopNsPerOp": 23,
+          "dispatchLoopShape": "class"
+        }
+      },
+      {
+        "cellId": "minimal-cardinality-16",
+        "schemaVersion": 1,
+        "measurementClass": "characterization",
+        "profileId": "shipping-fidelity-il2cpp-minimal-player-v1",
+        "managedStrippingLevel": "Minimal",
+        "topologyId": "cardinality-16-v1",
+        "messageTypeCount": 16,
+        "unityVersion": "6000.5.2f1",
+        "libraryState": "cold",
+        "diagnostics": ["first", "second"],
+        "buildDurationMs": 120003,
+        "editorBuildWallClockMs": 130003,
+        "playerTotalBytes": 40003000,
+        "gameAssemblyBytes": 9000300,
+        "timings": {
+          "engineStartToRunMs": 303,
+          "firstTypedDispatchUs": 43,
+          "dispatchLoopNsPerOp": 24,
+          "dispatchLoopShape": "class"
+        }
+      }
+    ]
+  },
+  "subunsubRows": [
+    {
+      "scenario": "Comparison_DxMessaging_SubUnsub",
+      "platform": "PlayMode Mono (LinuxEditor; Unity 6000.5.2f1)",
+      "commit": "98b47536a0eb1445fcd2a9700899aab0be24897f",
+      "runIndex": "-1",
+      "emitsPerSecond": "1000.000",
+      "gcAllocations": "12",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "384"
+    },
+    {
+      "scenario": "Comparison_CsEvent_SubUnsub",
+      "platform": "PlayMode Mono (LinuxEditor; Unity 6000.5.2f1)",
+      "commit": "98b47536a0eb1445fcd2a9700899aab0be24897f",
+      "runIndex": "-1",
+      "emitsPerSecond": "1000.000",
+      "gcAllocations": "-1",
+      "wallClockMs": "5000.000",
+      "gcAllocatedBytes": "-1"
+    }
+  ],
+  "subunsubOptions": {
+    "experimentId": "subunsub-observations",
+    "artifactClass": "allocation-subunsub-observations",
+    "reducer": "allocation-subunsub-observations-v1"
+  },
+  "differentialOptions": {
+    "experimentId": "native-lifecycle-replay-failure",
+    "artifactClass": "differential-replay-failure",
+    "reducer": "differential-replay-failure-v1"
+  },
+  "differentialMutations": [
+    ["missing message kind", "replays/broadcast.json", null, null, "broadcast\\.json is required"],
+    [
+      "wrong generator profile",
+      "differential-replay-profile.json",
+      "generatorVersion",
+      11,
+      "reviewed native lifecycle profile"
+    ],
+    [
+      "source disagreement",
+      "differential-replay-environment.json",
+      "sourceCommit",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source identity"
+    ],
+    [
+      "false mismatch",
+      "replays/untargeted.json",
+      "minimized.candidateTrace",
+      [
+        {
+          "callbacks": [],
+          "exception": null,
+          "trimResult": null,
+          "occupiedTypeSlots": 0,
+          "occupiedTargetSlots": 0,
+          "finalEmissions": [],
+          "unmatchedDiagnostics": [],
+          "state": "control-0"
+        }
+      ],
+      "first observable mismatch"
+    ],
+    [
+      "non-minimal operation",
+      "replays/targeted.json",
+      "minimized.operations.0.kind",
+      "Emit",
+      "deletion-minimal"
+    ]
+  ],
+  "differentialExpectedCases": [
+    ["Untargeted", 6, 1],
+    ["Targeted", 6, 1],
+    ["Broadcast", 6, 1]
+  ],
+  "shippingDefects": [
+    "missing raw cell",
+    "duplicate row",
+    "summary timing",
+    "missing summary column"
+  ]
+}

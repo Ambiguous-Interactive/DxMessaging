@@ -114,7 +114,6 @@ __pycache__.meta
 .prettierignore
 .markdownlint.json
 .markdownlint.jsonc
-.markdownlint-cli2.jsonc
 .markdownlintignore
 .yamllint.yaml
 .cspell.json

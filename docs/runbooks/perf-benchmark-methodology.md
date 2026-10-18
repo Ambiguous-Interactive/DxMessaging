@@ -80,6 +80,25 @@ distinct closed generic forces a one-time JIT compile, so the flood measures JIT
 cost, not the registration algorithm; under IL2CPP/AOT those generics are
 precompiled, so the same flood is on the order of 100x cheaper.
 
+### Storage benchmark workload boundaries
+
+Storage inspection and fixture isolation live in test assemblies. Benchmarks call the
+ordinary production registration, dispatch, removal, and trim paths. The context-map
+pool fixture isolates cached containers inside the production singleton; it does not
+install an alternate runtime pool.
+
+`ChurnWithTrim` removes a target, calls `MessageBus.Trim(force: true)`, and registers
+the replacement. Its time includes the complete trim operation and public storage-count
+reads that verify the single-target eviction. It replaces the old
+benchmark-only exact-slot sweep and is a different workload; do not compare their
+rates as a performance change.
+
+`IntKeyMapFreshConstructionBenchmark` constructs the production `IntKeyMap<object>`
+implementation and reports `DXM_INT_KEY_MAP_CONSTRUCTION`. It measures that map,
+not the enclosing bus context-map owner. The old synthetic priority-owner constructor
+row is retired. Historical constructor rows for those owners are not comparable to
+the remaining storage constructor rows.
+
 ### Cold vs warm/hot modes
 
 Both registration and dispatch are covered in two modes. "Cold" is the

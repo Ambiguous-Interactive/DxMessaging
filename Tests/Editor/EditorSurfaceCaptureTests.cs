@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.IO;
     using DxMessaging.Editor;
@@ -10,7 +11,9 @@ namespace DxMessaging.Tests.Editor
     using DxMessaging.Unity;
     using NUnit.Framework;
     using UnityEditor;
+    using UnityEditor.UIElements;
     using UnityEngine;
+    using UnityEngine.TestTools;
     using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
 
@@ -305,6 +308,140 @@ namespace DxMessaging.Tests.Editor
                 Is.False,
                 "A refused capture must not leave a partial image behind."
             );
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CaptureReadyRestoresStateWhenStopped(bool readinessThrows)
+        {
+            int windowsBefore = Resources.FindObjectsOfTypeAll<EditorWindow>().Length;
+            RenderTexture previousTarget = RenderTexture.active;
+            bool previousSrgbWrite = GL.sRGBWrite;
+            VisualElement surface = CreateOpaqueProbe();
+            StyleEnum<DisplayStyle> originalDisplay = surface.style.display;
+            string path = ResolveOutputPath(nameof(CaptureReadyRestoresStateWhenStopped));
+            _createdFiles.Add(path);
+            IEnumerator capture = EditorSurfaceCapture.CaptureWhenReady(
+                surface,
+                CanvasWidth,
+                CanvasHeight,
+                path,
+                () =>
+                    readinessThrows
+                        ? throw new InvalidOperationException("Readiness failed.")
+                        : false,
+                _ => Assert.Fail("A stopped capture cannot finish rendering.")
+            );
+            try
+            {
+                if (readinessThrows)
+                {
+                    Assert.Throws<InvalidOperationException>(() => capture.MoveNext());
+                }
+                else
+                {
+                    Assert.That(capture.MoveNext(), Is.True);
+                    Assert.That(
+                        Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
+                        Is.EqualTo(windowsBefore + 1)
+                    );
+                }
+                Assert.That(RenderTexture.active, Is.SameAs(previousTarget));
+                Assert.That(GL.sRGBWrite, Is.EqualTo(previousSrgbWrite));
+            }
+            finally
+            {
+                ((IDisposable)capture).Dispose();
+            }
+            Assert.That(surface.style.display, Is.EqualTo(originalDisplay));
+            Assert.That(
+                Resources.FindObjectsOfTypeAll<EditorWindow>().Length,
+                Is.EqualTo(windowsBefore)
+            );
+            Assert.That(File.Exists(path), Is.False);
+        }
+
+        /// <remarks>
+        /// Serialized binding can create PropertyField controls after attachment. A capture
+        /// with a valid PNG must still show all five settings fields, rather than blank rows.
+        /// </remarks>
+        [UnityTest]
+        public IEnumerator CaptureRendersBoundProjectSettingsControls()
+        {
+            DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
+            settings.hideFlags = HideFlags.HideAndDontSave;
+            _createdObjects.Add(settings);
+            VisualElement surface = new();
+            surface.style.width = 720;
+            surface.style.height = 600;
+            DxMessagingSettingsProvider.BuildSettingsUi(surface, new SerializedObject(settings));
+            Dictionary<string, int> childrenBeforeFirstLayout = new();
+            surface.RegisterCallback<GeometryChangedEvent>(evt =>
+            {
+                if (ReferenceEquals(evt.target, surface) && childrenBeforeFirstLayout.Count == 0)
+                {
+                    foreach (PropertyField field in surface.Query<PropertyField>().ToList())
+                    {
+                        childrenBeforeFirstLayout[field.name] = field.childCount;
+                    }
+                }
+            });
+            string path = ResolveOutputPath(nameof(CaptureRendersBoundProjectSettingsControls));
+            _createdFiles.Add(path);
+            yield return EditorSurfaceCapture.CaptureWhenReady(
+                surface,
+                800,
+                680,
+                path,
+                () =>
+                    EditorToolingDocumentationCaptureTests.AreProjectSettingsControlsReady(
+                        surface,
+                        settings
+                    ),
+                result => Assert.That(result.ByteCount, Is.GreaterThan(0))
+            );
+            foreach (string propertyName in childrenBeforeFirstLayout.Keys)
+            {
+                Assert.That(
+                    childrenBeforeFirstLayout[propertyName],
+                    Is.GreaterThan(0),
+                    $"{propertyName} must initialize its control before capture layout begins."
+                );
+            }
+            Assert.That(
+                childrenBeforeFirstLayout.Count,
+                Is.EqualTo(5),
+                "The first capture layout must observe all five settings fields."
+            );
+            AssertBoundProjectSettingsControls(surface);
+        }
+
+        private static void AssertBoundProjectSettingsControls(VisualElement surface)
+        {
+            foreach (
+                string propertyName in new[]
+                {
+                    "_diagnosticsTargets",
+                    "_diagnosticsStackTraces",
+                    "_messageBufferSize",
+                    "_suppressDomainReloadWarning",
+                    "_baseCallIgnoredTypes",
+                }
+            )
+            {
+                PropertyField field = surface.Q<PropertyField>(propertyName);
+                Assert.That(field, Is.Not.Null, $"Settings surface must contain {propertyName}.");
+                Assert.That(
+                    field.childCount,
+                    Is.GreaterThan(0),
+                    $"{propertyName} must contain its real bound control."
+                );
+                Assert.That(
+                    field.layout.height,
+                    Is.GreaterThan(0),
+                    $"{propertyName} must occupy visible space at capture."
+                );
+            }
         }
 
         [Test]

@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const PAIRED_CONTRACT = require("./paired-replay-contract.json");
 const supportedScenarios = require("./comparison-supported-scenarios.json");
 
 const SCHEMA_VERSION = 1;
@@ -39,15 +40,7 @@ Use --validate-manifest with --manifest to validate the declaration before run o
 }
 
 function parseArgs(argv) {
-  const options = {
-    manifest: "",
-    first: "",
-    center: "",
-    last: "",
-    output: "",
-    validateManifest: false,
-    help: false
-  };
+  const options = { ...PAIRED_CONTRACT.cliDefaults };
   for (let index = 2; index < argv.length; index++) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") {
@@ -116,18 +109,7 @@ function validateManifest(manifest, { requireTrackedCandidatePaths = false } = {
   if (!isObject(manifest)) {
     throw new Error("The bracket manifest must be an object.");
   }
-  requireExactKeys(
-    manifest,
-    [
-      "schemaVersion",
-      "bracketId",
-      "orientation",
-      "materialityBandPercent",
-      "candidatePaths",
-      "rows"
-    ],
-    "The bracket manifest"
-  );
+  requireExactKeys(manifest, PAIRED_CONTRACT.manifestFields, "The bracket manifest");
   if (manifest.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`The bracket manifest schemaVersion must be ${SCHEMA_VERSION}.`);
   }
@@ -251,6 +233,81 @@ function requireCycleEvidence(row, label, ratio, spread) {
   ) {
     throw new Error(`${label} spread does not match its cycleRatios.`);
   }
+  // SYNC: require-comparison-rows.ps1 paired cycleMeasurements validation block.
+  // JavaScript also requires safe integers so JSON counts and their sums remain exact.
+  if (!Array.isArray(row.cycleMeasurements) || row.cycleMeasurements.length !== CYCLES) {
+    throw new Error(`${label} cycleMeasurements must contain exactly ${CYCLES} values.`);
+  }
+  const totals = {
+    firstOperations: 0,
+    secondOperations: 0,
+    firstActiveSeconds: 0,
+    secondActiveSeconds: 0
+  };
+  for (const [index, cycle] of row.cycleMeasurements.entries()) {
+    const cycleLabel = `${label} cycleMeasurements[${index}]`;
+    if (!isObject(cycle)) throw new Error(`${cycleLabel} must be an object.`);
+    for (const arm of ["first", "second"]) {
+      const operations = cycle[`${arm}Operations`];
+      if (!Number.isSafeInteger(operations) || operations <= 0) {
+        throw new Error(`${cycleLabel} ${arm}Operations must be a positive safe integer.`);
+      }
+      if (operations % (4 * BATCH_OPERATIONS) !== 0) {
+        throw new Error(`${cycleLabel} must retain balanced ABBA/BAAB operation counts.`);
+      }
+      const seconds = requireFiniteNumber(
+        cycle[`${arm}ActiveSeconds`],
+        `${cycleLabel} ${arm}ActiveSeconds`
+      );
+      if (seconds < MINIMUM_CYCLE_ACTIVE_MILLISECONDS / 1000) {
+        throw new Error(`${cycleLabel} did not reach the minimum active time.`);
+      }
+      totals[`${arm}Operations`] += operations;
+      totals[`${arm}ActiveSeconds`] += seconds;
+    }
+    if (cycle.firstOperations !== cycle.secondOperations) {
+      throw new Error(`${cycleLabel} must retain balanced ABBA/BAAB operation counts.`);
+    }
+    const retained = requireFiniteNumber(
+      cycle.firstToSecondRatio,
+      `${cycleLabel} firstToSecondRatio`
+    );
+    if (retained <= 0) throw new Error(`${cycleLabel} retained ratio must be positive.`);
+    const recomputed =
+      cycle.firstOperations /
+      cycle.firstActiveSeconds /
+      (cycle.secondOperations / cycle.secondActiveSeconds);
+    for (const value of [retained, cycleRatios[index]]) {
+      if (
+        !Number.isFinite(recomputed) ||
+        recomputed <= 0 ||
+        Math.abs(value - recomputed) / recomputed > RELATIVE_TOLERANCE
+      ) {
+        throw new Error(`${cycleLabel} ratio does not match its work and active time.`);
+      }
+    }
+  }
+  if (
+    !Number.isSafeInteger(totals.firstOperations) ||
+    !Number.isSafeInteger(totals.secondOperations) ||
+    !Number.isFinite(totals.firstActiveSeconds) ||
+    !Number.isFinite(totals.secondActiveSeconds)
+  ) {
+    throw new Error(`${label} retained cycle totals must remain finite and exact.`);
+  }
+  const aggregate = requireFiniteNumber(row.aggregateRateRatio, `${label} aggregateRateRatio`);
+  if (aggregate <= 0) throw new Error(`${label} aggregate ratio must be positive.`);
+  const recomputedAggregate =
+    totals.firstOperations /
+    totals.firstActiveSeconds /
+    (totals.secondOperations / totals.secondActiveSeconds);
+  if (
+    !Number.isFinite(recomputedAggregate) ||
+    recomputedAggregate <= 0 ||
+    Math.abs(aggregate - recomputedAggregate) / recomputedAggregate > RELATIVE_TOLERANCE
+  ) {
+    throw new Error(`${label} aggregate ratio does not match its retained cycles.`);
+  }
 }
 
 function validateSummary(summary, label, manifest, expectedDigest) {
@@ -290,16 +347,7 @@ function validateSummary(summary, label, manifest, expectedDigest) {
   }
   requireExactKeys(
     summary.executionProfile,
-    [
-      "id",
-      "cpuModel",
-      "source",
-      "selectionPolicy",
-      "selectedEfficiencyClass",
-      "selectedLogicalProcessorIndices",
-      "affinityMask",
-      "priorityClass"
-    ],
+    PAIRED_CONTRACT.executionProfileFields,
     `${label} summary execution profile`
   );
   if (

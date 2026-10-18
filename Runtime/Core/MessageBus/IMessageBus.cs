@@ -581,7 +581,8 @@ namespace DxMessaging.Core.MessageBus
         /// <para>
         /// Deregistration is idempotent at the handle level only in the sense that a handle that
         /// has outlived a reset/domain-reload, or a <see cref="MessageBusRegistration.None"/> /
-        /// foreign handle, is a silent no-op. Calling it twice for the same live registration is a
+        /// foreign handle, is a silent no-op. Built-in handles passed to a different bus instance
+        /// also leave both buses unchanged. Calling it twice for the same live registration is a
         /// genuine over-deregistration and is logged (matching the pre-v4 behaviour of invoking
         /// the returned deregistration action twice).
         /// </para>

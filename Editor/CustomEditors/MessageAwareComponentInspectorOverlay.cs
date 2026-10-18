@@ -61,25 +61,6 @@ namespace DxMessaging.Editor.CustomEditors
         */
         private static readonly HashSet<int> _renderedThisRepaint = new();
 
-        internal static System.Action<System.Action> AssetDatabaseMutationScheduler { get; set; } =
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-
-        internal static System.Action<System.Action> TransientRefreshScheduler { get; set; } =
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-
-        internal static System.Action InspectorRepaintAction { get; set; } = RepaintAllInspectors;
-
-        internal static System.Func<bool> InspectorResolutionTransientBlocker { get; set; } =
-            () => EditorApplication.isCompiling || EditorApplication.isUpdating;
-
-        internal static System.Func<MessageAwareComponent, bool> ImGuiRenderAction { get; set; } =
-            BuildAndRenderOverlay;
-
-        internal static System.Action<
-            MessageAwareComponent,
-            BaseCallReportEntry
-        > OpenScriptAction { get; set; } = OpenScriptForComponentCore;
-
         internal static event System.Action InspectorStateInvalidated;
 
         static MessageAwareComponentInspectorOverlay()
@@ -175,9 +156,7 @@ namespace DxMessaging.Editor.CustomEditors
                 return false;
             }
 
-            System.Func<MessageAwareComponent, bool> render =
-                ImGuiRenderAction ?? BuildAndRenderOverlay;
-            return render.Invoke(messageAwareComponent);
+            return BuildAndRenderOverlay(messageAwareComponent);
         }
 
         /// <summary>
@@ -264,24 +243,9 @@ namespace DxMessaging.Editor.CustomEditors
             return MessageAwareComponentInspectorView.Create(state, CreateInspectorViewActions());
         }
 
-        internal static void ResetTestSeams()
-        {
-            _renderedThisRepaint.Clear();
-            AssetDatabaseMutationScheduler = DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            TransientRefreshScheduler = DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            InspectorRepaintAction = RepaintAllInspectors;
-            InspectorResolutionTransientBlocker = () =>
-                EditorApplication.isCompiling || EditorApplication.isUpdating;
-            ImGuiRenderAction = BuildAndRenderOverlay;
-            OpenScriptAction = OpenScriptForComponentCore;
-        }
-
         internal static bool IsInspectorResolutionTransientlyBlocked()
         {
-            System.Func<bool> isBlocked =
-                InspectorResolutionTransientBlocker
-                ?? (() => EditorApplication.isCompiling || EditorApplication.isUpdating);
-            return isBlocked.Invoke();
+            return EditorApplication.isCompiling || EditorApplication.isUpdating;
         }
 
         internal static MessageAwareComponentInspectorState ResolveInspectorState(Object target)
@@ -422,10 +386,9 @@ namespace DxMessaging.Editor.CustomEditors
 
         private static void NotifyInspectorStateInvalidated()
         {
-            System.Action repaint = InspectorRepaintAction ?? RepaintAllInspectors;
             try
             {
-                repaint.Invoke();
+                RepaintAllInspectors();
             }
             catch (System.Exception ex)
             {
@@ -543,9 +506,7 @@ namespace DxMessaging.Editor.CustomEditors
             BaseCallReportEntry entry
         )
         {
-            System.Action<MessageAwareComponent, BaseCallReportEntry> openScript =
-                OpenScriptAction ?? OpenScriptForComponentCore;
-            openScript.Invoke(component, entry);
+            OpenScriptForComponentCore(component, entry);
         }
 
         private static void OpenScriptForComponentCore(
@@ -585,10 +546,7 @@ namespace DxMessaging.Editor.CustomEditors
                 current GUI cycle, so the next frame's Layout pass sees the new state and
                 both passes emit consistent control counts.
             */
-            System.Action<System.Action> schedule =
-                AssetDatabaseMutationScheduler
-                ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            schedule(() =>
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
             {
                 if (settings == null)
                 {
@@ -616,10 +574,7 @@ namespace DxMessaging.Editor.CustomEditors
                 the overlay's shape gating remains identical on Layout and Repaint passes of THIS
                 frame. The next frame's Layout pass observes the new state; both passes agree.
             */
-            System.Action<System.Action> schedule =
-                AssetDatabaseMutationScheduler
-                ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            schedule(() =>
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
             {
                 if (settings == null)
                 {

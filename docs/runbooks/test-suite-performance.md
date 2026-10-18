@@ -29,7 +29,7 @@ the absolute number.
 `.github/unity-versions.json`) with `max-parallel: 1`. Each job validates its
 editor and acquires the organization lock once, then runs `editmode`, `playmode`,
 and `standalone` as separate Unity invocations. Each mode uses a separate
-runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`, result
+runner-local project under `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, result
 verification, and artifact. The
 correctness legs exclude the heavy categories
 (`Stress;Performance;Allocation;MemoryReclaim;PerfBench;PerfGate;PerfBaseline`),

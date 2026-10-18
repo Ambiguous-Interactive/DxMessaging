@@ -62,7 +62,6 @@ namespace DxMessaging.Core.MessageBus
         /// outside of dispatch, the id of the most recent emission.
         /// </summary>
         public long EmissionId => 0 < _dispatchDepth ? _scopedEmissionId : _emissionId;
-        internal long TickCounter => _tickCounter;
         internal bool IsDispatching => 0 < _dispatchDepth;
 
         private const long DefaultIdleEvictionTicks = 30;
@@ -120,66 +119,28 @@ namespace DxMessaging.Core.MessageBus
             DispatchPhase.PostProcess,
             DispatchVariant.WithoutContext
         );
-        internal const int ExpectedMessageCacheFieldCount = 8;
-
-        private static readonly ISweepable[] SweepableTypeCacheRegistry =
+        private static readonly Func<MessageBus, bool, int>[] SweepableTypeCacheRegistry =
         {
-            new SweepableTypeCache(
-                nameof(_scalarSinks),
-                typeof(MessageCache<HandlerCache<int, HandlerCache>>[]),
-                static (bus, force) => bus.SweepDirtyScalarTypeSlots(force)
-            ),
-            new SweepableTypeCache(
-                nameof(_contextSinks),
-                typeof(MessageCache<ContextHandlerMap>[]),
-                static (bus, force) => bus.SweepDirtyTargetSlots(force)
-            ),
-            new SweepableTypeCache(
-                nameof(_untargetedInterceptsByType),
-                typeof(MessageCache<InterceptorCache<object>>),
-                static (bus, force) =>
-                    bus.SweepDirtyInterceptorTypeSlots(bus._untargetedInterceptsByType, force)
-            ),
-            new SweepableTypeCache(
-                nameof(_targetedInterceptsByType),
-                typeof(MessageCache<InterceptorCache<object>>),
-                static (bus, force) =>
-                    bus.SweepDirtyInterceptorTypeSlots(bus._targetedInterceptsByType, force)
-            ),
-            new SweepableTypeCache(
-                nameof(_broadcastInterceptsByType),
-                typeof(MessageCache<InterceptorCache<object>>),
-                static (bus, force) =>
-                    bus.SweepDirtyInterceptorTypeSlots(bus._broadcastInterceptsByType, force)
-            ),
-            new SweepableTypeCache(
-                nameof(_untargetedDispatchPlans),
-                typeof(MessageCache<UntargetedDispatchPlan>),
-                static (bus, force) => bus.SweepStaleUntargetedDispatchPlans()
-            ),
-            new SweepableTypeCache(
-                nameof(_targetedDispatchPlans),
-                typeof(MessageCache<DispatchPlan>),
-                static (bus, force) => bus.SweepStaleDispatchPlans(bus._targetedDispatchPlans)
-            ),
-            new SweepableTypeCache(
-                nameof(_broadcastDispatchPlans),
-                typeof(MessageCache<DispatchPlan>),
-                static (bus, force) => bus.SweepStaleDispatchPlans(bus._broadcastDispatchPlans)
-            ),
+            static (bus, force) => bus.SweepDirtyScalarTypeSlots(force),
+            static (bus, force) => bus.SweepDirtyTargetSlots(force),
+            static (bus, force) =>
+                bus.SweepDirtyInterceptorTypeSlots(bus._untargetedInterceptsByType, force),
+            static (bus, force) =>
+                bus.SweepDirtyInterceptorTypeSlots(bus._targetedInterceptsByType, force),
+            static (bus, force) =>
+                bus.SweepDirtyInterceptorTypeSlots(bus._broadcastInterceptsByType, force),
+            static (bus, force) => bus.SweepStaleUntargetedDispatchPlans(),
+            static (bus, force) => bus.SweepStaleDispatchPlans(bus._targetedDispatchPlans),
+            static (bus, force) => bus.SweepStaleDispatchPlans(bus._broadcastDispatchPlans),
         };
-
-        internal static IReadOnlyList<ISweepable> SweepableTypeCaches => SweepableTypeCacheRegistry;
 
         private static readonly ArrayPool<DispatchBucket> DispatchBucketPool =
             ArrayPool<DispatchBucket>.Shared;
         private static readonly ArrayPool<DispatchEntry> DispatchEntryPool =
             ArrayPool<DispatchEntry>.Shared;
 
-        private static CollectionPool<ContextHandlerMap> ContextHandlerByTargetDictsOverride;
-
         private static CollectionPool<ContextHandlerMap> ContextHandlerByTargetDicts =>
-            ContextHandlerByTargetDictsOverride ?? ContextHandlerByTargetDictPoolHolder.Instance;
+            ContextHandlerByTargetDictPoolHolder.Instance;
 
         private static CollectionPool<ContextHandlerMap> CreateContextHandlerByTargetPool(
             int maxRetained,
@@ -197,41 +158,6 @@ namespace DxMessaging.Core.MessageBus
         private static ContextHandlerMap CreateFreshContextHandlerMap()
         {
             return new ContextHandlerMap();
-        }
-
-        internal static object CreateContextMapSeedForBenchmark()
-        {
-            return new HandlerCache<int, HandlerCache>();
-        }
-
-        internal static object CreatePopulatedContextMapForBenchmark(InstanceId[] keys, object seed)
-        {
-            if (keys == null)
-            {
-                throw new ArgumentNullException(nameof(keys));
-            }
-            HandlerCache<int, HandlerCache> typedSeed =
-                seed as HandlerCache<int, HandlerCache>
-                ?? throw new ArgumentException("Unexpected context-map seed type.", nameof(seed));
-            ContextHandlerMap map = CreateFreshContextHandlerMap();
-            for (int index = 0; index < keys.Length; ++index)
-            {
-                map[keys[index]] = typedSeed;
-            }
-            return map;
-        }
-
-        internal static void ObserveContextMapForBenchmark(
-            object opaqueMap,
-            out int count,
-            out int capacity
-        )
-        {
-            ContextHandlerMap map =
-                opaqueMap as ContextHandlerMap
-                ?? throw new ArgumentException("Unexpected context-map type.", nameof(opaqueMap));
-            count = map.Count;
-            capacity = map.Capacity;
         }
 
         private static class ContextHandlerByTargetDictPoolHolder
@@ -736,35 +662,6 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
-        private sealed class SweepableTypeCache : ISweepable
-        {
-            private readonly Func<MessageBus, bool, int> _sweep;
-
-            public SweepableTypeCache(
-                string storageFieldName,
-                Type storageFieldType,
-                Func<MessageBus, bool, int> sweep
-            )
-            {
-                StorageFieldName = storageFieldName;
-                StorageFieldType = storageFieldType;
-                _sweep = sweep;
-            }
-
-            public string StorageFieldName { get; }
-            public Type StorageFieldType { get; }
-
-            public int Sweep(MessageBus bus, bool force)
-            {
-                if (bus == null)
-                {
-                    throw new ArgumentNullException(nameof(bus));
-                }
-
-                return _sweep(bus, force);
-            }
-        }
-
         private readonly struct DispatchLease : IDisposable
         {
             private readonly MessageBus _bus;
@@ -1007,11 +904,6 @@ namespace DxMessaging.Core.MessageBus
                 _recycledEmptyHandlerCache = cache;
             }
         }
-
-        internal object RecycledHandlerCacheForTesting => _recycledEmptyHandlerCache;
-
-        internal int RecycledHandlerCacheHighWaterForTesting =>
-            _recycledEmptyHandlerCache?.highWaterDistinctHandlers ?? 0;
 
         public int RegisteredTargeted
         {
@@ -1309,6 +1201,12 @@ namespace DxMessaging.Core.MessageBus
         private readonly BusGlobalSlot _globalSlots = new();
 
         /*
+            A retained handle keeps this identity marker alive without retaining its bus.
+            Reset preserves the marker; reset generations reject pre-reset registrations.
+        */
+        private readonly object _registrationOwner = new object();
+
+        /*
             P1 emit-preamble plans: one per (bus, type, kind), validated by a
             single bus-wide version stamp (see DispatchPlan /
             InvalidateDispatchPlans). Registered in SweepableTypeCacheRegistry
@@ -1317,155 +1215,6 @@ namespace DxMessaging.Core.MessageBus
         private readonly MessageCache<UntargetedDispatchPlan> _untargetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _targetedDispatchPlans = new();
         private readonly MessageCache<DispatchPlan> _broadcastDispatchPlans = new();
-
-        internal readonly struct FlatSnapshotStorageObservation
-        {
-            internal FlatSnapshotStorageObservation(
-                int entryCount,
-                int arrayCapacity,
-                int emptyHolderPoolCount
-            )
-            {
-                EntryCount = entryCount;
-                ArrayCapacity = arrayCapacity;
-                EmptyHolderPoolCount = emptyHolderPoolCount;
-            }
-
-            internal int EntryCount { get; }
-
-            internal int ArrayCapacity { get; }
-
-            /// <summary>
-            /// Released holder objects currently pooled with empty entry arrays. This does not
-            /// measure arrays or retained bytes; ArrayPool memory retention requires an external
-            /// memory measurement.
-            /// </summary>
-            internal int EmptyHolderPoolCount { get; }
-        }
-
-        internal readonly struct PriorityStorageObservation
-        {
-            internal PriorityStorageObservation(int entries, int mapCapacity, int orderCapacity)
-            {
-                Entries = entries;
-                MapCapacity = mapCapacity;
-                OrderCapacity = orderCapacity;
-            }
-
-            internal int Entries { get; }
-
-            internal int MapCapacity { get; }
-
-            internal int OrderCapacity { get; }
-        }
-
-        internal bool TryObserveUntargetedPriorityStorageForBenchmark<TMessage>(
-            out PriorityStorageObservation observation
-        )
-            where TMessage : IUntargetedMessage
-        {
-            if (
-                !_scalarSinks[BusSinkIndex.UntargetedHandleDefault]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handlers)
-            )
-            {
-                observation = default;
-                return false;
-            }
-
-            observation = ObservePriorityStorage(handlers);
-            return true;
-        }
-
-        internal static object CreatePriorityStorageOwnerForBenchmark()
-        {
-            return new HandlerCache<int, HandlerCache>();
-        }
-
-        internal static bool TryObservePriorityStorageOwnerForBenchmark(
-            object owner,
-            out PriorityStorageObservation observation
-        )
-        {
-            if (owner is not HandlerCache<int, HandlerCache> handlers)
-            {
-                observation = default;
-                return false;
-            }
-
-            observation = ObservePriorityStorage(handlers);
-            return true;
-        }
-
-        private static PriorityStorageObservation ObservePriorityStorage(
-            HandlerCache<int, HandlerCache> handlers
-        )
-        {
-            return new PriorityStorageObservation(
-                handlers.handlers.Count,
-                handlers.handlers.EnsureCapacity(0),
-                handlers.order.Capacity
-            );
-        }
-
-        /// <summary>
-        /// Read-only benchmark telemetry for the active untargeted flat snapshot of
-        /// <typeparamref name="TMessage"/>. This method does not acquire, build, or mutate a
-        /// snapshot, so observing storage cannot alter the path being measured.
-        /// </summary>
-        internal bool TryObserveUntargetedFlatSnapshotStorageForBenchmark<TMessage>(
-            out FlatSnapshotStorageObservation observation
-        )
-            where TMessage : IUntargetedMessage
-        {
-            if (
-                !_scalarSinks[BusSinkIndex.UntargetedHandleDefault]
-                    .TryGetValue<TMessage>(out HandlerCache<int, HandlerCache> handlers)
-                || handlers.dispatchState == null
-                || ReferenceEquals(handlers.dispatchState.active, DispatchSnapshot.Empty)
-                || handlers.dispatchState.active.flat == null
-            )
-            {
-                observation = default;
-                return false;
-            }
-
-            FlatDispatchArray flat = handlers.dispatchState.active.flat;
-            observation = new FlatSnapshotStorageObservation(
-                flat.Count,
-                flat.Capacity,
-                flat.EmptyHolderPoolCount
-            );
-            return true;
-        }
-
-        internal bool HasDispatchStateForTesting<TMessage>(
-            RegistrationMethod method,
-            InstanceId context
-        )
-            where TMessage : IMessage
-        {
-            switch (method)
-            {
-                case RegistrationMethod.Targeted:
-                case RegistrationMethod.Broadcast:
-                case RegistrationMethod.TargetedPostProcessor:
-                case RegistrationMethod.BroadcastPostProcessor:
-                    return ContextSinkForMethod(method)
-                            .TryGetValue<TMessage>(out ContextHandlerMap handlersByContext)
-                        && handlersByContext.TryGetValue(
-                            context,
-                            out HandlerCache<int, HandlerCache> contextHandlers
-                        )
-                        && contextHandlers.dispatchState != null;
-                default:
-                    return ScalarSinkForMethod(method)
-                            .TryGetValue<TMessage>(
-                                out HandlerCache<int, HandlerCache> scalarHandlers
-                            )
-                        && scalarHandlers.dispatchState != null;
-            }
-        }
 
         /*
             Bumped by every mutation that can change what a DispatchPlan
@@ -1487,7 +1236,7 @@ namespace DxMessaging.Core.MessageBus
         { }
 
         /// <summary>
-        /// Internal factory used by tests and integration assemblies to construct a
+        /// Internal factory used by integration assemblies to construct a
         /// <see cref="MessageBus"/> with an injected <see cref="IDxMessagingClock"/> and optional
         /// eviction overrides. Lives behind an <c>internal static</c> entry point so the public
         /// surface exposes only the parameterless constructor; this keeps reflection-based DI
@@ -1563,9 +1312,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
 #if UNITY_2021_3_OR_NEWER
-        private static List<WeakReference<MessageBus>> IdleSweepBuses = new();
-        private static IdleSweepRegistryBenchmarkScope ActiveIdleSweepRegistryBenchmarkScope;
-        private static ContextMapPoolBenchmarkScope ActiveContextMapPoolBenchmarkScope;
+        private static readonly List<WeakReference<MessageBus>> IdleSweepBuses = new();
         private static bool RuntimeSettingsSubscribed;
 
         private static void RegisterForIdleSweeps(MessageBus bus)
@@ -1637,201 +1384,6 @@ namespace DxMessaging.Core.MessageBus
             IdleSweepBuses.Clear();
             RuntimeSettingsSubscribed = false;
             ResetStaticPools();
-        }
-
-        internal static IDisposable IsolateIdleSweepRegistryForBenchmark()
-        {
-            return new IdleSweepRegistryBenchmarkScope();
-        }
-
-        internal static int IdleSweepRegistryCountForBenchmark => IdleSweepBuses.Count;
-
-        internal static object IdleSweepRegistryIdentityForBenchmark => IdleSweepBuses;
-
-        internal static IDisposable IsolateContextMapPoolForBenchmark()
-        {
-            return new ContextMapPoolBenchmarkScope();
-        }
-
-        internal static bool ContextMapPoolOverrideActiveForBenchmark =>
-            ContextHandlerByTargetDictsOverride != null;
-
-        internal static ContextMapPoolBenchmarkObservation ObserveContextMapPoolForBenchmark()
-        {
-            CollectionPool<ContextHandlerMap> current = ContextHandlerByTargetDicts;
-            return new ContextMapPoolBenchmarkObservation(
-                current,
-                current.UseLru,
-                current.MaxRetained
-            );
-        }
-
-        internal static void ConfigureContextMapPoolForBenchmark(bool useLru, int maxRetained)
-        {
-            ContextHandlerByTargetDicts.UseLru = useLru;
-            ContextHandlerByTargetDicts.MaxRetained = maxRetained;
-        }
-
-        private sealed class IdleSweepRegistryBenchmarkScope : IDisposable
-        {
-            private static readonly object SyncRoot = new object();
-            private readonly List<WeakReference<MessageBus>> _saved;
-            private readonly IdleSweepRegistryBenchmarkScope _parent;
-            private readonly int _ownerThreadId;
-            private bool _disposed;
-
-            internal IdleSweepRegistryBenchmarkScope()
-            {
-                _ownerThreadId = Environment.CurrentManagedThreadId;
-                lock (SyncRoot)
-                {
-                    if (
-                        ActiveIdleSweepRegistryBenchmarkScope != null
-                        && ActiveIdleSweepRegistryBenchmarkScope._ownerThreadId != _ownerThreadId
-                    )
-                    {
-                        throw new InvalidOperationException(
-                            "Nested idle-sweep benchmark scopes must share one owning thread."
-                        );
-                    }
-
-                    _parent = ActiveIdleSweepRegistryBenchmarkScope;
-                    _saved = IdleSweepBuses;
-                    ActiveIdleSweepRegistryBenchmarkScope = this;
-                    IdleSweepBuses = new List<WeakReference<MessageBus>>();
-                }
-            }
-
-            public void Dispose()
-            {
-                lock (SyncRoot)
-                {
-                    if (_disposed)
-                    {
-                        return;
-                    }
-                    if (Environment.CurrentManagedThreadId != _ownerThreadId)
-                    {
-                        throw new InvalidOperationException(
-                            "Idle-sweep benchmark scopes must be disposed on their owning thread."
-                        );
-                    }
-
-                    _disposed = true;
-                    while (
-                        ActiveIdleSweepRegistryBenchmarkScope != null
-                        && ActiveIdleSweepRegistryBenchmarkScope._disposed
-                    )
-                    {
-                        IdleSweepRegistryBenchmarkScope completed =
-                            ActiveIdleSweepRegistryBenchmarkScope;
-                        IdleSweepBuses = completed._saved;
-                        ActiveIdleSweepRegistryBenchmarkScope = completed._parent;
-                    }
-                }
-            }
-        }
-
-        private sealed class ContextMapPoolBenchmarkScope : IDisposable
-        {
-            private static readonly object SyncRoot = new object();
-            private readonly CollectionPool<ContextHandlerMap> _savedOverride;
-            private readonly CollectionPool<ContextHandlerMap> _savedPool;
-            private readonly CollectionPool<ContextHandlerMap> _isolated;
-            private readonly ContextMapPoolBenchmarkScope _parent;
-            private readonly int _ownerThreadId;
-            private readonly bool _initialUseLru;
-            private readonly int _initialMaxRetained;
-            private bool _disposed;
-
-            internal ContextMapPoolBenchmarkScope()
-            {
-                _ownerThreadId = Environment.CurrentManagedThreadId;
-                lock (SyncRoot)
-                {
-                    if (
-                        ActiveContextMapPoolBenchmarkScope != null
-                        && ActiveContextMapPoolBenchmarkScope._ownerThreadId != _ownerThreadId
-                    )
-                    {
-                        throw new InvalidOperationException(
-                            "Nested context-map benchmark scopes must share one owning thread."
-                        );
-                    }
-
-                    _parent = ActiveContextMapPoolBenchmarkScope;
-                    _savedOverride = ContextHandlerByTargetDictsOverride;
-                    _savedPool = ContextHandlerByTargetDicts;
-                    _initialUseLru = _savedPool.UseLru;
-                    _initialMaxRetained = _savedPool.MaxRetained;
-                    _isolated = CreateContextHandlerByTargetPool(
-                        _initialMaxRetained,
-                        _initialUseLru
-                    );
-                    ActiveContextMapPoolBenchmarkScope = this;
-                    ContextHandlerByTargetDictsOverride = _isolated;
-                }
-            }
-
-            public void Dispose()
-            {
-                lock (SyncRoot)
-                {
-                    if (_disposed)
-                    {
-                        return;
-                    }
-
-                    if (Environment.CurrentManagedThreadId != _ownerThreadId)
-                    {
-                        throw new InvalidOperationException(
-                            "Context-map benchmark scopes must be disposed on their owning thread."
-                        );
-                    }
-                    if (!ReferenceEquals(ActiveContextMapPoolBenchmarkScope, this))
-                    {
-                        throw new InvalidOperationException(
-                            "Context-map benchmark scopes must be disposed in strict LIFO order."
-                        );
-                    }
-
-                    bool effectiveUseLru = _isolated.UseLru;
-                    int effectiveMaxRetained = _isolated.MaxRetained;
-                    if (effectiveUseLru != _initialUseLru)
-                    {
-                        _savedPool.UseLru = effectiveUseLru;
-                    }
-                    if (effectiveMaxRetained != _initialMaxRetained)
-                    {
-                        _savedPool.MaxRetained = effectiveMaxRetained;
-                    }
-
-                    _disposed = true;
-                    _ = _isolated.Trim(0);
-                    ContextHandlerByTargetDictsOverride = _savedOverride;
-                    ActiveContextMapPoolBenchmarkScope = _parent;
-                }
-            }
-        }
-
-        internal readonly struct ContextMapPoolBenchmarkObservation
-        {
-            internal ContextMapPoolBenchmarkObservation(
-                object identity,
-                bool useLru,
-                int maxRetained
-            )
-            {
-                Identity = identity;
-                UseLru = useLru;
-                MaxRetained = maxRetained;
-            }
-
-            internal object Identity { get; }
-
-            internal bool UseLru { get; }
-
-            internal int MaxRetained { get; }
         }
 
         /// <summary>Gets the settings-bound pool used only by nested reflexive sends.</summary>
@@ -2062,35 +1614,6 @@ namespace DxMessaging.Core.MessageBus
         private long _reflexiveDispatchLeaseSequence;
         private long _activeReflexiveDispatchLeaseId;
         private long _reflexiveRetentionGeneration;
-
-        /// <summary>Reports retained successful lookups across all receiver types.</summary>
-        internal int ReflexiveMethodCacheCount => _methodCache.Count;
-
-        /// <summary>Reports lookup backing capacity for cold-path reclamation checks.</summary>
-        internal int ReflexiveMethodCacheCapacity => _methodCache.EnsureCapacity(0);
-
-        /// <summary>Checks retention without changing the lookup's recency.</summary>
-        internal bool IsReflexiveMethodCached(Type componentType, MethodSignatureKey signature) =>
-            _methodCache.ContainsKey((componentType, signature));
-
-        /// <summary>Reports whether this bus still owns root or active traversal scratch.</summary>
-        internal bool HasRetainedReflexiveDispatchState => _reflexiveDispatchState != null;
-
-        /// <summary>Reports the backing high-water capacity of retained or active traversal scratch.</summary>
-        internal int ReflexiveDispatchRetainedCapacity =>
-            _reflexiveDispatchState?.RetainedCapacity ?? 0;
-
-        /// <summary>Diagnostics for reentrant reflexive dispatch state retained by this bus.</summary>
-        internal CollectionPoolDiagnostics ReflexiveDispatchPoolDiagnostics =>
-            _reflexiveDispatchStatePool?.Snapshot() ?? default;
-
-        /// <summary>Current retained-entry cap for the reentrant reflexive state pool.</summary>
-        internal int ReflexiveDispatchPoolMaxRetained =>
-            _reflexiveDispatchStatePool?.MaxRetained ?? _handlerCacheRetentionLimit;
-
-        /// <summary>Whether the reentrant reflexive state pool retains entries in LRU order.</summary>
-        internal bool ReflexiveDispatchPoolUsesLru =>
-            _reflexiveDispatchStatePool?.UseLru ?? ContextHandlerByTargetDicts.UseLru;
 #endif
 
         private RegistrationLog _log;
@@ -2396,13 +1919,13 @@ namespace DxMessaging.Core.MessageBus
                 (and the next emission of any type) see every plan as stale.
             */
             InvalidateDispatchPlans();
-            int typeSlotsEvicted = SweepableTypeCacheRegistry[0].Sweep(this, force);
+            int typeSlotsEvicted = SweepableTypeCacheRegistry[0](this, force);
             _lastContextTypeSlotsEvicted = 0;
-            int targetSlotsEvicted = SweepableTypeCacheRegistry[1].Sweep(this, force);
+            int targetSlotsEvicted = SweepableTypeCacheRegistry[1](this, force);
             typeSlotsEvicted += _lastContextTypeSlotsEvicted;
-            typeSlotsEvicted += SweepableTypeCacheRegistry[2].Sweep(this, force);
-            typeSlotsEvicted += SweepableTypeCacheRegistry[3].Sweep(this, force);
-            typeSlotsEvicted += SweepableTypeCacheRegistry[4].Sweep(this, force);
+            typeSlotsEvicted += SweepableTypeCacheRegistry[2](this, force);
+            typeSlotsEvicted += SweepableTypeCacheRegistry[3](this, force);
+            typeSlotsEvicted += SweepableTypeCacheRegistry[4](this, force);
             typeSlotsEvicted += SweepGlobalSlot(force);
             typeSlotsEvicted += SweepDirtyTypedHandlerSlots(force);
             /*
@@ -2410,9 +1933,9 @@ namespace DxMessaging.Core.MessageBus
                 rows above so anything they evicted is dereferenced within the
                 same sweep. Always returns 0 (derived caches, not type slots).
             */
-            _ = SweepableTypeCacheRegistry[5].Sweep(this, force);
-            _ = SweepableTypeCacheRegistry[6].Sweep(this, force);
-            _ = SweepableTypeCacheRegistry[7].Sweep(this, force);
+            _ = SweepableTypeCacheRegistry[5](this, force);
+            _ = SweepableTypeCacheRegistry[6](this, force);
+            _ = SweepableTypeCacheRegistry[7](this, force);
             if (force)
             {
                 ClearDirtySweepCandidates();
@@ -2957,124 +2480,6 @@ namespace DxMessaging.Core.MessageBus
             }
 
             DxPools.InstanceIdSets.Return(targets);
-        }
-
-        internal CollectionPoolDiagnostics GetContextDictPoolDiagnosticsForTesting()
-        {
-            return ContextHandlerByTargetDicts.Snapshot();
-        }
-
-        internal int SweepDirtyTargetSlotForBenchmark<TMessage>(InstanceId target)
-            where TMessage : IMessage
-        {
-            int typeIndex = MessageHelperIndexer<TMessage>.SequentialId;
-            int evicted = 0;
-            for (int sinkIndex = 0; sinkIndex < _contextSinks.Length; ++sinkIndex)
-            {
-                MessageCache<ContextHandlerMap> sink = _contextSinks[sinkIndex];
-                if (
-                    sink == null
-                    || !sink.TryGetValueAtIndex(typeIndex, out ContextHandlerMap handlersByTarget)
-                    || !handlersByTarget.TryGetValue(
-                        target,
-                        out HandlerCache<int, HandlerCache> handlers
-                    )
-                    || handlers.handlers.Count != 0
-                    || HasActiveDispatchSnapshot(handlers.dispatchState)
-                )
-                {
-                    continue;
-                }
-
-                handlers.Clear();
-                _ = handlersByTarget.Remove(target);
-                evicted++;
-            }
-
-            if (
-                _dirtyTargets.TryGetValue(typeIndex, out List<InstanceId> targets)
-                && _dirtyTargetSets.TryGetValue(typeIndex, out HashSet<InstanceId> targetSet)
-                && targetSet.Remove(target)
-            )
-            {
-                for (int index = targets.Count - 1; 0 <= index; --index)
-                {
-                    if (targets[index] != target)
-                    {
-                        continue;
-                    }
-
-                    int lastIndex = targets.Count - 1;
-                    targets[index] = targets[lastIndex];
-                    targets.RemoveAt(lastIndex);
-                    break;
-                }
-            }
-
-            /*
-                Deliberately retain the empty per-type context map and dirty-candidate
-                collections. Returning and immediately renting them would make this row measure
-                shared pools in addition to the target map. ResetState returns them at teardown.
-            */
-            return evicted;
-        }
-
-        internal bool TryObserveTargetedHandleMapStorageForBenchmark<TMessage>(
-            out int entries,
-            out int capacity
-        )
-            where TMessage : IMessage
-        {
-            MessageCache<ContextHandlerMap> sink = _contextSinks[
-                BusContextIndex.TargetedHandleDefault
-            ];
-            if (!sink.TryGetValue<TMessage>(out ContextHandlerMap handlersByTarget))
-            {
-                entries = 0;
-                capacity = 0;
-                return false;
-            }
-
-            entries = handlersByTarget.Count;
-            capacity = handlersByTarget.Capacity;
-            return true;
-        }
-
-        internal bool TryObserveTargetedHandleMapTopologyForBenchmark<TMessage>(
-            InstanceId target,
-            out IntKeyMapTopologyObservation observation
-        )
-            where TMessage : IMessage
-        {
-            MessageCache<ContextHandlerMap> sink = _contextSinks[
-                BusContextIndex.TargetedHandleDefault
-            ];
-            if (!sink.TryGetValue<TMessage>(out ContextHandlerMap handlersByTarget))
-            {
-                observation = default;
-                return false;
-            }
-
-            observation = handlersByTarget.ObserveTopologyForBenchmark(target.Id);
-            return true;
-        }
-
-        internal bool TryObserveTargetedHandleMapLongestClusterForBenchmark<TMessage>(
-            out int longestCluster
-        )
-            where TMessage : IMessage
-        {
-            MessageCache<ContextHandlerMap> sink = _contextSinks[
-                BusContextIndex.TargetedHandleDefault
-            ];
-            if (!sink.TryGetValue<TMessage>(out ContextHandlerMap handlersByTarget))
-            {
-                longestCluster = 0;
-                return false;
-            }
-
-            longestCluster = handlersByTarget.LongestClusterForBenchmark;
-            return true;
         }
 
         private ContextHandlerMap GetOrRentContextMap<T>(MessageCache<ContextHandlerMap> sinks)
@@ -3823,6 +3228,7 @@ namespace DxMessaging.Core.MessageBus
             long capturedGeneration = _resetGeneration;
             long capturedSweepGeneration = _globalSlotSweepGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.GlobalAcceptAll,
                 RegistrationMethod.GlobalAcceptAll,
                 0,
@@ -3977,6 +3383,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.UntargetedInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -4049,6 +3456,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.TargetedInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -4121,6 +3529,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.BroadcastInterceptor,
                 RegistrationMethod.Interceptor,
                 priority,
@@ -6130,6 +5539,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.Handler,
                 registrationMethod,
                 priority,
@@ -6359,6 +5769,7 @@ namespace DxMessaging.Core.MessageBus
 
             long capturedGeneration = _resetGeneration;
             return new MessageBusRegistration(
+                _registrationOwner,
                 MessageBusRegistration.Kind.Handler,
                 registrationMethod,
                 priority,
@@ -6496,6 +5907,11 @@ namespace DxMessaging.Core.MessageBus
         public void Deregister<T>(in MessageBusRegistration registration)
             where T : IMessage
         {
+            if (!ReferenceEquals(registration.owner, _registrationOwner))
+            {
+                return;
+            }
+
             switch (registration.kind)
             {
                 case MessageBusRegistration.Kind.Handler:

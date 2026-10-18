@@ -93,7 +93,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 forward the token's bus and always registers on the global bus
                 (pre-existing token behavior, flagged for API review).
             */
-            Action interceptorDeregistration =
+            Action interceptorDeregistration = (
                 handler.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(
                     (ref SimpleUntargetedMessage message) =>
                     {
@@ -110,7 +110,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     },
                     priority: 0,
                     messageBus: messageBus
-                );
+                )
+            ).AsAction();
             _ = token.RegisterUntargeted((in SimpleUntargetedMessage _) => { });
             _ = token.RegisterUntargetedPostProcessor(
                 (in SimpleUntargetedMessage _) => existingPostProcessCount++,

@@ -1,0 +1,1138 @@
+{
+  "options": {
+    "experimentId": "editor-settings-cache-test",
+    "artifactClass": "editor-settings-cache",
+    "reducer": "editor-settings-cache-v1",
+    "sourceCommit": "98b47536a0eb1445fcd2a9700899aab0be24897f"
+  },
+  "files": {
+    "editor-settings-profile.json": {
+      "schemaVersion": 1,
+      "measurementClass": "characterization",
+      "testMode": "EditMode",
+      "orders": ["ABBA", "BAAB", "ABBA", "BAAB"],
+      "baselineCalls": 64,
+      "followupCalls": 8,
+      "phaseAndBlockLimitMs": 2000,
+      "blockGrowthLimitBytes": 134217728,
+      "warmupCallsPerArm": 1,
+      "scope": "native Editor; selected overlays before full candidate tree",
+      "claim": "descriptive counters and live-memory changes; no speedup ratio, interval, retention or OOM cause"
+    },
+    "source-proof.json": {
+      "sourceCommit": "98b47536a0eb1445fcd2a9700899aab0be24897f",
+      "sourceTree": "dddddddddddddddddddddddddddddddddddddddd",
+      "allOtherTrackedUnityAssetsIdentical": true,
+      "overlay": [
+        {
+          "path": "Editor/Analyzers/DxMessagingConsoleHarvester.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Editor/Settings/DxMessagingSettings.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs.meta",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsAssetImportTests.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsAssetImportTests.cs.meta",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsLookupTests.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsLookupTests.cs.meta",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Runtime/Benchmarks/BenchmarkProtocol.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Runtime/Comparisons/PairedBenchmarkProtocolContractTests.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        },
+        {
+          "path": "Tests/Runtime/Comparisons/PairedComparisonHarness.cs",
+          "candidateSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "retainedSha256": "f2764a30bea370f9a7f3ba1e360dd8933c4f4c64974b1b29b32fc1848c15e4c6",
+          "redactionCounts": {}
+        }
+      ],
+      "packageRestored": [
+        {
+          "path": "Editor/Analyzers/DxMessagingConsoleHarvester.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Editor/Settings/DxMessagingSettings.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs.meta",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsAssetImportTests.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsAssetImportTests.cs.meta",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsLookupTests.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Editor/DxMessagingSettingsLookupTests.cs.meta",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Runtime/Benchmarks/BenchmarkProtocol.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Runtime/Comparisons/PairedBenchmarkProtocolContractTests.cs",
+          "matchesOriginal": true
+        },
+        {
+          "path": "Tests/Runtime/Comparisons/PairedComparisonHarness.cs",
+          "matchesOriginal": true
+        }
+      ]
+    },
+    "candidate/Editor/Analyzers/DxMessagingConsoleHarvester.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Editor/Settings/DxMessagingSettings.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Editor/Settings/DxMessagingSettingsAssetPostprocessor.cs.meta.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Editor/DxMessagingSettingsAssetImportTests.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Editor/DxMessagingSettingsAssetImportTests.cs.meta.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Editor/DxMessagingSettingsLookupTests.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Editor/DxMessagingSettingsLookupTests.cs.meta.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Runtime/Benchmarks/BenchmarkProtocol.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Runtime/Comparisons/DxMessagingBridge.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Runtime/Comparisons/PairedBenchmarkProtocolContractTests.cs.txt": "synthetic candidate bytes\n",
+    "candidate/Tests/Runtime/Comparisons/PairedComparisonHarness.cs.txt": "synthetic candidate bytes\n",
+    "freshness.json": {
+      "fresh": true,
+      "sourceUtc": "2026-10-07T17:00:00Z",
+      "assemblyUtc": "2026-10-07T17:01:00Z"
+    },
+    "samples.json": {
+      "rows": [
+        {
+          "source": "synthetic/0",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/1",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/2",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/3",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/4",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/5",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/6",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/7",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/8",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/9",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/10",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/11",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/12",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/13",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/14",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/15",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/16",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/17",
+          "same": true,
+          "sameMeta": true
+        },
+        {
+          "source": "synthetic/18",
+          "same": true,
+          "sameMeta": true
+        }
+      ],
+      "assemblies": [
+        {
+          "name": "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample",
+          "assemblyUtc": "2026-10-07T17:01:00Z"
+        },
+        {
+          "name": "WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample.Editor",
+          "assemblyUtc": "2026-10-07T17:01:00Z"
+        },
+        {
+          "name": "WallstopStudios.DxMessaging.MiniCombat.Sample",
+          "assemblyUtc": "2026-10-07T17:01:00Z"
+        },
+        {
+          "name": "WallstopStudios.DxMessaging.UIButtons.Sample",
+          "assemblyUtc": "2026-10-07T17:01:00Z"
+        }
+      ]
+    },
+    "original-samples.json": {
+      "rootMetaExists": true,
+      "rootMetaSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "files": [
+        {
+          "path": "synthetic-0",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-1",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-2",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-3",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-4",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-5",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-6",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-7",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-8",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-9",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-10",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-11",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-12",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-13",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-14",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-15",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-16",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-17",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-18",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-19",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-20",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-21",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-22",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-23",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-24",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-25",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-26",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-27",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-28",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-29",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-30",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-31",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-32",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-33",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-34",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-35",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-36",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-37",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-38",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-39",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-40",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-41",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-42",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ]
+    },
+    "restored-samples.json": {
+      "rootMetaExists": true,
+      "rootMetaSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "files": [
+        {
+          "path": "synthetic-0",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-1",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-2",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-3",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-4",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-5",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-6",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-7",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-8",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-9",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-10",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-11",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-12",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-13",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-14",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-15",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-16",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-17",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-18",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-19",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-20",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-21",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-22",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-23",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-24",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-25",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-26",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-27",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-28",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-29",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-30",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-31",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-32",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-33",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-34",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-35",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-36",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-37",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-38",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-39",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-40",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-41",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "path": "synthetic-42",
+          "bytes": 1,
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ]
+    },
+    "restoration.json": {
+      "newFixtureLoaded": false,
+      "scratchFolders": [],
+      "sampleFixtureCreated": false,
+      "assemblyUtc": "2026-10-07T17:04:00Z",
+      "restoredSourceUtc": "2026-10-07T17:03:00Z"
+    },
+    "preflight.json": {
+      "observedUtc": "2026-10-07T17:01:30Z",
+      "observationError": "",
+      "frameworkErrors": "",
+      "frameworkActive": false,
+      "playing": false,
+      "compiling": false,
+      "updating": false,
+      "mainStage": true,
+      "activeScene": "Assets/original.unity",
+      "scenes": [
+        {
+          "path": "Assets/original.unity",
+          "dirty": false,
+          "loaded": true
+        }
+      ]
+    },
+    "stopped-baseline.json": {
+      "observedUtc": "2026-10-07T16:00:00Z",
+      "unityVersion": "6000.4.6f1",
+      "operatingSystem": "synthetic OS",
+      "assetPathCount": 31324,
+      "settingsPresent": true,
+      "legacySettingsPresent": true,
+      "canonicalPresent": true,
+      "warmupCachedCalls": 1,
+      "warmupLegacyCalls": 1,
+      "armA": "legacy harvester FindAssets plus first GUID load",
+      "armB": "shared passive cached settings lookup",
+      "absentEnvironment": "not available; existing settings preserved",
+      "stopped": "lookup-block-exceeded-two-seconds",
+      "rows": [
+        {
+          "block": 0,
+          "order": "ABBA",
+          "arm": "A",
+          "calls": 64,
+          "found": 64,
+          "elapsedMilliseconds": 2100,
+          "legacySearches": 64,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        }
+      ]
+    },
+    "followup.json": {
+      "observedUtc": "2026-10-07T16:01:00Z",
+      "unityVersion": "6000.4.6f1",
+      "operatingSystem": "synthetic OS",
+      "assetPathCount": 31324,
+      "settingsPresent": true,
+      "legacySettingsPresent": true,
+      "canonicalPresent": true,
+      "warmupCachedCalls": 1,
+      "warmupLegacyCalls": 1,
+      "armA": "legacy harvester FindAssets plus first GUID load",
+      "armB": "shared passive cached settings lookup",
+      "absentEnvironment": "not available; existing settings preserved",
+      "stopped": "",
+      "rows": [
+        {
+          "block": 0,
+          "order": "ABBA",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 0,
+          "order": "ABBA",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 0,
+          "order": "ABBA",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 0,
+          "order": "ABBA",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 1,
+          "order": "BAAB",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 1,
+          "order": "BAAB",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 1,
+          "order": "BAAB",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 1,
+          "order": "BAAB",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 2,
+          "order": "ABBA",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 2,
+          "order": "ABBA",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 2,
+          "order": "ABBA",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 2,
+          "order": "ABBA",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 3,
+          "order": "BAAB",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        },
+        {
+          "block": 3,
+          "order": "BAAB",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 3,
+          "order": "BAAB",
+          "arm": "A",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 100,
+          "legacySearches": 8,
+          "passiveSearches": 0,
+          "passiveLookups": 0,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1100,
+          "managedBefore": 1000,
+          "managedAfter": 1050
+        },
+        {
+          "block": 3,
+          "order": "BAAB",
+          "arm": "B",
+          "calls": 8,
+          "found": 8,
+          "elapsedMilliseconds": 0.001,
+          "legacySearches": 0,
+          "passiveSearches": 0,
+          "passiveLookups": 8,
+          "workingBefore": 1000,
+          "workingAfter": 900,
+          "nativeBefore": 1000,
+          "nativeAfter": 1000,
+          "managedBefore": 1000,
+          "managedAfter": 1000
+        }
+      ]
+    }
+  },
+  "mutations": [
+    ["source-proof.json", "sourceCommit", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    ["source-proof.json", "allOtherTrackedUnityAssetsIdentical", false],
+    [
+      "source-proof.json",
+      "overlay.0.candidateSha256",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    ["source-proof.json", "packageRestored.0.matchesOriginal", false],
+    ["freshness.json", "assemblyUtc", "2026-10-07T16:59:00Z"],
+    ["freshness.json", "assemblyUtc", "invalid"],
+    ["samples.json", "rows.0.sameMeta", false],
+    ["samples.json", "assemblies.0.name", "wrong"],
+    [
+      "restored-samples.json",
+      "files.0.sha256",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    ["restoration.json", "newFixtureLoaded", true],
+    ["preflight.json", "frameworkActive", true],
+    ["full.cleanup.json", "scenes.0.dirty", true],
+    ["full.cleanup.json", "runGuid", "different"],
+    ["full.cleanup.json", "ownedResultPath", "different"],
+    ["full.cleanup.json", "observedUtc", "2026-10-07T16:00:00Z"],
+    ["full.result.json", "passCount", 974],
+    ["full.result.json", "nodes.0.status", "Inconclusive"],
+    ["control.result.json", "nodes.0.name", "different"],
+    ["stopped-baseline.json", "stopped", ""],
+    ["stopped-baseline.json", "rows.0.elapsedMilliseconds", 1999],
+    ["followup.json", "rows.0.arm", "B"],
+    ["followup.json", "rows.0.calls", 64],
+    ["followup.json", "rows.0.found", 7],
+    ["followup.json", "rows.0.legacySearches", 0],
+    ["followup.json", "rows.1.passiveSearches", 1],
+    ["followup.json", "rows.1.elapsedMilliseconds", null],
+    ["followup.json", "rows.1.nativeBefore", -1],
+    ["followup.json", "stopped", "editor-busy"],
+    ["followup.json", "rows.0.order", "BAAB"],
+    ["followup.json", "rows.0.elapsedMilliseconds", 2500],
+    ["followup.json", "rows.0.nativeAfter", 134218729],
+    ["full.status.txt", "", "error: partial"],
+    ["control.cleanup.status.txt", "", "done"],
+    ["editor-settings-profile.json", "followupCalls", 64],
+    [
+      "source-proof.json",
+      "overlay.0.redactionCounts",
+      {
+        "credential-assignment": 1
+      }
+    ]
+  ],
+  "leaf": {
+    "isSuite": false,
+    "status": "Passed",
+    "startTime": "2026-10-07T17:01:40Z",
+    "endTime": "2026-10-07T17:01:41Z"
+  },
+  "result": {
+    "skipCount": 0,
+    "inconclusiveCount": 0,
+    "durationSeconds": 1
+  }
+}

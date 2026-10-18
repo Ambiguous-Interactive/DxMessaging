@@ -87,8 +87,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Assert.AreEqual(expectedFanOut, observation.DispatchCalls);
             Assert.AreEqual(benchmarkCase.Cardinality, observation.LiveRegistrations);
             Assert.AreEqual(1, observation.OccupiedTypeSlots);
-            MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
-            MessageBus.PriorityStorageObservation busStorage = observation.BusPriorityStorage;
+            HandlerCacheStorageObservation storage = observation.Storage;
+            PriorityStorageObservation busStorage = observation.BusPriorityStorage;
 
             return new HandlerCardinalityBenchmarkResult(
                 benchmarkCase,
@@ -180,7 +180,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 _distinctPriorityShape =
                     operation == HandlerCardinalityOperation.PriorityDispatch
                     || operation == HandlerCardinalityOperation.PriorityChurn;
-                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 MessageRegistrationToken token = null;
                 try
                 {
@@ -275,11 +275,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 );
             }
 
-            internal MessageBus.PriorityStorageObservation ObserveBusPriorityStorage()
+            internal PriorityStorageObservation ObserveBusPriorityStorage()
             {
                 if (
                     !_bus.TryObserveUntargetedPriorityStorageForBenchmark<CardinalityMessage>(
-                        out MessageBus.PriorityStorageObservation storage
+                        out PriorityStorageObservation storage
                     )
                 )
                 {
@@ -290,14 +290,14 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 return storage;
             }
 
-            internal MessageHandler.HandlerCacheStorageObservation ObserveStorage()
+            internal HandlerCacheStorageObservation ObserveStorage()
             {
                 if (
                     !_messageHandler.TryObserveFastPriorityHandlerStorage<CardinalityMessage>(
                         _bus,
                         TypedSlotIndex.UntargetedHandleFast,
                         0,
-                        out MessageHandler.HandlerCacheStorageObservation storage
+                        out HandlerCacheStorageObservation storage
                     )
                 )
                 {
@@ -341,14 +341,13 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     {
         HandlerCache,
         PrioritySlot,
-        BusPriorityOwner,
         OrdinaryTypedHandler,
         GlobalTypedHandler,
     }
 
     /// <summary>
     /// Isolates the eager object count, bytes, and fixed-batch construction latency of
-    /// the handler-entry cache, typed priority slot, bus priority owner, ordinary typed handler,
+    /// the handler-entry cache, typed priority slot, ordinary typed handler,
     /// and global typed handler. These rows run once per benchmark execution, independently of
     /// the cardinality matrix.
     /// </summary>
@@ -362,7 +361,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test, Performance, Category("PerfBench")]
         [TestCase(HandlerStorageConstructionKind.HandlerCache)]
         [TestCase(HandlerStorageConstructionKind.PrioritySlot)]
-        [TestCase(HandlerStorageConstructionKind.BusPriorityOwner)]
         [TestCase(HandlerStorageConstructionKind.OrdinaryTypedHandler)]
         [TestCase(HandlerStorageConstructionKind.GlobalTypedHandler)]
         public void HandlerStorageConstructionBenchmark(HandlerStorageConstructionKind kind)
@@ -450,12 +448,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         );
                     }
                     return count;
-                case HandlerStorageConstructionKind.BusPriorityOwner:
-                    for (int index = 0; index < count; ++index)
-                    {
-                        s_constructionSink = MessageBus.CreatePriorityStorageOwnerForBenchmark();
-                    }
-                    return count;
                 case HandlerStorageConstructionKind.OrdinaryTypedHandler:
                     for (int index = 0; index < count; ++index)
                     {
@@ -481,29 +473,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 ConstructBatch(kind, 1),
                 $"Construction kind {kind} must create one fresh storage owner."
             );
-            if (kind == HandlerStorageConstructionKind.BusPriorityOwner)
-            {
-                Assert.IsTrue(
-                    MessageBus.TryObservePriorityStorageOwnerForBenchmark(
-                        s_constructionSink,
-                        out MessageBus.PriorityStorageObservation observation
-                    ),
-                    $"Construction kind {kind} must expose its fresh storage observation."
-                );
-                Assert.Zero(
-                    observation.Entries,
-                    $"Construction kind {kind} must start with zero priority entries."
-                );
-                Assert.Zero(
-                    observation.MapCapacity,
-                    $"Construction kind {kind} must not eagerly allocate the priority map."
-                );
-                Assert.Zero(
-                    observation.OrderCapacity,
-                    $"Construction kind {kind} must not eagerly allocate priority order storage."
-                );
-            }
-            else if (kind == HandlerStorageConstructionKind.OrdinaryTypedHandler)
+            if (kind == HandlerStorageConstructionKind.OrdinaryTypedHandler)
             {
                 MessageHandler.TypedHandler<StorageConstructionMessage> handler =
                     (MessageHandler.TypedHandler<StorageConstructionMessage>)s_constructionSink;
@@ -657,8 +627,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int dispatchCalls,
             int liveRegistrations,
             int occupiedTypeSlots,
-            MessageBus.PriorityStorageObservation busPriorityStorage,
-            MessageHandler.HandlerCacheStorageObservation storage
+            PriorityStorageObservation busPriorityStorage,
+            HandlerCacheStorageObservation storage
         )
         {
             DispatchCalls = dispatchCalls;
@@ -674,9 +644,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         public int OccupiedTypeSlots { get; }
 
-        public MessageBus.PriorityStorageObservation BusPriorityStorage { get; }
+        public PriorityStorageObservation BusPriorityStorage { get; }
 
-        public MessageHandler.HandlerCacheStorageObservation Storage { get; }
+        public HandlerCacheStorageObservation Storage { get; }
     }
 
     public readonly struct HandlerCardinalityBenchmarkResult

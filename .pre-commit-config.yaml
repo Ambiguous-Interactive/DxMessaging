@@ -80,8 +80,8 @@ repos:
         stages:
           - pre-commit
       - id: markdownlint
-        name: markdownlint-cli2
-        entry: npx --no-install markdownlint-cli2 --fix
+        name: markdownlint
+        entry: npx --no-install markdownlint --dot --fix
         language: system
         files: '(?i)\.(md|markdown)$'
         stages:

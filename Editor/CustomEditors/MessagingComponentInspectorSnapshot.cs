@@ -1,5 +1,5 @@
 #if UNITY_EDITOR
-namespace DxMessaging.Editor.Testing
+namespace DxMessaging.Editor.CustomEditors
 {
     using System;
     using System.Collections.Generic;
@@ -12,9 +12,9 @@ namespace DxMessaging.Editor.Testing
 
     /// <summary>
     /// Captures inspector-oriented diagnostics for <see cref="MessagingComponent"/> instances without relying on GUI APIs.
-    /// Intended for automated editor tests that need to validate inspector state transitions.
+    /// Supplies the component inspector, Message Monitor, and Flow Graph with consistent state.
     /// </summary>
-    internal static class MessagingComponentEditorHarness
+    internal static class MessagingComponentInspectorSnapshot
     {
         private static readonly MessageEmissionData[] EmptyEmissions =
             Array.Empty<MessageEmissionData>();

@@ -26,6 +26,10 @@ How the DxMessaging Unity suites are hosted, selected, and executed, plus the le
 - The repo root is a UPM package, not a Unity project. `scripts/unity/run-ci-tests.ps1` generates a thin host whose `Packages/manifest.json` declares `com.wallstop-studios.dxmessaging` as a local `file:` dependency and lists it under `testables`. Local runs default to `.artifacts/u/<version>-<mode>/`; CI passes a short, scope-isolated path under `$RUNNER_WORKSPACE/dxm-u/{t,b,p}/`. Never add `Assets/` content to the package root.
 - `testables` exposes every asmdef under `Tests/` automatically, so a new suite needs no harness change: create the asmdef, give it a stable name such as `WallstopStudios.DxMessaging.Tests.Editor.NewSuite`, then confirm discovery with `node scripts/unity/lib/asmdef-discovery.js`.
 - Name perf and DI-integration assemblies `*Benchmarks*`, `*Allocations*`, `*Comparisons*`, `*VContainer*`, `*Zenject*`, or `*Reflex*`. The classification regex in `scripts/unity/lib/asmdef-discovery.js` excludes those from the default include list.
+- Pipeline transport controls are a separate opt-in. Shipping discovery records their exclusion;
+  `includeTransportControls` requires the actual resolved package directory and admitted editor
+  version. Preserve the Unity 2021.3 floor; do not inject Pipeline into the general harness.
+  Follow [the host repair scope contract](../../../docs/runbooks/pipeline-host-repair.md).
 - A new test-only UPM dependency goes into `New-ManifestJson` in `scripts/unity/run-ci-tests.ps1`; inspect the result with the runner's `-GenerateOnly` mode. Heavyweight runtime dependencies must be opt-in behind `--include-integrations`.
 - Committed source of truth: `scripts/unity/run-ci-tests.ps1` plus `Runtime/`, `Editor/`, `Tests/`. Generated and ignored: the host project's `Library/`, `Temp/`, `Logs/`, and `UserSettings/`. Fixed CI runners reuse scope-isolated projects and per-version package caches outside the checkout; do not upload or restore Unity `Library` directories through `actions/cache`.
 

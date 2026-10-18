@@ -98,9 +98,7 @@ function row(
 ) {
   return {
     scenario,
-    platform: PLATFORM,
-    commit: "abc1234",
-    runIndex: "0",
+    ...PERF_TEST_VECTORS.monoRowDefaults,
     emitsPerSecond,
     gcAllocations,
     wallClockMs,
@@ -110,12 +108,9 @@ function row(
 
 function comparisonRow(emitsPerSecond, gcAllocations = "0", gcAllocatedBytes = "0") {
   return {
-    platform: STANDALONE_PLATFORM,
-    commit: "abc1234",
-    runIndex: "-1",
+    ...PERF_TEST_VECTORS.standaloneRowDefaults,
     emitsPerSecond,
     gcAllocations,
-    wallClockMs: "5000.000",
     gcAllocatedBytes
   };
 }
@@ -123,12 +118,9 @@ function comparisonRow(emitsPerSecond, gcAllocations = "0", gcAllocatedBytes = "
 function dispatchRow(scenario, emitsPerSecond, gcAllocations = "0", gcAllocatedBytes = "0") {
   return {
     scenario,
-    platform: STANDALONE_PLATFORM,
-    commit: "abc1234",
-    runIndex: "-1",
+    ...PERF_TEST_VECTORS.standaloneRowDefaults,
     emitsPerSecond,
     gcAllocations,
-    wallClockMs: "5000.000",
     gcAllocatedBytes
   };
 }
@@ -142,9 +134,7 @@ function playModeRow(
 ) {
   return {
     scenario,
-    platform: EDITOR_PLAYMODE_PLATFORM,
-    commit: "abc1234",
-    runIndex: "-1",
+    ...PERF_TEST_VECTORS.playModeRowDefaults,
     emitsPerSecond,
     gcAllocations,
     wallClockMs,
@@ -226,11 +216,7 @@ test("extract-perf-baseline CSV and args helpers cover round-trip and errors", (
 });
 
 test("indexDxMessagingRows filters by scope, platform substring, and technology", () => {
-  const rows = [
-    row("UntargetedFlood_OneHandler", "1000000.000"),
-    { ...row("TargetedFlood_OneListener", "2000000.000"), platform: "Unity 2021.3.45f1 EditMode" },
-    row("Comparison_MessagePipe_GlobalToOne", "1.000")
-  ];
+  const rows = structuredClone(PERF_TEST_VECTORS.indexedRows);
   assert.deepEqual(
     [...indexDxMessagingRows(rows, "PlayMode", "Unity 6000.3.16f1").keys()],
     ["UntargetedFlood_OneHandler"]
@@ -295,21 +281,7 @@ test("delta sign is normalized so + is always better and - is always worse", () 
 });
 
 test("isRegression trips on large throughput drops or allocation growth", () => {
-  const baseline = row("x", "1000000.000");
-  const cases = [
-    [row("x", "500000.000"), baseline, true],
-    [row("x", "900000.000"), baseline, false],
-    [row("x", "1000000.000", "128"), baseline, true],
-    [row("x", "0.000"), row("x", "0.000"), false],
-    [row("x", "0.000", "1"), row("x", "0.000", "0"), true],
-    [
-      row("MessageBusConstruction_1000", "0.000", "-1", "10.400"),
-      row("MessageBusConstruction_1000", "0.000", "-1", "10.000"),
-      false
-    ],
-    [row("x", "1000000.000", "-1"), row("x", "1000000.000", "0"), false],
-    [row("x", "1000000.000", "5"), row("x", "1000000.000", "-1"), false]
-  ];
+  const cases = structuredClone(PERF_TEST_VECTORS.regressionCases);
   for (const [current, base, expected] of cases) {
     assert.equal(isRegression(current, base, 0.33), expected);
   }
@@ -373,20 +345,12 @@ test("byte reporting mirrors allocs: real byte delta is goodness-signed, unmeasu
 });
 
 test("dispatch table renders a GC bytes column with real values and a per-row n/a", () => {
-  const scenario = "UntargetedFlood_OneHandler";
-  const broadcast = "BroadcastFlood_OneHandler";
-  const rows = [
-    playModeRow(scenario, "20000000.000", "0", "5000.000", "0"),
-    playModeRow(broadcast, "9000000.000", "1234", "5000.000", "98304")
-  ];
+  const rows = structuredClone(PERF_TEST_VECTORS.dispatchBytesRows);
   const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
   assert.ok(block.includes("GC bytes"), block);
   assert.ok(block.includes("98,304"), block);
 
-  const partialRows = [
-    playModeRow(scenario, "20000000.000", "0", "5000.000", "8192"),
-    { ...playModeRow(broadcast, "9000000.000", "42"), gcAllocatedBytes: "-1" }
-  ];
+  const partialRows = structuredClone(PERF_TEST_VECTORS.partialDispatchBytesRows);
   const partialBlock = buildBlock(
     selectRowsForVersion(partialRows, "Unity 6000.3.16f1"),
     "6000.3.16f1"
@@ -535,12 +499,7 @@ test("buildComparisonSections bolds a sole present tech and display-precision ti
 });
 
 test("generated performance block summarizes comparisons before internal dispatch", () => {
-  const rows = [
-    dispatchRow("UntargetedFlood_OneHandler", "37500000.000"),
-    dispatchRow("Comparison_DxMessaging_GlobalToOne", "30000000.000", "-1", "-1"),
-    dispatchRow("Comparison_DxMessaging_SubUnsub", "2000000.000", "-1", "-1"),
-    dispatchRow("Comparison_MessagePipe_GlobalToOne", "90000000.000", "-1", "-1")
-  ];
+  const rows = structuredClone(PERF_TEST_VECTORS.performanceSummaryRows);
   const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
 
   const summaryAt = block.indexOf("### DxMessaging comparison summary");
@@ -562,29 +521,16 @@ test("generated performance block summarizes comparisons before internal dispatc
 });
 
 test("deriveScope reads the execution scope from platform strings", () => {
-  const cases = [
-    [STANDALONE_PLATFORM, "Standalone"],
-    [EDITOR_PLAYMODE_PLATFORM, "PlayMode"],
-    ["Unity 6000.3.16f1 EditMode Mono", "EditMode"],
-    ["Unity 6000.3.16f1 Linux", null],
-    [undefined, null],
-    ["Standalone PlayMode mix", "Standalone"]
-  ];
+  const cases = PERF_TEST_VECTORS.scopeCases;
   for (const [platform, expected] of cases) {
     assert.equal(deriveScope(platform), expected, `${platform}`);
   }
+  assert.equal(deriveScope(undefined), null, "undefined");
   assert.equal(extractorDeriveScope, deriveScope);
 });
 
 test("two scopes render separate dispatch tables; only the Mono leg shows real allocs", () => {
-  const scenario = "UntargetedFlood_OneHandler";
-  const broadcast = "BroadcastFlood_OneHandler";
-  const rows = [
-    { ...dispatchRow(scenario, "37500000.000"), gcAllocations: "-1", gcAllocatedBytes: "-1" },
-    { ...dispatchRow(broadcast, "18000000.000"), gcAllocations: "-1", gcAllocatedBytes: "-1" },
-    playModeRow(scenario, "20000000.000", "0", "5000.000", "4096"),
-    playModeRow(broadcast, "9000000.000", "1234", "5000.000", "98304")
-  ];
+  const rows = structuredClone(PERF_TEST_VECTORS.twoScopeRows);
   const block = buildBlock(selectRowsForVersion(rows, "Unity 6000.3.16f1"), "6000.3.16f1");
 
   const standaloneHeading = "### Dispatch throughput - Standalone (IL2CPP)";
@@ -615,12 +561,7 @@ test("two scopes render separate dispatch tables; only the Mono leg shows real a
 });
 
 test("comparison throughput stays on Standalone while GC count+bytes come from the Mono leg", () => {
-  const rows = [
-    dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "-1"),
-    dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "-1"),
-    playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "0", "5000.000", "0"),
-    playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "110806", "5000.000", "20000")
-  ];
+  const rows = structuredClone(PERF_TEST_VECTORS.comparisonScopeRows);
   const sections = comparisonSectionsFor(rows);
   assert.equal(sections.length, 4);
   const [, throughput, allocations, bytes] = sections;
@@ -640,36 +581,7 @@ test("comparison throughput stays on Standalone while GC count+bytes come from t
 });
 
 test("comparison bytes choose their own measured scope", () => {
-  const cases = [
-    [
-      [
-        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "-1", "4096"),
-        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "-1", "8192"),
-        playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "0", "5000.000", "-1"),
-        playModeRow(
-          "Comparison_MessagePipe_GlobalToOne",
-          "40000000.000",
-          "110806",
-          "5000.000",
-          "-1"
-        )
-      ],
-      "GC allocations per 10k ops (PlayMode (Mono))",
-      "110,806",
-      "GC allocated bytes per 10k ops (Standalone (IL2CPP))"
-    ],
-    [
-      [
-        dispatchRow("Comparison_DxMessaging_GlobalToOne", "28000000.000", "111", "-1"),
-        dispatchRow("Comparison_MessagePipe_GlobalToOne", "68000000.000", "222", "-1"),
-        playModeRow("Comparison_DxMessaging_GlobalToOne", "20000000.000", "-1", "5000.000", "4096"),
-        playModeRow("Comparison_MessagePipe_GlobalToOne", "40000000.000", "-1", "5000.000", "8192")
-      ],
-      "GC allocations per 10k ops (Standalone (IL2CPP))",
-      "222",
-      "GC allocated bytes per 10k ops (PlayMode (Mono))"
-    ]
-  ];
+  const cases = structuredClone(PERF_TEST_VECTORS.comparisonBytesCases);
   for (const [rows, allocHeading, allocValue, bytesHeading] of cases) {
     const [, , allocations, bytes] = comparisonSectionsFor(rows);
     assert.ok(allocations.includes(allocHeading) && allocations.includes(allocValue), allocations);

@@ -519,7 +519,7 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 MessageBus existingBus = MessageBus.CreateForInternalUse(new FakeClock());
                 settings._messageBufferSize = 2;
-                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                overrideToken = RuntimeSettingsFixture.Override(settings);
 
                 Assert.AreEqual(2, IMessageBus.GlobalMessageBufferSize);
                 Assert.AreEqual(2, GetEmissionBuffer(existingBus).Capacity);
