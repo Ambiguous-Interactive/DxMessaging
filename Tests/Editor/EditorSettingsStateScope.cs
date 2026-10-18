@@ -81,8 +81,10 @@ namespace DxMessaging.Tests.Editor
             }
             try
             {
-                // Importing temporary compiler inputs requests a compilation while NUnit locks
-                // reloads. Keep imports batched until their original bytes are restored.
+                /*
+                    Importing temporary compiler inputs requests a compilation while NUnit locks
+                    reloads. Keep imports batched until their original bytes are restored.
+                */
                 AssetDatabase.StartAssetEditing();
                 _assetEditing = true;
                 foreach (KeyValuePair<string, string> saved in _saved)

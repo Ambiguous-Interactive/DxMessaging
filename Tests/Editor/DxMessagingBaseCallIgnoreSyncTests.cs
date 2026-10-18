@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
@@ -12,6 +13,7 @@ namespace DxMessaging.Tests.Editor
     using NUnit.Framework;
     using UnityEditor;
     using UnityEngine;
+    using UnityEngine.TestTools;
     using Object = UnityEngine.Object;
 
     [TestFixture]
@@ -413,17 +415,21 @@ namespace DxMessaging.Tests.Editor
         private static string SidecarPath =>
             Path.GetFullPath(DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
 
-        [SetUp]
-        public void SetUp()
+        [UnitySetUp]
+        public IEnumerator SetUp()
         {
+            if (EditorApplication.isCompiling)
+            {
+                yield return new RecompileScripts();
+            }
             _scheduled = new(typeof(DxMessagingBaseCallIgnoreSync));
             _responseCallbacks = new(typeof(SetupCscRsp));
             _inputs = new();
             _settingsCache = new();
         }
 
-        [TearDown]
-        public void TearDown()
+        [UnityTearDown]
+        public IEnumerator TearDown()
         {
             try
             {
@@ -448,6 +454,10 @@ namespace DxMessaging.Tests.Editor
                 {
                     _settingsCache?.Dispose();
                 }
+            }
+            if (EditorApplication.isCompiling)
+            {
+                yield return new RecompileScripts();
             }
         }
 
@@ -508,7 +518,8 @@ namespace DxMessaging.Tests.Editor
         /// <remarks>
         /// 2026-10-18: importing a temporary sidecar requested compilation while NUnit locked
         /// reloads in Unity 2021 CI. The fixture batches imports until original inputs are
-        /// restored, so real idle callbacks run without leaving later tests compile-blocked.
+        /// restored, then lets the framework complete pending compilation before the next
+        /// test constructs state. Unity setup is not rerun after that domain reload.
         /// </remarks>
         [Test]
         public void RealDeferredCallbacksDoNotRewritePreparedCompilerInputs()

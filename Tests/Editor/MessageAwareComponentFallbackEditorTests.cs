@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
+    using System.Collections;
     using System.Collections.Generic;
     using System.Linq;
     using System.Reflection;
@@ -14,6 +15,7 @@ namespace DxMessaging.Tests.Editor
     using UnityEditor;
     using UnityEditor.UIElements;
     using UnityEngine;
+    using UnityEngine.TestTools;
     using UnityEngine.UIElements;
     using Object = UnityEngine.Object;
 
@@ -44,9 +46,13 @@ namespace DxMessaging.Tests.Editor
                     "_renderedThisRepaint"
                 );
 
-        [SetUp]
-        public void SetUp()
+        [UnitySetUp]
+        public IEnumerator SetUp()
         {
+            if (EditorApplication.isCompiling)
+            {
+                yield return new RecompileScripts();
+            }
             /*
                 Disable diagnostic noise so the overlay's BuildAndRenderOverlay returns early via
                 the gating phase (no EditorGUILayout calls). Stale entries from a previous session
@@ -72,8 +78,8 @@ namespace DxMessaging.Tests.Editor
             RenderedTargets.Clear();
         }
 
-        [TearDown]
-        public void TearDown()
+        [UnityTearDown]
+        public IEnumerator TearDown()
         {
             try
             {
@@ -131,6 +137,10 @@ namespace DxMessaging.Tests.Editor
                         RenderedTargets.UnionWith(_renderedBeforeTest);
                     }
                 );
+            }
+            if (EditorApplication.isCompiling)
+            {
+                yield return new RecompileScripts();
             }
         }
 
