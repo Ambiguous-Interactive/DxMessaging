@@ -14,7 +14,11 @@ job runs `editmode`, `playmode`, and `standalone` as separate invocations under
 one lock and cleanup window. The oldest and current endpoint jobs also run the
 Minimal, Low, Medium, and High shipping-fidelity cells. All player modes build
 `StandaloneWindows64` IL2CPP players from runner-local projects under
-`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>/`.
+`$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/` for ordinary correctness runs.
+The workflow derives the short key from tracked Runtime, Editor, Tests, and Samples input paths.
+Content edits reuse the project; added, removed, or renamed paths select a new project so cached
+compiler graphs cannot retain deleted sources. Existing projects stay intact. Performance and
+manual shipping project paths keep their separate cache scopes.
 
 ## When to use
 

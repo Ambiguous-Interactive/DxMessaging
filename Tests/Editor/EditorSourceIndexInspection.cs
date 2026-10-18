@@ -48,8 +48,9 @@ namespace DxMessaging.Tests.Editor
         internal static void Reset()
         {
             Complete();
-            EditorApplication.update -= (EditorApplication.CallbackFunction)
+            EditorApplication.CallbackFunction callback = (EditorApplication.CallbackFunction)
                 Delegate.CreateDelegate(typeof(EditorApplication.CallbackFunction), DrainMethod);
+            EditorApplication.update -= callback;
             Indexes.Clear();
             (
                 (IDictionary)
