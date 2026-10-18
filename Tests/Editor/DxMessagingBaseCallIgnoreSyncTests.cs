@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Reflection;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Editor;
@@ -107,41 +108,76 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class DxMessagingEditorInitializerTests
     {
-        private readonly List<Action> _scheduled = new();
         private readonly List<DxMessagingSettings> _createdSettings = new();
         private readonly List<string> _warnings = new();
-        private DiagnosticsTarget _previousDiagnosticsTargets;
-        private bool _previousDiagnosticsStackTraces;
-        private int _previousMessageBufferSize;
+        private EditorDelayCallScope _scheduled;
+        private EditorStaticFieldScope _initializerState;
+        private EditorSettingsCacheScope _settingsCache;
+        private EditorStaticFieldScope _runtimeSettings;
+        private UnityEngine.Object _previousRuntimeSettings;
+        private EditorDelayCallScope _sidecarCallbacks;
+        private IDisposable _registryScope;
+        private IDisposable _poolScope;
+        private DiagnosticsTarget _previousTargets;
+        private bool _previousStacks;
+        private int _previousBuffer;
+        private int _previousBusIndex;
+        private IMessageBus _previousBus;
+        private bool _previousOptionsEnabled;
+        private EnterPlayModeOptions _previousOptions;
+        private bool _previousDebugEnabled;
+        private Action<DxMessaging.Core.LogLevel, string> _previousDebugLog;
+        private int _previousSyntheticOwner;
 
         [SetUp]
         public void SetUp()
         {
-            _previousDiagnosticsTargets = IMessageBus.GlobalDiagnosticsTargets;
-            _previousDiagnosticsStackTraces = IMessageBus.GlobalDiagnosticsStackTraces;
-            _previousMessageBufferSize = IMessageBus.GlobalMessageBufferSize;
-            _scheduled.Clear();
+            _previousTargets = IMessageBus.GlobalDiagnosticsTargets;
+            _previousStacks = IMessageBus.GlobalDiagnosticsStackTraces;
+            _previousBuffer = IMessageBus.GlobalMessageBufferSize;
+            _previousBusIndex = IMessageBus.GlobalSequentialIndex;
+            _previousBus = DxMessaging.Core.MessageHandler.MessageBus;
+            _previousDebugEnabled = DxMessaging.Core.MessagingDebug.enabled;
+            _previousDebugLog = DxMessaging.Core.MessagingDebug.LogFunction;
+            _previousSyntheticOwner =
+                DxMessaging.Core.MessageBus.MessageRegistrationBuilder.GetSyntheticOwnerCounter();
+            _previousOptionsEnabled = EditorSettings.enterPlayModeOptionsEnabled;
+            _previousOptions = EditorSettings.enterPlayModeOptions;
+            _initializerState = new(
+                typeof(DxMessagingEditorInitializer),
+                "s_playModeWarningIssued",
+                "s_ensureSettingsAssetScheduled"
+            );
+            _initializerState.Set("s_playModeWarningIssued", false);
+            _initializerState.Set("s_ensureSettingsAssetScheduled", false);
+            _settingsCache = new();
+            _runtimeSettings = new(
+                typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider),
+                "_cached"
+            );
+            _previousRuntimeSettings =
+                MessageBusInspection.ReadField(
+                    typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider),
+                    "_cached"
+                ) as UnityEngine.Object;
+            _runtimeSettings.Set("_cached", null);
+            _sidecarCallbacks = new(typeof(DxMessagingBaseCallIgnoreSync));
+            _scheduled = new(typeof(DxMessagingEditorInitializer));
+            _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            _poolScope = MessageBusInspection.IsolateContextMapPoolForBenchmark();
             _warnings.Clear();
-
-            DxMessagingEditorInitializer.ResetTestSeams();
-            DxMessagingEditorInitializer.StaticStateResetter = () =>
-            {
-                IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
-                IMessageBus.GlobalDiagnosticsStackTraces = false;
-                IMessageBus.GlobalMessageBufferSize = IMessageBus.DefaultMessageBufferSize;
-            };
-            DxMessagingEditorInitializer.AssetDatabaseMutationScheduler = work =>
-                _scheduled.Add(work);
-            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => false;
-            DxMessagingEditorInitializer.DomainReloadWarningLogger = message =>
-                _warnings.Add(message);
+            Application.logMessageReceived += ObserveWarning;
+            EditorSettings.enterPlayModeOptionsEnabled = false;
         }
 
         [TearDown]
         public void TearDown()
         {
+            Application.logMessageReceived -= ObserveWarning;
             try
             {
+                _scheduled?.Dispose();
+                _sidecarCallbacks?.Dispose();
                 foreach (DxMessagingSettings settings in _createdSettings)
                 {
                     if (settings != null)
@@ -153,11 +189,60 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                DxMessagingEditorInitializer.ResetTestSeams();
-                IMessageBus.GlobalDiagnosticsTargets = _previousDiagnosticsTargets;
-                IMessageBus.GlobalDiagnosticsStackTraces = _previousDiagnosticsStackTraces;
-                IMessageBus.GlobalMessageBufferSize = _previousMessageBufferSize;
+                EditorTestCleanup.Run(
+                    () =>
+                    {
+                        object currentRuntimeSettings = MessageBusInspection.ReadField(
+                            typeof(DxMessaging.Core.Configuration.DxMessagingRuntimeSettingsProvider),
+                            "_cached"
+                        );
+                        if (
+                            currentRuntimeSettings
+                                is DxMessaging.Core.Configuration.DxMessagingRuntimeSettings created
+                            && created.IsFallbackInstance
+                            && !ReferenceEquals(created, _previousRuntimeSettings)
+                        )
+                        {
+                            Object.DestroyImmediate(created);
+                        }
+                    },
+                    () => _runtimeSettings?.Dispose(),
+                    () => _settingsCache?.Dispose(),
+                    () => _initializerState?.Dispose(),
+                    () => _poolScope?.Dispose(),
+                    () => _registryScope?.Dispose(),
+                    () => EditorSettings.enterPlayModeOptionsEnabled = _previousOptionsEnabled,
+                    () => EditorSettings.enterPlayModeOptions = _previousOptions,
+                    () => DxMessaging.Core.MessageHandler.SetGlobalMessageBus(_previousBus),
+                    () => IMessageBus.GlobalSequentialIndex = _previousBusIndex,
+                    () => IMessageBus.GlobalDiagnosticsTargets = _previousTargets,
+                    () => IMessageBus.GlobalDiagnosticsStackTraces = _previousStacks,
+                    () => IMessageBus.GlobalMessageBufferSize = _previousBuffer,
+                    () => DxMessaging.Core.MessagingDebug.enabled = _previousDebugEnabled,
+                    () => DxMessaging.Core.MessagingDebug.LogFunction = _previousDebugLog,
+                    () =>
+                        DxMessaging.Core.MessageBus.MessageRegistrationBuilder.SetSyntheticOwnerCounter(
+                            _previousSyntheticOwner
+                        )
+                );
             }
+        }
+
+        private void ObserveWarning(string message, string stack, LogType type)
+        {
+            if (
+                type == LogType.Warning
+                && message == DxMessagingEditorInitializer.DomainReloadWarningMessage
+            )
+            {
+                _warnings.Add(message);
+            }
+        }
+
+        private void DisableDomainReload()
+        {
+            EditorSettings.enterPlayModeOptionsEnabled = true;
+            EditorSettings.enterPlayModeOptions |= EnterPlayModeOptions.DisableDomainReload;
         }
 
         [Test]
@@ -168,178 +253,117 @@ namespace DxMessaging.Tests.Editor
             settings._legacyEnableDiagnosticsInEditor = true;
             settings._diagnosticsStackTraces = true;
             settings._messageBufferSize = 37;
-            DxMessagingEditorInitializer.PassiveSettingsLoader = () => settings;
-
+            _settingsCache.SetCurrent(settings);
             DxMessagingEditorInitializer.ApplyEditorSettings();
-
             Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Editor));
             Assert.That(IMessageBus.GlobalDiagnosticsStackTraces, Is.True);
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(37));
             Assert.That(
                 settings._legacyEnableDiagnosticsInEditor,
                 Is.True,
-                "The passive initializer path must not perform durable asset migration; it only "
-                    + "applies effective values and schedules the idle mutation."
+                "The passive path must preserve the original asset."
             );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "ApplyEditorSettings must schedule exactly one deferred settings ensure."
-            );
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
         }
 
         [Test]
         public void ApplyEditorSettingsWhenPassiveSettingsMissingDefersEnsureWithoutCreatingSynchronously()
         {
-            int ensureCount = 0;
-            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
-            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
-            {
-                ensureCount++;
-                return NewSettings();
-            };
+            _settingsCache.SetCurrent(null);
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
             IMessageBus.GlobalDiagnosticsStackTraces = true;
             IMessageBus.GlobalMessageBufferSize = 3;
-
             DxMessagingEditorInitializer.ApplyEditorSettings();
-
-            Assert.That(
-                ensureCount,
-                Is.EqualTo(0),
-                "The domain-load path must stay passive and defer settings asset creation."
-            );
             Assert.That(_scheduled.Count, Is.EqualTo(1));
+            Assert.That(
+                DxMessagingSettings.LoadSettingsPassive(),
+                Is.Null,
+                "Applying globals must not replace a cached miss by creating settings synchronously."
+            );
             Assert.That(IMessageBus.GlobalDiagnosticsTargets, Is.EqualTo(DiagnosticsTarget.Off));
             Assert.That(IMessageBus.GlobalDiagnosticsStackTraces, Is.False);
             Assert.That(
                 IMessageBus.GlobalMessageBufferSize,
                 Is.EqualTo(IMessageBus.DefaultMessageBufferSize)
             );
-            Assert.That(
-                _warnings,
-                Is.Empty,
-                "A missing passive settings asset cannot decide the warning preference; the "
-                    + "deferred ensure callback re-checks with the realized settings."
-            );
+            Assert.That(_warnings, Is.Empty);
         }
 
         [Test]
         public void ApplyEditorSettingsWarnsImmediatelyWhenPassiveSettingsUnsuppressedAndDomainReloadDisabled()
         {
-            int ensureCount = 0;
             DxMessagingSettings settings = NewSettings();
             settings._suppressDomainReloadWarning = false;
-            DxMessagingEditorInitializer.PassiveSettingsLoader = () => settings;
-            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
-            {
-                ensureCount++;
-                return settings;
-            };
-            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => true;
-
+            _settingsCache.SetCurrent(settings);
+            DisableDomainReload();
             DxMessagingEditorInitializer.ApplyEditorSettings();
-
             Assert.That(
                 _warnings,
                 Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
             );
             Assert.That(_scheduled.Count, Is.EqualTo(1));
-
             _scheduled[0].Invoke();
-
-            Assert.That(ensureCount, Is.EqualTo(1));
             Assert.That(
                 _warnings,
                 Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }),
-                "The deferred ensure must not duplicate a warning already emitted from the "
-                    + "domain-load passive settings read."
+                "The real deferred ensure must not repeat an issued warning."
             );
         }
 
         [Test]
-        public void DeferredSettingsEnsureUsesSharedIdleSchedulerAndRequeuesUntilIdle()
+        public void DeferredSettingsEnsureUsesRealIdleQueueAndClearsDebounce()
         {
-            bool editorIdle = false;
-            int ensureCount = 0;
-            DxMessagingSettings ensuredSettings = NewSettings();
-            ensuredSettings._diagnosticsTargets = DiagnosticsTarget.Runtime;
-            ensuredSettings._messageBufferSize = 19;
-
-            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
-            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
-            {
-                ensureCount++;
-                return ensuredSettings;
-            };
-            DxMessagingEditorInitializer.AssetDatabaseMutationScheduler = work =>
-                DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
-                    work,
-                    scheduledWork => _scheduled.Add(scheduledWork),
-                    () => editorIdle
-                );
-
+            _settingsCache.SetCurrent(null);
             DxMessagingEditorInitializer.ApplyEditorSettings();
-
-            Assert.That(_scheduled.Count, Is.EqualTo(1));
-            _scheduled[0].Invoke();
-
-            Assert.That(
-                ensureCount,
-                Is.EqualTo(0),
-                "The deferred settings ensure must not run while the editor is compiling/updating."
-            );
+            DxMessagingEditorInitializer.ApplyEditorSettings();
             Assert.That(
                 _scheduled.Count,
-                Is.EqualTo(2),
-                "A busy deferred tick must requeue through DxMessagingEditorIdle."
+                Is.EqualTo(1),
+                "Repeated requests must share one real queued ensure."
             );
-
-            editorIdle = true;
-            _scheduled[1].Invoke();
-
-            Assert.That(ensureCount, Is.EqualTo(1));
+            DxMessagingSettings settings = NewSettings();
+            settings._diagnosticsTargets = DiagnosticsTarget.Runtime;
+            settings._messageBufferSize = 19;
+            _settingsCache.SetCurrent(settings);
+            _scheduled[0].Invoke();
             Assert.That(
                 IMessageBus.GlobalDiagnosticsTargets,
                 Is.EqualTo(DiagnosticsTarget.Runtime)
             );
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(19));
-            Assert.That(_scheduled.Count, Is.EqualTo(2));
-
             DxMessagingEditorInitializer.ApplyEditorSettings();
+            Assert.That(_scheduled.Count, Is.EqualTo(2));
+            _scheduled[1].Invoke();
+            Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(19));
+            MethodInfo scheduler = typeof(DxMessagingEditorInitializer).GetMethod(
+                "ScheduleEnsureSettingsAsset",
+                BindingFlags.Static | BindingFlags.NonPublic
+            );
             Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(3),
-                "A completed deferred ensure must clear its debounce latch so a later settings "
-                    + "refresh can schedule another migration/create pass."
+                EditorProductionCalls
+                    .From(scheduler)
+                    .Any(call =>
+                        call.DeclaringType == typeof(DxMessagingEditorIdle)
+                        && call.Name == "ScheduleAssetDatabaseMutation"
+                    ),
+                Is.True
             );
         }
 
         [Test]
         public void DeferredSettingsEnsureWarnsOnceWhenDomainReloadIsDisabledAndWarningUnsuppressed()
         {
-            int ensureCount = 0;
-            DxMessagingSettings ensuredSettings = NewSettings();
-            ensuredSettings._diagnosticsTargets = DiagnosticsTarget.Runtime;
-            ensuredSettings._messageBufferSize = 23;
-            ensuredSettings._suppressDomainReloadWarning = false;
-
-            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
-            DxMessagingEditorInitializer.SettingsAssetEnsurer = () =>
-            {
-                ensureCount++;
-                return ensuredSettings;
-            };
-            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => true;
-
+            _settingsCache.SetCurrent(null);
+            DisableDomainReload();
             DxMessagingEditorInitializer.ApplyEditorSettings();
-
             Assert.That(_warnings, Is.Empty);
             Assert.That(_scheduled.Count, Is.EqualTo(1));
-
+            DxMessagingSettings settings = NewSettings();
+            settings._suppressDomainReloadWarning = false;
+            settings._diagnosticsTargets = DiagnosticsTarget.Runtime;
+            settings._messageBufferSize = 23;
+            _settingsCache.SetCurrent(settings);
             _scheduled[0].Invoke();
-
-            Assert.That(ensureCount, Is.EqualTo(1));
             Assert.That(
                 IMessageBus.GlobalDiagnosticsTargets,
                 Is.EqualTo(DiagnosticsTarget.Runtime)
@@ -349,36 +373,25 @@ namespace DxMessaging.Tests.Editor
                 _warnings,
                 Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
             );
-
             DxMessagingEditorInitializer.ApplyEditorSettings();
             Assert.That(_scheduled.Count, Is.EqualTo(2));
             _scheduled[1].Invoke();
-
-            Assert.That(ensureCount, Is.EqualTo(2));
             Assert.That(
                 _warnings,
-                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage }),
-                "The warning must be re-evaluated after deferred settings ensure, but only emitted "
-                    + "once per editor domain."
+                Is.EqualTo(new[] { DxMessagingEditorInitializer.DomainReloadWarningMessage })
             );
         }
 
         [Test]
         public void DeferredSettingsEnsureKeepsDefaultSuppressedDomainReloadWarningQuiet()
         {
-            DxMessagingEditorInitializer.PassiveSettingsLoader = () => null;
-            DxMessagingEditorInitializer.SettingsAssetEnsurer = NewSettings;
-            DxMessagingEditorInitializer.DomainReloadDisabledDetector = () => true;
-
+            DxMessagingSettings settings = NewSettings();
+            Assert.That(settings._suppressDomainReloadWarning, Is.True);
+            _settingsCache.SetCurrent(settings);
+            DisableDomainReload();
             DxMessagingEditorInitializer.ApplyEditorSettings();
             _scheduled[0].Invoke();
-
-            Assert.That(
-                _warnings,
-                Is.Empty,
-                "Fresh settings assets default to suppressing this advisory warning unless the "
-                    + "user clears the suppression setting."
-            );
+            Assert.That(_warnings, Is.Empty);
         }
 
         private DxMessagingSettings NewSettings()
@@ -389,54 +402,24 @@ namespace DxMessaging.Tests.Editor
         }
     }
 
-    /// <summary>
-    /// Regression coverage for issue #210: a synchronous <c>AssetDatabase.ImportAsset</c> issued
-    /// from <see cref="DxMessagingSettings"/>'s <c>OnValidate</c> during domain-load asset
-    /// deserialization re-enters the asset importer and hard-crashes the native editor
-    /// (<c>GuidReservations::Reserve</c> abort on Unity 6000.4+).
-    /// </summary>
-    /// <remarks>
-    /// The native crash cannot be reproduced from managed test code, so instead of provoking it we
-    /// pin the invariant that makes it impossible: the OnValidate / deserialization-context path
-    /// must DEFER the sidecar write to the next editor tick and never apply it synchronously. The
-    /// tests substitute the deferral + apply seams on <see cref="DxMessagingBaseCallIgnoreSync"/> so
-    /// they observe call timing deterministically and never write the on-disk sidecar.
-    /// </remarks>
     [TestFixture]
     public sealed class DxMessagingBaseCallIgnoreSyncTests
     {
-        private Action<Action> _originalScheduler;
-        private Func<bool> _originalCanMutateAssetDatabase;
-        private Action<DxMessagingSettings> _originalApplier;
-        private Action _originalCscRspAdditionalFileSyncScheduler;
-        private readonly List<Action> _scheduled = new();
         private readonly List<DxMessagingSettings> _createdSettings = new();
-        private int _applyCount;
-        private int _cscRspSyncCount;
+        private EditorDelayCallScope _scheduled;
+        private EditorDelayCallScope _responseCallbacks;
+        private EditorCompilerInputScope _inputs;
+        private EditorSettingsCacheScope _settingsCache;
+        private static string SidecarPath =>
+            Path.GetFullPath(DxMessagingBaseCallIgnoreSync.SidecarAssetPath);
 
         [SetUp]
         public void SetUp()
         {
-            _originalScheduler = DxMessagingBaseCallIgnoreSync.DeferralScheduler;
-            _originalCanMutateAssetDatabase = DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase;
-            _originalApplier = DxMessagingBaseCallIgnoreSync.SidecarApplier;
-            _originalCscRspAdditionalFileSyncScheduler =
-                DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler;
-            _scheduled.Clear();
-            _applyCount = 0;
-            _cscRspSyncCount = 0;
-
-            /*
-                Capture deferred work instead of routing it to EditorApplication.delayCall, and count
-                applies instead of touching the AssetDatabase. This makes "synchronous vs deferred"
-                observable and keeps the tests filesystem-free and deterministic. The csc.rsp follow-up
-                is captured for the same reason.
-            */
-            DxMessagingBaseCallIgnoreSync.DeferralScheduler = work => _scheduled.Add(work);
-            DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => true;
-            DxMessagingBaseCallIgnoreSync.SidecarApplier = _ => _applyCount++;
-            DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler = () =>
-                _cscRspSyncCount++;
+            _scheduled = new(typeof(DxMessagingBaseCallIgnoreSync));
+            _responseCallbacks = new(typeof(SetupCscRsp));
+            _inputs = new();
+            _settingsCache = new();
         }
 
         [TearDown]
@@ -444,6 +427,8 @@ namespace DxMessaging.Tests.Editor
         {
             try
             {
+                _scheduled?.Dispose();
+                _responseCallbacks?.Dispose();
                 foreach (DxMessagingSettings settings in _createdSettings)
                 {
                     if (settings != null)
@@ -455,21 +440,19 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                /*
-                    Restore in finally so a throw while destroying objects can never leak the
-                    substituted seams into the rest of the editor session.
-                */
-                DxMessagingBaseCallIgnoreSync.DeferralScheduler = _originalScheduler;
-                DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase =
-                    _originalCanMutateAssetDatabase;
-                DxMessagingBaseCallIgnoreSync.SidecarApplier = _originalApplier;
-                DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler =
-                    _originalCscRspAdditionalFileSyncScheduler;
+                try
+                {
+                    _inputs?.Dispose();
+                }
+                finally
+                {
+                    _settingsCache?.Dispose();
+                }
             }
         }
 
         [Test]
-        public void DeferredCallbacksDoNotRewritePreparedCompilerInputs()
+        public void PreparedCompilerInputWritersRemainIdempotent()
         {
             string project = Path.Combine(Path.GetTempPath(), $"dxm_prepared_{Guid.NewGuid():N}");
             string assets = Path.Combine(project, "Assets");
@@ -491,12 +474,6 @@ namespace DxMessaging.Tests.Editor
                     );
                 Action writeResponse = () =>
                     SetupCscRsp.SynchronizeResponseFiles(assets, imports.Add, ref rspPending);
-                DxMessagingBaseCallIgnoreSync.SidecarApplier = _ => writeSidecar();
-                DxMessagingBaseCallIgnoreSync.CscRspAdditionalFileSyncScheduler = () =>
-                    _scheduled.Add(writeResponse);
-                _scheduled.Clear();
-                DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
-
                 SetupCscRsp.PrepareCompilerInputs(
                     true,
                     writeSidecar,
@@ -509,260 +486,157 @@ namespace DxMessaging.Tests.Editor
                 DateTime unchangedTime = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
                 File.SetLastWriteTimeUtc(sidecar, unchangedTime);
                 File.SetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp"), unchangedTime);
-                for (int callback = 0; callback < 2; ++callback)
-                {
-                    Assert.AreEqual(
-                        1,
-                        _scheduled.Count,
-                        $"Callback {callback + 1} must be the sole pending sidecar or response-file work item."
-                    );
-                    Action work = _scheduled[0];
-                    _scheduled.RemoveAt(0);
-                    work();
-                }
-
-                Assert.IsEmpty(
-                    _scheduled,
-                    "The sidecar and response-file callbacks must finish without requeuing work."
-                );
+                writeSidecar();
+                writeResponse();
                 CollectionAssert.AreEqual(
                     new[] { DxMessagingBaseCallIgnoreSync.SidecarAssetPath, "Assets/csc.rsp" },
                     imports,
-                    "Deferred callbacks must not import already-prepared compiler inputs again."
+                    "Reapplying the actual prepared writers must not import unchanged inputs."
                 );
+                Assert.AreEqual(unchangedTime, File.GetLastWriteTimeUtc(sidecar));
                 Assert.AreEqual(
                     unchangedTime,
-                    File.GetLastWriteTimeUtc(sidecar),
-                    "Deferred regeneration must leave sidecar bytes untouched."
-                );
-                Assert.AreEqual(
-                    unchangedTime,
-                    File.GetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp")),
-                    "Deferred response-file synchronization must leave compiler inputs untouched."
+                    File.GetLastWriteTimeUtc(Path.Combine(assets, "csc.rsp"))
                 );
             }
             finally
             {
-                _scheduled.Clear();
                 Directory.Delete(project, true);
             }
+        }
+
+        [Test]
+        public void RealDeferredCallbacksDoNotRewritePreparedCompilerInputs()
+        {
+            DxMessagingSettings settings = NewSettings();
+            _settingsCache.SetCurrent(settings);
+            DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
+            SetupCscRsp.PrepareCompilerInputs();
+            byte[] sidecar = File.ReadAllBytes(SidecarPath);
+            byte[] response = File.ReadAllBytes(Path.Combine(Application.dataPath, "csc.rsp"));
+            DateTime sidecarTime = File.GetLastWriteTimeUtc(SidecarPath);
+            DateTime responseTime = File.GetLastWriteTimeUtc(
+                Path.Combine(Application.dataPath, "csc.rsp")
+            );
+            _scheduled[0].Invoke();
+            Assert.That(_responseCallbacks.Count, Is.EqualTo(1));
+            _responseCallbacks[0].Invoke();
+            CollectionAssert.AreEqual(sidecar, File.ReadAllBytes(SidecarPath));
+            CollectionAssert.AreEqual(
+                response,
+                File.ReadAllBytes(Path.Combine(Application.dataPath, "csc.rsp"))
+            );
+            Assert.That(File.GetLastWriteTimeUtc(SidecarPath), Is.EqualTo(sidecarTime));
+            Assert.That(
+                File.GetLastWriteTimeUtc(Path.Combine(Application.dataPath, "csc.rsp")),
+                Is.EqualTo(responseTime)
+            );
         }
 
         [Test]
         public void OnValidateDefersSidecarRegenerationInsteadOfImportingSynchronously()
         {
             DxMessagingSettings settings = NewSettings();
-
+            byte[] before = CurrentSidecar();
             InvokePrivate(settings, "OnValidate");
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(0),
-                "OnValidate must NOT write/import the sidecar synchronously: a synchronous "
-                    + "AssetDatabase.ImportAsset from OnValidate during domain-load deserialization "
-                    + "re-enters the asset importer and hard-crashes the native editor (#210)."
+            CollectionAssert.AreEqual(
+                before,
+                CurrentSidecar(),
+                "OnValidate must not synchronously write or import compiler inputs."
             );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "OnValidate must schedule exactly one deferred sidecar regeneration."
-            );
-
-            /*
-                The deferred work must be a REAL regeneration, not a dropped/no-op write: driving the
-                scheduled tick applies the sidecar exactly once.
-            */
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
             _scheduled[0].Invoke();
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(1),
-                "OnValidate's deferred work must apply the sidecar exactly once when the editor "
-                    + "tick runs (it must defer the real regeneration, not silently drop it)."
-            );
-            Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(1),
-                "Once OnValidate's deferred sidecar write runs, csc.rsp must be resynchronized so "
-                    + "the analyzer receives the generated sidecar during the same editor session."
-            );
+            AssertContent(settings);
+            Assert.That(_responseCallbacks.Count, Is.EqualTo(1));
         }
 
         [Test]
         public void OnEnableDoesNotRegenerateSidecar()
         {
             DxMessagingSettings settings = NewSettings();
-
+            byte[] before = CurrentSidecar();
             InvokePrivate(settings, "OnEnable");
-
-            /*
-                OnEnable fires on EVERY domain reload and play-mode entry. It must neither apply nor
-                schedule a regeneration: the on-disk sidecar is already consistent, and regenerating
-                here would churn the AssetDatabase on every reload (and reintroduce #210 risk).
-            */
-            Assert.That(_applyCount, Is.EqualTo(0), "OnEnable must not apply the sidecar.");
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(0),
-                "OnEnable must not schedule a deferred sidecar regeneration."
-            );
+            CollectionAssert.AreEqual(before, CurrentSidecar());
+            Assert.That(_scheduled.Count, Is.Zero);
+            Assert.That(_responseCallbacks.Count, Is.Zero);
         }
 
         [Test]
         public void RegenerateSidecarDeferredNeverAppliesSynchronously()
         {
             DxMessagingSettings settings = NewSettings();
-
+            byte[] before = CurrentSidecar();
             DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(0),
-                "RegenerateSidecarDeferred must defer; it must never apply the sidecar synchronously."
-            );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "RegenerateSidecarDeferred must schedule exactly one deferred regeneration."
-            );
-
-            // Driving the deferred work (the next editor tick) performs the apply exactly once.
+            CollectionAssert.AreEqual(before, CurrentSidecar());
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
             _scheduled[0].Invoke();
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(1),
-                "The deferred work must apply the sidecar exactly once when the editor tick runs."
-            );
-            Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(1),
-                "Deferred sidecar regeneration must schedule a csc.rsp sync after the sidecar "
-                    + "apply runs."
-            );
+            AssertContent(settings);
+            Assert.That(_responseCallbacks.Count, Is.EqualTo(1));
         }
 
         [Test]
-        public void RegenerateSidecarDeferredRequeuesUntilEditorCanMutateAssets()
+        public void DeferredSidecarWorkRemainsQueuedUntilSharedIdleSchedulerAllowsIt()
         {
-            bool editorIdle = false;
-            DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => editorIdle;
             DxMessagingSettings settings = NewSettings();
-
+            byte[] before = CurrentSidecar();
             DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(0),
-                "Deferred regeneration must not apply synchronously."
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
+            bool idle = false;
+            List<Action> ticks = new();
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
+                _scheduled[0],
+                ticks.Add,
+                () => idle
             );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "Pre-condition: the first deferred tick must be scheduled."
-            );
-
-            _scheduled[0].Invoke();
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(0),
-                "A deferred tick that fires while Unity is compiling/updating must not import the sidecar."
-            );
-            Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(0),
-                "A busy deferred tick must not resync csc.rsp before the sidecar apply runs."
-            );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(2),
-                "A deferred tick that fires while Unity is compiling/updating must requeue itself."
-            );
-
-            editorIdle = true;
-            _scheduled[1].Invoke();
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(1),
-                "Once Unity is idle, the requeued callback must apply exactly once."
-            );
-            Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(1),
-                "Once the requeued sidecar apply succeeds, csc.rsp must be resynchronized exactly once."
-            );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(2),
-                "The idle apply must not keep rescheduling itself."
-            );
+            ticks[0]();
+            CollectionAssert.AreEqual(before, CurrentSidecar());
+            Assert.That(ticks.Count, Is.EqualTo(2));
+            idle = true;
+            ticks[1]();
+            AssertContent(settings);
+            Assert.That(ticks.Count, Is.EqualTo(2));
+            Assert.That(_responseCallbacks.Count, Is.EqualTo(1));
         }
 
-        /// <remarks>
-        /// 2026-09-06: An ambient editor-update assumption skipped this test on Unity 2021 CI
-        /// even though SetUp controls the idle predicate and captures every side effect.
-        /// </remarks>
         [Test]
         public void RegenerateSidecarAppliesSynchronouslyWhenEditorCanMutateAssets()
         {
-            /*
-                SetUp supplies an idle predicate and captures the apply and scheduling actions.
-                Explicit ignored-type edits must apply immediately under that controlled state.
-            */
             DxMessagingSettings settings = NewSettings();
-
+            Assert.That(DxMessagingEditorIdle.CanMutateAssetDatabase(), Is.True);
             DxMessagingBaseCallIgnoreSync.RegenerateSidecar(settings);
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(1),
-                "RegenerateSidecar must apply synchronously when Unity is idle (immediate feedback "
-                    + "for explicit Add/Remove-ignored-type actions)."
-            );
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(0),
-                "RegenerateSidecar must not defer when Unity is idle."
-            );
-            Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(1),
-                "Synchronous sidecar regeneration must also schedule csc.rsp resynchronization."
-            );
+            AssertContent(settings);
+            Assert.That(_scheduled.Count, Is.Zero);
+            Assert.That(_responseCallbacks.Count, Is.EqualTo(1));
         }
 
         [Test]
-        public void RegenerateSidecarDefersWhenEditorCannotMutateAssets()
+        public void SynchronousSidecarEntryRetainsItsRealBusyAndDeferredGuards()
         {
-            bool editorIdle = false;
-            DxMessagingBaseCallIgnoreSync.CanMutateAssetDatabase = () => editorIdle;
-            DxMessagingSettings settings = NewSettings();
-
-            DxMessagingBaseCallIgnoreSync.RegenerateSidecar(settings);
-
+            MethodInfo entry = typeof(DxMessagingBaseCallIgnoreSync).GetMethod(
+                nameof(DxMessagingBaseCallIgnoreSync.RegenerateSidecar)
+            );
+            MethodBase[] calls = EditorProductionCalls.From(entry).ToArray();
             Assert.That(
-                _applyCount,
-                Is.EqualTo(0),
-                "RegenerateSidecar must not apply synchronously while Unity is compiling/updating."
+                calls.Any(call =>
+                    call.DeclaringType == typeof(DxMessagingEditorIdle)
+                    && call.Name == "CanMutateAssetDatabase"
+                ),
+                Is.True
             );
             Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "RegenerateSidecar must defer while Unity is compiling/updating."
-            );
-
-            editorIdle = true;
-            _scheduled[0].Invoke();
-
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(1),
-                "The deferred regeneration must apply once Unity becomes idle."
+                calls.Any(call =>
+                    call.DeclaringType == typeof(DxMessagingBaseCallIgnoreSync)
+                    && call.Name == "RegenerateSidecarDeferred"
+                ),
+                Is.True
             );
             Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(1),
-                "The deferred regeneration must schedule csc.rsp resynchronization after applying."
+                calls.Any(call =>
+                    call.DeclaringType == typeof(DxMessagingBaseCallIgnoreSync)
+                    && call.Name == "ApplySidecarAndScheduleCscRspSync"
+                ),
+                Is.True
             );
         }
 
@@ -770,48 +644,39 @@ namespace DxMessaging.Tests.Editor
         public void RegenerateSidecarDeferredSkipsDestroyedSettings()
         {
             DxMessagingSettings settings = NewSettings();
+            byte[] before = CurrentSidecar();
             DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
-            Assert.That(
-                _scheduled.Count,
-                Is.EqualTo(1),
-                "Pre-condition: a deferred regeneration must have been scheduled."
-            );
-
-            // Simulate the asset being destroyed (deleted, or torn down) before the deferred tick.
+            Assert.That(_scheduled.Count, Is.EqualTo(1));
             Object.DestroyImmediate(settings);
             _createdSettings.Remove(settings);
-
-            Assert.DoesNotThrow(
-                () => _scheduled[0].Invoke(),
-                "Deferred regeneration must tolerate the captured settings asset being destroyed "
-                    + "before the editor tick fires."
-            );
-            Assert.That(
-                _applyCount,
-                Is.EqualTo(0),
-                "Deferred regeneration must skip the apply when the captured settings asset has "
-                    + "been destroyed (Unity's lifetime-aware null check)."
-            );
-            Assert.That(
-                _cscRspSyncCount,
-                Is.EqualTo(0),
-                "Destroyed settings must not trigger a csc.rsp sync because no sidecar apply ran."
-            );
+            Assert.DoesNotThrow(() => _scheduled[0].Invoke());
+            CollectionAssert.AreEqual(before, CurrentSidecar());
+            Assert.That(_responseCallbacks.Count, Is.Zero);
         }
 
         private DxMessagingSettings NewSettings()
         {
             DxMessagingSettings settings = ScriptableObject.CreateInstance<DxMessagingSettings>();
             _createdSettings.Add(settings);
-            /*
-                CreateInstance can fire OnEnable/OnValidate; drain anything captured so each test
-                starts from a clean slate.
-            */
             _scheduled.Clear();
-            _applyCount = 0;
-            _cscRspSyncCount = 0;
+            _responseCallbacks.Clear();
+            settings._baseCallIgnoredTypes = new List<string>
+            {
+                "Owned.SidecarProbe" + Guid.NewGuid().ToString("N"),
+            };
             return settings;
         }
+
+        private static byte[] CurrentSidecar() =>
+            File.Exists(SidecarPath) ? File.ReadAllBytes(SidecarPath) : null;
+
+        private static void AssertContent(DxMessagingSettings settings) =>
+            Assert.That(
+                File.ReadAllText(SidecarPath),
+                Is.EqualTo(
+                    DxMessagingBaseCallIgnoreSync.BuildContent(settings._baseCallIgnoredTypes)
+                )
+            );
 
         private static void InvokePrivate(DxMessagingSettings settings, string methodName)
         {
@@ -819,12 +684,7 @@ namespace DxMessaging.Tests.Editor
                 methodName,
                 BindingFlags.Instance | BindingFlags.NonPublic
             );
-            Assert.That(
-                method,
-                Is.Not.Null,
-                $"DxMessagingSettings.{methodName} was not found; if it was renamed, update this "
-                    + "test (OnValidate/OnEnable are the #210-relevant deserialization callbacks)."
-            );
+            Assert.That(method, Is.Not.Null);
             method.Invoke(settings, null);
         }
     }

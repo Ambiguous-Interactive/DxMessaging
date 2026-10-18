@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
+  the runtime settings resource asset for application behavior and keep fixture configuration in
+  test assemblies; see the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
 - Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
   dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
@@ -51,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Preserve token cleanup and retryable failures when a custom-bus deregistration callback clears,
   disables, or registers with the token ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642)).
+
 - Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
   ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
 

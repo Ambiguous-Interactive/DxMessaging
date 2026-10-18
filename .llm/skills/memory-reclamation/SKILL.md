@@ -44,7 +44,7 @@ state, not stale cache.
   slot touch is a single counter write, and active dispatch snapshots are leased
   so a forced trim cannot return an array still being iterated.
 - Every holder must reach one of the three reclaim paths:
-  `MessageBus.SweepableTypeCaches` (bus scalar sinks, context sinks, interceptor
+  `MessageBus.SweepableTypeCacheRegistry` (bus scalar sinks, context sinks, interceptor
   caches), `MessageHandler.ResetEmptyTypedSlotsForSweep` /
   `MessageBus.SweepGlobalSlot` (handler slots), or `DxPools.TrimAll` (shared
   collection pools).
@@ -62,8 +62,8 @@ state, not stale cache.
 
 ### Adding a MessageCache field
 
-1. Bump `MessageBus.ExpectedMessageCacheFieldCount`.
-1. Add the matching row to `MessageBus.SweepableTypeCaches`.
+1. Bump `MessageBusInvariantTests.ExpectedMessageCacheFieldCount`.
+1. Add the matching row to `MessageBus.SweepableTypeCacheRegistry`.
 1. Extend `MessageBusInvariantTests` for the new field.
 1. Add a `MemoryReclamationTests` row proving the cache trims.
 1. Update `LeakWatcher` when the cache adds a public leak counter.
@@ -84,7 +84,7 @@ state, not stale cache.
   measured against the watcher's own snapshot, so the bus need not be empty.
 - For typed-handler reclamation, also pass `handler: handler` to
   `LeakWatcher.WatchWithSlots(bus, ...)`. This checks retained context keys and
-  priority caches through a cold internal query; those deltas are separate from
+  priority caches through cold inspection in the test assembly; those deltas are separate from
   public bus counters and freeze on disposal. Default watchers skip this query.
 - Put direct reclamation fixtures in `Tests/Runtime/MemoryReclaim` with
   `[Category("MemoryReclaim")]`. The category is opt-in and, like `Stress`,

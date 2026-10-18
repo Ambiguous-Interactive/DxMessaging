@@ -58,12 +58,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
 
                 IEvictableSlot slot = ReadTypedSlot<ProbeMessage>(
                     handler,
@@ -113,12 +115,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 IEvictableSlot slot = ReadTypedSlot<ProbeMessage>(
                     handler,
                     bus,
@@ -204,12 +208,14 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     currentCallCount++;
                 };
-                Action staleDeregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    staleCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action staleDeregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        staleCallback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 IEvictableSlot slot = ReadTypedSlot<ProbeMessage>(
                     handler,
                     bus,
@@ -263,13 +269,15 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     currentCallCount++;
                 };
-                Action staleDeregistration = handler.RegisterTargetedMessageHandler(
-                    target,
-                    callback,
-                    staleCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action staleDeregistration = (
+                    handler.RegisterTargetedMessageHandler(
+                        target,
+                        callback,
+                        staleCallback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 IEvictableSlot slot = ReadTypedSlot<TargetedProbeMessage>(
                     handler,
                     bus,
@@ -325,15 +333,17 @@ namespace DxMessaging.Tests.Editor.Contract
                 };
                 Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
                 Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-                Action staleDeregistration = handler.RegisterGlobalAcceptAll(
-                    originalUntargeted,
-                    staleUntargeted,
-                    targeted,
-                    targeted,
-                    broadcast,
-                    broadcast,
-                    bus
-                );
+                Action staleDeregistration = (
+                    handler.RegisterGlobalAcceptAll(
+                        originalUntargeted,
+                        staleUntargeted,
+                        targeted,
+                        targeted,
+                        broadcast,
+                        broadcast,
+                        bus
+                    )
+                ).AsAction();
                 IEvictableSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
 
                 InvokeResetState(bus);
@@ -377,15 +387,17 @@ namespace DxMessaging.Tests.Editor.Contract
                 Action<IUntargetedMessage> untargeted = _ => { };
                 Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
                 Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-                Action deregistration = handler.RegisterGlobalAcceptAll(
-                    untargeted,
-                    untargeted,
-                    targeted,
-                    targeted,
-                    broadcast,
-                    broadcast,
-                    bus
-                );
+                Action deregistration = (
+                    handler.RegisterGlobalAcceptAll(
+                        untargeted,
+                        untargeted,
+                        targeted,
+                        targeted,
+                        broadcast,
+                        broadcast,
+                        bus
+                    )
+                ).AsAction();
                 IEvictableSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
                 long registerTick = ReadBusTick(bus);
 

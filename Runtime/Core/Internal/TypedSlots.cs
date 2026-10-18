@@ -149,11 +149,6 @@ namespace DxMessaging.Core.Internal
         bool HasPendingContextCleanup { get; }
 
         /// <summary>
-        /// Counts retained context keys and scalar or context-keyed priority caches for diagnostics.
-        /// </summary>
-        void GetRetainedStorageCounts(out int contextKeys, out int priorityCaches);
-
-        /// <summary>
         /// Resets every empty typed or typed-global slot and removes it from
         /// the handler's slot arrays.
         /// </summary>

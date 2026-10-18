@@ -11,7 +11,7 @@ namespace DxMessaging.Editor.Windows
     using Core.MessageBus;
     using Core.Messages;
     using DxMessaging.Editor;
-    using DxMessaging.Editor.Testing;
+    using DxMessaging.Editor.CustomEditors;
     using DxMessaging.Unity;
     using UnityEditor;
     using UnityEditor.SceneManagement;
@@ -2022,7 +2022,7 @@ namespace DxMessaging.Editor.Windows
             MessagingComponent component
         )
         {
-            MessagingComponentInspectorState state = MessagingComponentEditorHarness.Capture(
+            MessagingComponentInspectorState state = MessagingComponentInspectorSnapshot.Capture(
                 component,
                 resolveSerializedProviderBus: false
             );

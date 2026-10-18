@@ -22,6 +22,31 @@
       Include="../Tests/Runtime/TestUtilities/ScenarioHarness.cs"
       Link="ScenarioHarness.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/StorageInspection.cs"
+      Link="StorageInspection.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/BenchmarkStorageScopes.cs"
+      Link="BenchmarkStorageScopes.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/StorageObservations.cs"
+      Link="StorageObservations.cs"
+    />
+    <Compile Include="../Tests/Runtime/TestUtilities/MapInspection.cs" Link="MapInspection.cs" />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/EntryStorageInspection.cs"
+      Link="EntryStorageInspection.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ReflexiveStorageInspection.cs"
+      Link="ReflexiveStorageInspection.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/MessageBusInspection.cs"
+      Link="MessageBusInspection.cs"
+    />
     <Compile Include="../Tests/Runtime/TestUtilities/LeakWatcher.cs" Link="LeakWatcher.cs" />
     <Compile
       Include="../Tests/Runtime/TestUtilities/DelegatingMessageBus.cs"
@@ -42,6 +67,34 @@
     <Compile
       Include="../Tests/Runtime/Core/TokenTeardownReentrancyTests.cs"
       Link="TokenTeardownReentrancyTests.cs"
+    />
+    <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
+    <Compile
+      Include="../Tests/Editor/Contract/TypedSlotShapeTests.cs"
+      Link="TypedSlotShapeTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/MessageBusInvariantTests.cs"
+      Link="MessageBusInvariantTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/BusGlobalSlotLiveCountTests.cs"
+      Link="BusGlobalSlotLiveCountTests.cs"
+    />
+    <Compile Include="../Tests/Editor/Contract/ReflectionHelpers.cs" Link="ReflectionHelpers.cs" />
+    <Compile
+      Include="../Tests/Runtime/Core/ProductionAssemblySurfaceTests.cs"
+      Link="ProductionAssemblySurfaceTests.cs"
+    />
+    <Compile Include="../Tests/Editor/EditorProductionCalls.cs" Link="EditorProductionCalls.cs" />
+    <Compile
+      Include="../Tests/Editor/Contract/SweepRegistryInspection.cs"
+      Link="SweepRegistryInspection.cs"
+    />
+    <Compile Include="../Editor/Analyzers/BaseCallIlInspector.cs" Link="BaseCallIlInspector.cs" />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/HandlerDeregistrationActions.cs"
+      Link="HandlerDeregistrationActions.cs"
     />
   </ItemGroup>
 </Project>

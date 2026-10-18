@@ -597,20 +597,23 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         [Test]
         [Category("Allocation")]
-        public void RuntimeSettingsOverrideAllocatesOneReferenceToken()
+        public void CachedRuntimeSettingsLookupAllocatesNothing()
         {
             DxMessagingRuntimeSettings settings =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
-            Action overrideCycle = () =>
-                DxMessagingRuntimeSettingsProvider.Override(settings).Dispose();
-            using IDisposable isolatedRegistry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable isolatedRegistry =
+                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            IDisposable fixtureSettings = null;
             try
             {
-                overrideCycle();
+                fixtureSettings = RuntimeSettingsFixture.Override(settings);
+                DxMessagingRuntimeSettings observed = null;
+                Action read = () => observed = DxMessagingRuntimeSettingsProvider.Current;
+                read();
                 long delta = AllocationProbe.MeasureMin(
                     AllocationMeasurementAttempts,
                     prepare: null,
-                    operation: overrideCycle
+                    operation: read
                 );
                 if (delta == AllocationProbe.Unmeasured)
                 {
@@ -618,16 +621,17 @@ namespace DxMessaging.Tests.Editor.Allocations
                         "The GC.Alloc allocation probe is non-functional on this backend."
                     );
                 }
-
+                Assert.AreSame(settings, observed);
                 Assert.AreEqual(
-                    1,
+                    0,
                     delta,
-                    "Override and Dispose must allocate only the existing sealed reference token."
+                    "Reading the existing production settings cache must allocate nothing."
                 );
             }
             finally
             {
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                fixtureSettings?.Dispose();
+                RuntimeSettingsFixture.Reset();
                 UnityEngine.Object.DestroyImmediate(settings);
             }
         }

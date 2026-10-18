@@ -31,10 +31,10 @@ so several callbacks at one priority can leave those counters unchanged. An equa
 and opposite change in two categories must still fail disposal even when the
 aggregate total is zero.
 
-For built-in `MessageBus` instances, `Snapshot` also uses the cold internal
-`LiveRegistrationCountForTesting` query. It sums registration reference counts
+For built-in `MessageBus` instances, `Snapshot` also uses
+`MessageBusInspection.CountLiveRegistrations` in the test assembly. It sums registration reference counts
 from existing handler, interceptor and global stores, including shared-priority
-callbacks and duplicate registrations. The query adds no bus fields and never runs on dispatch.
+callbacks and duplicate registrations. The inspection adds no production members and never runs on dispatch.
 `DelegatingMessageBus.RegistrationCountSource` exposes
 the forwarded source for test doubles; a double with independent storage can
 return null to keep public-counter accounting.
@@ -150,7 +150,7 @@ retained storage on the supplied bus. Use
 return to baseline. Always supply the intended bus explicitly when a handler
 participates in more than one bus.
 
-The internal `MessageHandler.GetRetainedStorageCounts` query counts context keys
+The test-only `EntryStorageInspection.GetRetainedStorageCounts` query counts context keys
 across typed slots and retained priority caches in both scalar and context-keyed
 maps. Keys in separate typed slots count separately even when they hold the same
 `InstanceId`. Several delegates sharing one priority cache count as one cache.

@@ -107,11 +107,10 @@ re-apply caps, retention modes, and toggles without recreation, so editing the
 asset while the editor is in Play mode takes effect on the next sweep
 boundary.
 
-Tests can install temporary settings with
-`DxMessagingRuntimeSettingsProvider.Override`. Nested override tokens may be
-disposed in any order: the newest token restores the nearest active ancestor,
-and `DxMessagingStaticState.Reset()` invalidates stale tokens. Each override
-allocates one sealed reference token.
+The provider caches the resource asset until player subsystem initialization or
+`DxMessagingStaticState.Reset()`. 4.0 removes the test-only runtime-settings override
+API; configure the resource asset for application behavior and keep fixture
+configuration in test assemblies.
 
 For the full list of fields, defaults, and tooltip text, see the
 [Runtime Settings reference](../reference/runtime-settings.md).

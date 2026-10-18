@@ -9,6 +9,11 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.MessageBus.Internal;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+    using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+    using StringAssert = NUnit.Framework.Legacy.StringAssert;
+#endif
 
     /// <summary>
     /// Contract guardrails for the typed-handler-side slot grid:
@@ -434,8 +439,8 @@ namespace DxMessaging.Tests.Editor.Contract
                     );
             }
 
-            Assert.IsFalse(cache.entries.UsesSpillStorage);
-            Assert.AreEqual(2, cache.entries.InlineCapacity);
+            Assert.IsFalse(EntryStorageInspection.UsesSpillStorage(cache.entries));
+            Assert.AreEqual(2, EntryStorageInspection.InlineCapacity(cache.entries));
             AssertOrderedKeys(cache, handlers[0], handlers[1]);
 
             cache.entries[handlers[0]] =
@@ -449,23 +454,23 @@ namespace DxMessaging.Tests.Editor.Contract
 
             cache.entries[handlers[2]] =
                 new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[2], 1);
-            Assert.IsTrue(cache.entries.UsesSpillStorage);
-            Assert.AreEqual(2, cache.entries.InlineCapacity);
-            Assert.GreaterOrEqual(cache.entries.MapCapacity, 3);
-            Assert.GreaterOrEqual(cache.entries.OrderCapacity, 3);
+            Assert.IsTrue(EntryStorageInspection.UsesSpillStorage(cache.entries));
+            Assert.AreEqual(2, EntryStorageInspection.InlineCapacity(cache.entries));
+            Assert.GreaterOrEqual(EntryStorageInspection.MapCapacity(cache.entries), 3);
+            Assert.GreaterOrEqual(EntryStorageInspection.OrderCapacity(cache.entries), 3);
             AssertOrderedKeys(cache, handlers[1], handlers[0], handlers[2]);
 
-            int mapCapacity = cache.entries.MapCapacity;
-            int orderCapacity = cache.entries.OrderCapacity;
+            int mapCapacity = EntryStorageInspection.MapCapacity(cache.entries);
+            int orderCapacity = EntryStorageInspection.OrderCapacity(cache.entries);
             cache.entries.Clear();
             Assert.Zero(cache.entries.Count);
-            Assert.IsTrue(cache.entries.UsesSpillStorage);
-            Assert.AreEqual(mapCapacity, cache.entries.MapCapacity);
-            Assert.AreEqual(orderCapacity, cache.entries.OrderCapacity);
+            Assert.IsTrue(EntryStorageInspection.UsesSpillStorage(cache.entries));
+            Assert.AreEqual(mapCapacity, EntryStorageInspection.MapCapacity(cache.entries));
+            Assert.AreEqual(orderCapacity, EntryStorageInspection.OrderCapacity(cache.entries));
 
             cache.entries[handlers[1]] =
                 new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[1], 1);
-            Assert.IsTrue(cache.entries.UsesSpillStorage);
+            Assert.IsTrue(EntryStorageInspection.UsesSpillStorage(cache.entries));
             AssertOrderedKeys(cache, handlers[1]);
         }
 
@@ -483,7 +488,10 @@ namespace DxMessaging.Tests.Editor.Contract
                     new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handler, 1);
             }
 
-            Assert.IsTrue(cache.entries.UsesSpillStorage, "Five handlers must use spill storage.");
+            Assert.IsTrue(
+                EntryStorageInspection.UsesSpillStorage(cache.entries),
+                "Five handlers must use spill storage."
+            );
             Assert.IsTrue(cache.entries.Remove(handlers[3]), "Fallback removal must find D.");
             Assert.IsTrue(cache.entries.Remove(handlers[0]), "Prefix removal must find A.");
             Assert.IsTrue(cache.entries.Remove(handlers[1]), "Prefix removal must find B.");
@@ -496,18 +504,18 @@ namespace DxMessaging.Tests.Editor.Contract
 
             Assert.AreEqual(
                 2,
-                cache.entries.SkippedPrefixCount,
+                EntryStorageInspection.SkippedPrefixCount(cache.entries),
                 "A and B form the skipped prefix."
             );
             Assert.AreEqual(
                 7,
-                cache.entries.OrderSlotCount,
+                EntryStorageInspection.OrderSlotCount(cache.entries),
                 "Re-registered keys append after C/E."
             );
             Assert.AreEqual(5, cache.entries.Count, "Exactly five delegates remain live.");
             Assert.AreEqual(
                 2,
-                cache.entries.SkippedPrefixCount,
+                EntryStorageInspection.SkippedPrefixCount(cache.entries),
                 "Count must remain a pure O(1) read."
             );
 
@@ -519,8 +527,15 @@ namespace DxMessaging.Tests.Editor.Contract
                 handlers[1],
                 handlers[5]
             );
-            Assert.Zero(cache.entries.SkippedPrefixCount, "Ordered preparation must compact.");
-            Assert.AreEqual(5, cache.entries.OrderSlotCount, "Compaction must leave five slots.");
+            Assert.Zero(
+                EntryStorageInspection.SkippedPrefixCount(cache.entries),
+                "Ordered preparation must compact."
+            );
+            Assert.AreEqual(
+                5,
+                EntryStorageInspection.OrderSlotCount(cache.entries),
+                "Compaction must leave five slots."
+            );
             Assert.IsFalse(cache.entries.Remove(handlers[0]), "Removed A must remain absent.");
         }
 
@@ -546,7 +561,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     );
             }
 
-            int initialMapCapacity = cache.entries.MapCapacity;
+            int initialMapCapacity = EntryStorageInspection.MapCapacity(cache.entries);
             for (int index = 0; index < handlers.Length - 3; ++index)
             {
                 Assert.IsTrue(
@@ -567,17 +582,17 @@ namespace DxMessaging.Tests.Editor.Contract
                     .OrderedEntries
                     .CompactionPrefixThreshold - 1;
             Assert.LessOrEqual(
-                cache.entries.SkippedPrefixCount,
+                EntryStorageInspection.SkippedPrefixCount(cache.entries),
                 maximumSkippedPrefix,
                 "Skipped prefix must compact at the absolute and ratio threshold."
             );
             Assert.LessOrEqual(
-                cache.entries.OrderSlotCount,
+                EntryStorageInspection.OrderSlotCount(cache.entries),
                 cache.entries.Count + maximumSkippedPrefix,
                 "Logical order slots must stay bounded by live entries plus the prefix."
             );
             Assert.LessOrEqual(
-                cache.entries.OrderCapacity,
+                EntryStorageInspection.OrderCapacity(cache.entries),
                 MessageHandler
                     .HandlerActionCache<System.Action<int>>
                     .OrderedEntries
@@ -586,7 +601,7 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             Assert.AreEqual(
                 initialMapCapacity,
-                cache.entries.MapCapacity,
+                EntryStorageInspection.MapCapacity(cache.entries),
                 "Fixed live cardinality must not grow dictionary capacity."
             );
             AssertOrderedKeys(
@@ -619,8 +634,14 @@ namespace DxMessaging.Tests.Editor.Contract
             }
 
             Assert.Zero(cache.entries.Count, "Removing every handler must empty the map.");
-            Assert.Zero(cache.entries.OrderSlotCount, "Full teardown must clear order slots.");
-            Assert.Zero(cache.entries.SkippedPrefixCount, "Full teardown must reset the cursor.");
+            Assert.Zero(
+                EntryStorageInspection.OrderSlotCount(cache.entries),
+                "Full teardown must clear order slots."
+            );
+            Assert.Zero(
+                EntryStorageInspection.SkippedPrefixCount(cache.entries),
+                "Full teardown must reset the cursor."
+            );
 
             cache.entries[handlers[4]] =
                 new MessageHandler.HandlerActionCache<System.Action<int>>.Entry(handlers[4], 1);

@@ -6,7 +6,7 @@ namespace DxMessaging.Core.Pooling
     /// <summary>
     /// Default <see cref="IDxMessagingClock"/> backed by a process-lifetime
     /// <see cref="Stopwatch"/>. Monotonic and Unity-agnostic so it works in
-    /// EditMode, PlayMode, and standalone test harnesses.
+    /// Unity players, editors, and non-Unity hosts.
     /// </summary>
     public sealed class StopwatchClock : IDxMessagingClock
     {

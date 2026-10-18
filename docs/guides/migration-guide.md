@@ -4,6 +4,14 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Remove the test-only runtime settings override
+
+`DxMessagingRuntimeSettingsProvider.Override` is removed. Configure
+`Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings and read
+`DxMessagingRuntimeSettingsProvider.Current`. Keep any fixture configuration and
+restoration in test assemblies. Resource loading, default settings, player resets,
+and live edits to the asset in the Editor retain their existing behavior.
+
 ### Opt in to inherited string demo handlers
 
 `MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one

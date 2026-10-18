@@ -387,7 +387,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             public LifecycleState(int cardinality)
             {
                 Cardinality = cardinality;
-                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 /*
                     Keep lifecycle measurements independent of the host editor's mutable
                     global diagnostics preference. Diagnostics have separate coverage;
@@ -730,7 +730,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 _operation = operation;
                 _cyclePath = ResolveCyclePath(operation);
-                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 _bus = new MessageBus { DiagnosticsMode = false };
                 _handler = new MessageHandler(new InstanceId(43001), _bus) { active = true };
                 _callback = Handle;
@@ -1216,7 +1216,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int cardinality
         )
         {
-            IDisposable registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            IDisposable registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
             try
             {
                 return new DeregistrationAttributionState(operation, cardinality, registryScope);

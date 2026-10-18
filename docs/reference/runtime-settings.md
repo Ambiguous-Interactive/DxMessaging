@@ -175,8 +175,7 @@ The struct overrides `ToString()` and implements equality on all four fields.
 ## Hot-Reload Semantics
 
 `DxMessagingRuntimeSettings` raises the static event
-`DxMessagingRuntimeSettings.SettingsChanged` from its editor `OnValidate` and
-from `DxMessagingRuntimeSettingsProvider.Override`. Subscribers should be
+`DxMessagingRuntimeSettings.SettingsChanged` from its editor `OnValidate`. Subscribers should be
 small and re-entrancy-safe; the event is invoked synchronously on the calling
 thread.
 
@@ -208,43 +207,15 @@ subscriptions from previous Play mode sessions from firing.
 
 ---
 
-## Test Override
+## Settings lifetime
 
-`DxMessagingRuntimeSettingsProvider.Override(DxMessagingRuntimeSettings settings)`
-pushes a test-supplied settings instance as the active `Current` value and
-returns an `IDisposable`. Each call allocates one sealed reference token; the
-interface return does not add boxing. Disposing nested tokens in any order
-restores the nearest active ancestor, or the settings that were current before
-the override chain began. Ending a covered ancestor does not raise a transient
-event. The push and each effective restore raise `SettingsChanged` so subscribed
-buses re-apply caps in both directions. `DxMessagingStaticState.Reset()`
-invalidates every older token, so disposing stale test state cannot replace a
-new configuration.
+Use `DxMessagingRuntimeSettingsProvider.Current` to read the resource asset or its
+default fallback. The provider clears its cached reference on player subsystem
+initialization and `DxMessagingStaticState.Reset()`, then loads settings on the next read.
 
-```csharp
-using System;
-using DxMessaging.Core.Configuration;
-using UnityEngine;
-
-public static class TestSettingsExample
-{
-    public static void RunWithCustomSettings()
-    {
-        DxMessagingRuntimeSettings testSettings =
-            ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
-        // Test-only: production code should not call Override directly.
-        using (IDisposable token =
-            DxMessagingRuntimeSettingsProvider.Override(testSettings))
-        {
-            // Bus reads testSettings until token is disposed.
-        }
-    }
-}
-```
-
-The provider is intended for tests and bootstrap code that needs to inject a
-specific configuration. Production code should rely on the loaded asset (or
-the defaulted fallback) rather than calling `Override` directly.
+4.0 removes the test-only `DxMessagingRuntimeSettingsProvider.Override` API.
+Configure `Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings.
+Keep fixture configuration and restoration in test assemblies.
 
 ---
 

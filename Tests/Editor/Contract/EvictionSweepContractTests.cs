@@ -66,12 +66,14 @@ namespace DxMessaging.Tests.Editor.Contract
                 DxPools.TypedHandlerPriorityDicts.MaxRetained = 0;
                 DxPools.TypedHandlerPriorityDicts.UseLru = true;
                 DxPools.TypedHandlerPriorityDicts.MaxRetained = retentionCapacity;
-                keep = handler.RegisterTargetedMessageHandler(
-                    new InstanceId(1),
-                    callback,
-                    callback,
-                    messageBus: bus
-                );
+                keep = (
+                    handler.RegisterTargetedMessageHandler(
+                        new InstanceId(1),
+                        callback,
+                        callback,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 MessageHandler.TypedHandler<TargetedProbeMessage> typed =
                     (MessageHandler.TypedHandler<TargetedProbeMessage>)
                         ReadTypedHandler<TargetedProbeMessage>(handler, bus);
@@ -122,12 +124,14 @@ namespace DxMessaging.Tests.Editor.Contract
                         InstanceId context = new InstanceId(firstContext + i);
                         string diagnostic =
                             $"force={force}, retentionCapacity={retentionCapacity}, phase={phase}, context={context.Id}";
-                        Action remove = handler.RegisterTargetedMessageHandler(
-                            context,
-                            callback,
-                            callback,
-                            messageBus: bus
-                        );
+                        Action remove = (
+                            handler.RegisterTargetedMessageHandler(
+                                context,
+                                callback,
+                                callback,
+                                messageBus: bus
+                            )
+                        ).AsAction();
                         try
                         {
                             Assert.That(
@@ -187,12 +191,9 @@ namespace DxMessaging.Tests.Editor.Contract
             InstanceId transient = new InstanceId(2);
             int calls = 0;
             Action<TargetedProbeMessage> later = _ => calls++;
-            Action keep = handler.RegisterTargetedMessageHandler(
-                live,
-                later,
-                later,
-                messageBus: bus
-            );
+            Action keep = (
+                handler.RegisterTargetedMessageHandler(live, later, later, messageBus: bus)
+            ).AsAction();
             Action removeFirst = null;
             Action removeLater = null;
             Action<TargetedProbeMessage> first = _ =>
@@ -203,19 +204,18 @@ namespace DxMessaging.Tests.Editor.Contract
             };
             try
             {
-                removeFirst = handler.RegisterTargetedMessageHandler(
-                    transient,
-                    first,
-                    first,
-                    priority: -1,
-                    messageBus: bus
-                );
-                removeLater = handler.RegisterTargetedMessageHandler(
-                    transient,
-                    later,
-                    later,
-                    messageBus: bus
-                );
+                removeFirst = (
+                    handler.RegisterTargetedMessageHandler(
+                        transient,
+                        first,
+                        first,
+                        priority: -1,
+                        messageBus: bus
+                    )
+                ).AsAction();
+                removeLater = (
+                    handler.RegisterTargetedMessageHandler(transient, later, later, messageBus: bus)
+                ).AsAction();
                 MessageHandler.TypedHandler<TargetedProbeMessage> typed =
                     (MessageHandler.TypedHandler<TargetedProbeMessage>)
                         ReadTypedHandler<TargetedProbeMessage>(handler, bus);
@@ -234,10 +234,10 @@ namespace DxMessaging.Tests.Editor.Contract
                     Is.EqualTo(2),
                     $"force={force}: in-flight cleanup must defer context removal."
                 );
-                long deregistrationTick = bus.TickCounter;
+                long deregistrationTick = (long)MessageBusInspection.ReadField(bus, "_tickCounter");
                 bus.Trim(force);
                 Assert.That(
-                    bus.TickCounter,
+                    (long)MessageBusInspection.ReadField(bus, "_tickCounter"),
                     Is.EqualTo(deregistrationTick),
                     $"force={force}: trim must not advance the idle-age counter."
                 );
@@ -256,7 +256,7 @@ namespace DxMessaging.Tests.Editor.Contract
                     OtherProbeMessage tick = new OtherProbeMessage();
                     bus.UntargetedBroadcast(ref tick);
                     Assert.That(
-                        bus.TickCounter,
+                        (long)MessageBusInspection.ReadField(bus, "_tickCounter"),
                         Is.EqualTo(unchecked(deregistrationTick + 1)),
                         "An unrelated emission must advance the touch age without re-registering the handler."
                     );
@@ -267,12 +267,9 @@ namespace DxMessaging.Tests.Editor.Contract
                     Is.EqualTo(1),
                     $"force={force}: deferred cleanup must remain scheduled after in-flight trim."
                 );
-                Action replacement = handler.RegisterTargetedMessageHandler(
-                    transient,
-                    later,
-                    later,
-                    messageBus: bus
-                );
+                Action replacement = (
+                    handler.RegisterTargetedMessageHandler(transient, later, later, messageBus: bus)
+                ).AsAction();
                 try
                 {
                     removeLater();
@@ -320,12 +317,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
                 object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
                 Array slots = ReadArrayField(typedHandler, "_slots");
@@ -363,12 +362,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
                 object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
                 Array slots = ReadArrayField(typedHandler, "_slots");
@@ -453,12 +454,14 @@ namespace DxMessaging.Tests.Editor.Contract
                     currentCalls++;
                 };
 
-                Action staleDeregistration = handler.RegisterUntargetedMessageHandler(
-                    original,
-                    stale,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action staleDeregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        original,
+                        stale,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 staleDeregistration();
                 _ = bus.Trim(force: true);
 
@@ -493,12 +496,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 ProbeMessage message = new ProbeMessage();
                 bus.UntargetedBroadcast(ref message);
 
@@ -553,12 +558,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
                 _ = bus.Trim(force: true);
 
@@ -592,13 +599,15 @@ namespace DxMessaging.Tests.Editor.Contract
             {
                 InstanceId context = new InstanceId(0x5044_4203);
                 Action<TargetedProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterTargetedMessageHandler(
-                    context,
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterTargetedMessageHandler(
+                        context,
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
                 _ = bus.Trim(force: true);
 
@@ -631,12 +640,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 ProbeMessage probe = new ProbeMessage();
                 bus.UntargetedBroadcast(ref probe);
 
@@ -703,12 +714,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
                 OtherProbeMessage other = new OtherProbeMessage();
 
@@ -780,12 +793,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
 
                 OtherProbeMessage other = new OtherProbeMessage();
@@ -815,12 +830,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
                 System.Collections.Generic.List<object> pooledList = DxPools.ObjectLists.Rent();
                 DxPools.ObjectLists.Return(pooledList);
@@ -910,20 +927,24 @@ namespace DxMessaging.Tests.Editor.Contract
                 InstanceId context = new InstanceId(0x5044_4202);
                 Action<TargetedProbeMessage> targetedCallback = _ => { };
                 Action<BroadcastProbeMessage> broadcastCallback = _ => { };
-                Action deregisterTargeted = handler.RegisterTargetedMessageHandler(
-                    context,
-                    targetedCallback,
-                    targetedCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
-                Action deregisterBroadcast = handler.RegisterSourcedBroadcastMessageHandler(
-                    context,
-                    broadcastCallback,
-                    broadcastCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregisterTargeted = (
+                    handler.RegisterTargetedMessageHandler(
+                        context,
+                        targetedCallback,
+                        targetedCallback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
+                Action deregisterBroadcast = (
+                    handler.RegisterSourcedBroadcastMessageHandler(
+                        context,
+                        broadcastCallback,
+                        broadcastCallback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregisterTargeted();
                 deregisterBroadcast();
                 Assert.GreaterOrEqual(bus.OccupiedTargetSlots, 2);
@@ -975,8 +996,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 Assert.IsFalse(DxPools.ObjectLists.UseLru);
                 Assert.AreEqual(0, DxPools.DescribeAll().ObjectLists.Cached);
 
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
-                using (DxMessagingRuntimeSettingsProvider.Override(settings))
+                RuntimeSettingsFixture.Reset();
+                using (RuntimeSettingsFixture.Override(settings))
                 {
                     // Entering and disposing the scope is the behavior under test.
                 }
@@ -993,7 +1014,7 @@ namespace DxMessaging.Tests.Editor.Contract
             }
             finally
             {
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(
                     DxMessagingRuntimeSettingsProvider.Current
                 );
@@ -1003,9 +1024,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
         [TestCase(false)]
         [TestCase(true)]
-        public void NestedRuntimeSettingsOverridesRestoreNearestActiveSettings(
-            bool disposeOuterFirst
-        )
+        public void FixtureSettingsScopesRestoreNearestActiveSettings(bool disposeOuterFirst)
         {
             DxMessagingRuntimeSettings original =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
@@ -1018,9 +1037,9 @@ namespace DxMessaging.Tests.Editor.Contract
             IDisposable innerToken = null;
             try
             {
-                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
-                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
-                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+                originalToken = RuntimeSettingsFixture.Override(original);
+                outerToken = RuntimeSettingsFixture.Override(outer);
+                innerToken = RuntimeSettingsFixture.Override(inner);
 
                 IDisposable first = disposeOuterFirst ? outerToken : innerToken;
                 IDisposable second = disposeOuterFirst ? innerToken : outerToken;
@@ -1045,7 +1064,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 innerToken?.Dispose();
                 outerToken?.Dispose();
                 originalToken?.Dispose();
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(
                     DxMessagingRuntimeSettingsProvider.Current
                 );
@@ -1056,7 +1075,7 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void NestedRuntimeSettingsOverridesUseTokenIdentityForSameSettingsInstance()
+        public void NestedFixtureSettingsScopesUseTokenIdentityForSameSettingsInstance()
         {
             DxMessagingRuntimeSettings original =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
@@ -1067,9 +1086,9 @@ namespace DxMessaging.Tests.Editor.Contract
             IDisposable innerToken = null;
             try
             {
-                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
-                outerToken = DxMessagingRuntimeSettingsProvider.Override(shared);
-                innerToken = DxMessagingRuntimeSettingsProvider.Override(shared);
+                originalToken = RuntimeSettingsFixture.Override(original);
+                outerToken = RuntimeSettingsFixture.Override(shared);
+                innerToken = RuntimeSettingsFixture.Override(shared);
 
                 outerToken.Dispose();
                 Assert.AreSame(
@@ -1090,14 +1109,14 @@ namespace DxMessaging.Tests.Editor.Contract
                 innerToken?.Dispose();
                 outerToken?.Dispose();
                 originalToken?.Dispose();
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 UnityEngine.Object.DestroyImmediate(shared);
                 UnityEngine.Object.DestroyImmediate(original);
             }
         }
 
         [Test]
-        public void DisposedMiddleRuntimeSettingsOverrideIsSkippedDuringUnwind()
+        public void DisposedMiddleFixtureSettingsScopeIsSkippedDuringUnwind()
         {
             DxMessagingRuntimeSettings original =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
@@ -1113,10 +1132,10 @@ namespace DxMessaging.Tests.Editor.Contract
             IDisposable innerToken = null;
             try
             {
-                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
-                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
-                middleToken = DxMessagingRuntimeSettingsProvider.Override(middle);
-                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+                originalToken = RuntimeSettingsFixture.Override(original);
+                outerToken = RuntimeSettingsFixture.Override(outer);
+                middleToken = RuntimeSettingsFixture.Override(middle);
+                innerToken = RuntimeSettingsFixture.Override(inner);
 
                 middleToken.Dispose();
                 Assert.AreSame(
@@ -1145,7 +1164,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 middleToken?.Dispose();
                 outerToken?.Dispose();
                 originalToken?.Dispose();
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 UnityEngine.Object.DestroyImmediate(inner);
                 UnityEngine.Object.DestroyImmediate(middle);
                 UnityEngine.Object.DestroyImmediate(outer);
@@ -1154,7 +1173,7 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void StaticResetInvalidatesOlderRuntimeSettingsOverrideTokens()
+        public void StaticResetDetachesOlderFixtureSettingsScopes()
         {
             DxMessagingRuntimeSettings staleOuter =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
@@ -1170,12 +1189,12 @@ namespace DxMessaging.Tests.Editor.Contract
             IDisposable replacementToken = null;
             try
             {
-                staleOuterToken = DxMessagingRuntimeSettingsProvider.Override(staleOuter);
-                staleInnerToken = DxMessagingRuntimeSettingsProvider.Override(staleInner);
+                staleOuterToken = RuntimeSettingsFixture.Override(staleOuter);
+                staleInnerToken = RuntimeSettingsFixture.Override(staleInner);
 
                 DxMessagingStaticState.Reset();
-                replacementBaseToken = DxMessagingRuntimeSettingsProvider.Override(replacementBase);
-                replacementToken = DxMessagingRuntimeSettingsProvider.Override(replacement);
+                replacementBaseToken = RuntimeSettingsFixture.Override(replacementBase);
+                replacementToken = RuntimeSettingsFixture.Override(replacement);
 
                 staleInnerToken.Dispose();
                 staleOuterToken.Dispose();
@@ -1207,7 +1226,7 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void OutOfOrderRuntimeSettingsDisposalRaisesOnlyFinalRestoreEvent()
+        public void FixtureSettingsDisposalRaisesOnlyFinalRestoreEvent()
         {
             DxMessagingRuntimeSettings original =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
@@ -1227,9 +1246,9 @@ namespace DxMessaging.Tests.Editor.Contract
             };
             try
             {
-                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
-                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
-                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+                originalToken = RuntimeSettingsFixture.Override(original);
+                outerToken = RuntimeSettingsFixture.Override(outer);
+                innerToken = RuntimeSettingsFixture.Override(inner);
                 DxMessagingRuntimeSettings.SettingsChanged += captureRestore;
 
                 outerToken.Dispose();
@@ -1265,7 +1284,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 innerToken?.Dispose();
                 outerToken?.Dispose();
                 originalToken?.Dispose();
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 UnityEngine.Object.DestroyImmediate(inner);
                 UnityEngine.Object.DestroyImmediate(outer);
                 UnityEngine.Object.DestroyImmediate(original);
@@ -1273,7 +1292,7 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void OutOfOrderRuntimeSettingsDisposalCarriesGlobalBufferSnapshotForward()
+        public void FixtureSettingsDisposalCarriesGlobalBufferSnapshotForward()
         {
             int entryBufferSize = IMessageBus.GlobalMessageBufferSize;
             DxMessagingRuntimeSettings originalFallback =
@@ -1288,10 +1307,10 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 originalFallback.MarkAsFallbackInstance();
-                originalToken = DxMessagingRuntimeSettingsProvider.Override(originalFallback);
+                originalToken = RuntimeSettingsFixture.Override(originalFallback);
                 IMessageBus.GlobalMessageBufferSize = 23;
-                outerToken = DxMessagingRuntimeSettingsProvider.Override(outer);
-                innerToken = DxMessagingRuntimeSettingsProvider.Override(inner);
+                outerToken = RuntimeSettingsFixture.Override(outer);
+                innerToken = RuntimeSettingsFixture.Override(inner);
 
                 outerToken.Dispose();
                 innerToken.Dispose();
@@ -1312,7 +1331,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 innerToken?.Dispose();
                 outerToken?.Dispose();
                 originalToken?.Dispose();
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 IMessageBus.GlobalMessageBufferSize = entryBufferSize;
                 UnityEngine.Object.DestroyImmediate(inner);
                 UnityEngine.Object.DestroyImmediate(outer);
@@ -1321,17 +1340,17 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void NullRuntimeSettingsOverrideLeavesCurrentSettingsUnchanged()
+        public void NullFixtureSettingsLeavesCurrentSettingsUnchanged()
         {
             DxMessagingRuntimeSettings original =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             IDisposable originalToken = null;
             try
             {
-                originalToken = DxMessagingRuntimeSettingsProvider.Override(original);
+                originalToken = RuntimeSettingsFixture.Override(original);
 
                 Assert.Throws<ArgumentNullException>(
-                    () => DxMessagingRuntimeSettingsProvider.Override(null),
+                    () => RuntimeSettingsFixture.Override(null),
                     "A null override must be rejected."
                 );
                 Assert.AreSame(
@@ -1343,7 +1362,7 @@ namespace DxMessaging.Tests.Editor.Contract
             finally
             {
                 originalToken?.Dispose();
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                RuntimeSettingsFixture.Reset();
                 UnityEngine.Object.DestroyImmediate(original);
             }
         }
@@ -1381,12 +1400,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 deregistration();
 
                 Assert.GreaterOrEqual(bus.OccupiedTypeSlots, 1);

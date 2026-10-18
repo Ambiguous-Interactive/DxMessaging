@@ -60,7 +60,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// </summary>
         public static IDisposable IsolateIdleSweepRegistry()
         {
-            return DxMessaging.Core.MessageBus.MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            return MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
         }
 
         /// <summary>

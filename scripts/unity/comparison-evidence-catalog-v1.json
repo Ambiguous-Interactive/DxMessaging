@@ -38,7 +38,7 @@
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "86408cc744fcbf13991376de48af300ad788acbad87fe9373ad6eb721ec078a1"
+      "sha256": "c787c0a3d6b047116de3c842cbdf4178ca7c18bf8b911dde2d255e67b82f9227"
     },
     "dxInterface": {
       "origin": "repository",
@@ -48,7 +48,7 @@
     "dxHandler": {
       "origin": "repository",
       "path": "Runtime/Core/MessageHandler.cs",
-      "sha256": "3c6d83c528e3dea3e98edaa33eb649018b36c1047de84cb9298ad89e52cf9c4c"
+      "sha256": "2b9bc1737b5da6133241eff9edac74b544ee39793c3ad7871816ad5bc2252f59"
     },
     "dxToken": {
       "origin": "repository",
@@ -58,7 +58,7 @@
     "dxFlat": {
       "origin": "repository",
       "path": "Runtime/Core/Internal/FlatDispatch.cs",
-      "sha256": "11bbcc1e0f1da2118290ee6bfc19c7c61611452f7dbc808f1ce0ed979c4ef8aa"
+      "sha256": "26949f25ab084d1947663da4a7d6253a3c081d332f128894d88911763e50a8f9"
     },
     "dxPools": {
       "origin": "repository",
@@ -68,7 +68,7 @@
     "dxSettings": {
       "origin": "repository",
       "path": "Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs",
-      "sha256": "aa6d69c8544b663149612e7fbcd3ad93ee74e860f44a40fcb4982107e0c84449"
+      "sha256": "c3e0c13d21a931b7f56e95401e70db8c633e1d033221414a2297499bbdd2aeb2"
     },
     "reentrantTests": {
       "origin": "repository",

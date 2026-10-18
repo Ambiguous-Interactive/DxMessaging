@@ -135,19 +135,28 @@ namespace DxMessaging.Tests.Editor
             settings._baseCallCheckEnabled = false;
             DxMessagingSettings.InvalidateSettingsCache();
             Read();
-            int rescans = DxMessagingConsoleHarvester.RescanCount;
-            int lookups = DxMessagingSettings.SettingsLookupCount;
-            DxMessagingConsoleHarvester.RescanNow();
-            DxMessagingConsoleHarvester.RescanNow();
-            Assert.That(
-                DxMessagingConsoleHarvester.RescanCount,
-                Is.EqualTo(rescans + 2),
-                "Both idle rescan calls must execute the production settings path."
+            using EditorStaticFieldScope harvesterState = new(
+                typeof(DxMessagingConsoleHarvester),
+                "_lastSettingsRevision"
             );
+            harvesterState.Set("_lastSettingsRevision", -1);
+            DxMessagingConsoleHarvester.RescanNow();
             Assert.That(
-                DxMessagingSettings.SettingsLookupCount,
-                Is.EqualTo(lookups + 2),
-                "Harvester rescans must use the shared passive loader."
+                MessageBusInspection.ReadField(
+                    typeof(DxMessagingConsoleHarvester),
+                    "_lastSettingsRevision"
+                ),
+                Is.EqualTo(DxMessagingSettings.SettingsRevision)
+            );
+            harvesterState.Set("_lastSettingsRevision", -1);
+            DxMessagingConsoleHarvester.RescanNow();
+            Assert.That(
+                MessageBusInspection.ReadField(
+                    typeof(DxMessagingConsoleHarvester),
+                    "_lastSettingsRevision"
+                ),
+                Is.EqualTo(DxMessagingSettings.SettingsRevision),
+                "Both real idle rescans must consume the current settings revision."
             );
             Assert.That(
                 _loads,

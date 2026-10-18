@@ -1,10 +1,13 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Collections.Generic;
     using DxMessaging.Core.DataStructure;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+    using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+#endif
 
     public sealed class IntKeyMapTests
     {
@@ -20,7 +23,11 @@ namespace DxMessaging.Tests.Runtime.Core
             }
 
             Assert.AreEqual(keys.Length, map.Count, "Every distinct key should occupy one entry.");
-            Assert.GreaterOrEqual(map.Capacity, map.Count, "Growth must retain enough storage.");
+            Assert.GreaterOrEqual(
+                MapInspection.Capacity(map),
+                map.Count,
+                "Growth must retain enough storage."
+            );
             for (int index = 0; index < keys.Length; ++index)
             {
                 Assert.IsTrue(
@@ -70,7 +77,11 @@ namespace DxMessaging.Tests.Runtime.Core
             map[-100] = "first";
             map[-99] = "second";
             map[-98] = "third";
-            Assert.AreEqual(4, map.Capacity, "The cluster should wrap within four buckets.");
+            Assert.AreEqual(
+                4,
+                MapInspection.Capacity(map),
+                "The cluster should wrap within four buckets."
+            );
 
             Assert.IsTrue(map.Remove(-100), "The cluster head should be removable.");
             Assert.IsFalse(map.TryGetValue(-100, out _), "The removed key must stay absent.");
@@ -105,7 +116,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(0, empty.DeletionMoves, "An absent key predicts no deletion moves.");
             Assert.AreEqual(
                 0,
-                map.LongestClusterForBenchmark,
+                MapInspection.LongestCluster(map),
                 "An empty map must report no occupied cluster."
             );
 
@@ -158,7 +169,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(
                 3,
-                map.LongestClusterForBenchmark,
+                MapInspection.LongestCluster(map),
                 "The wrapped occupied run must count as one three-entry cluster."
             );
 
@@ -177,7 +188,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(
                 2,
-                map.LongestClusterForBenchmark,
+                MapInspection.LongestCluster(map),
                 "Removing the head must leave one two-entry wrapped cluster."
             );
         }
@@ -233,14 +244,14 @@ namespace DxMessaging.Tests.Runtime.Core
             object second = new();
             map[1] = first;
             map[5] = second;
-            int capacity = map.Capacity;
+            int capacity = MapInspection.Capacity(map);
 
             map.Clear();
 
             Assert.AreEqual(0, map.Count, "Clear should remove every logical entry.");
             Assert.AreEqual(
                 capacity,
-                map.Capacity,
+                MapInspection.Capacity(map),
                 "A pooled map should retain its reusable arrays."
             );
             Assert.IsFalse(map.TryGetValue(1, out _), "Clear should remove the first value.");
@@ -356,4 +367,3 @@ namespace DxMessaging.Tests.Runtime.Core
         }
     }
 }
-#endif

@@ -33,8 +33,6 @@ namespace DxMessaging.Editor.Settings
         private static string _cachedSettingsPath;
 
         internal static int SettingsRevision => Volatile.Read(ref _settingsRevision);
-        internal static int SettingsLookupCount { get; private set; }
-        internal static int SettingsSearchCount { get; private set; }
 
         internal static void InvalidateSettingsCache()
         {
@@ -310,7 +308,6 @@ namespace DxMessaging.Editor.Settings
             Func<string, string> guidToPath
         )
         {
-            SettingsLookupCount++;
             int revision = SettingsRevision;
             if (
                 _cachedSettingsRevision == revision
@@ -324,7 +321,6 @@ namespace DxMessaging.Editor.Settings
             string settingsPath = SettingsPath;
             if (settings == null)
             {
-                SettingsSearchCount++;
                 string[] guids = findGuids();
                 if (guids != null)
                 {

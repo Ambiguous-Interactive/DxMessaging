@@ -3528,14 +3528,14 @@ def performance_baseline_script(render_script: str) -> str:
 def target_map_rows(metric: str = "operationsPerSecond=1000") -> list[str]:
     rows: list[str] = []
     for key_count in (1, 4, 16, 256, 4096):
-        for operation in ("Hit", "Miss", "Churn"):
+        for operation in ("Hit", "Miss", "ChurnWithTrim"):
             rows.append(
                 "DXM_TARGET_MAP_BENCHMARK "
                 f"scenario=TargetMap_{key_count}_{operation} "
                 f"keyCount={key_count} operation={operation} {metric}"
             )
         rows.append(
-            f"DXM_TARGET_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
+            f"DXM_INT_KEY_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
         )
     return rows
 
@@ -3571,6 +3571,18 @@ def validate_performance_evidence_guards(render_script: str) -> None:
     script = performance_evidence_script(render_script)
     cases = (
         ("complete evidence", rows, 0, ""),
+        (
+            "retired exact-slot churn workload",
+            [row.replace("ChurnWithTrim", "Churn") for row in rows],
+            1,
+            "does not exactly match",
+        ),
+        (
+            "retired context-map constructor workload",
+            [row.replace("DXM_INT_KEY_MAP_CONSTRUCTION", "DXM_TARGET_MAP_CONSTRUCTION") for row in rows],
+            1,
+            "does not exactly match",
+        ),
         (
             "missing Standalone identity",
             rows[1:],

@@ -746,9 +746,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId redirectedId = redirectedHost;
             List<MessageRegistrationHandle> handles = new();
             using IDisposable poolCapScope = new ContextMapPoolCapScope(16);
-            int maxRetained = DxMessaging
-                .Core.MessageBus.MessageBus.ObserveContextMapPoolForBenchmark()
-                .MaxRetained;
+            int maxRetained = MessageBusInspection.ObserveContextMapPoolForBenchmark().MaxRetained;
             int distinctRouteCount = checked(maxRetained + 1);
             const int sameRouteMutationCount = 64;
             int historyCountDuringMutation = -1;
@@ -1039,9 +1037,7 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId redirectedId = redirectedHost;
             List<MessageRegistrationHandle> handles = new();
             using IDisposable poolCapScope = new ContextMapPoolCapScope(16);
-            int maxRetained = DxMessaging
-                .Core.MessageBus.MessageBus.ObserveContextMapPoolForBenchmark()
-                .MaxRetained;
+            int maxRetained = MessageBusInspection.ObserveContextMapPoolForBenchmark().MaxRetained;
             int distinctRouteCount = checked(maxRetained + 1);
             bool emittingNested = false;
             int historyCountAfterNested = -1;
@@ -1489,19 +1485,17 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private sealed class ContextMapPoolCapScope : IDisposable
         {
-            private readonly DxMessaging.Core.MessageBus.MessageBus.ContextMapPoolBenchmarkObservation _baseline;
+            private readonly ContextMapPoolBenchmarkObservation _baseline;
             private readonly IDisposable _isolation;
             private bool _disposed;
 
             public ContextMapPoolCapScope(int maxRetained)
             {
-                _baseline =
-                    DxMessaging.Core.MessageBus.MessageBus.ObserveContextMapPoolForBenchmark();
-                _isolation =
-                    DxMessaging.Core.MessageBus.MessageBus.IsolateContextMapPoolForBenchmark();
+                _baseline = MessageBusInspection.ObserveContextMapPoolForBenchmark();
+                _isolation = MessageBusInspection.IsolateContextMapPoolForBenchmark();
                 try
                 {
-                    DxMessaging.Core.MessageBus.MessageBus.ConfigureContextMapPoolForBenchmark(
+                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(
                         _baseline.UseLru,
                         maxRetained
                     );
@@ -1523,7 +1517,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 _disposed = true;
                 try
                 {
-                    DxMessaging.Core.MessageBus.MessageBus.ConfigureContextMapPoolForBenchmark(
+                    MessageBusInspection.ConfigureContextMapPoolForBenchmark(
                         _baseline.UseLru,
                         _baseline.MaxRetained
                     );

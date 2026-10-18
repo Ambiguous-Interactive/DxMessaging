@@ -11,7 +11,7 @@ namespace DxMessaging.Editor.Windows
     using Core.Diagnostics;
     using Core.Messages;
     using DxMessaging.Editor;
-    using DxMessaging.Editor.Testing;
+    using DxMessaging.Editor.CustomEditors;
     using DxMessaging.Unity;
     using UnityEditor;
     using UnityEditor.SceneManagement;
@@ -831,7 +831,7 @@ namespace DxMessaging.Editor.Windows
                 try
                 {
                     MessagingComponentInspectorState state =
-                        MessagingComponentEditorHarness.Capture(
+                        MessagingComponentInspectorSnapshot.Capture(
                             component,
                             resolveSerializedProviderBus: false
                         );

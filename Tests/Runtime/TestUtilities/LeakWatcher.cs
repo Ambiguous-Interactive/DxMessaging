@@ -16,7 +16,7 @@ namespace DxMessaging.Tests.Runtime
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Built-in buses and forwarding test doubles also expose a cold internal live
+    /// Built-in buses and forwarding test doubles are inspected for a cold live
     /// registration count, including duplicate reference counts and callbacks sharing
     /// one priority container. Arbitrary custom buses supply only their public
     /// counters, which may not detect additions within an existing container.
@@ -226,7 +226,7 @@ namespace DxMessaging.Tests.Runtime
             {
                 if (_registrationCountBus != null)
                 {
-                    return _registrationCountBus.LiveRegistrationCountForTesting;
+                    return MessageBusInspection.CountLiveRegistrations(_registrationCountBus);
                 }
                 return _bus.RegisteredUntargeted
                     + _bus.RegisteredTargeted

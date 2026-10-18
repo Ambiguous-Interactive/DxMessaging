@@ -1297,7 +1297,7 @@ namespace DxMessaging.Tests.Editor
         [Test]
         public void AResolvableTypeRendersAnOpenSourceLink()
         {
-            DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
+            EditorSourceIndexInspection.Reset();
             try
             {
                 /*
@@ -1308,7 +1308,7 @@ namespace DxMessaging.Tests.Editor
                     typeof(OlderMessage).AssemblyQualifiedName,
                     out _
                 );
-                DxMessagingEditorSourceLinks.CompleteMessageSourceIndexesForTests();
+                EditorSourceIndexInspection.Complete();
 
                 Assert.That(
                     DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
@@ -1350,7 +1350,7 @@ namespace DxMessaging.Tests.Editor
             }
             finally
             {
-                DxMessagingEditorSourceLinks.ResetMessageSourceIndexesForTests();
+                EditorSourceIndexInspection.Reset();
             }
         }
 
@@ -1395,20 +1395,33 @@ namespace DxMessaging.Tests.Editor
             Assert.That(log, Is.Not.Null);
             Assert.That(details, Is.Not.Null);
 
-            DxMessagingEditorSourceLinks.RaiseMessageSourceIndexChangedForTests();
+            try
+            {
+                EditorSourceIndexInspection.Reset();
+                _ = DxMessagingEditorSourceLinks.TryResolveSourceForAssemblyQualifiedName(
+                    typeof(OlderMessage).AssemblyQualifiedName,
+                    out _
+                );
+                EditorSourceIndexInspection.Complete();
 
-            Assert.That(
-                root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
-                Is.Not.SameAs(details),
-                "A completed index must re-render the pane that can carry a source link; a window "
-                    + "that does not listen shows a linkless pane forever."
-            );
-            Assert.That(
-                root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
-                Is.SameAs(log),
-                "Re-rendering for a link must not rebuild the log and take the reader's scroll "
-                    + "position with it."
-            );
+                Assert.That(
+                    root.Q<VisualElement>(DxMessagingMessageMonitorWindow.DetailsPaneName),
+                    Is.Not.SameAs(details),
+                    "A completed index must re-render the pane that can carry a source link; a window "
+                        + "that does not listen shows a linkless pane forever."
+                );
+                Assert.That(
+                    root.Q<ScrollView>(DxMessagingMessageMonitorWindow.ListName),
+                    Is.SameAs(log),
+                    "Re-rendering for a link must not rebuild the log and take the reader's scroll "
+                        + "position with it."
+                );
+            }
+            finally
+            {
+                EditorSourceIndexInspection.Complete();
+                EditorSourceIndexInspection.Reset();
+            }
         }
 
         /// <summary>

@@ -1543,8 +1543,8 @@ jobs:
 
           : > .artifacts/perf-target-map-current.txt
           while IFS= read -r file; do
-            grep 'DXM_TARGET_MAP_' "${file}" \
-              | sed -E 's/^.*(DXM_TARGET_MAP_(BENCHMARK|CONSTRUCTION))/\1/' \
+            grep -E 'DXM_(TARGET_MAP_|INT_KEY_MAP_CONSTRUCTION)' "${file}" \
+              | sed -E 's/^.*(DXM_(TARGET_MAP_BENCHMARK|INT_KEY_MAP_CONSTRUCTION))/\1/' \
               | sed 's/^/[Standalone] /' \
               >> .artifacts/perf-target-map-current.txt || true
           done < <(find .artifacts/perf-download -type f \
@@ -1553,7 +1553,7 @@ jobs:
 
           awk '
             $1 == "[Standalone]" && $2 == "DXM_TARGET_MAP_BENCHMARK" { print $2, $4, $5 }
-            $1 == "[Standalone]" && $2 == "DXM_TARGET_MAP_CONSTRUCTION" { print $2, $3 }
+            $1 == "[Standalone]" && $2 == "DXM_INT_KEY_MAP_CONSTRUCTION" { print $2, $3 }
           ' .artifacts/perf-target-map-current.txt \
             > .artifacts/perf-target-map-Standalone-identities.txt
           duplicate_target_keys="$(sort \
@@ -1570,11 +1570,11 @@ jobs:
           expected_target_keys=.artifacts/perf-target-map-expected-keys.txt
           : > "${expected_target_keys}"
           for key_count in 1 4 16 256 4096; do
-            for operation in Hit Miss Churn; do
+            for operation in Hit Miss ChurnWithTrim; do
               echo "DXM_TARGET_MAP_BENCHMARK keyCount=${key_count} operation=${operation}" \
                 >> "${expected_target_keys}"
             done
-            echo "DXM_TARGET_MAP_CONSTRUCTION keyCount=${key_count}" \
+            echo "DXM_INT_KEY_MAP_CONSTRUCTION keyCount=${key_count}" \
               >> "${expected_target_keys}"
           done
           sort -u -o "${expected_target_keys}" "${expected_target_keys}"

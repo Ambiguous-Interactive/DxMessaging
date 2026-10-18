@@ -30,9 +30,9 @@ pool trim path.
 
 | Holder                  | Key                                               | Reclaimed By                                  |
 | ----------------------- | ------------------------------------------------- | --------------------------------------------- |
-| Bus scalar sinks        | message type                                      | `MessageBus.SweepableTypeCaches`              |
-| Bus context sinks       | message type and `InstanceId`                     | `MessageBus.SweepableTypeCaches`              |
-| Interceptor caches      | message type                                      | `MessageBus.SweepableTypeCaches`              |
+| Bus scalar sinks        | message type                                      | `MessageBus.SweepableTypeCacheRegistry`       |
+| Bus context sinks       | message type and `InstanceId`                     | `MessageBus.SweepableTypeCacheRegistry`       |
+| Interceptor caches      | message type                                      | `MessageBus.SweepableTypeCacheRegistry`       |
 | Typed handler slots     | message type, handler, priority, optional context | `MessageHandler.ResetEmptyTypedSlotsForSweep` |
 | Global accept-all slot  | global handler delegates                          | `MessageBus.SweepGlobalSlot`                  |
 | Shared collection pools | pooled dictionaries, lists, stacks, sets          | `DxPools.TrimAll`                             |
@@ -82,8 +82,8 @@ the same settings in `MessageBus.ApplyRuntimeSettings`.
 
 When adding a new `MessageCache<>` storage field to `MessageBus`:
 
-1. Bump `MessageBus.ExpectedMessageCacheFieldCount`.
-1. Add a matching row to `MessageBus.SweepableTypeCaches`.
+1. Bump `MessageBusInvariantTests.ExpectedMessageCacheFieldCount`.
+1. Add a matching row to `MessageBus.SweepableTypeCacheRegistry`.
 1. Add or update `MessageBusInvariantTests` coverage for the field.
 1. Add a `MemoryReclamationTests` fixture row that proves the new cache trims.
 1. Update `LeakWatcher` if the cache introduces a new public leak counter.

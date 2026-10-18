@@ -191,8 +191,6 @@ namespace DxMessaging.Editor.Analyzers
         private static int _lastSeenCount;
         private static int _lastSettingsRevision = -1;
 
-        internal static int RescanCount { get; private set; }
-
         /*
             Latch flipped on by `OnAssemblyCompilationFinished` to coalesce the burst of one-event-
             per-assembly callbacks Unity fires during a build. We schedule a single deferred
@@ -270,7 +268,7 @@ namespace DxMessaging.Editor.Analyzers
         /// <c>true</c> when the legacy <c>UnityEditor.LogEntries</c> reflection layer resolved
         /// successfully on this Unity version. The harvester does not require this to be true to
         /// function -- Unity 2021's analyzer warnings flow through the CompilerMessage feed
-        /// instead. Exposed primarily for diagnostics / tests.
+        /// instead. Available for editor diagnostics.
         /// </summary>
         public static bool LogEntriesAvailable => !_logEntriesDisabled;
 
@@ -418,7 +416,6 @@ namespace DxMessaging.Editor.Analyzers
             }
 
             int settingsRevision = DxMessagingSettings.SettingsRevision;
-            RescanCount++;
             DxMessagingSettings settings = TryLoadSettings();
             _lastSettingsRevision = settingsRevision;
             if (settings != null && !settings._baseCallCheckEnabled)

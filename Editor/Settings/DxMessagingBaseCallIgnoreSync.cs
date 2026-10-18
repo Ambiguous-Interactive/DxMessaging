@@ -34,39 +34,6 @@ namespace DxMessaging.Editor.Settings
             "# One fully-qualified type name per line. Lines starting with # are comments.";
 
         /// <summary>
-        /// Test seam controlling WHEN deferred regeneration runs. Production schedules the work on
-        /// the next editor tick via <see cref="EditorApplication.delayCall"/>; tests substitute a
-        /// capturing scheduler so they can assert no synchronous AssetDatabase import happens and
-        /// then drive the deferred work deterministically without touching the filesystem.
-        /// </summary>
-        internal static Action<Action> DeferralScheduler { get; set; } =
-            work => EditorApplication.delayCall += () => work();
-
-        /// <summary>
-        /// Test seam for Unity editor state. Production uses Unity's update/compile flags; tests
-        /// substitute a deterministic busy/idle predicate to prove deferred work requeues.
-        /// </summary>
-        internal static Func<bool> CanMutateAssetDatabase { get; set; } =
-            DxMessaging.Editor.DxMessagingEditorIdle.CanMutateAssetDatabase;
-
-        /// <summary>
-        /// Test seam controlling WHAT regeneration does. Production performs the real
-        /// write + <see cref="AssetDatabase.ImportAsset"/> via <see cref="RegenerateSidecarCore"/>;
-        /// tests substitute a recorder so they can observe whether the apply happens synchronously
-        /// or only after the deferred tick, without writing the on-disk sidecar.
-        /// </summary>
-        internal static Action<DxMessagingSettings> SidecarApplier { get; set; } =
-            RegenerateSidecarCore;
-
-        /// <summary>
-        /// Test seam for the follow-up <c>csc.rsp</c> sync. Production schedules the
-        /// <c>-additionalfile</c> normalization after sidecar regeneration, which covers deferred
-        /// <c>OnValidate</c> writes that finish after <see cref="SetupCscRsp"/>'s startup pass.
-        /// </summary>
-        internal static Action CscRspAdditionalFileSyncScheduler { get; set; } =
-            ScheduleDefaultCscRspAdditionalFileSync;
-
-        /// <summary>
         /// Regenerates the sidecar text file from the supplied settings asset. Writes only when
         /// the on-disk content differs from what would be written, to avoid AssetDatabase churn
         /// during domain reload.
@@ -74,7 +41,7 @@ namespace DxMessaging.Editor.Settings
         /// <param name="settings">The settings asset. May be <c>null</c> -- no-op in that case.</param>
         /// <remarks>
         /// This is the entry point for explicit, user-driven edits (the "Ignore this type" button,
-        /// settings asset Inspector edits) and for EditMode tests: when Unity is idle the regen runs
+        /// settings asset Inspector edits): when Unity is idle the regen runs
         /// synchronously for immediate feedback, and when Unity is mid-compile or mid-asset-import
         /// it falls back to <see cref="RegenerateSidecarDeferred"/>. It MUST NOT be called from a
         /// deserialization callback such as <c>ScriptableObject.OnValidate</c> -- those callbacks
@@ -90,7 +57,7 @@ namespace DxMessaging.Editor.Settings
                 return;
             }
 
-            if (!CanCurrentlyMutateAssetDatabase())
+            if (!DxMessaging.Editor.DxMessagingEditorIdle.CanMutateAssetDatabase())
             {
                 RegenerateSidecarDeferred(settings);
                 return;
@@ -127,33 +94,21 @@ namespace DxMessaging.Editor.Settings
                 return;
             }
 
-            DxMessaging.Editor.DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
-                () =>
+            DxMessaging.Editor.DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
+            {
+                if (settings == null)
                 {
-                    if (settings == null)
-                    {
-                        return;
-                    }
-                    ApplySidecarAndScheduleCscRspSync(settings);
-                },
-                DeferralScheduler,
-                CanCurrentlyMutateAssetDatabase
-            );
-        }
-
-        private static bool CanCurrentlyMutateAssetDatabase()
-        {
-            Func<bool> canMutateAssetDatabase =
-                CanMutateAssetDatabase
-                ?? DxMessaging.Editor.DxMessagingEditorIdle.CanMutateAssetDatabase;
-            return canMutateAssetDatabase();
+                    return;
+                }
+                ApplySidecarAndScheduleCscRspSync(settings);
+            });
         }
 
         private static void ApplySidecarAndScheduleCscRspSync(DxMessagingSettings settings)
         {
             try
             {
-                SidecarApplier(settings);
+                RegenerateSidecarCore(settings);
             }
             finally
             {
@@ -165,9 +120,7 @@ namespace DxMessaging.Editor.Settings
         {
             try
             {
-                Action scheduler =
-                    CscRspAdditionalFileSyncScheduler ?? ScheduleDefaultCscRspAdditionalFileSync;
-                scheduler();
+                ScheduleDefaultCscRspAdditionalFileSync();
             }
             catch (Exception ex)
             {

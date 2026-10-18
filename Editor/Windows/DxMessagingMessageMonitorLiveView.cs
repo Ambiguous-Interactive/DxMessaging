@@ -599,8 +599,7 @@ namespace DxMessaging.Editor.Windows
         }
 
         /// <summary>
-        /// Builds one log row. Exposed so tests exercise the same factory the list binds, without
-        /// depending on when the virtualized list realizes a row.
+        /// Builds one log row for the virtualized list.
         /// </summary>
         internal static VisualElement CreateRow(
             MessageMonitorLiveEntry row,

@@ -14,16 +14,16 @@ namespace DxMessaging.Tests.Editor
     public sealed class DxMessagingSettingsAssetImportTests
     {
         private readonly List<Object> _createdObjects = new();
-        private readonly List<Action> _deferredSidecarWork = new();
-        private Action<Action> _originalSidecarScheduler;
+        private EditorDelayCallScope _deferredSidecarWork;
+        private int _searches;
         private string _folder;
         private string _assetPath;
 
         [SetUp]
         public void SetUp()
         {
-            _originalSidecarScheduler = DxMessagingBaseCallIgnoreSync.DeferralScheduler;
-            DxMessagingBaseCallIgnoreSync.DeferralScheduler = _deferredSidecarWork.Add;
+            _deferredSidecarWork = new(typeof(DxMessagingBaseCallIgnoreSync));
+            _searches = 0;
             string name = "__DxMessagingSettingsImportTests_" + Guid.NewGuid().ToString("N");
             _folder = "Assets/" + name;
             Assert.That(Directory.Exists(_folder), Is.False, "The scratch folder must be new.");
@@ -60,8 +60,7 @@ namespace DxMessaging.Tests.Editor
             finally
             {
                 _createdObjects.Clear();
-                _deferredSidecarWork.Clear();
-                DxMessagingBaseCallIgnoreSync.DeferralScheduler = _originalSidecarScheduler;
+                _deferredSidecarWork.Dispose();
                 DxMessagingSettings.InvalidateSettingsCache();
                 _folder = null;
             }
@@ -73,18 +72,18 @@ namespace DxMessaging.Tests.Editor
             DxMessagingSettings settings = CreateTransientSettings();
             DxMessagingSettings.InvalidateSettingsCache();
             Assert.That(Read() == null, Is.True, "The owned folder starts with a cached miss.");
-            int searches = DxMessagingSettings.SettingsSearchCount;
+            int searches = _searches;
             AssetDatabase.CreateAsset(settings, _assetPath);
             AssetDatabase.ImportAsset(_assetPath, ImportAssetOptions.ForceSynchronousImport);
 
             Assert.That(
-                DxMessagingSettings.SettingsSearchCount,
+                _searches,
                 Is.EqualTo(searches),
                 "Native import callbacks must not search for settings synchronously."
             );
             Assert.That(Read(), Is.SameAs(settings), "An import must invalidate cached absence.");
             Assert.That(
-                DxMessagingSettings.SettingsSearchCount,
+                _searches,
                 Is.EqualTo(searches + 1),
                 "The first passive read after import performs one replacement search."
             );
@@ -100,7 +99,7 @@ namespace DxMessaging.Tests.Editor
             AssetDatabase.ImportAsset(_assetPath, ImportAssetOptions.ForceSynchronousImport);
             Assert.That(Read(), Is.SameAs(settings), "Start with the owned imported settings.");
             int revision = DxMessagingSettings.SettingsRevision;
-            int searches = DxMessagingSettings.SettingsSearchCount;
+            int searches = _searches;
 
             if (change == "delete")
             {
@@ -138,7 +137,7 @@ namespace DxMessaging.Tests.Editor
                 $"The native {change} callback must invalidate the selected path."
             );
             Assert.That(
-                DxMessagingSettings.SettingsSearchCount,
+                _searches,
                 Is.EqualTo(searches),
                 $"The native {change} callback must defer settings lookup."
             );
@@ -154,7 +153,7 @@ namespace DxMessaging.Tests.Editor
                 $"The resolved native {change} result must remain cached."
             );
             Assert.That(
-                DxMessagingSettings.SettingsSearchCount,
+                _searches,
                 Is.EqualTo(searches + 1),
                 $"Native {change} must permit exactly one replacement search."
             );
@@ -178,7 +177,11 @@ namespace DxMessaging.Tests.Editor
                     path.StartsWith(_folder + "/", StringComparison.Ordinal)
                         ? AssetDatabase.LoadAssetAtPath<DxMessagingSettings>(path)
                         : null,
-                () => AssetDatabase.FindAssets("t:DxMessagingSettings", new[] { _folder }),
+                () =>
+                {
+                    _searches++;
+                    return AssetDatabase.FindAssets("t:DxMessagingSettings", new[] { _folder });
+                },
                 AssetDatabase.GUIDToAssetPath
             );
         }

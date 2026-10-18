@@ -1,7 +1,6 @@
 namespace DxMessaging.Core.MessageBus.Internal
 {
     using System.Collections.Generic;
-    using System.Diagnostics;
     using System.Runtime.CompilerServices;
     using DxMessaging.Core;
 
@@ -81,8 +80,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// matching the dictionary's behaviour. Over-deregistration is a
         /// no-op for both fields. <c>DEBUG</c> builds verify the invariant
         /// after every register / deregister via
-        /// <c>MessageBus.DebugAssertGlobalLiveCount</c> and
-        /// <see cref="DebugAssertLiveCountInvariant"/>.
+        /// <c>MessageBus.DebugAssertGlobalLiveCount</c>.
         /// </para>
         /// </summary>
         public int liveCount;
@@ -183,22 +181,6 @@ namespace DxMessaging.Core.MessageBus.Internal
             {
                 ++version;
             }
-        }
-
-        /// <summary>
-        /// Defensive <c>DEBUG</c>-only assertion that <see cref="liveCount"/>
-        /// equals <c>sharedHandlers.Count</c>. Provided so contract tests can
-        /// pin the invariant without exposing private bus state. Stripped in
-        /// Release builds via <see cref="ConditionalAttribute"/>.
-        /// </summary>
-        [Conditional("DEBUG")]
-        internal void DebugAssertLiveCountInvariant()
-        {
-            Debug.Assert(
-                liveCount == sharedHandlers.Count,
-                "BusGlobalSlot.liveCount must mirror sharedHandlers.Count at every "
-                    + "stable observation point."
-            );
         }
     }
 }
