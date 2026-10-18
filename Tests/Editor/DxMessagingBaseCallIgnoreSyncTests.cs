@@ -505,6 +505,11 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
+        /// <remarks>
+        /// 2026-10-18: importing a temporary sidecar requested compilation while NUnit locked
+        /// reloads in Unity 2021 CI. The fixture batches imports until original inputs are
+        /// restored, so real idle callbacks run without leaving later tests compile-blocked.
+        /// </remarks>
         [Test]
         public void RealDeferredCallbacksDoNotRewritePreparedCompilerInputs()
         {
@@ -513,6 +518,12 @@ namespace DxMessaging.Tests.Editor
             DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
             Assert.That(_scheduled.Count, Is.EqualTo(1));
             SetupCscRsp.PrepareCompilerInputs();
+            Assert.That(
+                DxMessagingEditorIdle.CanMutateAssetDatabase(),
+                Is.True,
+                "Temporary compiler inputs must remain batched until fixture restoration. "
+                    + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
+            );
             byte[] sidecar = File.ReadAllBytes(SidecarPath);
             byte[] response = File.ReadAllBytes(Path.Combine(Application.dataPath, "csc.rsp"));
             DateTime sidecarTime = File.GetLastWriteTimeUtc(SidecarPath);

@@ -36,6 +36,7 @@ namespace DxMessaging.Tests.Editor
     {
         private readonly Dictionary<string, string> _saved = new();
         private readonly Dictionary<string, object> _pending = new();
+        private bool _assetEditing;
 
         internal EditorCompilerInputScope()
         {
@@ -80,6 +81,10 @@ namespace DxMessaging.Tests.Editor
             }
             try
             {
+                // Importing temporary compiler inputs requests a compilation while NUnit locks
+                // reloads. Keep imports batched until their original bytes are restored.
+                AssetDatabase.StartAssetEditing();
+                _assetEditing = true;
                 foreach (KeyValuePair<string, string> saved in _saved)
                 {
                     if (saved.Value != null)
@@ -131,18 +136,42 @@ namespace DxMessaging.Tests.Editor
                     failures.Add(exception);
                 }
             }
-            typeof(DxMessagingBaseCallIgnoreSync)
-                .GetField(
-                    "SidecarImportPending",
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic
-                )
-                .SetValue(null, _pending["sidecar"]);
-            typeof(DxMessaging.Editor.SetupCscRsp)
-                .GetField(
-                    "responseFileImportPending",
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic
-                )
-                .SetValue(null, _pending["response"]);
+            try
+            {
+                typeof(DxMessagingBaseCallIgnoreSync)
+                    .GetField(
+                        "SidecarImportPending",
+                        System.Reflection.BindingFlags.Static
+                            | System.Reflection.BindingFlags.NonPublic
+                    )
+                    .SetValue(null, _pending["sidecar"]);
+                typeof(DxMessaging.Editor.SetupCscRsp)
+                    .GetField(
+                        "responseFileImportPending",
+                        System.Reflection.BindingFlags.Static
+                            | System.Reflection.BindingFlags.NonPublic
+                    )
+                    .SetValue(null, _pending["response"]);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+            finally
+            {
+                if (_assetEditing)
+                {
+                    _assetEditing = false;
+                    try
+                    {
+                        AssetDatabase.StopAssetEditing();
+                    }
+                    catch (Exception exception)
+                    {
+                        failures.Add(exception);
+                    }
+                }
+            }
             if (0 < failures.Count)
             {
                 throw new AggregateException("Failed to restore owned compiler inputs.", failures);
