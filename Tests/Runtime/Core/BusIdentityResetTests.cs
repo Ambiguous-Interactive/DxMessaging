@@ -23,7 +23,7 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         private static readonly InstanceId Context = new InstanceId(947);
 
-        private static IEnumerable<TestCaseData> IsolationCases()
+        private static IEnumerable<(MessageScenario Scenario, bool Fast)> RegistrationShapes()
         {
             foreach (
                 MessageScenario scenario in MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext
@@ -40,17 +40,20 @@ namespace DxMessaging.Tests.Runtime.Core
                     {
                         continue;
                     }
-                    foreach (bool useDefault in new[] { false, true })
+                    yield return (scenario, fast);
+                }
+            }
+        }
+
+        private static IEnumerable<TestCaseData> IsolationCases()
+        {
+            foreach ((MessageScenario scenario, bool fast) in RegistrationShapes())
+            {
+                foreach (bool useDefault in new[] { false, true })
+                {
+                    foreach (bool sharedHandler in new[] { false, true })
                     {
-                        foreach (bool sharedHandler in new[] { false, true })
-                        {
-                            yield return new TestCaseData(
-                                scenario,
-                                fast,
-                                useDefault,
-                                sharedHandler
-                            );
-                        }
+                        yield return new TestCaseData(scenario, fast, useDefault, sharedHandler);
                     }
                 }
             }
@@ -416,6 +419,283 @@ namespace DxMessaging.Tests.Runtime.Core
             }
             finally
             {
+                counter.SetValue(null, previous);
+            }
+        }
+
+        public enum LeaseResetMode
+        {
+            NoReset,
+            ResetAutomaticOwners,
+            ResetExplicitOwners,
+        }
+
+        private static IEnumerable<TestCaseData> LeaseCases()
+        {
+            List<(MessageScenario Scenario, bool Fast, bool Global)> shapes =
+                new List<(MessageScenario, bool, bool)>();
+            foreach ((MessageScenario scenario, bool fast) in RegistrationShapes())
+            {
+                shapes.Add((scenario, fast, false));
+            }
+            foreach (MessageScenario scenario in MessageScenarios.AllKinds)
+            {
+                foreach (bool fast in new[] { false, true })
+                {
+                    shapes.Add((scenario, fast, true));
+                }
+            }
+            foreach ((MessageScenario scenario, bool fast, bool global) in shapes)
+            {
+                foreach (
+                    LeaseResetMode mode in new[]
+                    {
+                        LeaseResetMode.NoReset,
+                        LeaseResetMode.ResetAutomaticOwners,
+                        LeaseResetMode.ResetExplicitOwners,
+                    }
+                )
+                {
+                    foreach (bool activateBeforeReset in new[] { false, true })
+                    {
+                        yield return new TestCaseData(
+                            scenario,
+                            fast,
+                            global,
+                            mode,
+                            activateBeforeReset
+                        );
+                    }
+                }
+            }
+        }
+
+        /// <remarks>
+        /// 2026-10-19: resetting the synthetic owner counter made independent builder handlers
+        /// compare equal on a preserved custom bus. Only the first registered lease received messages.
+        /// An inactive lease also reserves its owner and must remain distinct when activated later.
+        /// </remarks>
+        [TestCaseSource(nameof(LeaseCases))]
+        public void BuilderLeasesKeepCallbacksAndOwnersAcrossReset(
+            MessageScenario scenario,
+            bool fast,
+            bool global,
+            LeaseResetMode mode,
+            bool activateBeforeReset
+        )
+        {
+            using ResetScope scope = new ResetScope();
+            MessageBus bus = scope.NewBus();
+            using LeakWatcher leaks = new LeakWatcher(bus);
+            MessageRegistrationBuilder builder = new MessageRegistrationBuilder(
+                new FixedMessageBusProvider(bus)
+            );
+            List<string> callbacks = new List<string>();
+            MessageRegistrationLease first = null;
+            MessageRegistrationLease second = null;
+            MessageRegistrationLease Build(string name, int explicitOwner, bool activate)
+            {
+                MessageRegistrationBuildOptions options = new MessageRegistrationBuildOptions
+                {
+                    PreferredMessageBus = bus,
+                    ActivateOnBuild = activate,
+                    Configure = token =>
+                    {
+                        if (global)
+                        {
+                            RegisterGlobal(token, fast, () => callbacks.Add(name));
+                        }
+                        else
+                        {
+                            Register(token, scenario, fast, () => callbacks.Add(name), 0);
+                        }
+                    },
+                };
+                if (mode == LeaseResetMode.ResetExplicitOwners)
+                {
+                    options.Owner = new InstanceId(explicitOwner);
+                }
+                return builder.Build(options);
+            }
+            try
+            {
+                first = Build("old", 953, activateBeforeReset);
+                Emit(scenario, bus);
+                string[] before = callbacks.ToArray();
+                callbacks.Clear();
+                MessageHandler.SetGlobalMessageBus(bus);
+                if (mode != LeaseResetMode.NoReset)
+                {
+                    DxMessagingStaticState.Reset();
+                }
+                second = Build("new", 954, true);
+                if (!activateBeforeReset)
+                {
+                    first.Activate();
+                }
+                Emit(scenario, bus);
+                string[] both = callbacks.ToArray();
+                int registrationsBeforeCleanup = leaks.Snapshot;
+                callbacks.Clear();
+                second.Dispose();
+                int registrationsAfterSecond = leaks.Snapshot;
+                Emit(scenario, bus);
+                string[] survivor = callbacks.ToArray();
+                first.Dispose();
+                int registrationsAfterFirst = leaks.Snapshot;
+                int expectedRetained =
+                    activateBeforeReset && mode != LeaseResetMode.NoReset ? 1 : 0;
+                string label =
+                    $"[{scenario}, fast={fast}, global={global}, mode={mode}, active={activateBeforeReset}, owners={first.Owner.Id}/{second.Owner.Id}]";
+                AssertAll(() =>
+                {
+                    Assert.That(
+                        second.Owner,
+                        Is.Not.EqualTo(first.Owner),
+                        label + " independent leases must own distinct handlers."
+                    );
+                    Assert.That(
+                        first.Handler.Equals(second.Handler),
+                        Is.False,
+                        label + " independent generated handlers must not compare equal."
+                    );
+                    Assert.That(
+                        before,
+                        Is.EqualTo(activateBeforeReset ? new[] { "old" } : Array.Empty<string>()),
+                        label + " activation control before reset."
+                    );
+                    Assert.That(
+                        both,
+                        Is.EqualTo(
+                            activateBeforeReset ? new[] { "old", "new" } : new[] { "new", "old" }
+                        ),
+                        label + " both leases must receive messages in activation order."
+                    );
+                    Assert.That(
+                        survivor,
+                        Is.EqualTo(new[] { "old" }),
+                        label + " disposing the new lease must preserve the old lease."
+                    );
+                    Assert.That(
+                        registrationsBeforeCleanup,
+                        Is.EqualTo(2),
+                        label + " both accepted leases must own one live registration."
+                    );
+                    Assert.That(
+                        registrationsAfterSecond,
+                        Is.EqualTo(1),
+                        label
+                            + " valid new-lease cleanup must release its registration before the owned-bus reset."
+                    );
+                    Assert.That(
+                        registrationsAfterFirst,
+                        Is.EqualTo(expectedRetained),
+                        label
+                            + " only intentionally stale pre-reset teardown may retain a registration."
+                    );
+                });
+            }
+            finally
+            {
+                second?.Dispose();
+                first?.Dispose();
+                // A public reset intentionally stales earlier custom-bus teardown. This test
+                // owns the bus and explicitly reclaims its retained registrations afterward.
+                bus.ResetState();
+            }
+        }
+
+        [Test]
+        public void RepeatedResetDoesNotReuseAutomaticallyGeneratedOwners()
+        {
+            using ResetScope scope = new ResetScope();
+            MessageBus bus = scope.NewBus();
+            MessageRegistrationBuilder builder = new MessageRegistrationBuilder();
+            HashSet<InstanceId> issued = new HashSet<InstanceId>();
+            for (int iteration = 0; iteration < 8; ++iteration)
+            {
+                using MessageRegistrationLease lease = builder.Build(
+                    new MessageRegistrationBuildOptions { PreferredMessageBus = bus }
+                );
+                Assert.That(
+                    issued.Add(lease.Owner),
+                    Is.True,
+                    $"Reset {iteration} reused synthetic owner {lease.Owner.Id}."
+                );
+                DxMessagingStaticState.Reset();
+            }
+        }
+
+        [Test]
+        public void ExhaustedSyntheticOwnersNeverWrapAndExplicitOwnersRemainAvailable()
+        {
+            using ResetScope scope = new ResetScope();
+            MessageBus bus = scope.NewBus();
+            MessageRegistrationBuilder builder = new MessageRegistrationBuilder();
+            FieldInfo counter = typeof(MessageRegistrationBuilder).GetField(
+                "_syntheticOwnerCounter",
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+            Assert.That(
+                counter,
+                Is.Not.Null,
+                "Inspect only the actual private allocator's cold boundary."
+            );
+            int previous = (int)counter.GetValue(null);
+            MessageRegistrationLease last = null;
+            MessageRegistrationBuildOptions automatic = new MessageRegistrationBuildOptions
+            {
+                PreferredMessageBus = bus,
+            };
+            try
+            {
+                // No callback is registered with an injected identifier; dispose all leases
+                // before restoring the original allocator value.
+                counter.SetValue(null, int.MinValue + 1);
+                last = builder.Build(automatic);
+                Assert.That(
+                    last.Owner.Id,
+                    Is.EqualTo(int.MinValue),
+                    "The last negative synthetic owner is valid."
+                );
+                Assert.Throws<InvalidOperationException>(
+                    () =>
+                    {
+                        using MessageRegistrationLease unexpected = builder.Build(automatic);
+                    },
+                    "Exhaustion must fail before wrapping into positive identifiers."
+                );
+                Assert.Throws<InvalidOperationException>(
+                    () =>
+                    {
+                        using MessageRegistrationLease unexpected = builder.Build(automatic);
+                    },
+                    "An exhausted synthetic owner range must remain exhausted."
+                );
+                using MessageRegistrationLease explicitLease = builder.Build(
+                    new MessageRegistrationBuildOptions
+                    {
+                        PreferredMessageBus = bus,
+                        Owner = new InstanceId(955),
+                    }
+                );
+                AssertAll(() =>
+                {
+                    Assert.That(
+                        explicitLease.Owner.Id,
+                        Is.EqualTo(955),
+                        "Explicit owners do not consume the synthetic range."
+                    );
+                    Assert.That(
+                        counter.GetValue(null),
+                        Is.EqualTo(int.MinValue),
+                        "Failed reservations and explicit owners must leave the exhausted counter unchanged."
+                    );
+                });
+            }
+            finally
+            {
+                last?.Dispose();
                 counter.SetValue(null, previous);
             }
         }

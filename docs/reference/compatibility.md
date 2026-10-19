@@ -86,10 +86,11 @@ reflexive GameObject messages, PlayerLoop integration, and `ScriptableObject` se
 Unity-only. The settings provider type is absent outside Unity; buses use built-in defaults.
 Call `DxMessagingStaticState.Reset()` when a host needs to reset shared static state.
 It clears the built-in default bus and restores shared configuration. Custom bus
-registrations remain in their original bus. Message type IDs, bus cache indices, and
-registration handle IDs remain consumed until the application domain ends, so a reset
-cannot make a newly created bus share a retained bus's handler cache. Creating a bus
-throws `InvalidOperationException` if the bus index space is exhausted.
+registrations remain in their original bus. Message type IDs, bus cache indices,
+automatically generated lease owner IDs, and registration handle IDs remain consumed until
+the application domain ends. New buses and automatically owned leases therefore keep
+separate handler storage from retained ones. Creating a bus or generating a lease owner
+throws `InvalidOperationException` if its identifier range is exhausted.
 
 Keep all bus activity, including trims and registration changes, on one owning thread.
 There is no background sweep outside Unity. Host activity advances idle counters; force

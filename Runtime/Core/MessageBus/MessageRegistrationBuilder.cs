@@ -97,7 +97,8 @@ namespace DxMessaging.Core.MessageBus
     {
         /// <summary>
         /// Explicit owner identifier for the underlying <see cref="MessageHandler"/>.
-        /// When omitted, a synthetic identifier is generated automatically.
+        /// When omitted, a negative synthetic identifier is generated automatically and remains
+        /// consumed until the application domain ends, including across static resets.
         /// </summary>
         public InstanceId? Owner { get; set; }
 
@@ -427,16 +428,6 @@ namespace DxMessaging.Core.MessageBus
         private readonly IMessageBusProvider _messageBusProvider;
         private static int _syntheticOwnerCounter;
 
-        internal static int GetSyntheticOwnerCounter()
-        {
-            return Volatile.Read(ref _syntheticOwnerCounter);
-        }
-
-        internal static void SetSyntheticOwnerCounter(int value)
-        {
-            _ = Interlocked.Exchange(ref _syntheticOwnerCounter, value);
-        }
-
         /// <summary>
         /// Initializes a builder that resolves buses from global state.
         /// </summary>
@@ -460,6 +451,7 @@ namespace DxMessaging.Core.MessageBus
         /// <param name="options">Options controlling bus selection, diagnostics, and lifecycle behavior.</param>
         /// <returns>A lease that wraps the created <see cref="MessageRegistrationToken"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the synthetic owner range is exhausted and no explicit owner is supplied.</exception>
         /// <exception cref="MessageRegistrationBuildException">Thrown when ActivateOnBuild activation fails and automatic cleanup remains retryable.</exception>
         public MessageRegistrationLease Build(MessageRegistrationBuildOptions options)
         {
@@ -567,10 +559,24 @@ namespace DxMessaging.Core.MessageBus
                 return options.Owner.Value;
             }
 
-            int generatedId = Interlocked.Decrement(ref _syntheticOwnerCounter);
-
-            InstanceId syntheticOwner = new InstanceId(generatedId);
-            return syntheticOwner;
+            while (true)
+            {
+                int current = Volatile.Read(ref _syntheticOwnerCounter);
+                if (current == int.MinValue)
+                {
+                    throw new InvalidOperationException(
+                        "The synthetic owner identifier space is exhausted."
+                    );
+                }
+                int next = current - 1;
+                if (
+                    Interlocked.CompareExchange(ref _syntheticOwnerCounter, next, current)
+                    == current
+                )
+                {
+                    return new InstanceId(next);
+                }
+            }
         }
 
         private IMessageBus ResolveMessageBus(MessageRegistrationBuildOptions options)

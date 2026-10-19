@@ -52,8 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Preserve bus cache identity across static resets so independent buses cannot deliver each
-  other's callbacks through a shared handler ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645)).
+- Preserve bus cache and generated lease owner identities across static resets so independent
+  buses keep their callbacks separate and new leases on a retained custom bus receive messages
+  ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645), [#646](https://github.com/Ambiguous-Interactive/DxMessaging/issues/646)).
 - Apply runtime memory settings on an idle Editor update so validation does not change live buses
   or shared pools during asset loading ([#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644)).
 - Preserve token cleanup and retryable failures when a custom-bus deregistration callback clears,

@@ -101,6 +101,12 @@ options.UnityOwner = gameObject;  // or any Component
 
 When omitted, a synthetic owner ID is generated automatically. `UnityOwner` takes precedence over `Owner` when both are set.
 
+Automatically generated owner IDs remain consumed until the application domain ends.
+`DxMessagingStaticState.Reset()` does not reuse them, so leases on a preserved custom bus
+keep separate handlers across resets. This also applies to leases that have not yet been
+activated. `Build()` throws `InvalidOperationException` if the negative synthetic owner
+range is exhausted. Explicit `Owner` and `UnityOwner` values still take precedence.
+
 ### Message Bus Selection
 
 Control which bus handles registrations:

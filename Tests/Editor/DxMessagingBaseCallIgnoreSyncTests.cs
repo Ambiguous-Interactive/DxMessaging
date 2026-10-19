@@ -128,7 +128,6 @@ namespace DxMessaging.Tests.Editor
         private EnterPlayModeOptions _previousOptions;
         private bool _previousDebugEnabled;
         private Action<DxMessaging.Core.LogLevel, string> _previousDebugLog;
-        private int _previousSyntheticOwner;
 
         [SetUp]
         public void SetUp()
@@ -139,8 +138,6 @@ namespace DxMessaging.Tests.Editor
             _previousBus = DxMessaging.Core.MessageHandler.MessageBus;
             _previousDebugEnabled = DxMessaging.Core.MessagingDebug.enabled;
             _previousDebugLog = DxMessaging.Core.MessagingDebug.LogFunction;
-            _previousSyntheticOwner =
-                DxMessaging.Core.MessageBus.MessageRegistrationBuilder.GetSyntheticOwnerCounter();
             _previousOptionsEnabled = EditorSettings.enterPlayModeOptionsEnabled;
             _previousOptions = EditorSettings.enterPlayModeOptions;
             _initializerState = new(
@@ -218,11 +215,7 @@ namespace DxMessaging.Tests.Editor
                     () => IMessageBus.GlobalDiagnosticsStackTraces = _previousStacks,
                     () => IMessageBus.GlobalMessageBufferSize = _previousBuffer,
                     () => DxMessaging.Core.MessagingDebug.enabled = _previousDebugEnabled,
-                    () => DxMessaging.Core.MessagingDebug.LogFunction = _previousDebugLog,
-                    () =>
-                        DxMessaging.Core.MessageBus.MessageRegistrationBuilder.SetSyntheticOwnerCounter(
-                            _previousSyntheticOwner
-                        )
+                    () => DxMessaging.Core.MessagingDebug.LogFunction = _previousDebugLog
                 );
             }
         }
