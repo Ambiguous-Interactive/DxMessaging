@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clear deregistered handler caches during static reset so empty storage is reclaimed and
+  fresh global registrations cannot replay disposed callbacks
+  ([#647](https://github.com/Ambiguous-Interactive/DxMessaging/issues/647)).
 - Preserve bus cache and generated lease owner identities across static resets so independent
   buses keep their callbacks separate and new leases on a retained custom bus receive messages
   ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645), [#646](https://github.com/Ambiguous-Interactive/DxMessaging/issues/646)).

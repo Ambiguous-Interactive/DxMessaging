@@ -408,6 +408,10 @@ generated lease owner IDs, and registration handle IDs. New buses and automatica
 leases keep separate handler storage from retained ones. Bus construction or automatic
 lease owner generation throws `InvalidOperationException` when its identifier range is exhausted.
 
+Reset clears the default bus's typed handler caches, including handlers that already
+deregistered their last callback. A new registration on a retained handler receives
+fresh messages without replaying a cached callback from before reset.
+
 | API                                            | Purpose                                     | Use Case                        |
 | ---------------------------------------------- | ------------------------------------------- | ------------------------------- |
 | `MessageHandler.MessageBus`                    | Access current global bus                   | Normal message emission         |

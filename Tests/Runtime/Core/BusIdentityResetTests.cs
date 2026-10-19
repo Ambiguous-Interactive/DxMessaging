@@ -430,22 +430,28 @@ namespace DxMessaging.Tests.Runtime.Core
             ResetExplicitOwners,
         }
 
-        private static IEnumerable<TestCaseData> LeaseCases()
+        private static IEnumerable<(
+            MessageScenario Scenario,
+            bool Fast,
+            bool Global
+        )> RegistrationFamilies()
         {
-            List<(MessageScenario Scenario, bool Fast, bool Global)> shapes =
-                new List<(MessageScenario, bool, bool)>();
             foreach ((MessageScenario scenario, bool fast) in RegistrationShapes())
             {
-                shapes.Add((scenario, fast, false));
+                yield return (scenario, fast, false);
             }
             foreach (MessageScenario scenario in MessageScenarios.AllKinds)
             {
                 foreach (bool fast in new[] { false, true })
                 {
-                    shapes.Add((scenario, fast, true));
+                    yield return (scenario, fast, true);
                 }
             }
-            foreach ((MessageScenario scenario, bool fast, bool global) in shapes)
+        }
+
+        private static IEnumerable<TestCaseData> LeaseCases()
+        {
+            foreach ((MessageScenario scenario, bool fast, bool global) in RegistrationFamilies())
             {
                 foreach (
                     LeaseResetMode mode in new[]
@@ -697,6 +703,277 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 last?.Dispose();
                 counter.SetValue(null, previous);
+            }
+        }
+
+        private static IEnumerable<TestCaseData> ReclamationCases()
+        {
+            foreach ((MessageScenario scenario, bool fast, bool global) in RegistrationFamilies())
+            {
+                foreach (bool emitBeforeReset in new[] { false, true })
+                {
+                    foreach (bool trimBeforeReset in new[] { false, true })
+                    {
+                        yield return new TestCaseData(
+                            scenario,
+                            fast,
+                            global,
+                            emitBeforeReset,
+                            trimBeforeReset
+                        );
+                    }
+                }
+            }
+        }
+
+        /// <remarks>
+        /// 2026-10-19: reset dropped dirty handlers after their last deregistration without
+        /// clearing their typed state. Empty wrappers and frozen global callback lists survived;
+        /// the first post-reset emission could reuse the old list instead of the fresh callback.
+        /// </remarks>
+        [TestCaseSource(nameof(ReclamationCases))]
+        public void ResetReclaimsDeregisteredHandlerStateAndStartsFreshCallbacks(
+            MessageScenario scenario,
+            bool fast,
+            bool global,
+            bool emitBeforeReset,
+            bool trimBeforeReset
+        )
+        {
+            using ResetScope scope = new ResetScope();
+            MessageBus bus = (MessageBus)MessageHandler.MessageBus;
+            MessageHandler handler = new MessageHandler(new InstanceId(956), bus) { active = true };
+            using LeakWatcher leaks = new LeakWatcher(bus);
+            using MessageRegistrationToken oldToken = MessageRegistrationToken.Create(handler, bus);
+            int oldCalls = 0;
+            int newCalls = 0;
+            void Old()
+            {
+                oldCalls++;
+            }
+            void New()
+            {
+                newCalls++;
+            }
+            if (global)
+            {
+                RegisterGlobal(oldToken, fast, Old);
+            }
+            else
+            {
+                Register(oldToken, scenario, fast, Old, 0);
+            }
+            oldToken.Enable();
+            if (emitBeforeReset)
+            {
+                Emit(scenario, bus);
+            }
+            oldToken.Dispose();
+            int registrationsAfterValidCleanup = leaks.Snapshot;
+            if (trimBeforeReset)
+            {
+                bus.Trim(force: true);
+            }
+            DxMessagingStaticState.Reset();
+            bus.Trim(force: true);
+            bool hasTypedAfterReset = handler.HasTypedHandlersForBus(bus);
+            int emptyAfterReset = handler.CountEmptyTypedSlotsForSweep(bus);
+            using MessageRegistrationToken replacement = MessageRegistrationToken.Create(
+                handler,
+                bus
+            );
+            if (global)
+            {
+                RegisterGlobal(replacement, fast, New);
+            }
+            else
+            {
+                Register(replacement, scenario, fast, New, 0);
+            }
+            replacement.Enable();
+            oldToken.Dispose();
+            Emit(scenario, bus);
+            replacement.Dispose();
+            int registrationsAfterReplacement = leaks.Snapshot;
+            for (int repeat = 0; repeat < 3; ++repeat)
+            {
+                DxMessagingStaticState.Reset();
+                bus.Trim(force: true);
+            }
+            string label =
+                $"[{scenario}, fast={fast}, global={global}, emit={emitBeforeReset}, trimFirst={trimBeforeReset}]";
+            AssertAll(() =>
+            {
+                Assert.That(
+                    registrationsAfterValidCleanup,
+                    Is.Zero,
+                    label + " valid old-token cleanup must complete before reset."
+                );
+                Assert.That(
+                    hasTypedAfterReset,
+                    Is.False,
+                    label + " reset and forced trim must release the empty typed wrapper."
+                );
+                Assert.That(
+                    emptyAfterReset,
+                    Is.Zero,
+                    label + " reset must not strand empty slots outside the dirty queue."
+                );
+                Assert.That(
+                    oldCalls,
+                    Is.EqualTo(emitBeforeReset ? 1 : 0),
+                    label + " a disposed callback must not return after reset."
+                );
+                Assert.That(
+                    newCalls,
+                    Is.EqualTo(1),
+                    label + " the replacement must receive the first post-reset emission."
+                );
+                Assert.That(
+                    registrationsAfterReplacement,
+                    Is.Zero,
+                    label + " replacement cleanup must complete before maintenance."
+                );
+                Assert.That(
+                    handler.HasTypedHandlersForBus(bus),
+                    Is.False,
+                    label + " repeated reset/trim must leave no wrapper."
+                );
+                Assert.That(
+                    handler.CountEmptyTypedSlotsForSweep(bus),
+                    Is.Zero,
+                    label + " repeated reset/trim must leave no empty slot."
+                );
+            });
+        }
+
+        [Test]
+        public void FinalGlobalDeregistrationThenNestedResetStopsPeersAndPreservesNewCallbacks(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool fast,
+            [Values(false, true)] bool throwAfterNested
+        )
+        {
+            RunFinalGlobalDeregistrationThenNestedReset(scenario, fast, throwAfterNested, 2);
+        }
+
+        [Test]
+        public void SpilledFinalGlobalDeregistrationThenNestedResetKeepsSnapshotOwnership(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool fast,
+            [Values(false, true)] bool throwAfterNested
+        )
+        {
+            RunFinalGlobalDeregistrationThenNestedReset(scenario, fast, throwAfterNested, 8);
+        }
+
+        private static void RunFinalGlobalDeregistrationThenNestedReset(
+            MessageScenario scenario,
+            bool fast,
+            bool throwAfterNested,
+            int callbackCount
+        )
+        {
+            using ResetScope scope = new ResetScope();
+            MessageBus bus = (MessageBus)MessageHandler.MessageBus;
+            using LeakWatcher leaks = new LeakWatcher(bus);
+            MessageHandler handler = new MessageHandler(new InstanceId(957), bus) { active = true };
+            using MessageRegistrationToken oldToken = MessageRegistrationToken.Create(handler, bus);
+            MessageRegistrationToken replacement = null;
+            List<string> events = new List<string>();
+            InvalidOperationException failure = new InvalidOperationException(
+                "after nested reset emission"
+            );
+            int firstCalls = 0;
+            int registrationsBeforeReset = -1;
+            try
+            {
+                RegisterGlobal(
+                    oldToken,
+                    fast,
+                    () =>
+                    {
+                        events.Add("old");
+                        firstCalls++;
+                        if (firstCalls != 1)
+                        {
+                            return;
+                        }
+                        oldToken.Dispose();
+                        registrationsBeforeReset = leaks.Snapshot;
+                        DxMessagingStaticState.Reset();
+                        replacement = MessageRegistrationToken.Create(handler, bus);
+                        RegisterGlobal(replacement, fast, () => events.Add("new"));
+                        replacement.Enable();
+                        Emit(scenario, bus);
+                        if (throwAfterNested)
+                        {
+                            throw failure;
+                        }
+                    }
+                );
+                for (int peer = 1; peer < callbackCount; ++peer)
+                {
+                    int peerIndex = peer;
+                    RegisterGlobal(
+                        oldToken,
+                        fast,
+                        () => events.Add(callbackCount == 2 ? "peer" : "peer" + peerIndex)
+                    );
+                }
+                oldToken.Enable();
+                if (throwAfterNested)
+                {
+                    InvalidOperationException observed = Assert.Throws<InvalidOperationException>(
+                        () =>
+                            Emit(scenario, bus)
+                    );
+                    Assert.That(
+                        observed,
+                        Is.SameAs(failure),
+                        scenario + " the original callback exception must propagate."
+                    );
+                }
+                else
+                {
+                    Emit(scenario, bus);
+                }
+                Emit(scenario, bus);
+                replacement.Dispose();
+                int registrationsAfterReplacement = leaks.Snapshot;
+                bus.Trim(force: true);
+                AssertAll(() =>
+                {
+                    Assert.That(
+                        registrationsBeforeReset,
+                        Is.Zero,
+                        scenario + " final deregistration must precede reset."
+                    );
+                    Assert.That(
+                        events,
+                        Is.EqualTo(new[] { "old", "new", "new" }),
+                        scenario
+                            + " nested reset must stop old peers and preserve new emissions after normal/exception exits."
+                    );
+                    Assert.That(
+                        registrationsAfterReplacement,
+                        Is.Zero,
+                        scenario + " valid replacement teardown must complete before trim."
+                    );
+                    Assert.That(
+                        handler.HasTypedHandlersForBus(bus),
+                        Is.False,
+                        scenario + " the final forced trim must release new typed state."
+                    );
+                });
+            }
+            finally
+            {
+                replacement?.Dispose();
+                oldToken.Dispose();
+                bus.Trim(force: true);
             }
         }
 

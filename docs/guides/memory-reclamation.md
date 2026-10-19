@@ -51,6 +51,9 @@ Reclamation targets these kinds of state:
 - **Per-handler bus storage (4.0).** A handler allocates storage only for buses it
   uses. Trimming the last empty typed slot or resetting the bus releases that
   bus entry. Creating unrelated buses does not increase a handler's storage.
+  Reset also clears typed caches for handlers whose final registration was
+  already removed, dropping frozen callback references before sweep tracking
+  is cleared. Reusing a handler after reset starts with fresh callback state.
 - **Registration history (4.0).** Each bus keeps at most `RegistrationLogCapacity`
   entries (1,024 by default). New entries overwrite the oldest. Records retain
   numeric owner identity without retaining Unity objects. Reading history

@@ -3029,6 +3029,10 @@ namespace DxMessaging.Core.MessageBus
         private void ResetTypedSlotsForReferencedHandlers()
         {
             HashSet<MessageHandler> handlers = new HashSet<MessageHandler>();
+            foreach (MessageHandler handler in _dirtyHandlers)
+            {
+                handlers.Add(handler);
+            }
             AddHandlersFromScalarSinks(handlers);
             AddHandlersFromContextSinks(handlers);
 
