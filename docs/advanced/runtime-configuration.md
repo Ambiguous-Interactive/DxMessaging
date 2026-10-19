@@ -401,6 +401,12 @@ public class DynamicComponentManager
 
 ## Quick Reference
 
+`DxMessagingStaticState.Reset()` clears the built-in default bus, restores shared
+configuration, and invalidates prior global override scopes. It preserves custom bus
+registrations and previously issued message type IDs, bus cache indices, and registration
+handle IDs. A new bus therefore keeps separate handler storage from every retained bus.
+Bus construction throws `InvalidOperationException` when no unused bus index remains.
+
 | API                                            | Purpose                                     | Use Case                        |
 | ---------------------------------------------- | ------------------------------------------- | ------------------------------- |
 | `MessageHandler.MessageBus`                    | Access current global bus                   | Normal message emission         |

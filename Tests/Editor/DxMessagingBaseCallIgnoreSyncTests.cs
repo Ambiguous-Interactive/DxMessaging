@@ -123,7 +123,6 @@ namespace DxMessaging.Tests.Editor
         private DiagnosticsTarget _previousTargets;
         private bool _previousStacks;
         private int _previousBuffer;
-        private int _previousBusIndex;
         private IMessageBus _previousBus;
         private bool _previousOptionsEnabled;
         private EnterPlayModeOptions _previousOptions;
@@ -137,7 +136,6 @@ namespace DxMessaging.Tests.Editor
             _previousTargets = IMessageBus.GlobalDiagnosticsTargets;
             _previousStacks = IMessageBus.GlobalDiagnosticsStackTraces;
             _previousBuffer = IMessageBus.GlobalMessageBufferSize;
-            _previousBusIndex = IMessageBus.GlobalSequentialIndex;
             _previousBus = DxMessaging.Core.MessageHandler.MessageBus;
             _previousDebugEnabled = DxMessaging.Core.MessagingDebug.enabled;
             _previousDebugLog = DxMessaging.Core.MessagingDebug.LogFunction;
@@ -216,7 +214,6 @@ namespace DxMessaging.Tests.Editor
                     () => EditorSettings.enterPlayModeOptionsEnabled = _previousOptionsEnabled,
                     () => EditorSettings.enterPlayModeOptions = _previousOptions,
                     () => DxMessaging.Core.MessageHandler.SetGlobalMessageBus(_previousBus),
-                    () => IMessageBus.GlobalSequentialIndex = _previousBusIndex,
                     () => IMessageBus.GlobalDiagnosticsTargets = _previousTargets,
                     () => IMessageBus.GlobalDiagnosticsStackTraces = _previousStacks,
                     () => IMessageBus.GlobalMessageBufferSize = _previousBuffer,

@@ -116,10 +116,30 @@ namespace DxMessaging.Core.MessageBus
         /// </remarks>
         static int GlobalMessageBufferSize { get; set; } = DefaultMessageBufferSize;
 
-        internal static int GlobalSequentialIndex = -1;
+        private static int GlobalSequentialIndex = -1;
 
-        protected static int GenerateNewGlobalSequentialIndex() =>
-            Interlocked.Increment(ref GlobalSequentialIndex);
+        /// <summary>Reserves a bus cache index for the lifetime of the application domain.</summary>
+        /// <exception cref="InvalidOperationException">All representable indices have been issued.</exception>
+        protected static int GenerateNewGlobalSequentialIndex()
+        {
+            while (true)
+            {
+                int current = Volatile.Read(ref GlobalSequentialIndex);
+                if (current == int.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        "The message bus index space is exhausted."
+                    );
+                }
+                int next = current + 1;
+                if (
+                    Interlocked.CompareExchange(ref GlobalSequentialIndex, next, current) == current
+                )
+                {
+                    return next;
+                }
+            }
+        }
 
         internal static bool ShouldEnableDiagnostics()
         {
@@ -147,6 +167,12 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         bool DiagnosticsMode { get; }
 
+        /// <summary>Identifies the storage used by this bus in each message handler's cache.</summary>
+        /// <remarks>
+        /// Independent bus storage must reserve its own index through
+        /// <see cref="GenerateNewGlobalSequentialIndex"/>. Never reset or reuse an issued index.
+        /// A forwarding wrapper uses its underlying bus's index when both share that storage.
+        /// </remarks>
         int RegisteredGlobalSequentialIndex { get; }
 
         /// <summary>

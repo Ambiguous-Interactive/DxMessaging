@@ -85,6 +85,11 @@ and explicit trim APIs are available. `MonoBehaviour` components, GameObject rou
 reflexive GameObject messages, PlayerLoop integration, and `ScriptableObject` settings are
 Unity-only. The settings provider type is absent outside Unity; buses use built-in defaults.
 Call `DxMessagingStaticState.Reset()` when a host needs to reset shared static state.
+It clears the built-in default bus and restores shared configuration. Custom bus
+registrations remain in their original bus. Message type IDs, bus cache indices, and
+registration handle IDs remain consumed until the application domain ends, so a reset
+cannot make a newly created bus share a retained bus's handler cache. Creating a bus
+throws `InvalidOperationException` if the bus index space is exhausted.
 
 Keep all bus activity, including trims and registration changes, on one owning thread.
 There is no background sweep outside Unity. Host activity advances idle counters; force

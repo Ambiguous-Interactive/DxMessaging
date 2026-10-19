@@ -70,6 +70,10 @@
     />
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
     <Compile
+      Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"
+      Link="BusIdentityResetTests.cs"
+    />
+    <Compile
       Include="../Tests/Editor/Contract/TypedSlotShapeTests.cs"
       Link="TypedSlotShapeTests.cs"
     />
