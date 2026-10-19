@@ -99,13 +99,14 @@ To customize, create the asset:
    asset is picked up at runtime.
 
 The recommended path is `Assets/Resources/DxMessagingRuntimeSettings.asset`.
-The asset's editor `OnValidate` warns when it is placed outside a `Resources/`
-folder because `Resources.Load` cannot find it there.
+After validation, an idle Editor update warns when the asset is outside a
+`Resources/` folder because `Resources.Load` cannot find it there.
 
-Field changes raise `DxMessagingRuntimeSettings.SettingsChanged`. Live buses
-re-apply caps, retention modes, and toggles without recreation, so editing the
-asset while the editor is in Play mode takes effect on the next sweep
-boundary.
+In 4.0, field validation queues `DxMessagingRuntimeSettings.SettingsChanged` for
+an idle Editor update. Repeated edits to one asset coalesce until delivery;
+compilation and import postpone it. Live buses then re-apply caps, retention
+modes, and toggles without recreation. Validation itself normalizes local fields
+without changing live buses or shared pools.
 
 The provider caches the resource asset until player subsystem initialization or
 `DxMessagingStaticState.Reset()`. 4.0 removes the test-only runtime-settings override

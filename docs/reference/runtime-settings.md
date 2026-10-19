@@ -27,8 +27,9 @@ via `Resources.Load<DxMessagingRuntimeSettings>("DxMessagingRuntimeSettings")`.
 On a load miss the runtime hands out a defaulted in-memory instance so the
 package always has a usable settings object. Field changes raise
 `SettingsChanged`, which live buses subscribe to so they can re-apply caps
-without recreation. The asset is hot-reloadable: edits saved to disk while
-Play mode is running take effect on the next sweep boundary.
+without recreation. In 4.0, validation queues one notification per asset until an
+idle Editor update. Edits made during compilation or import stay pending until
+the Editor is idle; subscribers then read the latest values.
 
 The plain [.NET runtime build](compatibility.md#plain-net-runtime) does not include
 this provider or its `ScriptableObject` settings type. Buses use the built-in defaults;
@@ -56,8 +57,8 @@ Two creation paths put the asset in place:
   `Assets/Resources/DxMessagingRuntimeSettings.asset` directly, creating the
   `Assets/Resources` folder if it does not already exist.
 
-The asset's `OnValidate` warns when an asset path lies outside a `Resources/`
-folder because `Resources.Load` would not find it there.
+After validation, an idle Editor update warns when the asset path lies outside
+a `Resources/` folder because `Resources.Load` would not find it there.
 
 ---
 
@@ -76,7 +77,8 @@ folder because `Resources.Load` would not find it there.
 
 The `Min` column reflects the `[Min(...)]` attribute that the editor enforces
 on numeric fields. Editor-time `OnValidate` clamps negative values back to
-zero before raising `SettingsChanged`.
+zero immediately. Asset-path checks and `SettingsChanged` delivery wait for an
+idle Editor update.
 
 ---
 
@@ -175,9 +177,14 @@ The struct overrides `ToString()` and implements equality on all four fields.
 ## Hot-Reload Semantics
 
 `DxMessagingRuntimeSettings` raises the static event
-`DxMessagingRuntimeSettings.SettingsChanged` from its editor `OnValidate`. Subscribers should be
-small and re-entrancy-safe; the event is invoked synchronously on the calling
-thread.
+`DxMessagingRuntimeSettings.SettingsChanged` on an idle Editor update after
+validation. In 4.0, `OnValidate` clamps only local fields and queues the asset;
+it does not inspect the AssetDatabase or invoke subscribers. Repeated validations
+of one asset coalesce, and subscribers read its latest values on the main Editor
+thread. Compilation and import postpone delivery. A destroyed queued asset is
+discarded. Validation requested by a subscriber waits for another update.
+Transient fallback creation does not broadcast defaults on that update. Subscribers
+should be small and re-entrancy-safe.
 
 ```csharp
 public static event Action<DxMessagingRuntimeSettings> SettingsChanged;

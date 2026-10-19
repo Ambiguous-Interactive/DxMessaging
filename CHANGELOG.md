@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Apply runtime memory settings on an idle Editor update so validation does not change live buses
+  or shared pools during asset loading ([#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644)).
 - Preserve token cleanup and retryable failures when a custom-bus deregistration callback clears,
   disables, or registers with the token ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642)).
 

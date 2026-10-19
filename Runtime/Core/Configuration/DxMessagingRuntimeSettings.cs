@@ -4,6 +4,10 @@ namespace DxMessaging.Core.Configuration
     using MessageBus;
 #if UNITY_2021_3_OR_NEWER
     using UnityEngine;
+#if UNITY_EDITOR
+    using System.Collections.Concurrent;
+    using System.Threading;
+#endif
 
     /// <summary>
     /// Runtime-loaded settings asset that controls memory-reclamation policy and
@@ -119,9 +123,9 @@ namespace DxMessaging.Core.Configuration
         internal bool IsFallbackInstance => _isFallbackInstance;
 
         /// <summary>
-        /// Raised when this asset is validated in the editor.
-        /// Subscribers should be small and re-entrancy-safe; the event is invoked
-        /// synchronously from <c>OnValidate</c>.
+        /// Raised on an idle Editor update after this asset is validated.
+        /// Repeated validations coalesce until that update; subscribers read the latest values.
+        /// Subscribers should be small and re-entrancy-safe.
         /// </summary>
         public static event Action<DxMessagingRuntimeSettings> SettingsChanged;
 
@@ -145,6 +149,19 @@ namespace DxMessaging.Core.Configuration
         }
 
 #if UNITY_EDITOR
+        private static readonly ConcurrentQueue<DxMessagingRuntimeSettings> PendingValidations =
+            new ConcurrentQueue<DxMessagingRuntimeSettings>();
+
+        [NonSerialized]
+        private int _validationPending;
+
+        [UnityEditor.InitializeOnLoadMethod]
+        private static void RegisterValidationUpdates()
+        {
+            UnityEditor.EditorApplication.update -= ProcessPendingValidations;
+            UnityEditor.EditorApplication.update += ProcessPendingValidations;
+        }
+
         private void OnValidate()
         {
             if (_idleEvictionSeconds < 0f)
@@ -167,6 +184,49 @@ namespace DxMessaging.Core.Configuration
             {
                 _registrationLogCapacity = 0;
             }
+
+            /*
+                Validation can run during loading. Queue only managed state here; asset
+                inspection and subscribers that mutate live buses run on the Editor thread.
+            */
+            if (Interlocked.CompareExchange(ref _validationPending, 1, 0) == 0)
+            {
+                PendingValidations.Enqueue(this);
+            }
+        }
+
+        private static void ProcessPendingValidations()
+        {
+            if (
+                UnityEditor.EditorApplication.isUpdating
+                || UnityEditor.EditorApplication.isCompiling
+            )
+            {
+                return;
+            }
+
+            /*
+                Bound this update to the requests already queued. A subscriber can validate
+                again; that new request belongs to the next update, preventing recursive drain.
+            */
+            int count = PendingValidations.Count;
+            for (int i = 0; i < count; ++i)
+            {
+                if (!PendingValidations.TryDequeue(out DxMessagingRuntimeSettings settings))
+                {
+                    break;
+                }
+
+                Interlocked.Exchange(ref settings._validationPending, 0);
+                if (settings != null && !settings.IsFallbackInstance)
+                {
+                    settings.ApplyValidatedSettings();
+                }
+            }
+        }
+
+        private void ApplyValidatedSettings()
+        {
             string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
             if (
                 !string.IsNullOrEmpty(assetPath)
