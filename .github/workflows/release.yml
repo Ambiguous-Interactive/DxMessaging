@@ -78,7 +78,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.18.0"
 
@@ -144,7 +144,7 @@ jobs:
           node scripts/validate-npm-meta.js --tarball ".artifacts/release/${PACKAGE_FILE}"
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-package
           path: .artifacts/release/
@@ -236,7 +236,7 @@ jobs:
       - name: Setup Node.js
         id: setup_node
         timeout-minutes: 5
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.18.0"
 
@@ -378,7 +378,7 @@ jobs:
       - name: Upload release Unity artifacts
         if: ${{ always() && steps.redact_release.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: unity-release-editmode
           path: .artifacts/unity/release-editmode
@@ -473,7 +473,7 @@ jobs:
 
       - name: Setup Node.js
         timeout-minutes: 5
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.18.0"
 
@@ -492,7 +492,7 @@ jobs:
 
       - name: Upload the .unitypackage artifact
         timeout-minutes: 5
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-unitypackage
           path: .artifacts/release-unitypackage/
@@ -556,13 +556,13 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.18.0"
           registry-url: "https://registry.npmjs.org"
 
       - name: Download release package
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-package
           path: .artifacts/release
@@ -570,7 +570,7 @@ jobs:
       - name: Download the .unitypackage artifact
         # Guaranteed present: publish only runs when the unitypackage job
         # succeeded (job-level needs), so this never blocks the npm publish.
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-unitypackage
           path: .artifacts/unitypackage
@@ -632,7 +632,7 @@ jobs:
       - name: Upload the Asset Store submission staging artifact
         # Upload before npm publication so a green irreversible registry step
         # never precedes delivery of the operator's exact staged inputs.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: asset-store-submission
           path: .artifacts/asset-store-submission/
