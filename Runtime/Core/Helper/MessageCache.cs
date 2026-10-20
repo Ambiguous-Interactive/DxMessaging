@@ -33,11 +33,11 @@ namespace DxMessaging.Core.Helper
                 _current = default;
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             /// <summary>
             /// Advances the enumerator to the next cached value.
             /// </summary>
             /// <returns><c>true</c> if another non-null value exists; otherwise <c>false</c>.</returns>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool MoveNext()
             {
                 TValue[] values = _cache._values;
@@ -59,10 +59,10 @@ namespace DxMessaging.Core.Helper
 
             object IEnumerator.Current => Current;
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             /// <summary>
             /// Resets the enumerator to the position before the first element.
             /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void Reset()
             {
                 _index = -1;
@@ -201,8 +201,9 @@ namespace DxMessaging.Core.Helper
         }
 
         /// <summary>
-        /// Returns an enumerator iterating over non-null entries in insertion order.
+        /// Returns an enumerator that visits non-null entries by increasing message-type ID.
         /// </summary>
+        /// <remarks>Message-type IDs are shared across cache instances.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public MessageCacheEnumerator GetEnumerator()
         {
