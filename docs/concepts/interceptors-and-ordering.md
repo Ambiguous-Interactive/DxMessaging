@@ -7,14 +7,13 @@ registrations does not rewrite an already captured list for the current emission
 
 ### What this means for a captured list
 
-- Listeners added during emission will **not** be invoked for the current message
-- Newly registered listeners will only become active starting with the **next** emission
-- Listeners removed during emission will still complete their execution for the current message
-- This behavior applies to all registration types: handlers, interceptors, and post-processors
-- This behavior applies to all message categories: Untargeted, Targeted, and Broadcast
+Typed handler and post-processor snapshots retain their callback membership once acquired:
 
-One phase boundary is deliberately not frozen. Interceptors run **before** the
-handler snapshot is taken, so a handler that an interceptor deregisters is gone
+- Registering a listener does not add it to a snapshot already in use.
+- Removing a registration does not remove its callback from that snapshot.
+- The acquisition points below determine whether a change affects a later phase of the same emission.
+
+Interceptors run **before** the handler snapshot is taken, so a handler that an interceptor deregisters is gone
 before that snapshot exists and does **not** run for the current message.
 Deregistering a handler from another handler or from a post-processor follows
 the frozen rule above; deregistering a handler from an interceptor takes effect
@@ -31,10 +30,21 @@ reaches that handler. An earlier handler can therefore change what a later handl
 receives in the same emission. Fast callbacks run before Action callbacks. If all
 Action registrations are removed before that phase begins, the Action phase is skipped.
 
+Without-context handle phases have separate acquisition points. Targeted without-targeting
+handlers are acquired when that phase begins, so a keyed handler can change its callbacks.
+Broadcast without-source handlers reuse a populated snapshot acquired before keyed handling;
+when that route was empty, the later phase can acquire newly registered handlers.
+
 **Fixed in v4.0.0:** A nested global emission uses the changed registrations while
 the outer emission keeps its captured callbacks. Removing a peer and registering a
 replacement before a nested emit no longer drops the outer peer or delivers the
 outer message to the replacement. Reset still stops the invalidated emission.
+
+If a callback resets a `MessageBus` or bumps its reset generation, that emission stops
+before any remaining handler or post-processor phase. This includes the later
+without-targeting or without-source handle phase, even when the callback registers
+replacement listeners before returning. A nested or subsequent emission uses the
+registrations that remain after the reset.
 
 #### Example
 

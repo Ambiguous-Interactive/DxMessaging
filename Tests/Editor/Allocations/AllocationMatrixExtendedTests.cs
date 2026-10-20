@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor.Allocations
 {
     using System;
+    using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -50,6 +51,115 @@ namespace DxMessaging.Tests.Editor.Allocations
             _diagnosticsScope?.Dispose();
             _diagnosticsScope = null;
             MessagingDebug.LogFunction = _savedLogFunction;
+        }
+
+        private static IEnumerable<TestCaseData> TypedWithoutContextAllocationCases()
+        {
+            foreach (MessageScenario scenario in MessageScenarios.AllKinds)
+            {
+                if (scenario.Kind != MessageKind.Targeted && scenario.Kind != MessageKind.Broadcast)
+                {
+                    continue;
+                }
+                foreach (bool fast in new[] { false, true })
+                {
+                    foreach (bool featured in new[] { false, true })
+                    {
+                        yield return new TestCaseData(scenario, fast, featured).SetName(
+                            $"TypedWithoutContextAllocation_{scenario.Kind}_Fast{fast}_Featured{featured}"
+                        );
+                    }
+                }
+            }
+        }
+
+        /// <summary>Checks both handle phases after warming fast and featured dispatch plans.</summary>
+        [TestCaseSource(nameof(TypedWithoutContextAllocationCases))]
+        public void TypedAndWithoutContextHandlePhasesRemainAllocationFree(
+            MessageScenario scenario,
+            bool fast,
+            bool featured
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    string label = scenario + ",fast=" + fast + ",featured=" + featured;
+                    int primaryCalls = 0;
+                    int variantCalls = 0;
+                    switch (scenario.Kind)
+                    {
+                        case MessageKind.Targeted:
+                        {
+                            if (fast)
+                            {
+                                _ = token.RegisterTargeted<SimpleTargetedMessage>(
+                                    StableTarget,
+                                    (in SimpleTargetedMessage _) => ++primaryCalls
+                                );
+                                _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                                    (in InstanceId _, in SimpleTargetedMessage __) => ++variantCalls
+                                );
+                            }
+                            else
+                            {
+                                _ = token.RegisterTargeted<SimpleTargetedMessage>(
+                                    StableTarget,
+                                    _ => ++primaryCalls
+                                );
+                                _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                                    (_, __) => ++variantCalls
+                                );
+                            }
+                            break;
+                        }
+                        case MessageKind.Broadcast:
+                        {
+                            if (fast)
+                            {
+                                _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
+                                    StableSource,
+                                    (in SimpleBroadcastMessage _) => ++primaryCalls
+                                );
+                                _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                                    (in InstanceId _, in SimpleBroadcastMessage __) =>
+                                        ++variantCalls
+                                );
+                            }
+                            else
+                            {
+                                _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
+                                    StableSource,
+                                    _ => ++primaryCalls
+                                );
+                                _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                                    (_, __) => ++variantCalls
+                                );
+                            }
+                            break;
+                        }
+                        default:
+                        {
+                            throw new InvalidOperationException(
+                                $"Unhandled MessageKind {scenario.Kind}."
+                            );
+                        }
+                    }
+                    if (featured)
+                    {
+                        _ = RegisterAllowingInterceptor(scenario.WithInterceptor(true), token);
+                    }
+                    Action emit = BuildEmitClosure(scenario, bus);
+                    AllocationAssertions.AssertNoAllocations("TypedWithoutContext-" + label, emit);
+                    Assert.That(0 < primaryCalls, Is.True, label + ": keyed callbacks ran");
+                    Assert.That(
+                        variantCalls,
+                        Is.EqualTo(primaryCalls),
+                        label + ": both handle phases must deliver once per emission"
+                    );
+                }
+            );
         }
 
         /// <summary>

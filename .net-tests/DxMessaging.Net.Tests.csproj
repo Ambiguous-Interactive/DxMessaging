@@ -81,6 +81,10 @@
       Link="HistoricalPostRouteOwnershipTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/TypedWithoutContextResetBoundaryTests.cs"
+      Link="TypedWithoutContextResetBoundaryTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/MemoryReclaim/GlobalNestedSnapshotReclamationTests.cs"
       Link="GlobalNestedSnapshotReclamationTests.cs"
     />

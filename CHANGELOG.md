@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop targeted and broadcast messages after a keyed handler resets the bus, before any
+  without-context handler runs ([#651](https://github.com/Ambiguous-Interactive/DxMessaging/issues/651)).
 - Preserve outer global accept-all callbacks when nested emissions change their registrations
   ([#650](https://github.com/Ambiguous-Interactive/DxMessaging/issues/650)).
 - Stop the current emission when a global callback resets the bus, so replacement callbacks

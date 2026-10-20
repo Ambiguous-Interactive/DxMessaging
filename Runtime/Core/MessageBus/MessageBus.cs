@@ -4035,6 +4035,8 @@ namespace DxMessaging.Core.MessageBus
                 ReflexiveMessage always takes the featured path (the typeof
                 check is a JIT-time constant for every other message type).
             */
+            long emissionResetGeneration = _resetGeneration;
+
             if (plan.fastPath && typeof(TMessage) != typeof(ReflexiveMessage))
             {
                 bool fastFound = false;
@@ -4060,6 +4062,11 @@ namespace DxMessaging.Core.MessageBus
                     {
                         fastFound = true;
                     }
+                }
+
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return;
                 }
 
                 /*
@@ -4112,8 +4119,6 @@ namespace DxMessaging.Core.MessageBus
 
                 return;
             }
-
-            long emissionResetGeneration = _resetGeneration;
 
             /*
                 Pre-freeze targeted post-processing for this emission
@@ -4372,6 +4377,11 @@ namespace DxMessaging.Core.MessageBus
                 {
                     foundAnyHandlers = true;
                 }
+            }
+
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                return;
             }
 
             /*
@@ -4645,6 +4655,8 @@ namespace DxMessaging.Core.MessageBus
                 Fast lane: no interceptors, no global accept-all, no
                 post-processors of either variant existed at emission start.
             */
+            long emissionResetGeneration = _resetGeneration;
+
             if (plan.fastPath)
             {
                 /*
@@ -4694,6 +4706,11 @@ namespace DxMessaging.Core.MessageBus
                         source
                     );
                     _ = DispatchFlatSnapshot(fastSnapshot, ref typedMessage);
+                }
+
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return;
                 }
 
                 /*
@@ -4752,8 +4769,6 @@ namespace DxMessaging.Core.MessageBus
 
                 return;
             }
-
-            long emissionResetGeneration = _resetGeneration;
 
             /*
                 Pre-freeze broadcast post-processing for this emission
@@ -4899,6 +4914,11 @@ namespace DxMessaging.Core.MessageBus
                     copy/live-count guards.
                 */
                 _ = DispatchFlatSnapshot(snapshot, ref typedMessage);
+            }
+
+            if (emissionResetGeneration != _resetGeneration)
+            {
+                return;
             }
 
             bool bwsFound = InternalBroadcastWithoutSource(
