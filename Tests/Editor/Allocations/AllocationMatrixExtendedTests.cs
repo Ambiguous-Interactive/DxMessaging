@@ -266,6 +266,76 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        /// <summary>Checks steady global dispatch after nested mutation has displaced a snapshot.</summary>
+        [Test]
+        [Category("Allocation")]
+        public void GlobalSnapshotsRemainAllocationFreeAfterNestedMutation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(0, 1, 2)] int shape,
+            [Values(3, 8)] int count
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    string label = scenario + ",shape=" + shape + ",count=" + count;
+                    Action emit = BuildClassEmitClosure(scenario, bus);
+                    RegisterClassHandler(scenario, token);
+                    bool mutated = false;
+                    int callbacks = 0;
+                    MessageRegistrationHandle removed = default;
+                    MessageRegistrationHandle RegisterSnapshotCallback(bool fast, Action callback)
+                    {
+                        if (fast)
+                        {
+                            return token.RegisterGlobalAcceptAll(
+                                (in IUntargetedMessage _) => callback(),
+                                (in InstanceId _, in ITargetedMessage __) => callback(),
+                                (in InstanceId _, in IBroadcastMessage __) => callback()
+                            );
+                        }
+                        return token.RegisterGlobalAcceptAll(
+                            _ => callback(),
+                            (_, _) => callback(),
+                            (_, _) => callback()
+                        );
+                    }
+                    RegisterSnapshotCallback(
+                        shape != 0,
+                        () =>
+                        {
+                            if (mutated)
+                            {
+                                return;
+                            }
+                            mutated = true;
+                            token.RemoveRegistration(removed);
+                            RegisterSnapshotCallback(shape == 1, () => ++callbacks);
+                            emit();
+                        }
+                    );
+                    for (int index = 0; index < count - 1; ++index)
+                    {
+                        int captured = index;
+                        removed = RegisterSnapshotCallback(
+                            shape == 1,
+                            () => callbacks += captured + 1
+                        );
+                    }
+                    emit();
+                    int before = callbacks;
+                    AllocationAssertions.AssertNoAllocations("GlobalSnapshots-" + label, emit);
+                    Assert.That(
+                        before < callbacks,
+                        Is.True,
+                        label + ": measured dispatch delivered peers"
+                    );
+                }
+            );
+        }
+
         /// <summary>
         /// Pins a per-emit upper bound on the struct-message global accept-all
         /// dispatch path. Emitting a struct message under a registered global

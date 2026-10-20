@@ -72,6 +72,14 @@
       Include="../Tests/Runtime/Core/GlobalResetBoundaryTests.cs"
       Link="GlobalResetBoundaryTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/GlobalNestedMutationTests.cs"
+      Link="GlobalNestedMutationTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/GlobalNestedSnapshotReclamationTests.cs"
+      Link="GlobalNestedSnapshotReclamationTests.cs"
+    />
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
     <Compile
       Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"

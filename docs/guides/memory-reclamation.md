@@ -3,12 +3,18 @@
 DxMessaging keeps dispatch state in per-message-type and per-context slots so
 lookups stay O(1) on the hot path. Long-running sessions can otherwise retain a
 slot for every message type or `InstanceId` ever touched. The memory
-reclamation system bounds that growth without changing dispatch semantics or
-allocating during emit.
+reclamation system bounds that growth while preserving dispatch behavior.
 
 This page describes when reclamation runs, what it touches, how to configure
 it for common scenarios, and the diagnostic counters you can use to verify it
 is doing its job.
+
+**Fixed in v4.0.0:** Nested global accept-all emissions keep callbacks still owed to
+outer emissions. When a nested emission replaces a captured snapshot, that old
+snapshot releases its captures after its last consumer finishes, including
+exception exits. Nested registration changes can allocate replacement snapshot
+lists. Retained snapshot tracking applies
+`BufferMaxDistinctEntries` when the last consumer finishes.
 
 ## Table of Contents
 

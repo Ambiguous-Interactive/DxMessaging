@@ -2998,13 +2998,62 @@ namespace DxMessaging.Core
                 entry/order drift structurally impossible.
             */
             public OrderedEntries entries;
-            public readonly List<T> cache = new();
+            public List<T> cache = new();
+            private int _globalSnapshotBorrowers;
+            private List<List<T>> _retiredGlobalSnapshots;
             private System.Collections.IList _flatInvokerCache;
             public long version;
             public long lastSeenVersion = -1;
             public long lastSeenEmissionId = -1;
             public long flatInvokerLastSeenVersion = -1;
             public long flatInvokerLastSeenEmissionId = -1;
+
+            internal List<T> AcquireGlobalSnapshot(long emissionId)
+            {
+                List<T> snapshot = TypedHandler<IMessage>.GetOrAddNewHandlerStack(this, emissionId);
+                ++_globalSnapshotBorrowers;
+                return snapshot;
+            }
+
+            internal void ReleaseGlobalSnapshot()
+            {
+                System.Diagnostics.Debug.Assert(0 < _globalSnapshotBorrowers);
+                --_globalSnapshotBorrowers;
+                if (_globalSnapshotBorrowers != 0 || _retiredGlobalSnapshots == null)
+                {
+                    return;
+                }
+                for (int index = 0; index < _retiredGlobalSnapshots.Count; ++index)
+                {
+                    _retiredGlobalSnapshots[index].Clear();
+                }
+                _retiredGlobalSnapshots.Clear();
+                if (DxPools.IntSets.MaxRetained < _retiredGlobalSnapshots.Capacity)
+                {
+                    _retiredGlobalSnapshots = null;
+                }
+            }
+
+            internal List<T> PrepareHandlerSnapshotRebuild()
+            {
+                if (_globalSnapshotBorrowers != 0)
+                {
+                    /*
+                        A nested emission must not overwrite a list already borrowed
+                        by an outer callback or its prefrozen default phase. Keep
+                        displaced lists until every global borrower has exited.
+                    */
+                    List<T> replacement = new List<T>(entries.Count);
+                    _retiredGlobalSnapshots ??= new List<List<T>>();
+                    _retiredGlobalSnapshots.Add(cache);
+                    cache = replacement;
+                }
+                else
+                {
+                    cache.Clear();
+                }
+                return cache;
+            }
 
             /// <summary>True iff the ordered entry storage holds zero handlers.</summary>
             bool DxMessaging.Core.Internal.IHandlerActionCache.IsEmpty
@@ -3773,45 +3822,67 @@ namespace DxMessaging.Core
                 HandlerActionCache<FastHandler<IUntargetedMessage>> fastCache = GetGlobalCache<
                     FastHandler<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedFast);
-                RunFastHandlers(fastCache, ref message, emissionId, messageBus, resetGeneration);
-                if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                {
-                    return;
-                }
                 HandlerActionCache<Action<IUntargetedMessage>> cache = GetGlobalCache<
                     Action<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedDefault);
-                /*
-                    Live-count fast path. Cross-handler in-flight snapshot
-                    semantics do not apply to the global accept-all path: the
-                    bus dispatch loop calls PrefreezeGlobalUntargetedForEmission
-                    lazily per-entry inside InvokeGlobalUntargetedEntry, after
-                    earlier-priority handlers have already run. A sibling
-                    MessageHandler that removes this handler's entry mid-emit
-                    drains cache.entries before the lazy prefreeze can capture
-                    a snapshot, so cache.cache rebuilds from the now-empty
-                    entries. Bailing on cache.entries.Count == 0 is therefore
-                    equivalent to bailing after GetOrAddNewHandlerStack would
-                    return an empty list, and is documented behavior for the
-                    global path.
-                */
-                if (cache?.entries is not { Count: > 0 })
+                List<FastHandler<IUntargetedMessage>> fastSnapshot =
+                    fastCache?.AcquireGlobalSnapshot(emissionId);
+                bool defaultBorrowed = false;
+                try
                 {
-                    return;
-                }
-
-                List<Action<IUntargetedMessage>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
-                int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
-                {
-                    handlers[i](message);
+                    List<Action<IUntargetedMessage>> handlers = cache?.AcquireGlobalSnapshot(
+                        emissionId
+                    );
+                    defaultBorrowed = cache != null;
+                    RunFastHandlers(
+                        fastCache,
+                        ref message,
+                        emissionId,
+                        messageBus,
+                        resetGeneration,
+                        fastSnapshot
+                    );
                     if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
                     {
                         return;
                     }
+
+                    /*
+                        Live-count fast path. Cross-handler in-flight snapshot
+                        semantics do not apply to the global accept-all path: the
+                        bus dispatch loop calls PrefreezeGlobalUntargetedForEmission
+                        lazily per-entry inside InvokeGlobalUntargetedEntry, after
+                        earlier-priority handlers have already run. A sibling
+                        MessageHandler that removes this handler's entry mid-emit
+                        drains cache.entries before the lazy prefreeze can capture
+                        a snapshot, so cache.cache rebuilds from the now-empty
+                        entries. Bailing on cache.entries.Count == 0 is therefore
+                        equivalent to bailing after GetOrAddNewHandlerStack would
+                        return an empty list, and is documented behavior for the
+                        global path.
+                    */
+                    if (cache?.entries is not { Count: > 0 })
+                    {
+                        return;
+                    }
+
+                    int handlersCount = handlers.Count;
+                    for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    {
+                        handlers[i](message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (defaultBorrowed)
+                    {
+                        cache.ReleaseGlobalSnapshot();
+                    }
+                    fastCache?.ReleaseGlobalSnapshot();
                 }
             }
 
@@ -3835,44 +3906,58 @@ namespace DxMessaging.Core
                     GetGlobalCache<FastHandlerWithContext<ITargetedMessage>>(
                         TypedGlobalSlotIndex.TargetedFast
                     );
-                RunFastHandlers(
-                    ref target,
-                    fastCache,
-                    ref message,
-                    emissionId,
-                    messageBus,
-                    resetGeneration
-                );
-                if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                {
-                    return;
-                }
-
                 HandlerActionCache<Action<InstanceId, ITargetedMessage>> cache = GetGlobalCache<
                     Action<InstanceId, ITargetedMessage>
                 >(TypedGlobalSlotIndex.TargetedDefault);
-                /*
-                    Live-count fast path. See comment in HandleGlobalUntargeted
-                    for why the global accept-all path bails on
-                    cache.entries.Count == 0 rather than reading the snapshot.
-                */
-                if (cache?.entries is not { Count: > 0 })
+                List<FastHandlerWithContext<ITargetedMessage>> fastSnapshot =
+                    fastCache?.AcquireGlobalSnapshot(emissionId);
+                bool defaultBorrowed = false;
+                try
                 {
-                    return;
-                }
-
-                List<Action<InstanceId, ITargetedMessage>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
-                int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
-                {
-                    handlers[i](target, message);
+                    List<Action<InstanceId, ITargetedMessage>> handlers =
+                        cache?.AcquireGlobalSnapshot(emissionId);
+                    defaultBorrowed = cache != null;
+                    RunFastHandlers(
+                        ref target,
+                        fastCache,
+                        ref message,
+                        emissionId,
+                        messageBus,
+                        resetGeneration,
+                        fastSnapshot
+                    );
                     if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
                     {
                         return;
                     }
+
+                    /*
+                        Live-count fast path. See comment in HandleGlobalUntargeted
+                        for why the global accept-all path bails on
+                        cache.entries.Count == 0 rather than reading the snapshot.
+                    */
+                    if (cache?.entries is not { Count: > 0 })
+                    {
+                        return;
+                    }
+
+                    int handlersCount = handlers.Count;
+                    for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    {
+                        handlers[i](target, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (defaultBorrowed)
+                    {
+                        cache.ReleaseGlobalSnapshot();
+                    }
+                    fastCache?.ReleaseGlobalSnapshot();
                 }
             }
 
@@ -3896,183 +3981,197 @@ namespace DxMessaging.Core
                     GetGlobalCache<FastHandlerWithContext<IBroadcastMessage>>(
                         TypedGlobalSlotIndex.BroadcastFast
                     );
-                RunFastHandlers(
-                    ref source,
-                    fastCache,
-                    ref message,
-                    emissionId,
-                    messageBus,
-                    resetGeneration
-                );
-                if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                {
-                    return;
-                }
-
                 HandlerActionCache<Action<InstanceId, IBroadcastMessage>> cache = GetGlobalCache<
                     Action<InstanceId, IBroadcastMessage>
                 >(TypedGlobalSlotIndex.BroadcastDefault);
-                /*
-                    Live-count fast path. See comment in HandleGlobalUntargeted
-                    for why the global accept-all path bails on
-                    cache.entries.Count == 0 rather than reading the snapshot.
-                */
-                if (cache?.entries is not { Count: > 0 })
+                List<FastHandlerWithContext<IBroadcastMessage>> fastSnapshot =
+                    fastCache?.AcquireGlobalSnapshot(emissionId);
+                bool defaultBorrowed = false;
+                try
                 {
-                    return;
-                }
-
-                List<Action<InstanceId, IBroadcastMessage>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
-                int handlersCount = handlers.Count;
-                switch (handlersCount)
-                {
-                    case 1:
-                    {
-                        handlers[0](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        return;
-                    }
-                    case 2:
-                    {
-                        handlers[0](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 2)
-                        {
-                            return;
-                        }
-                        handlers[1](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        return;
-                    }
-                    case 3:
-                    {
-                        handlers[0](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 2)
-                        {
-                            return;
-                        }
-                        handlers[1](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 3)
-                        {
-                            return;
-                        }
-                        handlers[2](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        return;
-                    }
-                    case 4:
-                    {
-                        handlers[0](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 2)
-                        {
-                            return;
-                        }
-                        handlers[1](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 3)
-                        {
-                            return;
-                        }
-                        handlers[2](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 4)
-                        {
-                            return;
-                        }
-                        handlers[3](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        return;
-                    }
-                    case 5:
-                    {
-                        handlers[0](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 2)
-                        {
-                            return;
-                        }
-                        handlers[1](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 3)
-                        {
-                            return;
-                        }
-                        handlers[2](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 4)
-                        {
-                            return;
-                        }
-                        handlers[3](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        if (handlers.Count < 5)
-                        {
-                            return;
-                        }
-                        handlers[4](source, message);
-                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
-                        {
-                            return;
-                        }
-                        return;
-                    }
-                }
-
-                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
-                {
-                    handlers[i](source, message);
+                    List<Action<InstanceId, IBroadcastMessage>> handlers =
+                        cache?.AcquireGlobalSnapshot(emissionId);
+                    defaultBorrowed = cache != null;
+                    RunFastHandlers(
+                        ref source,
+                        fastCache,
+                        ref message,
+                        emissionId,
+                        messageBus,
+                        resetGeneration,
+                        fastSnapshot
+                    );
                     if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
                     {
                         return;
                     }
+
+                    /*
+                        Live-count fast path. See comment in HandleGlobalUntargeted
+                        for why the global accept-all path bails on
+                        cache.entries.Count == 0 rather than reading the snapshot.
+                    */
+                    if (cache?.entries is not { Count: > 0 })
+                    {
+                        return;
+                    }
+
+                    int handlersCount = handlers.Count;
+                    switch (handlersCount)
+                    {
+                        case 1:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 2:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 3:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 3)
+                            {
+                                return;
+                            }
+                            handlers[2](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 4:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 3)
+                            {
+                                return;
+                            }
+                            handlers[2](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 4)
+                            {
+                                return;
+                            }
+                            handlers[3](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 5:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 3)
+                            {
+                                return;
+                            }
+                            handlers[2](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 4)
+                            {
+                                return;
+                            }
+                            handlers[3](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 5)
+                            {
+                                return;
+                            }
+                            handlers[4](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                    }
+
+                    for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    {
+                        handlers[i](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (defaultBorrowed)
+                    {
+                        cache.ReleaseGlobalSnapshot();
+                    }
+                    fastCache?.ReleaseGlobalSnapshot();
                 }
             }
 
@@ -5761,27 +5860,17 @@ namespace DxMessaging.Core
                 ref TMessage message,
                 long emissionId,
                 IMessageBus messageBus,
-                long resetGeneration
+                long resetGeneration,
+                List<FastHandler<TU>> globalSnapshot = null
             )
                 where TMessage : IMessage
                 where TU : IMessage
             {
                 /*
-                    Snapshot semantics: do not bail on the live entry storage
-                    count. A mid-emit removal can drain entries while the pinned
-                    emission snapshot in cache.cache still holds the handlers we
-                    must invoke. Read the snapshot first and bail only if the
-                    snapshot itself is empty.
-
-                    Perf note: GetOrAddNewHandlerStack is now invoked on every
-                    call (including for empty caches that the previous fast-path
-                    would have skipped). The cost is one
-                    emission-id/version compare and -- only when the per-emission
-                    snapshot has not been pinned yet -- a single pass over
-                    cache.entries to materialise an empty list. The win is
-                    correctness across cross-handler mid-emit removals where the
-                    pinned snapshot in cache.cache still holds handlers the live
-                    entry storage no longer reaches.
+                    Global dispatch supplies the list borrowed before either
+                    callback phase. Other callers resolve the emission list here.
+                    Check the snapshot count rather than live entries, which can
+                    change while an outer emission still owns its callbacks.
                 */
                 if (cache == null)
                 {
@@ -5789,7 +5878,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandler<TU>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandler<TU>> handlers =
+                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {
@@ -5951,13 +6041,14 @@ namespace DxMessaging.Core
                 ref TMessage message,
                 long emissionId,
                 IMessageBus messageBus = null,
-                long resetGeneration = 0
+                long resetGeneration = 0,
+                List<FastHandlerWithContext<TU>> globalSnapshot = null
             )
                 where TMessage : IMessage
                 where TU : IMessage
             {
                 /*
-                    Snapshot semantics: see comment on the FastHandler<TU> overload.
+                    Snapshot ownership follows the FastHandler<TU> overload.
                     The pinned emission snapshot may still hold handlers even when
                     the live entry storage has been drained mid-emit.
                 */
@@ -5967,10 +6058,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandlerWithContext<TU>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
+                List<FastHandlerWithContext<TU>> handlers =
+                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {
@@ -6791,16 +6880,12 @@ namespace DxMessaging.Core
             }
 
             /*
-                Mid-dispatch clear contract: the List returned here is the LIVE
-                cache.cache list, not a copy. IHandlerActionCache.Reset() (bus
-                reset / sweep eviction) clears it IN PLACE, so every dispatch
-                loop that indexes the returned list re-checks list.Count before
-                each invocation past the first (and the >5 fallback loops bound
-                on the live Count). A reset fired from inside a handler then
-                cleanly stops the in-flight bucket: no peer delegate runs and
-                nothing throws. The re-check is a single inlined List.Count
-                field read on data already in cache, so steady-state dispatch
-                cost is unchanged.
+                Global dispatch borrows its cached lists before running either
+                delegate phase. Rebuilding a borrowed cache replaces the list;
+                final borrower release scrubs the displaced lists. Reset still
+                clears the current list in place. Per-callback bus generations
+                stop invalidated global emissions even when their old list was
+                displaced. Legacy callers without global borrows retain live Count checks.
             */
             internal static List<TU> GetOrAddNewHandlerStack<TU>(
                 HandlerActionCache<TU> actionCache,
@@ -6814,10 +6899,10 @@ namespace DxMessaging.Core
                         /*
                             Rebuild in the ordered map's first-registration order.
                             This branch only runs on registration churn, never on
-                            steady-state dispatch, and reuses the snapshot list.
+                            steady-state dispatch. Borrowed lists are replaced so nested
+                            rebuilds preserve their outer readers.
                         */
-                        List<TU> list = actionCache.cache;
-                        list.Clear();
+                        List<TU> list = actionCache.PrepareHandlerSnapshotRebuild();
                         actionCache.entries.PrepareForOrderedIteration();
                         int orderedCount = actionCache.entries.Count;
                         for (int i = 0; i < orderedCount; ++i)

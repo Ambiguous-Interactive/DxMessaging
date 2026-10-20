@@ -2,9 +2,10 @@
 
 ## Snapshot Semantics: Frozen Listener Lists
 
-**IMPORTANT:** DxMessaging uses snapshot semantics for message emissions. When a message is emitted, the system creates a snapshot of all current listeners (interceptors, handlers, and post-processors). This snapshot is "frozen" for the duration of that emission.
+DxMessaging freezes listener lists at the phase boundaries described below. Changing
+registrations does not rewrite an already captured list for the current emission.
 
-### What this means
+### What this means for a captured list
 
 - Listeners added during emission will **not** be invoked for the current message
 - Newly registered listeners will only become active starting with the **next** emission
@@ -24,6 +25,16 @@ In 3.2.3 and later, this rule also covers the first post-processor registered
 for a message type and one registered for a target or source that an interceptor
 selects during the emission. Both start on the next emission. A processor removed
 from an interceptor-selected route still finishes the current emission.
+
+Global accept-all subscriptions freeze each `MessageHandler`'s lists when the bus
+reaches that handler. An earlier handler can therefore change what a later handler
+receives in the same emission. Fast callbacks run before Action callbacks. If all
+Action registrations are removed before that phase begins, the Action phase is skipped.
+
+**Fixed in v4.0.0:** A nested global emission uses the changed registrations while
+the outer emission keeps its captured callbacks. Removing a peer and registering a
+replacement before a nested emit no longer drops the outer peer or delivers the
+outer message to the replacement. Reset still stops the invalidated emission.
 
 #### Example
 
