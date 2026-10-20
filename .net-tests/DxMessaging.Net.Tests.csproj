@@ -128,5 +128,9 @@
       Include="../Tests/Runtime/MemoryReclaim/DisabledTokenRetentionTests.cs"
       Link="DisabledTokenRetentionTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/DiagnosticOriginAfterDisableTests.cs"
+      Link="DiagnosticOriginAfterDisableTests.cs"
+    />
   </ItemGroup>
 </Project>
