@@ -92,8 +92,8 @@ namespace DxMessaging.Core
         /// Gets the baseline global <see cref="IMessageBus"/> instance used when no custom bus is configured.
         /// </summary>
         /// <remarks>
-        /// The instance is recreated when <see cref="DxMessagingStaticState.Reset"/> runs so that domain-reload-disabled
-        /// environments can obtain a clean slate.
+        /// <see cref="DxMessagingStaticState.Reset"/> clears registrations on this instance and selects it as
+        /// the global bus. Its reference remains stable for the lifetime of the application domain.
         /// </remarks>
         public static IMessageBus InitialGlobalMessageBus => _defaultGlobalMessageBus;
 
@@ -165,7 +165,9 @@ namespace DxMessaging.Core
         /// Restores the global <see cref="Core.MessageBus.MessageBus"/> to the built-in default instance.
         /// </summary>
         /// <remarks>
-        /// The default instance is recreated by <see cref="ResetStatics"/> when the static state reset utility runs.
+        /// Selects the existing default bus without clearing its registrations and invalidates outstanding
+        /// global override scopes. Call <see cref="DxMessagingStaticState.Reset"/> to clear the default bus
+        /// and restore shared configuration.
         /// </remarks>
         public static void ResetGlobalMessageBus()
         {
@@ -198,7 +200,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Recreates the built-in global <see cref="Core.MessageBus.MessageBus"/> and assigns it as the active global bus.
+        /// Clears the built-in default <see cref="Core.MessageBus.MessageBus"/> and selects it as the active global bus.
         /// </summary>
         /// <remarks>
         /// Invoked by <see cref="DxMessagingStaticState.Reset"/> to provide a clean slate when domain reloads are disabled.
