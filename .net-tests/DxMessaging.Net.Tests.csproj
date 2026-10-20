@@ -77,6 +77,10 @@
       Link="GlobalNestedMutationTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/HistoricalPostRouteOwnershipTests.cs"
+      Link="HistoricalPostRouteOwnershipTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/MemoryReclaim/GlobalNestedSnapshotReclamationTests.cs"
       Link="GlobalNestedSnapshotReclamationTests.cs"
     />
