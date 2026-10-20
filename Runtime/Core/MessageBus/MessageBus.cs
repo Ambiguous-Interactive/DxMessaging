@@ -6118,7 +6118,6 @@ namespace DxMessaging.Core.MessageBus
             long touchTick = AdvanceTick();
             InvalidateDispatchPlans();
             ContextHandlerMap broadcastHandlers = GetOrRentContextMap<T>(sinks);
-            ContextHandlerMap capturedBroadcastHandlers = broadcastHandlers;
             SlotKey slotKey = RegistrationMethodAxes.GetSlotKey(registrationMethod);
 
             if (
@@ -6191,7 +6190,7 @@ namespace DxMessaging.Core.MessageBus
                 0L,
                 touchTick,
                 capturedHandlers,
-                capturedBroadcastHandlers,
+                null,
                 messageHandler,
                 context
             );

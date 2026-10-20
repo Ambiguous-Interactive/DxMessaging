@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Release recycled context maps from consumed keyed registration handles so retaining an old
+  value cannot keep a later unrelated bus and receiver alive
+  ([#652](https://github.com/Ambiguous-Interactive/DxMessaging/issues/652)).
 - Stop targeted and broadcast messages after a keyed handler resets the bus, before any
   without-context handler runs ([#651](https://github.com/Ambiguous-Interactive/DxMessaging/issues/651)).
 - Preserve outer global accept-all callbacks when nested emissions change their registrations

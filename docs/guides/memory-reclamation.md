@@ -16,6 +16,11 @@ exception exits. Nested registration changes can allocate replacement snapshot
 lists. Retained snapshot tracking applies
 `BufferMaxDistinctEntries` when the last consumer finishes.
 
+A consumed targeted or sourced-broadcast `MessageBusRegistration` does not retain a
+recycled context map. Keeping that old value cannot pin unrelated registrations
+when another bus reuses the map. A handle can still retain its own handler or
+external state; discard consumed values when their lifecycle ends.
+
 ## Table of Contents
 
 - [Memory Reclamation](#memory-reclamation)

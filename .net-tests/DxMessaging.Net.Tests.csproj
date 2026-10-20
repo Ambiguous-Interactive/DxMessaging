@@ -120,5 +120,9 @@
       Include="../Tests/Runtime/TestUtilities/HandlerDeregistrationActions.cs"
       Link="HandlerDeregistrationActions.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/ConsumedContextHandleRetentionTests.cs"
+      Link="ConsumedContextHandleRetentionTests.cs"
+    />
   </ItemGroup>
 </Project>
