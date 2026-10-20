@@ -68,6 +68,10 @@
       Include="../Tests/Runtime/Core/TokenTeardownReentrancyTests.cs"
       Link="TokenTeardownReentrancyTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/GlobalResetBoundaryTests.cs"
+      Link="GlobalResetBoundaryTests.cs"
+    />
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
     <Compile
       Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"

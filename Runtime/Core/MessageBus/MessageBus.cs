@@ -3844,6 +3844,10 @@ namespace DxMessaging.Core.MessageBus
             {
                 IUntargetedMessage untargetedMessage = typedMessage;
                 BroadcastGlobalUntargeted(ref untargetedMessage, emissionId);
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return;
+                }
             }
 
             /*
@@ -4177,6 +4181,10 @@ namespace DxMessaging.Core.MessageBus
             {
                 ITargetedMessage targetedMessage = typedMessage;
                 BroadcastGlobalTargeted(ref target, ref targetedMessage, emissionId);
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return;
+                }
             }
 
             bool foundAnyHandlers = false;
@@ -4813,6 +4821,10 @@ namespace DxMessaging.Core.MessageBus
             {
                 IBroadcastMessage broadcastMessage = typedMessage;
                 BroadcastGlobalSourcedBroadcast(ref source, ref broadcastMessage, emissionId);
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return;
+                }
             }
 
             /*
@@ -5004,11 +5016,14 @@ namespace DxMessaging.Core.MessageBus
         /*
             IL2CPP check elision on the frozen global bucket walk; entries and
             handlers are non-null by snapshot construction (see DispatchFlatSnapshot).
+            The entering reset generation also guards the walk: a reset invalidates
+            the message before a later entry can resolve fresh typed-global callbacks.
         */
         [Il2CppSetOption(Option.NullChecks, false)]
         [Il2CppSetOption(Option.ArrayBoundsChecks, false)]
         private void BroadcastGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
         {
+            long resetGeneration = _resetGeneration;
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IUntargetedMessage>(
                 this,
                 _globalSlots,
@@ -5036,44 +5051,98 @@ namespace DxMessaging.Core.MessageBus
                 {
                     case 1:
                     {
-                        InvokeGlobalUntargetedEntry(ref message, entries[0]);
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[0], resetGeneration))
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 2:
                     {
-                        InvokeGlobalUntargetedEntry(ref message, entries[0]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[1]);
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[0], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[1], resetGeneration))
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 3:
                     {
-                        InvokeGlobalUntargetedEntry(ref message, entries[0]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[1]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[2]);
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[0], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[1], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[2], resetGeneration))
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 4:
                     {
-                        InvokeGlobalUntargetedEntry(ref message, entries[0]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[1]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[2]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[3]);
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[0], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[1], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[2], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[3], resetGeneration))
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 5:
                     {
-                        InvokeGlobalUntargetedEntry(ref message, entries[0]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[1]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[2]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[3]);
-                        InvokeGlobalUntargetedEntry(ref message, entries[4]);
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[0], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[1], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[2], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[3], resetGeneration))
+                        {
+                            return;
+                        }
+                        if (!InvokeGlobalUntargetedEntry(ref message, entries[4], resetGeneration))
+                        {
+                            return;
+                        }
                         continue;
                     }
                 }
 
                 for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
                 {
-                    InvokeGlobalUntargetedEntry(ref message, entries[entryIndex]);
+                    if (
+                        !InvokeGlobalUntargetedEntry(
+                            ref message,
+                            entries[entryIndex],
+                            resetGeneration
+                        )
+                    )
+                    {
+                        return;
+                    }
                 }
             }
         }
@@ -5087,6 +5156,7 @@ namespace DxMessaging.Core.MessageBus
             long emissionId
         )
         {
+            long resetGeneration = _resetGeneration;
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<ITargetedMessage>(
                 this,
                 _globalSlots,
@@ -5114,44 +5184,204 @@ namespace DxMessaging.Core.MessageBus
                 {
                     case 1:
                     {
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[0]);
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 2:
                     {
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[0]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[1]);
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 3:
                     {
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[0]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[1]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[2]);
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[2],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 4:
                     {
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[0]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[1]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[2]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[3]);
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[2],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[3],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 5:
                     {
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[0]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[1]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[2]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[3]);
-                        InvokeGlobalTargetedEntry(ref target, ref message, entries[4]);
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[2],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[3],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalTargetedEntry(
+                                ref target,
+                                ref message,
+                                entries[4],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                 }
 
                 for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
                 {
-                    InvokeGlobalTargetedEntry(ref target, ref message, entries[entryIndex]);
+                    if (
+                        !InvokeGlobalTargetedEntry(
+                            ref target,
+                            ref message,
+                            entries[entryIndex],
+                            resetGeneration
+                        )
+                    )
+                    {
+                        return;
+                    }
                 }
             }
         }
@@ -5165,6 +5395,7 @@ namespace DxMessaging.Core.MessageBus
             long emissionId
         )
         {
+            long resetGeneration = _resetGeneration;
             DispatchSnapshot snapshot = AcquireGlobalDispatchSnapshot<IBroadcastMessage>(
                 this,
                 _globalSlots,
@@ -5192,44 +5423,204 @@ namespace DxMessaging.Core.MessageBus
                 {
                     case 1:
                     {
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[0]);
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 2:
                     {
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[0]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[1]);
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 3:
                     {
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[0]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[1]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[2]);
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[2],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 4:
                     {
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[0]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[1]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[2]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[3]);
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[2],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[3],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                     case 5:
                     {
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[0]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[1]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[2]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[3]);
-                        InvokeGlobalBroadcastEntry(ref source, ref message, entries[4]);
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[0],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[1],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[2],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[3],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
+                        if (
+                            !InvokeGlobalBroadcastEntry(
+                                ref source,
+                                ref message,
+                                entries[4],
+                                resetGeneration
+                            )
+                        )
+                        {
+                            return;
+                        }
                         continue;
                     }
                 }
 
                 for (int entryIndex = 0; entryIndex < entryCount; ++entryIndex)
                 {
-                    InvokeGlobalBroadcastEntry(ref source, ref message, entries[entryIndex]);
+                    if (
+                        !InvokeGlobalBroadcastEntry(
+                            ref source,
+                            ref message,
+                            entries[entryIndex],
+                            resetGeneration
+                        )
+                    )
+                    {
+                        return;
+                    }
                 }
             }
         }
@@ -7363,9 +7754,10 @@ namespace DxMessaging.Core.MessageBus
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [Il2CppSetOption(Option.NullChecks, false)]
-        private void InvokeGlobalUntargetedEntry<TMessage>(
+        private bool InvokeGlobalUntargetedEntry<TMessage>(
             ref TMessage message,
-            DispatchEntry entry
+            DispatchEntry entry,
+            long resetGeneration
         )
             where TMessage : IUntargetedMessage
         {
@@ -7374,21 +7766,23 @@ namespace DxMessaging.Core.MessageBus
 
             if (!handler.active)
             {
-                return;
+                return true;
             }
 
             ref IUntargetedMessage interfaceMessage = ref DxUnsafe.As<TMessage, IUntargetedMessage>(
                 ref message
             );
             handler.HandleGlobalUntargetedMessage(ref interfaceMessage, this);
+            return _resetGeneration == resetGeneration;
         }
 
         [Il2CppSetOption(Option.NullChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeGlobalTargetedEntry<TMessage>(
+        private bool InvokeGlobalTargetedEntry<TMessage>(
             ref InstanceId target,
             ref TMessage message,
-            DispatchEntry entry
+            DispatchEntry entry,
+            long resetGeneration
         )
             where TMessage : ITargetedMessage
         {
@@ -7397,21 +7791,23 @@ namespace DxMessaging.Core.MessageBus
 
             if (!handler.active)
             {
-                return;
+                return true;
             }
 
             ref ITargetedMessage interfaceMessage = ref DxUnsafe.As<TMessage, ITargetedMessage>(
                 ref message
             );
             handler.HandleGlobalTargetedMessage(ref target, ref interfaceMessage, this);
+            return _resetGeneration == resetGeneration;
         }
 
         [Il2CppSetOption(Option.NullChecks, false)]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InvokeGlobalBroadcastEntry<TMessage>(
+        private bool InvokeGlobalBroadcastEntry<TMessage>(
             ref InstanceId source,
             ref TMessage message,
-            DispatchEntry entry
+            DispatchEntry entry,
+            long resetGeneration
         )
             where TMessage : IBroadcastMessage
         {
@@ -7420,13 +7816,14 @@ namespace DxMessaging.Core.MessageBus
 
             if (!handler.active)
             {
-                return;
+                return true;
             }
 
             ref IBroadcastMessage interfaceMessage = ref DxUnsafe.As<TMessage, IBroadcastMessage>(
                 ref message
             );
             handler.HandleGlobalSourcedBroadcastMessage(ref source, ref interfaceMessage, this);
+            return _resetGeneration == resetGeneration;
         }
 
         [Conditional("ENABLE_IL2CPP")]

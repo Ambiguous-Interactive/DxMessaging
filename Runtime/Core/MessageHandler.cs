@@ -9,6 +9,7 @@ namespace DxMessaging.Core
     using MessageBus;
     using Messages;
     using Pooling;
+    using BusType = global::DxMessaging.Core.MessageBus.MessageBus;
 
     /// <summary>
     /// Per-owner handler that executes registered message callbacks.
@@ -513,7 +514,13 @@ namespace DxMessaging.Core
             if (GetHandlerForType(messageBus, out TypedHandler<IMessage> handler))
             {
                 long emissionId = messageBus.EmissionId;
-                handler.HandleGlobalUntargeted(ref message, emissionId);
+                long resetGeneration = BusType.GetResetGeneration(messageBus);
+                handler.HandleGlobalUntargeted(
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
             }
         }
 
@@ -619,7 +626,14 @@ namespace DxMessaging.Core
             if (GetHandlerForType(messageBus, out TypedHandler<IMessage> handler))
             {
                 long emissionId = messageBus.EmissionId;
-                handler.HandleGlobalTargeted(ref target, ref message, emissionId);
+                long resetGeneration = BusType.GetResetGeneration(messageBus);
+                handler.HandleGlobalTargeted(
+                    ref target,
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
             }
         }
 
@@ -644,7 +658,14 @@ namespace DxMessaging.Core
             if (GetHandlerForType(messageBus, out TypedHandler<IMessage> handler))
             {
                 long emissionId = messageBus.EmissionId;
-                handler.HandleGlobalBroadcast(ref source, ref message, emissionId);
+                long resetGeneration = BusType.GetResetGeneration(messageBus);
+                handler.HandleGlobalBroadcast(
+                    ref source,
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
             }
         }
 
@@ -3739,12 +3760,24 @@ namespace DxMessaging.Core
             /// Emits the UntargetedMessage to all global listeners.
             /// </summary>
             /// <param name="message">Message to emit.</param>
-            public void HandleGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
+            /// <param name="emissionId">Current emission's snapshot identity.</param>
+            /// <param name="messageBus">Bus whose reset generation guards each callback.</param>
+            /// <param name="resetGeneration">Generation captured before the first callback.</param>
+            public void HandleGlobalUntargeted(
+                ref IUntargetedMessage message,
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
+            )
             {
                 HandlerActionCache<FastHandler<IUntargetedMessage>> fastCache = GetGlobalCache<
                     FastHandler<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedFast);
-                RunFastHandlers(fastCache, ref message, emissionId);
+                RunFastHandlers(fastCache, ref message, emissionId, messageBus, resetGeneration);
+                if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                {
+                    return;
+                }
                 HandlerActionCache<Action<IUntargetedMessage>> cache = GetGlobalCache<
                     Action<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedDefault);
@@ -3775,6 +3808,10 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](message);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -3783,17 +3820,33 @@ namespace DxMessaging.Core
             /// </summary>
             /// <param name="target">Target that this message is intended for.</param>
             /// <param name="message">Message to emit.</param>
+            /// <param name="emissionId">Current emission's snapshot identity.</param>
+            /// <param name="messageBus">Bus whose reset generation guards each callback.</param>
+            /// <param name="resetGeneration">Generation captured before the first callback.</param>
             public void HandleGlobalTargeted(
                 ref InstanceId target,
                 ref ITargetedMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
             )
             {
                 HandlerActionCache<FastHandlerWithContext<ITargetedMessage>> fastCache =
                     GetGlobalCache<FastHandlerWithContext<ITargetedMessage>>(
                         TypedGlobalSlotIndex.TargetedFast
                     );
-                RunFastHandlers(ref target, fastCache, ref message, emissionId);
+                RunFastHandlers(
+                    ref target,
+                    fastCache,
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
+                if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                {
+                    return;
+                }
 
                 HandlerActionCache<Action<InstanceId, ITargetedMessage>> cache = GetGlobalCache<
                     Action<InstanceId, ITargetedMessage>
@@ -3816,6 +3869,10 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](target, message);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -3824,17 +3881,33 @@ namespace DxMessaging.Core
             /// </summary>
             /// <param name="source">Source that this message is from.</param>
             /// <param name="message">Message to emit.</param>
+            /// <param name="emissionId">Current emission's snapshot identity.</param>
+            /// <param name="messageBus">Bus whose reset generation guards each callback.</param>
+            /// <param name="resetGeneration">Generation captured before the first callback.</param>
             public void HandleGlobalBroadcast(
                 ref InstanceId source,
                 ref IBroadcastMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
             )
             {
                 HandlerActionCache<FastHandlerWithContext<IBroadcastMessage>> fastCache =
                     GetGlobalCache<FastHandlerWithContext<IBroadcastMessage>>(
                         TypedGlobalSlotIndex.BroadcastFast
                     );
-                RunFastHandlers(ref source, fastCache, ref message, emissionId);
+                RunFastHandlers(
+                    ref source,
+                    fastCache,
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
+                if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                {
+                    return;
+                }
 
                 HandlerActionCache<Action<InstanceId, IBroadcastMessage>> cache = GetGlobalCache<
                     Action<InstanceId, IBroadcastMessage>
@@ -3859,76 +3932,136 @@ namespace DxMessaging.Core
                     case 1:
                     {
                         handlers[0](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 2:
                     {
                         handlers[0](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 3:
                     {
                         handlers[0](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 4:
                     {
                         handlers[0](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 5:
                     {
                         handlers[0](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 5)
                         {
                             return;
                         }
                         handlers[4](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                 }
@@ -3936,6 +4069,10 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](source, message);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -5622,7 +5759,9 @@ namespace DxMessaging.Core
             private static void RunFastHandlers<TMessage, TU>(
                 HandlerActionCache<FastHandler<TU>> cache,
                 ref TMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
             )
                 where TMessage : IMessage
                 where TU : IMessage
@@ -5661,76 +5800,136 @@ namespace DxMessaging.Core
                     case 1:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 2:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 3:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 4:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 5:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 5)
                         {
                             return;
                         }
                         handlers[4](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                 }
@@ -5738,14 +5937,21 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](in typedMessage);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 
+            // Legacy direct callers omit the bus; global dispatch supplies its reset boundary.
             private static void RunFastHandlers<TMessage, TU>(
                 ref InstanceId context,
                 HandlerActionCache<FastHandlerWithContext<TU>> cache,
                 ref TMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus = null,
+                long resetGeneration = 0
             )
                 where TMessage : IMessage
                 where TU : IMessage
@@ -5775,76 +5981,136 @@ namespace DxMessaging.Core
                     case 1:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 2:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 3:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 4:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 5:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 5)
                         {
                             return;
                         }
                         handlers[4](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                 }
@@ -5852,6 +6118,10 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](in context, in typedMessage);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 

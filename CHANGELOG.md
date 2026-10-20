@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop the current emission when a global callback resets the bus, so replacement callbacks
+  receive only fresh emissions ([#649](https://github.com/Ambiguous-Interactive/DxMessaging/issues/649)).
 - Clear deregistered handler caches during static reset so empty storage is reclaimed and
   fresh global registrations cannot replay disposed callbacks
   ([#647](https://github.com/Ambiguous-Interactive/DxMessaging/issues/647)).

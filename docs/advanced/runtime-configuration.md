@@ -412,6 +412,13 @@ Reset clears the default bus's typed handler caches, including handlers that alr
 deregistered their last callback. A new registration on a retained handler receives
 fresh messages without replaying a cached callback from before reset.
 
+A reset during an interceptor, global callback, handler, or post-processor stops the
+current message. Remaining callbacks and later phases do not run for that emission.
+Registrations created after the reset receive subsequent emissions, including a
+nested emission started explicitly by the resetting callback.
+`MessageBus.BumpResetGeneration()` uses the same callback boundary and invalidates
+older deregistration handles while retaining the bus's registrations for later emissions.
+
 | API                                            | Purpose                                     | Use Case                        |
 | ---------------------------------------------- | ------------------------------------------- | ------------------------------- |
 | `MessageHandler.MessageBus`                    | Access current global bus                   | Normal message emission         |
