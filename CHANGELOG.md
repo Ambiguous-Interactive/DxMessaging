@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Clarify `MessageCache` enumeration order and restore its iterator API summaries
-  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503)).
+- Correct IntelliSense summaries and references, including `MessageCache` enumeration order
+  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
+  [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
   the runtime settings resource asset for application behavior and keep fixture configuration in
   test assemblies; see the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).

@@ -167,7 +167,7 @@ namespace DxMessaging.Core.Internal
     /// otherwise.
     /// </para>
     /// <para>
-    /// <see cref="TypedHandler{T}"/> routes storage through this slot;
+    /// <see cref="MessageHandler.TypedHandler{T}"/> routes storage through this slot;
     /// the legacy named fields were deleted and the
     /// <c>_slots[<see cref="TypedSlotIndex.Length"/>]</c> array the
     /// storage owner.
@@ -175,7 +175,7 @@ namespace DxMessaging.Core.Internal
     /// </remarks>
     /// <typeparam name="T">
     /// The strongly-typed message contract this slot's parent
-    /// <see cref="TypedHandler{T}"/> binds to. The slot itself does not
+    /// <see cref="MessageHandler.TypedHandler{T}"/> binds to. The slot itself does not
     /// reference <typeparamref name="T"/> directly today (the type-erased
     /// <see cref="IHandlerActionCache"/> handles the per-delegate generic
     /// shapes) -- the parameter is carried so typed storage can add a
@@ -187,7 +187,7 @@ namespace DxMessaging.Core.Internal
     {
         /// <summary>
         /// Per-priority handler caches keyed by priority value.
-        /// <see cref="TypedHandler{T}"/> routes non-context storage through
+        /// <see cref="MessageHandler.TypedHandler{T}"/> routes non-context storage through
         /// this slot.
         /// </summary>
         public readonly Dictionary<int, IHandlerActionCache> byPriority = new();
@@ -474,7 +474,7 @@ namespace DxMessaging.Core.Internal
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The <see cref="TypedHandler{T}"/> specialization for <see cref="IMessage"/>
+    /// The <see cref="MessageHandler.TypedHandler{T}"/> specialization for <see cref="IMessage"/>
     /// holds an array of 6 <see cref="TypedGlobalSlot"/> entries. Other
     /// specializations share an empty array because they cannot accept global
     /// registrations. The per-(<see cref="DispatchKind"/>,
@@ -484,7 +484,7 @@ namespace DxMessaging.Core.Internal
     /// array slots and is committed in <see cref="TypedGlobalSlotIndex"/>
     /// (sibling file in the same folder). This type defines the per-slot
     /// shape; the index file owns the layout decision.
-    /// <see cref="TypedHandler{T}"/> routes global storage through this type.
+    /// <see cref="MessageHandler.TypedHandler{T}"/> routes global storage through this type.
     /// </para>
     /// <para>
     /// Non-generic by design: the typed handler's six legacy global

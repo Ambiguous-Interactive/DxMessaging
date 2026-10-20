@@ -16,7 +16,7 @@ namespace DxMessaging.Unity
     /// <example>
     /// <code>
     /// // Temporarily override the global bus while still keeping a reference to the startup instance.
-    /// var initialProvider = Resources.Load<InitialGlobalMessageBusProvider>("InitialGlobalMessageBusProvider");
+    /// var initialProvider = Resources.Load&lt;InitialGlobalMessageBusProvider&gt;("InitialGlobalMessageBusProvider");
     /// IMessageBus startupBus = initialProvider.Resolve();
     /// using (MessageHandler.OverrideGlobalMessageBus(customBus))
     /// {
@@ -24,7 +24,7 @@ namespace DxMessaging.Unity
     /// }
     /// // startupBus still references the original global bus
     /// </code>
-    /// </summary>
+    /// </example>
     [CreateAssetMenu(
         fileName = "InitialGlobalMessageBusProvider",
         menuName = "Wallstop Studios/DxMessaging/Message Bus Providers/Initial Global Message Bus"

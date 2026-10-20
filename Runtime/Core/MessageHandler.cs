@@ -3141,7 +3141,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// One-size-fits-all wrapper around all possible Messaging sinks for a particular MessageHandler & MessageType.
+        /// One-size-fits-all wrapper around all possible Messaging sinks for a particular MessageHandler and message type.
         /// </summary>
         /// <typeparam name="T">Message type that this Handler exists to serve.</typeparam>
         internal sealed class TypedHandler<T> : ITypedHandlerSlotSweeper

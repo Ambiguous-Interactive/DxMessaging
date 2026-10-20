@@ -21,10 +21,10 @@ namespace DxMessaging.Core.Messages
     [Flags]
     public enum ReflexiveSendMode
     {
-        [Obsolete("Please use a valid Send Mode")]
         /// <summary>
         /// Legacy sentinel indicating no traversal; not supported.
         /// </summary>
+        [Obsolete("Please use a valid Send Mode")]
         None = 0,
 
         /// <summary>

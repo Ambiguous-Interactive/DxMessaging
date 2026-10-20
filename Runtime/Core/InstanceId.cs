@@ -78,41 +78,40 @@ namespace DxMessaging.Core
 #endif
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Converts a <see cref="UnityEngine.GameObject"/> reference into an <see cref="InstanceId"/>.
         /// </summary>
         /// <param name="gameObject">GameObject to wrap.</param>
         /// <returns>Instance identifier representing <paramref name="gameObject"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator InstanceId(UnityEngine.GameObject gameObject)
         {
             return new InstanceId(gameObject);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Converts a <see cref="UnityEngine.Component"/> reference into an <see cref="InstanceId"/>.
         /// </summary>
         /// <param name="component">Component to wrap.</param>
         /// <returns>Instance identifier representing <paramref name="component"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator InstanceId(UnityEngine.Component component)
         {
             return new InstanceId(component);
         }
 #endif
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Checks for equality with another <see cref="InstanceId"/>.
         /// </summary>
         /// <param name="other">Other instance identifier.</param>
         /// <returns><c>true</c> when both identifiers refer to the same Unity instance.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(InstanceId other)
         {
             return _id == other._id;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Checks for equality with an arbitrary object.
         /// </summary>
@@ -120,16 +119,17 @@ namespace DxMessaging.Core
         /// <returns>
         /// <c>true</c> when <paramref name="other"/> is an <see cref="InstanceId"/> representing the same Unity instance.
         /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override bool Equals(object other)
         {
             return other is InstanceId id && Equals(id);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Gets a hash code suitable for dictionary or set lookups.
         /// </summary>
         /// <returns>Hash code derived from the underlying Unity instance ID.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode()
         {
             return _id;
@@ -150,43 +150,42 @@ namespace DxMessaging.Core
 #endif
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Determines whether two identifiers refer to the same Unity instance.
         /// </summary>
         /// <param name="lhs">Left-hand identifier.</param>
         /// <param name="rhs">Right-hand identifier.</param>
         /// <returns><c>true</c> when both identifiers represent the same value.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(InstanceId lhs, InstanceId rhs)
         {
             return lhs._id == rhs._id;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Determines whether two identifiers refer to different Unity instances.
         /// </summary>
         /// <param name="lhs">Left-hand identifier.</param>
         /// <param name="rhs">Right-hand identifier.</param>
         /// <returns><c>true</c> when the identifiers represent different values.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator !=(InstanceId lhs, InstanceId rhs)
         {
             return lhs._id != rhs._id;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Compares two identifiers for ascending ordering.
         /// </summary>
         /// <param name="lhs">Left-hand identifier.</param>
         /// <param name="rhs">Right-hand identifier.</param>
         /// <returns><c>true</c> when <paramref name="lhs"/> precedes <paramref name="rhs"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator <(InstanceId lhs, InstanceId rhs)
         {
             return lhs._id.CompareTo(rhs._id) < 0;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Compares two identifiers for ascending ordering with equality.
         /// </summary>
@@ -195,24 +194,24 @@ namespace DxMessaging.Core
         /// <returns>
         /// <c>true</c> when <paramref name="lhs"/> precedes <paramref name="rhs"/> or both identifiers are equal.
         /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator <=(InstanceId lhs, InstanceId rhs)
         {
             return lhs._id.CompareTo(rhs._id) <= 0;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Compares two identifiers for descending ordering.
         /// </summary>
         /// <param name="lhs">Left-hand identifier.</param>
         /// <param name="rhs">Right-hand identifier.</param>
         /// <returns><c>true</c> when <paramref name="lhs"/> follows <paramref name="rhs"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator >(InstanceId lhs, InstanceId rhs)
         {
             return 0 < lhs._id.CompareTo(rhs._id);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Compares two identifiers for descending ordering with equality.
         /// </summary>
@@ -221,23 +220,23 @@ namespace DxMessaging.Core
         /// <returns>
         /// <c>true</c> when <paramref name="lhs"/> follows <paramref name="rhs"/> or both identifiers are equal.
         /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator >=(InstanceId lhs, InstanceId rhs)
         {
             return 0 <= lhs._id.CompareTo(rhs._id);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Compares this identifier with another identifier for ordering.
         /// </summary>
         /// <param name="other">Identifier to compare with.</param>
         /// <returns>Relative ordering as defined by <see cref="IComparable{T}.CompareTo(T)"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int CompareTo(InstanceId other)
         {
             return _id.CompareTo(other._id);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <summary>
         /// Compares this identifier with an arbitrary object for ordering.
         /// </summary>
@@ -245,6 +244,7 @@ namespace DxMessaging.Core
         /// <returns>
         /// Relative ordering when <paramref name="rhs"/> is an <see cref="InstanceId"/>; otherwise <c>-1</c>.
         /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int CompareTo(object rhs)
         {
             if (rhs is InstanceId other)

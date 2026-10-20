@@ -5627,10 +5627,9 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary>
         /// Runs the untargeted interceptor phase over the plan's frozen,
-        /// priority-ordered interceptor array. Callers gate on
-        /// <see cref="DispatchPlan.interceptorCount"/>, so this method is
-        /// entered only when at least one interceptor was registered when the
-        /// plan was refreshed.
+        /// priority-ordered interceptor array. Callers enter this phase only
+        /// when <see cref="DispatchPlan.interceptorCache"/> retains a store
+        /// with registered interceptors at plan refresh.
         /// </summary>
         /// <remarks>
         /// The array is never mutated in place (see

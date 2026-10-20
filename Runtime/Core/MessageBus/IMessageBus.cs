@@ -602,7 +602,7 @@ namespace DxMessaging.Core.MessageBus
         /// Pass the <see cref="MessageBusRegistration"/> returned by the matching
         /// <c>Register*</c> call, using the SAME <typeparamref name="T"/> you registered with
         /// (for <see cref="RegisterGlobalAcceptAll"/>, any <c>T : IMessage</c> such as
-        /// <see cref="Messages.IMessage"/> is accepted, since the global slot is not type-keyed).
+        /// <see cref="IMessage"/> is accepted, since the global slot is not type-keyed).
         /// </para>
         /// <para>
         /// Deregistration is idempotent at the handle level only in the sense that a handle that
