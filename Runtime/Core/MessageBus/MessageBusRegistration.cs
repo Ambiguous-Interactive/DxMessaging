@@ -87,8 +87,8 @@ namespace DxMessaging.Core.MessageBus
         internal readonly object capturedPrimary;
 
         /// <summary>
-        /// The keyed (<see cref="Kind.Handler"/> targeted/broadcast) per-type context map captured
-        /// by identity; null otherwise.
+        /// Reserved secondary identity anchor. Built-in registrations leave it null so
+        /// a consumed handle cannot retain a recycled context map.
         /// </summary>
         internal readonly object capturedSecondary;
 

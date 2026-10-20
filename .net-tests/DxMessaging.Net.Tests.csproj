@@ -124,5 +124,9 @@
       Include="../Tests/Runtime/MemoryReclaim/ConsumedContextHandleRetentionTests.cs"
       Link="ConsumedContextHandleRetentionTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/DisabledTokenRetentionTests.cs"
+      Link="DisabledTokenRetentionTests.cs"
+    />
   </ItemGroup>
 </Project>

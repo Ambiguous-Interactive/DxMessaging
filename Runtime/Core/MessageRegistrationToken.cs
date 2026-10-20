@@ -2779,6 +2779,7 @@ namespace DxMessaging.Core
                     registration spills into an independent compatibility wrapper.
                 */
                 _hasInlineDeregistration = false;
+                _typedDeregistration = default;
             }
         }
 

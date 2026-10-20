@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Release consumed typed teardown state after a token disables successfully, preserving staged
+  callbacks for re-enabling while allowing unrelated users of recycled maps to collect
+  ([#653](https://github.com/Ambiguous-Interactive/DxMessaging/issues/653)).
 - Release recycled context maps from consumed keyed registration handles so retaining an old
   value cannot keep a later unrelated bus and receiver alive
   ([#652](https://github.com/Ambiguous-Interactive/DxMessaging/issues/652)).

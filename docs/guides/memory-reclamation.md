@@ -21,6 +21,11 @@ recycled context map. Keeping that old value cannot pin unrelated registrations
 when another bus reuses the map. A handle can still retain its own handler or
 external state; discard consumed values when their lifecycle ends.
 
+Disabled tokens retain their staged callbacks for the next `Enable()`. After a typed
+registration's teardown succeeds, the token releases that consumed cleanup value so
+later users of recycled typed context maps can collect. A failed teardown keeps its
+cleanup value for retry.
+
 ## Table of Contents
 
 - [Memory Reclamation](#memory-reclamation)
