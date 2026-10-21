@@ -132,5 +132,9 @@
       Include="../Tests/Runtime/Core/DiagnosticOriginAfterDisableTests.cs"
       Link="DiagnosticOriginAfterDisableTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/OrderedHandlerEntryLifecycleTests.cs"
+      Link="OrderedHandlerEntryLifecycleTests.cs"
+    />
   </ItemGroup>
 </Project>
