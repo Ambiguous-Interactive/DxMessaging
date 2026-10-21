@@ -506,6 +506,14 @@ When diagnostics are enabled, buses and tokens record message emissions in a rin
 - Manually-created records and legacy direct handler dispatches keep
   `traceId = 0`; tools treat those as local evidence only.
 
+> **Changed in 4.0.0:** Disabling, retargeting, and re-enabling a token inside a callback preserves
+> the originating bus for that delivery and its pending frozen callbacks. Fresh deliveries use
+> the rebound bus. Nested deliveries keep their own scoped trace IDs.
+
+Tokens record successful callbacks after they return, using `DiagnosticMode` at that point.
+A callback that throws adds no token emission record. Resetting the originating bus clears its
+current scoped trace ID; records completed after that reset can carry `traceId = 0`.
+
 ```csharp
 using DxMessaging.Core.MessageBus;
 

@@ -64,16 +64,14 @@ namespace DxMessaging.Core
             Maps each staged registration handle to the unified per-handle Registration
             object the public Register* methods built. Calling Registration.Register()
             (re)registers the handler on the bus and returns the matching
-            HandlerDeregistration. The Registration object IS the collapsed staging
-            state: it replaces (a) the per-registration staging Func display class, (b)
-            the staging Func delegate itself, and (c) the nested AugmentedHandler
-            local-function delegate -- the captured target/source, user handler,
-            priority, and kind are now plain fields, and the diagnostics-augmented
-            invoker is an instance method bound to the object (the FastHandler<T> handed
-            to MessageHandler is (FastHandler<T>)registration.AugmentedHandlerScalar).
-            The registration also owns its common teardown state, eliminating the separate
-            HandlerDeregistration object; an allocation-backed wrapper is created only for
-            overlapping retry/recovery state. Net ~ -3 managed allocations per registration.
+            HandlerDeregistration. The Registration object stores the staged kind,
+            target/source, user handler and priority without a staging Func or closure.
+            A separate immutable binding owns the augmented invokers and their resolved
+            bus. Replays on the same bus reuse that binding; a different bus gets a new
+            binding so frozen callbacks retain their own diagnostic origin. Binding
+            creation is a registration cost, never a steady-state emission allocation.
+            The registration also owns its common teardown state; an allocation-backed
+            wrapper is created only for overlapping retry/recovery state.
             The central replay loop pairs
             the Registration with its handle and performs the AddDeregistration. The
             re-entrancy snapshot semantics are unchanged: the replay queue captures the
@@ -2619,13 +2617,11 @@ namespace DxMessaging.Core
         }
 
         /*
-            The unified per-handle staging object. Replaces, per registration, the old
-            staging Func<handle, HandlerDeregistration> display class + delegate AND the
-            nested AugmentedHandler local-function delegate. The captured staging state
-            (owning token, handle, user handler delegate, target/source InstanceId,
-            priority, kind) lives in plain fields; the diagnostics-augmented invoker is
-            an instance method bound to this object (so MessageHandler still receives a
-            delegate on the hot path -- no virtual/interface call per dispatch).
+            The unified per-handle staging object holds the owning token, handle,
+            user delegate, target/source, priority and kind without a staging Func.
+            Its current immutable invocation binding owns the augmented delegates and
+            resolved bus. Older frozen delegates keep their own binding through replay;
+            MessageHandler still invokes a delegate without per-dispatch virtual calls.
 
             The base is non-generic so _registrations / the replay queue can hold every
             registration polymorphically. The constrained MessageHandler.Register*<T>
@@ -2641,7 +2637,6 @@ namespace DxMessaging.Core
         {
             protected readonly MessageRegistrationToken Token;
             public MessageRegistrationHandle Handle;
-            private IMessageBus _registeredMessageBus;
 
             protected Registration(MessageRegistrationToken token)
             {
@@ -2722,9 +2717,7 @@ namespace DxMessaging.Core
 
             protected IMessageBus ResolveRegistrationMessageBus()
             {
-                IMessageBus messageBus = Token._messageBus;
-                _registeredMessageBus = messageBus ?? Token._messageHandler?.DefaultMessageBus;
-                return messageBus;
+                return Token._messageBus;
             }
 
             protected static void ThrowIfNullHandler(object handler, string parameterName)
@@ -2734,10 +2727,34 @@ namespace DxMessaging.Core
                     throw new ArgumentNullException(parameterName);
                 }
             }
+        }
+
+        /*
+            A frozen dispatch delegate owns this binding, rather than the replayed staging
+            object's current bus. Rebinding creates a new target; an older callback and
+            its pending peers keep the old target until their snapshots are released.
+            The token still decides whether to record after the user callback returns.
+        */
+        private abstract class InvocationBinding
+        {
+            protected readonly MessageRegistrationToken Token;
+            private readonly MessageRegistrationHandle _handle;
+            public readonly IMessageBus MessageBus;
+
+            protected InvocationBinding(
+                MessageRegistrationToken token,
+                MessageRegistrationHandle handle,
+                IMessageBus messageBus
+            )
+            {
+                Token = token;
+                _handle = handle;
+                MessageBus = messageBus;
+            }
 
             protected void RecordDiagnosticEmission(IMessage message, InstanceId? context = null)
             {
-                Token.RecordDiagnosticEmission(Handle, _registeredMessageBus, message, context);
+                Token.RecordDiagnosticEmission(_handle, MessageBus, message, context);
             }
         }
 
@@ -2791,17 +2808,6 @@ namespace DxMessaging.Core
             private readonly object _userHandler;
             private readonly int _priority;
 
-            /*
-                Strongly-typed views of _userHandler, resolved ONCE at Register() time
-                (cold) so the per-dispatch augmented invoker calls a typed field directly
-                -- no per-dispatch castclass or kind-switch (which would add an O(handlers)
-                cost on the hot dispatch path). Exactly one is set per registration kind.
-            */
-            private Action<T> _scalarAction;
-            private MessageHandler.FastHandler<T> _scalarFast;
-            private Action<InstanceId, T> _contextAction;
-            private MessageHandler.FastHandlerWithContext<T> _contextFast;
-
             internal TargetedRegistration(
                 MessageRegistrationToken token,
                 RegistrationKind kind,
@@ -2837,85 +2843,77 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.TargetedHandlerAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedMessageHandler(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedHandlerFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedMessageHandler(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedPostProcessorAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedPostProcessor(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.TargetedPostProcessorFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedPostProcessor(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargeting(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargeting(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 _priority,
                                 messageBus
                             )
@@ -2952,50 +2950,76 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            /*
-                Scalar invokers (targeted handler / post-processor). The user's handler is
-                the identity/dedup key; this flat invoker runs for the default slot. Calls
-                the typed field directly (no castclass) then records the (message, _context)
-                emission, matching the former AugmentedHandler bodies exactly.
-            */
-            private void AugmentedScalarAction(in T message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _scalarAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message, _context);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedScalarFast(in T message)
+            private sealed class Binding : InvocationBinding
             {
-                _scalarFast(in message);
-                if (Token._diagnosticMode)
-                {
-                    RecordDiagnosticEmission(message, _context);
-                }
-            }
+                private readonly Action<T> _scalarAction;
+                private readonly MessageHandler.FastHandler<T> _scalarFast;
+                private readonly Action<InstanceId, T> _contextAction;
+                private readonly MessageHandler.FastHandlerWithContext<T> _contextFast;
+                private readonly InstanceId _context;
 
-            /*
-                Context invokers (without-targeting handler / post-processor). Emission data
-                uses the dispatch-supplied target (the readonly parameter), not the stored _context
-                (default for these kinds), matching the former bodies exactly.
-            */
-            private void AugmentedContextAction(in InstanceId target, in T message)
-            {
-                _contextAction(target, message);
-                if (Token._diagnosticMode)
+                public Binding(TargetedRegistration<T> registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message, target);
+                    _scalarAction = registration._userHandler as Action<T>;
+                    _scalarFast = registration._userHandler as MessageHandler.FastHandler<T>;
+                    _contextAction = registration._userHandler as Action<InstanceId, T>;
+                    _contextFast =
+                        registration._userHandler as MessageHandler.FastHandlerWithContext<T>;
+                    _context = registration._context;
                 }
-            }
 
-            private void AugmentedContextFast(in InstanceId target, in T message)
-            {
-                _contextFast(in target, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedScalarAction(in T message)
                 {
-                    RecordDiagnosticEmission(message, target);
+                    _scalarAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                public void AugmentedScalarFast(in T message)
+                {
+                    _scalarFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                /*
+                    Context invokers (without-targeting handler / post-processor). Emission data
+                    uses the dispatch-supplied target (the readonly parameter), not the stored _context
+                    (default for these kinds), matching the former bodies exactly.
+                */
+                public void AugmentedContextAction(in InstanceId target, in T message)
+                {
+                    _contextAction(target, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
+                }
+
+                public void AugmentedContextFast(in InstanceId target, in T message)
+                {
+                    _contextFast(in target, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
                 }
             }
         }
@@ -3006,14 +3030,6 @@ namespace DxMessaging.Core
             private readonly RegistrationKind _kind;
             private readonly object _userHandler;
             private readonly int _priority;
-
-            /*
-                Typed views of _userHandler, resolved once at Register() time (cold) so the
-                per-dispatch invoker calls a typed field directly -- no castclass/switch on
-                the hot path. Exactly one is set per registration kind.
-            */
-            private Action<T> _scalarAction;
-            private MessageHandler.FastHandler<T> _scalarFast;
 
             internal UntargetedRegistration(
                 MessageRegistrationToken token,
@@ -3043,31 +3059,28 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.UntargetedHandlerAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterUntargetedMessageHandler(
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.UntargetedHandlerFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterUntargetedMessageHandler(
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.UntargetedPostProcessorFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterUntargetedPostProcessor(
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 _priority,
                                 messageBus
                             )
@@ -3088,25 +3101,46 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            /*
-                Untargeted scalar invokers. No context: emission data carries the message
-                only, matching the former AugmentedHandler bodies exactly.
-            */
-            private void AugmentedScalarAction(in T message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _scalarAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedScalarFast(in T message)
+            private sealed class Binding : InvocationBinding
             {
-                _scalarFast(in message);
-                if (Token._diagnosticMode)
+                private readonly Action<T> _scalarAction;
+                private readonly MessageHandler.FastHandler<T> _scalarFast;
+
+                public Binding(UntargetedRegistration<T> registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message);
+                    _scalarAction = registration._userHandler as Action<T>;
+                    _scalarFast = registration._userHandler as MessageHandler.FastHandler<T>;
+                }
+
+                public void AugmentedScalarAction(in T message)
+                {
+                    _scalarAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
+                }
+
+                public void AugmentedScalarFast(in T message)
+                {
+                    _scalarFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
                 }
             }
         }
@@ -3118,16 +3152,6 @@ namespace DxMessaging.Core
             private readonly InstanceId _context;
             private readonly object _userHandler;
             private readonly int _priority;
-
-            /*
-                Typed views of _userHandler, resolved once at Register() time (cold) so the
-                per-dispatch invoker calls a typed field directly -- no castclass/switch on
-                the hot path. Exactly one is set per registration kind.
-            */
-            private Action<T> _scalarAction;
-            private MessageHandler.FastHandler<T> _scalarFast;
-            private Action<InstanceId, T> _contextAction;
-            private MessageHandler.FastHandlerWithContext<T> _contextFast;
 
             internal BroadcastRegistration(
                 MessageRegistrationToken token,
@@ -3164,85 +3188,77 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.BroadcastHandlerAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastMessageHandler(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastHandlerFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastMessageHandler(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastPostProcessorAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastPostProcessor(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.BroadcastPostProcessorFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastPostProcessor(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourceAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSource(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourceFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSource(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 priority: _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 priority: _priority,
                                 messageBus
                             )
@@ -3271,48 +3287,76 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            /*
-                Broadcast scalar invokers. Emission data carries the stored source
-                (_context), matching the former AugmentedHandler bodies exactly.
-            */
-            private void AugmentedScalarAction(in T message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _scalarAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message, _context);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedScalarFast(in T message)
+            private sealed class Binding : InvocationBinding
             {
-                _scalarFast(in message);
-                if (Token._diagnosticMode)
-                {
-                    RecordDiagnosticEmission(message, _context);
-                }
-            }
+                private readonly Action<T> _scalarAction;
+                private readonly MessageHandler.FastHandler<T> _scalarFast;
+                private readonly Action<InstanceId, T> _contextAction;
+                private readonly MessageHandler.FastHandlerWithContext<T> _contextFast;
+                private readonly InstanceId _context;
 
-            /*
-                Broadcast context invokers for the without-source kinds. Emission data uses
-                the dispatch-supplied source (the readonly parameter), not the stored _context
-                (default for these kinds), matching the former bodies exactly.
-            */
-            private void AugmentedContextAction(in InstanceId source, in T message)
-            {
-                _contextAction(source, message);
-                if (Token._diagnosticMode)
+                public Binding(BroadcastRegistration<T> registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _scalarAction = registration._userHandler as Action<T>;
+                    _scalarFast = registration._userHandler as MessageHandler.FastHandler<T>;
+                    _contextAction = registration._userHandler as Action<InstanceId, T>;
+                    _contextFast =
+                        registration._userHandler as MessageHandler.FastHandlerWithContext<T>;
+                    _context = registration._context;
                 }
-            }
 
-            private void AugmentedContextFast(in InstanceId source, in T message)
-            {
-                _contextFast(in source, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedScalarAction(in T message)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _scalarAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                public void AugmentedScalarFast(in T message)
+                {
+                    _scalarFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                /*
+                    Broadcast context invokers for the without-source kinds. Emission data uses
+                    the dispatch-supplied source (the readonly parameter), not the stored _context
+                    (default for these kinds), matching the former bodies exactly.
+                */
+                public void AugmentedContextAction(in InstanceId source, in T message)
+                {
+                    _contextAction(source, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
+                }
+
+                public void AugmentedContextFast(in InstanceId source, in T message)
+                {
+                    _contextFast(in source, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
                 }
             }
         }
@@ -3547,11 +3591,11 @@ namespace DxMessaging.Core
                     return StoreDeregistration(
                         messageHandler.RegisterGlobalAcceptAll(
                             _untargetedAction,
-                            AugmentedUntargetedAction,
+                            GetBinding(messageBus).AugmentedUntargetedAction,
                             _targetedAction,
-                            AugmentedTargetedAction,
+                            GetBinding(messageBus).AugmentedTargetedAction,
                             _broadcastAction,
-                            AugmentedBroadcastAction,
+                            GetBinding(messageBus).AugmentedBroadcastAction,
                             messageBus
                         )
                     );
@@ -3560,11 +3604,11 @@ namespace DxMessaging.Core
                 return StoreDeregistration(
                     messageHandler.RegisterGlobalAcceptAll(
                         _untargetedFast,
-                        AugmentedUntargetedFast,
+                        GetBinding(messageBus).AugmentedUntargetedFast,
                         _targetedFast,
-                        AugmentedTargetedFast,
+                        GetBinding(messageBus).AugmentedTargetedFast,
                         _broadcastFast,
-                        AugmentedBroadcastFast,
+                        GetBinding(messageBus).AugmentedBroadcastFast,
                         messageBus
                     )
                 );
@@ -3611,57 +3655,93 @@ namespace DxMessaging.Core
                 return this;
             }
 
-            private void AugmentedUntargetedAction(IUntargetedMessage message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _untargetedAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedTargetedAction(InstanceId target, ITargetedMessage message)
+            private sealed class Binding : InvocationBinding
             {
-                _targetedAction(target, message);
-                if (Token._diagnosticMode)
-                {
-                    RecordDiagnosticEmission(message, target);
-                }
-            }
+                private readonly Action<IUntargetedMessage> _untargetedAction;
+                private readonly Action<InstanceId, ITargetedMessage> _targetedAction;
+                private readonly Action<InstanceId, IBroadcastMessage> _broadcastAction;
+                private readonly MessageHandler.FastHandler<IUntargetedMessage> _untargetedFast;
+                private readonly MessageHandler.FastHandlerWithContext<ITargetedMessage> _targetedFast;
+                private readonly MessageHandler.FastHandlerWithContext<IBroadcastMessage> _broadcastFast;
 
-            private void AugmentedBroadcastAction(InstanceId source, IBroadcastMessage message)
-            {
-                _broadcastAction(source, message);
-                if (Token._diagnosticMode)
+                public Binding(GlobalAcceptAllRegistration registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _untargetedAction = registration._untargetedAction;
+                    _targetedAction = registration._targetedAction;
+                    _broadcastAction = registration._broadcastAction;
+                    _untargetedFast = registration._untargetedFast;
+                    _targetedFast = registration._targetedFast;
+                    _broadcastFast = registration._broadcastFast;
                 }
-            }
 
-            private void AugmentedUntargetedFast(in IUntargetedMessage message)
-            {
-                _untargetedFast(in message);
-                if (Token._diagnosticMode)
+                public void AugmentedUntargetedAction(IUntargetedMessage message)
                 {
-                    RecordDiagnosticEmission(message);
+                    _untargetedAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
                 }
-            }
 
-            private void AugmentedTargetedFast(in InstanceId target, in ITargetedMessage message)
-            {
-                _targetedFast(in target, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedTargetedAction(InstanceId target, ITargetedMessage message)
                 {
-                    RecordDiagnosticEmission(message, target);
+                    _targetedAction(target, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
                 }
-            }
 
-            private void AugmentedBroadcastFast(in InstanceId source, in IBroadcastMessage message)
-            {
-                _broadcastFast(in source, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedBroadcastAction(InstanceId source, IBroadcastMessage message)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _broadcastAction(source, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
+                }
+
+                public void AugmentedUntargetedFast(in IUntargetedMessage message)
+                {
+                    _untargetedFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
+                }
+
+                public void AugmentedTargetedFast(in InstanceId target, in ITargetedMessage message)
+                {
+                    _targetedFast(in target, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
+                }
+
+                public void AugmentedBroadcastFast(
+                    in InstanceId source,
+                    in IBroadcastMessage message
+                )
+                {
+                    _broadcastFast(in source, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
                 }
             }
         }

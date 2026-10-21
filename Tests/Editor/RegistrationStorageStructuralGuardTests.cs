@@ -92,14 +92,11 @@ namespace DxMessaging.Tests.Editor
         /// and never a parameterless <see cref="Action"/> wrapper. The pre-change form
         /// stored a staging <c>Func</c> (a delegate plus its display class capturing
         /// target/source/handler/priority) whose nested <c>AugmentedHandler</c> local
-        /// function became a SECOND delegate handed to the bus. Collapsing both into a
-        /// single Registration object (captured state as fields, the augmented invoker
-        /// an instance method bound to the object) removes about two managed allocations
-        /// per registration, uniformly across every registration kind, while keeping the
-        /// hot dispatch path delegate-based. A revert to a <c>Func</c>/<c>Action</c> value
-        /// type re-introduces those allocations. This assertion is deterministic and
-        /// backend-independent, so it catches a revert even where the allocation probe is
-        /// unavailable.
+        /// function became a SECOND delegate handed to the bus. Staging state now
+        /// lives in one Registration object without a staging delegate. Augmented
+        /// invokers belong to immutable per-bus bindings, so older frozen callbacks
+        /// keep their diagnostic origin during replay. This assertion protects the
+        /// staging representation; it does not count all registration allocations.
         /// </summary>
         [Test]
         public void RegistrationArenaStoresUnifiedRegistrationObjectAndOrderLinks()

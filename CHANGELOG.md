@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks
+  and nested deliveries ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
 - Release consumed typed teardown state after a token disables successfully, preserving staged
   callbacks for re-enabling while allowing unrelated users of recycled maps to collect
   ([#653](https://github.com/Ambiguous-Interactive/DxMessaging/issues/653)).
