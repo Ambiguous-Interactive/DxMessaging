@@ -69,7 +69,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Windows Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -219,13 +219,13 @@ jobs:
           }
           if ($code -ne 0) { exit $code }
 
-      # F1: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 -- matches the repo-wide pinned
+      # F1: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 -- matches the repo-wide pinned
       # version used by release.yml/unity-tests.yml/unity-benchmarks.yml.
       # F19: if-no-files-found is `error` (not `warn`) so a missing transcript
       # is a HARD failure rather than a silent empty artifact upload.
       - name: Upload bootstrap transcript
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-bootstrap-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/runner-bootstrap/**

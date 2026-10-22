@@ -1,0 +1,6 @@
+{
+  "extends": "../.markdownlint.jsonc",
+  // Roslyn 3.3 requires an exact mixed-space release table header and separator.
+  // These compiler-validated records keep all other Markdown checks enabled.
+  "MD060": false
+}

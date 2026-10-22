@@ -348,9 +348,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Assert.IsTrue(enumerated.Add(value), "Enumeration returned a duplicate value.");
             }
-            CollectionAssert.AreEquivalent(
-                expected.Values,
+            Assert.That(
                 enumerated,
+                Is.EquivalentTo(expected.Values),
                 "Enumeration should return exactly the oracle's live values."
             );
         }

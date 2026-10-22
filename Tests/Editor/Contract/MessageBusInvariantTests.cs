@@ -50,8 +50,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 .Select(field => field.Name)
                 .ToArray();
 
-            CollectionAssert.Contains(fieldNames, "_scalarSinks");
-            CollectionAssert.Contains(fieldNames, "_contextSinks");
+            Assert.That(fieldNames, Does.Contain("_scalarSinks"));
+            Assert.That(fieldNames, Does.Contain("_contextSinks"));
         }
 
         [Test]
@@ -204,9 +204,9 @@ namespace DxMessaging.Tests.Editor.Contract
                 .OrderBy(name => name, StringComparer.Ordinal)
                 .ToArray();
 
-            CollectionAssert.AreEqual(
-                fieldNames,
+            Assert.That(
                 registeredNames,
+                Is.EqualTo(fieldNames),
                 "Every MessageBus MessageCache storage field must have exactly one sweep registry row."
             );
         }
@@ -260,8 +260,9 @@ namespace DxMessaging.Tests.Editor.Contract
                 .Select(group => group.Key)
                 .ToArray();
 
-            CollectionAssert.IsEmpty(
+            Assert.That(
                 duplicateNames,
+                Is.Empty,
                 "Sweep registry rows must be one-to-one with MessageBus MessageCache storage fields."
             );
         }
@@ -557,7 +558,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 DispatchTrimProbeMessage message = new DispatchTrimProbeMessage();
                 bus.UntargetedBroadcast(ref message);
 
-                CollectionAssert.AreEqual(new[] { "first", "second" }, calls);
+                Assert.That(calls, Is.EqualTo(new[] { "first", "second" }));
                 Assert.AreEqual(
                     0,
                     inFlightTrimResult.TypeSlotsEvicted,

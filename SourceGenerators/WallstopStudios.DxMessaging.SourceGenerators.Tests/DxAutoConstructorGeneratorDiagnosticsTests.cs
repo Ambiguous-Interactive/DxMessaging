@@ -54,12 +54,12 @@ public class Container
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG003"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG003"),
             "DXMSG003 should be reported when nested types are not declared inside partial containers."
         );
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG004"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG004"),
             "DXMSG004 should suggest adding the partial keyword for the containing type."
         );
     }
@@ -86,7 +86,7 @@ public readonly partial struct InvalidOptional
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG005"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG005"),
             "DXMSG005 should be reported for optional defaults that cannot be parsed."
         );
     }
@@ -416,7 +416,7 @@ public readonly partial struct M
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG005"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG005"),
             "DXMSG005 should fire for unparseable Expression strings."
         );
     }
@@ -446,7 +446,7 @@ public readonly partial struct M
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG005"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG005"),
             "DXMSG005 should fire when the Expression's type cannot implicitly convert to the field type."
         );
     }
@@ -476,7 +476,7 @@ public readonly partial struct M
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG005"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG005"),
             "DXMSG005 should fire when null is passed as the default for a non-nullable value type."
         );
     }
