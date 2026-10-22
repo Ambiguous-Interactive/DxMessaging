@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent custom bus emission getters from interrupting subscription registration and teardown or
+  reclaiming a subscription while it is being enabled
+  ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655)).
+
 - Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks
   and nested deliveries ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
 - Release consumed typed teardown state after a token disables successfully, preserving staged

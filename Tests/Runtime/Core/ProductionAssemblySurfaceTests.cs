@@ -37,10 +37,11 @@ namespace DxMessaging.Tests.Runtime.Core
                     "LastSeenVersion",
                     "LastSeenEmissionId",
                 },
-                ["DxMessaging.Core.MessageBus.Internal.IEvictableSlot"] = new[] { "Version" },
                 ["DxMessaging.Core.Internal.TypedSlot`1"] = new[]
                 {
                     "Clear",
+                    "LastTouchTicks",
+                    "lastTouchTicks",
                     "Version",
                     "lastSeenVersion",
                     "lastSeenEmissionId",
@@ -48,12 +49,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 ["DxMessaging.Core.Internal.TypedGlobalSlot"] = new[]
                 {
                     "Clear",
+                    "LastTouchTicks",
+                    "lastTouchTicks",
                     "Version",
                     "lastSeenVersion",
                     "lastSeenEmissionId",
                 },
                 ["DxMessaging.Core.MessageBus.Internal.BusGlobalSlot"] = new[]
                 {
+                    "LastTouchTicks",
                     "Version",
                     "lastSeenVersion",
                     "lastSeenEmissionId",
@@ -62,7 +66,10 @@ namespace DxMessaging.Tests.Runtime.Core
             };
             foreach (Type type in assembly.GetTypes())
             {
-                if ((type.Namespace ?? string.Empty).Split('.').Contains("Testing"))
+                if (
+                    (type.Namespace ?? string.Empty).Split('.').Contains("Testing")
+                    || type.FullName == "DxMessaging.Core.MessageBus.Internal.IEvictableSlot"
+                )
                 {
                     found.Add(type.FullName);
                 }

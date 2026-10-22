@@ -1725,12 +1725,6 @@ namespace DxMessaging.Core.MessageBus
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetCurrentTouchTick(IMessageBus messageBus)
-        {
-            return messageBus is MessageBus bus ? bus._tickCounter : messageBus?.EmissionId ?? 0;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetResetGeneration(IMessageBus messageBus)
         {
             return messageBus is MessageBus bus ? bus._resetGeneration : 0;

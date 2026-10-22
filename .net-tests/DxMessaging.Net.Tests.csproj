@@ -136,5 +136,17 @@
       Include="../Tests/Runtime/Core/OrderedHandlerEntryLifecycleTests.cs"
       Link="OrderedHandlerEntryLifecycleTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/ForeignTouchGetterLifecycleTests.cs"
+      Link="ForeignTouchGetterLifecycleTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/CounterBasedTouchTests.cs"
+      Link="CounterBasedTouchTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/EvictionSweepContractTests.cs"
+      Link="EvictionSweepContractTests.cs"
+    />
   </ItemGroup>
 </Project>

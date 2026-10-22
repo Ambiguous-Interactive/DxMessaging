@@ -26,7 +26,7 @@ namespace DxMessaging.Tests.Editor.Contract
     /// <remarks>
     /// <para>
     /// These tests pin the eviction-driven monotonic <c>Reset()</c> contract
-    /// and the <see cref="IEvictableSlot"/> shape that typed storage relies on.
+    /// and the concrete slot storage that typed dispatch relies on.
     /// Each test below covers one structural invariant in the per-slot
     /// lifecycle.
     /// </para>
@@ -226,20 +226,6 @@ namespace DxMessaging.Tests.Editor.Contract
                 );
                 previous = slot.version;
             }
-        }
-
-        [Test]
-        public void TypedSlotResetPreservesLastTouchTicks()
-        {
-            TypedSlot<ProbeMessage> slot = new TypedSlot<ProbeMessage>(requiresContext: false);
-            slot.lastTouchTicks = 42;
-            slot.Reset();
-            Assert.AreEqual(
-                42,
-                slot.lastTouchTicks,
-                "Reset() must preserve lastTouchTicks so the sweep can distinguish "
-                    + "freshly-reset slots from never-touched slots."
-            );
         }
 
         /// <summary>
@@ -1022,33 +1008,6 @@ namespace DxMessaging.Tests.Editor.Contract
             slot.Reset();
 
             Assert.IsNull(slot.cache);
-        }
-
-        [Test]
-        public void TypedGlobalSlotResetPreservesLastTouchTicks()
-        {
-            TypedGlobalSlot slot = new TypedGlobalSlot();
-            slot.lastTouchTicks = 99;
-            slot.Reset();
-            Assert.AreEqual(99, slot.lastTouchTicks);
-        }
-
-        [Test]
-        public void TypedSlotImplementsIEvictableSlot()
-        {
-            Assert.IsTrue(
-                typeof(IEvictableSlot).IsAssignableFrom(typeof(TypedSlot<ProbeMessage>)),
-                "TypedSlot<T> must implement IEvictableSlot so the sweep can reclaim it."
-            );
-        }
-
-        [Test]
-        public void TypedGlobalSlotImplementsIEvictableSlot()
-        {
-            Assert.IsTrue(
-                typeof(IEvictableSlot).IsAssignableFrom(typeof(TypedGlobalSlot)),
-                "TypedGlobalSlot must implement IEvictableSlot so the sweep can reclaim it."
-            );
         }
 
         /// <summary>

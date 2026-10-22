@@ -9,6 +9,9 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.Messages;
     using DxMessaging.Core.Pooling;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 #if UNITY_2021_3_OR_NEWER
     using DxMessaging.Core.Configuration;
     using DxMessaging.Tests.Runtime;
@@ -329,7 +332,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
                 Array slots = ReadArrayField(typedHandler, "_slots");
                 int slotIndex = TypedSlotIndex.UntargetedHandleDefault;
-                Assert.IsInstanceOf<IEvictableSlot>(slots.GetValue(slotIndex));
+                Assert.IsInstanceOf<TypedSlot<ProbeMessage>>(slots.GetValue(slotIndex));
 
                 System.Collections.Generic.List<object> pooledList = DxPools.ObjectLists.Rent();
                 DxPools.ObjectLists.Return(pooledList);
@@ -377,7 +380,7 @@ namespace DxMessaging.Tests.Editor.Contract
 
                 IMessageBus.TrimResult freshResult = bus.Trim(force: false);
 
-                Assert.IsInstanceOf<IEvictableSlot>(slots.GetValue(slotIndex));
+                Assert.IsInstanceOf<TypedSlot<ProbeMessage>>(slots.GetValue(slotIndex));
                 Assert.AreEqual(0, freshResult.TypeSlotsEvicted);
                 Assert.AreEqual(1, ReadCollectionCount(bus, "_dirtyTypes"));
                 Assert.AreEqual(1, ReadCollectionCount(bus, "_dirtyHandlers"));

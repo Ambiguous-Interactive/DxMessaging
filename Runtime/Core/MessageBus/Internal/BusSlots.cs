@@ -22,7 +22,7 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// <c>HandlerCache</c> imposed.
     /// </para>
     /// </remarks>
-    internal sealed class BusGlobalSlot : IEvictableSlot
+    internal sealed class BusGlobalSlot
     {
         /// <summary>
         /// Live global handlers, keyed by handler with insertion order tracked
@@ -85,14 +85,7 @@ namespace DxMessaging.Core.MessageBus.Internal
         /// </summary>
         public MessageBus.DispatchState broadcastDispatchState;
 
-        /// <inheritdoc />
-        public long LastTouchTicks
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => lastTouchTicks;
-        }
-
-        /// <inheritdoc />
+        /// <summary>Whether this slot owns no live handlers.</summary>
         public bool IsEmpty
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

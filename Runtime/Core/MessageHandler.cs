@@ -776,8 +776,7 @@ namespace DxMessaging.Core
                 }
 
                 _cache.BumpVersion();
-                _slot.lastTouchTicks =
-                    global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(_messageBus);
+
                 _ = _cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
                 if (wasLastForEntry)
                 {
@@ -3337,13 +3336,6 @@ namespace DxMessaging.Core
                     cache.BumpVersion();
 
                     _messageBus.Deregister<T>(in _busRegistration);
-                    if (_slot != null)
-                    {
-                        _slot.lastTouchTicks =
-                            global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                                _messageBus
-                            );
-                    }
 
                     _ = cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
                     if (wasLastForEntry && _slot != null)
@@ -5408,13 +5400,7 @@ namespace DxMessaging.Core
                 cache.entries[originalHandler] = entry;
                 cache.version++;
                 TypedSlot<T> slot = FindContextSlot(handlersByContext);
-                if (slot != null)
-                {
-                    slot.lastTouchTicks =
-                        global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                            messageBus
-                        );
-                }
+
                 if (firstRegistration && slot != null)
                 {
                     slot.liveCount++;
@@ -6975,8 +6961,6 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                slot.lastTouchTicks =
-                    global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(messageBus);
                 HandlerActionCache<TU> cache = slot.cache as HandlerActionCache<TU>;
                 if (cache == null)
                 {
@@ -7317,13 +7301,7 @@ namespace DxMessaging.Core
                 cache.entries[originalHandler] = entry;
                 cache.version++;
                 TypedSlot<T> slot = FindPrioritySlot(handlers);
-                if (slot != null)
-                {
-                    slot.lastTouchTicks =
-                        global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                            messageBus
-                        );
-                }
+
                 if (slot != null && !slot.orderedPriorities.Contains(priority))
                 {
                     slot.orderedPriorities.Add(priority);

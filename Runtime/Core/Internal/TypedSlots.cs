@@ -182,7 +182,7 @@ namespace DxMessaging.Core.Internal
     /// concrete cache reference here without an additional
     /// generic re-parameterization.
     /// </typeparam>
-    internal sealed class TypedSlot<T> : IEvictableSlot
+    internal sealed class TypedSlot<T>
         where T : IMessage
     {
         /// <summary>
@@ -201,15 +201,6 @@ namespace DxMessaging.Core.Internal
 
         /// <summary>Monotonic version counter for the slot's structural state.</summary>
         public long version;
-
-        /// <summary>
-        /// Bus tick counter value at the most recent register / deregister /
-        /// emit that touched this slot. Maintained by the sweep touch hook;
-        /// preserved across <see cref="Reset"/>
-        /// so the sweep can distinguish freshly-reset slots from
-        /// never-touched slots.
-        /// </summary>
-        public long lastTouchTicks;
 
         /// <summary>
         /// Counts unique live (handler, priority) pairs across every entry in
@@ -370,14 +361,7 @@ namespace DxMessaging.Core.Internal
             this.requiresContext = requiresContext;
         }
 
-        /// <inheritdoc />
-        public long LastTouchTicks
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => lastTouchTicks;
-        }
-
-        /// <inheritdoc />
+        /// <summary>Whether this slot owns no live registrations.</summary>
         public bool IsEmpty
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -392,9 +376,6 @@ namespace DxMessaging.Core.Internal
         /// outer containers, then bumps <see cref="version"/> as the LAST
         /// step so any captured dispatch closure that observed the prior
         /// version detects invalidation.
-        /// <see cref="lastTouchTicks"/> is intentionally preserved so the
-        /// sweep can distinguish freshly-reset slots from never-touched
-        /// ones.
         /// </summary>
         /// <remarks>
         /// Drain order is load-bearing: inner caches must be reset (and their
@@ -508,7 +489,7 @@ namespace DxMessaging.Core.Internal
     /// holds exactly one cache.
     /// </para>
     /// </remarks>
-    internal sealed class TypedGlobalSlot : IEvictableSlot
+    internal sealed class TypedGlobalSlot
     {
         /// <summary>
         /// Type-erased handler cache for this slot's
@@ -522,13 +503,6 @@ namespace DxMessaging.Core.Internal
         public long version;
 
         /// <summary>
-        /// Bus tick counter value at the most recent register / deregister /
-        /// emit that touched this slot. Maintained by the sweep touch hook;
-        /// preserved across <see cref="Reset"/>.
-        /// </summary>
-        public long lastTouchTicks;
-
-        /// <summary>
         /// Reserved live-handler counter intended to mirror the entry count
         /// of <see cref="cache"/> at every stable observation point so
         /// <see cref="IsEmpty"/> is a single integer compare rather than a
@@ -540,14 +514,7 @@ namespace DxMessaging.Core.Internal
         /// </summary>
         public int liveCount;
 
-        /// <inheritdoc />
-        public long LastTouchTicks
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => lastTouchTicks;
-        }
-
-        /// <inheritdoc />
+        /// <summary>Whether this slot owns no live registrations.</summary>
         public bool IsEmpty
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -560,7 +527,6 @@ namespace DxMessaging.Core.Internal
         /// reference, then bumps <see cref="version"/> as the LAST step so
         /// any captured dispatch closure that observed the prior version
         /// detects invalidation.
-        /// <see cref="lastTouchTicks"/> is intentionally preserved.
         /// </summary>
         /// <remarks>
         /// Drain order is load-bearing: the inner cache's own monotonic
