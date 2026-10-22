@@ -733,7 +733,7 @@ namespace DxMessaging.Core
 
         /// <summary>
         /// Value teardown for one typed global handler slot. Captures the old closure's
-        /// reset/slot guards, erased cache identity, refcount key, and touch/live-count state.
+        /// reset/slot guards, erased cache identity, refcount key, and live-count state.
         /// </summary>
         internal readonly struct GlobalHandlerDeregistrationState
         {
@@ -3362,6 +3362,20 @@ namespace DxMessaging.Core
                     cache.BumpVersion();
 
                     _messageBus.Deregister<T>(in _busRegistration);
+
+                    /*
+                        A foreign bus callback can reset and retire the captured slot. Check the
+                        reset identities again before touching its former cache or pending work.
+                    */
+                    if (
+                        !global::DxMessaging.Core.MessageBus.MessageBus.IsResetGenerationCurrent(
+                            _messageBus,
+                            _resetGeneration
+                        ) || (_slot != null && _slot.version != _slotVersion)
+                    )
+                    {
+                        return;
+                    }
 
                     _ = cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
                     if (wasLastForEntry && _slot != null)

@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop teardown from attaching pending context cleanup to a typed slot retired by a reentrant
+  bus reset ([#660](https://github.com/Ambiguous-Interactive/DxMessaging/issues/660)).
+
 - Keep reflexive method signature keys stable when caller-owned type arrays change, and make
   default/null-array key equality safe. Resolve reflected overloads from the captured signature
   ([#659](https://github.com/Ambiguous-Interactive/DxMessaging/issues/659)).
