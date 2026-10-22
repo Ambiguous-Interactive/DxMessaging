@@ -27,13 +27,13 @@ token.RemoveRegistration(handle);
 Register handlers for messages that have no specific target -- system-wide events.
 
 ```csharp
-// Standard handler (allocation-friendly for simple cases)
+// Handler that receives the message by value
 MessageRegistrationHandle RegisterUntargeted<T>(
     Action<T> handler,
     int priority = 0
 );
 
-// Fast handler (zero-allocation, receives message by readonly reference)
+// Fast handler that receives the message by readonly reference
 MessageRegistrationHandle RegisterUntargeted<T>(
     MessageHandler.FastHandler<T> handler,
     int priority = 0
@@ -210,29 +210,44 @@ Component.
 
 ## Interceptors (Bus-Level)
 
-Interceptors allow you to intercept and potentially modify or cancel messages at the bus level before they reach handlers.
+Interceptors can modify a message or cancel dispatch before handlers run. The declarations below
+belong to `IMessageBus`.
+
+> **Changed in v4.0.0:** Bus registration methods return `MessageBusRegistration`. Keep the handle
+> and call `Deregister<T>(in handle)` on the same bus with the registered message type. For
+> `RegisterGlobalAcceptAll`, use `Deregister<IMessage>(in handle)`.
+
+Token methods return a separate `MessageRegistrationHandle`; remove it through the token that
+created it with `RemoveRegistration(handle)`.
 
 ```csharp
 // Intercept untargeted messages
-Action RegisterUntargetedInterceptor<T>(
+MessageBusRegistration RegisterUntargetedInterceptor<T>(
     UntargetedInterceptor<T> interceptor,
     int priority = 0
-);
+)
+    where T : IUntargetedMessage;
 
 // Intercept targeted messages
-Action RegisterTargetedInterceptor<T>(
+MessageBusRegistration RegisterTargetedInterceptor<T>(
     TargetedInterceptor<T> interceptor,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 
 // Intercept broadcast messages
-Action RegisterBroadcastInterceptor<T>(
+MessageBusRegistration RegisterBroadcastInterceptor<T>(
     BroadcastInterceptor<T> interceptor,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 
 // Global observer for all messages
-Action RegisterGlobalAcceptAll(MessageHandler handler);
+MessageBusRegistration RegisterGlobalAcceptAll(MessageHandler messageHandler);
+
+// Remove a registration from the same bus
+void Deregister<T>(in MessageBusRegistration registration)
+    where T : IMessage;
 ```
 
 ---

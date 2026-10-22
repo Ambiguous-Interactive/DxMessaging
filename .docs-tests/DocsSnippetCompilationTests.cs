@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NUnit.Framework;
 
 namespace WallstopStudios.DxMessaging.Docs.Tests;
@@ -8,6 +11,81 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    /// <summary>Keep bus reference declarations aligned with the actual public interface.</summary>
+    /// <remarks>2026-10-22: Stub compilation accepted obsolete Action return types in API declarations.</remarks>
+    [TestCase("RegisterUntargetedInterceptor")]
+    [TestCase("RegisterTargetedInterceptor")]
+    [TestCase("RegisterBroadcastInterceptor")]
+    [TestCase("RegisterGlobalAcceptAll")]
+    [TestCase("Deregister")]
+    public void BusReferenceSignaturesMatchRuntimeInterface(string methodName)
+    {
+        string root = ResolveRepoRoot();
+        string referencePath = Path.Combine(root, "docs", "reference", "reference.md");
+        string interfacePath = Path.Combine(
+            root,
+            "Runtime",
+            "Core",
+            "MessageBus",
+            "IMessageBus.cs"
+        );
+        MethodDeclarationSyntax runtimeMethod = CSharpSyntaxTree
+            .ParseText(File.ReadAllText(interfacePath))
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Single(method => method.Identifier.ValueText == methodName);
+        MethodDeclarationSyntax[] documentedMethods = ExtractCodeBlocks(referencePath, "csharp")
+            .SelectMany(snippet =>
+                CSharpSyntaxTree
+                    .ParseText("interface ReferenceSignatures {\n" + snippet + "\n}")
+                    .GetRoot()
+                    .DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>()
+            )
+            .Where(method => method.Identifier.ValueText == methodName)
+            .ToArray();
+        string label = referencePath + ": " + methodName;
+        Assert.That(documentedMethods, Has.Length.EqualTo(1), label + " must appear once");
+        MethodDeclarationSyntax documented = documentedMethods[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                documented.ReturnType.WithoutTrivia().ToString(),
+                Is.EqualTo(runtimeMethod.ReturnType.WithoutTrivia().ToString()),
+                label + " return type"
+            );
+            Assert.That(
+                documented.TypeParameterList?.WithoutTrivia().NormalizeWhitespace().ToFullString(),
+                Is.EqualTo(
+                    runtimeMethod
+                        .TypeParameterList?.WithoutTrivia()
+                        .NormalizeWhitespace()
+                        .ToFullString()
+                ),
+                label + " type parameters"
+            );
+            Assert.That(
+                documented.ParameterList.WithoutTrivia().NormalizeWhitespace().ToFullString(),
+                Is.EqualTo(
+                    runtimeMethod.ParameterList.WithoutTrivia().NormalizeWhitespace().ToFullString()
+                ),
+                label + " parameters"
+            );
+            Assert.That(
+                documented.ConstraintClauses.Select(clause =>
+                    clause.WithoutTrivia().NormalizeWhitespace().ToFullString()
+                ),
+                Is.EqualTo(
+                    runtimeMethod.ConstraintClauses.Select(clause =>
+                        clause.WithoutTrivia().NormalizeWhitespace().ToFullString()
+                    )
+                ),
+                label + " constraints"
+            );
+        });
+    }
+
     [TestCase(0)]
     [TestCase(1)]
     [TestCase(2)]

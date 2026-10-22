@@ -28,8 +28,9 @@ Lifecycles and tokens
     the next Disable/Enable cycle.
   - If a custom bus rejects a registration on an enabled token before changing its registrations,
     that call leaves no staged entry to replay later.
-  - A failed `Enable()` retains handles returned while the token was disabled. Retry `Enable()`
-    after the bus recovers, or remove those handles.
+  - A failed `Enable()` retains handles returned while the token was disabled. If `Enabled` is
+    false, retry `Enable()` after the bus recovers, or remove those handles. If rollback leaves
+    `Enabled` true, finish cleanup with `Disable()` before enabling again.
 - Clearing
   - `token.UnregisterAll()` removes current registrations and clears token-local diagnostics when
     cleanup finishes.

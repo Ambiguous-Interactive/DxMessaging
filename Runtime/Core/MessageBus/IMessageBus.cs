@@ -449,9 +449,8 @@ namespace DxMessaging.Core.MessageBus
         ///     And returns: true if message handling should continue, false if message handling should be stopped.
         /// </note>
         /// <remarks>
-        /// Interceptor delegates registered with this method are retained for the bus lifetime.
-        /// Calling the returned deregistration action removes the interceptor from dispatch, but
-        /// the delegate reference may remain until the final deregistration of that interceptor.
+        /// Pass the returned handle to <see cref="Deregister{T}"/> to remove this registration
+        /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
         MessageBusRegistration RegisterUntargetedInterceptor<T>(
@@ -479,9 +478,8 @@ namespace DxMessaging.Core.MessageBus
         ///     And returns: true if message handling should continue, false if message handling should be stopped.
         /// </note>
         /// <remarks>
-        /// Interceptor delegates registered with this method are retained for the bus lifetime.
-        /// Calling the returned deregistration action removes the interceptor from dispatch, but
-        /// the delegate reference may remain until the final deregistration of that interceptor.
+        /// Pass the returned handle to <see cref="Deregister{T}"/> to remove this registration
+        /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
         MessageBusRegistration RegisterTargetedInterceptor<T>(
@@ -509,9 +507,8 @@ namespace DxMessaging.Core.MessageBus
         ///     And returns: true if message handling should continue, false if message handling should be stopped.
         /// </note>
         /// <remarks>
-        /// Interceptor delegates registered with this method are retained for the bus lifetime.
-        /// Calling the returned deregistration action removes the interceptor from dispatch, but
-        /// the delegate reference may remain until the final deregistration of that interceptor.
+        /// Pass the returned handle to <see cref="Deregister{T}"/> to remove this registration
+        /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
         MessageBusRegistration RegisterBroadcastInterceptor<T>(

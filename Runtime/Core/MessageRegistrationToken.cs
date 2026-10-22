@@ -45,8 +45,12 @@ namespace DxMessaging.Core
     public sealed class MessageRegistrationToken : IDisposable
     {
         /// <summary>
-        /// Whether the token is currently enabled (registrations are active).
+        /// Whether new registrations activate immediately.
         /// </summary>
+        /// <remarks>
+        /// Pending cleanup after a failure, or a registration accepted during teardown, can keep
+        /// this true. Complete cleanup before treating the token as inactive.
+        /// </remarks>
         public bool Enabled => _enabled;
 
         /// <summary>
@@ -1374,8 +1378,13 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Enables the token if not already enabled. Executes all staged registrations.
+        /// Activates staged registrations in their original registration order.
         /// </summary>
+        /// <remarks>
+        /// Handles staged while disabled remain valid if replay fails. If rollback leaves
+        /// <see cref="Enabled"/> true, finish cleanup with <see cref="Disable"/> before retrying
+        /// <see cref="Enable"/>. If cleanup completes, retry Enable after the bus recovers.
+        /// </remarks>
         /// <note>
         /// Idempotent.
         /// </note>
@@ -1411,8 +1420,14 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Disables the token if not already disabled. Executes all staged de-registrations.
+        /// Runs active cleanup while retaining staged handlers for a later <see cref="Enable"/>.
         /// </summary>
+        /// <remarks>
+        /// Attempts the cleanup queued at the start, then rethrows the first failure. Failed
+        /// cleanup keeps its original handle retryable. Registrations accepted during teardown
+        /// retain cleanup for a later pass. <see cref="Enabled"/> stays true while cleanup remains.
+        /// Retry after the bus recovers or the callback stops adding registrations.
+        /// </remarks>
         /// <note>
         /// Idempotent.
         /// </note>
@@ -1440,7 +1455,10 @@ namespace DxMessaging.Core
         /// Removes registrations and token-local diagnostic state while preserving any cleanup accepted during the call.
         /// </summary>
         /// <remarks>
-        /// Registrations accepted during teardown retain their cleanup for a later pass.
+        /// Failed cleanup keeps its original handle retryable and rethrows the first failure
+        /// after other queued cleanup is attempted. Registrations accepted during teardown
+        /// retain cleanup for a later pass. Repeat after the bus recovers or the callback stops
+        /// adding registrations. <see cref="Enabled"/> stays true while cleanup remains.
         /// </remarks>
         /// <example>
         /// <code>
@@ -2159,7 +2177,11 @@ namespace DxMessaging.Core
         /// <summary>
         /// Removes a single staged registration by handle.
         /// </summary>
-        /// <param name="handle">Handle returned from a Register* method.</param>
+        /// <param name="handle">Handle returned by a registration on this token.</param>
+        /// <remarks>
+        /// A cleanup failure is rethrown and retains the original handle for retry. Removing a
+        /// handle with no staged registration or pending cleanup has no effect.
+        /// </remarks>
         /// <example>
         /// <code>
         /// var h = token.RegisterUntargeted&lt;SceneLoaded&gt;(OnScene);
@@ -3805,11 +3827,14 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Creates a MessagingRegistrationToken that operates on the given handler.
+        /// Creates a disabled registration token bound to the given handler.
         /// </summary>
         /// <param name="messageHandler">Message handler to register handlers to.</param>
-        /// <param name="messageBus">MessageBus to use for this MessageRegistrationToken. Uses the GlobalMessageBus if left null.</param>
-        /// <returns>MessagingRegistrationToken bound to the MessageHandler.</returns>
+        /// <param name="messageBus">
+        /// Bus override. Pass <see langword="null"/> to use the handler's default bus when a registration activates.
+        /// </param>
+        /// <returns>A disabled token that stages handlers until <see cref="Enable"/> is called.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="messageHandler"/> is null.</exception>
         public static MessageRegistrationToken Create(
             MessageHandler messageHandler,
             IMessageBus messageBus = null
@@ -3824,8 +3849,12 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Removes all staged registrations and clears token-local diagnostic state.
+        /// Removes registrations and clears diagnostics when cleanup completes.
         /// </summary>
+        /// <remarks>
+        /// Uses the same failure and reentrancy behavior as <see cref="UnregisterAll"/>. Pending
+        /// cleanup remains owned by the token. Disposal does not prevent later registrations.
+        /// </remarks>
         public void Dispose()
         {
             UnregisterAll();

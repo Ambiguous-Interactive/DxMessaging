@@ -43,7 +43,7 @@
     "dxInterface": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/IMessageBus.cs",
-      "sha256": "b09b902e7005df10f8f67c209df4607dbc1f59fd283d646c7799db40d470de3a"
+      "sha256": "212fc9be8ab7f3f06f853f59dd011a79fe1a9feee13ad6923c633c967981b46d"
     },
     "dxHandler": {
       "origin": "repository",
@@ -53,7 +53,7 @@
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "1d28ee2a28a6c4f0395988753e85ea64784f8ca9a6fcbe5273ffe3a526ee79fe"
+      "sha256": "217c0daa53ef07a7ba3cb5e1398d5f95204fd4e79dbcf86eeaa1e71af4062638"
     },
     "dxFlat": {
       "origin": "repository",
