@@ -138,16 +138,21 @@ namespace DxMessaging.Core
         /// </summary>
         /// <param name="obj">Object to compare with.</param>
         /// <returns>
-        /// Relative ordering when <paramref name="obj"/> is a <see cref="MessageRegistrationHandle"/>; otherwise <c>-1</c>.
+        /// Relative ordering for another <see cref="MessageRegistrationHandle"/>; positive for <see langword="null"/>.
         /// </returns>
+        /// <exception cref="ArgumentException">The argument is non-null and has another type.</exception>
         public int CompareTo(object obj)
         {
+            if (obj is null)
+            {
+                return 1;
+            }
             if (obj is MessageRegistrationHandle handle)
             {
                 return CompareTo(handle);
             }
 
-            return -1;
+            throw new ArgumentException("Object must be a MessageRegistrationHandle.", nameof(obj));
         }
 
         /// <summary>

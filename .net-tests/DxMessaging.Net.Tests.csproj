@@ -156,5 +156,9 @@
       Include="../Tests/Runtime/Core/RetiredCleanupSlotTests.cs"
       Link="RetiredCleanupSlotTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/ComparableContractTests.cs"
+      Link="ComparableContractTests.cs"
+    />
   </ItemGroup>
 </Project>

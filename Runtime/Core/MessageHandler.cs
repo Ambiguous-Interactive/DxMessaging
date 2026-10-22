@@ -2007,12 +2007,12 @@ namespace DxMessaging.Core
         /// Compares this handler with another handler for ordering.
         /// </summary>
         /// <param name="other">Handler to compare.</param>
-        /// <returns>Relative ordering based on <see cref="owner"/>.</returns>
+        /// <returns>Relative ordering based on <see cref="owner"/>; positive for <see langword="null"/>.</returns>
         public int CompareTo(MessageHandler other)
         {
-            if (other == null)
+            if (other is null)
             {
-                return -1;
+                return 1;
             }
 
             return owner.CompareTo(other.owner);
@@ -2023,11 +2023,20 @@ namespace DxMessaging.Core
         /// </summary>
         /// <param name="obj">Object to compare.</param>
         /// <returns>
-        /// Relative ordering when <paramref name="obj"/> is a <see cref="MessageHandler"/>; otherwise <c>-1</c>.
+        /// Relative ordering for another <see cref="MessageHandler"/>; positive for <see langword="null"/>.
         /// </returns>
+        /// <exception cref="ArgumentException">The argument is non-null and has another type.</exception>
         public int CompareTo(object obj)
         {
-            return CompareTo(obj as MessageHandler);
+            if (obj is null)
+            {
+                return 1;
+            }
+            if (obj is MessageHandler other)
+            {
+                return CompareTo(other);
+            }
+            throw new ArgumentException("Object must be a MessageHandler.", nameof(obj));
         }
 
         /// <summary>

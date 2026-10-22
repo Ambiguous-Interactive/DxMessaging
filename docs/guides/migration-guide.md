@@ -4,6 +4,16 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Use compatible comparison arguments
+
+`InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input
+rules. Comparing an instance with null returns a positive value. Passing an unrelated non-null
+type to `CompareTo(object)` throws `ArgumentException`. `MessageHandler.CompareTo(MessageHandler)`
+also places null before a handler. Earlier versions returned -1 for these inputs.
+
+Pass another value of the same type, or null, when using these methods. Numeric and owner ordering
+for valid values, equality, hashing, and generic comparisons between non-null values are unchanged.
+
 ### Construct a new reflexive message to change its signature
 
 `MethodSignatureKey` captures its ordered parameter types at construction. Null and empty type

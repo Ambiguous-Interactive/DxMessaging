@@ -248,16 +248,21 @@ namespace DxMessaging.Core
         /// </summary>
         /// <param name="rhs">Object to compare with.</param>
         /// <returns>
-        /// Relative ordering when <paramref name="rhs"/> is an <see cref="InstanceId"/>; otherwise <c>-1</c>.
+        /// Relative ordering for another <see cref="InstanceId"/>; positive for <see langword="null"/>.
         /// </returns>
+        /// <exception cref="ArgumentException">The argument is non-null and has another type.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int CompareTo(object rhs)
         {
+            if (rhs is null)
+            {
+                return 1;
+            }
             if (rhs is InstanceId other)
             {
                 return CompareTo(other);
             }
-            return -1;
+            throw new ArgumentException("Object must be an InstanceId.", nameof(rhs));
         }
     }
 }

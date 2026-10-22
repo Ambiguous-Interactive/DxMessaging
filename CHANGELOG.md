@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons
+  follow `IComparable`: values sort after null, and unrelated argument types throw
+  `ArgumentException` ([#661](https://github.com/Ambiguous-Interactive/DxMessaging/issues/661)).
+
 - Stop teardown from attaching pending context cleanup to a typed slot retired by a reentrant
   bus reset ([#660](https://github.com/Ambiguous-Interactive/DxMessaging/issues/660)).
 
