@@ -30,9 +30,9 @@ namespace DxMessaging.Tests.Editor
             "dxmessaging-documentation-diagnostic-code";
         private const string CompilerDiagnosticMessageLabelName =
             "dxmessaging-documentation-diagnostic-message";
-        private const string DxMessageIdGeneratorSourcePath =
+        private const string SourceGeneratorDirectoryPath =
             "Packages/com.wallstop-studios.dxmessaging/SourceGenerators/"
-            + "WallstopStudios.DxMessaging.SourceGenerators/DxMessageIdGenerator.cs";
+            + "WallstopStudios.DxMessaging.SourceGenerators";
         private const string Dxmsg002FileName = "dxmsg002-compiler-diagnostic.png";
         private const string Dxmsg003FileName = "dxmsg003-compiler-diagnostic.png";
         private const string Dxmsg004FileName = "dxmsg004-compiler-diagnostic.png";
@@ -1110,7 +1110,12 @@ namespace DxMessaging.Tests.Editor
             string valueName
         )
         {
-            string source = File.ReadAllText(DxMessageIdGeneratorSourcePath);
+            string[] sourcePaths = Directory.GetFiles(SourceGeneratorDirectoryPath, "*.cs");
+            Array.Sort(sourcePaths, StringComparer.Ordinal);
+            string source = string.Join(
+                Environment.NewLine,
+                Array.ConvertAll(sourcePaths, File.ReadAllText)
+            );
             string idAnchor = $"id: \"{diagnosticId}\"";
             int idIndex = source.IndexOf(idAnchor, StringComparison.Ordinal);
             if (idIndex < 0)

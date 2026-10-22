@@ -299,8 +299,8 @@ RUN tokei --version
 RUN set -eux; \
     LYCHEE_VERSION="0.24.2"; \
     case "${TARGETARCH}" in \
-        amd64) LYCHEE_ARCH="x86_64-unknown-linux-gnu" ;; \
-        arm64) LYCHEE_ARCH="aarch64-unknown-linux-gnu" ;; \
+        amd64) LYCHEE_ARCH="x86_64-unknown-linux-musl" ;; \
+        arm64) LYCHEE_ARCH="aarch64-unknown-linux-musl" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
     curl --fail --location --show-error --retry 3 --retry-delay 2 \
@@ -585,7 +585,9 @@ RUN rm -rf /tmp/tools
 # Install CSharpier as dotnet tool for vscode user
 # ------------------------------------------------------------------------------
 USER vscode
-RUN dotnet tool install --global csharpier --version 1.3.0
+# Discard build-time scratch ownership before the runtime user UID can change.
+RUN dotnet tool install --global csharpier --version 1.3.0 \
+    && rm -rf /tmp/NuGetScratchvscode
 
 # Add dotnet tools to PATH for vscode user
 ENV PATH="${PATH}:/home/vscode/.dotnet/tools"
