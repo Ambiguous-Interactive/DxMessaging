@@ -5,12 +5,14 @@ namespace DxMessaging.Core
     using System.Runtime.Serialization;
 
     /// <summary>
-    /// Lightweight wrapper around Unity instance IDs to uniquely identify objects.
+    /// Numeric identity for objects and message routing.
     /// </summary>
     /// <remarks>
     /// In Unity builds, this struct also carries a reference to the underlying <c>UnityEngine.Object</c>.
     /// It supports implicit conversions from <c>UnityEngine.GameObject</c> and <c>UnityEngine.Component</c>,
-    /// and provides value semantics for hashing, equality, and ordering. Outside Unity, it stores only the integer ID.
+    /// and provides value semantics for hashing, equality, and ordering based only on the integer ID.
+    /// Constructing from an integer does not find or attach a Unity object. Caller-defined IDs share the same
+    /// numeric identity space as Unity IDs. Outside Unity, this struct stores only the integer ID.
     /// </remarks>
     /// <example>
     /// <code>
@@ -109,7 +111,7 @@ namespace DxMessaging.Core
         /// Checks for equality with another <see cref="InstanceId"/>.
         /// </summary>
         /// <param name="other">Other instance identifier.</param>
-        /// <returns><c>true</c> when both identifiers refer to the same Unity instance.</returns>
+        /// <returns><c>true</c> when both identifiers have the same numeric identity.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(InstanceId other)
         {
@@ -121,7 +123,7 @@ namespace DxMessaging.Core
         /// </summary>
         /// <param name="other">Object to compare.</param>
         /// <returns>
-        /// <c>true</c> when <paramref name="other"/> is an <see cref="InstanceId"/> representing the same Unity instance.
+        /// <c>true</c> when <paramref name="other"/> is an <see cref="InstanceId"/> with the same numeric identity.
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override bool Equals(object other)
@@ -132,7 +134,7 @@ namespace DxMessaging.Core
         /// <summary>
         /// Gets a hash code suitable for dictionary or set lookups.
         /// </summary>
-        /// <returns>Hash code derived from the underlying Unity instance ID.</returns>
+        /// <returns>Hash code derived from the wrapped numeric identifier.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode()
         {
@@ -140,7 +142,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Returns a string representation that includes the Unity instance ID and, when available, the object name.
+        /// Returns a string representation that includes the numeric identifier and, when available, the Unity object name.
         /// </summary>
         /// <returns>Human-readable description of the identifier.</returns>
         public override string ToString()
@@ -155,7 +157,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Determines whether two identifiers refer to the same Unity instance.
+        /// Determines whether two identifiers have the same numeric identity.
         /// </summary>
         /// <param name="lhs">Left-hand identifier.</param>
         /// <param name="rhs">Right-hand identifier.</param>
@@ -167,7 +169,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Determines whether two identifiers refer to different Unity instances.
+        /// Determines whether two identifiers have different numeric identities.
         /// </summary>
         /// <param name="lhs">Left-hand identifier.</param>
         /// <param name="rhs">Right-hand identifier.</param>

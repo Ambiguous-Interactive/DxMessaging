@@ -159,7 +159,9 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>The invalid/empty handle. Deregistering it is a silent no-op.</summary>
         public static readonly MessageBusRegistration None = default;
 
-        /// <summary>True when this handle represents a live registration (not <see cref="None"/>).</summary>
+        /// <summary>True when this handle is nonempty (not <see cref="None"/>).</summary>
+        /// <remarks>This value does not query registration liveness or change after deregistration or bus reset.
+        /// Assign <see cref="None"/> to a retained handle after successful cleanup.</remarks>
         public bool IsValid => kind != Kind.None;
 
         /// <summary>The external id supplied to <see cref="MessageBusRegistration(long, object)"/>; 0 for non-external handles.</summary>

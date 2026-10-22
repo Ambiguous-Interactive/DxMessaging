@@ -232,6 +232,10 @@ belong to `IMessageBus`.
 > and call `Deregister<T>(in handle)` on the same bus with the registered message type. For
 > `RegisterGlobalAcceptAll`, use `Deregister<IMessage>(in handle)`.
 
+`MessageBusRegistration.IsValid` distinguishes a nonempty handle from `None`. It does not query
+whether the callback is still registered and stays true on a retained handle after deregistration
+or bus reset. After successful cleanup, assign `MessageBusRegistration.None` to the retained field.
+
 Token methods return a separate `MessageRegistrationHandle`; remove it through the token that
 created it with `RemoveRegistration(handle)`.
 
