@@ -306,9 +306,9 @@ RUN set -eux; \
     curl --fail --location --show-error --retry 3 --retry-delay 2 \
         --output lychee.tar.gz "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-${LYCHEE_ARCH}.tar.gz"; \
     tar -xzf lychee.tar.gz; \
-    cp lychee /usr/local/bin/lychee; \
+    cp "lychee-${LYCHEE_ARCH}/lychee" /usr/local/bin/lychee; \
     chmod +x /usr/local/bin/lychee; \
-    rm -rf lychee.tar.gz lychee; \
+    rm -rf lychee.tar.gz "lychee-${LYCHEE_ARCH}"; \
     lychee --version
 
 # ------------------------------------------------------------------------------
