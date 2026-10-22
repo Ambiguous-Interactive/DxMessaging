@@ -148,5 +148,9 @@
       Include="../Tests/Editor/Contract/EvictionSweepContractTests.cs"
       Link="EvictionSweepContractTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/MethodSignatureKeyValueTests.cs"
+      Link="MethodSignatureKeyValueTests.cs"
+    />
   </ItemGroup>
 </Project>

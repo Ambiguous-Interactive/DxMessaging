@@ -8378,7 +8378,7 @@ namespace DxMessaging.Core.MessageBus
                         message.method,
                         ReflexiveMethodBindingFlags,
                         null,
-                        message.parameterTypes,
+                        message.signatureKey.CapturedParameterTypes,
                         null
                     );
                 }
@@ -8399,7 +8399,7 @@ namespace DxMessaging.Core.MessageBus
                             )
                             || !ParameterTypesMatch(
                                 matchingMethod.GetParameters(),
-                                message.parameterTypes
+                                message.signatureKey.CapturedParameterTypes
                             )
                         )
                         {

@@ -13,6 +13,58 @@ namespace DxMessaging.Tests.Runtime.Core
 
     public sealed class ReflexiveTests : MessagingTestBase
     {
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void MutatedMetadataKeepsCapturedOverloadOnColdAndCachedLookup(
+            bool warmCache,
+            bool explicitTypes
+        )
+        {
+            MessageBus bus = new();
+            GameObject host = CreateReflexiveHost("CapturedSignature");
+            SignatureSnapshotReceiverComponent receiver =
+                host.AddComponent<SignatureSnapshotReceiverComponent>();
+            object[] arguments = { 1, 2 };
+            ReflexiveMessage message = explicitTypes
+                ? new ReflexiveMessage(
+                    nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
+                    ReflexiveSendMode.Flat,
+                    arguments,
+                    new[] { typeof(int), typeof(int) }
+                )
+                : new ReflexiveMessage(
+                    nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
+                    ReflexiveSendMode.Flat,
+                    arguments
+                );
+            InstanceId target = host;
+            if (warmCache)
+            {
+                message.EmitTargeted(target, bus);
+            }
+            message.parameterTypes[0] = typeof(object);
+            message.parameterTypes[1] = typeof(object);
+            message.EmitTargeted(target, bus);
+            ReflexiveMessage original = new(
+                nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
+                ReflexiveSendMode.Flat,
+                1,
+                2
+            );
+            original.EmitTargeted(target, bus);
+            Assert.That(receiver.IntegerCalls, Is.EqualTo(warmCache ? 3 : 2));
+            Assert.That(receiver.ObjectCalls, Is.Zero);
+            Assert.That(
+                bus.IsReflexiveMethodCached(
+                    typeof(SignatureSnapshotReceiverComponent),
+                    original.signatureKey
+                ),
+                Is.True
+            );
+        }
+
         [Test]
         public void SuccessfulReflexiveMethodsShareOneLeastRecentlyUsedBound()
         {

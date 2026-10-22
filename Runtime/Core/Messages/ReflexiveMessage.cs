@@ -48,7 +48,8 @@ namespace DxMessaging.Core.Messages
         OnlyIncludeActive = 1 << 3,
     }
 
-    /// <summary>Lookup identity composed of a method name and an ordered parameter-type sequence.</summary>
+    /// <summary>Lookup identity composed of a method name and a captured ordered parameter-type sequence.</summary>
+    /// <remarks>The default value compares equal to itself and differs from every constructed key.</remarks>
     public readonly struct MethodSignatureKey : IEquatable<MethodSignatureKey>
     {
         private const int HashBase = 5556137;
@@ -63,14 +64,20 @@ namespace DxMessaging.Core.Messages
         /// Creates a lookup key for a reflected method signature.
         /// </summary>
         /// <param name="methodName">Name of the method.</param>
-        /// <param name="parameterTypes">Ordered parameter list expected by the method.</param>
+        /// <param name="parameterTypes">Ordered parameter list captured by the key. Null and empty lists describe no parameters.</param>
+        /// <remarks>Nonempty type lists are copied so caller mutations cannot change equality or dictionary lookup.</remarks>
         public MethodSignatureKey(string methodName, Type[] parameterTypes)
             : this()
         {
             _methodName = methodName ?? throw new ArgumentNullException(nameof(methodName));
-            _parameterTypes = parameterTypes;
+            _parameterTypes =
+                parameterTypes == null || parameterTypes.Length == 0
+                    ? Type.EmptyTypes
+                    : (Type[])parameterTypes.Clone();
             _hashCode = CalculateHashCode();
         }
+
+        internal Type[] CapturedParameterTypes => _parameterTypes ?? Type.EmptyTypes;
 
         private int CalculateHashCode()
         {
@@ -110,18 +117,17 @@ namespace DxMessaging.Core.Messages
         /// <returns><c>true</c> when both keys describe the same method.</returns>
         public bool Equals(MethodSignatureKey other)
         {
-            if (
-                _parameterTypes.Length != other._parameterTypes.Length
-                || _methodName != other._methodName
-            )
+            ReadOnlySpan<Type> types = _parameterTypes.AsSpan();
+            ReadOnlySpan<Type> otherTypes = other._parameterTypes.AsSpan();
+            if (types.Length != otherTypes.Length || _methodName != other._methodName)
             {
                 return false;
             }
 
             // ReSharper disable once LoopCanBeConvertedToQuery
-            for (int i = 0; i < _parameterTypes.Length; ++i)
+            for (int i = 0; i < types.Length; ++i)
             {
-                if (_parameterTypes[i] != other._parameterTypes[i])
+                if (types[i] != otherTypes[i])
                 {
                     return false;
                 }
@@ -187,7 +193,8 @@ namespace DxMessaging.Core.Messages
         /// <summary>Arguments forwarded to the reflected method.</summary>
         public readonly object[] parameters;
 
-        /// <summary>Ordered parameter types used to select the reflected overload.</summary>
+        /// <summary>Parameter type metadata supplied at construction.</summary>
+        /// <remarks>The lookup signature is captured separately. Mutating this array does not retarget the message.</remarks>
         public readonly Type[] parameterTypes;
 
         /// <summary>Lookup key used by the reflection cache for this message.</summary>

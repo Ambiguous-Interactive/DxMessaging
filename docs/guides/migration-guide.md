@@ -4,6 +4,17 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Construct a new reflexive message to change its signature
+
+`MethodSignatureKey` captures its ordered parameter types at construction. Null and empty type
+lists both describe a method with no parameters, and default keys support equality and dictionary
+lookup. Each nonempty type list is copied once when the key is constructed.
+
+`ReflexiveMessage` uses that captured signature for reflected overload selection. Changing its
+public `parameterTypes` array after construction does not select a different overload. Construct
+a new message with the intended types instead. The `parameters` array still supplies the argument
+values and must remain compatible with the captured signature.
+
 ### Remove the test-only runtime settings override
 
 `DxMessagingRuntimeSettingsProvider.Override` is removed. Configure
