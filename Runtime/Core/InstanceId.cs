@@ -29,9 +29,9 @@ namespace DxMessaging.Core
         public static readonly InstanceId EmptyId = new(0);
 
         /// <summary>Gets the numeric identifier used for equality, hashing and routing.</summary>
-        [DataMember(Name = "id")]
         public int Id => _id;
 
+        [DataMember(Name = "id")]
         private readonly int _id;
 
 #if UNITY_2021_3_OR_NEWER

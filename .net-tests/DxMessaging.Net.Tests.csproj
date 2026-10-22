@@ -160,5 +160,9 @@
       Include="../Tests/Runtime/Core/ComparableContractTests.cs"
       Link="ComparableContractTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/InstanceIdDataContractTests.cs"
+      Link="InstanceIdDataContractTests.cs"
+    />
   </ItemGroup>
 </Project>

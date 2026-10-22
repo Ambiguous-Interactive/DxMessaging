@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix `InstanceId` XML and JSON data contract serialization by storing the numeric `id` member on its backing field
+  ([#662](https://github.com/Ambiguous-Interactive/DxMessaging/issues/662)).
+
 - **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons
   follow `IComparable`: values sort after null, and unrelated argument types throw
   `ArgumentException` ([#661](https://github.com/Ambiguous-Interactive/DxMessaging/issues/661)).
