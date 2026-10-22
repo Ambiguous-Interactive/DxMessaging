@@ -136,6 +136,7 @@ internal sealed class DocsObsoleteApiReferenceTests
     /// Issue #617: absolute-path exclusions rejected real source whenever a checkout's parent
     /// was named .artifacts, obj, or bin. Exclusions apply only inside the repository root.
     /// </remarks>
+    [TestCase("ordinary")]
     [TestCase(".artifacts")]
     [TestCase("obj")]
     [TestCase("bin")]
