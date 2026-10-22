@@ -29,21 +29,24 @@ Register handlers for messages that have no specific target -- system-wide event
 ```csharp
 // Handler that receives the message by value
 MessageRegistrationHandle RegisterUntargeted<T>(
-    Action<T> handler,
+    Action<T> untargetedHandler,
     int priority = 0
-);
+)
+    where T : IUntargetedMessage;
 
 // Fast handler that receives the message by readonly reference
 MessageRegistrationHandle RegisterUntargeted<T>(
-    MessageHandler.FastHandler<T> handler,
+    MessageHandler.FastHandler<T> untargetedHandler,
     int priority = 0
-);
+)
+    where T : IUntargetedMessage;
 
 // Post-processor (runs after all handlers)
 MessageRegistrationHandle RegisterUntargetedPostProcessor<T>(
-    MessageHandler.FastHandler<T> handler,
+    MessageHandler.FastHandler<T> untargetedPostProcessor,
     int priority = 0
-);
+)
+    where T : IUntargetedMessage;
 ```
 
 ### Targeted Message Registration
@@ -56,23 +59,26 @@ Register handlers for messages directed at specific GameObjects, Components, or 
 // GameObject target
 MessageRegistrationHandle RegisterGameObjectTargeted<T>(
     GameObject target,
-    Action<T> handler,
+    Action<T> targetedHandler,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 
 // Component target
 MessageRegistrationHandle RegisterComponentTargeted<T>(
     Component target,
-    Action<T> handler,
+    Action<T> targetedHandler,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 
 // InstanceId target (low-level)
 MessageRegistrationHandle RegisterTargeted<T>(
     InstanceId target,
-    Action<T> handler,
+    Action<T> targetedHandler,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 ```
 
 #### All Targets
@@ -80,9 +86,10 @@ MessageRegistrationHandle RegisterTargeted<T>(
 ```csharp
 // Receive all targeted messages regardless of target
 MessageRegistrationHandle RegisterTargetedWithoutTargeting<T>(
-    MessageHandler.FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> messageHandler,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 ```
 
 #### Post-Processors
@@ -91,15 +98,17 @@ MessageRegistrationHandle RegisterTargetedWithoutTargeting<T>(
 // Post-process for specific target
 MessageRegistrationHandle RegisterTargetedPostProcessor<T>(
     InstanceId target,
-    MessageHandler.FastHandler<T> handler,
+    MessageHandler.FastHandler<T> targetedPostProcessor,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 
 // Post-process all targeted messages
 MessageRegistrationHandle RegisterTargetedWithoutTargetingPostProcessor<T>(
-    MessageHandler.FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> postProcessor,
     int priority = 0
-);
+)
+    where T : ITargetedMessage;
 ```
 
 ### Broadcast Message Registration
@@ -112,23 +121,26 @@ Register handlers for messages broadcast from specific sources.
 // From specific GameObject
 MessageRegistrationHandle RegisterGameObjectBroadcast<T>(
     GameObject source,
-    Action<T> handler,
+    Action<T> broadcastHandler,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 
 // From specific Component
 MessageRegistrationHandle RegisterComponentBroadcast<T>(
     Component source,
-    Action<T> handler,
+    Action<T> broadcastHandler,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 
 // From specific InstanceId
 MessageRegistrationHandle RegisterBroadcast<T>(
     InstanceId source,
-    Action<T> handler,
+    Action<T> broadcastHandler,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 ```
 
 #### All Sources
@@ -136,9 +148,10 @@ MessageRegistrationHandle RegisterBroadcast<T>(
 ```csharp
 // Receive broadcasts from any source
 MessageRegistrationHandle RegisterBroadcastWithoutSource<T>(
-    MessageHandler.FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> broadcastHandler,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 ```
 
 #### Post-Processors
@@ -147,15 +160,17 @@ MessageRegistrationHandle RegisterBroadcastWithoutSource<T>(
 // Post-process for specific source
 MessageRegistrationHandle RegisterBroadcastPostProcessor<T>(
     InstanceId source,
-    MessageHandler.FastHandler<T> handler,
+    MessageHandler.FastHandler<T> broadcastPostProcessor,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 
 // Post-process all broadcasts
 MessageRegistrationHandle RegisterBroadcastWithoutSourcePostProcessor<T>(
-    MessageHandler.FastHandlerWithContext<T> handler,
+    MessageHandler.FastHandlerWithContext<T> broadcastHandler,
     int priority = 0
-);
+)
+    where T : IBroadcastMessage;
 ```
 
 ---

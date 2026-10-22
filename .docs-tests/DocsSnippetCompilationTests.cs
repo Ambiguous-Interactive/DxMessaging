@@ -11,6 +11,11 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    private static readonly CSharpParseOptions UnityReferenceParseOptions = new(
+        LanguageVersion.CSharp9,
+        preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }
+    );
+
     /// <summary>Keep bus reference declarations aligned with the actual public interface.</summary>
     /// <remarks>2026-10-22: Stub compilation accepted obsolete Action return types in API declarations.</remarks>
     [TestCase("RegisterUntargetedInterceptor")]
@@ -20,70 +25,116 @@ internal sealed class DocsSnippetCompilationTests
     [TestCase("Deregister")]
     public void BusReferenceSignaturesMatchRuntimeInterface(string methodName)
     {
+        AssertReferenceSignatures("IMessageBus", methodName);
+    }
+
+    /// <summary>Preserve the names and constraints needed to call the printed token overloads.</summary>
+    /// <remarks>2026-10-22: Reference prototypes omitted constraints and used different parameter names.</remarks>
+    [TestCase("RegisterUntargeted")]
+    [TestCase("RegisterUntargetedPostProcessor")]
+    [TestCase("RegisterGameObjectTargeted")]
+    [TestCase("RegisterComponentTargeted")]
+    [TestCase("RegisterTargeted")]
+    [TestCase("RegisterTargetedWithoutTargeting")]
+    [TestCase("RegisterTargetedPostProcessor")]
+    [TestCase("RegisterTargetedWithoutTargetingPostProcessor")]
+    [TestCase("RegisterGameObjectBroadcast")]
+    [TestCase("RegisterComponentBroadcast")]
+    [TestCase("RegisterBroadcast")]
+    [TestCase("RegisterBroadcastWithoutSource")]
+    [TestCase("RegisterBroadcastPostProcessor")]
+    [TestCase("RegisterBroadcastWithoutSourcePostProcessor")]
+    public void TokenReferenceSignaturesMatchRuntimeDeclarations(string methodName)
+    {
+        AssertReferenceSignatures("MessageRegistrationToken", methodName);
+    }
+
+    private static void AssertReferenceSignatures(string declaringType, string methodName)
+    {
         string root = ResolveRepoRoot();
         string referencePath = Path.Combine(root, "docs", "reference", "reference.md");
-        string interfacePath = Path.Combine(
-            root,
-            "Runtime",
-            "Core",
-            "MessageBus",
-            "IMessageBus.cs"
-        );
-        MethodDeclarationSyntax runtimeMethod = CSharpSyntaxTree
-            .ParseText(File.ReadAllText(interfacePath))
+        string runtimePath =
+            declaringType == "IMessageBus"
+                ? Path.Combine(root, "Runtime", "Core", "MessageBus", "IMessageBus.cs")
+                : Path.Combine(root, "Runtime", "Core", "MessageRegistrationToken.cs");
+        MethodDeclarationSyntax[] runtimeMethods = CSharpSyntaxTree
+            .ParseText(File.ReadAllText(runtimePath), UnityReferenceParseOptions)
             .GetRoot()
             .DescendantNodes()
             .OfType<MethodDeclarationSyntax>()
-            .Single(method => method.Identifier.ValueText == methodName);
+            .Where(method =>
+                method.Identifier.ValueText == methodName
+                && method.Parent is TypeDeclarationSyntax owner
+                && owner.Identifier.ValueText == declaringType
+            )
+            .ToArray();
         MethodDeclarationSyntax[] documentedMethods = ExtractCodeBlocks(referencePath, "csharp")
             .SelectMany(snippet =>
                 CSharpSyntaxTree
-                    .ParseText("interface ReferenceSignatures {\n" + snippet + "\n}")
+                    .ParseText(
+                        "interface ReferenceSignatures {\n" + snippet + "\n}",
+                        UnityReferenceParseOptions
+                    )
                     .GetRoot()
                     .DescendantNodes()
                     .OfType<MethodDeclarationSyntax>()
             )
             .Where(method => method.Identifier.ValueText == methodName)
             .ToArray();
-        string label = referencePath + ": " + methodName;
-        Assert.That(documentedMethods, Has.Length.EqualTo(1), label + " must appear once");
-        MethodDeclarationSyntax documented = documentedMethods[0];
-        Assert.Multiple(() =>
+        string label = referencePath + ": " + declaringType + "." + methodName;
+        Assert.That(documentedMethods, Is.Not.Empty, label + " must be documented");
+        if (declaringType == "IMessageBus")
         {
-            Assert.That(
-                documented.ReturnType.WithoutTrivia().ToString(),
-                Is.EqualTo(runtimeMethod.ReturnType.WithoutTrivia().ToString()),
-                label + " return type"
-            );
-            Assert.That(
-                documented.TypeParameterList?.WithoutTrivia().NormalizeWhitespace().ToFullString(),
-                Is.EqualTo(
-                    runtimeMethod
-                        .TypeParameterList?.WithoutTrivia()
-                        .NormalizeWhitespace()
-                        .ToFullString()
-                ),
-                label + " type parameters"
-            );
-            Assert.That(
-                documented.ParameterList.WithoutTrivia().NormalizeWhitespace().ToFullString(),
-                Is.EqualTo(
-                    runtimeMethod.ParameterList.WithoutTrivia().NormalizeWhitespace().ToFullString()
-                ),
-                label + " parameters"
-            );
-            Assert.That(
-                documented.ConstraintClauses.Select(clause =>
-                    clause.WithoutTrivia().NormalizeWhitespace().ToFullString()
-                ),
-                Is.EqualTo(
-                    runtimeMethod.ConstraintClauses.Select(clause =>
-                        clause.WithoutTrivia().NormalizeWhitespace().ToFullString()
-                    )
-                ),
-                label + " constraints"
-            );
-        });
+            Assert.That(documentedMethods, Has.Length.EqualTo(1), label + " must appear once");
+        }
+        foreach (MethodDeclarationSyntax documented in documentedMethods)
+        {
+            string[] parameterTypes = documented
+                .ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type))
+                .ToArray();
+            MethodDeclarationSyntax[] matches = runtimeMethods
+                .Where(method =>
+                    method
+                        .ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type))
+                        .SequenceEqual(parameterTypes)
+                )
+                .ToArray();
+            Assert.That(matches, Has.Length.EqualTo(1), label + " must match one actual overload");
+            MethodDeclarationSyntax runtimeMethod = matches[0];
+            Assert.Multiple(() =>
+            {
+                Assert.That(
+                    SignatureText(documented.ReturnType),
+                    Is.EqualTo(SignatureText(runtimeMethod.ReturnType)),
+                    label + " return type"
+                );
+                Assert.That(
+                    SignatureText(documented.TypeParameterList),
+                    Is.EqualTo(SignatureText(runtimeMethod.TypeParameterList)),
+                    label + " type parameters"
+                );
+                Assert.That(
+                    SignatureText(documented.ParameterList),
+                    Is.EqualTo(SignatureText(runtimeMethod.ParameterList)),
+                    label + " parameters"
+                );
+                Assert.That(
+                    documented.ConstraintClauses.Select(SignatureText),
+                    Is.EqualTo(runtimeMethod.ConstraintClauses.Select(SignatureText)),
+                    label + " constraints"
+                );
+            });
+        }
+    }
+
+    private static string SignatureText(SyntaxNode? node)
+    {
+        // The Unity reference shortens UnityEngine types while retaining their public names.
+        return node?.WithoutTrivia()
+                .NormalizeWhitespace()
+                .ToFullString()
+                .Replace("UnityEngine.", string.Empty, StringComparison.Ordinal)
+            ?? string.Empty;
     }
 
     [TestCase(0)]
