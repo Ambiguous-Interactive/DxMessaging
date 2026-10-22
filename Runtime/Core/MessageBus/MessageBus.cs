@@ -905,6 +905,8 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of stored targeted priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         public int RegisteredTargeted
         {
             get
@@ -924,8 +926,11 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the storage index assigned to this bus for its lifetime.</summary>
         public int RegisteredGlobalSequentialIndex { get; } = GenerateNewGlobalSequentialIndex();
 
+        /// <summary>Gets the number of type-level storage entries still tracked by this bus.</summary>
+        /// <remarks>Includes route-cache entries and pending empty handler slots. One message type can contribute multiple entries.</remarks>
         public int OccupiedTypeSlots
         {
             get
@@ -967,6 +972,8 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of context entries in targeted and sourced route maps.</summary>
+        /// <remarks>The same identifier can occupy several type or route entries. Empty entries can remain until eligible cleanup.</remarks>
         public int OccupiedTargetSlots
         {
             get
@@ -984,6 +991,8 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of stored broadcast priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         public int RegisteredBroadcast
         {
             get
@@ -1003,6 +1012,8 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of stored untargeted priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         public int RegisteredUntargeted
         {
             get
@@ -1021,6 +1032,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of stored interceptor delegate and priority pairs across message kinds.</summary>
         public int RegisteredInterceptors
         {
             get
@@ -1033,6 +1045,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of stored post-processor priority buckets across message and context routes.</summary>
         public int RegisteredPostProcessors
         {
             get
@@ -1072,6 +1085,7 @@ namespace DxMessaging.Core.MessageBus
             }
         }
 
+        /// <summary>Gets the number of distinct MessageHandler sinks in the global accept-all slot.</summary>
         public int RegisteredGlobalAcceptAll => _globalSlots.sharedHandlers.Count;
 
         private static int SumInterceptorCache(MessageCache<InterceptorCache<object>> cache)
@@ -1108,6 +1122,7 @@ namespace DxMessaging.Core.MessageBus
             return count;
         }
 
+        /// <summary>Controls whether this bus records diagnostic emissions.</summary>
         public bool DiagnosticsMode
         {
             get => _diagnosticsMode;
@@ -1164,6 +1179,8 @@ namespace DxMessaging.Core.MessageBus
             public static bool SourcedRegistered;
         }
 
+        /// <summary>Gets the registration log, creating a disabled log on first access.</summary>
+        /// <remarks>Enable the returned log to record future registration changes.</remarks>
         public RegistrationLog Log => _log ??= new RegistrationLog(false, _registrationLogCapacity);
 
         /*
@@ -1895,6 +1912,9 @@ namespace DxMessaging.Core.MessageBus
             return 0;
         }
 
+        /// <summary>Attempts to reclaim empty route and handler storage and trim shared pools.</summary>
+        /// <param name="force">Bypass ordinary cleanup cadence while preserving live registrations and in-flight state.</param>
+        /// <returns>Reclamation counts and occupied type entries remaining, or the default result when trimming is disabled.</returns>
         public TrimResult Trim(bool force = false)
         {
             if (!_trimApiEnabled)

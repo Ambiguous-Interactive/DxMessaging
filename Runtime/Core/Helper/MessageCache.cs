@@ -55,6 +55,8 @@ namespace DxMessaging.Core.Helper
                 return false;
             }
 
+            /// <summary>Gets the value selected by the most recent successful MoveNext.</summary>
+            /// <value>The current value, or the default before iteration and after it ends.</value>
             public TValue Current => _current;
 
             object IEnumerator.Current => Current;

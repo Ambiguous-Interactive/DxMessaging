@@ -38,6 +38,7 @@ namespace DxMessaging.Core
     /// </remarks>
     public static class MessagingDebug
     {
+        /// <summary>Controls whether DxMessaging emits its optional debug log messages.</summary>
         public static bool enabled = false;
 
         /// <summary>

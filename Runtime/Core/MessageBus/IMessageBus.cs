@@ -68,6 +68,8 @@ namespace DxMessaging.Core.MessageBus
         /// </remarks>
         static bool GlobalDiagnosticsStackTraces { get; set; }
 
+        /// <summary>Legacy toggle for whether any diagnostics target is configured.</summary>
+        /// <remarks>Assigning true selects All; assigning false selects Off. Use GlobalDiagnosticsTargets to select environments.</remarks>
         [Obsolete("Use GlobalDiagnosticsTargets instead.")]
         static bool GlobalDiagnosticsMode
         {
@@ -75,6 +77,7 @@ namespace DxMessaging.Core.MessageBus
             set => GlobalDiagnosticsTargets = value ? DiagnosticsTarget.All : DiagnosticsTarget.Off;
         }
 
+        /// <summary>Gets the current emission sequence used by dispatch snapshots.</summary>
         long EmissionId { get; }
 
         /// <summary>
@@ -190,6 +193,11 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         readonly struct TrimResult : IEquatable<TrimResult>
         {
+            /// <summary>Creates a report of the storage reclaimed by a trim pass.</summary>
+            /// <param name="typeSlotsEvicted">Number of type cache entries, typed handler slots and global slots reclaimed.</param>
+            /// <param name="targetSlotsEvicted">Number of bus target or source context entries removed.</param>
+            /// <param name="pooledCollectionsEvicted">Number of collections dropped from shared pools.</param>
+            /// <param name="liveTypeSlotsRemaining">Number of occupied type slots remaining after the pass.</param>
             public TrimResult(
                 int typeSlotsEvicted,
                 int targetSlotsEvicted,
@@ -203,7 +211,7 @@ namespace DxMessaging.Core.MessageBus
                 LiveTypeSlotsRemaining = liveTypeSlotsRemaining;
             }
 
-            /// <summary>Number of typed-handler slots reset.</summary>
+            /// <summary>Number of type cache entries, typed handler slots and global slots reclaimed.</summary>
             public int TypeSlotsEvicted { get; }
 
             /// <summary>Number of bus target/source context entries removed.</summary>
@@ -215,14 +223,22 @@ namespace DxMessaging.Core.MessageBus
             /// <summary>Number of occupied type slots remaining after trim.</summary>
             public int LiveTypeSlotsRemaining { get; }
 
+            /// <summary>Compares all four trim counts with another result.</summary>
+            /// <param name="other">Result to compare.</param>
+            /// <returns><c>true</c> when all four counts match; otherwise <c>false</c>.</returns>
             public bool Equals(TrimResult other) =>
                 TypeSlotsEvicted == other.TypeSlotsEvicted
                 && TargetSlotsEvicted == other.TargetSlotsEvicted
                 && PooledCollectionsEvicted == other.PooledCollectionsEvicted
                 && LiveTypeSlotsRemaining == other.LiveTypeSlotsRemaining;
 
+            /// <summary>Checks whether an object contains the same trim counts.</summary>
+            /// <param name="obj">Object to compare.</param>
+            /// <returns><c>true</c> for a TrimResult with matching counts; otherwise <c>false</c>.</returns>
             public override bool Equals(object obj) => obj is TrimResult other && Equals(other);
 
+            /// <summary>Produces a hash from all four trim counts.</summary>
+            /// <returns>Hash code derived from the reported counts.</returns>
             public override int GetHashCode() =>
                 (
                     TypeSlotsEvicted,
@@ -231,19 +247,35 @@ namespace DxMessaging.Core.MessageBus
                     LiveTypeSlotsRemaining
                 ).GetHashCode();
 
+            /// <summary>Compares two values for equality.</summary>
+            /// <param name="left">Left value to compare.</param>
+            /// <param name="right">Right value to compare.</param>
+            /// <returns><c>true</c> when all four trim counts match; otherwise <c>false</c>.</returns>
             public static bool operator ==(TrimResult left, TrimResult right) => left.Equals(right);
 
+            /// <summary>Compares two values for inequality.</summary>
+            /// <param name="left">Left value to compare.</param>
+            /// <param name="right">Right value to compare.</param>
+            /// <returns><c>false</c> when all four trim counts match; otherwise <c>true</c>.</returns>
             public static bool operator !=(TrimResult left, TrimResult right) =>
                 !left.Equals(right);
 
+            /// <summary>Formats all four named trim counts.</summary>
+            /// <returns>Text containing the reclaimed counts and remaining type-slot count.</returns>
             public override string ToString() =>
                 $"TrimResult(TypeSlotsEvicted={TypeSlotsEvicted}, TargetSlotsEvicted={TargetSlotsEvicted}, PooledCollectionsEvicted={PooledCollectionsEvicted}, LiveTypeSlotsRemaining={LiveTypeSlotsRemaining})";
         }
 
+        /// <summary>Gets the number of stored broadcast priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         int RegisteredBroadcast { get; }
 
+        /// <summary>Gets the number of stored targeted priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         int RegisteredTargeted { get; }
 
+        /// <summary>Gets the number of stored untargeted priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         int RegisteredUntargeted { get; }
 
         /// <summary>
@@ -266,13 +298,13 @@ namespace DxMessaging.Core.MessageBus
         int RegisteredInterceptors { get; }
 
         /// <summary>
-        /// Total number of registered post-processors across all message kinds.
+        /// Number of stored post-processor priority buckets across message kinds.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Sums per-message-type post-processor handler counts across the untargeted,
+        /// Sums per-message-type post-processor priority buckets across the untargeted,
         /// targeted, targeted-without-targeting, broadcast, and broadcast-without-source
-        /// post-processor sinks. Test infrastructure such as <c>LeakWatcher</c> reads this
+        /// post-processor sinks. Multiple callbacks can share a bucket. <c>LeakWatcher</c> reads this
         /// counter to detect post-processor handles that escape a watched region. Same
         /// single-thread contract as the other counters.
         /// </para>

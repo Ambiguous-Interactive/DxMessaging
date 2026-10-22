@@ -8,8 +8,8 @@ namespace DxMessaging.Core
     /// Lightweight wrapper around Unity instance IDs to uniquely identify objects.
     /// </summary>
     /// <remarks>
-    /// In Unity builds, this struct also carries a reference to the underlying <see cref="UnityEngine.Object"/>.
-    /// It supports implicit conversions from <see cref="UnityEngine.GameObject"/> and <see cref="UnityEngine.Component"/>,
+    /// In Unity builds, this struct also carries a reference to the underlying <c>UnityEngine.Object</c>.
+    /// It supports implicit conversions from <c>UnityEngine.GameObject</c> and <c>UnityEngine.Component</c>,
     /// and provides value semantics for hashing, equality, and ordering. Outside Unity, it stores only the integer ID.
     /// </remarks>
     /// <example>
@@ -23,8 +23,10 @@ namespace DxMessaging.Core
     [DataContract]
     public readonly struct InstanceId : IComparable, IComparable<InstanceId>, IEquatable<InstanceId>
     {
+        /// <summary>Identifier with numeric value zero and no associated Unity object.</summary>
         public static readonly InstanceId EmptyId = new(0);
 
+        /// <summary>Gets the numeric identifier used for equality, hashing and routing.</summary>
         [DataMember(Name = "id")]
         public int Id => _id;
 
@@ -32,13 +34,15 @@ namespace DxMessaging.Core
 
 #if UNITY_2021_3_OR_NEWER
         // ReSharper disable once InconsistentNaming
+        /// <summary>Stored Unity object reference, when this identifier was created from one.</summary>
+        /// <remarks>This reference does not participate in equality or hashing.</remarks>
         public readonly UnityEngine.Object Object;
 #endif
 
         /// <summary>
-        /// Creates an identifier that wraps the provided Unity instance ID.
+        /// Creates an identifier from a Unity instance ID or a caller-defined numeric identity.
         /// </summary>
-        /// <param name="id">Unity instance ID to wrap.</param>
+        /// <param name="id">Numeric identity to wrap.</param>
         public InstanceId(int id)
         {
             _id = id;
@@ -79,7 +83,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Converts a <see cref="UnityEngine.GameObject"/> reference into an <see cref="InstanceId"/>.
+        /// Converts a <c>UnityEngine.GameObject</c> reference into an <see cref="InstanceId"/>.
         /// </summary>
         /// <param name="gameObject">GameObject to wrap.</param>
         /// <returns>Instance identifier representing <paramref name="gameObject"/>.</returns>
@@ -90,7 +94,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Converts a <see cref="UnityEngine.Component"/> reference into an <see cref="InstanceId"/>.
+        /// Converts a <c>UnityEngine.Component</c> reference into an <see cref="InstanceId"/>.
         /// </summary>
         /// <param name="component">Component to wrap.</param>
         /// <returns>Instance identifier representing <paramref name="component"/>.</returns>

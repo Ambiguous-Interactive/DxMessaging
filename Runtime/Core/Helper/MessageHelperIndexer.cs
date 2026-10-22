@@ -19,6 +19,8 @@ namespace DxMessaging.Core.Helper
         internal static int TotalMessages = 0;
     }
 
+    /// <summary>Per-message-type storage for the lazily assigned cache index.</summary>
+    /// <typeparam name="TMessage">Message type associated with the cached index.</typeparam>
     public static class MessageHelperIndexer<TMessage>
         where TMessage : IMessage
     {

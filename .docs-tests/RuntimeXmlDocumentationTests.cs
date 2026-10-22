@@ -8,14 +8,22 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class RuntimeXmlDocumentationTests
 {
-    [TestCase(false, false, TestName = "Runtime XML grammar and attachment: plain .NET")]
+    [TestCase(
+        false,
+        false,
+        TestName = "Runtime XML grammar, attachment and parameter tags: plain .NET"
+    )]
     [TestCase(
         true,
         false,
-        TestName = "Runtime XML grammar and attachment: Unity player projection"
+        TestName = "Runtime XML grammar, attachment and parameter tags: Unity player projection"
     )]
-    [TestCase(true, true, TestName = "Runtime XML grammar and attachment: Unity Editor projection")]
-    public void RuntimeDocumentationHasValidXmlAndDeclarationAttachment(bool unity, bool editor)
+    [TestCase(
+        true,
+        true,
+        TestName = "Runtime XML grammar, attachment and parameter tags: Unity Editor projection"
+    )]
+    public void RuntimeDocumentationHasValidXmlAndParameterDocumentation(bool unity, bool editor)
     {
         string root = ResolveRepoRoot();
         string[] symbols = GetSymbols(unity, editor);
@@ -25,7 +33,7 @@ internal sealed class RuntimeXmlDocumentationTests
             .Select(path => Parse(File.ReadAllText(path), path, symbols))
             .ToArray();
 
-        ImmutableArray<Diagnostic> diagnostics = GetGrammarAndAttachmentDiagnostics(trees);
+        ImmutableArray<Diagnostic> diagnostics = GetDocumentationStructureDiagnostics(trees);
 
         Assert.That(
             diagnostics,
@@ -57,10 +65,42 @@ internal sealed class RuntimeXmlDocumentationTests
         "",
         TestName = "Runtime XML guard accepts escaped generic and text characters"
     )]
+    [TestCase(
+        "/// <summary>Sample.</summary>\npublic sealed class Sample {\n/// <param name=\"missing\">Input.</param>\npublic void Run(int value) { }\n}",
+        "CS1572",
+        TestName = "Runtime XML guard rejects an unknown parameter tag"
+    )]
+    [TestCase(
+        "/// <summary>Sample.</summary>\npublic sealed class Sample {\n/// <param name=\"first\">First input.</param>\npublic void Run(int first, int second) { }\n}",
+        "CS1573",
+        TestName = "Runtime XML guard rejects a partially documented parameter list"
+    )]
+    [TestCase(
+        "/// <summary>Sample.</summary>\n/// <typeparam name=\"Wrong\">Type.</typeparam>\npublic sealed class Sample<T> { }",
+        "CS1711",
+        TestName = "Runtime XML guard rejects an unknown type parameter tag"
+    )]
+    [TestCase(
+        "/// <summary>Sample.</summary>\n/// <typeparam name=\"T\">First type.</typeparam>\npublic sealed class Sample<T, U> { }",
+        "CS1712",
+        TestName = "Runtime XML guard rejects a partially documented type parameter list"
+    )]
+    [TestCase(
+        "/// <summary>Sample.</summary>\n/// <typeparam name=\"T\">Type.</typeparam>\npublic sealed class Sample<T> {\n/// <summary>Run.</summary>\n/// <typeparam name=\"U\">Method type.</typeparam>\n/// <param name=\"value\">Input.</param>\npublic void Run<U>(int value) { }\n}",
+        "",
+        TestName = "Runtime XML guard accepts matching parameter and type parameter tags"
+    )]
+    [TestCase(
+        "public sealed class Sample { public int Value { get; } }",
+        "CS1591",
+        TestName = "Runtime XML guard rejects missing public documentation"
+    )]
     public void GuardDistinguishesInvalidDocumentation(string source, string expectedCode)
     {
         SyntaxTree tree = Parse(source, "Control.cs", Array.Empty<string>());
-        ImmutableArray<Diagnostic> diagnostics = GetGrammarAndAttachmentDiagnostics(new[] { tree });
+        ImmutableArray<Diagnostic> diagnostics = GetDocumentationStructureDiagnostics(
+            new[] { tree }
+        );
 
         if (expectedCode.Length == 0)
         {
@@ -87,7 +127,7 @@ internal sealed class RuntimeXmlDocumentationTests
         return CSharpSyntaxTree.ParseText(source, options, path);
     }
 
-    private static ImmutableArray<Diagnostic> GetGrammarAndAttachmentDiagnostics(
+    private static ImmutableArray<Diagnostic> GetDocumentationStructureDiagnostics(
         IEnumerable<SyntaxTree> trees
     )
     {
@@ -101,12 +141,21 @@ internal sealed class RuntimeXmlDocumentationTests
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
         /*
-            These checks cover XML grammar and comment attachment. Semantic links and
-            supported Unity compilation require their own complete reference inputs.
+            These checks cover XML grammar, attachment, tag names, partial lists and public comment presence.
+            Member links and supported Unity compilation require complete reference inputs.
         */
         return compilation
             .GetDiagnostics()
-            .Where(diagnostic => diagnostic.Id is "CS1570" or "CS1587")
+            .Where(diagnostic =>
+                diagnostic.Id
+                    is "CS1570"
+                        or "CS1587"
+                        or "CS1572"
+                        or "CS1573"
+                        or "CS1711"
+                        or "CS1712"
+                        or "CS1591"
+            )
             .ToImmutableArray();
     }
 

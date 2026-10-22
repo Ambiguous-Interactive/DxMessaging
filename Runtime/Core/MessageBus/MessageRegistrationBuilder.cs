@@ -181,12 +181,16 @@ namespace DxMessaging.Core.MessageBus
             OnDispose = onDispose;
         }
 
+        /// <summary>Optional callback invoked after the lease is constructed; null skips the hook.</summary>
         public Action<MessageRegistrationToken> OnBuild { get; }
 
+        /// <summary>Optional callback invoked when the lease becomes active; null skips the hook.</summary>
         public Action<MessageRegistrationToken> OnActivate { get; }
 
+        /// <summary>Optional callback invoked when the lease becomes inactive; null skips the hook.</summary>
         public Action<MessageRegistrationToken> OnDeactivate { get; }
 
+        /// <summary>Optional callback invoked during lease disposal; null skips the hook.</summary>
         public Action<MessageRegistrationToken> OnDispose { get; }
     }
 

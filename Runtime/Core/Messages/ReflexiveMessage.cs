@@ -7,7 +7,7 @@ namespace DxMessaging.Core.Messages
     /// </summary>
     /// <remarks>
     /// Used by <see cref="ReflexiveMessage"/> to determine which components receive the reflected call.
-    /// - <c>Flat</c>: only the immediate <see cref="UnityEngine.GameObject"/>.
+    /// - <c>Flat</c>: only the immediate <c>UnityEngine.GameObject</c>.
     /// - <c>Upwards</c>: up the transform parent chain.
     /// - <c>Downwards</c>: down into children.
     /// - <c>OnlyIncludeActive</c>: exclude disabled components and components on inactive GameObjects.
@@ -48,6 +48,7 @@ namespace DxMessaging.Core.Messages
         OnlyIncludeActive = 1 << 3,
     }
 
+    /// <summary>Lookup identity composed of a method name and an ordered parameter-type sequence.</summary>
     public readonly struct MethodSignatureKey : IEquatable<MethodSignatureKey>
     {
         private const int HashBase = 5556137;
@@ -129,11 +130,19 @@ namespace DxMessaging.Core.Messages
             return true;
         }
 
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when the method names and ordered parameter types match; otherwise <c>false</c>.</returns>
         public static bool operator ==(MethodSignatureKey left, MethodSignatureKey right)
         {
             return left.Equals(right);
         }
 
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>false</c> when the method names and ordered parameter types match; otherwise <c>true</c>.</returns>
         public static bool operator !=(MethodSignatureKey left, MethodSignatureKey right)
         {
             return !(left == right);
@@ -146,7 +155,7 @@ namespace DxMessaging.Core.Messages
     /// <remarks>
     /// This message is handled specially by the bus to mimic Unity's <c>SendMessage*</c> patterns while still
     /// flowing through DxMessaging pipelines (interceptors, post-processors, diagnostics).
-    /// It resolves methods on components on or around the targeted <see cref="UnityEngine.GameObject"/> based on
+    /// It resolves methods on components on or around the targeted <c>UnityEngine.GameObject</c> based on
     /// <see cref="sendMode"/> and invokes them with provided <see cref="parameters"/>.
     /// Prefer type-safe message contracts in production; use this to integrate with legacy patterns.
     /// </remarks>
@@ -166,13 +175,22 @@ namespace DxMessaging.Core.Messages
     /// </example>
     public readonly struct ReflexiveMessage : ITargetedMessage<ReflexiveMessage>
     {
+        /// <summary>Gets the type used to route this message through the bus.</summary>
         public Type MessageType => typeof(ReflexiveMessage);
 
+        /// <summary>Name of the method requested by the Unity reflection bridge.</summary>
         public readonly string method;
+
+        /// <summary>Traversal flags used to choose eligible Unity receivers.</summary>
         public readonly ReflexiveSendMode sendMode;
+
+        /// <summary>Arguments forwarded to the reflected method.</summary>
         public readonly object[] parameters;
+
+        /// <summary>Ordered parameter types used to select the reflected overload.</summary>
         public readonly Type[] parameterTypes;
 
+        /// <summary>Lookup key used by the reflection cache for this message.</summary>
         public readonly MethodSignatureKey signatureKey;
 
         /// <summary>

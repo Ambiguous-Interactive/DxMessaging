@@ -210,9 +210,17 @@ namespace DxMessaging.Core.MessageBus
             return hash;
         }
 
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when both values have the same opaque registration identity; otherwise <c>false</c>.</returns>
         public static bool operator ==(MessageBusRegistration left, MessageBusRegistration right) =>
             left.Equals(right);
 
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>false</c> when both values have the same opaque registration identity; otherwise <c>true</c>.</returns>
         public static bool operator !=(MessageBusRegistration left, MessageBusRegistration right) =>
             !left.Equals(right);
     }

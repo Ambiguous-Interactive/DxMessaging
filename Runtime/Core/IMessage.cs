@@ -34,6 +34,7 @@ namespace DxMessaging.Core
     /// </example>
     public interface IMessage
     {
+        /// <summary>Gets the type used to identify this message to the bus.</summary>
         Type MessageType => GetType();
     }
 }

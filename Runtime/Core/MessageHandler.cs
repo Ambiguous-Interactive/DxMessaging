@@ -15,7 +15,7 @@ namespace DxMessaging.Core
     /// Per-owner handler that executes registered message callbacks.
     /// </summary>
     /// <remarks>
-    /// A <see cref="MessageHandler"/> is typically created and managed by <see cref="Unity.MessagingComponent"/> in Unity.
+    /// A <see cref="MessageHandler"/> is typically created and managed by <c>Unity.MessagingComponent</c> in Unity.
     /// Most user code interacts with the handler through <see cref="MessageRegistrationToken"/>, which stages
     /// registrations and ensures correct enable/disable lifecycles.
     /// </remarks>
@@ -848,10 +848,13 @@ namespace DxMessaging.Core
         /// <summary>
         /// Registers this MessageHandler to Globally Accept All Messages via the MessageBus, properly handling deregistration.
         /// </summary>
+        /// <param name="originalUntargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="untargetedMessageHandler">MessageHandler to accept all UntargetedMessages.</param>
+        /// <param name="originalBroadcastMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="broadcastMessageHandler">MessageHandler to accept all TargetedMessages for all entities.</param>
+        /// <param name="originalTargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
             Action<IUntargetedMessage> originalUntargetedMessageHandler,
@@ -900,10 +903,13 @@ namespace DxMessaging.Core
         /// <summary>
         /// Registers this MessageHandler to Globally Accept All Messages via the MessageBus, properly handling deregistration.
         /// </summary>
+        /// <param name="originalUntargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="untargetedMessageHandler">MessageHandler to accept all UntargetedMessages.</param>
+        /// <param name="originalBroadcastMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="broadcastMessageHandler">MessageHandler to accept all TargetedMessages for all entities.</param>
+        /// <param name="originalTargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
             FastHandler<IUntargetedMessage> originalUntargetedMessageHandler,
@@ -954,9 +960,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedMessageHandler<T>(
             InstanceId target,
@@ -1022,9 +1029,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedMessageHandler<T>(
             InstanceId target,
@@ -1057,9 +1065,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedPostProcessor<T>(
             InstanceId target,
@@ -1089,9 +1098,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedPostProcessor<T>(
             InstanceId target,
@@ -1150,9 +1160,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post-process TargetedMessages for all messages of the provided type via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargetingPostProcessor<T>(
             Action<InstanceId, T> originalHandler,
@@ -1182,9 +1193,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post process fast TargetedMessages for all messages of the provided type via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargetingPostProcessor<T>(
             FastHandlerWithContext<T> originalHandler,
@@ -1246,9 +1258,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept TargetedMessages without Targeting via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargeting<T>(
             Action<InstanceId, T> originalHandler,
@@ -1304,9 +1317,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept fast TargetedMessages without Targeting via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargeting<T>(
             FastHandlerWithContext<T> originalHandler,
@@ -1333,9 +1347,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedMessageHandler<T>(
             Action<T> originalHandler,
@@ -1394,9 +1409,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept fast UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedMessageHandler<T>(
             FastHandler<T> originalHandler,
@@ -1425,9 +1441,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post-process UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedPostProcessor<T>(
             Action<T> originalHandler,
@@ -1457,9 +1474,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post process fast UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedPostProcessor<T>(
             FastHandler<T> originalHandler,
@@ -1490,9 +1508,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source Id of BroadcastMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastMessageHandler<T>(
             InstanceId source,
@@ -1553,9 +1572,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source Id of BroadcastMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastMessageHandler<T>(
             InstanceId source,
@@ -1584,9 +1604,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept BroadcastMessage regardless of source via their MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSource<T>(
             Action<InstanceId, T> originalHandler,
@@ -1642,9 +1663,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept fast BroadcastMessage regardless of source via their MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSource<T>(
             FastHandlerWithContext<T> originalHandler,
@@ -1672,9 +1694,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source object to listen for BroadcastMessages on.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastPostProcessor<T>(
             InstanceId source,
@@ -1708,9 +1731,10 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source object to listen for BroadcastMessages on.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastPostProcessor<T>(
             InstanceId source,
@@ -1777,9 +1801,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post-processes BroadcastMessage messages for all messages of the provided type.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSourcePostProcessor<T>(
             Action<InstanceId, T> originalHandler,
@@ -1809,9 +1834,10 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post processes fast BroadcastMessage messages for all messages of the provided type.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSourcePostProcessor<T>(
             FastHandlerWithContext<T> originalHandler,
@@ -3667,6 +3693,7 @@ namespace DxMessaging.Core
             /// </summary>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleUntargeted(ref T message, int priority, long emissionId)
             {
                 RunFastHandlers(
@@ -3689,6 +3716,7 @@ namespace DxMessaging.Core
             /// <param name="target">Target the message is for.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleTargeted(
                 ref InstanceId target,
                 ref T message,
@@ -3718,6 +3746,7 @@ namespace DxMessaging.Core
             /// <param name="target">Target the message is for.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleTargetedWithoutTargeting(
                 ref InstanceId target,
                 ref T message,
@@ -3747,6 +3776,7 @@ namespace DxMessaging.Core
             /// <param name="source">Source the message is from.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleSourcedBroadcast(
                 ref InstanceId source,
                 ref T message,
@@ -3776,6 +3806,7 @@ namespace DxMessaging.Core
             /// <param name="source">Source the message is from.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleSourcedBroadcastWithoutSource(
                 ref InstanceId source,
                 ref T message,
@@ -4315,9 +4346,11 @@ namespace DxMessaging.Core
             /// Adds a TargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedHandler(
                 InstanceId target,
@@ -4379,9 +4412,11 @@ namespace DxMessaging.Core
             /// Adds a fast TargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedHandler(
                 InstanceId target,
@@ -4406,9 +4441,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a TargetedWithoutTargetingHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingHandler(
                 Action<InstanceId, T> originalHandler,
@@ -4473,9 +4510,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast TargetedWithoutTargetingHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingHandler(
                 FastHandlerWithContext<T> originalHandler,
@@ -4501,9 +4540,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a UntargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedHandler(
                 Action<T> originalHandler,
@@ -4568,9 +4609,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast UntargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedHandler(
                 FastHandler<T> originalHandler,
@@ -4597,9 +4640,11 @@ namespace DxMessaging.Core
             /// Adds a SourcedBroadcastHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
             /// <param name="source">The Source of the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastHandler(
                 InstanceId source,
@@ -4660,9 +4705,11 @@ namespace DxMessaging.Core
             /// Adds a fast SourcedBroadcastHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
             /// <param name="source">The Source of the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastHandler(
                 InstanceId source,
@@ -4687,9 +4734,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a SourcedBroadcastWithoutSourceHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastWithoutSourceHandler(
                 Action<InstanceId, T> originalHandler,
@@ -4756,9 +4805,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast SourcedBroadcastWithoutSourceHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastWithoutSourceHandler(
                 FastHandlerWithContext<T> originalHandler,
@@ -4785,7 +4836,9 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global UntargetedHandler to listen to all Untargeted Messages of all types, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 Action<IUntargetedMessage> originalHandler,
@@ -4804,7 +4857,9 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global fast UntargetedHandler to listen to all Untargeted Messages of all types, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 FastHandler<IUntargetedMessage> originalHandler,
@@ -4823,7 +4878,9 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global TargetedHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 Action<InstanceId, ITargetedMessage> originalHandler,
@@ -4842,7 +4899,9 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global fast TargetedHandler to listen to all Targeted Messages of all types for all entities (along with the target instance id), returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 FastHandlerWithContext<ITargetedMessage> originalHandler,
@@ -4861,7 +4920,9 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global BroadcastHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 Action<InstanceId, IBroadcastMessage> originalHandler,
@@ -4880,7 +4941,9 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global fast BroadcastHandler to listen to all Targeted Messages of all types for all entities (along with the source instance id), returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 FastHandlerWithContext<IBroadcastMessage> originalHandler,
@@ -4899,9 +4962,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds an Untargeted post-processor to be called after all other handlers have been called.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedPostProcessor(
                 Action<T> originalHandler,
@@ -4934,9 +4999,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast Untargeted post-processor to be called after all other handlers have been called.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedPostProcessor(
                 FastHandler<T> originalHandler,
@@ -4963,9 +5030,11 @@ namespace DxMessaging.Core
             /// Adds a Targeted post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedPostProcessor(
                 InstanceId target,
@@ -5027,9 +5096,11 @@ namespace DxMessaging.Core
             /// Adds a Targeted post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedPostProcessor(
                 InstanceId target,
@@ -5054,9 +5125,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Targeted post-processor to be called after all other handlers have been called after every message of the given type.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingPostProcessor(
                 Action<InstanceId, T> originalHandler,
@@ -5123,9 +5196,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Targeted post-processor to be called after all other handlers have been called after every message of the given type.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingPostProcessor(
                 FastHandlerWithContext<T> originalHandler,
@@ -5152,9 +5227,11 @@ namespace DxMessaging.Core
             /// Adds a Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="source">The Source the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastPostProcessor(
                 InstanceId source,
@@ -5216,9 +5293,11 @@ namespace DxMessaging.Core
             /// Adds a fast Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="source">The Source the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastPostProcessor(
                 InstanceId source,
@@ -5243,9 +5322,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Broadcast post-processor to be called after all other handlers have been called for every message of the given type.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastWithoutSourcePostProcessor(
                 Action<InstanceId, T> originalHandler,
@@ -5311,9 +5392,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastWithoutSourcePostProcessor(
                 FastHandlerWithContext<T> originalHandler,

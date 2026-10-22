@@ -70,6 +70,7 @@ namespace DxMessaging.Unity.Integrations.Reflex
             }
         }
 
+        /// <summary>Adapts a Reflex container to IMessageBusProvider.</summary>
         public sealed class ContainerMessageBusProvider : IMessageBusProvider
         {
             private readonly Container _container;
