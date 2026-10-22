@@ -101,7 +101,7 @@ organization lock.
     uses: ./.github/actions/validate-unity-license
 
   - name: Acquire organization Unity lock
-    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+    uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
     with:
       lock-name: wallstop-organization-builds
       require-resource-lifecycle: "true"

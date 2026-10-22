@@ -9,6 +9,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
     using Microsoft.CodeAnalysis.Text;
+    using static WallstopStudios.DxMessaging.SourceGenerators.GeneratorDiagnostics;
 
     [Generator]
     public sealed class DxMessageIdGenerator : ISourceGenerator
@@ -17,24 +18,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameOnly,
             genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
             miscellaneousOptions: SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
-        );
-
-        private static readonly DiagnosticDescriptor NonPartialContainerDiagnostic = new(
-            id: "DXMSG003",
-            title: "Containing type must be partial for nested generation",
-            messageFormat: "Type '{0}' is nested inside non-partial container(s): {1}. Suggested fix: add the 'partial' keyword to the containing type declaration(s).",
-            category: "DxMessaging",
-            defaultSeverity: DiagnosticSeverity.Warning,
-            isEnabledByDefault: true
-        );
-
-        private static readonly DiagnosticDescriptor AddPartialSuggestionDiagnostic = new(
-            id: "DXMSG004",
-            title: "Add 'partial' keyword to containing type",
-            messageFormat: "Add 'partial' to the declaration of '{0}' to enable generation for nested type '{1}'.",
-            category: "DxMessaging",
-            defaultSeverity: DiagnosticSeverity.Info,
-            isEnabledByDefault: true
         );
 
         /*
@@ -63,7 +46,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         private static readonly DiagnosticDescriptor MultipleAttributesError = new(
             id: "DXMSG002",
             title: "Multiple Message Attributes",
-            messageFormat: "Type '{0}' cannot have more than one Dx message attribute ([DxBroadcastMessage], [DxTargetedMessage], [DxUntargetedMessage]).",
+            messageFormat: "Type '{0}' cannot have more than one Dx message attribute ([DxBroadcastMessage], [DxTargetedMessage], [DxUntargetedMessage])",
             category: "DxMessaging",
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true

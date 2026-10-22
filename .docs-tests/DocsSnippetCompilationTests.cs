@@ -406,7 +406,8 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == "CS0219"
+                diagnostic is not null
+                && diagnostic.Id == "CS0219"
                 && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             "The snippet compiler must fail documentation builds on ordinary compiler warnings."
@@ -425,7 +426,8 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == "CS0649"
+                diagnostic is not null
+                && diagnostic.Id == "CS0649"
                 && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             "Ordinary unassigned fields must remain fatal; externally assigned examples must initialize fields explicitly."
@@ -433,7 +435,7 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.None.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == "CS1591"
+                diagnostic is not null && diagnostic.Id == "CS1591"
             ),
             "CS1591 must remain ignored because standalone snippets and synthetic stubs are not complete public API assemblies."
         );
@@ -446,7 +448,7 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.None.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == "CS0649"
+                diagnostic is not null && diagnostic.Id == "CS0649"
             ),
             "Unity-serialized fields are the narrow external-assignment exception."
         );
@@ -464,7 +466,8 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == "CS1570"
+                diagnostic is not null
+                && diagnostic.Id == "CS1570"
                 && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             "Malformed XML documentation must remain fatal even though missing public API comments are outside the snippet contract."
@@ -501,7 +504,8 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == diagnosticId
+                diagnostic is not null
+                && diagnostic.Id == diagnosticId
                 && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             )
         );
@@ -545,7 +549,8 @@ internal sealed class DocsSnippetCompilationTests
         Assert.That(
             diagnostics,
             Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(diagnostic =>
-                diagnostic.Id == diagnosticId
+                diagnostic is not null
+                && diagnostic.Id == diagnosticId
                 && diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
             ),
             $"The readonly contract snippet must report {diagnosticId}."

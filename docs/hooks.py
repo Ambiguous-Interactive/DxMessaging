@@ -18,6 +18,7 @@ from html import unescape
 from pathlib import Path
 from urllib.parse import quote
 
+from markdown import Markdown
 from markupsafe import Markup
 from pymdownx.highlight import Highlight
 
@@ -304,7 +305,7 @@ def on_env(env, config, files):
     in a Jinja template, so they need the same highlighter wired into the template
     environment instead of a runtime JavaScript highlighter.
     """
-    highlighter = Highlight(**get_highlight_options(config))
+    highlighter = Highlight(Markdown(), **get_highlight_options(config))
     # pymdownx numbers markdown fences per page from 0; seed template highlights
     # far above that range so __span-N/__codelineno-N ids never collide with them.
     code_block_count = {"value": 100}

@@ -9,7 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../Runtime/**/*.cs" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
     <Analyzer Include="../Runtime/Analyzers/*.dll" />
   </ItemGroup>
 </Project>

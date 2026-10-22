@@ -274,8 +274,10 @@ namespace DxMessaging.Tests.Runtime.Core
             finally
             {
                 newToken.Dispose();
-                // Public reset intentionally preserves custom sinks and invalidates old teardown.
-                // This test owns the retained bus and clears it through its real internal reset.
+                /*
+                    Public reset intentionally preserves custom sinks and invalidates old teardown.
+                    This test owns the retained bus and clears it through its real internal reset.
+                */
                 retained.ResetState();
             }
         }
@@ -605,8 +607,10 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 second?.Dispose();
                 first?.Dispose();
-                // A public reset intentionally stales earlier custom-bus teardown. This test
-                // owns the bus and explicitly reclaims its retained registrations afterward.
+                /*
+                    A public reset intentionally stales earlier custom-bus teardown. This test
+                    owns the bus and explicitly reclaims its retained registrations afterward.
+                */
                 bus.ResetState();
             }
         }
@@ -655,8 +659,10 @@ namespace DxMessaging.Tests.Runtime.Core
             };
             try
             {
-                // No callback is registered with an injected identifier; dispose all leases
-                // before restoring the original allocator value.
+                /*
+                    No callback is registered with an injected identifier; dispose all leases
+                    before restoring the original allocator value.
+                */
                 counter.SetValue(null, int.MinValue + 1);
                 last = builder.Build(automatic);
                 Assert.That(

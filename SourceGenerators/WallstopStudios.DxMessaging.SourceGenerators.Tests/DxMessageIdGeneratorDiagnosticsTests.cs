@@ -65,7 +65,7 @@ public readonly partial struct ConflictingMessage : IBroadcastMessage { }
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
             "DXMSG002 should be reported when a message type has multiple Dx message attributes."
         );
     }
@@ -91,12 +91,12 @@ public class Container
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG003"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG003"),
             "DXMSG003 should be reported when a nested message type lives inside a non-partial container."
         );
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG004"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG004"),
             "DXMSG004 should suggest adding the partial keyword for the containing type."
         );
     }
@@ -302,12 +302,12 @@ public partial class A
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG003"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG003"),
             "DXMSG003 should fire when ANY container in the chain is non-partial."
         );
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG004"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG004"),
             "DXMSG004 should suggest making the non-partial container partial."
         );
     }
@@ -336,7 +336,7 @@ public readonly partial struct Conflicting { }
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
             "DXMSG002 should fire for [DxUntargetedMessage] + [DxTargetedMessage]."
         );
     }
@@ -359,7 +359,7 @@ public readonly partial struct Conflicting { }
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
             "DXMSG002 should fire for [DxUntargetedMessage] + [DxBroadcastMessage]."
         );
     }
@@ -382,7 +382,7 @@ public readonly partial struct Conflicting { }
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
             "DXMSG002 should fire for [DxTargetedMessage] + [DxBroadcastMessage]."
         );
     }
@@ -406,7 +406,7 @@ public readonly partial struct Conflicting { }
 
         Assert.That(
             diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002"),
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002"),
             "DXMSG002 should fire when all three Dx message attributes are present."
         );
     }
@@ -594,7 +594,7 @@ public readonly partial struct Conflicting { }
 
         Assert.That(
             result.Results[0].Diagnostics,
-            Has.Some.Matches<Diagnostic>(d => d.Id == "DXMSG002")
+            Has.Some.Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG002")
         );
         Assert.That(generated, Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"));
         Assert.That(generated, Does.Not.Contain("RegisterAot"));

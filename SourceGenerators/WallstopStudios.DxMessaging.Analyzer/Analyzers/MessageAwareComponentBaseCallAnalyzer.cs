@@ -91,7 +91,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
             catches the omission so the slip cannot reach a release build).
         */
         private const string MissingBaseCallMessageFormat =
-            "'{0}' overrides MessageAwareComponent.{1} but does not call base.{1}(); the messaging system may not function correctly on this component.";
+            "'{0}' overrides MessageAwareComponent.{1} but does not call base.{1}(); the messaging system may not function correctly on this component";
 
         private const string HelpLinkBase =
             "https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/reference/analyzers.md#";
@@ -199,7 +199,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         private static readonly DiagnosticDescriptor NewModifierDescriptor = new(
             id: NewModifierHidesGuardedMethodDiagnosticId,
             title: "Unity lifecycle method hidden with 'new' instead of 'override'",
-            messageFormat: "'{0}' hides MessageAwareComponent.{1} with 'new'; replace with 'override' and call base.{1}() so the messaging system continues to function.",
+            messageFormat: "'{0}' hides MessageAwareComponent.{1} with 'new'; replace with 'override' and call base.{1}() so the messaging system continues to function",
             category: Category,
             defaultSeverity: DiagnosticSeverity.Warning,
             isEnabledByDefault: true,
@@ -209,7 +209,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         private static readonly DiagnosticDescriptor OptedOutDescriptor = new(
             id: OptedOutOfBaseCallCheckDiagnosticId,
             title: "Type opted out of MessageAwareComponent base-call check",
-            messageFormat: "'{0}' is excluded from the DxMessaging base-call check ({1}).",
+            messageFormat: "'{0}' is excluded from the DxMessaging base-call check ({1})",
             category: Category,
             defaultSeverity: DiagnosticSeverity.Info,
             isEnabledByDefault: true,
@@ -230,7 +230,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
         private static readonly DiagnosticDescriptor BrokenChainDescriptor = new(
             id: BrokenChainDiagnosticId,
             title: "base.{method}() chains into an override that does not reach MessageAwareComponent",
-            messageFormat: "'{0}' calls base.{1}() but the inherited override on '{2}' does not chain to MessageAwareComponent.{1}; the messaging system will not function correctly on this component.",
+            messageFormat: "'{0}' calls base.{1}() but the inherited override on '{2}' does not chain to MessageAwareComponent.{1}; the messaging system will not function correctly on this component",
             category: Category,
             defaultSeverity: DiagnosticSeverity.Warning,
             isEnabledByDefault: true,

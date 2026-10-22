@@ -84,8 +84,8 @@ if ($SkipCiAnalyzers -and -not $GenerateOnly) {
 }
 
 $PackageName = 'com.wallstop-studios.dxmessaging'
-$TestFrameworkVersion = '1.4.5'
-$PerformanceFrameworkVersion = '3.4.2'
+$TestFrameworkVersion = '1.4.6'
+$PerformanceFrameworkVersion = '3.6.0'
 # DxMessaging's own analyzer + source-generator assemblies. These MUST be present
 # in the package's Runtime/Analyzers/; the harness just sanity-checks they ship
 # there (see Assert-DxMessagingAnalyzerDllsPresent). The generator + analyzer apply

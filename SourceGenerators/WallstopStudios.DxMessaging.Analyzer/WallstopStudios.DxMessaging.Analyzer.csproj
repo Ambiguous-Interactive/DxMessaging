@@ -18,6 +18,7 @@
   -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!-- DO NOT bump this without verifying Unity 2021 still loads the analyzer.
          Unity 2021's analyzer loader silently rejects analyzers compiled against
          Roslyn 4.x. No automated test pins this anymore; verify in Unity
@@ -28,12 +29,16 @@
     <AssemblyInformationalVersion>$(Version)</AssemblyInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Expose internals to the analyzer test project so tests can reference
          IgnoreListReader.IgnoreFileName by symbol instead of duplicating the literal. -->
     <InternalsVisibleTo Include="WallstopStudios.DxMessaging.SourceGenerators.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.3">
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

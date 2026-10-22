@@ -73,7 +73,7 @@ public sealed class RuntimeContractTests
                 {
                     Assert.That(
                         value,
-                        Is.SameAs(message),
+                        Is.SameAs((object)message),
                         "Class-message identity must survive dispatch."
                     );
                 }

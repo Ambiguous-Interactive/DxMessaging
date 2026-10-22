@@ -6,7 +6,6 @@ namespace DxMessaging.Tests.Runtime.Core
     using NUnit.Framework;
 #if !UNITY_2021_3_OR_NEWER
     using Assert = NUnit.Framework.Legacy.ClassicAssert;
-    using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
 #endif
 
     public sealed class IntKeyMapTests
@@ -359,9 +358,9 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Assert.IsTrue(enumerated.Add(value), "Enumeration returned a duplicate value.");
             }
-            CollectionAssert.AreEquivalent(
-                expected.Values,
+            Assert.That(
                 enumerated,
+                Is.EquivalentTo(expected.Values),
                 "Enumeration should return exactly the oracle's live values."
             );
         }

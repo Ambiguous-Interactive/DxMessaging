@@ -70,7 +70,9 @@ internal sealed class RuntimeXmlDocumentationTests
         {
             Assert.That(
                 diagnostics,
-                Has.Some.Matches<Diagnostic>(diagnostic => diagnostic.Id == expectedCode)
+                Has.Some.Matches<Diagnostic>(diagnostic =>
+                    diagnostic is not null && diagnostic.Id == expectedCode
+                )
             );
         }
     }

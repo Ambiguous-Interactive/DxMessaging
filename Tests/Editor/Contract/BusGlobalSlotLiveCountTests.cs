@@ -9,7 +9,6 @@ namespace DxMessaging.Tests.Editor.Contract
     using NUnit.Framework;
 #if !UNITY_2021_3_OR_NEWER
     using Assert = NUnit.Framework.Legacy.ClassicAssert;
-    using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
 #endif
 
     /// <summary>
