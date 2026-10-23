@@ -125,7 +125,7 @@ jobs:
         run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
       - name: Commit changes to PR branch
         if: ${{ steps.changes.outputs.has_changes == 'true' }}
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7
+        uses: stefanzweifel/git-auto-commit-action@d0b01107b5db882071f96de5dd4b54961ea93f4c # v7
         with:
           commit_message: "chore(format): apply requested formatting"
           branch: ${{ steps.meta.outputs.head_ref }}
@@ -249,7 +249,7 @@ jobs:
         run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
       - name: Commit changes to PR branch
         if: ${{ steps.changes.outputs.has_changes == 'true' }}
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7
+        uses: stefanzweifel/git-auto-commit-action@d0b01107b5db882071f96de5dd4b54961ea93f4c # v7
         with:
           commit_message: "chore(format): apply requested formatting"
           branch: ${{ steps.meta.outputs.head_ref }}
