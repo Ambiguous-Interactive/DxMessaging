@@ -533,6 +533,12 @@ MessagingDebug.LogFunction = (level, msg) =>
     UnityEngine.Debug.Log($"[DxMessaging:{level}] {msg}");
 ```
 
+`enabled` gates the overload with a `params object[]` argument and package call sites
+that check the flag. The two-argument `Log(level, message)` overload calls the receiver
+even when `enabled` is false. For example, the plain .NET build uses it to report
+unsupported reflexive dispatch. Set `LogFunction` to `null` to discard logs from both
+overloads. Formatting and receiver exceptions propagate to the caller.
+
 ## Per-Environment Configuration
 
 A common pattern is enabling diagnostics only in the Editor for development visibility while keeping runtime builds lean.
