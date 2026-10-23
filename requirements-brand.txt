@@ -12,7 +12,7 @@ defusedxml==0.7.1
     # via cairosvg
 pillow==13.0.0
     # via cairosvg
-pycparser==3.11 ; implementation_name != 'PyPy'
+pycparser==3.12 ; implementation_name != 'PyPy'
     # via cffi
 tinycss2==1.5.1
     # via
