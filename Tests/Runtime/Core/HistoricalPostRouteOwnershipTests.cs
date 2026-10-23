@@ -85,7 +85,7 @@ namespace DxMessaging.Tests.Runtime.Core
             bool armed = true;
             bool childAdded = false;
             MessageRegistrationHandle last = default;
-            ProbeFailure sentinel = new ProbeFailure();
+            ProbeFailureException sentinel = new ProbeFailureException();
             Exception actualError = null;
             object oldSnapshot = null;
             object oldFlat = null;
@@ -582,7 +582,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private delegate bool Interceptor(ref InstanceId route, ref ProbeMessage message);
 
-        private sealed class ProbeFailure : Exception { }
+        public sealed class ProbeFailureException : Exception
+        {
+            public ProbeFailureException() { }
+
+            public ProbeFailureException(string message)
+                : base(message) { }
+
+            public ProbeFailureException(string message, Exception innerException)
+                : base(message, innerException) { }
+        }
 
         private readonly struct ProbeMessage : ITargetedMessage, IBroadcastMessage
         {

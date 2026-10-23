@@ -421,9 +421,12 @@ namespace DxMessaging.Tests.Runtime.Core
 
             public override int GetHashCode()
             {
-                HashCalls++;
+                RecordHashCall();
                 return 0;
             }
+
+            // Keep invocation counting separate from the deliberately constant hash value.
+            private void RecordHashCall() => HashCalls++;
 
             private void Record()
             {

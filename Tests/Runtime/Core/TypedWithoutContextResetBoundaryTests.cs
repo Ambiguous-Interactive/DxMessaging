@@ -152,7 +152,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> calls = new List<string>();
             string phase = "warmup";
             bool armed = false;
-            ProbeFailure sentinel = new ProbeFailure();
+            ProbeFailureException sentinel = new ProbeFailureException();
             Exception actualError = null;
 
             RegisterPrimary(
@@ -496,7 +496,16 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private sealed class ProbeFailure : Exception { }
+        public sealed class ProbeFailureException : Exception
+        {
+            public ProbeFailureException() { }
+
+            public ProbeFailureException(string message)
+                : base(message) { }
+
+            public ProbeFailureException(string message, Exception innerException)
+                : base(message, innerException) { }
+        }
 
         private readonly struct ProbeMessage : ITargetedMessage, IBroadcastMessage
         {
