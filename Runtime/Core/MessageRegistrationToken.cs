@@ -43,8 +43,13 @@ namespace DxMessaging.Core
     public sealed class MessageRegistrationToken : IDisposable
     {
         /// <summary>
-        /// Whether the token is currently enabled (registrations are active).
+        /// Whether new registrations activate immediately.
         /// </summary>
+        /// <remarks>
+        /// Pending cleanup after a failure can keep this true. Complete cleanup before
+        /// treating the token as inactive. Rollback publishes this state before diagnostic
+        /// formatting or log receivers run.
+        /// </remarks>
         public bool Enabled => _enabled;
 
         /// <summary>
@@ -1989,6 +1994,11 @@ namespace DxMessaging.Core
             }
 
             Exception rollbackException = InvokeDeregistrationQueue(rollbackBaseline);
+            /*
+                Diagnostic formatting and receivers can throw or reenter this token.
+                Publish pending cleanup before entering either user-code boundary.
+            */
+            _enabled = 0 < _deregistrationCount;
             if (rollbackException != null && MessagingDebug.enabled)
             {
                 MessagingDebug.Log(

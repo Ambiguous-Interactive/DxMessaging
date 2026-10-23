@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep failed registration cleanup retryable when diagnostic formatting or a log receiver throws
+  or reenters the token ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663)).
+
 - Fix provider fallback selection in registration builders, components, dependency-injection
   adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
   resolution, scoped container fallbacks, and live serialized-handle fallbacks

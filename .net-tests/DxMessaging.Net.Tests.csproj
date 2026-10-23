@@ -23,5 +23,13 @@
       Link="ScenarioHarness.cs"
     />
     <Compile Include="../Tests/Runtime/TestUtilities/LeakWatcher.cs" Link="LeakWatcher.cs" />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/DelegatingMessageBus.cs"
+      Link="DelegatingMessageBus.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenRollbackLoggingTests.cs"
+      Link="TokenRollbackLoggingTests.cs"
+    />
   </ItemGroup>
 </Project>
