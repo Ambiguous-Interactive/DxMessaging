@@ -50,6 +50,7 @@ namespace DxMessaging.Core
         /// <remarks>
         /// Pending cleanup after a failure, or a registration accepted during teardown, can keep
         /// this true. Complete cleanup before treating the token as inactive.
+        /// Rollback publishes this state before diagnostic formatting or log receivers run.
         /// </remarks>
         public bool Enabled => _enabled;
 
@@ -2071,6 +2072,11 @@ namespace DxMessaging.Core
             }
 
             Exception rollbackException = InvokeDeregistrationQueue(rollbackBaseline);
+            /*
+                Diagnostic formatting and receivers can throw or reenter this token.
+                Publish pending cleanup before entering either user-code boundary.
+            */
+            _enabled = 0 < _deregistrationCount;
             if (rollbackException != null && MessagingDebug.enabled)
             {
                 MessagingDebug.Log(

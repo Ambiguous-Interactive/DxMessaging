@@ -57,6 +57,10 @@
       Link="ForeignBusRegistrationTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/TokenRollbackLoggingTests.cs"
+      Link="TokenRollbackLoggingTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/TokenRegistrationFailureTests.cs"
       Link="TokenRegistrationFailureTests.cs"
     />

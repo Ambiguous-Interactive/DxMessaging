@@ -539,6 +539,11 @@ even when `enabled` is false. For example, the plain .NET build uses it to repor
 unsupported reflexive dispatch. Set `LogFunction` to `null` to discard logs from both
 overloads. Formatting and receiver exceptions propagate to the caller.
 
+In 4.0, a logger that throws while `Enable()` rolls back a failed registration leaves
+pending cleanup visible through `Enabled`. Call `Disable()` to finish that cleanup
+before enabling staged handlers again. A logger that disables or clears the token
+during recovery keeps the resulting cleanup state.
+
 ## Per-Environment Configuration
 
 A common pattern is enabling diagnostics only in the Editor for development visibility while keeping runtime builds lean.
