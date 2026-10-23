@@ -146,12 +146,9 @@ A sweep reclaims only empty slots; active registrations are never touched.
 
 Idle sweeps run on a wall-clock cadence. Two triggers can drive a sweep:
 
-- **Emit-time sampling.** Every emit checks whether enough wall time has
-  elapsed since the last sweep. The threshold is
-  `EvictionTickIntervalSeconds`. When it has, the bus runs a sweep before
-  dispatching the message. Sampling the clock periodically keeps the per-emit
-  overhead at one branch on the hot path (every 16th emit samples the wall
-  clock to decide whether enough time has elapsed).
+- **Emit-time sampling.** Every 16th emit samples the wall clock against
+  `EvictionTickIntervalSeconds`. When that interval has elapsed, the bus runs
+  a sweep before dispatching the message.
 - **Unity PlayerLoop hook.** `EvictionPlayerLoopHook` inserts a sweep callback
   into Unity's PlayerLoop so that idle sweeps still run when no emits are
   happening. The hook is installed automatically on Unity 2021.3 and newer
@@ -162,18 +159,21 @@ Idle sweeps are gated by two settings. When `EvictionEnabled` is false neither
 the inline emit-time path nor the PlayerLoop path runs. When
 `EvictionTickIntervalSeconds` is large, sweeps run less often.
 
-Empty slots become eligible only after they have remained empty (and free of
-register, deregister, or dispatch activity) for at least `IdleEvictionSeconds`
-worth of bus activity ticks (advanced on emit, register, deregister, and once
-per frame from the Unity PlayerLoop). The bus tracks per-slot dirty state by
+Empty slots become eligible when their bus activity-tick age is strictly greater
+than the rounded-up `IdleEvictionSeconds` value. This setting retains its legacy
+name; it is a counter-age budget. Emit, register and deregister operations advance
+the counter. The Unity PlayerLoop advances it once when a sweep is due, rather
+than on every frame. With the default budget of 30, the 31st subsequent tick makes
+an untouched empty slot eligible. The bus tracks per-slot dirty state by
 stamping touched slots with an internal tick counter, then revisits only the
 types, targets, interceptors, and handlers that have changed since the
 previous sweep.
 
 On non-Unity hosts the tick counter only advances on bus activity, so an
-inactive bus does not age out empty slots without an explicit `Trim`. Drive
-sweeps by emitting messages periodically or call `Trim` on the bus's owning
-thread outside dispatch. The message bus does not support concurrent access.
+inactive bus does not age out empty slots just because wall time passes.
+Nonforced `Trim` checks the current age without advancing it. Continue bus activity
+to age slots, or call `Trim(force: true)` on the bus's owning thread outside dispatch
+for deterministic reclamation. The message bus does not support concurrent access.
 
 ### Explicit Trim
 
@@ -207,7 +207,7 @@ Method lookup recency always uses LRU, independent of `BufferUseLruEviction`.
 
 ## Tuning by Scenario
 
-The defaults (30 second idle threshold, 5 second tick, LRU pool retention with
+The defaults (30 activity ticks of idle age, 5 seconds between sweeps, LRU pool retention with
 512 distinct entries, both master switches on) are tuned for general-purpose
 projects. Use the table below as a starting point when defaults do not fit.
 
@@ -230,8 +230,8 @@ editing the asset rather than restarting the editor.
 Every successful `Trim` call returns an `IMessageBus.TrimResult`. Its fields
 are read-only counters for the work the sweep performed:
 
-- `TypeSlotsEvicted` is the number of typed-handler-slot entries that were
-  reset across all reclaimed message types.
+- `TypeSlotsEvicted` aggregates bus type-cache entries, typed-handler slots and
+  global slots reclaimed across all message types.
 - `TargetSlotsEvicted` is the number of bus-side target or source context
   entries removed across all reclaimed `InstanceId`s.
 - `PooledCollectionsEvicted` is the number of pooled collections dropped from
@@ -341,10 +341,10 @@ Three settings gate idle sweeps:
 - `EvictionTickIntervalSeconds` controls the minimum interval between sweeps.
   A very large value defers sweeps; zero allows back-to-back sweeps but does
   not force one to run on every emit.
-- `IdleEvictionSeconds` controls when an empty slot becomes eligible. If the
-  threshold is larger than the interval between dispatches that touch the
-  slot, the slot is repeatedly reset and never ages out. Lower the threshold
-  or call `Trim(force: true)` for a deterministic reclaim.
+- `IdleEvictionSeconds` controls the activity-tick budget. Repeated touches
+  reset a slot's age. Wall time alone does not advance this counter; the bus
+  needs activity or due PlayerLoop sweeps. Lower the budget or call
+  `Trim(force: true)` for a deterministic reclaim.
 
 In the [plain .NET runtime build](../reference/compatibility.md#plain-net-runtime),
 the PlayerLoop hook and settings asset are unavailable. Buses use the built-in defaults.

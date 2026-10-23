@@ -35,7 +35,7 @@ namespace DxMessaging.Core.Configuration
         /// <summary>Default soft cap on retained entries in shared pools and the per-bus priority-leaf spare.</summary>
         public const int DefaultBufferMaxDistinctEntries = 512;
 
-        /// <summary>Default idle threshold in seconds before an empty slot is eligible for eviction.</summary>
+        /// <summary>Default counter-age budget for empty slots; the legacy setting name retains Seconds.</summary>
         public const float DefaultIdleEvictionSeconds = 30f;
 
         /// <summary>Default minimum interval between idle sweeps, in seconds.</summary>
@@ -43,7 +43,7 @@ namespace DxMessaging.Core.Configuration
 
         [SerializeField]
         [Tooltip(
-            "Idle threshold in seconds. Empty per-message-type slots are evicted only after going at least this long without a register/deregister/dispatch touch. See IdleEvictionSeconds."
+            "Legacy-named idle-age budget in bus activity ticks, rounded up. Empty slots become eligible when their age exceeds this budget. Wall time controls sweep cadence only. See IdleEvictionSeconds."
         )]
         [Min(0f)]
         internal float _idleEvictionSeconds = DefaultIdleEvictionSeconds;
@@ -96,7 +96,11 @@ namespace DxMessaging.Core.Configuration
 
         private bool _isFallbackInstance;
 
-        /// <summary>Idle threshold in seconds. See <c>_idleEvictionSeconds</c>.</summary>
+        /// <summary>Counter-age budget for empty slots, rounded up; the legacy name retains Seconds.</summary>
+        /// <remarks>
+        /// Bus register, deregister and emit operations advance age. A due PlayerLoop sweep also
+        /// advances it once. Wall time controls sweep cadence; it does not measure this age.
+        /// </remarks>
         public float IdleEvictionSeconds => _idleEvictionSeconds;
 
         /// <summary>Per-pool retained-entry cap. See <c>_bufferMaxDistinctEntries</c>.</summary>

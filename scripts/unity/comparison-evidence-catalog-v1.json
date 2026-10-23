@@ -43,7 +43,7 @@
     "dxInterface": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/IMessageBus.cs",
-      "sha256": "2efa2b6eb88828c14b3079d1c5587667b726cbd288b2b7a8037ec2c3c7a4763f"
+      "sha256": "d62fc1dbb0d288c63ab2225a08edfa9a6a3d9ed664ca4f6064d886e130f3af84"
     },
     "dxHandler": {
       "origin": "repository",
@@ -68,7 +68,7 @@
     "dxSettings": {
       "origin": "repository",
       "path": "Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs",
-      "sha256": "a5d6c4b971d121754661c471c212f34f8af65955c60691011d0b47112a821a9d"
+      "sha256": "472b3cca0b6e1a3c5bd4e5dd6a110ef40f5cd4b1570536bc77b80fd716452521"
     },
     "reentrantTests": {
       "origin": "repository",

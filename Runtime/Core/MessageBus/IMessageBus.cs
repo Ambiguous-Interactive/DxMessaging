@@ -217,7 +217,7 @@ namespace DxMessaging.Core.MessageBus
             /// <summary>Number of bus target/source context entries removed.</summary>
             public int TargetSlotsEvicted { get; }
 
-            /// <summary>Number of pooled collections dropped from shared pools.</summary>
+            /// <summary>Number of collections dropped from shared or bus-owned pools and spare storage.</summary>
             public int PooledCollectionsEvicted { get; }
 
             /// <summary>Number of occupied type slots remaining after trim.</summary>
