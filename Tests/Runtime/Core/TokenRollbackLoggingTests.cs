@@ -598,16 +598,24 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
-        private sealed class RollbackException : Exception
+        public sealed class RollbackException : Exception
         {
             private readonly Func<string> _format;
+
+            public RollbackException() { }
+
+            public RollbackException(string message)
+                : base(message) { }
+
+            public RollbackException(string message, Exception innerException)
+                : base(message, innerException) { }
 
             internal RollbackException(Func<string> format)
             {
                 _format = format;
             }
 
-            public override string ToString() => _format();
+            public override string ToString() => _format == null ? base.ToString() : _format();
         }
 
         private readonly struct ProbeMessage
